@@ -1765,6 +1765,15 @@ class ContainerController extends Controller
             }
 
             $hostname = strtolower($request->domain);
+
+            try {
+                app(\App\Services\Billing\UsageDeployGuardService::class)
+                    ->assertDomainAvailableForBind(auth()->user(), $hostname, $service);
+            } catch (\Illuminate\Validation\ValidationException $e) {
+                return $this->domainsTabRedirect($service)
+                    ->withErrors($e->errors())
+                    ->withInput();
+            }
             $nodeIp = $deployment->node->ip_address;
             $nginxService = new NginxProxyService;
 

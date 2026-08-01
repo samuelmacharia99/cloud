@@ -227,6 +227,19 @@ class ProvisioningService
                 $service->update(['status' => 'terminated', 'terminate_date' => now()]);
             }
 
+            if ($service->fresh()->billing_mode?->value === 'usage'
+                || (string) $service->billing_mode === 'usage') {
+                try {
+                    app(\App\Services\Billing\UsageDeployGuardService::class)
+                        ->beginCoolDownForService($service->fresh());
+                } catch (\Throwable $e) {
+                    \Log::warning('Usage domain cool-down failed after terminate', [
+                        'service_id' => $service->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+
             // Send service terminated notification
             app(NotificationService::class)->notifyServiceTerminated($service->fresh());
         } catch (\Exception $e) {

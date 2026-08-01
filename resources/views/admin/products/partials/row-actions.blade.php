@@ -35,22 +35,34 @@
         </form>
     @endif
 
-    <form
-        action="{{ route('admin.products.destroy', $product) }}"
-        method="POST"
-        class="inline"
-        data-confirm="Are you sure you want to delete this product? This action cannot be undone."
-    >
-        @csrf
-        @method('DELETE')
-        <button
-            type="submit"
+    @if (($product->services_count ?? $product->services()->count()) > 0 || $product->requiresReplacementBeforeDelete())
+        <a
+            href="{{ route('admin.products.delete-confirm', $product) }}"
             class="action-icon-btn text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40"
-            title="Delete product"
+            title="Delete product (reassign services)"
         >
             <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
             </svg>
-        </button>
-    </form>
+        </a>
+    @else
+        <form
+            action="{{ route('admin.products.destroy', $product) }}"
+            method="POST"
+            class="inline"
+            data-confirm="Are you sure you want to delete this product? This action cannot be undone."
+        >
+            @csrf
+            @method('DELETE')
+            <button
+                type="submit"
+                class="action-icon-btn text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40"
+                title="Delete product"
+            >
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                </svg>
+            </button>
+        </form>
+    @endif
 </div>

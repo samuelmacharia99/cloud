@@ -6,7 +6,7 @@
 <div class="space-y-6 max-w-3xl">
     <div>
         <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Almost ready</h1>
-        <p class="text-slate-600 dark:text-slate-400 mt-1">We pick the resources for you. You only need a domain — email is included.</p>
+        <p class="text-slate-600 dark:text-slate-400 mt-1">We pick the resources for you. Deploy with a domain — email is included. Hosting is billed on usage after your free period.</p>
     </div>
 
     @if(!empty($attachDomain))
@@ -29,7 +29,7 @@
             </div>
             <div>
                 <p class="text-xs text-slate-500">Billing</p>
-                <p class="font-medium text-slate-900 dark:text-white">Monthly usage (starter + meters)</p>
+                <p class="font-medium text-slate-900 dark:text-white">Usage-based (after free period)</p>
             </div>
         </div>
         <a href="{{ route('customer.select-techstack') }}" class="text-sm text-blue-600 dark:text-blue-400 hover:underline">Change stack →</a>
@@ -38,12 +38,22 @@
     <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 p-6">
         <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-6">
             <div>
-                <h2 class="font-semibold text-slate-900 dark:text-white">Monthly starter</h2>
-                <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Includes the allotment below. Extra usage is billed on renewal.</p>
+                @if(!empty($freeEligible))
+                    <h2 class="font-semibold text-slate-900 dark:text-white">First {{ $freePeriodDays ?? 30 }} days free</h2>
+                    <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Hosting is KES 0 at checkout. Pay only if you register a new domain. After the free period, we bill measured usage.</p>
+                @else
+                    <h2 class="font-semibold text-slate-900 dark:text-white">Usage billing</h2>
+                    <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Your free period was already used. Checkout charges the monthly starter; extra usage is billed on renewal.</p>
+                @endif
             </div>
             <p class="text-3xl font-bold text-blue-600 dark:text-blue-400">
-                {{ $currency?->symbol ?? 'KES' }} {{ number_format($floorPrice * ($currency?->exchange_rate ?? 1), 0) }}
-                <span class="text-sm font-normal text-slate-500">/ month</span>
+                @if(!empty($freeEligible) && (float) ($checkoutHostingPrice ?? 0) <= 0)
+                    Free
+                    <span class="text-sm font-normal text-slate-500">hosting</span>
+                @else
+                    {{ $currency?->symbol ?? 'KES' }} {{ number_format(($checkoutHostingPrice ?? $floorPrice) * ($currency?->exchange_rate ?? 1), 0) }}
+                    <span class="text-sm font-normal text-slate-500">/ month</span>
+                @endif
             </p>
         </div>
 

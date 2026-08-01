@@ -445,12 +445,12 @@ class CartController extends Controller
         }
 
         if (! empty($item['usage_billing']) && $product->type === 'container_hosting') {
-            $attrs = app(\App\Services\Billing\UsageBillingProfileService::class)
-                ->newUsageServiceAttributes($product);
+            $price = app(\App\Services\Billing\UsageBillingProfileService::class)
+                ->checkoutHostingPrice(auth()->user(), $product);
 
             return [
-                'unit_price' => $attrs['custom_price'],
-                'setup_fee' => (float) ($listing?->setup_fee ?? $product->setup_fee ?? 0),
+                'unit_price' => $price,
+                'setup_fee' => 0,
             ];
         }
 

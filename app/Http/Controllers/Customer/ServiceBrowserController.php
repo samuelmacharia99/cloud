@@ -227,6 +227,8 @@ class ServiceBrowserController extends Controller
 
             $attrs = $usageProfile->newUsageServiceAttributes($usageProduct);
             $included = $usageProfile->includedLimits();
+            $guard = app(\App\Services\Billing\UsageDeployGuardService::class);
+            $freeEligible = $guard->qualifiesForFreePeriod($user);
 
             return view('customer.confirm-techstack-usage', [
                 'language' => $language,
@@ -234,6 +236,9 @@ class ServiceBrowserController extends Controller
                 'routing' => $routing,
                 'product' => $usageProduct,
                 'floorPrice' => $attrs['custom_price'],
+                'checkoutHostingPrice' => $usageProfile->checkoutHostingPrice($user, $usageProduct),
+                'freeEligible' => $freeEligible,
+                'freePeriodDays' => $guard->freePeriodDays(),
                 'included' => $included,
                 'autoEmail' => $usageProfile->autoIncludeEmail(),
                 'emailProduct' => $usageProfile->resolveEmailProduct(),
@@ -301,6 +306,15 @@ class ServiceBrowserController extends Controller
             return back()->withInput()->withErrors(['primary_domain' => $e->getMessage()]);
         }
 
+        $guard = app(\App\Services\Billing\UsageDeployGuardService::class);
+        try {
+            $guard->assertCanDeploy($user, $fqdn);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return back()->withInput()->withErrors($e->errors());
+        }
+
+        $freeEligible = $guard->qualifiesForFreePeriod($user);
+
         $cart = session(CartController::CART_SESSION_KEY, []);
         $key = uniqid('usage_', true);
         $item = [
@@ -308,6 +322,7 @@ class ServiceBrowserController extends Controller
             'product_id' => $product->id,
             'billing_cycle' => 'monthly',
             'usage_billing' => true,
+            'usage_free_period' => $freeEligible,
             'primary_domain' => $fqdn,
             'include_email' => $usageProfile->autoIncludeEmail(),
             'added_at' => now()->toIso8601String(),
@@ -321,9 +336,11 @@ class ServiceBrowserController extends Controller
         $cart[$key] = $item;
         session([CartController::CART_SESSION_KEY => $cart]);
 
-        // Pre-fill checkout domain field via session cart primary_domain.
-        return redirect()->route('customer.checkout.show')
-            ->with('success', 'Application hosting added. Confirm and pay your monthly starter amount.');
+        $message = $freeEligible
+            ? 'Application hosting added — first '.$guard->freePeriodDays().' days free. You only pay for a new domain registration if needed.'
+            : 'Application hosting added. Confirm checkout to continue.';
+
+        return redirect()->route('customer.checkout.show')->with('success', $message);
     }
 
     /**

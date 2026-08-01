@@ -2709,6 +2709,31 @@ class ContainerDeploymentService
             $payload['memory_limit_mb'] = (int) $included['memory_mb'];
         }
 
+        // Usage-billed apps: prefer snapped included_limits, then clamp to provision hard caps.
+        $usageProfile = app(\App\Services\Billing\UsageBillingProfileService::class);
+        if ($usageProfile->serviceUsesUsageBilling($service)) {
+            $snap = is_array($service->included_limits) ? $service->included_limits : [];
+            if (! empty($snap['cpu'])) {
+                $payload['cpu_limit'] = (float) $snap['cpu'];
+            }
+            if (! empty($snap['memory_mb'])) {
+                $payload['memory_limit_mb'] = (int) $snap['memory_mb'];
+            }
+
+            $cpuCap = $usageProfile->provisionCpuCap();
+            $memCap = $usageProfile->provisionMemoryMbCap();
+            if (isset($payload['cpu_limit'])) {
+                $payload['cpu_limit'] = min((float) $payload['cpu_limit'], $cpuCap);
+            } else {
+                $payload['cpu_limit'] = $cpuCap;
+            }
+            if (isset($payload['memory_limit_mb'])) {
+                $payload['memory_limit_mb'] = min((int) $payload['memory_limit_mb'], $memCap);
+            } else {
+                $payload['memory_limit_mb'] = $memCap;
+            }
+        }
+
         return $payload;
     }
 }

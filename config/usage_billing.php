@@ -80,4 +80,43 @@ return [
     /** Bill bandwidth overage in v1 (off by default). */
     'bandwidth_billing_enabled' => filter_var(env('USAGE_BILLING_BANDWIDTH', false), FILTER_VALIDATE_BOOLEAN),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Free first period (new usage deploys)
+    |--------------------------------------------------------------------------
+    |
+    | Hosting is not charged at checkout. Domain registration (if any) still is.
+    | After free_period.days, renewals bill measured usage (floor may be 0).
+    |
+    */
+
+    'free_period' => [
+        'enabled' => filter_var(env('USAGE_BILLING_FREE_PERIOD', true), FILTER_VALIDATE_BOOLEAN),
+        'days' => (int) env('USAGE_BILLING_FREE_DAYS', 30),
+        'once_per_account' => filter_var(env('USAGE_BILLING_FREE_ONCE', true), FILTER_VALIDATE_BOOLEAN),
+        /** Charge KES 0 for hosting at checkout when eligible. */
+        'zero_checkout_hosting' => filter_var(env('USAGE_BILLING_ZERO_CHECKOUT', true), FILTER_VALIDATE_BOOLEAN),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Anti-abuse
+    |--------------------------------------------------------------------------
+    */
+
+    'abuse' => [
+        'max_concurrent_apps' => (int) env('USAGE_BILLING_MAX_APPS', 1),
+        'max_concurrent_apps_after_payment' => (int) env('USAGE_BILLING_MAX_APPS_PAID', 5),
+        'max_deploys_per_week' => (int) env('USAGE_BILLING_MAX_DEPLOYS_WEEK', 3),
+        'domain_cool_down_days' => (int) env('USAGE_BILLING_DOMAIN_COOLDOWN_DAYS', 30),
+        'account_cool_down_days_after_terminate' => (int) env('USAGE_BILLING_ACCOUNT_COOLDOWN_DAYS', 0),
+        /**
+         * Resource ceilings applied at container provision for usage services
+         * (also used as Docker cgroup limits). Defaults mirror hard_caps.
+         */
+        'provision_cpu' => (float) env('USAGE_BILLING_PROVISION_CPU', env('USAGE_BILLING_HARD_CPU', 2)),
+        'provision_memory_mb' => (int) env('USAGE_BILLING_PROVISION_MEMORY_MB', env('USAGE_BILLING_HARD_MEMORY_MB', 2048)),
+        'provision_disk_gb' => (float) env('USAGE_BILLING_PROVISION_DISK_GB', env('USAGE_BILLING_INCLUDED_DISK_GB', 20)),
+    ],
+
 ];

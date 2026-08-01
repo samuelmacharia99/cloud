@@ -103,8 +103,47 @@ class ProductController extends Controller
             ->with('success', $message);
     }
 
-    public function destroy(Product $product)
+    public function destroy(Request $request, Product $product)
     {
+        if ($product->isSystemProtected()) {
+            return redirect()->route('admin.products.index')
+                ->with('error', $product->deletionBlockedMessage());
+        }
+
+        if ($product->requiresReplacementBeforeDelete() && ! $request->filled('replacement_product_id')) {
+            return redirect()->route('admin.products.delete-confirm', $product);
+        }
+
+        if ($request->filled('replacement_product_id')) {
+            $validated = $request->validate([
+                'replacement_product_id' => [
+                    'required',
+                    'integer',
+                    'exists:products,id',
+                    'not_in:'.$product->id,
+                ],
+            ], [
+                'replacement_product_id.required' => 'Choose a package to move existing services to.',
+                'replacement_product_id.not_in' => 'Choose a different package than the one being deleted.',
+            ]);
+
+            $replacement = Product::query()->findOrFail($validated['replacement_product_id']);
+
+            try {
+                $moved = $product->services()->count();
+                $product->reassignDependentsAndDelete($replacement);
+
+                return redirect()->route('admin.products.index')
+                    ->with('success', $moved > 0
+                        ? "Moved {$moved} service(s) to {$replacement->name} and deleted the product."
+                        : "Product deleted. Related invoice/order lines now point to {$replacement->name}.");
+            } catch (\InvalidArgumentException $e) {
+                return redirect()->route('admin.products.delete-confirm', $product)
+                    ->withInput()
+                    ->with('error', $e->getMessage());
+            }
+        }
+
         if (! $product->canBeDeleted()) {
             return redirect()->route('admin.products.index')
                 ->with('error', $product->deletionBlockedMessage());
@@ -114,6 +153,35 @@ class ProductController extends Controller
 
         return redirect()->route('admin.products.index')
             ->with('success', 'Product deleted successfully.');
+    }
+
+    /**
+     * Confirm deletion and choose a replacement package for attached services.
+     */
+    public function deleteConfirm(Product $product)
+    {
+        if ($product->isSystemProtected()) {
+            return redirect()->route('admin.products.index')
+                ->with('error', $product->deletionBlockedMessage());
+        }
+
+        if (! $product->requiresReplacementBeforeDelete()) {
+            return redirect()->route('admin.products.index')
+                ->with('info', 'This product has no attached services. Use the delete action to remove it.');
+        }
+
+        $candidates = $product->replacementCandidates();
+        $servicesCount = $product->services()->count();
+        $invoiceItemsCount = $product->invoiceItems()->count();
+        $orderItemsCount = $product->orderItems()->count();
+
+        return view('admin.products.delete-confirm', compact(
+            'product',
+            'candidates',
+            'servicesCount',
+            'invoiceItemsCount',
+            'orderItemsCount',
+        ));
     }
 
     public function duplicate(Product $product)

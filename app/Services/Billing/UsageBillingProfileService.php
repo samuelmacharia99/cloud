@@ -164,7 +164,7 @@ class UsageBillingProfileService
      */
     public function newUsageServiceAttributes(?Product $product = null): array
     {
-        // Prefer the product's monthly price as the commercial floor; fall back to config.
+        // Stored floor for renewals / post–free-period checkouts (overage still stacks on top).
         $productMonthly = $product ? (float) ($product->monthly_price ?? 0) : 0;
         $floor = $productMonthly > 0 ? $productMonthly : $this->floorPriceMonthly();
 
@@ -175,6 +175,82 @@ class UsageBillingProfileService
             'included_limits' => $this->includedLimits(),
             'usage_rates' => $this->usageRates(),
         ];
+    }
+
+    /**
+     * Checkout unit price for a usage cart line (0 when first free period applies).
+     */
+    public function checkoutHostingPrice(User $user, ?Product $product = null): float
+    {
+        $guard = app(UsageDeployGuardService::class);
+        if (config('usage_billing.free_period.zero_checkout_hosting', true)
+            && $guard->qualifiesForFreePeriod($user)) {
+            return 0.0;
+        }
+
+        return $this->newUsageServiceAttributes($product)['custom_price'];
+    }
+
+    public function provisionCpuCap(): float
+    {
+        $cap = (float) config('usage_billing.abuse.provision_cpu', $this->hardCaps()['cpu'] ?? 2);
+
+        return max(0.25, $cap);
+    }
+
+    public function provisionMemoryMbCap(): int
+    {
+        $cap = (int) config('usage_billing.abuse.provision_memory_mb', $this->hardCaps()['memory_mb'] ?? 2048);
+
+        return max(256, $cap);
+    }
+
+    public function provisionDiskGbCap(): float
+    {
+        $cap = (float) config('usage_billing.abuse.provision_disk_gb', $this->includedLimits()['disk_gb'] ?? 20);
+
+        return max(1.0, $cap);
+    }
+
+    /**
+     * After creating a usage-mode container service: free-period dates, meta, domain lock.
+     *
+     * @param  array<string, mixed>  $cartItem
+     */
+    public function finalizeNewUsageContainerService(Service $service, User $user, array $cartItem): void
+    {
+        $guard = app(UsageDeployGuardService::class);
+        $free = ! empty($cartItem['usage_free_period']);
+        $days = $guard->freePeriodDays();
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+
+        if (! empty($cartItem['primary_domain'])) {
+            $meta['primary_domain'] = $guard->normalizeFqdn((string) $cartItem['primary_domain']);
+        }
+
+        $meta['disk_limit_mb'] = (int) round($this->provisionDiskGbCap() * 1024);
+
+        if ($free) {
+            $meta['usage_free_period_granted'] = true;
+            $meta['usage_free_period_ends_at'] = now()->addDays($days)->toIso8601String();
+            $service->update([
+                'commenced_at' => now(),
+                'next_due_date' => now()->addDays($days),
+                // Keep custom_price as renewal floor; first invoice is deferred via next_due_date.
+                'service_meta' => $meta,
+            ]);
+        } else {
+            $service->update([
+                'commenced_at' => now(),
+                'next_due_date' => now()->addMonth(),
+                'service_meta' => $meta,
+            ]);
+        }
+
+        $fqdn = $guard->primaryDomainForService($service->fresh());
+        if ($fqdn) {
+            $guard->lockDomain($fqdn, $user, $service->fresh());
+        }
     }
 
     public function serviceUsesUsageBilling(Service $service): bool

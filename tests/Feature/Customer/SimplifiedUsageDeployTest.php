@@ -43,7 +43,8 @@ class SimplifiedUsageDeployTest extends TestCase
             ->get(route('customer.confirm-techstack'))
             ->assertOk()
             ->assertSee('Almost ready', false)
-            ->assertSee('Monthly starter', false)
+            ->assertSee('First', false)
+            ->assertSee('days free', false)
             ->assertDontSee('Choose Your Hosting Package', false);
     }
 
@@ -83,8 +84,50 @@ class SimplifiedUsageDeployTest extends TestCase
         $this->assertNotEmpty($cart);
         $item = reset($cart);
         $this->assertTrue($item['usage_billing']);
+        $this->assertTrue($item['usage_free_period']);
         $this->assertSame($product->id, $item['product_id']);
         $this->assertSame('example.com', $item['primary_domain']);
         $this->assertSame('monthly', $item['billing_cycle']);
+    }
+
+    public function test_continue_usage_deploy_rejects_locked_domain(): void
+    {
+        config(['usage_billing.enabled' => true]);
+
+        $customer = User::factory()->customer()->create(['reseller_id' => null]);
+        $other = User::factory()->customer()->create(['reseller_id' => null]);
+        $language = ContainerTemplate::factory()->create(['is_active' => true]);
+        Product::factory()->containerHosting()->create([
+            'container_template_id' => $language->id,
+            'is_active' => true,
+        ]);
+        Product::factory()->create([
+            'type' => 'email_hosting',
+            'is_active' => true,
+            'provisioning_driver_key' => 'mailcow',
+        ]);
+
+        \App\Models\DomainDeploymentLock::create([
+            'fqdn' => 'taken.example',
+            'user_id' => $other->id,
+            'status' => \App\Models\DomainDeploymentLock::STATUS_LOCKED,
+            'locked_at' => now(),
+        ]);
+
+        $this->actingAs($customer)
+            ->withSession([
+                'selected_techstack' => [
+                    'language_id' => $language->id,
+                    'language_name' => $language->name,
+                    'hosting_type' => 'container',
+                    'deployment_platform' => 'container',
+                ],
+            ])
+            ->from(route('customer.confirm-techstack'))
+            ->post(route('customer.confirm-techstack.usage'), [
+                'primary_domain' => 'taken.example',
+            ])
+            ->assertRedirect()
+            ->assertSessionHasErrors('primary_domain');
     }
 }

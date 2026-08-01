@@ -521,6 +521,12 @@ class CheckoutController extends Controller
 
                         $service = Service::create($serviceAttrs);
 
+                        if ($product->type === 'container_hosting' && ! empty($item['usage_billing'])) {
+                            app(\App\Services\Billing\UsageBillingProfileService::class)
+                                ->finalizeNewUsageContainerService($service, $user, $item);
+                            $service = $service->fresh();
+                        }
+
                         if ($product->type === 'container_hosting' && $request) {
                             app(ContainerEmailBundleService::class)->attachToContainerService(
                                 $request,
@@ -534,16 +540,18 @@ class CheckoutController extends Controller
                             );
                         }
 
-                        // Create InvoiceItem
-                        InvoiceItem::create([
-                            'invoice_id' => $invoice->id,
-                            'service_id' => $service->id,
-                            'product_id' => $product->id,
-                            'description' => $item['name'] ?? $product->name,
-                            'quantity' => 1,
-                            'unit_price' => $item['unit_price'],
-                            'amount' => $item['amount'],
-                        ]);
+                        // Create InvoiceItem (skip zero-amount free hosting lines)
+                        if ((float) ($item['amount'] ?? 0) > 0 || empty($item['usage_billing'])) {
+                            InvoiceItem::create([
+                                'invoice_id' => $invoice->id,
+                                'service_id' => $service->id,
+                                'product_id' => $product->id,
+                                'description' => $item['name'] ?? $product->name,
+                                'quantity' => 1,
+                                'unit_price' => $item['unit_price'],
+                                'amount' => $item['amount'],
+                            ]);
+                        }
                     } elseif ($item['type'] === 'domain') {
                         $extension = DomainExtension::where('extension', $item['extension'])->first();
                         $resolvedNs = app(ResellerNameserverService::class)->resolveForCustomerItem($user, $item);
@@ -701,12 +709,12 @@ class CheckoutController extends Controller
         }
 
         if (! empty($item['usage_billing']) && $product->type === 'container_hosting') {
-            $attrs = app(\App\Services\Billing\UsageBillingProfileService::class)
-                ->newUsageServiceAttributes($product);
+            $price = app(\App\Services\Billing\UsageBillingProfileService::class)
+                ->checkoutHostingPrice(auth()->user(), $product);
 
             return [
-                'unit_price' => $attrs['custom_price'],
-                'setup_fee' => (float) ($product->setup_fee ?? 0),
+                'unit_price' => $price,
+                'setup_fee' => 0,
             ];
         }
 
@@ -1345,6 +1353,12 @@ class CheckoutController extends Controller
 
                         $service = Service::create($serviceAttrs);
 
+                        if ($product->type === 'container_hosting' && ! empty($item['usage_billing'])) {
+                            app(\App\Services\Billing\UsageBillingProfileService::class)
+                                ->finalizeNewUsageContainerService($service, $user, $item);
+                            $service = $service->fresh();
+                        }
+
                         if ($product->type === 'container_hosting' && $request) {
                             app(ContainerEmailBundleService::class)->attachToContainerService(
                                 $request,
@@ -1358,16 +1372,18 @@ class CheckoutController extends Controller
                             );
                         }
 
-                        // Create InvoiceItem
-                        InvoiceItem::create([
-                            'invoice_id' => $invoice->id,
-                            'service_id' => $service->id,
-                            'product_id' => $product->id,
-                            'description' => $item['name'] ?? $product->name,
-                            'quantity' => 1,
-                            'unit_price' => $item['unit_price'],
-                            'amount' => $item['amount'],
-                        ]);
+                        // Create InvoiceItem (skip zero-amount free hosting lines)
+                        if ((float) ($item['amount'] ?? 0) > 0 || empty($item['usage_billing'])) {
+                            InvoiceItem::create([
+                                'invoice_id' => $invoice->id,
+                                'service_id' => $service->id,
+                                'product_id' => $product->id,
+                                'description' => $item['name'] ?? $product->name,
+                                'quantity' => 1,
+                                'unit_price' => $item['unit_price'],
+                                'amount' => $item['amount'],
+                            ]);
+                        }
                     } elseif ($item['type'] === 'domain') {
                         $extension = DomainExtension::where('extension', $item['extension'])->first();
                         $resolvedNs = app(ResellerNameserverService::class)->resolveForCustomerItem($user, $item);
