@@ -14,7 +14,35 @@ class CustomerProjectTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_related_services_are_grouped_under_a_project_folder(): void
+    public function test_laravel_next_service_gets_a_project_with_container_labels(): void
+    {
+        $customer = User::factory()->customer()->create();
+        $product = Product::factory()->containerHosting()->create(['name' => 'App Hosting']);
+        Service::factory()->create([
+            'user_id' => $customer->id,
+            'product_id' => $product->id,
+            'name' => 'Atlas',
+            'status' => 'active',
+            'service_meta' => [
+                'frontend' => 'nextjs',
+                'backend' => 'laravel',
+                'database_id' => 'mysql',
+            ],
+        ]);
+
+        $response = $this->actingAs($customer)->get(route('customer.services.index'));
+
+        $response->assertOk();
+        $response->assertSee('Atlas');
+        $response->assertSee('Rename project');
+        $response->assertSee('Backend');
+        $response->assertSee('Frontend');
+        $response->assertSee('Edge');
+        $response->assertSee('Database');
+        $this->assertNotNull(Service::query()->where('name', 'Atlas')->value('project_id'));
+    }
+
+    public function test_related_services_are_grouped_under_a_project(): void
     {
         $customer = User::factory()->customer()->create();
         $appProduct = Product::factory()->containerHosting()->create(['name' => 'App Hosting']);
@@ -39,25 +67,23 @@ class CustomerProjectTest extends TestCase
             'service_meta' => ['bundled_email_service_id' => $email->id],
         ]);
 
-        $response = $this->actingAs($customer)->get(route('customer.services.index'));
-
-        $response->assertOk();
-        $response->assertSee('Project');
-        $response->assertSee('Rename project');
-        $response->assertSee('Washflow App');
-        $response->assertSee('Washflow Mail');
+        $this->actingAs($customer)
+            ->get(route('customer.services.index'))
+            ->assertOk()
+            ->assertSee('Washflow App')
+            ->assertSee('Washflow Mail')
+            ->assertSee('Rename project');
 
         $this->assertSame(
             $app->fresh()->project_id,
             $email->fresh()->project_id
         );
-        $this->assertNotNull($app->fresh()->project_id);
     }
 
-    public function test_sidecar_stack_shows_project_folder_with_container_labels(): void
+    public function test_sidecar_compose_shows_container_labels(): void
     {
         $customer = User::factory()->customer()->create();
-        $product = Product::factory()->containerHosting()->create(['name' => 'App Hosting']);
+        $product = Product::factory()->containerHosting()->create();
         $service = Service::factory()->create([
             'user_id' => $customer->id,
             'product_id' => $product->id,
@@ -80,16 +106,50 @@ services:
 YAML,
         ]);
 
-        $response = $this->actingAs($customer)->get(route('customer.services.index'));
+        $this->actingAs($customer)
+            ->get(route('customer.services.index'))
+            ->assertOk()
+            ->assertSee('Backend')
+            ->assertSee('Frontend')
+            ->assertSee('Edge')
+            ->assertSee('Database');
+    }
 
-        $response->assertOk();
-        $response->assertSee('Project');
-        $response->assertSee('Rename project');
-        $response->assertSee('Backend');
-        $response->assertSee('Frontend');
-        $response->assertSee('Edge');
-        $response->assertSee('Database');
-        $response->assertSee('Atlas');
+    public function test_customer_can_create_project_and_move_service(): void
+    {
+        $customer = User::factory()->customer()->create();
+        $product = Product::factory()->create(['type' => 'shared_hosting']);
+        $service = Service::factory()->create([
+            'user_id' => $customer->id,
+            'product_id' => $product->id,
+            'name' => 'Solo Shared',
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($customer)
+            ->post(route('customer.projects.store'), ['name' => 'Client A'])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $project = CustomerProject::query()->where('user_id', $customer->id)->first();
+        $this->assertNotNull($project);
+        $this->assertSame('Client A', $project->name);
+
+        $this->actingAs($customer)
+            ->patch(route('customer.services.project', $service), [
+                'project_id' => $project->id,
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $this->assertSame($project->id, $service->fresh()->project_id);
+
+        $this->actingAs($customer)
+            ->get(route('customer.services.index'))
+            ->assertOk()
+            ->assertSee('Client A')
+            ->assertSee('Solo Shared')
+            ->assertSee('Move to project');
     }
 
     public function test_customer_can_rename_own_project(): void
@@ -107,12 +167,11 @@ YAML,
             'status' => 'active',
         ]);
 
-        $response = $this->actingAs($customer)->patch(route('customer.projects.rename', $project), [
-            'name' => 'Washflow',
-        ]);
+        $this->actingAs($customer)
+            ->patch(route('customer.projects.rename', $project), ['name' => 'Washflow'])
+            ->assertRedirect()
+            ->assertSessionHas('success');
 
-        $response->assertRedirect();
-        $response->assertSessionHas('success');
         $this->assertSame('Washflow', $project->fresh()->name);
     }
 
@@ -125,9 +184,9 @@ YAML,
             'name' => 'Owner Project',
         ]);
 
-        $this->actingAs($other)->patch(route('customer.projects.rename', $project), [
-            'name' => 'Hijacked',
-        ])->assertForbidden();
+        $this->actingAs($other)
+            ->patch(route('customer.projects.rename', $project), ['name' => 'Hijacked'])
+            ->assertForbidden();
 
         $this->assertSame('Owner Project', $project->fresh()->name);
     }
@@ -143,62 +202,13 @@ YAML,
             'status' => 'active',
         ]);
 
-        $response = $this->actingAs($customer)->get(route('customer.services.index'));
-
-        $response->assertOk();
-        $response->assertSee('Solo Shared');
-        $response->assertDontSee('Rename project');
-        $this->assertDatabaseCount('customer_projects', 0);
-    }
-
-    public function test_project_switcher_filters_resources(): void
-    {
-        $customer = User::factory()->customer()->create();
-        $appProduct = Product::factory()->containerHosting()->create();
-        $emailProduct = Product::factory()->emailHosting()->create();
-        $sharedProduct = Product::factory()->create(['type' => 'shared_hosting']);
-
-        $project = CustomerProject::factory()->create([
-            'user_id' => $customer->id,
-            'name' => 'Washflow',
-        ]);
-
-        $app = Service::factory()->create([
-            'user_id' => $customer->id,
-            'product_id' => $appProduct->id,
-            'project_id' => $project->id,
-            'name' => 'Washflow App',
-            'status' => 'active',
-            'service_meta' => [],
-        ]);
-        $email = Service::factory()->create([
-            'user_id' => $customer->id,
-            'product_id' => $emailProduct->id,
-            'project_id' => $project->id,
-            'name' => 'Washflow Mail',
-            'status' => 'active',
-        ]);
-        $app->update(['service_meta' => ['bundled_email_service_id' => $email->id]]);
-
-        Service::factory()->create([
-            'user_id' => $customer->id,
-            'product_id' => $sharedProduct->id,
-            'name' => 'Solo Shared',
-            'status' => 'active',
-        ]);
-
         $this->actingAs($customer)
-            ->get(route('customer.services.index', ['project' => $project->id]))
-            ->assertOk()
-            ->assertSee('Washflow App')
-            ->assertSee('Washflow Mail')
-            ->assertDontSee('Solo Shared')
-            ->assertSee('Rename project');
-
-        $this->actingAs($customer)
-            ->get(route('customer.services.index', ['project' => 'ungrouped']))
+            ->get(route('customer.services.index'))
             ->assertOk()
             ->assertSee('Solo Shared')
-            ->assertDontSee('Washflow App');
+            ->assertSee('No project')
+            ->assertDontSee('Rename project');
+
+        $this->assertDatabaseCount('customer_projects', 0);
     }
 }

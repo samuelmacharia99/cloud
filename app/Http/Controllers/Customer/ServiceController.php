@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Customer;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\MoveCustomerServiceProjectRequest;
 use App\Http\Requests\RenameCustomerProjectRequest;
 use App\Http\Requests\RenameCustomerServiceRequest;
+use App\Http\Requests\StoreCustomerProjectRequest;
 use App\Models\CustomerProject;
 use App\Models\Service;
 use App\Services\Customer\CustomerHostingUpgradeService;
@@ -18,7 +20,7 @@ use Illuminate\Http\Request;
 
 class ServiceController extends Controller
 {
-    public function index(Request $request, CustomerProjectService $projectService)
+    public function index(CustomerProjectService $projectService)
     {
         $user = auth()->user();
         $projectService->ensureForUser($user);
@@ -33,35 +35,12 @@ class ServiceController extends Controller
             ->get();
 
         $serviceGroups = $projectService->groupForDisplay($services);
-        $projects = $user->customerProjects()
-            ->whereIn('id', $services->pluck('project_id')->filter()->unique())
-            ->orderBy('name')
-            ->get();
-
-        $selectedProject = $request->query('project', 'all');
-        if ($selectedProject !== 'all' && $selectedProject !== 'ungrouped') {
-            $selectedProject = (string) ((int) $selectedProject);
-            if (! $projects->contains(fn ($p) => (string) $p->id === $selectedProject)) {
-                $selectedProject = 'all';
-            }
-        }
-
-        if ($selectedProject !== 'all') {
-            $serviceGroups = collect($serviceGroups)->filter(function (array $group) use ($selectedProject) {
-                if ($selectedProject === 'ungrouped') {
-                    return ($group['type'] ?? '') !== 'project';
-                }
-
-                return ($group['type'] ?? '') === 'project'
-                    && (string) ($group['project']->id ?? '') === $selectedProject;
-            })->values()->all();
-        }
+        $projects = $user->customerProjects()->orderBy('name')->get();
 
         return view('customer.services.index', compact(
             'services',
             'serviceGroups',
             'projects',
-            'selectedProject',
         ));
     }
 
@@ -76,6 +55,30 @@ class ServiceController extends Controller
         return back()->with('success', 'Service renamed successfully.');
     }
 
+    public function storeProject(StoreCustomerProjectRequest $request, CustomerProjectService $projectService)
+    {
+        $this->authorize('create', CustomerProject::class);
+
+        $user = $request->user();
+        $service = null;
+
+        if ($request->filled('service_id')) {
+            $service = Service::query()->findOrFail($request->validated('service_id'));
+            $this->authorize('rename', $service);
+            if ((int) $service->user_id !== (int) $user->id) {
+                abort(403);
+            }
+        }
+
+        $project = $projectService->createProject(
+            $user,
+            $request->validated('name'),
+            $service,
+        );
+
+        return back()->with('success', 'Project “'.$project->name.'” created.');
+    }
+
     public function renameProject(RenameCustomerProjectRequest $request, CustomerProject $project)
     {
         $this->authorize('rename', $project);
@@ -84,7 +87,23 @@ class ServiceController extends Controller
             'name' => $request->validated('name'),
         ]);
 
-        return back()->with('success', 'Project renamed successfully.');
+        return back()->with('success', 'Project renamed.');
+    }
+
+    public function moveService(MoveCustomerServiceProjectRequest $request, Service $service, CustomerProjectService $projectService)
+    {
+        $this->authorize('rename', $service);
+
+        $projectId = $request->validated('project_id');
+        $project = $projectId
+            ? CustomerProject::query()->where('user_id', $request->user()->id)->findOrFail($projectId)
+            : null;
+
+        $projectService->assignService($service, $project);
+
+        return back()->with('success', $project
+            ? 'Moved to “'.$project->name.'”.'
+            : 'Removed from project.');
     }
 
     public function wordpressAdminLogin(Service $service, WordPressAdminLoginService $loginService)

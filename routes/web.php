@@ -576,6 +576,8 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
     Route::middleware(['customer', 'reseller.customer.catalog'])->group(function () {
         Route::get('/my/services', [App\Http\Controllers\Customer\ServiceController::class, 'index'])->name('customer.services.index');
         Route::patch('/my/services/{service}/rename', [App\Http\Controllers\Customer\ServiceController::class, 'rename'])->name('customer.services.rename');
+        Route::patch('/my/services/{service}/project', [App\Http\Controllers\Customer\ServiceController::class, 'moveService'])->name('customer.services.project');
+        Route::post('/my/projects', [App\Http\Controllers\Customer\ServiceController::class, 'storeProject'])->name('customer.projects.store');
         Route::patch('/my/projects/{project}/rename', [App\Http\Controllers\Customer\ServiceController::class, 'renameProject'])->name('customer.projects.rename');
         Route::get('/my/services/{service}/wordpress-admin', [App\Http\Controllers\Customer\ServiceController::class, 'wordpressAdminLogin'])
             ->middleware('throttle:10,1')

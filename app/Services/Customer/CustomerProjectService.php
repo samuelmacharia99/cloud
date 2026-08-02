@@ -6,16 +6,17 @@ use App\Models\CustomerProject;
 use App\Models\Service;
 use App\Models\User;
 use Illuminate\Support\Collection;
+use Illuminate\Validation\ValidationException;
 
 class CustomerProjectService
 {
     /**
-     * Create/link Project folders for multi-service or multi-container apps.
+     * Auto-link projects for multi-service / multi-container apps (incl. Laravel+Next).
      */
     public function ensureForUser(User $user): void
     {
         $services = $user->services()
-            ->with(['product', 'containerDeployment', 'project'])
+            ->with(['product.containerTemplate', 'containerDeployment', 'project'])
             ->whereNotIn('status', ['cancelled', 'terminated'])
             ->whereHas('product', fn ($q) => $q->where('type', '!=', 'domain'))
             ->get()
@@ -37,12 +38,28 @@ class CustomerProjectService
                 $visited[$member->id] = true;
             }
 
-            $roles = $this->composeContainerLabels($cluster->first(
-                fn (Service $s) => $s->isContainerHosting()
-            ) ?? $cluster->first());
-
-            if ($cluster->count() < 2 && count($roles) < 2) {
+            if (! $this->clusterNeedsProject($cluster)) {
                 continue;
+            }
+
+            // Don't steal services the customer already placed in another project.
+            $alreadyGrouped = $cluster->filter(fn (Service $s) => $s->project_id);
+            if ($alreadyGrouped->isNotEmpty()) {
+                $project = $alreadyGrouped
+                    ->map(fn (Service $s) => $s->project)
+                    ->filter()
+                    ->first(fn (CustomerProject $p) => (int) $p->user_id === (int) $user->id);
+
+                if ($project) {
+                    foreach ($cluster as $member) {
+                        if (! $member->project_id) {
+                            $member->project_id = $project->id;
+                            $member->save();
+                        }
+                    }
+
+                    continue;
+                }
             }
 
             $project = $this->resolveProjectForCluster($user, $cluster);
@@ -53,8 +70,6 @@ class CustomerProjectService
                 }
             }
         }
-
-        $this->pruneEmptyProjects($user);
     }
 
     /**
@@ -68,7 +83,8 @@ class CustomerProjectService
 
         $byProject = $services
             ->filter(fn (Service $s) => $s->project_id)
-            ->groupBy('project_id');
+            ->groupBy('project_id')
+            ->sortBy(fn (Collection $members) => mb_strtolower((string) ($members->first()?->project?->name ?? '')));
 
         foreach ($byProject as $members) {
             /** @var Collection<int, Service> $members */
@@ -78,17 +94,12 @@ class CustomerProjectService
             }
 
             $primary = $members->first(fn (Service $s) => $s->isContainerHosting()) ?? $members->first();
-            $containers = $this->composeContainerLabels($primary);
-
-            if ($members->count() < 2 && count($containers) < 2) {
-                continue;
-            }
 
             $groups[] = [
                 'type' => 'project',
                 'project' => $project,
                 'services' => $members->values(),
-                'containers' => $containers,
+                'containers' => $this->composeContainerLabels($primary),
             ];
 
             foreach ($members as $member) {
@@ -111,19 +122,16 @@ class CustomerProjectService
         return $groups;
     }
 
-    /**
-     * Ensure related services (bundled email / staging) share the anchor's project.
-     */
     public function syncRelated(Service $anchor): void
     {
-        $anchor->loadMissing(['product', 'containerDeployment', 'project', 'user']);
+        $anchor->loadMissing(['product.containerTemplate', 'containerDeployment', 'project', 'user']);
 
         if (! $anchor->user) {
             return;
         }
 
         $services = $anchor->user->services()
-            ->with(['product', 'containerDeployment', 'project'])
+            ->with(['product.containerTemplate', 'containerDeployment', 'project'])
             ->whereNotIn('status', ['cancelled', 'terminated'])
             ->get()
             ->keyBy('id');
@@ -133,16 +141,16 @@ class CustomerProjectService
         }
 
         $cluster = $this->relatedCluster($anchor, $services);
-        $roles = $this->composeContainerLabels(
-            $cluster->first(fn (Service $s) => $s->isContainerHosting()) ?? $anchor
-        );
 
-        if ($cluster->count() < 2 && count($roles) < 2) {
+        if (! $this->clusterNeedsProject($cluster)) {
             return;
         }
 
         $project = $this->resolveProjectForCluster($anchor->user, $cluster);
         foreach ($cluster as $member) {
+            if ($member->project_id && (int) $member->project_id !== (int) $project->id) {
+                continue;
+            }
             if ((int) $member->project_id !== (int) $project->id) {
                 $member->project_id = $project->id;
                 $member->save();
@@ -150,8 +158,38 @@ class CustomerProjectService
         }
     }
 
+    public function createProject(User $user, string $name, ?Service $firstService = null): CustomerProject
+    {
+        $project = CustomerProject::create([
+            'user_id' => $user->id,
+            'name' => $name,
+        ]);
+
+        if ($firstService) {
+            $this->assignService($firstService, $project);
+        }
+
+        return $project;
+    }
+
+    public function assignService(Service $service, ?CustomerProject $project): void
+    {
+        if ($project && (int) $project->user_id !== (int) $service->user_id) {
+            throw ValidationException::withMessages([
+                'project_id' => 'That project does not belong to this account.',
+            ]);
+        }
+
+        $service->project_id = $project?->id;
+        $service->save();
+
+        if ($project === null) {
+            $this->pruneEmptyProjects($service->user);
+        }
+    }
+
     /**
-     * Human-readable compose roles for a container service (Backend, Frontend, …).
+     * Human-readable compose / intended roles (Backend, Frontend, …).
      *
      * @return list<string>
      */
@@ -184,6 +222,24 @@ class CustomerProjectService
             }
         }
 
+        // Laravel + Next is one billed service; sidecars may not exist in compose yet.
+        if ($this->intendsLaravelNextStack($service)) {
+            $labels['Backend'] = true;
+            $labels['Frontend'] = true;
+            $labels['Edge'] = true;
+            $meta = is_array($service->service_meta) ? $service->service_meta : [];
+            $db = strtolower((string) ($meta['database'] ?? $meta['database_id'] ?? ''));
+            if ($db !== '' && $db !== 'none' && $db !== 'sqlite') {
+                $labels['Database'] = true;
+            } elseif (isset($labels['Database']) === false && (
+                str_contains($yaml, "\n  db:\n")
+                || str_contains($yaml, "\n  mysql:\n")
+                || str_contains($yaml, "\n  postgres:\n")
+            )) {
+                $labels['Database'] = true;
+            }
+        }
+
         if ($labels === [] && $service->product?->containerTemplate) {
             $composeServices = $service->product->containerTemplate->compose_services ?? [];
             if (is_array($composeServices) && $composeServices !== []) {
@@ -196,6 +252,45 @@ class CustomerProjectService
         }
 
         return array_keys($labels);
+    }
+
+    public function intendsLaravelNextStack(Service $service): bool
+    {
+        if (! $service->isContainerHosting()) {
+            return false;
+        }
+
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        $frontend = strtolower((string) ($meta['frontend'] ?? ''));
+
+        if (in_array($frontend, ['nextjs', 'next', 'next.js'], true)) {
+            return true;
+        }
+
+        // Explicit stack flags written during provisioning.
+        if (! empty($meta['laravel_next_sidecar']) || ! empty($meta['uses_next_sidecar'])) {
+            return true;
+        }
+
+        $yaml = (string) ($service->containerDeployment?->docker_compose_content ?? '');
+
+        return str_contains($yaml, "\n  frontend:\n")
+            && str_contains($yaml, "\n  edge:\n")
+            && str_contains($yaml, "\n  backend:\n");
+    }
+
+    /**
+     * @param  Collection<int, Service>  $cluster
+     */
+    private function clusterNeedsProject(Collection $cluster): bool
+    {
+        if ($cluster->count() >= 2) {
+            return true;
+        }
+
+        $primary = $cluster->first(fn (Service $s) => $s->isContainerHosting()) ?? $cluster->first();
+
+        return count($this->composeContainerLabels($primary)) >= 2;
     }
 
     /**
@@ -261,14 +356,24 @@ class CustomerProjectService
             return $existing;
         }
 
+        $name = CustomerProject::DEFAULT_NAME;
+        $primary = $cluster->first(fn (Service $s) => $s->isContainerHosting()) ?? $cluster->first();
+        if ($primary?->name) {
+            $name = $primary->name;
+        }
+
         return CustomerProject::create([
             'user_id' => $user->id,
-            'name' => CustomerProject::DEFAULT_NAME,
+            'name' => mb_substr($name, 0, 100),
         ]);
     }
 
-    private function pruneEmptyProjects(User $user): void
+    private function pruneEmptyProjects(?User $user): void
     {
+        if (! $user) {
+            return;
+        }
+
         CustomerProject::query()
             ->where('user_id', $user->id)
             ->whereDoesntHave('services')

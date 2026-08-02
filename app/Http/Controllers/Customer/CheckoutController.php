@@ -21,6 +21,7 @@ use App\Services\Billing\InvoiceSettlementService;
 use App\Services\Checkout\ContainerEmailBundleService;
 use App\Services\Checkout\EmailHostingCheckoutService;
 use App\Services\Checkout\SharedHostingCheckoutService;
+use App\Services\Customer\CustomerProjectService;
 use App\Services\CreditService;
 use App\Services\Dns\DomainCloudflareDnsService;
 use App\Services\DomainTransferService;
@@ -503,6 +504,10 @@ class CheckoutController extends Controller
                             'node_id' => $nodeId,
                             'service_meta' => $serviceMeta,
                         ]);
+
+                        if ($product->type === 'container_hosting') {
+                            app(CustomerProjectService::class)->syncRelated($service->fresh());
+                        }
 
                         if ($product->type === 'container_hosting' && $request) {
                             app(ContainerEmailBundleService::class)->attachToContainerService(
@@ -1300,6 +1305,10 @@ class CheckoutController extends Controller
                             'node_id' => $nodeId,
                             'service_meta' => $serviceMeta,
                         ]);
+
+                        if ($product->type === 'container_hosting') {
+                            app(CustomerProjectService::class)->syncRelated($service->fresh());
+                        }
 
                         if ($product->type === 'container_hosting' && $request) {
                             app(ContainerEmailBundleService::class)->attachToContainerService(

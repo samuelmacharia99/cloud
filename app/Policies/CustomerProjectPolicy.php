@@ -8,13 +8,20 @@ use Illuminate\Auth\Access\Response;
 
 class CustomerProjectPolicy
 {
-    /**
-     * Customer can rename their own project folder for personal reference.
-     */
+    public function create(User $user): Response
+    {
+        return Response::allow();
+    }
+
     public function rename(User $user, CustomerProject $customerProject): Response
     {
         return $user->is_admin || $user->id === $customerProject->user_id
             ? Response::allow()
             : Response::deny('You can only rename your own projects.');
+    }
+
+    public function update(User $user, CustomerProject $customerProject): Response
+    {
+        return $this->rename($user, $customerProject);
     }
 }
