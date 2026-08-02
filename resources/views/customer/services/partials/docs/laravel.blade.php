@@ -38,7 +38,7 @@
         <ul class="text-sm text-amber-900/90 dark:text-amber-100/90 space-y-2">
             <li><strong>500 error after deploy</strong> — Check <code class="font-mono text-xs">APP_KEY</code> is set and run migrations from Terminal: <code class="font-mono text-xs">php artisan migrate --force</code></li>
             <li><strong>Database connection refused</strong> — Use the credentials shown on the <strong>Database</strong> tab; host is the MySQL sidecar service name.</li>
-            <li><strong>Redeploy stack</strong> recreates containers but keeps <code class="font-mono text-xs">/app</code> files. Enable <strong>Reset database</strong> only when you intentionally want a clean DB.</li>
+            <li><strong>Redeploy stack</strong> recreates containers but keeps <code class="font-mono text-xs">/app</code> files. Enable <strong>Reset database</strong> only when you intentionally want a clean DB. Use the <strong>Git</strong> tab to pull code updates.</li>
         </ul>
     </div>
 </section>

@@ -234,9 +234,12 @@ class ContainerDeploymentService
                     $this->tearDownStack($ssh, $containerPath, removeVolumes: false);
                 }
 
-                // Prepare application source on host path (git clone/pull) before starting compose.
-                if ($hostAppPath) {
+                // Prepare application source on host path before starting compose.
+                // Redeploys keep existing /app files; customers refresh code from the Git tab.
+                if ($hostAppPath && ! $options->isRedeploy) {
                     $this->syncApplicationSource($ssh, $service, $template, $hostAppPath);
+                } elseif ($hostAppPath) {
+                    $ssh->mkdirp($hostAppPath);
                 }
 
                 $applicationRuntime = $this->resolveApplicationRuntime($ssh, $template, $hostAppPath);

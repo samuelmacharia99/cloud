@@ -668,9 +668,12 @@ class ContainerGitRepositoryService
         string $branch,
         bool $freshClone
     ): string {
-        $authenticatedUrl = app(ContainerGitCredentialsService::class)->authenticatedCloneUrl($service, $repoUrl);
+        $credentials = app(ContainerGitCredentialsService::class);
+        $authenticatedUrl = $credentials->authenticatedCloneUrl($service, $repoUrl);
+        [$cleanUrl] = $credentials->stripUrlCredentials($repoUrl);
         $pathArg = escapeshellarg($hostAppPath);
         $repoArg = escapeshellarg($authenticatedUrl);
+        $cleanRepoArg = escapeshellarg($cleanUrl);
         $branchArg = escapeshellarg($branch);
         $git = $this->gitInvocation($hostAppPath);
 
@@ -680,16 +683,22 @@ class ContainerGitRepositoryService
             $script = 'set -e; '
                 ."mkdir -p {$pathArg}; "
                 ."find {$pathArg} -mindepth 1 -maxdepth 1 -exec rm -rf {} +; "
-                ."{$git} clone --depth=1 --branch {$branchArg} {$repoArg} {$pathArg} 2>&1";
+                ."{$git} clone --depth=1 --branch {$branchArg} {$repoArg} {$pathArg} 2>&1; "
+                // Never leave tokens in the stored origin URL on disk.
+                ."cd {$pathArg}; {$git} remote set-url origin {$cleanRepoArg}";
         } else {
             $backupEnv = $this->backupEnvFilesScript($pathArg);
             $restoreEnv = $this->restoreEnvFilesScript($pathArg);
+            // Existing checkouts keep an unauthenticated origin URL; inject credentials
+            // for the fetch, then strip them again so tokens are not persisted.
             $script = 'set -e; '
                 ."cd {$pathArg}; "
                 .$backupEnv
+                ."{$git} remote set-url origin {$repoArg}; "
                 ."{$git} fetch --depth=1 origin {$branchArg} 2>&1; "
                 ."{$git} checkout -f {$branchArg} 2>&1; "
                 ."{$git} reset --hard FETCH_HEAD 2>&1; "
+                ."{$git} remote set-url origin {$cleanRepoArg}; "
                 .$restoreEnv;
         }
 

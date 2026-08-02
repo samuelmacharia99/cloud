@@ -7,7 +7,7 @@
     <div class="max-w-7xl mx-auto px-4">
         <!-- Header -->
         <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-lg p-8 mb-8">
-            <div class="flex items-start justify-between">
+            <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div>
                     <div class="flex items-center gap-4">
                         <div>
@@ -16,7 +16,7 @@
                         </div>
                     </div>
                 </div>
-                <div class="flex items-center gap-3">
+                <div class="flex flex-wrap items-center gap-3">
                     @php
                         $statusConfig = match($deployment?->status) {
                             'running'   => ['pulse' => 'bg-green-400',  'ring' => 'bg-green-500',  'text' => 'Running',   'textClass' => 'text-green-700 dark:text-green-300',  'bg' => 'bg-green-50 dark:bg-green-900/30',  'border' => 'border-green-200 dark:border-green-700'],
@@ -35,6 +35,142 @@
                         </span>
                         {{ $statusConfig['text'] }}
                     </span>
+
+                    @if ($deployment)
+                        <div x-data="redeployStackPanel(@js($redeployStackOptions ?? null))">
+                            <button type="button" @click="open = true" class="px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg font-medium transition hover:bg-slate-200 dark:hover:bg-slate-600">
+                                Redeploy stack
+                            </button>
+
+                            <template x-teleport="body">
+                                <div
+                                    x-show="open"
+                                    x-cloak
+                                    class="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/50"
+                                    @keydown.escape.window="open = false"
+                                >
+                                    <div
+                                        class="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-xl p-6"
+                                        @click.outside="open = false"
+                                    >
+                                        <h3 class="text-lg font-semibold text-slate-900 dark:text-white">Redeploy stack</h3>
+                                        <p class="text-sm text-slate-500 dark:text-slate-400 mt-1 mb-4">
+                                            Recreate the application runtime. Files in <code class="font-mono text-xs">/app</code> are kept unless you reset the database.
+                                            @if (!empty($redeployStackOptions))
+                                                Choose frontend and database the same way as when you first deployed.
+                                            @endif
+                                        </p>
+
+                                        <form method="POST" action="{{ route('customer.services.container.redeploy', $service) }}" @submit.prevent="submitRedeploy($el)">
+                                            @csrf
+
+                                            @if (!empty($redeployStackOptions) && empty($redeployStackOptions['skip_modal']))
+                                                <template x-if="options.framework?.show">
+                                                    <div class="mb-4">
+                                                        <p class="text-sm font-semibold text-slate-900 dark:text-white mb-2">
+                                                            Framework
+                                                            <span class="text-red-500" x-show="options.framework.required">*</span>
+                                                        </p>
+                                                        <div class="space-y-2">
+                                                            <template x-for="option in options.framework.options" :key="option.value">
+                                                                <label class="block p-3 border-2 rounded-lg cursor-pointer transition-all"
+                                                                    :class="selectedFramework === option.value
+                                                                        ? 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-slate-800'
+                                                                        : 'border-slate-200 dark:border-slate-700 hover:border-blue-400'">
+                                                                    <div class="flex items-center gap-3">
+                                                                        <input type="radio" name="framework" :value="option.value" x-model="selectedFramework" @change="onFrameworkChange()" class="mt-0.5">
+                                                                        <span class="font-medium text-slate-900 dark:text-white" x-text="option.label"></span>
+                                                                    </div>
+                                                                </label>
+                                                            </template>
+                                                        </div>
+                                                    </div>
+                                                </template>
+
+                                                <template x-if="options.frontend?.show">
+                                                    <div class="mb-4">
+                                                        <p class="text-sm font-semibold text-slate-900 dark:text-white mb-2">
+                                                            Frontend
+                                                            <span class="text-red-500" x-show="options.frontend.required">*</span>
+                                                        </p>
+                                                        <div class="space-y-2">
+                                                            <template x-for="option in options.frontend.options" :key="option.value">
+                                                                <label class="block p-3 border-2 rounded-lg cursor-pointer transition-all"
+                                                                    :class="selectedFrontend === option.value
+                                                                        ? 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-slate-800'
+                                                                        : 'border-slate-200 dark:border-slate-700 hover:border-blue-400'">
+                                                                    <div class="flex items-center gap-3">
+                                                                        <input type="radio" name="frontend" :value="option.value" x-model="selectedFrontend" :disabled="option.locked && options.frontend.options.length === 1" class="mt-0.5">
+                                                                        <span class="font-medium text-slate-900 dark:text-white" x-text="option.label"></span>
+                                                                    </div>
+                                                                </label>
+                                                            </template>
+                                                        </div>
+                                                        <p class="text-xs text-amber-700 dark:text-amber-300 mt-2" x-show="selectedFrontend && selectedFrontend !== 'none'" x-text="options.frontend.deferred_note"></p>
+                                                    </div>
+                                                </template>
+
+                                                <template x-if="options.database?.show">
+                                                    <div class="mb-4">
+                                                        <p class="text-sm font-semibold text-slate-900 dark:text-white mb-2">
+                                                            Database
+                                                            <span class="text-red-500" x-show="options.database.required">*</span>
+                                                        </p>
+                                                        <div class="space-y-2">
+                                                            <template x-if="options.database.allow_none">
+                                                                <label class="block p-3 border-2 rounded-lg cursor-pointer transition-all"
+                                                                    :class="selectedDatabaseId === ''
+                                                                        ? 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-slate-800'
+                                                                        : 'border-slate-200 dark:border-slate-700 hover:border-blue-400'">
+                                                                    <div class="flex items-center gap-3">
+                                                                        <input type="radio" name="database_id" value="" x-model="selectedDatabaseId" class="mt-0.5">
+                                                                        <span class="font-medium text-slate-900 dark:text-white">None</span>
+                                                                    </div>
+                                                                </label>
+                                                            </template>
+                                                            <template x-for="db in options.database.options" :key="db.id">
+                                                                <label class="block p-3 border-2 rounded-lg cursor-pointer transition-all"
+                                                                    :class="String(selectedDatabaseId) === String(db.id)
+                                                                        ? 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-slate-800'
+                                                                        : 'border-slate-200 dark:border-slate-700 hover:border-blue-400'">
+                                                                    <div class="flex items-start gap-3">
+                                                                        <input type="radio" name="database_id" :value="db.id" x-model="selectedDatabaseId" class="mt-1">
+                                                                        <div>
+                                                                            <span class="font-semibold text-slate-900 dark:text-white" x-text="db.name"></span>
+                                                                            <p class="text-sm text-slate-600 dark:text-slate-400 mt-1" x-text="'Type: ' + db.type"></p>
+                                                                        </div>
+                                                                    </div>
+                                                                </label>
+                                                            </template>
+                                                        </div>
+                                                        <p class="text-xs text-amber-700 dark:text-amber-300 mt-2" x-show="databaseChanged">
+                                                            Changing the database will wipe the current database volume on redeploy.
+                                                        </p>
+                                                    </div>
+                                                </template>
+                                            @endif
+
+                                            <label class="flex items-start gap-2 text-sm text-slate-600 dark:text-slate-300 mb-4">
+                                                <input type="checkbox" name="reset_database" value="1" x-model="resetDatabase" :disabled="databaseChanged" class="rounded border-slate-300 dark:border-slate-600 mt-0.5">
+                                                <span>Reset database (deletes all DB data)</span>
+                                            </label>
+                                            <template x-if="databaseChanged">
+                                                <input type="hidden" name="reset_database" value="1">
+                                            </template>
+
+                                            <div class="flex gap-2">
+                                                <button type="button" @click="open = false" class="btn-secondary flex-1 btn-sm">Cancel</button>
+                                                <button type="submit" class="flex-1 px-3 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-medium">
+                                                    Redeploy
+                                                </button>
+                                            </div>
+                                        </form>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    @endif
+
                     <a href="{{ route('customer.services.index') }}" class="px-4 py-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition">
                         ← Services
                     </a>
@@ -215,140 +351,6 @@
                             <a href="{{ route('customer.services.upgrade', $service) }}" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition">
                                 Change plan
                             </a>
-
-                            <div
-                                class="relative"
-                                x-data="redeployStackPanel(@js($redeployStackOptions))"
-                            >
-                                <button type="button" @click="open = true" class="px-5 py-2 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg font-medium transition hover:bg-slate-200 dark:hover:bg-slate-600">
-                                    Redeploy stack
-                                </button>
-
-                                <div
-                                    x-show="open"
-                                    x-cloak
-                                    class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
-                                    @keydown.escape.window="open = false"
-                                >
-                                    <div
-                                        class="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-xl p-6"
-                                        @click.outside="open = false"
-                                    >
-                                        <h3 class="text-lg font-semibold text-slate-900 dark:text-white">Redeploy stack</h3>
-                                        <p class="text-sm text-slate-500 dark:text-slate-400 mt-1 mb-4">
-                                            Recreate the application runtime. Files in <code class="font-mono text-xs">/app</code> are kept unless you reset the database.
-                                            @if (!empty($redeployStackOptions))
-                                                Choose frontend and database the same way as when you first deployed.
-                                            @endif
-                                        </p>
-
-                                        <form method="POST" action="{{ route('customer.services.container.redeploy', $service) }}" @submit.prevent="submitRedeploy($el)">
-                                            @csrf
-
-                                            @if (!empty($redeployStackOptions) && empty($redeployStackOptions['skip_modal']))
-                                                <template x-if="options.framework?.show">
-                                                    <div class="mb-4">
-                                                        <p class="text-sm font-semibold text-slate-900 dark:text-white mb-2">
-                                                            Framework
-                                                            <span class="text-red-500" x-show="options.framework.required">*</span>
-                                                        </p>
-                                                        <div class="space-y-2">
-                                                            <template x-for="option in options.framework.options" :key="option.value">
-                                                                <label class="block p-3 border-2 rounded-lg cursor-pointer transition-all"
-                                                                    :class="selectedFramework === option.value
-                                                                        ? 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-slate-800'
-                                                                        : 'border-slate-200 dark:border-slate-700 hover:border-blue-400'">
-                                                                    <div class="flex items-center gap-3">
-                                                                        <input type="radio" name="framework" :value="option.value" x-model="selectedFramework" @change="onFrameworkChange()" class="mt-0.5">
-                                                                        <span class="font-medium text-slate-900 dark:text-white" x-text="option.label"></span>
-                                                                    </div>
-                                                                </label>
-                                                            </template>
-                                                        </div>
-                                                    </div>
-                                                </template>
-
-                                                <template x-if="options.frontend?.show">
-                                                    <div class="mb-4">
-                                                        <p class="text-sm font-semibold text-slate-900 dark:text-white mb-2">
-                                                            Frontend
-                                                            <span class="text-red-500" x-show="options.frontend.required">*</span>
-                                                        </p>
-                                                        <div class="space-y-2">
-                                                            <template x-for="option in options.frontend.options" :key="option.value">
-                                                                <label class="block p-3 border-2 rounded-lg cursor-pointer transition-all"
-                                                                    :class="selectedFrontend === option.value
-                                                                        ? 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-slate-800'
-                                                                        : 'border-slate-200 dark:border-slate-700 hover:border-blue-400'">
-                                                                    <div class="flex items-center gap-3">
-                                                                        <input type="radio" name="frontend" :value="option.value" x-model="selectedFrontend" :disabled="option.locked && options.frontend.options.length === 1" class="mt-0.5">
-                                                                        <span class="font-medium text-slate-900 dark:text-white" x-text="option.label"></span>
-                                                                    </div>
-                                                                </label>
-                                                            </template>
-                                                        </div>
-                                                        <p class="text-xs text-amber-700 dark:text-amber-300 mt-2" x-show="selectedFrontend && selectedFrontend !== 'none'" x-text="options.frontend.deferred_note"></p>
-                                                    </div>
-                                                </template>
-
-                                                <template x-if="options.database?.show">
-                                                    <div class="mb-4">
-                                                        <p class="text-sm font-semibold text-slate-900 dark:text-white mb-2">
-                                                            Database
-                                                            <span class="text-red-500" x-show="options.database.required">*</span>
-                                                        </p>
-                                                        <div class="space-y-2">
-                                                            <template x-if="options.database.allow_none">
-                                                                <label class="block p-3 border-2 rounded-lg cursor-pointer transition-all"
-                                                                    :class="selectedDatabaseId === ''
-                                                                        ? 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-slate-800'
-                                                                        : 'border-slate-200 dark:border-slate-700 hover:border-blue-400'">
-                                                                    <div class="flex items-center gap-3">
-                                                                        <input type="radio" name="database_id" value="" x-model="selectedDatabaseId" class="mt-0.5">
-                                                                        <span class="font-medium text-slate-900 dark:text-white">None</span>
-                                                                    </div>
-                                                                </label>
-                                                            </template>
-                                                            <template x-for="db in options.database.options" :key="db.id">
-                                                                <label class="block p-3 border-2 rounded-lg cursor-pointer transition-all"
-                                                                    :class="String(selectedDatabaseId) === String(db.id)
-                                                                        ? 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-slate-800'
-                                                                        : 'border-slate-200 dark:border-slate-700 hover:border-blue-400'">
-                                                                    <div class="flex items-start gap-3">
-                                                                        <input type="radio" name="database_id" :value="db.id" x-model="selectedDatabaseId" class="mt-1">
-                                                                        <div>
-                                                                            <span class="font-semibold text-slate-900 dark:text-white" x-text="db.name"></span>
-                                                                            <p class="text-sm text-slate-600 dark:text-slate-400 mt-1" x-text="'Type: ' + db.type"></p>
-                                                                        </div>
-                                                                    </div>
-                                                                </label>
-                                                            </template>
-                                                        </div>
-                                                        <p class="text-xs text-amber-700 dark:text-amber-300 mt-2" x-show="databaseChanged">
-                                                            Changing the database will wipe the current database volume on redeploy.
-                                                        </p>
-                                                    </div>
-                                                </template>
-                                            @endif
-
-                                            <label class="flex items-start gap-2 text-sm text-slate-600 dark:text-slate-300 mb-4">
-                                                <input type="checkbox" name="reset_database" value="1" x-model="resetDatabase" :disabled="databaseChanged" class="rounded border-slate-300 dark:border-slate-600 mt-0.5">
-                                                <span>Reset database (deletes all DB data)</span>
-                                            </label>
-                                            <template x-if="databaseChanged">
-                                                <input type="hidden" name="reset_database" value="1">
-                                            </template>
-
-                                            <div class="flex gap-2">
-                                                <button type="button" @click="open = false" class="btn-secondary flex-1 btn-sm">Cancel</button>
-                                                <button type="submit" class="flex-1 px-3 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-medium">
-                                                    Redeploy
-                                                </button>
-                                            </div>
-                                        </form>
-                                    </div>
-                                </div>
-                            </div>
                         </div>
 
                         @include('customer.services.partials.staging')

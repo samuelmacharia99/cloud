@@ -11,8 +11,8 @@
                 Fresh orders automatically install the latest Laravel skeleton into <code class="font-mono text-xs">/app</code> (Composer create-project) after the container is running — progress appears below.
                 Prefer connecting a Git repository (Git tab) when you already have an app: Talksasa installs Composer dependencies, syncs platform <code class="font-mono text-xs">.env</code> keys, and runs migrations.
                 Use <strong>Initialize Laravel app</strong> only to retry a blank skeleton if auto-setup did not finish.
-                <strong>Redeploy stack</strong> refreshes the runtime and re-syncs Git; composer runs again when Laravel is detected.
-                Use <strong>Reset database</strong> on redeploy to wipe MySQL and re-run migrations.
+                <strong>Redeploy stack</strong> refreshes the runtime and keeps <code class="font-mono text-xs">/app</code> files (use the Git tab to pull code updates).
+                Use <strong>Reset database</strong> on redeploy to wipe the database and re-run migrations.
             </p>
         </div>
 
