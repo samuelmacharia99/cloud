@@ -191,7 +191,7 @@ class TechStackRoutingService
                 'locked' => $definition['frontend']['locked'] ?? null,
                 'options' => self::availableFrontends($language, $roles['framework']),
                 'value' => $roles['frontend'],
-                'deferred_note' => 'Frontend will run in a follow-up update; this deploy provisions the backend and database.',
+                'deferred_note' => 'Node.js is included in this app runtime for Vite/Next builds. A separate frontend container is not started yet — run npm scripts from the Terminal tab.',
             ],
             'database' => [
                 'show' => (bool) ($definition['database']['show'] ?? false),
@@ -410,7 +410,7 @@ class TechStackRoutingService
             $labels = config('stack_builder.frontend_labels', []);
             $key = (string) $techstack['frontend'];
             $label = $labels[$key] ?? $key;
-            $parts[] = 'frontend '.$label.' (later)';
+            $parts[] = 'frontend '.$label;
         }
 
         if (! empty($techstack['database_name'])) {

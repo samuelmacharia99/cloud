@@ -47,7 +47,7 @@
                 <p class="font-semibold text-slate-900 dark:text-white">
                     {{ config('stack_builder.frontend_labels.'.($stackSelection['frontend'] ?? 'none'), $stackSelection['frontend'] ?? 'None') }}
                     @if(!empty($stackSelection['frontend']) && $stackSelection['frontend'] !== 'none')
-                        <span class="text-xs font-normal text-amber-700 dark:text-amber-300">(later)</span>
+                        <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(Node.js for builds)</span>
                     @endif
                 </p>
             </div>

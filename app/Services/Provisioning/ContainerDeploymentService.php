@@ -2023,6 +2023,7 @@ class ContainerDeploymentService
         try {
             $this->waitForContainerRunning($ssh, $deployment->container_name, 60);
             $extensions->syncEnabledExtensions($service, $deployment, $ssh);
+            app(LaravelAppInitializationService::class)->ensureNodeRuntime($ssh, $deployment);
         } catch (\Throwable $e) {
             \Log::warning('Failed to sync enabled PHP extensions', [
                 'service_id' => $service->id,

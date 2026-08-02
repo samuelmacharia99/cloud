@@ -272,7 +272,7 @@ class TechStackRoutingServiceTest extends TestCase
         $this->assertSame(1, $meta['stack_builder_version']);
     }
 
-    public function test_selection_summary_includes_deferred_frontend(): void
+    public function test_selection_summary_includes_frontend_label(): void
     {
         $summary = TechStackRoutingService::selectionSummary([
             'language_name' => 'Laravel',
@@ -282,7 +282,7 @@ class TechStackRoutingServiceTest extends TestCase
 
         $this->assertStringContainsString('Laravel', $summary);
         $this->assertStringContainsString('Next.js', $summary);
-        $this->assertStringContainsString('(later)', $summary);
+        $this->assertStringNotContainsString('(later)', $summary);
         $this->assertStringContainsString('PostgreSQL', $summary);
     }
 }

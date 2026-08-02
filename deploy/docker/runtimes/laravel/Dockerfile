@@ -5,7 +5,7 @@ FROM php:${PHP_VERSION}-cli-bookworm
 ARG PHP_VERSION
 
 LABEL org.opencontainers.image.title="Talksasa Laravel Runtime"
-LABEL org.opencontainers.image.description="PHP CLI runtime with Composer and Laravel extensions"
+LABEL org.opencontainers.image.description="PHP CLI runtime with Composer, Node.js, and Laravel extensions"
 LABEL org.talksasa.php.version="${PHP_VERSION}"
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -13,7 +13,14 @@ ENV DEBIAN_FRONTEND=noninteractive \
     COMPOSER_HOME=/tmp/composer \
     PATH="/usr/local/bin:/usr/bin:/bin"
 
-    RUN apt-get update \
+# Node for Vite / Next.js frontend builds (copy binaries only — do not overwrite PHP in /usr/local).
+COPY --from=node:20-bookworm /usr/local/bin/node /usr/local/bin/node
+COPY --from=node:20-bookworm /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -sf ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -sf ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
+    && node -v && npm -v
+
+RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         git \
         unzip \

@@ -564,9 +564,49 @@ class LaravelAppInitializationService
             throw $e;
         }
 
+        $this->ensureNodeRuntime($ssh, $deployment);
+
         if ($this->deploymentNeedsPostgresqlDriver($service, $deployment)) {
             $this->ensurePostgresqlPdoDriver($ssh, $deployment);
         }
+    }
+
+    /**
+     * Ensure Node.js/npm exist for Vite / Next.js frontend builds on legacy images.
+     */
+    public function ensureNodeRuntime(SSHService $ssh, ContainerDeployment $deployment): void
+    {
+        try {
+            $this->dockerExec(
+                $ssh,
+                $deployment->container_name,
+                'node -v >/dev/null && npm -v >/dev/null',
+                20
+            );
+
+            return;
+        } catch (\Throwable) {
+            // Missing on older Talksasa PHP/Laravel runtime images.
+        }
+
+        $this->dockerExec(
+            $ssh,
+            $deployment->container_name,
+            'set -e; '
+                .'export DEBIAN_FRONTEND=noninteractive; '
+                .'apt-get update -qq; '
+                .'apt-get install -y --no-install-recommends ca-certificates curl gnupg; '
+                .'mkdir -p /etc/apt/keyrings; '
+                .'curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key '
+                .'| gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg; '
+                .'echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" '
+                .'> /etc/apt/sources.list.d/nodesource.list; '
+                .'apt-get update -qq; '
+                .'apt-get install -y --no-install-recommends nodejs; '
+                .'node -v; npm -v',
+            300,
+            asRoot: true
+        );
     }
 
     public function ensurePostgresqlPdoDriver(SSHService $ssh, ContainerDeployment $deployment): void

@@ -3,7 +3,8 @@
 /**
  * Compatibility matrix for the customer stack builder (v1).
  *
- * Frontend values are intent labels only — they do not provision a second container yet.
+ * Frontend values (vite-spa / nextjs) enable Node.js in the PHP/Laravel app runtime
+ * for builds. A separate frontend sidecar container is not provisioned yet.
  */
 return [
 

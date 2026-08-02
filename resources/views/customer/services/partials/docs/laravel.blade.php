@@ -6,6 +6,7 @@
             <li>On provision, Talksasa automatically scaffolds the latest Laravel into <code class="text-xs font-mono bg-white/70 dark:bg-slate-900 px-1.5 py-0.5 rounded">/app</code> (or connect Git at checkout / on the Git tab for an existing repo).</li>
             <li>Talksasa auto-writes database credentials into <code class="text-xs font-mono bg-white/70 dark:bg-slate-900 px-1.5 py-0.5 rounded">.env</code> on first setup.</li>
             <li>Git pulls preserve your existing <code class="text-xs font-mono bg-white/70 dark:bg-slate-900 px-1.5 py-0.5 rounded">.env</code>; only database and platform URL settings are refreshed. Add other secrets under <strong>Environment</strong>.</li>
+            <li>For Vite/Next frontends, Node.js 20 and npm are available in the app container — use the <strong>Terminal</strong> tab for <code class="font-mono text-xs">npm install</code> / <code class="font-mono text-xs">npm run build</code>.</li>
             <li>Bind your domain under <strong>Domains</strong>, then visit the site.</li>
         </ol>
     </div>
