@@ -452,12 +452,14 @@ class ContainerDoctorService
             }
 
             $message = 'Database "'.$normalized['database'].'" is ready and app credentials were synced.';
-            if ($normalized['corrected'] && $normalized['previous_database']) {
+            if ($normalized['corrected'] && $normalized['previous_database'] && $normalized['previous_database'] !== $normalized['database']) {
                 $message = 'Fixed DB_DATABASE from "'.$normalized['previous_database'].'" to "'
-                    .$normalized['database'].'". '.$message.' Reload the site or run: php artisan migrate --force';
-            } else {
-                $message .= ' Reload the site; if tables are missing run: php artisan migrate --force';
+                    .$normalized['database'].'". '.$message;
             }
+            if (! empty($normalized['password_aligned'])) {
+                $message .= ' Aligned DB_PASSWORD, sidecar password, and DATABASE_URL to the same value.';
+            }
+            $message .= ' Reload the site; if tables are missing run: php artisan migrate --force';
 
             return [
                 'success' => true,

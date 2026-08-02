@@ -101,6 +101,30 @@ class ContainerDatabaseEnvironmentTest extends TestCase
         $this->assertSame('my_app', $result['env']['DB_DATABASE']);
     }
 
+    public function test_normalize_database_environment_aligns_mismatched_passwords(): void
+    {
+        $service = new Service;
+        $service->id = 163;
+        $service->user_id = 193;
+
+        $result = (new ContainerDeploymentService)->normalizeDatabaseEnvironment($service, [
+            'DB_DATABASE' => 's163_db',
+            'DB_USERNAME' => 'u193_s163',
+            'DB_PASSWORD' => 'panel-password',
+            'POSTGRES_DB' => 's163_db',
+            'POSTGRES_USER' => 'u193_s163',
+            'POSTGRES_PASSWORD' => 'old-sidecar-password',
+            'DATABASE_URL' => 'postgresql://u193_s163:old-sidecar-password@db:5432/s163_db',
+        ], 'postgresql');
+
+        $this->assertTrue($result['corrected']);
+        $this->assertTrue($result['password_aligned']);
+        $this->assertSame('panel-password', $result['env']['DB_PASSWORD']);
+        $this->assertSame('panel-password', $result['env']['POSTGRES_PASSWORD']);
+        $this->assertStringContainsString('panel-password', urldecode($result['env']['DATABASE_URL']));
+        $this->assertStringNotContainsString('old-sidecar-password', urldecode($result['env']['DATABASE_URL']));
+    }
+
     /**
      * @param  array<string, string>  $env
      * @return array<string, string>

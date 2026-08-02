@@ -1248,11 +1248,18 @@ class ContainerDeploymentService
     }
 
     /**
-     * Fix the common mistake where DB_DATABASE was set to the DB username
-     * (e.g. u193_s163) instead of the platform database name (s163_db).
+     * Fix common DB env drift: username used as database name, and mismatched
+     * DB_PASSWORD / POSTGRES_PASSWORD / DATABASE_URL values.
      *
      * @param  array<string, mixed>  $envVars
-     * @return array{env: array<string, string>, corrected: bool, previous_database: ?string, database: string, username: string}
+     * @return array{
+     *     env: array<string, string>,
+     *     corrected: bool,
+     *     previous_database: ?string,
+     *     database: string,
+     *     username: string,
+     *     password_aligned: bool
+     * }
      */
     public function normalizeDatabaseEnvironment(Service $service, array $envVars, string $databaseType): array
     {
@@ -1284,6 +1291,7 @@ class ContainerDeploymentService
         );
 
         $corrected = false;
+        $passwordAligned = false;
         $previous = $database !== '' ? $database : null;
 
         if ($database === '' || $looksLikeUsernameAsDatabase) {
@@ -1295,15 +1303,26 @@ class ContainerDeploymentService
         $env['DB_USERNAME'] = $username !== '' ? $username : $canonical['username'];
 
         if (in_array($databaseType, ['postgresql'], true)) {
+            $dbPassword = trim((string) ($env['DB_PASSWORD'] ?? ''));
+            $sidecarPassword = trim((string) ($env['POSTGRES_PASSWORD'] ?? ''));
+            $urlPassword = $this->passwordFromDatabaseUrl($env['DATABASE_URL'] ?? null);
+            $password = $this->resolveAlignedDatabasePassword($env, [
+                'DB_PASSWORD',
+                'POSTGRES_PASSWORD',
+            ], $env['DATABASE_URL'] ?? null);
+
+            if ($this->databasePasswordsConflict([$dbPassword, $sidecarPassword, $urlPassword])) {
+                $passwordAligned = true;
+                $corrected = true;
+            }
+
+            $env['DB_PASSWORD'] = $password;
+            $env['POSTGRES_PASSWORD'] = $password;
             $env['POSTGRES_DB'] = $database;
             $env['POSTGRES_USER'] = $env['DB_USERNAME'];
-            if (! empty($env['DB_PASSWORD']) && empty($env['POSTGRES_PASSWORD'])) {
-                $env['POSTGRES_PASSWORD'] = $env['DB_PASSWORD'];
-            }
-            $password = (string) ($env['DB_PASSWORD'] ?? $env['POSTGRES_PASSWORD'] ?? '');
-            $env['DB_CONNECTION'] = $env['DB_CONNECTION'] ?? 'pgsql';
-            $env['DB_HOST'] = $env['DB_HOST'] ?? 'db';
-            $env['DB_PORT'] = $env['DB_PORT'] ?? '5432';
+            $env['DB_CONNECTION'] = (string) ($env['DB_CONNECTION'] !== '' ? $env['DB_CONNECTION'] : 'pgsql');
+            $env['DB_HOST'] = (string) ($env['DB_HOST'] !== '' ? $env['DB_HOST'] : 'db');
+            $env['DB_PORT'] = (string) ($env['DB_PORT'] !== '' ? $env['DB_PORT'] : '5432');
             $env['DATABASE_URL'] = sprintf(
                 'postgresql://%s:%s@%s:%s/%s',
                 rawurlencode($env['DB_USERNAME']),
@@ -1313,15 +1332,30 @@ class ContainerDeploymentService
                 rawurlencode($database)
             );
         } elseif (in_array($databaseType, ['mysql', 'mariadb'], true)) {
+            $dbPassword = trim((string) ($env['DB_PASSWORD'] ?? ''));
+            $sidecarPassword = trim((string) ($env['MYSQL_PASSWORD'] ?? ''));
+            $urlPassword = $this->passwordFromDatabaseUrl($env['DATABASE_URL'] ?? null);
+            $password = $this->resolveAlignedDatabasePassword($env, [
+                'DB_PASSWORD',
+                'MYSQL_PASSWORD',
+                'MYSQL_ROOT_PASSWORD',
+            ], $env['DATABASE_URL'] ?? null);
+
+            if ($this->databasePasswordsConflict([$dbPassword, $sidecarPassword, $urlPassword])) {
+                $passwordAligned = true;
+                $corrected = true;
+            }
+
+            $env['DB_PASSWORD'] = $password;
+            $env['MYSQL_PASSWORD'] = $password;
+            if (($env['MYSQL_ROOT_PASSWORD'] ?? '') === '') {
+                $env['MYSQL_ROOT_PASSWORD'] = $password;
+            }
             $env['MYSQL_DATABASE'] = $database;
             $env['MYSQL_USER'] = $env['DB_USERNAME'];
-            if (! empty($env['DB_PASSWORD']) && empty($env['MYSQL_PASSWORD'])) {
-                $env['MYSQL_PASSWORD'] = $env['DB_PASSWORD'];
-            }
-            $password = (string) ($env['DB_PASSWORD'] ?? $env['MYSQL_PASSWORD'] ?? '');
-            $env['DB_CONNECTION'] = $env['DB_CONNECTION'] ?? 'mysql';
-            $env['DB_HOST'] = $env['DB_HOST'] ?? 'db';
-            $env['DB_PORT'] = $env['DB_PORT'] ?? '3306';
+            $env['DB_CONNECTION'] = (string) ($env['DB_CONNECTION'] !== '' ? $env['DB_CONNECTION'] : 'mysql');
+            $env['DB_HOST'] = (string) ($env['DB_HOST'] !== '' ? $env['DB_HOST'] : 'db');
+            $env['DB_PORT'] = (string) ($env['DB_PORT'] !== '' ? $env['DB_PORT'] : '3306');
             $env['DATABASE_URL'] = sprintf(
                 'mysql://%s:%s@%s:%s/%s',
                 rawurlencode($env['DB_USERNAME']),
@@ -1338,7 +1372,57 @@ class ContainerDeploymentService
             'previous_database' => $previous,
             'database' => $database,
             'username' => $env['DB_USERNAME'],
+            'password_aligned' => $passwordAligned,
         ];
+    }
+
+    /**
+     * Prefer DB_PASSWORD (panel source of truth), then sidecar password, then DATABASE_URL.
+     *
+     * @param  array<string, string>  $env
+     * @param  list<string>  $passwordKeys
+     */
+    private function resolveAlignedDatabasePassword(array $env, array $passwordKeys, ?string $databaseUrl): string
+    {
+        foreach ($passwordKeys as $key) {
+            $value = trim((string) ($env[$key] ?? ''));
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return $this->passwordFromDatabaseUrl($databaseUrl) ?? '';
+    }
+
+    private function passwordFromDatabaseUrl(?string $databaseUrl): ?string
+    {
+        if (! is_string($databaseUrl) || $databaseUrl === '') {
+            return null;
+        }
+
+        $parts = parse_url($databaseUrl);
+        if (! is_array($parts) || ! isset($parts['pass']) || $parts['pass'] === '') {
+            return null;
+        }
+
+        return rawurldecode((string) $parts['pass']);
+    }
+
+    /**
+     * @param  list<string|null>  $passwords
+     */
+    private function databasePasswordsConflict(array $passwords): bool
+    {
+        $unique = [];
+        foreach ($passwords as $password) {
+            $password = trim((string) $password);
+            if ($password === '') {
+                continue;
+            }
+            $unique[$password] = true;
+        }
+
+        return count($unique) > 1;
     }
 
     public function waitForDatabaseSidecar(
