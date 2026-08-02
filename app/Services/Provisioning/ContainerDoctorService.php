@@ -45,18 +45,21 @@ class ContainerDoctorService
 
         $logs = app(ContainerDeploymentService::class)->getLogs($service, self::LOG_LINES);
         $findings = $this->analyzeLogs($logs, $stack, $service);
+        $findings = $this->annotateFindingsWithLiveStatus($service, $findings);
 
         return [
             'scanned_at' => now()->toIso8601String(),
             'lines_scanned' => $this->countLines($logs),
             'stack' => $stack,
             'findings' => $findings,
-            'healthy' => $findings === [] || collect($findings)->every(fn ($f) => ($f['severity'] ?? '') === 'info'),
+            'healthy' => $findings === [] || collect($findings)->every(
+                fn ($f) => in_array(($f['severity'] ?? ''), ['info'], true)
+            ),
         ];
     }
 
     /**
-     * @return array{success: bool, message: string}
+     * @return array{success: bool, message: string, diagnosis?: array<string, mixed>}
      */
     public function treat(Service $service, string $action): array
     {
@@ -71,7 +74,7 @@ class ContainerDoctorService
             return ['success' => false, 'message' => 'Application must be running before applying a fix.'];
         }
 
-        return match ($action) {
+        $result = match ($action) {
             'sync_database_credentials' => $this->treatSyncDatabaseCredentials($service),
             'ensure_pdo_pgsql' => $this->treatEnsurePdoPgsql($service),
             'ensure_gd' => $this->treatEnsureGd($service),
@@ -81,6 +84,19 @@ class ContainerDoctorService
             'restart_application' => $this->treatRestartApplication($service),
             default => ['success' => false, 'message' => 'Unknown treatment action.'],
         };
+
+        if ($result['success']) {
+            try {
+                $result['diagnosis'] = $this->diagnose($service->fresh([
+                    'product.containerTemplate',
+                    'containerDeployment.node',
+                ]));
+            } catch (\Throwable) {
+                // Treatment already succeeded; diagnosis refresh is optional.
+            }
+        }
+
+        return $result;
     }
 
     /**
@@ -147,6 +163,80 @@ class ContainerDoctorService
                 ];
             }
         }
+
+        usort($findings, function (array $a, array $b): int {
+            $order = ['critical' => 0, 'warning' => 1, 'info' => 2];
+
+            return ($order[$a['severity']] ?? 9) <=> ($order[$b['severity']] ?? 9);
+        });
+
+        return $findings;
+    }
+
+    /**
+     * Downgrade log matches that look fixed in the live deployment env
+     * (old FATAL lines often remain in the last 2000 log lines).
+     *
+     * @param  list<array<string, mixed>>  $findings
+     * @return list<array<string, mixed>>
+     */
+    public function annotateFindingsWithLiveStatus(Service $service, array $findings): array
+    {
+        $service->loadMissing('containerDeployment');
+        $deployment = $service->containerDeployment;
+        if (! $deployment || $findings === []) {
+            return $findings;
+        }
+
+        $env = is_array($deployment->env_values) ? $deployment->env_values : [];
+        $canonical = app(ContainerDeploymentService::class)->canonicalDatabaseIdentifiers($service);
+        $database = (string) ($env['DB_DATABASE'] ?? $env['POSTGRES_DB'] ?? $env['MYSQL_DATABASE'] ?? '');
+        $username = (string) ($env['DB_USERNAME'] ?? $env['POSTGRES_USER'] ?? $env['MYSQL_USER'] ?? '');
+        $dbPassword = (string) ($env['DB_PASSWORD'] ?? '');
+        $sidecarPassword = (string) ($env['POSTGRES_PASSWORD'] ?? $env['MYSQL_PASSWORD'] ?? '');
+        $urlPassword = null;
+        if (! empty($env['DATABASE_URL']) && is_string($env['DATABASE_URL'])) {
+            $parts = parse_url($env['DATABASE_URL']);
+            if (is_array($parts) && isset($parts['pass'])) {
+                $urlPassword = rawurldecode((string) $parts['pass']);
+            }
+        }
+
+        $databaseLooksHealthy = $database !== ''
+            && $database === $canonical['database']
+            && $database !== $username
+            && ! preg_match('/^u\d+_s\d+$/', $database);
+
+        $passwordsAligned = $dbPassword !== ''
+            && ($sidecarPassword === '' || $sidecarPassword === $dbPassword)
+            && ($urlPassword === null || $urlPassword === '' || $urlPassword === $dbPassword);
+
+        foreach ($findings as &$finding) {
+            $id = (string) ($finding['id'] ?? '');
+
+            if ($id === 'postgres_database_missing' && $databaseLooksHealthy) {
+                $finding['severity'] = 'info';
+                $finding['stale'] = true;
+                $finding['title'] = 'Older logs: missing database (current env looks fixed)';
+                $finding['summary'] = 'Logs still mention a missing database, but live DB_DATABASE is already "'
+                    .$database.'". Treatment may have worked; reload the app or wait for newer log lines. '
+                    .'You can still re-sync credentials if errors continue.';
+                $finding['treat_label'] = 'Re-sync credentials';
+            }
+
+            if (in_array($id, ['postgres_password_auth_failed', 'mysql_access_denied'], true)
+                && $databaseLooksHealthy
+                && $passwordsAligned
+            ) {
+                $finding['severity'] = 'info';
+                $finding['stale'] = true;
+                $finding['title'] = 'Older logs: database auth failure (current env looks aligned)';
+                $finding['summary'] = 'Logs still show auth failures, but DB name/password fields in the live environment look consistent. '
+                    .'Reload the app or re-sync if new errors appear.';
+                $finding['treat_label'] = 'Re-sync credentials';
+            }
+        }
+        unset($finding);
 
         usort($findings, function (array $a, array $b): int {
             $order = ['critical' => 0, 'warning' => 1, 'info' => 2];

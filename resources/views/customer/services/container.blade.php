@@ -1025,10 +1025,22 @@ function containerDoctor(config = {}) {
         treatMessage: '',
         treatOk: false,
 
-        async runDiagnose() {
+        applyDiagnosis(data) {
+            this.findings = data.findings || [];
+            this.healthy = !!data.healthy;
+            this.linesScanned = data.lines_scanned || 0;
+            this.scannedAt = data.scanned_at
+                ? new Date(data.scanned_at).toLocaleTimeString()
+                : '';
+            this.hasResult = true;
+        },
+
+        async runDiagnose({ keepTreatMessage = false } = {}) {
             this.diagnosing = true;
             this.error = '';
-            this.treatMessage = '';
+            if (! keepTreatMessage) {
+                this.treatMessage = '';
+            }
             try {
                 const response = await fetch(this.diagnoseUrl, {
                     method: 'POST',
@@ -1038,19 +1050,13 @@ function containerDoctor(config = {}) {
                         'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
                     },
                 });
-                const data = await response.json();
+                const data = await response.json().catch(() => ({}));
                 if (!response.ok || data.error) {
-                    this.error = data.error || data.message || 'Doctor scan failed.';
+                    this.error = data.error || data.message || `Doctor scan failed (HTTP ${response.status}).`;
                     this.hasResult = false;
                     return;
                 }
-                this.findings = data.findings || [];
-                this.healthy = !!data.healthy;
-                this.linesScanned = data.lines_scanned || 0;
-                this.scannedAt = data.scanned_at
-                    ? new Date(data.scanned_at).toLocaleTimeString()
-                    : '';
-                this.hasResult = true;
+                this.applyDiagnosis(data);
             } catch (e) {
                 this.error = 'Network error while running doctor.';
                 console.error(e);
@@ -1065,7 +1071,9 @@ function containerDoctor(config = {}) {
             }
             this.treating = true;
             this.treatingAction = finding.treat_action;
+            this.error = '';
             this.treatMessage = '';
+            this.treatOk = false;
             try {
                 const response = await fetch(this.treatUrl, {
                     method: 'POST',
@@ -1077,15 +1085,25 @@ function containerDoctor(config = {}) {
                     },
                     body: JSON.stringify({ action: finding.treat_action }),
                 });
-                const data = await response.json();
+                const data = await response.json().catch(() => ({}));
                 this.treatOk = !!data.success;
-                this.treatMessage = data.message || (data.success ? 'Done.' : 'Treatment failed.');
-                if (data.success) {
-                    await this.runDiagnose();
+                this.treatMessage = data.message
+                    || (data.success
+                        ? 'Treatment completed.'
+                        : (data.error || `Treatment failed (HTTP ${response.status}).`));
+
+                if (data.diagnosis) {
+                    this.applyDiagnosis(data.diagnosis);
+                } else if (data.success) {
+                    await this.runDiagnose({ keepTreatMessage: true });
                 }
+
+                this.$nextTick(() => {
+                    this.$refs.treatBanner?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                });
             } catch (e) {
                 this.treatOk = false;
-                this.treatMessage = 'Network error while treating.';
+                this.treatMessage = 'Network error while treating. Check the browser console or try again.';
                 console.error(e);
             } finally {
                 this.treating = false;

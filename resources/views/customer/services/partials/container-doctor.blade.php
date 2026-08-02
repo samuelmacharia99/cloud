@@ -31,12 +31,30 @@
     </div>
 
     <div class="p-5 space-y-4">
-        <p x-show="error" x-cloak class="text-sm text-red-600 dark:text-red-400" x-text="error"></p>
-        <p x-show="treatMessage" x-cloak class="text-sm rounded-lg px-3 py-2"
-           :class="treatOk ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-800 dark:text-emerald-200' : 'bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200'"
-           x-text="treatMessage"></p>
+        <div
+            x-show="treating"
+            x-cloak
+            class="text-sm rounded-lg px-3 py-2 bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200 border border-blue-200 dark:border-blue-800"
+        >
+            Applying fix… this can take up to a minute (database sync + .env rewrite).
+        </div>
 
-        <template x-if="!hasResult && !diagnosing && !error">
+        <div
+            x-ref="treatBanner"
+            x-show="treatMessage"
+            x-cloak
+            class="text-sm rounded-lg px-3 py-3 border"
+            :class="treatOk
+                ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-900 dark:text-emerald-100 border-emerald-200 dark:border-emerald-800'
+                : 'bg-red-50 dark:bg-red-900/20 text-red-900 dark:text-red-100 border-red-200 dark:border-red-800'"
+        >
+            <p class="font-semibold" x-text="treatOk ? 'Treatment applied' : 'Treatment failed'"></p>
+            <p class="mt-1" x-text="treatMessage"></p>
+        </div>
+
+        <p x-show="error" x-cloak class="text-sm rounded-lg px-3 py-2 bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200 border border-red-200 dark:border-red-800" x-text="error"></p>
+
+        <template x-if="!hasResult && !diagnosing && !error && !treatMessage">
             <p class="text-sm text-slate-500 dark:text-slate-400">
                 Click <span class="font-medium text-slate-700 dark:text-slate-200">Run doctor</span> to check for Postgres auth mismatches, missing drivers, Node/GD issues, permission errors, and more.
             </p>
@@ -44,7 +62,8 @@
 
         <template x-if="hasResult && healthy">
             <div class="rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20 px-4 py-3 text-sm text-emerald-800 dark:text-emerald-200">
-                No critical issues matched in the last <span x-text="linesScanned"></span> lines
+                No active critical issues in the current environment
+                <span x-show="findings.some(f => f.stale)"> (some older log lines remain below)</span>
                 <span class="text-emerald-600/80 dark:text-emerald-300/80" x-show="scannedAt" x-text="'· scanned ' + scannedAt"></span>.
             </div>
         </template>
@@ -52,7 +71,8 @@
         <template x-if="hasResult && findings.length">
             <div class="space-y-3">
                 <template x-for="finding in findings" :key="finding.id">
-                    <div class="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+                    <div class="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden"
+                         :class="finding.stale && 'opacity-90'">
                         <div class="px-4 py-3 flex flex-wrap items-start justify-between gap-3 bg-slate-50 dark:bg-slate-900/40">
                             <div class="min-w-0 flex-1">
                                 <div class="flex items-center gap-2 flex-wrap">
@@ -63,7 +83,7 @@
                                             'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300': finding.severity === 'warning',
                                             'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300': finding.severity === 'info'
                                         }"
-                                        x-text="finding.severity"
+                                        x-text="finding.stale ? 'stale' : finding.severity"
                                     ></span>
                                     <h4 class="text-sm font-semibold text-slate-900 dark:text-white" x-text="finding.title"></h4>
                                 </div>

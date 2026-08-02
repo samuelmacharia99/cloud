@@ -87,4 +87,38 @@ LOG;
 
         $this->assertNotContains('missing_ext_gd', array_column($findings, 'id'));
     }
+
+    #[Test]
+    public function it_downgrades_missing_database_finding_when_env_already_fixed(): void
+    {
+        $service = new \App\Models\Service;
+        $service->id = 163;
+        $service->user_id = 193;
+        $service->setRelation('containerDeployment', new \App\Models\ContainerDeployment([
+            'env_values' => [
+                'DB_DATABASE' => 's163_db',
+                'DB_USERNAME' => 'u193_s163',
+                'DB_PASSWORD' => 'secret',
+                'POSTGRES_PASSWORD' => 'secret',
+                'DATABASE_URL' => 'postgresql://u193_s163:secret@db:5432/s163_db',
+            ],
+        ]));
+
+        $findings = [[
+            'id' => 'postgres_database_missing',
+            'severity' => 'critical',
+            'title' => 'PostgreSQL database does not exist',
+            'summary' => 'Missing',
+            'evidence' => ['FATAL: database "u193_s163" does not exist'],
+            'treat_action' => 'sync_database_credentials',
+            'treat_label' => 'Create/sync database',
+            'manual_steps' => [],
+        ]];
+
+        $annotated = app(ContainerDoctorService::class)->annotateFindingsWithLiveStatus($service, $findings);
+
+        $this->assertSame('info', $annotated[0]['severity']);
+        $this->assertTrue($annotated[0]['stale']);
+        $this->assertStringContainsString('current env looks fixed', $annotated[0]['title']);
+    }
 }
