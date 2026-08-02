@@ -21,14 +21,19 @@ ENV DEBIAN_FRONTEND=noninteractive \
         ca-certificates \
         libzip-dev \
         libpng-dev \
+        libfreetype6-dev \
+        libjpeg62-turbo-dev \
+        libwebp-dev \
         libonig-dev \
         libxml2-dev \
         libicu-dev \
         libgmp-dev \
         libpq-dev \
     && docker-php-ext-configure intl \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp \
     && docker-php-ext-install -j"$(nproc)" \
         bcmath \
+        gd \
         gmp \
         intl \
         mbstring \

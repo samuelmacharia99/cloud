@@ -197,8 +197,8 @@ class LaravelAppInitializationService
                 return 'Talksasa Cloud welcome page installed (replacing default Laravel landing page).';
             });
 
-            $this->runStep($initialization, $ssh, $deployment, 'dependencies', function () use ($ssh, $deployment, $timeout) {
-                $this->ensureComposerRuntimeReady($ssh, $deployment);
+            $this->runStep($initialization, $ssh, $deployment, 'dependencies', function () use ($ssh, $deployment, $timeout, $service) {
+                $this->ensureComposerRuntimeReady($ssh, $deployment, $service);
                 $this->appDirectory->prepareProjectForComposer($ssh, $deployment);
                 $output = $this->dockerExec(
                     $ssh,
@@ -520,7 +520,7 @@ class LaravelAppInitializationService
             ? $this->resolveProjectContainerRoot($ssh, $service, $deployment)
             : $this->pathResolver->containerProjectRoot('');
 
-        $this->ensureComposerRuntimeReady($ssh, $deployment);
+        $this->ensureComposerRuntimeReady($ssh, $deployment, $service);
 
         app(ContainerAppDirectoryService::class)->prepareProjectForComposer($ssh, $deployment, $projectRoot);
 
@@ -551,6 +551,18 @@ class LaravelAppInitializationService
         }
 
         $this->ensurePhpExtension($ssh, $deployment, 'gmp', 'libgmp-dev');
+
+        // Common Composer requirement (e.g. phpoffice/phpspreadsheet). Install on
+        // legacy runtime images that predate gd being baked into the Talksasa image.
+        try {
+            app(ContainerPhpExtensionsService::class)->ensureExtensionInstalled($ssh, $deployment, 'gd');
+        } catch (\Throwable $e) {
+            \Log::warning('Failed to ensure PHP gd extension before Composer', [
+                'container' => $deployment->container_name,
+                'error' => $e->getMessage(),
+            ]);
+            throw $e;
+        }
 
         if ($this->deploymentNeedsPostgresqlDriver($service, $deployment)) {
             $this->ensurePostgresqlPdoDriver($ssh, $deployment);

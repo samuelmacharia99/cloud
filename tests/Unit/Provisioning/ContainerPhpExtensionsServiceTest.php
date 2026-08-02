@@ -20,13 +20,17 @@ class ContainerPhpExtensionsServiceTest extends TestCase
     }
 
     #[Test]
-    public function it_supports_laravel_and_php_runtime_templates(): void
+    public function it_hides_builtin_extensions_from_optional_panel_list(): void
     {
         $service = new ContainerPhpExtensionsService;
+        $panel = $service->buildPanelState(
+            new \App\Models\Service(['service_meta' => []]),
+            null
+        );
 
-        $this->assertTrue($service->supportsTemplate('laravel'));
-        $this->assertTrue($service->supportsTemplate('php'));
-        $this->assertFalse($service->supportsTemplate('nodejs'));
+        $optionalKeys = array_column($panel['optional'], 'key');
+        $this->assertNotContains('gd', $optionalKeys);
+        $this->assertContains('gd', array_column($panel['builtin'], 'key'));
     }
 
     #[Test]

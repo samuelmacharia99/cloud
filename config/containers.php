@@ -18,7 +18,7 @@ return [
     'runtime_build_on_deploy' => (bool) env('CONTAINER_RUNTIME_BUILD_ON_DEPLOY', true),
 
     // Bumped when runtime Dockerfiles change so nodes rebuild images (e.g. new PHP extensions).
-    'runtime_build_revision' => (int) env('CONTAINER_RUNTIME_BUILD_REVISION', 3),
+    'runtime_build_revision' => (int) env('CONTAINER_RUNTIME_BUILD_REVISION', 4),
 
     'runtime_templates' => [
         'laravel' => [

@@ -115,7 +115,12 @@ class ContainerPhpExtensionsService
         }
 
         $optional = [];
+        $builtinNames = array_map('strtolower', $this->builtinExtensionNames());
         foreach ($this->optionalExtensionCatalog() as $key => $definition) {
+            if (in_array(strtolower($key), $builtinNames, true)) {
+                continue;
+            }
+
             $moduleName = strtolower((string) ($definition['install'] ?? $key));
             $optional[] = [
                 'key' => $key,

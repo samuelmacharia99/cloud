@@ -14,8 +14,10 @@ return [
   | Optional PHP extensions (customer-selectable)
   |--------------------------------------------------------------------------
   |
-  | Core extensions shipped in the Talksasa runtime image are not listed here.
   | Keys must match the PHP module name returned by `php -m`.
+  | Built-in runtime extensions may still appear here so legacy containers
+  | can install them via ensureExtensionInstalled before image rebuilds.
+  | The UI hides any key listed in `builtin`.
   |
   */
     'extensions' => [
@@ -105,6 +107,7 @@ return [
   */
     'builtin' => [
         'bcmath',
+        'gd',
         'gmp',
         'intl',
         'mbstring',
