@@ -866,6 +866,23 @@ class ContainerDoctorService
             $liveEnv = $this->readLiveAppEnvironment($ssh, $deployment);
             $rawEnv = $liveEnv === [] ? $platformEnv : array_merge($platformEnv, $liveEnv);
 
+            // Keep a handle on the volume's original platform role for admin bootstrap.
+            $canonical = $deploymentService->canonicalDatabaseIdentifiers($service);
+            if (! empty($platformEnv['DB_USERNAME']) || ! empty($platformEnv['POSTGRES_USER'])) {
+                $rawEnv['TALKSASA_PLATFORM_DB_USERNAME'] = (string) (
+                    $platformEnv['DB_USERNAME']
+                    ?? $platformEnv['POSTGRES_USER']
+                );
+            } else {
+                $rawEnv['TALKSASA_PLATFORM_DB_USERNAME'] = $canonical['username'];
+            }
+            if (! empty($platformEnv['DB_PASSWORD']) || ! empty($platformEnv['POSTGRES_PASSWORD'])) {
+                $rawEnv['TALKSASA_PLATFORM_DB_PASSWORD'] = (string) (
+                    $platformEnv['DB_PASSWORD']
+                    ?? $platformEnv['POSTGRES_PASSWORD']
+                );
+            }
+
             $workingPassword = $this->discoverWorkingDatabasePassword(
                 $ssh,
                 $deployment,
@@ -884,6 +901,12 @@ class ContainerDoctorService
                 (string) $databaseTemplate->type
             );
             $envVars = $normalized['env'];
+            $platformAdminUser = (string) ($rawEnv['TALKSASA_PLATFORM_DB_USERNAME'] ?? '');
+            $platformAdminPassword = (string) ($rawEnv['TALKSASA_PLATFORM_DB_PASSWORD'] ?? '');
+            unset(
+                $envVars['TALKSASA_PLATFORM_DB_USERNAME'],
+                $envVars['TALKSASA_PLATFORM_DB_PASSWORD']
+            );
 
             $deployment->update(['env_values' => array_merge($platformEnv, $envVars)]);
             $meta = is_array($service->service_meta) ? $service->service_meta : [];
@@ -892,13 +915,21 @@ class ContainerDoctorService
             $deployment->refresh();
             $service->setRelation('containerDeployment', $deployment);
 
+            $syncEnv = $envVars;
+            if ($platformAdminUser !== '') {
+                $syncEnv['TALKSASA_PLATFORM_DB_USERNAME'] = $platformAdminUser;
+            }
+            if ($platformAdminPassword !== '') {
+                $syncEnv['TALKSASA_PLATFORM_DB_PASSWORD'] = $platformAdminPassword;
+            }
+
             match ($databaseTemplate->type) {
                 'mysql', 'mariadb' => $deploymentService
-                    ->syncMysqlSidecarCredentials($ssh, $containerPath, $envVars),
+                    ->syncMysqlSidecarCredentials($ssh, $containerPath, $syncEnv),
                 'postgresql' => $deploymentService
-                    ->syncPostgresqlSidecarCredentials($ssh, $containerPath, $envVars),
+                    ->syncPostgresqlSidecarCredentials($ssh, $containerPath, $syncEnv, $service),
                 'mongodb' => $deploymentService
-                    ->syncMongodbSidecarCredentials($ssh, $containerPath, $envVars),
+                    ->syncMongodbSidecarCredentials($ssh, $containerPath, $syncEnv),
                 default => throw new \RuntimeException('Unsupported database type: '.$databaseTemplate->type),
             };
 

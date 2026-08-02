@@ -1076,7 +1076,7 @@ class ContainerController extends Controller
 
             match ($type) {
                 'mysql', 'mariadb' => $deploymentService->syncMysqlSidecarCredentials($ssh, $containerPath, $envVars),
-                'postgresql' => $deploymentService->syncPostgresqlSidecarCredentials($ssh, $containerPath, $envVars),
+                'postgresql' => $deploymentService->syncPostgresqlSidecarCredentials($ssh, $containerPath, $envVars, $service),
                 'mongodb' => $deploymentService->syncMongodbSidecarCredentials($ssh, $containerPath, $envVars),
                 default => null,
             };

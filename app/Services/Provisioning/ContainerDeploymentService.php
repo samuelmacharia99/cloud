@@ -1981,20 +1981,24 @@ class ContainerDeploymentService
     /**
      * Sync PostgreSQL user credentials inside a running db sidecar.
      *
-     * Like MySQL, the official postgres image only reads POSTGRES_USER/POSTGRES_PASSWORD
+     * The official postgres image only reads POSTGRES_USER/POSTGRES_PASSWORD
      * on first init (when the data directory is empty). Subsequent env changes are ignored.
      * Connect via the container's local socket (peer/trust) so a drifted password can still be reset.
+     *
+     * The application role in .env (e.g. washflow_user) may not exist yet, so it cannot be used
+     * as the admin connection. Try platform/canonical/postgres roles first, then create/alter
+     * the application role.
      */
     public function syncPostgresqlSidecarCredentials(
         SSHService $ssh,
         string $containerPath,
-        array $envVars
+        array $envVars,
+        ?Service $service = null
     ): void {
         $pathArg = escapeshellarg($containerPath);
         $database = (string) ($envVars['DB_DATABASE'] ?? $envVars['POSTGRES_DB'] ?? 'appdb');
         $username = (string) ($envVars['DB_USERNAME'] ?? $envVars['POSTGRES_USER'] ?? 'appuser');
         $password = (string) ($envVars['DB_PASSWORD'] ?? $envVars['POSTGRES_PASSWORD'] ?? '');
-        $adminUser = (string) ($envVars['POSTGRES_USER'] ?? 'postgres');
 
         $roleLiteral = "'".str_replace("'", "''", $username)."'";
         $dbLiteral = "'".str_replace("'", "''", $database)."'";
@@ -2018,15 +2022,16 @@ class ContainerDeploymentService
         $schemaSql = 'GRANT ALL ON SCHEMA public TO '.$userIdent.'; '
             .'ALTER SCHEMA public OWNER TO '.$userIdent.';';
 
-        $adminUserArg = escapeshellarg($adminUser);
-        $adminPassword = escapeshellarg((string) ($envVars['POSTGRES_PASSWORD'] ?? $envVars['DB_PASSWORD'] ?? ''));
+        $admin = $this->resolvePostgresqlAdminConnection($ssh, $containerPath, $envVars, $service);
+        $adminUserArg = escapeshellarg($admin['username']);
+        $adminPasswordArg = escapeshellarg($admin['password']);
+        $usePassword = $admin['use_password'];
 
-        $run = function (string $sql, string $databaseName = 'postgres') use ($ssh, $pathArg, $adminUserArg, $adminPassword): void {
+        $run = function (string $sql, string $databaseName = 'postgres') use ($ssh, $pathArg, $adminUserArg, $adminPasswordArg, $usePassword): void {
             $sqlArg = escapeshellarg($sql);
             $dbArg = escapeshellarg($databaseName);
 
-            // Prefer local socket auth (no password) so drifted POSTGRES_PASSWORD still works.
-            try {
+            if (! $usePassword) {
                 $ssh->exec(
                     "cd {$pathArg} && docker compose exec -T db "
                     ."psql -v ON_ERROR_STOP=1 -U {$adminUserArg} -d {$dbArg} -c {$sqlArg}",
@@ -2034,11 +2039,10 @@ class ContainerDeploymentService
                 );
 
                 return;
-            } catch (\Throwable) {
             }
 
             $ssh->exec(
-                "cd {$pathArg} && docker compose exec -T -e PGPASSWORD={$adminPassword} db "
+                "cd {$pathArg} && docker compose exec -T -e PGPASSWORD={$adminPasswordArg} db "
                 ."psql -v ON_ERROR_STOP=1 -U {$adminUserArg} -d {$dbArg} -c {$sqlArg}",
                 30
             );
@@ -2048,23 +2052,15 @@ class ContainerDeploymentService
 
         $exists = false;
         try {
-            $output = trim($ssh->exec(
-                "cd {$pathArg} && docker compose exec -T db "
-                ."psql -U {$adminUserArg} -d postgres -Atc ".escapeshellarg($createDbSql),
-                20
-            ));
+            $checkCmd = ! $usePassword
+                ? "cd {$pathArg} && docker compose exec -T db "
+                    ."psql -U {$adminUserArg} -d postgres -Atc ".escapeshellarg($createDbSql)
+                : "cd {$pathArg} && docker compose exec -T -e PGPASSWORD={$adminPasswordArg} db "
+                    ."psql -U {$adminUserArg} -d postgres -Atc ".escapeshellarg($createDbSql);
+            $output = trim($ssh->exec($checkCmd, 20));
             $exists = $output === '1';
         } catch (\Throwable) {
-            try {
-                $output = trim($ssh->exec(
-                    "cd {$pathArg} && docker compose exec -T -e PGPASSWORD={$adminPassword} db "
-                    ."psql -U {$adminUserArg} -d postgres -Atc ".escapeshellarg($createDbSql),
-                    20
-                ));
-                $exists = $output === '1';
-            } catch (\Throwable) {
-                $exists = false;
-            }
+            $exists = false;
         }
 
         if (! $exists) {
@@ -2074,6 +2070,92 @@ class ContainerDeploymentService
         $run($ownerSql);
         $run($grantSql);
         $run($schemaSql, $database);
+    }
+
+    /**
+     * Find a Postgres role that can administer the sidecar (create roles/databases).
+     *
+     * @param  array<string, mixed>  $envVars
+     * @return array{username: string, password: string, use_password: bool}
+     */
+    public function resolvePostgresqlAdminConnection(
+        SSHService $ssh,
+        string $containerPath,
+        array $envVars,
+        ?Service $service = null
+    ): array {
+        $pathArg = escapeshellarg($containerPath);
+        $canonical = $service ? $this->defaultDatabaseIdentifiers($service)['username'] : null;
+
+        $usernames = [];
+        foreach ([
+            $envVars['TALKSASA_PLATFORM_DB_USERNAME'] ?? null,
+            $canonical,
+            'postgres',
+            $envVars['POSTGRES_USER'] ?? null,
+            $envVars['DB_USERNAME'] ?? null,
+        ] as $candidate) {
+            $candidate = trim((string) $candidate);
+            if ($candidate !== '') {
+                $usernames[$candidate] = true;
+            }
+        }
+
+        $passwords = [];
+        foreach ([
+            '',
+            (string) ($envVars['TALKSASA_PLATFORM_DB_PASSWORD'] ?? ''),
+            (string) ($envVars['POSTGRES_PASSWORD'] ?? ''),
+            (string) ($envVars['DB_PASSWORD'] ?? ''),
+        ] as $password) {
+            $passwords[] = $password;
+        }
+        $passwords = array_values(array_unique($passwords, SORT_STRING));
+
+        $errors = [];
+
+        foreach (array_keys($usernames) as $username) {
+            $userArg = escapeshellarg($username);
+
+            foreach ($passwords as $password) {
+                try {
+                    if ($password === '') {
+                        $ssh->exec(
+                            "cd {$pathArg} && docker compose exec -T db "
+                            ."psql -U {$userArg} -d postgres -Atc ".escapeshellarg('SELECT 1'),
+                            15
+                        );
+
+                        return [
+                            'username' => $username,
+                            'password' => '',
+                            'use_password' => false,
+                        ];
+                    }
+
+                    $passwordArg = escapeshellarg($password);
+                    $ssh->exec(
+                        "cd {$pathArg} && docker compose exec -T -e PGPASSWORD={$passwordArg} db "
+                        ."psql -U {$userArg} -d postgres -Atc ".escapeshellarg('SELECT 1'),
+                        15
+                    );
+
+                    return [
+                        'username' => $username,
+                        'password' => $password,
+                        'use_password' => true,
+                    ];
+                } catch (\Throwable $e) {
+                    $errors[] = $username.'@'.($password === '' ? 'socket' : 'password').': '.$e->getMessage();
+                }
+            }
+        }
+
+        throw new \RuntimeException(
+            'Could not connect to Postgres as an admin role to repair credentials. '
+            .'Tried: '.implode(', ', array_keys($usernames)).'. '
+            .'Last errors: '.mb_substr(implode(' | ', array_slice($errors, -3)), 0, 500)
+        );
     }
 
     /**
