@@ -866,6 +866,18 @@ class ContainerDoctorService
             $liveEnv = $this->readLiveAppEnvironment($ssh, $deployment);
             $rawEnv = $liveEnv === [] ? $platformEnv : array_merge($platformEnv, $liveEnv);
 
+            $workingPassword = $this->discoverWorkingDatabasePassword(
+                $ssh,
+                $deployment,
+                $databaseTemplate->type,
+                $rawEnv
+            );
+            if ($workingPassword !== null) {
+                $rawEnv['DB_PASSWORD'] = $workingPassword;
+                $rawEnv['POSTGRES_PASSWORD'] = $workingPassword;
+                $rawEnv['MYSQL_PASSWORD'] = $workingPassword;
+            }
+
             $normalized = $deploymentService->normalizeDatabaseEnvironment(
                 $service,
                 $rawEnv,
@@ -896,13 +908,15 @@ class ContainerDoctorService
                     app(LaravelAppInitializationService::class)
                         ->writeApplicationEnvironment($service, $deployment, $ssh, preserveExisting: true);
                 } catch (\Throwable $e) {
-                    app(ContainerEnvironmentService::class)
-                        ->syncDotEnvFile($ssh, $service, $deployment, $envVars);
-                    \Log::warning('Doctor fell back to .env merge after Laravel env write failed', [
+                    \Log::warning('Doctor Laravel env write failed; falling back to dotenv merge', [
                         'service_id' => $service->id,
                         'error' => $e->getMessage(),
                     ]);
                 }
+
+                // Always force DATABASE_URL / POSTGRES_* onto disk — preserveExisting used to skip them.
+                app(ContainerEnvironmentService::class)
+                    ->syncDotEnvFile($ssh, $service, $deployment, $envVars);
 
                 try {
                     $this->clearLaravelCachesQuietly($service, $ssh);
@@ -918,15 +932,15 @@ class ContainerDoctorService
                 $ssh,
                 $deployment->container_name,
                 (string) $databaseTemplate->type,
-                $envVars
+                $this->envForRuntimeDatabaseProbe($envVars, (string) $databaseTemplate->type)
             );
 
-            $message = 'Database "'.$normalized['database'].'" credentials synced and .env rewritten.';
+            $message = 'Database "'.$normalized['database'].'" credentials synced and .env rewritten (including DATABASE_URL).';
             if ($normalized['corrected'] && $normalized['previous_database'] && $normalized['previous_database'] !== $normalized['database']) {
                 $message = 'Fixed DB_DATABASE from "'.$normalized['previous_database'].'" to "'
                     .$normalized['database'].'". '.$message;
             }
-            if (! empty($normalized['password_aligned'])) {
+            if (! empty($normalized['password_aligned']) || $workingPassword !== null) {
                 $message .= ' Aligned DB_PASSWORD, sidecar password, and DATABASE_URL.';
             }
 
@@ -967,6 +981,64 @@ class ContainerDoctorService
         } finally {
             $ssh->disconnect();
         }
+    }
+
+    /**
+     * Prefer a password that already authenticates against the live sidecar.
+     *
+     * @param  array<string, string>  $env
+     */
+    private function discoverWorkingDatabasePassword(
+        SSHService $ssh,
+        $deployment,
+        string $databaseType,
+        array $env
+    ): ?string {
+        if (! in_array($databaseType, ['postgresql', 'mysql', 'mariadb'], true)) {
+            return null;
+        }
+
+        $candidates = [];
+        foreach ([
+            (string) ($env['DB_PASSWORD'] ?? ''),
+            (string) ($env['POSTGRES_PASSWORD'] ?? ''),
+            (string) ($env['MYSQL_PASSWORD'] ?? ''),
+        ] as $password) {
+            $password = trim($password);
+            if ($password !== '') {
+                $candidates[$password] = true;
+            }
+        }
+
+        $urlPassword = null;
+        if (! empty($env['DATABASE_URL']) && is_string($env['DATABASE_URL'])) {
+            $parts = parse_url($env['DATABASE_URL']);
+            if (is_array($parts) && isset($parts['pass']) && $parts['pass'] !== '') {
+                $urlPassword = rawurldecode((string) $parts['pass']);
+                if ($urlPassword !== '') {
+                    $candidates[$urlPassword] = true;
+                }
+            }
+        }
+
+        $deploymentService = app(ContainerDeploymentService::class);
+        foreach (array_keys($candidates) as $password) {
+            $try = $env;
+            $try['DB_PASSWORD'] = $password;
+            $try['POSTGRES_PASSWORD'] = $password;
+            $try['MYSQL_PASSWORD'] = $password;
+            $probe = $deploymentService->probeApplicationDatabaseAccess(
+                $ssh,
+                $deployment->container_name,
+                $databaseType,
+                $this->envForRuntimeDatabaseProbe($try, $databaseType)
+            );
+            if ($probe['ok']) {
+                return $password;
+            }
+        }
+
+        return null;
     }
 
     /**

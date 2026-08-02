@@ -43,6 +43,14 @@ class LaravelAppInitializationService
         'DB_DATABASE',
         'DB_USERNAME',
         'DB_PASSWORD',
+        'DATABASE_URL',
+        'POSTGRES_DB',
+        'POSTGRES_USER',
+        'POSTGRES_PASSWORD',
+        'MYSQL_DATABASE',
+        'MYSQL_USER',
+        'MYSQL_PASSWORD',
+        'MYSQL_ROOT_PASSWORD',
         'APP_URL',
         'TALKSASA_CLOUD_URL',
     ];
@@ -955,6 +963,43 @@ class LaravelAppInitializationService
                 ?? ($envValues['POSTGRES_PASSWORD'] ?? ($envValues['MYSQL_PASSWORD'] ?? '')),
             'TALKSASA_CLOUD_URL' => rtrim((string) config('app.url', ''), '/'),
         ];
+
+        $dbName = (string) $replacements['DB_DATABASE'];
+        $dbUser = (string) $replacements['DB_USERNAME'];
+        $dbPassword = (string) $replacements['DB_PASSWORD'];
+        $dbHost = (string) $replacements['DB_HOST'];
+        $dbPort = (string) $replacements['DB_PORT'];
+
+        if (in_array($dbConnection, ['pgsql', 'postgresql'], true)) {
+            $replacements['POSTGRES_DB'] = (string) ($envValues['POSTGRES_DB'] ?? $dbName);
+            $replacements['POSTGRES_USER'] = (string) ($envValues['POSTGRES_USER'] ?? $dbUser);
+            $replacements['POSTGRES_PASSWORD'] = (string) ($envValues['POSTGRES_PASSWORD'] ?? $dbPassword);
+            $replacements['DB_PASSWORD'] = (string) $replacements['POSTGRES_PASSWORD'];
+            $replacements['DATABASE_URL'] = sprintf(
+                'postgresql://%s:%s@%s:%s/%s',
+                rawurlencode((string) $replacements['POSTGRES_USER']),
+                rawurlencode((string) $replacements['POSTGRES_PASSWORD']),
+                $dbHost,
+                $dbPort,
+                rawurlencode((string) $replacements['POSTGRES_DB'])
+            );
+        } elseif (in_array($dbConnection, ['mysql', 'mariadb'], true)) {
+            $replacements['MYSQL_DATABASE'] = (string) ($envValues['MYSQL_DATABASE'] ?? $dbName);
+            $replacements['MYSQL_USER'] = (string) ($envValues['MYSQL_USER'] ?? $dbUser);
+            $replacements['MYSQL_PASSWORD'] = (string) ($envValues['MYSQL_PASSWORD'] ?? $dbPassword);
+            if (($envValues['MYSQL_ROOT_PASSWORD'] ?? '') !== '') {
+                $replacements['MYSQL_ROOT_PASSWORD'] = (string) $envValues['MYSQL_ROOT_PASSWORD'];
+            }
+            $replacements['DB_PASSWORD'] = (string) $replacements['MYSQL_PASSWORD'];
+            $replacements['DATABASE_URL'] = sprintf(
+                'mysql://%s:%s@%s:%s/%s',
+                rawurlencode((string) $replacements['MYSQL_USER']),
+                rawurlencode((string) $replacements['MYSQL_PASSWORD']),
+                $dbHost,
+                $dbPort,
+                rawurlencode((string) $replacements['MYSQL_DATABASE'])
+            );
+        }
 
         if ($preserveUserSettings) {
             return array_intersect_key(
