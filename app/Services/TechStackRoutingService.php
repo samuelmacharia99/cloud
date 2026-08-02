@@ -481,6 +481,45 @@ class TechStackRoutingService
     }
 
     /**
+     * Apply framework / frontend / database choices chosen during container redeploy.
+     *
+     * @param  array<string, mixed>  $serviceMeta
+     * @return array{meta: array<string, mixed>, database_changed: bool}
+     */
+    public static function applyRedeployStackSelection(
+        array $serviceMeta,
+        ContainerTemplate $language,
+        ?string $framework,
+        ?string $frontend,
+        ?DatabaseTemplate $database,
+    ): array {
+        if (! self::isValidStackSelection($language, $framework, $frontend, $database)) {
+            throw new \InvalidArgumentException('Invalid stack selection for this application type.');
+        }
+
+        $roles = self::resolveDefaultRoles($language, $framework, $frontend);
+        $previousDatabaseId = isset($serviceMeta['database_id']) ? (int) $serviceMeta['database_id'] : null;
+        $newDatabaseId = $database?->id;
+
+        $serviceMeta['framework'] = $roles['framework'];
+        $serviceMeta['frontend'] = $roles['frontend'];
+        $serviceMeta['backend'] = $roles['backend'];
+        $serviceMeta['stack_builder_version'] = (int) config('stack_builder.version', 1);
+
+        if ($database) {
+            $serviceMeta['database_id'] = $database->id;
+            $serviceMeta['database_template_name'] = $database->name;
+        } else {
+            unset($serviceMeta['database_id'], $serviceMeta['database_template_name']);
+        }
+
+        return [
+            'meta' => $serviceMeta,
+            'database_changed' => $previousDatabaseId !== $newDatabaseId,
+        ];
+    }
+
+    /**
      * @param  list<string>  $values
      * @param  array<string, string>  $labels
      * @return list<array{value: string, label: string, locked: bool}>

@@ -36,6 +36,7 @@ use App\Services\Provisioning\ContainerStagingService;
 use App\Services\Provisioning\LaravelAppInitializationService;
 use App\Services\Provisioning\NginxProxyService;
 use App\Services\SSH\SSHService;
+use App\Services\TechStackRoutingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -68,7 +69,7 @@ class ContainerController extends Controller
         $status = null;
 
         if ($deployment) {
-            $containerService = new ContainerDeploymentService;
+            $containerService = app(ContainerDeploymentService::class);
             try {
                 $status = $containerService->getStatus($service);
                 $this->reconcileStuckProvisioningState($service, $deployment, $status);
@@ -113,6 +114,19 @@ class ContainerController extends Controller
             : null;
         $stagingPanel = app(ContainerStagingService::class)->panelState($service);
         $scheduledBackupDue = null;
+        $redeployStackOptions = null;
+        $template = $service->product?->containerTemplate;
+        if ($template) {
+            $currentFramework = is_string($service->service_meta['framework'] ?? null)
+                ? $service->service_meta['framework']
+                : null;
+            $redeployStackOptions = TechStackRoutingService::stackOptionsPayload($template, $currentFramework);
+            $redeployStackOptions['current'] = [
+                'framework' => $currentFramework,
+                'frontend' => $service->service_meta['frontend'] ?? ($redeployStackOptions['frontend']['value'] ?? 'none'),
+                'database_id' => $service->service_meta['database_id'] ?? null,
+            ];
+        }
 
         if ($deployment) {
             $deployment->loadMissing('domains');
@@ -156,6 +170,7 @@ class ContainerController extends Controller
             'autoDeployPanel',
             'stagingPanel',
             'scheduledBackupDue',
+            'redeployStackOptions',
         ));
     }
 
@@ -297,8 +312,42 @@ class ContainerController extends Controller
                 return back()->withErrors(['error' => 'Container host is not properly configured (missing SSH credentials). Please contact support.']);
             }
 
+            $template = $service->product?->containerTemplate;
             $resetDatabase = $request->boolean('reset_database');
-            $containerService = new ContainerDeploymentService;
+
+            if ($template) {
+                $validated = $request->validate([
+                    'framework' => ['nullable', 'string', 'max:64'],
+                    'frontend' => ['nullable', 'string', 'max:64'],
+                    'database_id' => ['nullable', 'integer', 'exists:database_templates,id'],
+                ]);
+
+                $database = ! empty($validated['database_id'])
+                    ? DatabaseTemplate::findOrFail($validated['database_id'])
+                    : null;
+
+                try {
+                    $applied = TechStackRoutingService::applyRedeployStackSelection(
+                        is_array($service->service_meta) ? $service->service_meta : [],
+                        $template,
+                        $validated['framework'] ?? null,
+                        $validated['frontend'] ?? null,
+                        $database,
+                    );
+                } catch (\InvalidArgumentException $e) {
+                    return back()->withErrors(['error' => $e->getMessage()])->withInput();
+                }
+
+                $service->update(['service_meta' => $applied['meta']]);
+                $service->refresh();
+
+                // Changing database engine/sidecar requires a clean volume.
+                if ($applied['database_changed']) {
+                    $resetDatabase = true;
+                }
+            }
+
+            $containerService = app(ContainerDeploymentService::class);
             $result = $containerService->deploy(
                 $service,
                 ContainerDeployOptions::redeploy($resetDatabase)
