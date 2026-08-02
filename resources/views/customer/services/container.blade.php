@@ -3,6 +3,10 @@
 @section('title', 'Application: ' . $service->name)
 
 @section('content')
+@php
+    // Scripts below always render; tabs are only built when a deployment exists.
+    $containerTabs = $containerTabs ?? ['overview'];
+@endphp
 <div class="bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 min-h-screen py-8">
     <div class="max-w-7xl mx-auto px-4">
         <!-- Header -->
@@ -973,7 +977,8 @@ function containerEnvironmentPanel(initialRows) {
 }
 
 function containerTabs(initialTab) {
-    const allowedTabs = @js($containerTabs);
+    // Defined inside @if ($deployment); default when the app is not deployed yet.
+    const allowedTabs = @js($containerTabs ?? ['overview']);
 
     return {
         activeTab: allowedTabs.includes(initialTab) ? initialTab : 'overview',
