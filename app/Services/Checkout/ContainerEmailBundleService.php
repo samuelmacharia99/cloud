@@ -8,6 +8,7 @@ use App\Models\Order;
 use App\Models\Product;
 use App\Models\Service;
 use App\Models\User;
+use App\Services\Customer\CustomerProjectService;
 use App\Services\Provisioning\DirectAdminDomainValidator;
 use App\Services\Provisioning\MailcowProvisioningService;
 use Illuminate\Http\Request;
@@ -189,6 +190,8 @@ class ContainerEmailBundleService
         $meta['primary_domain'] = $fqdn;
         $meta['bundled_email_service_id'] = $emailService->id;
         $containerService->update(['service_meta' => $meta]);
+
+        app(CustomerProjectService::class)->syncRelated($containerService->fresh());
 
         if ($containerProduct->bundle_email_include_in_invoice) {
             InvoiceItem::create([

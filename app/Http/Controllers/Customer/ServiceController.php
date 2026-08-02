@@ -3,9 +3,12 @@
 namespace App\Http\Controllers\Customer;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\RenameCustomerProjectRequest;
 use App\Http\Requests\RenameCustomerServiceRequest;
+use App\Models\CustomerProject;
 use App\Models\Service;
 use App\Services\Customer\CustomerHostingUpgradeService;
+use App\Services\Customer\CustomerProjectService;
 use App\Services\Customer\CustomerServiceCancellationService;
 use App\Services\Customer\CustomerServiceRenewalService;
 use App\Services\Hosting\ServicePackageUsageService;
@@ -15,10 +18,13 @@ use Illuminate\Http\Request;
 
 class ServiceController extends Controller
 {
-    public function index()
+    public function index(CustomerProjectService $projectService)
     {
-        $services = auth()->user()->services()
-            ->with(['product.containerTemplate', 'invoice'])
+        $user = auth()->user();
+        $projectService->ensureForUser($user);
+
+        $services = $user->services()
+            ->with(['product.containerTemplate', 'invoice', 'project', 'containerDeployment'])
             ->whereNotIn('status', ['cancelled', 'terminated'])
             ->whereHas('product', function ($q) {
                 $q->where('type', '!=', 'domain');
@@ -26,7 +32,9 @@ class ServiceController extends Controller
             ->latest()
             ->get();
 
-        return view('customer.services.index', compact('services'));
+        $serviceGroups = $projectService->groupForDisplay($services);
+
+        return view('customer.services.index', compact('services', 'serviceGroups'));
     }
 
     public function rename(RenameCustomerServiceRequest $request, Service $service)
@@ -38,6 +46,17 @@ class ServiceController extends Controller
         ]);
 
         return back()->with('success', 'Service renamed successfully.');
+    }
+
+    public function renameProject(RenameCustomerProjectRequest $request, CustomerProject $project)
+    {
+        $this->authorize('rename', $project);
+
+        $project->update([
+            'name' => $request->validated('name'),
+        ]);
+
+        return back()->with('success', 'Project renamed successfully.');
     }
 
     public function wordpressAdminLogin(Service $service, WordPressAdminLoginService $loginService)

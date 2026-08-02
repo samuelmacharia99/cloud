@@ -14,6 +14,7 @@ class Service extends Model
 
     protected $fillable = [
         'user_id',
+        'project_id',
         'product_id',
         'order_item_id',
         'reseller_id',
@@ -57,6 +58,11 @@ class Service extends Model
     public function user()
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function project()
+    {
+        return $this->belongsTo(CustomerProject::class, 'project_id');
     }
 
     public function product()

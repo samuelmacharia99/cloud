@@ -3,6 +3,7 @@
 namespace App\Services\Provisioning;
 
 use App\Models\Service;
+use App\Services\Customer\CustomerProjectService;
 use Illuminate\Support\Collection;
 
 /**
@@ -79,6 +80,8 @@ class ContainerStagingService
         $stagingMeta['production_service_id'] = $production->id;
         $stagingMeta['is_staging'] = true;
         $staging->update(['service_meta' => $stagingMeta]);
+
+        app(CustomerProjectService::class)->syncRelated($production->fresh());
     }
 
     public function unlink(Service $production): void

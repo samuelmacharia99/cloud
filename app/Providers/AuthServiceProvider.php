@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Models\CustomerProject;
 use App\Models\Domain;
 use App\Models\Email;
 use App\Models\Invoice;
@@ -13,6 +14,7 @@ use App\Models\Setting;
 use App\Models\SmsLog;
 use App\Models\Ticket;
 use App\Models\User;
+use App\Policies\CustomerProjectPolicy;
 use App\Policies\DomainPolicy;
 use App\Policies\EmailPolicy;
 use App\Policies\InvoicePolicy;
@@ -39,6 +41,7 @@ class AuthServiceProvider extends ServiceProvider
         User::class => ResellerPolicy::class,
         Setting::class => SettingPolicy::class,
         Service::class => ServicePolicy::class,
+        CustomerProject::class => CustomerProjectPolicy::class,
         Ticket::class => TicketPolicy::class,
     ];
 
