@@ -79,6 +79,26 @@ class ServiceBrowserController extends Controller
     }
 
     /**
+     * Stack builder options for selected language (AJAX).
+     */
+    public function getStackOptions(Request $request, $languageId)
+    {
+        $language = ContainerTemplate::findOrFail($languageId);
+        $framework = $request->query('framework');
+
+        if ($framework !== null && $framework !== '' && ! is_string($framework)) {
+            return response()->json(['message' => 'Invalid framework.'], 422);
+        }
+
+        return response()->json(
+            TechStackRoutingService::stackOptionsPayload(
+                $language,
+                is_string($framework) && $framework !== '' ? $framework : null
+            )
+        );
+    }
+
+    /**
      * Get available languages for selected database (AJAX)
      */
     public function getAvailableLanguages($databaseId)
@@ -105,6 +125,8 @@ class ServiceBrowserController extends Controller
             'language_id' => 'required|exists:container_templates,id',
             'database_id' => 'nullable|exists:database_templates,id',
             'deployment_platform' => 'nullable|in:shared,container',
+            'framework' => 'nullable|string|max:64',
+            'frontend' => 'nullable|string|max:64',
         ]);
 
         $language = ContainerTemplate::findOrFail($validated['language_id']);
@@ -120,9 +142,14 @@ class ServiceBrowserController extends Controller
             return back()->with('error', 'Selected database is not available for application hosting.');
         }
 
-        if (! TechStackRoutingService::isValidCombination($language, $database)) {
+        $framework = $validated['framework'] ?? null;
+        $frontend = $validated['frontend'] ?? null;
+
+        if (! TechStackRoutingService::isValidStackSelection($language, $framework, $frontend, $database)) {
             return back()->with('error', 'Invalid techstack combination selected');
         }
+
+        $roles = TechStackRoutingService::resolveDefaultRoles($language, $framework, $frontend);
 
         $routing = TechStackRoutingService::determineHostingType(
             $language,
@@ -149,8 +176,13 @@ class ServiceBrowserController extends Controller
         $techstackData = [
             'language_id' => $language->id,
             'language_name' => $language->name,
+            'language_slug' => $language->slug,
+            'backend' => $roles['backend'],
+            'framework' => $roles['framework'],
+            'frontend' => $roles['frontend'],
             'hosting_type' => 'container',
             'deployment_platform' => 'container',
+            'stack_builder_version' => (int) config('stack_builder.version', 1),
         ];
 
         if ($database) {
@@ -223,6 +255,8 @@ class ServiceBrowserController extends Controller
             'currency' => $currency,
             'currencyCode' => $currency->code,
             'attachDomain' => app(SharedHostingCheckoutService::class)->attachDomainFromSession(),
+            'stackSummary' => TechStackRoutingService::selectionSummary($techstack),
+            'stackSelection' => $techstack,
         ]);
     }
 

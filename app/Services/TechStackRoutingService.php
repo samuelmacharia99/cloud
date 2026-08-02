@@ -65,20 +65,246 @@ class TechStackRoutingService
     }
 
     /**
+     * Raw stack definition for a container template slug.
+     *
+     * @return array<string, mixed>
+     */
+    public static function stackDefinition(ContainerTemplate $language): array
+    {
+        $slug = strtolower((string) $language->slug);
+        $stacks = config('stack_builder.stacks', []);
+        $definition = $stacks[$slug] ?? config('stack_builder.default', []);
+
+        $definition['backend'] = $definition['backend'] ?? $slug;
+
+        return $definition;
+    }
+
+    /**
+     * @return list<array{value: string, label: string, locked?: bool}>
+     */
+    public static function availableFrameworks(ContainerTemplate $language): array
+    {
+        $definition = self::stackDefinition($language);
+        $framework = $definition['framework'] ?? [];
+
+        if (! ($framework['show'] ?? false)) {
+            return [];
+        }
+
+        return self::mapOptionLabels(
+            $framework['options'] ?? [],
+            config('stack_builder.framework_labels', [])
+        );
+    }
+
+    /**
+     * @return list<array{value: string, label: string, locked?: bool}>
+     */
+    public static function availableFrontends(ContainerTemplate $language, ?string $framework = null): array
+    {
+        $definition = self::stackDefinition($language);
+        $frontend = $definition['frontend'] ?? [];
+
+        if (! ($frontend['show'] ?? false)) {
+            return [];
+        }
+
+        $lockMap = $frontend['lock_when_framework'] ?? [];
+        if ($framework !== null && isset($lockMap[$framework])) {
+            $locked = (string) $lockMap[$framework];
+
+            return self::mapOptionLabels(
+                [$locked],
+                config('stack_builder.frontend_labels', []),
+                lockedValue: $locked
+            );
+        }
+
+        return self::mapOptionLabels(
+            $frontend['options'] ?? [],
+            config('stack_builder.frontend_labels', [])
+        );
+    }
+
+    /**
+     * Resolve locked / default role values for a language.
+     *
+     * @return array{backend: string, framework: ?string, frontend: string}
+     */
+    public static function resolveDefaultRoles(ContainerTemplate $language, ?string $framework = null, ?string $frontend = null): array
+    {
+        $definition = self::stackDefinition($language);
+        $frameworkConfig = $definition['framework'] ?? [];
+        $frontendConfig = $definition['frontend'] ?? [];
+
+        $resolvedFramework = $framework;
+        if ($resolvedFramework === null || $resolvedFramework === '') {
+            $resolvedFramework = $frameworkConfig['locked'] ?? null;
+        }
+
+        $resolvedFrontend = $frontend;
+        $lockMap = $frontendConfig['lock_when_framework'] ?? [];
+        if ($resolvedFramework !== null && isset($lockMap[$resolvedFramework])) {
+            $resolvedFrontend = (string) $lockMap[$resolvedFramework];
+        } elseif ($resolvedFrontend === null || $resolvedFrontend === '') {
+            $resolvedFrontend = $frontendConfig['locked'] ?? 'none';
+        }
+
+        return [
+            'backend' => (string) ($definition['backend'] ?? $language->slug),
+            'framework' => $resolvedFramework !== null && $resolvedFramework !== ''
+                ? (string) $resolvedFramework
+                : null,
+            'frontend' => (string) $resolvedFrontend,
+        ];
+    }
+
+    /**
+     * Payload for the stack-builder modal (AJAX).
+     *
+     * @return array<string, mixed>
+     */
+    public static function stackOptionsPayload(ContainerTemplate $language, ?string $framework = null): array
+    {
+        $definition = self::stackDefinition($language);
+        $roles = self::resolveDefaultRoles($language, $framework);
+        $databases = self::getAvailableDatabasesForLanguage($language);
+
+        return [
+            'language' => [
+                'id' => $language->id,
+                'name' => $language->name,
+                'slug' => $language->slug,
+            ],
+            'backend' => $roles['backend'],
+            'framework' => [
+                'show' => (bool) ($definition['framework']['show'] ?? false),
+                'required' => (bool) ($definition['framework']['required'] ?? false),
+                'locked' => $definition['framework']['locked'] ?? null,
+                'options' => self::availableFrameworks($language),
+                'value' => $roles['framework'],
+            ],
+            'frontend' => [
+                'show' => (bool) ($definition['frontend']['show'] ?? false),
+                'required' => (bool) ($definition['frontend']['required'] ?? false),
+                'locked' => $definition['frontend']['locked'] ?? null,
+                'options' => self::availableFrontends($language, $roles['framework']),
+                'value' => $roles['frontend'],
+                'deferred_note' => 'Frontend will run in a follow-up update; this deploy provisions the backend and database.',
+            ],
+            'database' => [
+                'show' => (bool) ($definition['database']['show'] ?? false),
+                'required' => (bool) ($definition['database']['required'] ?? false),
+                'allow_none' => (bool) ($definition['database']['allow_none'] ?? false),
+                'options' => $databases->map(fn (DatabaseTemplate $db) => [
+                    'id' => $db->id,
+                    'name' => $db->name,
+                    'slug' => $db->slug,
+                    'type' => $db->type,
+                ])->values()->all(),
+            ],
+            'skip_modal' => strtolower((string) $language->slug) === 'static-site',
+            'stack_builder_version' => (int) config('stack_builder.version', 1),
+        ];
+    }
+
+    /**
+     * Validate language + optional framework/frontend + database against the matrix.
+     */
+    public static function isValidStackSelection(
+        ContainerTemplate $language,
+        ?string $framework,
+        ?string $frontend,
+        ?DatabaseTemplate $database
+    ): bool {
+        $definition = self::stackDefinition($language);
+        $roles = self::resolveDefaultRoles($language, $framework, $frontend);
+
+        $frameworkConfig = $definition['framework'] ?? [];
+        if ($frameworkConfig['required'] ?? false) {
+            if ($roles['framework'] === null || $roles['framework'] === '') {
+                return false;
+            }
+            $allowedFrameworks = $frameworkConfig['options'] ?? [];
+            if ($allowedFrameworks !== [] && ! in_array($roles['framework'], $allowedFrameworks, true)) {
+                return false;
+            }
+        } elseif ($framework !== null && $framework !== '') {
+            $allowedFrameworks = $frameworkConfig['options'] ?? [];
+            $locked = $frameworkConfig['locked'] ?? null;
+            if ($allowedFrameworks !== [] && ! in_array($framework, $allowedFrameworks, true) && $framework !== $locked) {
+                return false;
+            }
+        }
+
+        $frontendConfig = $definition['frontend'] ?? [];
+        $lockMap = $frontendConfig['lock_when_framework'] ?? [];
+        $effectiveFramework = $roles['framework'] ?? $framework;
+        if ($effectiveFramework !== null && isset($lockMap[$effectiveFramework])) {
+            $expectedFrontend = (string) $lockMap[$effectiveFramework];
+            if ($frontend !== null && $frontend !== '' && $frontend !== $expectedFrontend) {
+                return false;
+            }
+        }
+
+        $allowedFrontends = $frontendConfig['options'] ?? ['none'];
+        if ($roles['framework'] !== null && isset($lockMap[$roles['framework']])) {
+            if ($roles['frontend'] !== (string) $lockMap[$roles['framework']]) {
+                return false;
+            }
+        } elseif ($frontendConfig['show'] ?? false) {
+            if (($frontendConfig['required'] ?? false) && ($roles['frontend'] === null || $roles['frontend'] === '')) {
+                return false;
+            }
+            if (! in_array($roles['frontend'], $allowedFrontends, true)) {
+                return false;
+            }
+        } else {
+            $lockedFrontend = $frontendConfig['locked'] ?? 'none';
+            if ($roles['frontend'] !== $lockedFrontend) {
+                // Allow submitting without an explicit frontend when locked — resolveDefaultRoles handles it.
+                if ($frontend !== null && $frontend !== '' && $frontend !== $lockedFrontend) {
+                    return false;
+                }
+            }
+        }
+
+        return self::isValidCombination($language, $database);
+    }
+
+    /**
      * Validate if selected techstack combination is allowed
      */
     public static function isValidCombination(
         ContainerTemplate $language,
         ?DatabaseTemplate $database
     ): bool {
+        $definition = self::stackDefinition($language);
+        $databaseConfig = $definition['database'] ?? [];
+        $slug = strtolower((string) $language->slug);
+
         if ($database === null) {
-            return $language->slug === 'static-site';
+            if ($slug === 'static-site') {
+                return true;
+            }
+
+            return (bool) ($databaseConfig['allow_none'] ?? false)
+                && ! ($databaseConfig['required'] ?? false);
+        }
+
+        if ($database->hosting_type !== 'container') {
+            return false;
+        }
+
+        $allowedTypes = $databaseConfig['types'] ?? null;
+        if (is_array($allowedTypes) && $allowedTypes !== []) {
+            return in_array($database->type, $allowedTypes, true);
         }
 
         // WordPress (and plain PHP) stay on MySQL/MariaDB.
-        if (in_array(strtolower($language->slug), ['php', 'wordpress'], true)) {
-            return in_array($database->type, ['mysql', 'mariadb'], true)
-                && $database->hosting_type === 'container';
+        if (in_array($slug, ['php', 'wordpress'], true)) {
+            return in_array($database->type, ['mysql', 'mariadb'], true);
         }
 
         // Laravel and other application stacks can use any container database.
@@ -87,8 +313,7 @@ class TechStackRoutingService
             || $language->hosting_type === 'container'
             || $language->hosting_type === 'directadmin'
         ) {
-            return in_array($database->type, ['postgresql', 'mongodb', 'redis', 'mysql', 'mariadb'], true)
-                && $database->hosting_type === 'container';
+            return in_array($database->type, ['postgresql', 'mongodb', 'redis', 'mysql', 'mariadb'], true);
         }
 
         return false;
@@ -101,20 +326,33 @@ class TechStackRoutingService
         ContainerTemplate $language,
         ?string $deploymentPlatform = null
     ): Collection {
-        // WordPress / plain PHP → container MySQL / MariaDB only
-        if (in_array(strtolower($language->slug), ['php', 'wordpress'], true)) {
+        $definition = self::stackDefinition($language);
+        $databaseConfig = $definition['database'] ?? [];
+        $slug = strtolower((string) $language->slug);
+
+        if ($slug === 'static-site' || ($databaseConfig['show'] ?? true) === false) {
+            return new Collection;
+        }
+
+        $types = $databaseConfig['types'] ?? [];
+
+        if ($types !== []) {
+            return DatabaseTemplate::active()
+                ->whereIn('type', $types)
+                ->where('hosting_type', 'container')
+                ->orderBy('order')
+                ->orderBy('name')
+                ->get();
+        }
+
+        // Legacy fallbacks
+        if (in_array($slug, ['php', 'wordpress'], true)) {
             return DatabaseTemplate::active()
                 ->whereIn('type', ['mysql', 'mariadb'])
                 ->where('hosting_type', 'container')
                 ->get();
         }
 
-        // Static site needs no database
-        if (strtolower($language->slug) === 'static-site') {
-            return collect();
-        }
-
-        // Laravel and all other stacks → every container database
         return DatabaseTemplate::active()
             ->forHostingType('container')
             ->get();
@@ -150,6 +388,41 @@ class TechStackRoutingService
     }
 
     /**
+     * Human-readable summary line for packages / checkout.
+     */
+    public static function selectionSummary(array $techstack): string
+    {
+        $parts = [];
+
+        if (! empty($techstack['language_name'])) {
+            $parts[] = (string) $techstack['language_name'];
+        } elseif (! empty($techstack['backend'])) {
+            $parts[] = (string) $techstack['backend'];
+        }
+
+        if (! empty($techstack['framework'])) {
+            $labels = config('stack_builder.framework_labels', []);
+            $key = (string) $techstack['framework'];
+            $parts[] = $labels[$key] ?? $key;
+        }
+
+        if (! empty($techstack['frontend']) && $techstack['frontend'] !== 'none') {
+            $labels = config('stack_builder.frontend_labels', []);
+            $key = (string) $techstack['frontend'];
+            $label = $labels[$key] ?? $key;
+            $parts[] = 'frontend '.$label.' (later)';
+        }
+
+        if (! empty($techstack['database_name'])) {
+            $parts[] = (string) $techstack['database_name'];
+        } else {
+            $parts[] = 'No database';
+        }
+
+        return implode(' · ', $parts);
+    }
+
+    /**
      * Persist selected tech stack from checkout session onto service metadata.
      *
      * @param  array<string, mixed>  $serviceMeta
@@ -170,6 +443,24 @@ class TechStackRoutingService
             $serviceMeta['application_stack'] = (string) $techstack['language_name'];
         }
 
+        if (! empty($techstack['language_slug'])) {
+            $serviceMeta['language_slug'] = (string) $techstack['language_slug'];
+        }
+
+        if (! empty($techstack['backend'])) {
+            $serviceMeta['backend'] = (string) $techstack['backend'];
+        }
+
+        if (array_key_exists('framework', $techstack)) {
+            $serviceMeta['framework'] = $techstack['framework'] !== null && $techstack['framework'] !== ''
+                ? (string) $techstack['framework']
+                : null;
+        }
+
+        if (! empty($techstack['frontend'])) {
+            $serviceMeta['frontend'] = (string) $techstack['frontend'];
+        }
+
         if (! empty($techstack['database_id'])) {
             $serviceMeta['database_id'] = (int) $techstack['database_id'];
         }
@@ -182,6 +473,29 @@ class TechStackRoutingService
             $serviceMeta['deployment_platform'] = (string) $techstack['deployment_platform'];
         }
 
+        if (! empty($techstack['stack_builder_version'])) {
+            $serviceMeta['stack_builder_version'] = (int) $techstack['stack_builder_version'];
+        }
+
         return $serviceMeta;
+    }
+
+    /**
+     * @param  list<string>  $values
+     * @param  array<string, string>  $labels
+     * @return list<array{value: string, label: string, locked: bool}>
+     */
+    private static function mapOptionLabels(array $values, array $labels, ?string $lockedValue = null): array
+    {
+        $options = [];
+        foreach ($values as $value) {
+            $options[] = [
+                'value' => $value,
+                'label' => $labels[$value] ?? $value,
+                'locked' => $lockedValue !== null && $value === $lockedValue && count($values) === 1,
+            ];
+        }
+
+        return $options;
     }
 }

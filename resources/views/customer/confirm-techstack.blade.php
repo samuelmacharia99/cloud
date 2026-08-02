@@ -30,10 +30,26 @@
     <!-- Techstack Summary -->
     <div class="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-slate-800 dark:to-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 p-6">
         <h3 class="font-semibold text-slate-900 dark:text-white mb-4">Your Selection</h3>
+        <p class="text-sm text-slate-700 dark:text-slate-300 mb-4">{{ $stackSummary ?? ($language->name.' · '.($database?->name ?? 'No database')) }}</p>
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
-                <p class="text-xs text-slate-600 dark:text-slate-400 mb-1">Language</p>
+                <p class="text-xs text-slate-600 dark:text-slate-400 mb-1">App / Backend</p>
                 <p class="font-semibold text-slate-900 dark:text-white">{{ $language->name }}</p>
+            </div>
+            @if(!empty($stackSelection['framework']))
+            <div>
+                <p class="text-xs text-slate-600 dark:text-slate-400 mb-1">Framework</p>
+                <p class="font-semibold text-slate-900 dark:text-white">{{ config('stack_builder.framework_labels.'.$stackSelection['framework'], $stackSelection['framework']) }}</p>
+            </div>
+            @endif
+            <div>
+                <p class="text-xs text-slate-600 dark:text-slate-400 mb-1">Frontend</p>
+                <p class="font-semibold text-slate-900 dark:text-white">
+                    {{ config('stack_builder.frontend_labels.'.($stackSelection['frontend'] ?? 'none'), $stackSelection['frontend'] ?? 'None') }}
+                    @if(!empty($stackSelection['frontend']) && $stackSelection['frontend'] !== 'none')
+                        <span class="text-xs font-normal text-amber-700 dark:text-amber-300">(later)</span>
+                    @endif
+                </p>
             </div>
             <div>
                 <p class="text-xs text-slate-600 dark:text-slate-400 mb-1">Database</p>
@@ -41,9 +57,9 @@
             </div>
             <div>
                 <p class="text-xs text-slate-600 dark:text-slate-400 mb-1">Hosting Type</p>
-                <p class="font-semibold text-slate-900 dark:text-white">🚀 Application hosting</p>
+                <p class="font-semibold text-slate-900 dark:text-white">Application hosting</p>
             </div>
-            <div class="text-right">
+            <div class="md:col-span-4 text-right">
                 <a href="{{ route('customer.select-techstack') }}" class="text-sm text-blue-600 dark:text-blue-400 hover:underline">Change →</a>
             </div>
         </div>

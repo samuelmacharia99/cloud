@@ -645,6 +645,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('/confirm-techstack', [ServiceBrowserController::class, 'showConfirmTechstack'])->name('customer.confirm-techstack');
         Route::post('/confirm-techstack', [ServiceBrowserController::class, 'confirmTechstack'])->name('customer.confirm-techstack.store');
         Route::get('/api/languages/{language}/databases', [ServiceBrowserController::class, 'getAvailableDatabases'])->name('api.languages.databases');
+        Route::get('/api/languages/{language}/stack-options', [ServiceBrowserController::class, 'getStackOptions'])->name('api.languages.stack-options');
         Route::get('/api/databases/{database}/languages', [ServiceBrowserController::class, 'getAvailableLanguages'])->name('api.databases.languages');
         Route::get('/api/products', [ServiceBrowserController::class, 'getAvailableProducts'])->name('api.products');
         Route::get('/deploy-service', [ServiceBrowserController::class, 'index'])->name('customer.deploy-service');

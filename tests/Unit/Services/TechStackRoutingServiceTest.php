@@ -177,4 +177,112 @@ class TechStackRoutingServiceTest extends TestCase
 
         $this->assertCount(0, TechStackRoutingService::getAvailableLanguagesForDatabase($database));
     }
+
+    public function test_wordpress_rejects_frontend_and_allows_mysql_only(): void
+    {
+        DatabaseTemplate::query()->delete();
+
+        $language = $this->createLanguage('wordpress');
+        $mysql = $this->createDatabase('container');
+        $postgres = DatabaseTemplate::create([
+            'name' => 'PostgreSQL',
+            'slug' => 'postgres-wp-stack',
+            'description' => 'Postgres',
+            'type' => 'postgresql',
+            'docker_image' => 'postgres:16',
+            'default_port' => 5432,
+            'required_ram_mb' => 256,
+            'hosting_type' => 'container',
+            'is_active' => true,
+            'order' => 1,
+        ]);
+
+        $this->assertTrue(TechStackRoutingService::isValidStackSelection($language, null, 'none', $mysql));
+        $this->assertFalse(TechStackRoutingService::isValidStackSelection($language, null, 'nextjs', $mysql));
+        $this->assertFalse(TechStackRoutingService::isValidStackSelection($language, null, 'none', $postgres));
+        $this->assertFalse(TechStackRoutingService::isValidStackSelection($language, null, 'none', null));
+    }
+
+    public function test_laravel_allows_next_frontend_with_postgres(): void
+    {
+        DatabaseTemplate::query()->delete();
+
+        $language = $this->createLanguage('laravel');
+        $postgres = DatabaseTemplate::create([
+            'name' => 'PostgreSQL',
+            'slug' => 'postgres-laravel-stack',
+            'description' => 'Postgres',
+            'type' => 'postgresql',
+            'docker_image' => 'postgres:16',
+            'default_port' => 5432,
+            'required_ram_mb' => 256,
+            'hosting_type' => 'container',
+            'is_active' => true,
+            'order' => 1,
+        ]);
+
+        $this->assertTrue(TechStackRoutingService::isValidStackSelection($language, null, 'nextjs', $postgres));
+        $this->assertTrue(TechStackRoutingService::isValidStackSelection($language, 'laravel', 'vite-spa', $postgres));
+        $this->assertFalse(TechStackRoutingService::isValidStackSelection($language, null, 'nextjs', null));
+    }
+
+    public function test_nodejs_requires_framework_and_locks_next_frontend(): void
+    {
+        $language = $this->createLanguage('nodejs');
+        $language->forceFill(['hosting_type' => 'container'])->save();
+
+        $this->assertFalse(TechStackRoutingService::isValidStackSelection($language, null, 'none', null));
+        $this->assertTrue(TechStackRoutingService::isValidStackSelection($language, 'express', 'none', null));
+        $this->assertTrue(TechStackRoutingService::isValidStackSelection($language, 'nextjs', 'nextjs', null));
+        $this->assertFalse(TechStackRoutingService::isValidStackSelection($language, 'nextjs', 'vite-spa', null));
+    }
+
+    public function test_static_site_allows_null_database(): void
+    {
+        $language = $this->createLanguage('static-site');
+
+        $this->assertTrue(TechStackRoutingService::isValidStackSelection($language, null, 'static', null));
+        $this->assertTrue(TechStackRoutingService::isValidCombination($language, null));
+    }
+
+    public function test_apply_session_selection_copies_stack_builder_roles(): void
+    {
+        session(['selected_techstack' => [
+            'language_id' => 12,
+            'language_name' => 'Laravel',
+            'language_slug' => 'laravel',
+            'backend' => 'laravel',
+            'framework' => 'laravel',
+            'frontend' => 'nextjs',
+            'database_id' => 4,
+            'database_name' => 'PostgreSQL',
+            'deployment_platform' => 'container',
+            'stack_builder_version' => 1,
+        ]]);
+
+        $meta = TechStackRoutingService::applySessionSelectionToServiceMeta([]);
+
+        $this->assertSame(12, $meta['container_template_id']);
+        $this->assertSame('Laravel', $meta['application_stack']);
+        $this->assertSame('laravel', $meta['language_slug']);
+        $this->assertSame('laravel', $meta['backend']);
+        $this->assertSame('laravel', $meta['framework']);
+        $this->assertSame('nextjs', $meta['frontend']);
+        $this->assertSame(4, $meta['database_id']);
+        $this->assertSame(1, $meta['stack_builder_version']);
+    }
+
+    public function test_selection_summary_includes_deferred_frontend(): void
+    {
+        $summary = TechStackRoutingService::selectionSummary([
+            'language_name' => 'Laravel',
+            'frontend' => 'nextjs',
+            'database_name' => 'PostgreSQL',
+        ]);
+
+        $this->assertStringContainsString('Laravel', $summary);
+        $this->assertStringContainsString('Next.js', $summary);
+        $this->assertStringContainsString('(later)', $summary);
+        $this->assertStringContainsString('PostgreSQL', $summary);
+    }
 }

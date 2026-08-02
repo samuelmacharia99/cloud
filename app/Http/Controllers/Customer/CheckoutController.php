@@ -407,11 +407,8 @@ class CheckoutController extends Controller
                                 $serviceMeta['selected_version'] = $selectedVersion;
                             }
 
-                            // Store selected database for provisioning
-                            $techstack = session('selected_techstack', []);
-                            if (! empty($techstack['database_id'])) {
-                                $serviceMeta['database_id'] = (int) $techstack['database_id'];
-                            }
+                            // Store selected stack builder roles + database for provisioning
+                            $serviceMeta = TechStackRoutingService::applySessionSelectionToServiceMeta($serviceMeta);
 
                             $serviceMeta = $this->applyResellerContainerServiceMeta($serviceMeta, $product, $user, $item);
 
@@ -1215,11 +1212,8 @@ class CheckoutController extends Controller
                                 $serviceMeta['selected_version'] = $selectedVersion;
                             }
 
-                            // Store selected database for provisioning
-                            $techstack = session('selected_techstack', []);
-                            if (! empty($techstack['database_id'])) {
-                                $serviceMeta['database_id'] = (int) $techstack['database_id'];
-                            }
+                            // Store selected stack builder roles + database for provisioning
+                            $serviceMeta = TechStackRoutingService::applySessionSelectionToServiceMeta($serviceMeta);
 
                             $serviceMeta = $this->applyResellerContainerServiceMeta($serviceMeta, $product, $user, $item);
 
