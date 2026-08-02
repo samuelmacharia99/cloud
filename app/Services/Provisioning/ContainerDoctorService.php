@@ -381,12 +381,13 @@ class ContainerDoctorService
                             'severity' => 'critical',
                             'title' => 'Live check: database has no tables',
                             'summary' => 'DB credentials work for "'.($probeEnv['DB_DATABASE'] ?? '').'", but the schema is empty. '
-                                .'The app will keep returning 500 until migrations/seed run.',
+                                .'HTTP 500 will continue until migrations (or a SQL import) create tables.',
                             'evidence' => ['table_count=0', 'DB_DATABASE='.($probeEnv['DB_DATABASE'] ?? '')],
                             'treat_action' => 'run_migrations',
                             'treat_label' => 'Run migrations',
                             'manual_steps' => [
-                                'Click Run migrations, or in Terminal: php artisan migrate --force',
+                                'Click Run migrations (runs php artisan migrate --force).',
+                                'If that reports nothing to migrate, import your SQL dump from the Database tab.',
                             ],
                             'source' => 'live',
                         ];
@@ -398,8 +399,11 @@ class ContainerDoctorService
             $checks['http_status'] = $httpStatus;
 
             if ($httpStatus !== null && $httpStatus >= 500) {
-                $hasDbFinding = collect($findings)->contains(
-                    fn ($f) => in_array($f['id'] ?? '', ['live_db_connection_failed', 'live_env_credential_drift', 'live_empty_database', 'live_missing_pdo'], true)
+                $hasEmptyDb = collect($findings)->contains(
+                    fn ($f) => ($f['id'] ?? '') === 'live_empty_database'
+                );
+                $hasCredentialDbIssue = collect($findings)->contains(
+                    fn ($f) => in_array($f['id'] ?? '', ['live_db_connection_failed', 'live_env_credential_drift', 'live_missing_pdo'], true)
                 );
 
                 $appErrors = $this->readRecentApplicationErrors($ssh, $deployment);
@@ -409,33 +413,21 @@ class ContainerDoctorService
                     ...$appErrors,
                 ]));
 
-                if ($hasDbFinding) {
+                if ($hasEmptyDb) {
+                    // Empty-schema finding already exposes Run migrations — avoid a second
+                    // card that wrongly suggests Repair DB credentials.
+                } elseif ($hasCredentialDbIssue) {
                     $findings[] = [
                         'id' => 'live_http_5xx',
                         'severity' => 'critical',
                         'title' => 'Live check: site returns HTTP '.$httpStatus,
-                        'summary' => 'The public URL is returning HTTP '.$httpStatus.'. Fix the database findings above first, then re-scan.',
+                        'summary' => 'The public URL is returning HTTP '.$httpStatus.'. Fix the database credential findings above first, then re-scan.',
                         'evidence' => $evidence,
                         'treat_action' => 'sync_database_credentials',
                         'treat_label' => 'Repair DB credentials',
                         'manual_steps' => [
                             'Re-scan after applying the suggested fix.',
                             'In Terminal check: tail -n 80 storage/logs/laravel.log',
-                        ],
-                        'source' => 'live',
-                    ];
-                } elseif (($checks['table_count'] ?? null) === 0 && $this->containerHasArtisan($ssh, $deployment)) {
-                    $findings[] = [
-                        'id' => 'live_http_5xx',
-                        'severity' => 'critical',
-                        'title' => 'Live check: site returns HTTP '.$httpStatus.' (empty database)',
-                        'summary' => 'Database credentials work, but there are no tables yet. Run migrations to clear the 500.',
-                        'evidence' => $evidence,
-                        'treat_action' => 'run_migrations',
-                        'treat_label' => 'Run migrations',
-                        'manual_steps' => [
-                            'Click Run migrations.',
-                            'If migrate fails, inspect the evidence / laravel.log.',
                         ],
                         'source' => 'live',
                     ];
@@ -1243,25 +1235,111 @@ class ContainerDoctorService
     {
         $deployment = $service->containerDeployment;
         $init = app(LaravelAppInitializationService::class);
+        $deploymentService = app(ContainerDeploymentService::class);
 
         try {
-            $locator = 'if [ -f /app/backend/artisan ]; then echo /app/backend; '
-                .'elif [ -f /app/artisan ]; then echo /app; '
-                .'else echo /app; fi';
-            $projectRoot = trim($ssh->exec(
-                'docker exec -u www-data '.escapeshellarg($deployment->container_name)
-                .' sh -lc '.escapeshellarg($locator),
-                15
-            )) ?: '/app';
+            $roots = [];
+            foreach (['/app/backend', '/app'] as $candidate) {
+                try {
+                    $has = trim($ssh->exec(
+                        'docker exec '.escapeshellarg($deployment->container_name)
+                        .' sh -lc '.escapeshellarg('[ -f '.$candidate.'/artisan ] && echo yes || echo no'),
+                        10
+                    ));
+                    if ($has === 'yes') {
+                        $roots[] = $candidate;
+                    }
+                } catch (\Throwable) {
+                }
+            }
 
-            $script = 'set -e; cd '.escapeshellarg($projectRoot).'; '
-                .'php artisan migrate --force --no-interaction';
+            if ($roots === []) {
+                return [
+                    'success' => false,
+                    'message' => 'No Laravel artisan binary found under /app or /app/backend. Import a SQL dump from the Database tab instead.',
+                ];
+            }
 
-            $output = $init->dockerExecPublic($ssh, $deployment->container_name, $script, 300);
+            $outputs = [];
+            $lastError = null;
+
+            foreach ($roots as $projectRoot) {
+                $script = 'set -e; cd '.escapeshellarg($projectRoot).'; '
+                    .'if [ ! -f .env ]; then echo "MISSING_ENV"; exit 42; fi; '
+                    .'php artisan migrate --force --no-interaction 2>&1; '
+                    .'php artisan db:seed --force --no-interaction 2>&1 || true';
+
+                try {
+                    $output = trim((string) $init->dockerExecPublic(
+                        $ssh,
+                        $deployment->container_name,
+                        $script,
+                        300
+                    ));
+                    $outputs[] = $projectRoot.': '.$output;
+                    $lastError = null;
+                    break;
+                } catch (\Throwable $e) {
+                    $lastError = $e;
+                    $outputs[] = $projectRoot.': FAILED '.$e->getMessage();
+
+                    // Retry once as root in case www-data cannot read vendor/.env.
+                    try {
+                        $output = trim((string) $init->dockerExecPublic(
+                            $ssh,
+                            $deployment->container_name,
+                            $script,
+                            300,
+                            asRoot: true
+                        ));
+                        $outputs[] = $projectRoot.' (root): '.$output;
+                        $lastError = null;
+                        break;
+                    } catch (\Throwable $rootError) {
+                        $lastError = $rootError;
+                        $outputs[] = $projectRoot.' (root): FAILED '.$rootError->getMessage();
+                    }
+                }
+            }
+
+            if ($lastError) {
+                return [
+                    'success' => false,
+                    'message' => 'Migrations failed: '.mb_substr($lastError->getMessage(), 0, 400),
+                ];
+            }
+
+            $env = is_array($deployment->env_values) ? $deployment->env_values : [];
+            $liveEnv = $this->readLiveAppEnvironment($ssh, $deployment);
+            if ($liveEnv !== []) {
+                $env = array_merge($env, $liveEnv);
+            }
+            $databaseTemplate = $deploymentService->resolveDatabaseTemplateForService($service);
+            $tableCount = null;
+            if ($databaseTemplate) {
+                $probeEnv = $this->envForRuntimeDatabaseProbe($env, (string) $databaseTemplate->type);
+                $tableCount = $deploymentService->countApplicationDatabaseTables(
+                    $ssh,
+                    $deployment->container_name,
+                    (string) $databaseTemplate->type,
+                    $probeEnv
+                );
+            }
+
+            if ($tableCount === 0) {
+                return [
+                    'success' => false,
+                    'message' => 'Artisan migrate finished but the database still has 0 tables. '
+                        .'This app likely has no migration files (or they target another connection). '
+                        .'Import your SQL dump from the Database tab. '
+                        .'Output: '.mb_substr(implode(' | ', $outputs), 0, 300),
+                ];
+            }
 
             return [
                 'success' => true,
-                'message' => 'Migrations completed. '.mb_substr(trim((string) $output), 0, 200),
+                'message' => 'Migrations completed. Tables now: '.$tableCount.'. '
+                    .mb_substr(implode(' | ', $outputs), 0, 240),
             ];
         } catch (\Throwable $e) {
             return [
