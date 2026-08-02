@@ -149,7 +149,16 @@ YAML,
             ->assertOk()
             ->assertSee('Client A')
             ->assertSee('Solo Shared')
-            ->assertSee('Move to project');
+            ->assertSee('drop here');
+
+        $this->actingAs($customer)
+            ->patchJson(route('customer.services.project', $service), [
+                'project_id' => null,
+            ])
+            ->assertOk()
+            ->assertJsonPath('ok', true);
+
+        $this->assertNull($service->fresh()->project_id);
     }
 
     public function test_customer_can_rename_own_project(): void

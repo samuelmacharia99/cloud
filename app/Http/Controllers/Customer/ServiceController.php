@@ -101,6 +101,16 @@ class ServiceController extends Controller
 
         $projectService->assignService($service, $project);
 
+        if ($request->wantsJson()) {
+            return response()->json([
+                'ok' => true,
+                'project_id' => $project?->id,
+                'message' => $project
+                    ? 'Moved to “'.$project->name.'”.'
+                    : 'Removed from project.',
+            ]);
+        }
+
         return back()->with('success', $project
             ? 'Moved to “'.$project->name.'”.'
             : 'Removed from project.');
