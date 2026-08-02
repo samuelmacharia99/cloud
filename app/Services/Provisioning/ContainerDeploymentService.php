@@ -1697,6 +1697,66 @@ class ContainerDeploymentService
 
     private function postgresqlApplicationAccessReady(SSHService $ssh, string $containerArg, array $envVars): bool
     {
+        $result = $this->probePostgresqlApplicationAccess($ssh, $containerArg, $envVars);
+
+        if (! $result['ok']) {
+            throw new \RuntimeException($result['error'] ?? 'PostgreSQL application access failed');
+        }
+
+        return true;
+    }
+
+    /**
+     * Probe whether the app container can open a PDO connection with the given env.
+     *
+     * @param  array<string, mixed>  $envVars
+     * @return array{ok: bool, error: ?string, driver_missing: bool}
+     */
+    public function probeApplicationDatabaseAccess(
+        SSHService $ssh,
+        string $containerName,
+        string $databaseType,
+        array $envVars
+    ): array {
+        $containerArg = escapeshellarg($containerName);
+
+        return match ($databaseType) {
+            'mysql', 'mariadb' => $this->probeMysqlApplicationAccess($ssh, $containerArg, $envVars),
+            'postgresql' => $this->probePostgresqlApplicationAccess($ssh, $containerArg, $envVars),
+            default => ['ok' => true, 'error' => null, 'driver_missing' => false],
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>  $envVars
+     * @return array{ok: bool, error: ?string, driver_missing: bool}
+     */
+    private function probeMysqlApplicationAccess(SSHService $ssh, string $containerArg, array $envVars): array
+    {
+        $database = (string) ($envVars['DB_DATABASE'] ?? $envVars['MYSQL_DATABASE'] ?? 'appdb');
+        $username = (string) ($envVars['DB_USERNAME'] ?? $envVars['MYSQL_USER'] ?? 'appuser');
+        $password = (string) ($envVars['DB_PASSWORD'] ?? $envVars['MYSQL_PASSWORD'] ?? '');
+
+        $script = 'try { '
+            .'$pdo = new PDO('
+            .'"mysql:host=db;port=3306;dbname='.addslashes($database).'", '
+            .'"'.addslashes($username).'", '
+            .'"'.addslashes($password).'", '
+            .'[PDO::ATTR_TIMEOUT => 5]'
+            .'); '
+            .'$pdo->query("SELECT 1"); '
+            .'fwrite(STDOUT, "ok"); exit(0); '
+            .'} catch (Throwable $e) { fwrite(STDERR, $e->getMessage()); exit(1); }';
+
+        return $this->runDatabaseProbeScript($ssh, $containerArg, $script);
+    }
+
+    /**
+     * @param  array<string, mixed>  $envVars
+     * @return array{ok: bool, error: ?string, driver_missing: bool}
+     */
+    private function probePostgresqlApplicationAccess(SSHService $ssh, string $containerArg, array $envVars): array
+    {
         $database = (string) ($envVars['DB_DATABASE'] ?? $envVars['POSTGRES_DB'] ?? 'appdb');
         $username = (string) ($envVars['DB_USERNAME'] ?? $envVars['POSTGRES_USER'] ?? 'appuser');
         $password = (string) ($envVars['DB_PASSWORD'] ?? $envVars['POSTGRES_PASSWORD'] ?? '');
@@ -1713,15 +1773,81 @@ class ContainerDeploymentService
             .'[PDO::ATTR_TIMEOUT => 5]'
             .'); '
             .'$pdo->query("SELECT 1"); '
-            .'exit(0); '
+            .'fwrite(STDOUT, "ok"); exit(0); '
             .'} catch (Throwable $e) { fwrite(STDERR, $e->getMessage()); exit(1); }';
 
-        $ssh->exec(
-            'docker exec -u www-data '.$containerArg.' php -r '.escapeshellarg($script),
-            20
-        );
+        return $this->runDatabaseProbeScript($ssh, $containerArg, $script);
+    }
 
-        return true;
+    /**
+     * @return array{ok: bool, error: ?string, driver_missing: bool}
+     */
+    private function runDatabaseProbeScript(SSHService $ssh, string $containerArg, string $script): array
+    {
+        try {
+            $ssh->exec(
+                'docker exec -u www-data '.$containerArg.' php -r '.escapeshellarg($script),
+                20
+            );
+
+            return ['ok' => true, 'error' => null, 'driver_missing' => false];
+        } catch (\Throwable $e) {
+            $message = $e->getMessage();
+            $output = $this->extractCommandOutput($message);
+
+            return [
+                'ok' => false,
+                'error' => $output !== '' ? $output : $message,
+                'driver_missing' => $this->isMissingDatabaseDriverError($message),
+            ];
+        }
+    }
+
+    /**
+     * Count user tables in the application database (best-effort).
+     *
+     * @param  array<string, mixed>  $envVars
+     */
+    public function countApplicationDatabaseTables(
+        SSHService $ssh,
+        string $containerName,
+        string $databaseType,
+        array $envVars
+    ): ?int {
+        $containerArg = escapeshellarg($containerName);
+        $database = (string) ($envVars['DB_DATABASE'] ?? $envVars['POSTGRES_DB'] ?? $envVars['MYSQL_DATABASE'] ?? 'appdb');
+        $username = (string) ($envVars['DB_USERNAME'] ?? $envVars['POSTGRES_USER'] ?? $envVars['MYSQL_USER'] ?? 'appuser');
+        $password = (string) ($envVars['DB_PASSWORD'] ?? $envVars['POSTGRES_PASSWORD'] ?? $envVars['MYSQL_PASSWORD'] ?? '');
+
+        if ($databaseType === 'postgresql') {
+            $port = (string) ($envVars['DB_PORT'] ?? '5432');
+            $script = 'try {'
+                .'$pdo = new PDO("pgsql:host=db;port='.addslashes($port).';dbname='.addslashes($database).'",'
+                .'"'.addslashes($username).'","'.addslashes($password).'",[PDO::ATTR_TIMEOUT=>5]);'
+                .'$n=$pdo->query("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=\'public\' AND table_type=\'BASE TABLE\'")->fetchColumn();'
+                .'fwrite(STDOUT,(string)$n); exit(0);'
+                .'} catch (Throwable $e) { fwrite(STDERR,$e->getMessage()); exit(1); }';
+        } elseif (in_array($databaseType, ['mysql', 'mariadb'], true)) {
+            $script = 'try {'
+                .'$pdo = new PDO("mysql:host=db;port=3306;dbname='.addslashes($database).'",'
+                .'"'.addslashes($username).'","'.addslashes($password).'",[PDO::ATTR_TIMEOUT=>5]);'
+                .'$n=$pdo->query("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE()")->fetchColumn();'
+                .'fwrite(STDOUT,(string)$n); exit(0);'
+                .'} catch (Throwable $e) { fwrite(STDERR,$e->getMessage()); exit(1); }';
+        } else {
+            return null;
+        }
+
+        try {
+            $output = trim($ssh->exec(
+                'docker exec -u www-data '.$containerArg.' php -r '.escapeshellarg($script),
+                20
+            ));
+
+            return is_numeric($output) ? (int) $output : null;
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     /**

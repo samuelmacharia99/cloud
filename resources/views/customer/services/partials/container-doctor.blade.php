@@ -62,9 +62,19 @@
 
         <template x-if="hasResult && healthy">
             <div class="rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20 px-4 py-3 text-sm text-emerald-800 dark:text-emerald-200">
-                No active critical issues in the current environment
+                No active critical issues from live checks
                 <span x-show="findings.some(f => f.stale)"> (some older log lines remain below)</span>
                 <span class="text-emerald-600/80 dark:text-emerald-300/80" x-show="scannedAt" x-text="'· scanned ' + scannedAt"></span>.
+            </div>
+        </template>
+
+        <template x-if="hasResult && liveChecks && (liveChecks.http_status || liveChecks.db_ok !== null)">
+            <div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 px-4 py-3 text-xs text-slate-600 dark:text-slate-300 flex flex-wrap gap-x-4 gap-y-1">
+                <span>Live checks:</span>
+                <span x-show="liveChecks.http_status" x-text="'HTTP ' + liveChecks.http_status"></span>
+                <span x-text="liveChecks.db_ok === true ? 'DB: connected' : (liveChecks.db_ok === false ? 'DB: failed' : 'DB: n/a')"></span>
+                <span x-show="liveChecks.table_count !== null && liveChecks.table_count !== undefined" x-text="'Tables: ' + liveChecks.table_count"></span>
+                <span x-show="liveChecks.env_source" x-text="'Env: ' + liveChecks.env_source"></span>
             </div>
         </template>
 

@@ -47,11 +47,15 @@ class ContainerDoctorService
         $findings = $this->analyzeLogs($logs, $stack, $service);
         $findings = $this->annotateFindingsWithLiveStatus($service, $findings);
 
+        $live = $this->collectLiveFindings($service);
+        $findings = $this->mergeLogAndLiveFindings($findings, $live);
+
         return [
             'scanned_at' => now()->toIso8601String(),
             'lines_scanned' => $this->countLines($logs),
             'stack' => $stack,
             'findings' => $findings,
+            'live_checks' => $live['checks'] ?? [],
             'healthy' => $findings === [] || collect($findings)->every(
                 fn ($f) => in_array(($f['severity'] ?? ''), ['info'], true)
             ),
@@ -82,6 +86,7 @@ class ContainerDoctorService
             'clear_laravel_caches' => $this->treatClearLaravelCaches($service),
             'fix_storage_permissions' => $this->treatFixStoragePermissions($service),
             'restart_application' => $this->treatRestartApplication($service),
+            'run_migrations' => $this->treatRunMigrations($service),
             default => ['success' => false, 'message' => 'Unknown treatment action.'],
         };
 
@@ -245,6 +250,373 @@ class ContainerDoctorService
         });
 
         return $findings;
+    }
+
+    /**
+     * Live probes against on-disk .env, PDO connectivity, HTTP status, and empty schema.
+     *
+     * @return array{findings: list<array<string, mixed>>, checks: array<string, mixed>}
+     */
+    public function collectLiveFindings(Service $service): array
+    {
+        $service->loadMissing('product.containerTemplate', 'containerDeployment.node');
+        $deployment = $service->containerDeployment;
+        $checks = [
+            'env_source' => null,
+            'http_status' => null,
+            'db_ok' => null,
+            'db_error' => null,
+            'table_count' => null,
+        ];
+        $findings = [];
+
+        if (! $deployment?->node || ! $deployment->isRunning()) {
+            return ['findings' => $findings, 'checks' => $checks];
+        }
+
+        $deploymentService = app(ContainerDeploymentService::class);
+        $databaseTemplate = $deploymentService->resolveDatabaseTemplateForService($service);
+        $stack = strtolower((string) ($service->product?->containerTemplate?->slug ?? ''));
+        $ssh = SSHService::forNode($deployment->node);
+
+        try {
+            $platformEnv = is_array($deployment->env_values) ? $deployment->env_values : [];
+            $liveEnv = $this->readLiveAppEnvironment($ssh, $deployment);
+            $checks['env_source'] = $liveEnv === [] ? 'platform' : 'app_dotenv';
+            $mergedEnv = $liveEnv === [] ? $platformEnv : array_merge($platformEnv, $liveEnv);
+
+            if ($databaseTemplate) {
+                $normalized = $deploymentService->normalizeDatabaseEnvironment(
+                    $service,
+                    $mergedEnv,
+                    (string) $databaseTemplate->type
+                );
+
+                if ($normalized['corrected'] || ! empty($normalized['password_aligned'])) {
+                    $details = [];
+                    if ($normalized['corrected'] && $normalized['previous_database'] !== $normalized['database']) {
+                        $details[] = 'DB_DATABASE is "'.($normalized['previous_database'] ?? '').'" but should be "'.$normalized['database'].'"';
+                    }
+                    if (! empty($normalized['password_aligned'])) {
+                        $details[] = 'DB_PASSWORD, POSTGRES_PASSWORD/MYSQL_PASSWORD, and DATABASE_URL are not the same password';
+                    }
+
+                    $findings[] = [
+                        'id' => 'live_env_credential_drift',
+                        'severity' => 'critical',
+                        'title' => 'Live .env database credentials are inconsistent',
+                        'summary' => 'The running app config still has drifted DB settings that commonly cause HTTP 500s. '
+                            .implode('. ', $details).'.',
+                        'evidence' => $details,
+                        'treat_action' => 'sync_database_credentials',
+                        'treat_label' => 'Repair DB credentials',
+                        'manual_steps' => [
+                            'Click Repair DB credentials to align passwords and rewrite .env.',
+                            'Then reload the site.',
+                        ],
+                        'source' => 'live',
+                    ];
+                }
+
+                // Probe with the credentials Laravel is most likely using right now
+                // (DATABASE_URL wins over DB_* when both are present).
+                $probeEnv = $this->envForRuntimeDatabaseProbe($mergedEnv, (string) $databaseTemplate->type);
+                $probe = $deploymentService->probeApplicationDatabaseAccess(
+                    $ssh,
+                    $deployment->container_name,
+                    (string) $databaseTemplate->type,
+                    $probeEnv
+                );
+                $checks['db_ok'] = $probe['ok'];
+                $checks['db_error'] = $probe['error'];
+
+                if (! $probe['ok']) {
+                    if (! empty($probe['driver_missing'])) {
+                        $findings[] = [
+                            'id' => 'live_missing_pdo',
+                            'severity' => 'critical',
+                            'title' => 'Live check: database PDO driver missing',
+                            'summary' => 'The app container cannot open a database connection because the PDO driver is missing.',
+                            'evidence' => array_filter([(string) $probe['error']]),
+                            'treat_action' => $databaseTemplate->type === 'postgresql' ? 'ensure_pdo_pgsql' : null,
+                            'treat_label' => $databaseTemplate->type === 'postgresql' ? 'Install pdo_pgsql' : null,
+                            'manual_steps' => ['Install the missing PDO driver, then retry.'],
+                            'source' => 'live',
+                        ];
+                    } else {
+                        $error = (string) ($probe['error'] ?? 'Connection failed');
+                        $isAuth = (bool) preg_match('/password authentication failed|access denied/i', $error);
+                        $isMissingDb = (bool) preg_match('/database ".*" does not exist|unknown database/i', $error);
+
+                        $findings[] = [
+                            'id' => 'live_db_connection_failed',
+                            'severity' => 'critical',
+                            'title' => $isMissingDb
+                                ? 'Live check: database does not exist'
+                                : ($isAuth ? 'Live check: database authentication failed' : 'Live check: database connection failed'),
+                            'summary' => 'A real connection from the app container to the database sidecar failed right now. '
+                                .'This is why the site can still return HTTP 500 even when older log lines look stale.',
+                            'evidence' => [mb_substr($error, 0, 300)],
+                            'treat_action' => 'sync_database_credentials',
+                            'treat_label' => 'Repair DB credentials',
+                            'manual_steps' => [
+                                'Repair DB credentials (creates missing DB, resets role password, rewrites .env).',
+                                'If it still fails, Redeploy with Reset database.',
+                            ],
+                            'source' => 'live',
+                        ];
+                    }
+                } else {
+                    $tableCount = $deploymentService->countApplicationDatabaseTables(
+                        $ssh,
+                        $deployment->container_name,
+                        (string) $databaseTemplate->type,
+                        $probeEnv
+                    );
+                    $checks['table_count'] = $tableCount;
+
+                    if ($tableCount === 0 && in_array($stack, ['laravel', 'php'], true)) {
+                        $findings[] = [
+                            'id' => 'live_empty_database',
+                            'severity' => 'critical',
+                            'title' => 'Live check: database has no tables',
+                            'summary' => 'The app can connect to "'.($probeEnv['DB_DATABASE'] ?? '').'", but the schema is empty. '
+                                .'Laravel will 500 until migrations run.',
+                            'evidence' => ['table_count=0', 'DB_DATABASE='.($probeEnv['DB_DATABASE'] ?? '')],
+                            'treat_action' => 'run_migrations',
+                            'treat_label' => 'Run migrations',
+                            'manual_steps' => [
+                                'Click Run migrations, or in Terminal: php artisan migrate --force',
+                            ],
+                            'source' => 'live',
+                        ];
+                    }
+                }
+            }
+
+            $httpStatus = $this->probeHttpStatus($ssh, $deployment);
+            $checks['http_status'] = $httpStatus;
+
+            if ($httpStatus !== null && $httpStatus >= 500) {
+                $hasDbFinding = collect($findings)->contains(
+                    fn ($f) => in_array($f['id'] ?? '', ['live_db_connection_failed', 'live_env_credential_drift', 'live_empty_database', 'live_missing_pdo'], true)
+                );
+
+                $findings[] = [
+                    'id' => 'live_http_5xx',
+                    'severity' => 'critical',
+                    'title' => 'Live check: site returns HTTP '.$httpStatus,
+                    'summary' => $hasDbFinding
+                        ? 'The public URL is returning HTTP '.$httpStatus.'. Fix the database findings above first, then re-scan.'
+                        : 'The public URL is returning HTTP '.$httpStatus.' right now. Clear caches or inspect app logs if DB checks are healthy.',
+                    'evidence' => [
+                        'HTTP '.$httpStatus,
+                        (string) ($deployment->getAccessUrl() ?? ''),
+                    ],
+                    'treat_action' => $hasDbFinding
+                        ? 'sync_database_credentials'
+                        : (in_array($stack, ['laravel', 'php'], true) ? 'clear_laravel_caches' : 'restart_application'),
+                    'treat_label' => $hasDbFinding
+                        ? 'Repair DB credentials'
+                        : (in_array($stack, ['laravel', 'php'], true) ? 'Clear Laravel caches' : 'Restart application'),
+                    'manual_steps' => [
+                        'Re-scan after applying the suggested fix.',
+                        'In Terminal check: tail -n 80 storage/logs/laravel.log',
+                    ],
+                    'source' => 'live',
+                ];
+            }
+        } catch (\Throwable $e) {
+            $findings[] = [
+                'id' => 'live_probe_failed',
+                'severity' => 'warning',
+                'title' => 'Live checks could not finish',
+                'summary' => 'Doctor could not complete live probes: '.$e->getMessage(),
+                'evidence' => [mb_substr($e->getMessage(), 0, 240)],
+                'treat_action' => null,
+                'treat_label' => null,
+                'manual_steps' => ['Retry Run doctor in a minute.'],
+                'source' => 'live',
+            ];
+        } finally {
+            $ssh->disconnect();
+        }
+
+        usort($findings, function (array $a, array $b): int {
+            $order = ['critical' => 0, 'warning' => 1, 'info' => 2];
+
+            return ($order[$a['severity']] ?? 9) <=> ($order[$b['severity']] ?? 9);
+        });
+
+        return ['findings' => $findings, 'checks' => $checks];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $logFindings
+     * @param  array{findings?: list<array<string, mixed>>, checks?: array<string, mixed>}  $live
+     * @return list<array<string, mixed>>
+     */
+    public function mergeLogAndLiveFindings(array $logFindings, array $live): array
+    {
+        $liveFindings = $live['findings'] ?? [];
+        $hasLiveDbSignal = collect($liveFindings)->contains(
+            fn ($f) => in_array($f['id'] ?? '', [
+                'live_db_connection_failed',
+                'live_env_credential_drift',
+                'live_empty_database',
+                'live_missing_pdo',
+                'live_http_5xx',
+            ], true)
+        );
+
+        if ($hasLiveDbSignal) {
+            $logFindings = array_values(array_filter(
+                $logFindings,
+                fn ($f) => empty($f['stale'])
+            ));
+        }
+
+        $byId = [];
+        foreach ($logFindings as $finding) {
+            $byId[(string) ($finding['id'] ?? uniqid('log_', true))] = $finding;
+        }
+        foreach ($liveFindings as $finding) {
+            $byId[(string) ($finding['id'] ?? uniqid('live_', true))] = $finding;
+        }
+
+        $merged = array_values($byId);
+        usort($merged, function (array $a, array $b): int {
+            $order = ['critical' => 0, 'warning' => 1, 'info' => 2];
+
+            return ($order[$a['severity']] ?? 9) <=> ($order[$b['severity']] ?? 9);
+        });
+
+        return $merged;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function parseEnvFileContent(string $content): array
+    {
+        $env = [];
+        foreach (preg_split("/\r\n|\n|\r/", $content) ?: [] as $line) {
+            $line = trim($line);
+            if ($line === '' || str_starts_with($line, '#') || ! str_contains($line, '=')) {
+                continue;
+            }
+            [$key, $value] = explode('=', $line, 2);
+            $key = trim($key);
+            if ($key === '') {
+                continue;
+            }
+            $value = trim($value);
+            if (
+                (str_starts_with($value, '"') && str_ends_with($value, '"'))
+                || (str_starts_with($value, "'") && str_ends_with($value, "'"))
+            ) {
+                $value = substr($value, 1, -1);
+            }
+            $env[$key] = $value;
+        }
+
+        return $env;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function readLiveAppEnvironment(SSHService $ssh, $deployment): array
+    {
+        $base = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name.'/app';
+        foreach ([$base.'/.env', $base.'/backend/.env'] as $path) {
+            try {
+                $exists = trim($ssh->exec('test -f '.escapeshellarg($path).' && echo yes || echo no', 10));
+                if ($exists !== 'yes') {
+                    continue;
+                }
+                $content = $ssh->exec('cat '.escapeshellarg($path), 20);
+                $parsed = $this->parseEnvFileContent((string) $content);
+                if ($parsed !== []) {
+                    return $parsed;
+                }
+            } catch (\Throwable) {
+                continue;
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * Prefer DATABASE_URL credentials when present (Laravel does the same).
+     *
+     * @param  array<string, string>  $env
+     * @return array<string, string>
+     */
+    public function envForRuntimeDatabaseProbe(array $env, string $databaseType): array
+    {
+        $probe = $env;
+        $url = (string) ($env['DATABASE_URL'] ?? '');
+        if ($url !== '') {
+            $parts = parse_url($url);
+            if (is_array($parts)) {
+                if (! empty($parts['host'])) {
+                    $probe['DB_HOST'] = (string) $parts['host'];
+                }
+                if (! empty($parts['port'])) {
+                    $probe['DB_PORT'] = (string) $parts['port'];
+                }
+                if (isset($parts['user'])) {
+                    $probe['DB_USERNAME'] = rawurldecode((string) $parts['user']);
+                }
+                if (isset($parts['pass'])) {
+                    $probe['DB_PASSWORD'] = rawurldecode((string) $parts['pass']);
+                    if ($databaseType === 'postgresql') {
+                        $probe['POSTGRES_PASSWORD'] = $probe['DB_PASSWORD'];
+                    }
+                    if (in_array($databaseType, ['mysql', 'mariadb'], true)) {
+                        $probe['MYSQL_PASSWORD'] = $probe['DB_PASSWORD'];
+                    }
+                }
+                if (! empty($parts['path']) && $parts['path'] !== '/') {
+                    $dbName = ltrim((string) $parts['path'], '/');
+                    if ($dbName !== '') {
+                        $probe['DB_DATABASE'] = $dbName;
+                        if ($databaseType === 'postgresql') {
+                            $probe['POSTGRES_DB'] = $dbName;
+                        }
+                        if (in_array($databaseType, ['mysql', 'mariadb'], true)) {
+                            $probe['MYSQL_DATABASE'] = $dbName;
+                        }
+                    }
+                }
+            }
+        }
+
+        return $probe;
+    }
+
+    private function probeHttpStatus(SSHService $ssh, $deployment): ?int
+    {
+        $url = $deployment->getAccessUrl();
+        if (! is_string($url) || $url === '') {
+            return null;
+        }
+
+        try {
+            $code = trim($ssh->exec(
+                'curl -s -o /dev/null -w "%{http_code}" --max-time 12 '.escapeshellarg($url).' || true',
+                20
+            ));
+            if (preg_match('/^\d{3}$/', $code) === 1) {
+                return (int) $code;
+            }
+        } catch (\Throwable) {
+            return null;
+        }
+
+        return null;
     }
 
     /**
@@ -490,7 +862,10 @@ class ContainerDoctorService
         }
 
         try {
-            $rawEnv = is_array($deployment->env_values) ? $deployment->env_values : [];
+            $platformEnv = is_array($deployment->env_values) ? $deployment->env_values : [];
+            $liveEnv = $this->readLiveAppEnvironment($ssh, $deployment);
+            $rawEnv = $liveEnv === [] ? $platformEnv : array_merge($platformEnv, $liveEnv);
+
             $normalized = $deploymentService->normalizeDatabaseEnvironment(
                 $service,
                 $rawEnv,
@@ -498,14 +873,12 @@ class ContainerDoctorService
             );
             $envVars = $normalized['env'];
 
-            if ($normalized['corrected'] || $envVars !== $rawEnv) {
-                $deployment->update(['env_values' => $envVars]);
-                $meta = is_array($service->service_meta) ? $service->service_meta : [];
-                $meta['env_values'] = $envVars;
-                $service->update(['service_meta' => $meta]);
-                $deployment->refresh();
-                $service->refresh();
-            }
+            $deployment->update(['env_values' => array_merge($platformEnv, $envVars)]);
+            $meta = is_array($service->service_meta) ? $service->service_meta : [];
+            $meta['env_values'] = array_merge($platformEnv, $envVars);
+            $service->update(['service_meta' => $meta]);
+            $deployment->refresh();
+            $service->setRelation('containerDeployment', $deployment);
 
             match ($databaseTemplate->type) {
                 'mysql', 'mariadb' => $deploymentService
@@ -541,15 +914,46 @@ class ContainerDoctorService
                     ->syncDotEnvFile($ssh, $service, $deployment, $envVars);
             }
 
-            $message = 'Database "'.$normalized['database'].'" is ready and app credentials were synced.';
+            $probe = $deploymentService->probeApplicationDatabaseAccess(
+                $ssh,
+                $deployment->container_name,
+                (string) $databaseTemplate->type,
+                $envVars
+            );
+
+            $message = 'Database "'.$normalized['database'].'" credentials synced and .env rewritten.';
             if ($normalized['corrected'] && $normalized['previous_database'] && $normalized['previous_database'] !== $normalized['database']) {
                 $message = 'Fixed DB_DATABASE from "'.$normalized['previous_database'].'" to "'
                     .$normalized['database'].'". '.$message;
             }
             if (! empty($normalized['password_aligned'])) {
-                $message .= ' Aligned DB_PASSWORD, sidecar password, and DATABASE_URL to the same value.';
+                $message .= ' Aligned DB_PASSWORD, sidecar password, and DATABASE_URL.';
             }
-            $message .= ' Reload the site; if tables are missing run: php artisan migrate --force';
+
+            if (! $probe['ok']) {
+                return [
+                    'success' => false,
+                    'message' => $message.' Live connection still fails: '.($probe['error'] ?? 'unknown error')
+                        .'. Try Redeploy with Reset database.',
+                ];
+            }
+
+            $tableCount = $deploymentService->countApplicationDatabaseTables(
+                $ssh,
+                $deployment->container_name,
+                (string) $databaseTemplate->type,
+                $envVars
+            );
+            if ($tableCount === 0 && in_array($stack, ['laravel', 'php'], true)) {
+                $migrate = $this->runMigrationsQuietly($service, $ssh);
+                if ($migrate['success']) {
+                    $message .= ' Empty schema detected — migrations were run automatically.';
+                } else {
+                    $message .= ' Database connects but has no tables. Run migrations next: '.$migrate['message'];
+                }
+            } else {
+                $message .= ' Live DB probe OK. Reload the site.';
+            }
 
             return [
                 'success' => true,
@@ -562,6 +966,64 @@ class ContainerDoctorService
             ];
         } finally {
             $ssh->disconnect();
+        }
+    }
+
+    /**
+     * @return array{success: bool, message: string}
+     */
+    private function treatRunMigrations(Service $service): array
+    {
+        $deployment = $service->containerDeployment;
+        $ssh = SSHService::forNode($deployment->node);
+
+        try {
+            $result = $this->runMigrationsQuietly($service, $ssh);
+            if ($result['success']) {
+                try {
+                    $this->clearLaravelCachesQuietly($service, $ssh);
+                } catch (\Throwable) {
+                }
+            }
+
+            return $result;
+        } finally {
+            $ssh->disconnect();
+        }
+    }
+
+    /**
+     * @return array{success: bool, message: string}
+     */
+    private function runMigrationsQuietly(Service $service, SSHService $ssh): array
+    {
+        $deployment = $service->containerDeployment;
+        $init = app(LaravelAppInitializationService::class);
+
+        try {
+            $locator = 'if [ -f /app/backend/artisan ]; then echo /app/backend; '
+                .'elif [ -f /app/artisan ]; then echo /app; '
+                .'else echo /app; fi';
+            $projectRoot = trim($ssh->exec(
+                'docker exec -u www-data '.escapeshellarg($deployment->container_name)
+                .' sh -lc '.escapeshellarg($locator),
+                15
+            )) ?: '/app';
+
+            $script = 'set -e; cd '.escapeshellarg($projectRoot).'; '
+                .'php artisan migrate --force --no-interaction';
+
+            $output = $init->dockerExecPublic($ssh, $deployment->container_name, $script, 300);
+
+            return [
+                'success' => true,
+                'message' => 'Migrations completed. '.mb_substr(trim((string) $output), 0, 200),
+            ];
+        } catch (\Throwable $e) {
+            return [
+                'success' => false,
+                'message' => 'Migrations failed: '.$e->getMessage(),
+            ];
         }
     }
 

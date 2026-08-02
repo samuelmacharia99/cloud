@@ -1021,6 +1021,7 @@ function containerDoctor(config = {}) {
         findings: [],
         linesScanned: 0,
         scannedAt: '',
+        liveChecks: null,
         error: '',
         treatMessage: '',
         treatOk: false,
@@ -1029,6 +1030,7 @@ function containerDoctor(config = {}) {
             this.findings = data.findings || [];
             this.healthy = !!data.healthy;
             this.linesScanned = data.lines_scanned || 0;
+            this.liveChecks = data.live_checks || null;
             this.scannedAt = data.scanned_at
                 ? new Date(data.scanned_at).toLocaleTimeString()
                 : '';

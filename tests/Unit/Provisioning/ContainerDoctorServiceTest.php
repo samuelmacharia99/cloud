@@ -121,4 +121,51 @@ LOG;
         $this->assertTrue($annotated[0]['stale']);
         $this->assertStringContainsString('current env looks fixed', $annotated[0]['title']);
     }
+
+    #[Test]
+    public function it_prefers_database_url_credentials_for_runtime_probe(): void
+    {
+        $probe = app(ContainerDoctorService::class)->envForRuntimeDatabaseProbe([
+            'DB_DATABASE' => 's163_db',
+            'DB_USERNAME' => 'u193_s163',
+            'DB_PASSWORD' => 'panel-password',
+            'DATABASE_URL' => 'postgresql://u193_s163:url-password@db:5432/s163_db',
+        ], 'postgresql');
+
+        $this->assertSame('url-password', $probe['DB_PASSWORD']);
+        $this->assertSame('s163_db', $probe['DB_DATABASE']);
+    }
+
+    #[Test]
+    public function it_drops_stale_log_findings_when_live_critical_exists(): void
+    {
+        $merged = app(ContainerDoctorService::class)->mergeLogAndLiveFindings(
+            [[
+                'id' => 'postgres_database_missing',
+                'severity' => 'info',
+                'stale' => true,
+                'title' => 'Older logs',
+            ]],
+            ['findings' => [[
+                'id' => 'live_db_connection_failed',
+                'severity' => 'critical',
+                'title' => 'Live auth failed',
+            ]]]
+        );
+
+        $ids = array_column($merged, 'id');
+        $this->assertNotContains('postgres_database_missing', $ids);
+        $this->assertContains('live_db_connection_failed', $ids);
+    }
+
+    #[Test]
+    public function it_parses_dotenv_content(): void
+    {
+        $env = app(ContainerDoctorService::class)->parseEnvFileContent(
+            "DB_DATABASE=s163_db\nDATABASE_URL=postgresql://u:p@db:5432/s163_db\n# comment\n"
+        );
+
+        $this->assertSame('s163_db', $env['DB_DATABASE']);
+        $this->assertSame('postgresql://u:p@db:5432/s163_db', $env['DATABASE_URL']);
+    }
 }
