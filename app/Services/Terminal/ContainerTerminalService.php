@@ -140,7 +140,10 @@ class ContainerTerminalService
         }
 
         // Legacy HTTP command mode (fallback when PTY WebSocket server is unavailable).
-        $dockerCmd = $this->buildDockerExecCommand($session, $this->resolveComposerCommand($sanitized));
+        $dockerCmd = $this->buildDockerExecCommand(
+            $session,
+            $this->resolveComposerCommand(self::applyArtisanProductionFlags($sanitized))
+        );
 
         try {
             // Execute via SSH
@@ -325,6 +328,37 @@ class ContainerTerminalService
         // "current working directory is outside of container mount namespace root".
         return 'docker exec '.$userFlag.'-w /app '.escapeshellarg($containerName)
             .' sh -c '.escapeshellarg($script);
+    }
+
+    /**
+     * Ensure artisan commands run non-interactively in production.
+     *
+     * Laravel's ConfirmableTrait cancels migrate/seed/wipe without a TTY unless --force
+     * is passed. HTTP terminal mode has no TTY, so we inject the flags automatically.
+     */
+    public static function applyArtisanProductionFlags(string $command): string
+    {
+        $trimmed = trim($command);
+        if ($trimmed === '' || preg_match('/^(?:php\s+)?artisan(\s+|$)/i', $trimmed) !== 1) {
+            return $command;
+        }
+
+        $hasNoInteraction = preg_match('/(^|\s)(--no-interaction|-n)(\s|$)/', $trimmed) === 1;
+        if (! $hasNoInteraction) {
+            $trimmed .= ' --no-interaction';
+        }
+
+        $needsForce = preg_match(
+            '/\bartisan\s+(migrate\b|migrate:\w+|db:seed|db:wipe)\b/i',
+            $trimmed
+        ) === 1;
+        $hasForce = preg_match('/(^|\s)--force(\s|$)/', $trimmed) === 1;
+
+        if ($needsForce && ! $hasForce) {
+            $trimmed .= ' --force';
+        }
+
+        return $trimmed;
     }
 
     /**

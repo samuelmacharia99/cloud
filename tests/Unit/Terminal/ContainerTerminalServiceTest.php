@@ -54,4 +54,33 @@ class ContainerTerminalServiceTest extends TestCase
         $this->assertStringContainsString('Partial output is shown below', $formatted);
         $this->assertStringContainsString('Command exited with status 124', $formatted);
     }
+
+    #[Test]
+    public function it_adds_force_and_no_interaction_for_production_artisan_commands(): void
+    {
+        $this->assertSame(
+            'php artisan migrate --no-interaction --force',
+            ContainerTerminalService::applyArtisanProductionFlags('php artisan migrate')
+        );
+        $this->assertSame(
+            'php artisan migrate:fresh --seed --no-interaction --force',
+            ContainerTerminalService::applyArtisanProductionFlags('php artisan migrate:fresh --seed')
+        );
+        $this->assertSame(
+            'php artisan db:seed --no-interaction --force',
+            ContainerTerminalService::applyArtisanProductionFlags('php artisan db:seed')
+        );
+        $this->assertSame(
+            'php artisan cache:clear --no-interaction',
+            ContainerTerminalService::applyArtisanProductionFlags('php artisan cache:clear')
+        );
+        $this->assertSame(
+            'php artisan migrate --force --no-interaction',
+            ContainerTerminalService::applyArtisanProductionFlags('php artisan migrate --force')
+        );
+        $this->assertSame(
+            'ls -la',
+            ContainerTerminalService::applyArtisanProductionFlags('ls -la')
+        );
+    }
 }

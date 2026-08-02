@@ -83,6 +83,17 @@ class ContainerTerminalPtyBridge
                         continue;
                     }
 
+                    $rewritten = ContainerTerminalService::applyArtisanProductionFlags($line);
+                    if ($rewritten !== $line) {
+                        $this->logAllowedCommand($rewritten);
+                        // Clear the already-typed line, then run with production-safe flags.
+                        $this->connection->send("\r\n\x1b[33m→ Adding --force/--no-interaction for production\x1b[0m\r\n");
+                        $this->ssh?->write("\x15".$rewritten.$char);
+                        $this->session->extendExpiry();
+
+                        continue;
+                    }
+
                     $this->logAllowedCommand($line);
                 }
 
