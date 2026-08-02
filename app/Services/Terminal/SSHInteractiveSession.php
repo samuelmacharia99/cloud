@@ -40,7 +40,7 @@ class SSHInteractiveSession
         $shell = (string) config('terminal.pty.shell', '/bin/sh');
         $userFlag = $execUser !== null ? '-u '.escapeshellarg($execUser).' ' : '';
         $command = sprintf(
-            'docker exec -i %s-w /app -e TERM=xterm-256color -e COLORTERM=truecolor -e PATH=/usr/local/bin:/usr/bin:/bin %s %s -l',
+            'docker exec -i %s-w /app -e TERM=xterm-256color -e COLORTERM=truecolor -e PATH=/usr/local/bin:/usr/bin:/bin -e HOME=/tmp -e NPM_CONFIG_CACHE=/tmp/.npm -e npm_config_cache=/tmp/.npm %s %s -l',
             $userFlag,
             escapeshellarg($containerName),
             escapeshellarg($shell)

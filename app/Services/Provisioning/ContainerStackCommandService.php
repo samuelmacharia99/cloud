@@ -153,11 +153,160 @@ class ContainerStackCommandService
                 $timeout,
                 $forceRebuild
             ),
+            'laravel' => $this->installLaravelFrontendDependencies(
+                $ssh,
+                $deployment,
+                $hostAppPath,
+                $timeout,
+                $forceRebuild
+            ),
+            'php' => array_values(array_filter(array_merge(
+                $this->installPhpDependencies($ssh, $deployment, $hostAppPath, $service, $timeout),
+                $this->installLaravelFrontendDependencies(
+                    $ssh,
+                    $deployment,
+                    $hostAppPath,
+                    $timeout,
+                    $forceRebuild
+                ),
+            ))),
             'ruby' => $this->installRubyDependencies($ssh, $containerPath, $containerName, $hostAppPath, $timeout),
             'python' => $this->installPythonDependencies($ssh, $containerPath, $containerName, $hostAppPath, $timeout),
-            'php' => $this->installPhpDependencies($ssh, $deployment, $hostAppPath, $service, $timeout),
             default => [],
         };
+    }
+
+    /**
+     * Install + build a Next/Vite app under /app/frontend (Laravel monorepo) when present.
+     *
+     * @return list<string>
+     */
+    public function installLaravelFrontendDependencies(
+        SSHService $ssh,
+        ContainerDeployment $deployment,
+        ?string $hostAppPath,
+        int $timeout = 900,
+        bool $forceRebuild = false
+    ): array {
+        $relativeDir = $this->resolveLaravelFrontendRelativeDir($ssh, $hostAppPath);
+        if ($relativeDir === null) {
+            return [];
+        }
+
+        $containerDir = '/app/'.trim($relativeDir, '/');
+        $init = app(LaravelAppInitializationService::class);
+
+        try {
+            app(LaravelAppInitializationService::class)->ensureNodeRuntime($ssh, $deployment);
+        } catch (\Throwable $e) {
+            return ['Frontend skipped: Node.js is not available ('.$e->getMessage().').'];
+        }
+
+        $messages = [];
+        $npmPrefix = 'export HOME=/tmp NPM_CONFIG_CACHE=/tmp/.npm npm_config_cache=/tmp/.npm; '
+            .'mkdir -p /tmp/.npm; '
+            .'printf "cache=/tmp/.npm\\n" > '.escapeshellarg($containerDir.'/.npmrc').'; ';
+
+        $installScript = 'set -e; '.$npmPrefix
+            .'cd '.escapeshellarg($containerDir).'; '
+            .'if [ -f package-lock.json ]; then '
+            .'npm ci --legacy-peer-deps --cache /tmp/.npm --no-audit --no-fund '
+            .'|| npm install --legacy-peer-deps --cache /tmp/.npm --no-audit --no-fund; '
+            .'else npm install --legacy-peer-deps --cache /tmp/.npm --no-audit --no-fund; fi; '
+            .'test -e node_modules/.bin/next -o -e node_modules/next/dist/bin/next -o -d node_modules';
+
+        try {
+            $init->dockerExecPublic($ssh, $deployment->container_name, $installScript, max(300, $timeout), asRoot: false);
+            $messages[] = 'Frontend dependencies installed in '.$containerDir.'.';
+        } catch (\Throwable $e) {
+            // Retry once as root in case www-data cannot write node_modules on the bind mount.
+            try {
+                $init->dockerExecPublic($ssh, $deployment->container_name, $installScript, max(300, $timeout), asRoot: true);
+                $chown = 'chown -R www-data:www-data '.escapeshellarg($containerDir.'/node_modules').' 2>/dev/null || true';
+                $init->dockerExecPublic($ssh, $deployment->container_name, $chown, 60, asRoot: true);
+                $messages[] = 'Frontend dependencies installed in '.$containerDir.' (root fallback).';
+            } catch (\Throwable $rootError) {
+                return ['Frontend npm install failed: '.mb_substr($rootError->getMessage(), 0, 300)];
+            }
+        }
+
+        $hasBuild = false;
+        try {
+            $pkg = trim($ssh->exec(
+                'docker exec '.escapeshellarg($deployment->container_name)
+                .' sh -lc '.escapeshellarg('cat '.escapeshellarg($containerDir.'/package.json')),
+                20
+            ));
+            $hasBuild = $this->runtimeService->packageJsonHasBuildScript($pkg)
+                || $this->runtimeService->packageJsonRequiresProductionBuild($pkg);
+        } catch (\Throwable) {
+            $hasBuild = true;
+        }
+
+        $needsBuild = $forceRebuild || $hasBuild;
+        if ($needsBuild) {
+            $buildScript = 'set -e; '.$npmPrefix
+                .'cd '.escapeshellarg($containerDir).'; '
+                .'npm run build';
+
+            try {
+                $init->dockerExecPublic($ssh, $deployment->container_name, $buildScript, max(600, $timeout), asRoot: false);
+                $messages[] = 'Frontend build completed in '.$containerDir.'.';
+            } catch (\Throwable $e) {
+                try {
+                    $init->dockerExecPublic($ssh, $deployment->container_name, $buildScript, max(600, $timeout), asRoot: true);
+                    $messages[] = 'Frontend build completed in '.$containerDir.' (root fallback).';
+                } catch (\Throwable $rootError) {
+                    $messages[] = 'Frontend build failed: '.mb_substr($rootError->getMessage(), 0, 300);
+                }
+            }
+        }
+
+        return $messages;
+    }
+
+    /**
+     * @return non-empty-string|null  Relative path under /app (e.g. "frontend")
+     */
+    public function resolveLaravelFrontendRelativeDir(SSHService $ssh, ?string $hostAppPath): ?string
+    {
+        if ($hostAppPath === null || $hostAppPath === '') {
+            return null;
+        }
+
+        foreach (['frontend', 'web', 'client'] as $dir) {
+            $path = rtrim($hostAppPath, '/').'/'.$dir.'/package.json';
+            if ($this->hostFileExists($ssh, $path)) {
+                try {
+                    $pkg = (string) $this->readHostFile($ssh, $path);
+                } catch (\Throwable) {
+                    continue;
+                }
+                if (str_contains($pkg, '"next"')
+                    || str_contains($pkg, '"vite"')
+                    || ($this->runtimeService->packageJsonHasBuildScript($pkg))) {
+                    return $dir;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    public function hostHasNextFrontend(SSHService $ssh, ?string $hostAppPath): bool
+    {
+        $dir = $this->resolveLaravelFrontendRelativeDir($ssh, $hostAppPath);
+        if ($dir === null || $hostAppPath === null) {
+            return false;
+        }
+
+        try {
+            $pkg = (string) $this->readHostFile($ssh, rtrim($hostAppPath, '/').'/'.$dir.'/package.json');
+        } catch (\Throwable) {
+            return false;
+        }
+
+        return str_contains($pkg, '"next"');
     }
 
     /**

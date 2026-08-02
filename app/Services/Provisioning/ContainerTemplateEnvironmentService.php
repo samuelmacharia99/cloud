@@ -19,6 +19,20 @@ class ContainerTemplateEnvironmentService
             $env = $this->prepareWordPressEnvironment($env);
         }
 
+        if (in_array($template->slug ?? '', ['laravel', 'php'], true)) {
+            // Customer Terminal + npm run as www-data; avoid root-owned /var/www/.npm.
+            $env['HOME'] = $env['HOME'] ?? '/tmp';
+            $env['NPM_CONFIG_CACHE'] = $env['NPM_CONFIG_CACHE'] ?? '/tmp/.npm';
+            $env['npm_config_cache'] = $env['npm_config_cache'] ?? '/tmp/.npm';
+            // Database cache needs cache_locks migrations many apps never ship.
+            if (! isset($env['CACHE_STORE']) || trim((string) $env['CACHE_STORE']) === '') {
+                $env['CACHE_STORE'] = 'file';
+            }
+            if (! isset($env['CACHE_DRIVER']) || trim((string) $env['CACHE_DRIVER']) === '') {
+                $env['CACHE_DRIVER'] = 'file';
+            }
+        }
+
         return $env;
     }
 

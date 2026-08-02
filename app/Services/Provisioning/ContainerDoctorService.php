@@ -83,10 +83,13 @@ class ContainerDoctorService
             'ensure_pdo_pgsql' => $this->treatEnsurePdoPgsql($service),
             'ensure_gd' => $this->treatEnsureGd($service),
             'ensure_node' => $this->treatEnsureNode($service),
+            'fix_npm_cache_permissions' => $this->treatFixNpmCachePermissions($service),
             'clear_laravel_caches' => $this->treatClearLaravelCaches($service),
             'fix_storage_permissions' => $this->treatFixStoragePermissions($service),
             'restart_application' => $this->treatRestartApplication($service),
             'run_migrations' => $this->treatRunMigrations($service),
+            'migrate_fresh' => $this->treatMigrateFresh($service),
+            'use_file_cache' => $this->treatUseFileCache($service),
             default => ['success' => false, 'message' => 'Unknown treatment action.'],
         };
 
@@ -365,30 +368,64 @@ class ContainerDoctorService
                         ];
                     }
                 } else {
-                    $tableCount = $deploymentService->countApplicationDatabaseTables(
+                    $pdoTableCount = $deploymentService->countApplicationDatabaseTables(
                         $ssh,
                         $deployment->container_name,
                         (string) $databaseTemplate->type,
                         $probeEnv
                     );
+                    $artisanTableCount = $this->countTablesViaArtisan($ssh, $deployment);
+                    // Prefer artisan (same connection Laravel uses, including config cache).
+                    $tableCount = $artisanTableCount ?? $pdoTableCount;
                     $checks['table_count'] = $tableCount;
+                    $checks['table_count_pdo'] = $pdoTableCount;
+                    $checks['table_count_artisan'] = $artisanTableCount;
+                    $checks['db_name'] = $probeEnv['DB_DATABASE'] ?? null;
 
                     $hasArtisan = $this->containerHasArtisan($ssh, $deployment);
 
-                    if ($tableCount === 0 && $hasArtisan && in_array($stack, ['laravel', 'php'], true)) {
+                    if (
+                        $pdoTableCount === 0
+                        && $artisanTableCount !== null
+                        && $artisanTableCount > 0
+                    ) {
+                        $findings[] = [
+                            'id' => 'live_db_config_drift',
+                            'severity' => 'critical',
+                            'title' => 'Live check: .env DB differs from artisan connection',
+                            'summary' => 'On-disk .env database "'.($probeEnv['DB_DATABASE'] ?? '').'" has 0 tables, '
+                                .'but artisan sees '.$artisanTableCount.' tables. Config cache is likely pointing at a different database than .env.',
+                            'evidence' => [
+                                'pdo_tables=0',
+                                'artisan_tables='.$artisanTableCount,
+                                'DB_DATABASE='.($probeEnv['DB_DATABASE'] ?? ''),
+                            ],
+                            'treat_action' => 'clear_laravel_caches',
+                            'treat_label' => 'Clear Laravel caches',
+                            'manual_steps' => [
+                                'Click Clear Laravel caches (runs config:clear / optimize:clear).',
+                                'Then: php artisan migrate:fresh --force && php artisan db:seed --force against the .env database, or align .env with the DB that already has tables.',
+                            ],
+                            'source' => 'live',
+                        ];
+                    } elseif ($tableCount === 0 && $hasArtisan && in_array($stack, ['laravel', 'php'], true)) {
                         $findings[] = [
                             'id' => 'live_empty_database',
                             'severity' => 'critical',
                             'title' => 'Live check: database has no tables',
                             'summary' => 'DB credentials work for "'.($probeEnv['DB_DATABASE'] ?? '').'", but the schema is empty. '
                                 .'HTTP 500 will continue until migrations (or a SQL import) create tables.',
-                            'evidence' => ['table_count=0', 'DB_DATABASE='.($probeEnv['DB_DATABASE'] ?? '')],
-                            'treat_action' => 'run_migrations',
-                            'treat_label' => 'Run migrations',
+                            'evidence' => [
+                                'table_count=0',
+                                'DB_DATABASE='.($probeEnv['DB_DATABASE'] ?? ''),
+                                $artisanTableCount === null ? 'artisan_count=unavailable' : 'artisan_tables=0',
+                            ],
+                            'treat_action' => 'migrate_fresh',
+                            'treat_label' => 'Rebuild schema (migrate:fresh)',
                             'manual_steps' => [
-                                'Click Run migrations (runs php artisan migrate --force).',
-                                'If artisan says "Nothing to migrate" with 0 tables, this app does not create schema via migrations — import a SQL dump from the Database tab.',
-                                'Or in Terminal check: ls database/migrations && php artisan migrate:status',
+                                'Click Rebuild schema — runs php artisan migrate:fresh --force (safe while tables=0).',
+                                'Or in Terminal: php artisan config:clear && php artisan migrate:fresh --force',
+                                'Then: php artisan db:seed --force',
                             ],
                             'source' => 'live',
                         ];
@@ -401,7 +438,7 @@ class ContainerDoctorService
 
             if ($httpStatus !== null && $httpStatus >= 500) {
                 $hasEmptyDb = collect($findings)->contains(
-                    fn ($f) => ($f['id'] ?? '') === 'live_empty_database'
+                    fn ($f) => in_array($f['id'] ?? '', ['live_empty_database', 'live_db_config_drift'], true)
                 );
                 $hasCredentialDbIssue = collect($findings)->contains(
                     fn ($f) => in_array($f['id'] ?? '', ['live_db_connection_failed', 'live_env_credential_drift', 'live_missing_pdo'], true)
@@ -415,7 +452,7 @@ class ContainerDoctorService
                 ]));
 
                 if ($hasEmptyDb) {
-                    // Empty-schema finding already exposes Run migrations — avoid a second
+                    // Empty-schema finding already exposes migrate:fresh — avoid a second
                     // card that wrongly suggests Repair DB credentials.
                 } elseif ($hasCredentialDbIssue) {
                     $findings[] = [
@@ -433,29 +470,52 @@ class ContainerDoctorService
                         'source' => 'live',
                     ];
                 } else {
+                    $looksLikeMissingCacheLocks = collect($appErrors)->contains(
+                        fn ($line) => (bool) preg_match('/cache_locks/i', (string) $line)
+                    );
                     $looksLikeMissingTable = collect($appErrors)->contains(
                         fn ($line) => (bool) preg_match('/relation .* does not exist|Base table or view not found|no such table/i', (string) $line)
                     );
+
+                    $hasTables = ($checks['table_count'] ?? null) !== null && (int) $checks['table_count'] > 0;
+
+                    if ($looksLikeMissingCacheLocks) {
+                        $treatAction = 'use_file_cache';
+                        $treatLabel = 'Switch cache to file';
+                    } elseif ($looksLikeMissingTable) {
+                        $treatAction = $hasTables ? 'run_migrations' : 'migrate_fresh';
+                        $treatLabel = $hasTables ? 'Run migrations' : 'Rebuild schema (migrate:fresh)';
+                    } elseif (in_array($stack, ['laravel', 'php'], true) && $hasTables) {
+                        $treatAction = 'restart_application';
+                        $treatLabel = 'Restart application';
+                    } elseif (in_array($stack, ['laravel', 'php'], true)) {
+                        $treatAction = 'clear_laravel_caches';
+                        $treatLabel = 'Clear Laravel caches';
+                    } else {
+                        $treatAction = 'restart_application';
+                        $treatLabel = 'Restart application';
+                    }
+
+                    $summary = $looksLikeMissingCacheLocks
+                        ? 'DB connects and has tables, but Laravel is using database cache without a cache_locks table — that commonly 500s GET /.'
+                        : ($looksLikeMissingTable
+                            ? 'DB connects, but the app error looks like missing tables/migrations.'
+                            : 'DB and schema look healthy (tables: '.((string) ($checks['table_count'] ?? '?')).'), '
+                                .'but the public URL still returns HTTP '.$httpStatus
+                                .'. This is an application exception — clearing caches alone will not clear this card until the URL returns 2xx/3xx.');
 
                     $findings[] = [
                         'id' => 'live_http_5xx',
                         'severity' => 'critical',
                         'title' => 'Live check: site returns HTTP '.$httpStatus,
-                        'summary' => $looksLikeMissingTable
-                            ? 'DB connects, but the app error looks like missing tables/migrations.'
-                            : 'DB credentials look healthy, but the public URL still returns HTTP '.$httpStatus
-                                .'. This is now an application error (not credential drift).',
+                        'summary' => $summary,
                         'evidence' => $evidence,
-                        'treat_action' => $looksLikeMissingTable
-                            ? 'run_migrations'
-                            : (in_array($stack, ['laravel', 'php'], true) ? 'clear_laravel_caches' : 'restart_application'),
-                        'treat_label' => $looksLikeMissingTable
-                            ? 'Run migrations'
-                            : (in_array($stack, ['laravel', 'php'], true) ? 'Clear Laravel caches' : 'Restart application'),
+                        'treat_action' => $treatAction,
+                        'treat_label' => $treatLabel,
                         'manual_steps' => [
-                            'Read the evidence lines from the app log.',
                             'In Terminal: tail -n 120 storage/logs/laravel.log',
-                            'Fix the application exception, then re-scan.',
+                            'If you see cache_locks missing: set CACHE_STORE=file && php artisan config:clear',
+                            'Fix the exception shown there, then re-scan — this card stays until the public URL stops returning HTTP 5xx.',
                         ],
                         'source' => 'live',
                     ];
@@ -668,13 +728,56 @@ class ContainerDoctorService
     }
 
     /**
+     * Count tables using Laravel's bootstrapped DB connection (honours config cache).
+     */
+    private function countTablesViaArtisan(SSHService $ssh, $deployment): ?int
+    {
+        $php = <<<'PHP'
+require "vendor/autoload.php";
+$app = require "bootstrap/app.php";
+$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+try {
+    if (method_exists(Illuminate\Support\Facades\Schema::class, "getTableListing")) {
+        echo count(Illuminate\Support\Facades\Schema::getTableListing());
+    } else {
+        $rows = Illuminate\Support\Facades\DB::select(
+            "SELECT COUNT(*) AS c FROM information_schema.tables WHERE table_type = 'BASE TABLE' AND table_schema NOT IN ('pg_catalog','information_schema','mysql','performance_schema','sys')"
+        );
+        echo (int) ($rows[0]->c ?? 0);
+    }
+} catch (Throwable $e) {
+    fwrite(STDERR, $e->getMessage());
+    exit(1);
+}
+PHP;
+
+        $script = 'if [ -f /app/backend/artisan ]; then cd /app/backend; '
+            .'elif [ -f /app/artisan ]; then cd /app; '
+            .'else exit 1; fi; '
+            .'php -r '.escapeshellarg($php);
+
+        try {
+            $output = trim($ssh->exec(
+                'docker exec -u www-data '.escapeshellarg($deployment->container_name)
+                .' sh -lc '.escapeshellarg($script),
+                45
+            ));
+
+            return is_numeric($output) ? (int) $output : null;
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
      * @return list<string>
      */
     private function readRecentApplicationErrors(SSHService $ssh, $deployment): array
     {
         $scripts = [
-            'if [ -f /app/backend/storage/logs/laravel.log ]; then tail -n 80 /app/backend/storage/logs/laravel.log; '
-                .'elif [ -f /app/storage/logs/laravel.log ]; then tail -n 80 /app/storage/logs/laravel.log; fi',
+            'for f in /app/backend/storage/logs/laravel.log /app/storage/logs/laravel.log '
+                .'/app/backend/storage/logs/laravel-*.log /app/storage/logs/laravel-*.log; do '
+                .'if [ -f "$f" ]; then echo "=== $f"; tail -n 120 "$f"; fi; done',
         ];
 
         $lines = [];
@@ -683,19 +786,25 @@ class ContainerDoctorService
                 $output = trim($ssh->exec(
                     'docker exec '.escapeshellarg($deployment->container_name)
                     .' sh -lc '.escapeshellarg($script),
-                    20
+                    25
                 ));
                 if ($output === '') {
                     continue;
                 }
 
-                foreach (preg_split("/\r\n|\n|\r/", $output) ?: [] as $line) {
+                $rawLines = preg_split("/\r\n|\n|\r/", $output) ?: [];
+                foreach ($rawLines as $i => $line) {
                     $line = trim($line);
                     if ($line === '') {
                         continue;
                     }
-                    if (preg_match('/(SQLSTATE|ERROR|Exception|FATAL|relation .* does not exist|Base table or view not found)/i', $line)) {
-                        $lines[] = mb_substr($line, 0, 240);
+                    if (preg_match('/(SQLSTATE|\.ERROR:|local\.ERROR|Exception|FATAL|CRITICAL|relation .* does not exist|Base table or view not found|No application encryption key|APP_KEY)/i', $line)) {
+                        $lines[] = mb_substr($line, 0, 280);
+                        // Capture the following message line when present.
+                        $next = trim((string) ($rawLines[$i + 1] ?? ''));
+                        if ($next !== '' && ! str_starts_with($next, '[') && ! str_starts_with($next, '#')) {
+                            $lines[] = mb_substr($next, 0, 280);
+                        }
                     }
                 }
             } catch (\Throwable) {
@@ -703,7 +812,40 @@ class ContainerDoctorService
             }
         }
 
-        return array_slice(array_values(array_unique($lines)), -5);
+        if ($lines === []) {
+            $bodyHint = $this->probeHttpErrorSnippet($ssh, $deployment);
+            if ($bodyHint !== null) {
+                $lines[] = $bodyHint;
+            }
+        }
+
+        return array_slice(array_values(array_unique($lines)), -8);
+    }
+
+    private function probeHttpErrorSnippet(SSHService $ssh, $deployment): ?string
+    {
+        $url = $deployment->getAccessUrl();
+        if (! is_string($url) || $url === '') {
+            return null;
+        }
+
+        try {
+            $body = trim($ssh->exec(
+                'curl -sL --max-time 12 '.escapeshellarg($url).' | tr "\\n" " " | head -c 500 || true',
+                20
+            ));
+            if ($body === '') {
+                return null;
+            }
+            // Prefer recognizable Laravel/Whoops phrases.
+            if (preg_match('/(SQLSTATE|Exception|ErrorException|Whoops|No application encryption key|server error)[^<]{0,160}/i', $body, $m)) {
+                return 'HTTP body: '.trim(preg_replace('/\s+/', ' ', $m[0]));
+            }
+
+            return 'HTTP body: '.mb_substr(trim(preg_replace('/\s+/', ' ', strip_tags($body))), 0, 200);
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     private function probeHttpStatus(SSHService $ssh, $deployment): ?int
@@ -840,6 +982,61 @@ class ContainerDoctorService
                 'treat_label' => 'Install Node.js',
                 'manual_steps' => [
                     'Install Node from Doctor, or Redeploy to pick up the Node-enabled runtime image.',
+                ],
+            ],
+            [
+                'id' => 'missing_cache_locks_table',
+                'severity' => 'critical',
+                'stacks' => ['laravel', 'php'],
+                'patterns' => [
+                    '/relation "cache_locks" does not exist/i',
+                    '/Table [\'"]?cache_locks[\'"]? doesn\'t exist/i',
+                    '/Base table or view not found.*cache_locks/i',
+                ],
+                'title' => 'Database cache table missing (cache_locks)',
+                'summary' => 'CACHE_STORE/CACHE_DRIVER is database, but the cache_locks table was never migrated. That commonly makes GET / return HTTP 500 even when the rest of the schema exists.',
+                'treat_action' => 'use_file_cache',
+                'treat_label' => 'Switch cache to file',
+                'manual_steps' => [
+                    'Click Switch cache to file (sets CACHE_STORE=file and clears config).',
+                    'Or create tables: php artisan cache:table && php artisan migrate --force',
+                    'Or in .env set CACHE_STORE=file then php artisan config:clear',
+                ],
+            ],
+            [
+                'id' => 'npm_cache_permission_denied',
+                'severity' => 'critical',
+                'stacks' => ['laravel', 'php', 'nodejs'],
+                'patterns' => [
+                    '/Your cache folder contains root-owned files/i',
+                    '/EACCES[\s\S]{0,80}\/var\/www\/\.npm/i',
+                    '/errno EACCES[\s\S]{0,120}\.npm/i',
+                ],
+                'title' => 'npm cache permission denied',
+                'summary' => 'npm cannot write to /var/www/.npm (often root-owned). Installs fail and next/vite binaries stay missing.',
+                'treat_action' => 'fix_npm_cache_permissions',
+                'treat_label' => 'Fix npm cache permissions',
+                'manual_steps' => [
+                    'Click Fix npm cache permissions (writes .npmrc + resets /var/www/.npm).',
+                    'Then run exactly: cd /app/frontend && rm -rf node_modules && HOME=/tmp npm install --legacy-peer-deps --cache /tmp/.npm',
+                ],
+            ],
+            [
+                'id' => 'next_binary_not_found',
+                'severity' => 'critical',
+                'stacks' => ['laravel', 'php', 'nodejs'],
+                'patterns' => [
+                    '/sh:\s+1:\s+next:\s+not found/i',
+                    '/next:\s+not found/i',
+                ],
+                'title' => 'Next.js binary not found',
+                'summary' => 'npm install did not complete (or node_modules is incomplete), so `next` is missing under /app/frontend.',
+                'treat_action' => 'fix_npm_cache_permissions',
+                'treat_label' => 'Fix npm cache + reinstall hint',
+                'manual_steps' => [
+                    'Fix npm cache permissions first.',
+                    'cd /app/frontend && rm -rf node_modules && HOME=/tmp npm install --legacy-peer-deps --cache /tmp/.npm',
+                    'Then: npm run build && npx next start -H 0.0.0.0 -p 3000',
                 ],
             ],
             [
@@ -1215,7 +1412,36 @@ class ContainerDoctorService
         $ssh = SSHService::forNode($deployment->node);
 
         try {
-            $result = $this->runMigrationsQuietly($service, $ssh);
+            $result = $this->runMigrationsQuietly($service, $ssh, fresh: false);
+            // Empty DB + migrations table out of sync: escalate to migrate:fresh.
+            if (! $result['success'] && str_contains(mb_strtolower($result['message']), 'out of sync')) {
+                $result = $this->runMigrationsQuietly($service, $ssh, fresh: true);
+            }
+            if ($result['success']) {
+                try {
+                    $this->clearLaravelCachesQuietly($service, $ssh);
+                } catch (\Throwable) {
+                }
+            }
+
+            return $result;
+        } finally {
+            $ssh->disconnect();
+        }
+    }
+
+    /**
+     * Rebuild schema with migrate:fresh. Only allowed when the DB has 0 app tables.
+     *
+     * @return array{success: bool, message: string}
+     */
+    private function treatMigrateFresh(Service $service): array
+    {
+        $deployment = $service->containerDeployment;
+        $ssh = SSHService::forNode($deployment->node);
+
+        try {
+            $result = $this->runMigrationsQuietly($service, $ssh, fresh: true);
             if ($result['success']) {
                 try {
                     $this->clearLaravelCachesQuietly($service, $ssh);
@@ -1232,13 +1458,39 @@ class ContainerDoctorService
     /**
      * @return array{success: bool, message: string}
      */
-    private function runMigrationsQuietly(Service $service, SSHService $ssh): array
+    private function runMigrationsQuietly(Service $service, SSHService $ssh, bool $fresh = false): array
     {
         $deployment = $service->containerDeployment;
         $init = app(LaravelAppInitializationService::class);
         $deploymentService = app(ContainerDeploymentService::class);
 
         try {
+            $env = is_array($deployment->env_values) ? $deployment->env_values : [];
+            $liveEnv = $this->readLiveAppEnvironment($ssh, $deployment);
+            if ($liveEnv !== []) {
+                $env = array_merge($env, $liveEnv);
+            }
+            $databaseTemplate = $deploymentService->resolveDatabaseTemplateForService($service);
+            $tableCountBefore = null;
+            if ($databaseTemplate) {
+                $probeEnv = $this->envForRuntimeDatabaseProbe($env, (string) $databaseTemplate->type);
+                $tableCountBefore = $deploymentService->countApplicationDatabaseTables(
+                    $ssh,
+                    $deployment->container_name,
+                    (string) $databaseTemplate->type,
+                    $probeEnv
+                );
+            }
+
+            // migrate:fresh destroys schema — only allow on an empty database.
+            if ($fresh && $tableCountBefore !== null && $tableCountBefore > 0) {
+                return [
+                    'success' => false,
+                    'message' => 'Refusing migrate:fresh: database already has '.$tableCountBefore
+                        .' tables. Use Run migrations, or wipe the DB from the Database tab first.',
+                ];
+            }
+
             $roots = [];
             foreach (['/app/backend', '/app'] as $candidate) {
                 try {
@@ -1263,11 +1515,14 @@ class ContainerDoctorService
 
             $outputs = [];
             $lastError = null;
+            $migrateCmd = $fresh
+                ? 'php artisan migrate:fresh --force --no-interaction 2>&1'
+                : 'php artisan migrate --force --no-interaction 2>&1';
 
             foreach ($roots as $projectRoot) {
                 $script = 'set -e; cd '.escapeshellarg($projectRoot).'; '
                     .'if [ ! -f .env ]; then echo "MISSING_ENV"; exit 42; fi; '
-                    .'php artisan migrate --force --no-interaction 2>&1; '
+                    .$migrateCmd.'; '
                     .'php artisan db:seed --force --no-interaction 2>&1 || true';
 
                 try {
@@ -1275,7 +1530,7 @@ class ContainerDoctorService
                         $ssh,
                         $deployment->container_name,
                         $script,
-                        300
+                        600
                     ));
                     $outputs[] = $projectRoot.': '.$output;
                     $lastError = null;
@@ -1284,13 +1539,12 @@ class ContainerDoctorService
                     $lastError = $e;
                     $outputs[] = $projectRoot.': FAILED '.$e->getMessage();
 
-                    // Retry once as root in case www-data cannot read vendor/.env.
                     try {
                         $output = trim((string) $init->dockerExecPublic(
                             $ssh,
                             $deployment->container_name,
                             $script,
-                            300,
+                            600,
                             asRoot: true
                         ));
                         $outputs[] = $projectRoot.' (root): '.$output;
@@ -1310,12 +1564,6 @@ class ContainerDoctorService
                 ];
             }
 
-            $env = is_array($deployment->env_values) ? $deployment->env_values : [];
-            $liveEnv = $this->readLiveAppEnvironment($ssh, $deployment);
-            if ($liveEnv !== []) {
-                $env = array_merge($env, $liveEnv);
-            }
-            $databaseTemplate = $deploymentService->resolveDatabaseTemplateForService($service);
             $tableCount = null;
             if ($databaseTemplate) {
                 $probeEnv = $this->envForRuntimeDatabaseProbe($env, (string) $databaseTemplate->type);
@@ -1331,12 +1579,37 @@ class ContainerDoctorService
                 $joined = mb_strtolower(implode(' | ', $outputs));
                 $nothingToMigrate = str_contains($joined, 'nothing to migrate');
 
+                $migrationFiles = 0;
+                try {
+                    $migrationFiles = (int) trim($ssh->exec(
+                        'docker exec '.escapeshellarg($deployment->container_name)
+                        .' sh -lc '.escapeshellarg(
+                            'for d in /app/backend/database/migrations /app/database/migrations; do '
+                            .'if [ -d "$d" ]; then ls -1 "$d"/*.php 2>/dev/null | wc -l; fi; '
+                            .'done | awk \'{s+=$1} END {print s+0}\''
+                        ),
+                        15
+                    ));
+                } catch (\Throwable) {
+                }
+
+                if ($nothingToMigrate && $migrationFiles > 0 && ! $fresh) {
+                    return [
+                        'success' => false,
+                        'message' => 'Artisan says "Nothing to migrate" but '.$migrationFiles
+                            .' migration files exist and the database still has 0 tables. '
+                            .'The migrations table is likely out of sync (migrations marked ran without schema). '
+                            .'Use Rebuild schema (migrate:fresh), or in Terminal: '
+                            .'php artisan migrate:status && php artisan migrate:fresh --force '
+                            .'(OK on an empty DB).',
+                    ];
+                }
+
                 return [
                     'success' => false,
                     'message' => $nothingToMigrate
                         ? 'Artisan reports "Nothing to migrate" and the database still has 0 tables. '
-                            .'This project has no pending Laravel migrations for schema creation. '
-                            .'Import your SQL dump from the Database tab (or run your app installer/seed command).'
+                            .'Import your SQL dump from the Database tab (or run migrate:fresh --force if migration files exist).'
                         : 'Artisan migrate finished but the database still has 0 tables. '
                             .'Import your SQL dump from the Database tab. '
                             .'Output: '.mb_substr(implode(' | ', $outputs), 0, 300),
@@ -1345,7 +1618,8 @@ class ContainerDoctorService
 
             return [
                 'success' => true,
-                'message' => 'Migrations completed. Tables now: '.$tableCount.'. '
+                'message' => ($fresh ? 'migrate:fresh completed. ' : 'Migrations completed. ')
+                    .'Tables now: '.$tableCount.'. '
                     .mb_substr(implode(' | ', $outputs), 0, 240),
             ];
         } catch (\Throwable $e) {
@@ -1435,6 +1709,47 @@ class ContainerDoctorService
     }
 
     /**
+     * Repair root-owned npm cache so www-data can install frontend deps.
+     *
+     * @return array{success: bool, message: string}
+     */
+    private function treatFixNpmCachePermissions(Service $service): array
+    {
+        $deployment = $service->containerDeployment;
+        $ssh = SSHService::forNode($deployment->node);
+        $init = app(LaravelAppInitializationService::class);
+
+        try {
+            $script = 'set -e; '
+                .'mkdir -p /tmp/.npm /tmp/www-home /var/www; '
+                .'rm -rf /var/www/.npm; '
+                .'mkdir -p /var/www/.npm; '
+                .'printf "cache=/tmp/.npm\\n" > /var/www/.npmrc; '
+                .'printf "cache=/tmp/.npm\\n" > /tmp/www-home/.npmrc; '
+                .'if [ -d /app/frontend ]; then printf "cache=/tmp/.npm\\n" > /app/frontend/.npmrc; fi; '
+                .'if [ -d /app ] && [ -f /app/package.json ]; then printf "cache=/tmp/.npm\\n" > /app/.npmrc; fi; '
+                .'chown -R www-data:www-data /var/www/.npm /var/www/.npmrc /tmp/.npm /tmp/www-home 2>/dev/null || true; '
+                .'chown www-data:www-data /app/frontend/.npmrc /app/.npmrc 2>/dev/null || true; '
+                .'chmod -R u+rwX /var/www/.npm /tmp/.npm /tmp/www-home 2>/dev/null || true; '
+                .'echo ok';
+
+            $init->dockerExecPublic($ssh, $deployment->container_name, $script, 60, asRoot: true);
+
+            return [
+                'success' => true,
+                'message' => 'npm cache redirected to /tmp/.npm and /var/www/.npm reset. '
+                    .'In Terminal run exactly: '
+                    .'cd /app/frontend && rm -rf node_modules && '
+                    .'HOME=/tmp npm install --legacy-peer-deps --cache /tmp/.npm',
+            ];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'message' => 'Failed to fix npm cache: '.$e->getMessage()];
+        } finally {
+            $ssh->disconnect();
+        }
+    }
+
+    /**
      * @return array{success: bool, message: string}
      */
     private function treatClearLaravelCaches(Service $service): array
@@ -1462,6 +1777,67 @@ class ContainerDoctorService
             return ['success' => true, 'message' => 'Laravel caches cleared.'];
         } catch (\Throwable $e) {
             return ['success' => false, 'message' => 'Failed to clear caches: '.$e->getMessage()];
+        } finally {
+            $ssh->disconnect();
+        }
+    }
+
+    /**
+     * Switch Laravel cache (and session if database-backed) to file drivers.
+     *
+     * @return array{success: bool, message: string}
+     */
+    private function treatUseFileCache(Service $service): array
+    {
+        $deployment = $service->containerDeployment;
+        $ssh = SSHService::forNode($deployment->node);
+        $init = app(LaravelAppInitializationService::class);
+
+        try {
+            $locator = 'if [ -f /app/backend/artisan ]; then echo /app/backend; '
+                .'elif [ -f /app/artisan ]; then echo /app; '
+                .'else echo /app; fi';
+            $projectRoot = trim($ssh->exec(
+                'docker exec -u www-data '.escapeshellarg($deployment->container_name)
+                .' sh -lc '.escapeshellarg($locator),
+                15
+            )) ?: '/app';
+
+            $php = <<<'PHP'
+$root = getenv('PROJECT_ROOT') ?: '/app';
+$envPath = rtrim($root, '/').'/.env';
+if (!is_file($envPath)) { fwrite(STDERR, "MISSING_ENV\n"); exit(1); }
+$c = file_get_contents($envPath);
+if ($c === false) { fwrite(STDERR, "read failed\n"); exit(1); }
+$set = function (string $c, string $k, string $v): string {
+    if (preg_match('/^'.preg_quote($k, '/').'=/m', $c)) {
+        return preg_replace('/^'.preg_quote($k, '/').'=.*$/m', $k.'='.$v, $c, 1);
+    }
+    return rtrim($c)."\n".$k.'='.$v."\n";
+};
+$c = $set($c, 'CACHE_STORE', 'file');
+$c = $set($c, 'CACHE_DRIVER', 'file');
+if (preg_match('/^SESSION_DRIVER=(database|redis)/mi', $c)) {
+    $c = $set($c, 'SESSION_DRIVER', 'file');
+}
+if (file_put_contents($envPath, $c) === false) { fwrite(STDERR, "write failed\n"); exit(1); }
+echo "ok";
+PHP;
+
+            $script = 'set -e; export PROJECT_ROOT='.escapeshellarg($projectRoot).'; '
+                .'php -r '.escapeshellarg($php).'; '
+                .'cd '.escapeshellarg($projectRoot).'; '
+                .'php artisan optimize:clear --no-interaction 2>/dev/null '
+                .'|| php artisan config:clear --no-interaction';
+
+            $init->dockerExecPublic($ssh, $deployment->container_name, $script, 120, asRoot: true);
+
+            return [
+                'success' => true,
+                'message' => 'Switched CACHE_STORE/CACHE_DRIVER to file and cleared config. Reload the site.',
+            ];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'message' => 'Failed to switch cache driver: '.$e->getMessage()];
         } finally {
             $ssh->disconnect();
         }

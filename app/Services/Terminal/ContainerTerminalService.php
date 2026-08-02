@@ -315,6 +315,9 @@ class ContainerTerminalService
         }
 
         $script = 'export PATH="/usr/local/bin:/usr/bin:/bin"; '
+            .'export HOME="${HOME:-/tmp}"; '
+            .'export NPM_CONFIG_CACHE="${NPM_CONFIG_CACHE:-/tmp/.npm}"; '
+            .'export npm_config_cache="${npm_config_cache:-/tmp/.npm}"; '
             .'cd '.escapeshellarg($targetCwd).' 2>/dev/null || cd /app 2>/dev/null; '
             .'eval "$(printf %s '.escapeshellarg($encodedCmd).' | base64 -d)"; '
             .'printf "\n__EXIT:%d\n" "$?"; pwd';
@@ -326,7 +329,9 @@ class ContainerTerminalService
         // Always set -w so exec does not inherit PID 1's cwd. After a failed Git
         // sync the /app mount can be invalid and inherited cwd triggers:
         // "current working directory is outside of container mount namespace root".
-        return 'docker exec '.$userFlag.'-w /app '.escapeshellarg($containerName)
+        return 'docker exec '.$userFlag.'-w /app '
+            .'-e HOME=/tmp -e NPM_CONFIG_CACHE=/tmp/.npm -e npm_config_cache=/tmp/.npm '
+            .escapeshellarg($containerName)
             .' sh -c '.escapeshellarg($script);
     }
 

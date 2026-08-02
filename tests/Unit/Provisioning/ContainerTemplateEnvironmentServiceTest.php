@@ -108,6 +108,23 @@ class ContainerTemplateEnvironmentServiceTest extends TestCase
         );
     }
 
+    #[Test]
+    public function it_sets_npm_cache_and_file_cache_defaults_for_laravel(): void
+    {
+        $service = new ContainerTemplateEnvironmentService;
+        $template = (object) [
+            'slug' => 'laravel',
+            'environment_variables' => [],
+        ];
+
+        $env = $service->prepare($template, [], $this->makeService());
+
+        $this->assertSame('/tmp', $env['HOME']);
+        $this->assertSame('/tmp/.npm', $env['NPM_CONFIG_CACHE']);
+        $this->assertSame('file', $env['CACHE_STORE']);
+        $this->assertSame('file', $env['CACHE_DRIVER']);
+    }
+
     private function makeService(?User $user = null): Service
     {
         $service = new Service;

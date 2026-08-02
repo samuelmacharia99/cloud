@@ -59,6 +59,18 @@ LOG;
     }
 
     #[Test]
+    public function it_detects_missing_cache_locks_table(): void
+    {
+        $logs = 'ERROR:  relation "cache_locks" does not exist at character 13';
+
+        $findings = app(ContainerDoctorService::class)->analyzeLogs($logs, 'laravel');
+        $finding = collect($findings)->firstWhere('id', 'missing_cache_locks_table');
+
+        $this->assertNotNull($finding);
+        $this->assertSame('use_file_cache', $finding['treat_action']);
+    }
+
+    #[Test]
     public function it_does_not_match_app_key_from_env_dump_alone(): void
     {
         $logs = "APP_KEY=base64:abc\nDB_HOST=db";

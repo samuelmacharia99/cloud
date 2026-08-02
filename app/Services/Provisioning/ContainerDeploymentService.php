@@ -956,7 +956,21 @@ class ContainerDeploymentService
     /**
      * Render docker-compose.yml from template with optional database sidecar
      */
-    private function renderCompose($template, string $containerName, int $port, array $envVars, ?DatabaseTemplate $databaseTemplate = null, ?ContainerDeployment $deployment = null, ?string $selectedVersion = null, ?string $hostAppPath = null, ?ApplicationRuntime $applicationRuntime = null, ?string $laravelDocumentRoot = null): string
+    private function renderCompose(
+        $template,
+        string $containerName,
+        int $port,
+        array $envVars,
+        ?DatabaseTemplate $databaseTemplate = null,
+        ?ContainerDeployment $deployment = null,
+        ?string $selectedVersion = null,
+        ?string $hostAppPath = null,
+        ?ApplicationRuntime $applicationRuntime = null,
+        ?string $laravelDocumentRoot = null,
+        bool $serveNextFrontend = false,
+        string $nextFrontendRelativeDir = 'frontend',
+        int $laravelApiPort = 8001,
+    ): string
     {
         // Determine resource limits (override > template)
         $cpuLimit = $deployment?->cpu_limit ?? $template->required_cpu_cores ?? 1.0;
@@ -1012,13 +1026,32 @@ class ContainerDeploymentService
 
             if (($template->slug ?? null) === 'laravel') {
                 $documentRoot = $laravelDocumentRoot ?: '/app/public';
-                $compose['services'][$containerName]['command'] = [
-                    'php',
-                    '-S',
-                    "0.0.0.0:{$internalPort}",
-                    '-t',
-                    $documentRoot,
-                ];
+                $frontendDir = '/app/'.trim($nextFrontendRelativeDir, '/');
+
+                if ($serveNextFrontend) {
+                    // Public URL → Next.js; Laravel API listens on loopback for the frontend.
+                    $compose['services'][$containerName]['command'] = [
+                        'sh',
+                        '-lc',
+                        'set -e; '
+                        .'export HOME=/tmp NPM_CONFIG_CACHE=/tmp/.npm npm_config_cache=/tmp/.npm; '
+                        .'mkdir -p /tmp/.npm; '
+                        .'php -S 127.0.0.1:'.$laravelApiPort.' -t '.escapeshellarg($documentRoot)
+                        .' >/tmp/laravel-api.log 2>&1 & '
+                        .'cd '.escapeshellarg($frontendDir).'; '
+                        .'if [ -x node_modules/.bin/next ]; then exec node_modules/.bin/next start -H 0.0.0.0 -p '.$internalPort.'; fi; '
+                        .'if [ -f node_modules/next/dist/bin/next ]; then exec node node_modules/next/dist/bin/next start -H 0.0.0.0 -p '.$internalPort.'; fi; '
+                        .'exec npx next start -H 0.0.0.0 -p '.$internalPort,
+                    ];
+                } else {
+                    $compose['services'][$containerName]['command'] = [
+                        'php',
+                        '-S',
+                        "0.0.0.0:{$internalPort}",
+                        '-t',
+                        $documentRoot,
+                    ];
+                }
             } else {
                 $compose['services'][$containerName]['command'] = [
                     'php',
@@ -1761,13 +1794,17 @@ class ContainerDeploymentService
         $username = (string) ($envVars['DB_USERNAME'] ?? $envVars['POSTGRES_USER'] ?? 'appuser');
         $password = (string) ($envVars['DB_PASSWORD'] ?? $envVars['POSTGRES_PASSWORD'] ?? '');
         $port = (string) ($envVars['DB_PORT'] ?? '5432');
+        $host = (string) ($envVars['DB_HOST'] ?? 'db');
+        if ($host === '' || $host === 'localhost' || $host === '127.0.0.1') {
+            $host = 'db';
+        }
 
         $script = 'if (!in_array("pgsql", PDO::getAvailableDrivers(), true)) {'
             .' fwrite(STDERR, "missing_pdo_pgsql"); exit(2);'
             .'}'
             .'try { '
             .'$pdo = new PDO('
-            .'"pgsql:host=db;port='.addslashes($port).';dbname='.addslashes($database).'", '
+            .'"pgsql:host='.addslashes($host).';port='.addslashes($port).';dbname='.addslashes($database).'", '
             .'"'.addslashes($username).'", '
             .'"'.addslashes($password).'", '
             .'[PDO::ATTR_TIMEOUT => 5]'
@@ -1815,23 +1852,29 @@ class ContainerDeploymentService
         array $envVars
     ): ?int {
         $containerArg = escapeshellarg($containerName);
+        $host = (string) ($envVars['DB_HOST'] ?? 'db');
+        if ($host === '' || $host === 'localhost' || $host === '127.0.0.1') {
+            // Inside the app container, the sidecar is reached as "db", not localhost.
+            $host = 'db';
+        }
         $database = (string) ($envVars['DB_DATABASE'] ?? $envVars['POSTGRES_DB'] ?? $envVars['MYSQL_DATABASE'] ?? 'appdb');
         $username = (string) ($envVars['DB_USERNAME'] ?? $envVars['POSTGRES_USER'] ?? $envVars['MYSQL_USER'] ?? 'appuser');
         $password = (string) ($envVars['DB_PASSWORD'] ?? $envVars['POSTGRES_PASSWORD'] ?? $envVars['MYSQL_PASSWORD'] ?? '');
 
         if ($databaseType === 'postgresql') {
             $port = (string) ($envVars['DB_PORT'] ?? '5432');
+            // Count all non-system schemas (not only public) so custom schemas aren't reported as empty.
             $script = 'try {'
-                .'$pdo = new PDO("pgsql:host=db;port='.addslashes($port).';dbname='.addslashes($database).'",'
+                .'$pdo = new PDO("pgsql:host='.addslashes($host).';port='.addslashes($port).';dbname='.addslashes($database).'",'
                 .'"'.addslashes($username).'","'.addslashes($password).'",[PDO::ATTR_TIMEOUT=>5]);'
-                .'$n=$pdo->query("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=\'public\' AND table_type=\'BASE TABLE\'")->fetchColumn();'
+                .'$n=$pdo->query("SELECT COUNT(*) FROM pg_catalog.pg_tables WHERE schemaname NOT IN (\'pg_catalog\',\'information_schema\')")->fetchColumn();'
                 .'fwrite(STDOUT,(string)$n); exit(0);'
                 .'} catch (Throwable $e) { fwrite(STDERR,$e->getMessage()); exit(1); }';
         } elseif (in_array($databaseType, ['mysql', 'mariadb'], true)) {
             $script = 'try {'
-                .'$pdo = new PDO("mysql:host=db;port=3306;dbname='.addslashes($database).'",'
+                .'$pdo = new PDO("mysql:host='.addslashes($host).';port=3306;dbname='.addslashes($database).'",'
                 .'"'.addslashes($username).'","'.addslashes($password).'",[PDO::ATTR_TIMEOUT=>5]);'
-                .'$n=$pdo->query("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE()")->fetchColumn();'
+                .'$n=$pdo->query("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_type=\'BASE TABLE\'")->fetchColumn();'
                 .'fwrite(STDOUT,(string)$n); exit(0);'
                 .'} catch (Throwable $e) { fwrite(STDERR,$e->getMessage()); exit(1); }';
         } else {
@@ -2478,6 +2521,7 @@ class ContainerDeploymentService
             $this->waitForContainerRunning($ssh, $deployment->container_name, 60);
             $extensions->syncEnabledExtensions($service, $deployment, $ssh);
             app(LaravelAppInitializationService::class)->ensureNodeRuntime($ssh, $deployment);
+            $this->installLaravelFrontendAfterDeploy($ssh, $service, $deployment);
         } catch (\Throwable $e) {
             \Log::warning('Failed to sync enabled PHP extensions', [
                 'service_id' => $service->id,
@@ -2485,6 +2529,115 @@ class ContainerDeploymentService
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    private function installLaravelFrontendAfterDeploy(SSHService $ssh, Service $service, ContainerDeployment $deployment): void
+    {
+        $slug = $service->product?->containerTemplate?->slug ?? '';
+        if (! in_array($slug, ['laravel', 'php'], true)) {
+            return;
+        }
+
+        $hostAppPath = $this->appDirectory->hostAppPath($deployment);
+        $messages = $this->stackCommands->installLaravelFrontendDependencies(
+            $ssh,
+            $deployment,
+            $hostAppPath,
+            (int) config('containers.node_build.command_timeout_seconds', 900),
+            forceRebuild: true
+        );
+
+        if ($messages !== []) {
+            $this->recordDeploymentEvent($service, $deployment, 'laravel_frontend_prepared', [
+                'messages' => $messages,
+            ]);
+        }
+
+        if (! $this->stackCommands->hostHasNextFrontend($ssh, $hostAppPath)) {
+            return;
+        }
+
+        try {
+            $this->switchLaravelRuntimeToNextFrontend($ssh, $service, $deployment, $hostAppPath);
+        } catch (\Throwable $e) {
+            \Log::warning('Failed to switch Laravel public runtime to Next.js frontend', [
+                'service_id' => $service->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Re-apply Next.js public runtime after a frontend build (Git pull / Doctor).
+     */
+    public function refreshLaravelNextFrontendRuntime(SSHService $ssh, Service $service, ContainerDeployment $deployment): void
+    {
+        $hostAppPath = $this->appDirectory->hostAppPath($deployment);
+        if (! $this->stackCommands->hostHasNextFrontend($ssh, $hostAppPath)) {
+            return;
+        }
+
+        $this->switchLaravelRuntimeToNextFrontend($ssh, $service, $deployment, $hostAppPath);
+    }
+
+    private function switchLaravelRuntimeToNextFrontend(
+        SSHService $ssh,
+        Service $service,
+        ContainerDeployment $deployment,
+        string $hostAppPath
+    ): void {
+        $service->loadMissing('product.containerTemplate');
+        $template = $service->product?->containerTemplate;
+        if (! $template) {
+            return;
+        }
+
+        $relativeDir = $this->stackCommands->resolveLaravelFrontendRelativeDir($ssh, $hostAppPath) ?? 'frontend';
+        $documentRoot = app(LaravelProjectPathResolver::class)->resolveDocumentRoot($ssh, $hostAppPath) ?: '/app/public';
+        $internalPort = (int) ($template->default_port ?: 8000);
+        $apiPort = $internalPort === 8001 ? 8002 : 8001;
+
+        $envVars = is_array($deployment->env_values) ? $deployment->env_values : [];
+        $envVars['HOME'] = '/tmp';
+        $envVars['NPM_CONFIG_CACHE'] = '/tmp/.npm';
+        $envVars['npm_config_cache'] = '/tmp/.npm';
+        $envVars['CACHE_STORE'] = $envVars['CACHE_STORE'] ?? 'file';
+        $envVars['CACHE_DRIVER'] = $envVars['CACHE_DRIVER'] ?? 'file';
+
+        $composeYaml = $this->renderCompose(
+            $template,
+            $deployment->container_name,
+            (int) $deployment->assigned_port,
+            $envVars,
+            $this->resolveDatabaseTemplateForService($service),
+            $deployment,
+            $deployment->selected_version,
+            $hostAppPath,
+            null,
+            $documentRoot,
+            serveNextFrontend: true,
+            nextFrontendRelativeDir: $relativeDir,
+            laravelApiPort: $apiPort,
+        );
+
+        $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+        $ssh->upload($composeYaml, $containerPath.'/docker-compose.yml');
+        $deployment->update([
+            'docker_compose_content' => $composeYaml,
+            'env_values' => $envVars,
+        ]);
+
+        $this->composeUp(
+            $ssh,
+            $containerPath,
+            $this->runtimeImages->usesRuntimeImage($template)
+        );
+
+        $this->recordDeploymentEvent($service, $deployment, 'laravel_next_frontend_runtime', [
+            'frontend_dir' => $relativeDir,
+            'public_port' => $internalPort,
+            'api_port' => $apiPort,
+        ]);
     }
 
     private function resolveHostAppPath($template, string $containerName): ?string

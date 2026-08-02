@@ -18,6 +18,7 @@ class ContainerGitRepositoryService
         'environment' => 'Configure application environment',
         'composer' => 'Install Composer dependencies',
         'migrations' => 'Run database migrations',
+        'frontend' => 'Install and build frontend (Next/Vite)',
         'post_pull' => 'Run stack post-pull steps',
         'permissions' => 'Apply file permissions',
         'runtime' => 'Refresh application runtime',
@@ -290,6 +291,26 @@ class ContainerGitRepositoryService
                 } else {
                     $this->skipPullStep($pull, 'migrations', 'Skipped by request.');
                 }
+
+                $this->runPullStep($pull, 'frontend', function () use ($service, $deployment, $ssh, $forceRebuild) {
+                    $hostAppPath = $this->appDirectory->hostAppPath($deployment);
+                    $messages = $this->stackCommands->installLaravelFrontendDependencies(
+                        $ssh,
+                        $deployment,
+                        $hostAppPath,
+                        (int) config('containers.node_build.command_timeout_seconds', 900),
+                        $forceRebuild
+                    );
+
+                    if ($this->stackCommands->hostHasNextFrontend($ssh, $hostAppPath)) {
+                        $this->deploymentService->refreshLaravelNextFrontendRuntime($ssh, $service, $deployment);
+                        $messages[] = 'Public runtime switched to Next.js frontend.';
+                    }
+
+                    return $messages !== []
+                        ? implode(' ', $messages)
+                        : 'No /app/frontend package.json; skipped frontend build.';
+                });
             } elseif ($this->isLaravelService($service)) {
                 $this->skipPullStep($pull, 'environment', 'No Laravel project detected in /app.');
                 $this->skipPullStep($pull, 'composer', 'No Laravel project detected in /app.');
