@@ -106,6 +106,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Laravel + Next.js sidecar stack
+    |--------------------------------------------------------------------------
+    |
+    | When a Laravel app has /app/frontend (Next), Compose runs backend + frontend
+    | + edge (+ db). Public traffic hits edge; UI is Next; /api hits Laravel.
+    |
+    */
+    'next_sidecar' => [
+        'node_image' => env('CONTAINER_NEXT_SIDECAR_NODE_IMAGE', 'node:20-bookworm-slim'),
+        'edge_image' => env('CONTAINER_NEXT_SIDECAR_EDGE_IMAGE', 'node:20-alpine'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Node.js production build (post-pull / bootstrap)
     |--------------------------------------------------------------------------
     */

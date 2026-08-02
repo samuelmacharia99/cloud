@@ -273,4 +273,68 @@ class ContainerDeploymentComposeTest extends TestCase
         $this->assertStringContainsString('pull_policy: never', $yaml);
         $this->assertStringContainsString("- '-t'\n", $yaml);
     }
+
+    #[Test]
+    public function render_compose_builds_laravel_next_sidecar_stack(): void
+    {
+        $template = new ContainerTemplate([
+            'slug' => 'laravel',
+            'docker_image' => 'talksasa/laravel-runtime:8.3',
+            'default_port' => 8000,
+            'required_cpu_cores' => 1.0,
+            'required_ram_mb' => 1024,
+            'volume_paths' => ['app_data' => '/app'],
+        ]);
+
+        $runtimeImages = $this->createMock(RuntimeImageProvisioner::class);
+        $runtimeImages->method('usesRuntimeImage')->willReturn(true);
+        $runtimeImages->method('resolveImageReference')->willReturn(['image' => 'talksasa/laravel-runtime:8.3']);
+
+        $deployer = new ContainerDeploymentService(
+            runtimeImages: $runtimeImages,
+            templateEnvironment: new ContainerTemplateEnvironmentService
+        );
+
+        $method = new ReflectionMethod(ContainerDeploymentService::class, 'renderCompose');
+        $method->setAccessible(true);
+
+        $hostApp = '/opt/talksasa/containers/user-1-service-12-laravel/app';
+        $yaml = $method->invoke(
+            $deployer,
+            $template,
+            'user-1-service-12-laravel',
+            31012,
+            [
+                'APP_ENV' => 'production',
+                'FRONTEND_URL' => 'https://atlas.example.com',
+                'APP_URL' => 'https://atlas.example.com',
+            ],
+            null,
+            null,
+            null,
+            $hostApp,
+            null,
+            '/app/backend/public',
+            true,
+            'frontend',
+            8000,
+        );
+
+        $this->assertStringContainsString("\n  backend:\n", $yaml);
+        $this->assertStringContainsString("\n  frontend:\n", $yaml);
+        $this->assertStringContainsString("\n  edge:\n", $yaml);
+        $this->assertStringContainsString('container_name: user-1-service-12-laravel', $yaml);
+        $this->assertStringContainsString('user-1-service-12-laravel-frontend', $yaml);
+        $this->assertStringContainsString('user-1-service-12-laravel-edge', $yaml);
+        $this->assertStringContainsString('31012:8080', $yaml);
+        $this->assertStringContainsString('http://backend:8000', $yaml);
+        $this->assertStringContainsString('https://atlas.example.com', $yaml);
+        $this->assertStringContainsString('NEXT_PUBLIC_APP_URL', $yaml);
+        $this->assertStringContainsString('BACKEND_HOST: backend', $yaml);
+        $this->assertStringContainsString('FRONTEND_HOST: frontend', $yaml);
+        $this->assertStringContainsString($hostApp.':/app', $yaml);
+        $this->assertStringContainsString("ports:\n      - '31012:8080'", $yaml);
+        // Public port belongs to edge only (backend uses expose, not host ports).
+        $this->assertMatchesRegularExpression('/backend:[\s\S]*?expose:\s*\n\s*-\s*[\'"]?8000/', $yaml);
+    }
 }

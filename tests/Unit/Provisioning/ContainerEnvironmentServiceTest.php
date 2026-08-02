@@ -60,6 +60,23 @@ class ContainerEnvironmentServiceTest extends TestCase
         $this->assertSame(['APP_ENV', 'DB_PASSWORD', 'ZZ_CUSTOM'], array_column($panel['variables'], 'key'));
         $this->assertTrue($panel['variables'][1]['sensitive']);
         $this->assertTrue($panel['variables'][1]['platform_managed']);
+        $this->assertTrue($panel['can_save']);
+        $this->assertTrue($panel['can_apply']);
+    }
+
+    public function test_build_panel_state_allows_save_while_deploying(): void
+    {
+        $service = new Service;
+        $service->setRelation('product', null);
+
+        $deployment = new ContainerDeployment([
+            'status' => 'deploying',
+            'env_values' => ['APP_ENV' => 'production'],
+        ]);
+
+        $panel = (new ContainerEnvironmentService)->buildPanelState($service, $deployment);
+
+        $this->assertTrue($panel['can_save']);
         $this->assertTrue($panel['can_apply']);
     }
 

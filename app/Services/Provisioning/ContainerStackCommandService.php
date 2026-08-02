@@ -195,11 +195,16 @@ class ContainerStackCommandService
 
         $containerDir = '/app/'.trim($relativeDir, '/');
         $init = app(LaravelAppInitializationService::class);
+        $execTarget = $this->resolveFrontendExecContainer($ssh, $deployment);
 
         try {
+            // Backend runtime image still hosts Node for first-time builds before the frontend sidecar exists.
             app(LaravelAppInitializationService::class)->ensureNodeRuntime($ssh, $deployment);
         } catch (\Throwable $e) {
-            return ['Frontend skipped: Node.js is not available ('.$e->getMessage().').'];
+            if ($execTarget === $deployment->container_name) {
+                return ['Frontend skipped: Node.js is not available ('.$e->getMessage().').'];
+            }
+            // Frontend sidecar is a Node image — continue without Laravel Node bootstrap.
         }
 
         $messages = [];
@@ -216,14 +221,15 @@ class ContainerStackCommandService
             .'test -e node_modules/.bin/next -o -e node_modules/next/dist/bin/next -o -d node_modules';
 
         try {
-            $init->dockerExecPublic($ssh, $deployment->container_name, $installScript, max(300, $timeout), asRoot: false);
-            $messages[] = 'Frontend dependencies installed in '.$containerDir.'.';
+            $init->dockerExecPublic($ssh, $execTarget, $installScript, max(300, $timeout), asRoot: false);
+            $messages[] = 'Frontend dependencies installed in '.$containerDir
+                .($execTarget !== $deployment->container_name ? ' (frontend sidecar).' : '.');
         } catch (\Throwable $e) {
             // Retry once as root in case www-data cannot write node_modules on the bind mount.
             try {
-                $init->dockerExecPublic($ssh, $deployment->container_name, $installScript, max(300, $timeout), asRoot: true);
+                $init->dockerExecPublic($ssh, $execTarget, $installScript, max(300, $timeout), asRoot: true);
                 $chown = 'chown -R www-data:www-data '.escapeshellarg($containerDir.'/node_modules').' 2>/dev/null || true';
-                $init->dockerExecPublic($ssh, $deployment->container_name, $chown, 60, asRoot: true);
+                $init->dockerExecPublic($ssh, $execTarget, $chown, 60, asRoot: true);
                 $messages[] = 'Frontend dependencies installed in '.$containerDir.' (root fallback).';
             } catch (\Throwable $rootError) {
                 return ['Frontend npm install failed: '.mb_substr($rootError->getMessage(), 0, 300)];
@@ -233,7 +239,7 @@ class ContainerStackCommandService
         $hasBuild = false;
         try {
             $pkg = trim($ssh->exec(
-                'docker exec '.escapeshellarg($deployment->container_name)
+                'docker exec '.escapeshellarg($execTarget)
                 .' sh -lc '.escapeshellarg('cat '.escapeshellarg($containerDir.'/package.json')),
                 20
             ));
@@ -251,7 +257,9 @@ class ContainerStackCommandService
             try {
                 $mem = (int) ($deployment->memory_limit_mb ?? 0);
                 if ($mem > 0) {
-                    $heapMb = max(1536, min(4096, (int) floor($mem * 0.65)));
+                    // Sidecar gets ~40% of plan memory; size the heap from that share.
+                    $sidecarShare = $this->deploymentHasNextSidecarStack($deployment) ? 0.40 : 0.65;
+                    $heapMb = max(1536, min(4096, (int) floor($mem * $sidecarShare)));
                 }
             } catch (\Throwable) {
             }
@@ -272,11 +280,11 @@ class ContainerStackCommandService
                 .'fi';
 
             try {
-                $init->dockerExecPublic($ssh, $deployment->container_name, $buildScript, max(600, $timeout), asRoot: false);
+                $init->dockerExecPublic($ssh, $execTarget, $buildScript, max(600, $timeout), asRoot: false);
                 $messages[] = 'Frontend build completed in '.$containerDir.'.';
             } catch (\Throwable $e) {
                 try {
-                    $init->dockerExecPublic($ssh, $deployment->container_name, $buildScript, max(600, $timeout), asRoot: true);
+                    $init->dockerExecPublic($ssh, $execTarget, $buildScript, max(600, $timeout), asRoot: true);
                     $messages[] = 'Frontend build completed in '.$containerDir.' (root fallback).';
                 } catch (\Throwable $rootError) {
                     $messages[] = 'Frontend build failed: '.mb_substr($rootError->getMessage(), 0, 300);
@@ -288,7 +296,36 @@ class ContainerStackCommandService
     }
 
     /**
-     * @return non-empty-string|null  Relative path under /app (e.g. "frontend")
+     * Prefer the Next frontend sidecar when the stack is split; otherwise the app container.
+     */
+    public function resolveFrontendExecContainer(SSHService $ssh, ContainerDeployment $deployment): string
+    {
+        $frontendName = LaravelNextGatewayProxy::frontendContainerName($deployment->container_name);
+
+        if ($this->deploymentHasNextSidecarStack($deployment)) {
+            $running = trim($ssh->exec(
+                'docker inspect -f "{{.State.Running}}" '.escapeshellarg($frontendName).' 2>/dev/null || echo false',
+                15
+            ));
+            if ($running === 'true') {
+                return $frontendName;
+            }
+        }
+
+        return $deployment->container_name;
+    }
+
+    public function deploymentHasNextSidecarStack(ContainerDeployment $deployment): bool
+    {
+        $yaml = (string) ($deployment->docker_compose_content ?? '');
+
+        return str_contains($yaml, "\n  frontend:\n")
+            && str_contains($yaml, "\n  edge:\n")
+            && str_contains($yaml, "\n  backend:\n");
+    }
+
+    /**
+     * @return non-empty-string|null Relative path under /app (e.g. "frontend")
      */
     public function resolveLaravelFrontendRelativeDir(SSHService $ssh, ?string $hostAppPath): ?string
     {

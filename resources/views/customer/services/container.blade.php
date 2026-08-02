@@ -905,6 +905,73 @@
 </div>
 
 <script>
+function containerEnvironmentPanel(initialRows) {
+    let rowSeq = 0;
+
+    return {
+        rows: (initialRows || []).map((row) => ({
+            _id: 'env-' + (++rowSeq),
+            key: row.key || '',
+            value: row.value || '',
+            sensitive: !!row.sensitive,
+            platform_managed: !!row.platform_managed,
+            reveal: false,
+            isNew: false,
+        })),
+        saving: false,
+        addRow() {
+            this.rows.push({
+                _id: 'env-' + (++rowSeq),
+                key: '',
+                value: '',
+                sensitive: false,
+                platform_managed: false,
+                reveal: true,
+                isNew: true,
+            });
+        },
+        removeRow(index) {
+            const row = this.rows[index];
+            if (!row) return;
+            if (row.platform_managed && !row.isNew) return;
+
+            if (row.isNew || !row.key) {
+                this.rows.splice(index, 1);
+                return;
+            }
+
+            if (!confirm(`Remove ${row.key}? The app will restart to apply.`)) {
+                return;
+            }
+
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = @js(route('customer.services.container.environment.delete', $service));
+            form.innerHTML = `
+                <input type="hidden" name="_token" value="${document.querySelector('meta[name=csrf-token]')?.content || ''}">
+                <input type="hidden" name="_method" value="DELETE">
+                <input type="hidden" name="keys[]" value="${row.key}">
+                <input type="hidden" name="restart" value="1">
+            `;
+            document.body.appendChild(form);
+            form.submit();
+        },
+        prepareSubmit(event) {
+            this.rows.forEach((row) => {
+                row.key = (row.key || '').trim().toUpperCase();
+            });
+            // Drop blank new rows so HTML5/server validation does not block real edits.
+            this.rows = this.rows.filter((row) => row.key !== '');
+            if (this.rows.length === 0) {
+                event.preventDefault();
+                alert('Add at least one environment variable before saving.');
+                return;
+            }
+            this.saving = true;
+        },
+    };
+}
+
 function containerTabs(initialTab) {
     const allowedTabs = @js($containerTabs);
 

@@ -33,16 +33,23 @@ class ContainerEnvironmentService
         'MONGO_INITDB_ROOT_PASSWORD',
         'MONGO_INITDB_DATABASE',
         'APP_URL',
+        'FRONTEND_URL',
         'TALKSASA_CLOUD_URL',
         'DATABASE_URL',
+        'INTERNAL_API_URL',
+        'BACKEND_URL',
+        'NEXT_PUBLIC_APP_URL',
+        'NEXT_PUBLIC_API_URL',
     ];
 
     /**
      * @return array{
      *     variables: list<array{key: string, value: string, sensitive: bool, platform_managed: bool}>,
+     *     can_save: bool,
      *     can_apply: bool,
      *     applies_dotenv: bool,
-     *     template_slug: ?string
+     *     template_slug: ?string,
+     *     deployment_status: ?string
      * }
      */
     public function buildPanelState(Service $service, ?ContainerDeployment $deployment): array
@@ -67,11 +74,18 @@ class ContainerEnvironmentService
             ];
         }
 
+        $status = $deployment?->status;
+        $canSave = $deployment !== null && ! in_array($status, ['terminated'], true);
+        // Apply restarts the stack; allow while deploying too (Save was previously disabled then).
+        $canApply = $canSave && in_array($status, ['running', 'stopped', 'failed', 'deploying', 'pending', 'provisioning'], true);
+
         return [
             'variables' => $variables,
-            'can_apply' => $deployment !== null && in_array($deployment->status, ['running', 'stopped', 'failed'], true),
+            'can_save' => $canSave,
+            'can_apply' => $canApply,
             'applies_dotenv' => in_array($slug, ['laravel', 'php'], true),
             'template_slug' => $slug,
+            'deployment_status' => $status,
         ];
     }
 
@@ -106,14 +120,30 @@ class ContainerEnvironmentService
         $service->update(['service_meta' => $meta]);
 
         $message = 'Environment variables saved.';
+        $applied = false;
 
         if ($restart) {
-            app(ContainerDeploymentService::class)->applyEnvironmentVariables($service->fresh(), $deployment->fresh());
-            $message = 'Environment variables saved and applied to the running stack.';
+            try {
+                app(ContainerDeploymentService::class)->applyEnvironmentVariables($service->fresh(), $deployment->fresh());
+                $message = 'Environment variables saved and applied to the running stack.';
+                $applied = true;
+            } catch (\Throwable $e) {
+                Log::error('Environment variables saved but stack apply failed', [
+                    'service_id' => $service->id,
+                    'error' => $e->getMessage(),
+                ]);
+
+                throw new \RuntimeException(
+                    'Environment variables were saved, but applying them to the stack failed: '.$e->getMessage(),
+                    0,
+                    $e
+                );
+            }
         }
 
         return [
             'updated' => count($normalized),
+            'applied' => $applied,
             'message' => $message,
         ];
     }

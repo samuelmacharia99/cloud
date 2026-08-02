@@ -3,8 +3,8 @@
 /**
  * Compatibility matrix for the customer stack builder (v1).
  *
- * Frontend values (vite-spa / nextjs) enable Node.js in the PHP/Laravel app runtime
- * for builds. A separate frontend sidecar container is not provisioned yet.
+ * Frontend value nextjs provisions Compose sidecars: backend (Laravel), frontend (Next),
+ * and edge (public router), plus the usual database sidecar when selected.
  */
 return [
 

@@ -853,7 +853,7 @@ class ContainerController extends Controller
             } elseif (preg_match('/^DESCRIBE\s+([a-zA-Z0-9_]+)\s*$/i', $query, $m)
                 || preg_match('/^DESC\s+([a-zA-Z0-9_]+)\s*$/i', $query, $m)) {
                 $table = $m[1];
-                $query = "SELECT column_name, data_type, is_nullable, column_default "
+                $query = 'SELECT column_name, data_type, is_nullable, column_default '
                     ."FROM information_schema.columns WHERE table_schema = 'public' AND table_name = '{$table}' "
                     .'ORDER BY ordinal_position';
             }
@@ -2111,8 +2111,16 @@ class ContainerController extends Controller
         } catch (\Throwable $e) {
             \Log::error("Failed to update environment for service {$service->id}: ".$e->getMessage());
 
+            $message = $e->getMessage();
+            // Values may already be persisted before apply/restart fails.
+            if (str_contains($message, 'were saved')) {
+                return $this->redirectToContainerTab($service, 'environment')
+                    ->with('success', 'Environment variables saved.')
+                    ->withErrors(['error' => $message]);
+            }
+
             return $this->redirectToContainerTab($service, 'environment')
-                ->withErrors(['error' => 'Failed to update environment: '.$e->getMessage()]);
+                ->withErrors(['error' => 'Failed to update environment: '.$message]);
         }
     }
 

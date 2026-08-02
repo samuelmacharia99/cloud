@@ -31,6 +31,7 @@ Roadmap: `docs/CONTAINER_APP_HOSTING_ROADMAP.md`
 - Phase 4.3 Mail product / 4.4 team & BYO Dockerfile
 - Production QA on real container/DA nodes
 - Commit convert-in-place when requested
+- Push/deploy Laravel+Next sidecar stack; Redeploy service 163 (see `docs/LARAVEL_NEXT_SIDECAR.md`)
 
 ## Git
 

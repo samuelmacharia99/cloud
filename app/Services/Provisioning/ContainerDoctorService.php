@@ -270,6 +270,9 @@ class ContainerDoctorService
             'db_ok' => null,
             'db_error' => null,
             'table_count' => null,
+            'sidecar_frontend' => null,
+            'sidecar_edge' => null,
+            'api_http_status' => null,
         ];
         $findings = [];
 
@@ -283,6 +286,68 @@ class ContainerDoctorService
         $ssh = SSHService::forNode($deployment->node);
 
         try {
+            if ($deploymentService->usesLaravelNextSidecarStack($deployment)) {
+                $frontendName = LaravelNextGatewayProxy::frontendContainerName($deployment->container_name);
+                $edgeName = LaravelNextGatewayProxy::edgeContainerName($deployment->container_name);
+                $frontendRunning = trim($ssh->exec(
+                    'docker inspect -f "{{.State.Running}}" '.escapeshellarg($frontendName).' 2>/dev/null || echo false',
+                    15
+                )) === 'true';
+                $edgeRunning = trim($ssh->exec(
+                    'docker inspect -f "{{.State.Running}}" '.escapeshellarg($edgeName).' 2>/dev/null || echo false',
+                    15
+                )) === 'true';
+                $checks['sidecar_frontend'] = $frontendRunning;
+                $checks['sidecar_edge'] = $edgeRunning;
+
+                if (! $frontendRunning || ! $edgeRunning) {
+                    $findings[] = [
+                        'id' => 'live_next_sidecar_down',
+                        'severity' => 'critical',
+                        'title' => 'Next.js sidecar stack is incomplete',
+                        'summary' => 'This app uses separate frontend/edge containers. '
+                            .(! $frontendRunning ? 'Frontend is not running. ' : '')
+                            .(! $edgeRunning ? 'Edge router is not running. ' : '')
+                            .'Redeploy or restart the stack so edge → frontend/backend routing works.',
+                        'evidence' => array_filter([
+                            $frontendRunning ? null : 'frontend container stopped: '.$frontendName,
+                            $edgeRunning ? null : 'edge container stopped: '.$edgeName,
+                        ]),
+                        'treat_action' => null,
+                        'treat_label' => null,
+                        'manual_steps' => [
+                            'Open Overview → Restart, or Redeploy stack (keep database).',
+                            'Confirm docker compose ps shows backend, frontend, edge, and db.',
+                        ],
+                        'source' => 'live',
+                    ];
+                } else {
+                    $apiUrl = rtrim((string) ($deployment->getAccessUrl() ?? ''), '/').'/api/v1/app/branding';
+                    if (str_starts_with($apiUrl, 'http')) {
+                        $apiCode = trim($ssh->exec(
+                            'curl -s -o /dev/null -w "%{http_code}" --max-time 12 '.escapeshellarg($apiUrl).' || true',
+                            20
+                        ));
+                        if (preg_match('/^\d{3}$/', $apiCode) === 1) {
+                            $checks['api_http_status'] = (int) $apiCode;
+                            if ((int) $apiCode >= 500) {
+                                $findings[] = [
+                                    'id' => 'live_api_via_edge_failed',
+                                    'severity' => 'warning',
+                                    'title' => 'API via edge returned HTTP '.$apiCode,
+                                    'summary' => 'Public /api traffic through the edge router is failing. Check Laravel logs on the backend container.',
+                                    'evidence' => ['GET '.$apiUrl.' → '.$apiCode],
+                                    'treat_action' => null,
+                                    'treat_label' => null,
+                                    'manual_steps' => ['Inspect backend logs and DATABASE_URL / APP_KEY.'],
+                                    'source' => 'live',
+                                ];
+                            }
+                        }
+                    }
+                }
+            }
+
             $platformEnv = is_array($deployment->env_values) ? $deployment->env_values : [];
             $liveEnv = $this->readLiveAppEnvironment($ssh, $deployment);
             $checks['env_source'] = $liveEnv === [] ? 'platform' : 'app_dotenv';

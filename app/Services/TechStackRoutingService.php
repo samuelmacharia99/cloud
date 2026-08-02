@@ -191,7 +191,7 @@ class TechStackRoutingService
                 'locked' => $definition['frontend']['locked'] ?? null,
                 'options' => self::availableFrontends($language, $roles['framework']),
                 'value' => $roles['frontend'],
-                'deferred_note' => 'Node.js is included in this app runtime for Vite/Next builds. A separate frontend container is not started yet — run npm scripts from the Terminal tab.',
+                'deferred_note' => 'Next.js starts a frontend sidecar plus an edge router on your public port. Laravel stays on an internal backend service; /api is routed automatically.',
             ],
             'database' => [
                 'show' => (bool) ($definition['database']['show'] ?? false),

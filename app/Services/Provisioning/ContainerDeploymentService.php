@@ -970,8 +970,7 @@ class ContainerDeploymentService
         bool $serveNextFrontend = false,
         string $nextFrontendRelativeDir = 'frontend',
         int $laravelApiPort = 8001,
-    ): string
-    {
+    ): string {
         // Determine resource limits (override > template)
         $cpuLimit = $deployment?->cpu_limit ?? $template->required_cpu_cores ?? 1.0;
         $memoryLimit = $deployment?->memory_limit_mb ?? $template->required_ram_mb ?? 256;
@@ -1026,24 +1025,13 @@ class ContainerDeploymentService
 
             if (($template->slug ?? null) === 'laravel') {
                 $documentRoot = $laravelDocumentRoot ?: '/app/public';
-                $frontendDir = '/app/'.trim($nextFrontendRelativeDir, '/');
 
                 if ($serveNextFrontend) {
-                    // Public URL → gateway: Next for UI, Laravel for /api|/sanctum|/storage|...
-                    $nextInternalPort = $internalPort === 3000 ? 3001 : 3000;
-                    $compose['services'][$containerName]['command'] = LaravelNextGatewayProxy::composeCommand(
+                    // Backend listens internally; public traffic hits the edge sidecar.
+                    $compose['services'][$containerName]['command'] = LaravelNextGatewayProxy::backendComposeCommand(
                         $documentRoot,
-                        $frontendDir,
-                        $internalPort,
-                        $laravelApiPort,
-                        $nextInternalPort,
+                        LaravelNextGatewayProxy::BACKEND_PORT
                     );
-                    $compose['services'][$containerName]['environment']['LARAVEL_API_PORT'] = (string) $laravelApiPort;
-                    $compose['services'][$containerName]['environment']['NEXT_PORT'] = (string) $nextInternalPort;
-                    $compose['services'][$containerName]['environment']['GATEWAY_PUBLIC_PORT'] = (string) $internalPort;
-                    $compose['services'][$containerName]['environment']['INTERNAL_API_URL'] = 'http://127.0.0.1:'.$laravelApiPort;
-                    $compose['services'][$containerName]['environment']['BACKEND_URL'] = 'http://127.0.0.1:'.$laravelApiPort;
-                    $compose['services'][$containerName]['environment']['API_URL'] = 'http://127.0.0.1:'.$laravelApiPort;
                 } else {
                     $compose['services'][$containerName]['command'] = [
                         'php',
@@ -1138,9 +1126,239 @@ class ContainerDeploymentService
             $this->injectDatabaseSidecar($compose, $databaseTemplate, $envVars, $containerName);
         }
 
+        if ($serveNextFrontend && ($template->slug ?? null) === 'laravel') {
+            $this->attachLaravelNextSidecarStack(
+                $compose,
+                $containerName,
+                $port,
+                $envVars,
+                $hostAppPath,
+                $laravelDocumentRoot ?: '/app/public',
+                $nextFrontendRelativeDir,
+                $cpuLimit,
+                $memoryLimit,
+                $deployment
+            );
+        }
+
         $this->ensureNamedVolumesDeclared($compose);
 
         return Yaml::dump($compose, 10, 2);
+    }
+
+    /**
+     * Promote the Laravel app service into backend + frontend + edge sidecars.
+     * Docker DNS: backend, frontend, edge. Public port binds only to edge.
+     *
+     * @param  array<string, mixed>  $compose
+     * @param  array<string, string>  $envVars
+     */
+    private function attachLaravelNextSidecarStack(
+        array &$compose,
+        string $containerName,
+        int $publicPort,
+        array $envVars,
+        ?string $hostAppPath,
+        string $documentRoot,
+        string $nextFrontendRelativeDir,
+        float $cpuLimit,
+        int $memoryLimitMb,
+        ?ContainerDeployment $deployment = null,
+    ): void {
+        if (! isset($compose['services'][$containerName]) || ! is_array($compose['services'][$containerName])) {
+            return;
+        }
+
+        $frontendDir = '/app/'.trim($nextFrontendRelativeDir, '/');
+        $backendPort = LaravelNextGatewayProxy::BACKEND_PORT;
+        $frontendPort = LaravelNextGatewayProxy::FRONTEND_PORT;
+        $edgePort = LaravelNextGatewayProxy::EDGE_INTERNAL_PORT;
+
+        $backendCpu = max(0.1, round($cpuLimit * 0.55, 2));
+        $frontendCpu = max(0.1, round($cpuLimit * 0.40, 2));
+        $edgeCpu = max(0.05, round($cpuLimit * 0.05, 2));
+        $backendMem = max(128, (int) floor($memoryLimitMb * 0.55));
+        $frontendMem = max(256, (int) floor($memoryLimitMb * 0.40));
+        $edgeMem = max(64, (int) floor($memoryLimitMb * 0.05));
+
+        $backend = $compose['services'][$containerName];
+        unset($compose['services'][$containerName]);
+
+        $backend['container_name'] = $containerName;
+        unset($backend['ports']);
+        $backend['expose'] = [(string) $backendPort];
+        $backend['command'] = LaravelNextGatewayProxy::backendComposeCommand($documentRoot, $backendPort);
+        $backend['mem_limit'] = $backendMem.'M';
+        $backend['cpus'] = $backendCpu;
+        $backend['deploy']['resources']['limits'] = [
+            'cpus' => (string) $backendCpu,
+            'memory' => $backendMem.'M',
+        ];
+        $backend['deploy']['resources']['reservations'] = [
+            'cpus' => (string) round($backendCpu * 0.5, 2),
+            'memory' => ((int) floor($backendMem * 0.5)).'M',
+        ];
+
+        $publicUrl = $this->resolvePublicAppUrl($deployment, $envVars);
+        $apiPublic = $publicUrl !== null ? rtrim($publicUrl, '/').'/api/v1' : null;
+
+        $backendEnv = is_array($backend['environment'] ?? null) ? $backend['environment'] : $envVars;
+        $backendEnv['INTERNAL_API_URL'] = 'http://'.LaravelNextGatewayProxy::BACKEND_SERVICE.':'.$backendPort;
+        $backendEnv['BACKEND_URL'] = $backendEnv['INTERNAL_API_URL'];
+        $backendEnv['LARAVEL_API_PORT'] = (string) $backendPort;
+        if ($publicUrl !== null) {
+            $backendEnv['APP_URL'] = $publicUrl;
+            $backendEnv['FRONTEND_URL'] = $publicUrl;
+            $backendEnv['TALKSASA_CLOUD_URL'] = $backendEnv['TALKSASA_CLOUD_URL'] ?? $publicUrl;
+        }
+        if ($apiPublic !== null) {
+            $backendEnv['API_URL'] = $apiPublic;
+        }
+        $backend['environment'] = $backendEnv;
+
+        $volumes = $backend['volumes'] ?? [];
+        if ($hostAppPath && $volumes === []) {
+            $volumes = ["{$hostAppPath}:/app"];
+        }
+
+        $frontendEnv = [
+            'HOME' => '/tmp',
+            'NPM_CONFIG_CACHE' => '/tmp/.npm',
+            'npm_config_cache' => '/tmp/.npm',
+            'NODE_ENV' => 'production',
+            'HOSTNAME' => '0.0.0.0',
+            'PORT' => (string) $frontendPort,
+            'INTERNAL_API_URL' => 'http://'.LaravelNextGatewayProxy::BACKEND_SERVICE.':'.$backendPort,
+            'BACKEND_URL' => 'http://'.LaravelNextGatewayProxy::BACKEND_SERVICE.':'.$backendPort,
+        ];
+        if ($publicUrl !== null) {
+            $frontendEnv['NEXT_PUBLIC_APP_URL'] = $publicUrl;
+            $frontendEnv['FRONTEND_URL'] = $publicUrl;
+            $frontendEnv['APP_URL'] = $publicUrl;
+        }
+        if ($apiPublic !== null) {
+            $frontendEnv['NEXT_PUBLIC_API_URL'] = $apiPublic;
+            $frontendEnv['API_URL'] = $apiPublic;
+        }
+        foreach (['NEXT_PUBLIC_APP_URL', 'NEXT_PUBLIC_API_URL', 'API_URL', 'FRONTEND_URL', 'APP_URL'] as $key) {
+            if (! empty($envVars[$key])) {
+                $frontendEnv[$key] = (string) $envVars[$key];
+            }
+        }
+
+        $frontend = [
+            'image' => $this->nextSidecarImage('node_image', 'node:20-bookworm-slim'),
+            'container_name' => LaravelNextGatewayProxy::frontendContainerName($containerName),
+            'restart' => $backend['restart'] ?? 'always',
+            'working_dir' => $frontendDir,
+            'environment' => $frontendEnv,
+            'expose' => [(string) $frontendPort],
+            'volumes' => $volumes,
+            'command' => LaravelNextGatewayProxy::frontendComposeCommand($frontendDir, $frontendPort),
+            'depends_on' => [LaravelNextGatewayProxy::BACKEND_SERVICE],
+            'mem_limit' => $frontendMem.'M',
+            'cpus' => $frontendCpu,
+            'deploy' => [
+                'resources' => [
+                    'limits' => [
+                        'cpus' => (string) $frontendCpu,
+                        'memory' => $frontendMem.'M',
+                    ],
+                    'reservations' => [
+                        'cpus' => (string) round($frontendCpu * 0.5, 2),
+                        'memory' => ((int) floor($frontendMem * 0.5)).'M',
+                    ],
+                ],
+            ],
+        ];
+
+        $edge = [
+            'image' => $this->nextSidecarImage('edge_image', 'node:20-alpine'),
+            'container_name' => LaravelNextGatewayProxy::edgeContainerName($containerName),
+            'restart' => $backend['restart'] ?? 'always',
+            'environment' => [
+                'GATEWAY_PUBLIC_PORT' => (string) $edgePort,
+                'BACKEND_HOST' => LaravelNextGatewayProxy::BACKEND_SERVICE,
+                'BACKEND_PORT' => (string) $backendPort,
+                'FRONTEND_HOST' => LaravelNextGatewayProxy::FRONTEND_SERVICE,
+                'FRONTEND_PORT' => (string) $frontendPort,
+            ],
+            'ports' => ["{$publicPort}:{$edgePort}"],
+            'volumes' => $hostAppPath
+                ? [LaravelNextGatewayProxy::hostScriptPath($hostAppPath).':'.LaravelNextGatewayProxy::scriptPathInContainer().':ro']
+                : [],
+            'command' => ['node', LaravelNextGatewayProxy::scriptPathInContainer()],
+            'depends_on' => [
+                LaravelNextGatewayProxy::BACKEND_SERVICE,
+                LaravelNextGatewayProxy::FRONTEND_SERVICE,
+            ],
+            'mem_limit' => $edgeMem.'M',
+            'cpus' => $edgeCpu,
+            'deploy' => [
+                'resources' => [
+                    'limits' => [
+                        'cpus' => (string) $edgeCpu,
+                        'memory' => $edgeMem.'M',
+                    ],
+                ],
+            ],
+        ];
+
+        if (isset($backend['depends_on'])) {
+            // keep db dependency on backend
+        }
+
+        $compose['services'][LaravelNextGatewayProxy::BACKEND_SERVICE] = $backend;
+        $compose['services'][LaravelNextGatewayProxy::FRONTEND_SERVICE] = $frontend;
+        $compose['services'][LaravelNextGatewayProxy::EDGE_SERVICE] = $edge;
+    }
+
+    /**
+     * @param  array<string, string>  $envVars
+     */
+    private function resolvePublicAppUrl(?ContainerDeployment $deployment, array $envVars): ?string
+    {
+        foreach (['FRONTEND_URL', 'APP_URL', 'NEXT_PUBLIC_APP_URL'] as $key) {
+            $value = trim((string) ($envVars[$key] ?? ''));
+            if ($value !== '' && preg_match('#^https?://#i', $value)) {
+                return rtrim($value, '/');
+            }
+        }
+
+        if ($deployment) {
+            $deployment->loadMissing('node', 'domains');
+            $active = $deployment->domains->firstWhere('status', 'active');
+            if ($active && ! empty($active->domain)) {
+                return 'https://'.ltrim((string) $active->domain, '/');
+            }
+
+            $url = $deployment->getAccessUrl();
+            if (is_string($url) && $url !== '') {
+                return rtrim($url, '/');
+            }
+        }
+
+        return null;
+    }
+
+    public function usesLaravelNextSidecarStack(ContainerDeployment $deployment): bool
+    {
+        $yaml = (string) ($deployment->docker_compose_content ?? '');
+
+        return str_contains($yaml, "\n  frontend:\n")
+            && str_contains($yaml, "\n  edge:\n")
+            && str_contains($yaml, "\n  backend:\n");
+    }
+
+    private function nextSidecarImage(string $key, string $default): string
+    {
+        try {
+            $value = config('containers.next_sidecar.'.$key, $default);
+
+            return is_string($value) && $value !== '' ? $value : $default;
+        } catch (\Throwable) {
+            return $default;
+        }
     }
 
     /**
@@ -2111,7 +2329,7 @@ class ContainerDeploymentService
             if (is_string($asOsUser) && $asOsUser !== '') {
                 $osUserArg = escapeshellarg($asOsUser);
                 $checkCmd = "cd {$pathArg} && docker compose exec -T -u {$osUserArg} db "
-                    ."psql -d postgres -Atc ".escapeshellarg($createDbSql);
+                    .'psql -d postgres -Atc '.escapeshellarg($createDbSql);
             } elseif (! $usePassword) {
                 $checkCmd = "cd {$pathArg} && docker compose exec -T db "
                     ."psql -U {$adminUserArg} -d postgres -Atc ".escapeshellarg($createDbSql);
@@ -2221,6 +2439,7 @@ class ContainerDeploymentService
                         )));
                         if ($isSuper !== 'on') {
                             $errors[] = $username.'@socket: connected but not superuser';
+
                             continue;
                         }
 
@@ -2240,6 +2459,7 @@ class ContainerDeploymentService
                     )));
                     if ($isSuper !== 'on') {
                         $errors[] = $username.'@password: connected but not superuser';
+
                         continue;
                     }
 
@@ -2595,13 +2815,14 @@ class ContainerDeploymentService
 
         $relativeDir = $this->stackCommands->resolveLaravelFrontendRelativeDir($ssh, $hostAppPath) ?? 'frontend';
         $documentRoot = app(LaravelProjectPathResolver::class)->resolveDocumentRoot($ssh, $hostAppPath) ?: '/app/public';
-        $internalPort = (int) ($template->default_port ?: 8000);
-        $apiPort = $internalPort === 8001 ? 8002 : 8001;
-        $nextPort = $internalPort === 3000 ? 3001 : 3000;
 
         $gatewayHostPath = LaravelNextGatewayProxy::hostScriptPath($hostAppPath);
         $ssh->upload(
-            LaravelNextGatewayProxy::scriptContents($internalPort, $apiPort, $nextPort),
+            LaravelNextGatewayProxy::scriptContents(
+                LaravelNextGatewayProxy::EDGE_INTERNAL_PORT,
+                LaravelNextGatewayProxy::BACKEND_PORT,
+                LaravelNextGatewayProxy::FRONTEND_PORT,
+            ),
             $gatewayHostPath
         );
 
@@ -2611,11 +2832,19 @@ class ContainerDeploymentService
         $envVars['npm_config_cache'] = '/tmp/.npm';
         $envVars['CACHE_STORE'] = $envVars['CACHE_STORE'] ?? 'file';
         $envVars['CACHE_DRIVER'] = $envVars['CACHE_DRIVER'] ?? 'file';
-        $envVars['INTERNAL_API_URL'] = 'http://127.0.0.1:'.$apiPort;
-        $envVars['BACKEND_URL'] = 'http://127.0.0.1:'.$apiPort;
-        $envVars['API_URL'] = 'http://127.0.0.1:'.$apiPort;
-        $envVars['LARAVEL_API_PORT'] = (string) $apiPort;
-        $envVars['NEXT_PORT'] = (string) $nextPort;
+        $envVars['INTERNAL_API_URL'] = 'http://'.LaravelNextGatewayProxy::BACKEND_SERVICE.':'.LaravelNextGatewayProxy::BACKEND_PORT;
+        $envVars['BACKEND_URL'] = $envVars['INTERNAL_API_URL'];
+        $envVars['LARAVEL_API_PORT'] = (string) LaravelNextGatewayProxy::BACKEND_PORT;
+        $envVars['NEXT_PORT'] = (string) LaravelNextGatewayProxy::FRONTEND_PORT;
+
+        $publicUrl = $this->resolvePublicAppUrl($deployment, $envVars);
+        if ($publicUrl !== null) {
+            $envVars['APP_URL'] = $publicUrl;
+            $envVars['FRONTEND_URL'] = $publicUrl;
+            $envVars['NEXT_PUBLIC_APP_URL'] = $publicUrl;
+            $envVars['NEXT_PUBLIC_API_URL'] = rtrim($publicUrl, '/').'/api/v1';
+            $envVars['API_URL'] = $envVars['NEXT_PUBLIC_API_URL'];
+        }
 
         $composeYaml = $this->renderCompose(
             $template,
@@ -2630,7 +2859,7 @@ class ContainerDeploymentService
             $documentRoot,
             serveNextFrontend: true,
             nextFrontendRelativeDir: $relativeDir,
-            laravelApiPort: $apiPort,
+            laravelApiPort: LaravelNextGatewayProxy::BACKEND_PORT,
         );
 
         $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
@@ -2640,16 +2869,23 @@ class ContainerDeploymentService
             'env_values' => $envVars,
         ]);
 
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        $meta['env_values'] = $envVars;
+        $meta['frontend'] = $meta['frontend'] ?? 'nextjs';
+        $service->update(['service_meta' => $meta]);
+
         $this->composeUp(
             $ssh,
             $containerPath,
             $this->runtimeImages->usesRuntimeImage($template)
         );
 
-        $this->recordDeploymentEvent($service, $deployment, 'laravel_next_frontend_runtime', [
+        $this->recordDeploymentEvent($service, $deployment, 'laravel_next_sidecar_stack', [
             'frontend_dir' => $relativeDir,
-            'public_port' => $internalPort,
-            'api_port' => $apiPort,
+            'public_port' => (int) $deployment->assigned_port,
+            'backend_port' => LaravelNextGatewayProxy::BACKEND_PORT,
+            'frontend_port' => LaravelNextGatewayProxy::FRONTEND_PORT,
+            'edge_port' => LaravelNextGatewayProxy::EDGE_INTERNAL_PORT,
         ]);
     }
 
@@ -2771,12 +3007,39 @@ class ContainerDeploymentService
 
             $runtime = $this->resolveApplicationRuntime($ssh, $template, $hostAppPath);
             $documentRoot = null;
+            $serveNextFrontend = false;
+            $nextFrontendRelativeDir = 'frontend';
 
             if (($template->slug ?? null) === 'laravel' && $hostAppPath) {
                 $resolver = app(LaravelProjectPathResolver::class);
                 if ($resolver->hasProject($ssh, $hostAppPath)) {
                     $resolved = $resolver->persistResolvedPaths($service, $ssh, $deployment);
                     $documentRoot = $resolved['document_root'] ?? $resolver->resolveDocumentRoot($ssh, $hostAppPath);
+                }
+
+                $serveNextFrontend = $this->usesLaravelNextSidecarStack($deployment)
+                    || $this->stackCommands->hostHasNextFrontend($ssh, $hostAppPath);
+                if ($serveNextFrontend) {
+                    $nextFrontendRelativeDir = $this->stackCommands->resolveLaravelFrontendRelativeDir($ssh, $hostAppPath) ?? 'frontend';
+                    $ssh->upload(
+                        LaravelNextGatewayProxy::scriptContents(
+                            LaravelNextGatewayProxy::EDGE_INTERNAL_PORT,
+                            LaravelNextGatewayProxy::BACKEND_PORT,
+                            LaravelNextGatewayProxy::FRONTEND_PORT,
+                        ),
+                        LaravelNextGatewayProxy::hostScriptPath($hostAppPath)
+                    );
+                    $publicUrl = $this->resolvePublicAppUrl($deployment, $envVars);
+                    $envVars['INTERNAL_API_URL'] = 'http://'.LaravelNextGatewayProxy::BACKEND_SERVICE.':'.LaravelNextGatewayProxy::BACKEND_PORT;
+                    $envVars['BACKEND_URL'] = $envVars['INTERNAL_API_URL'];
+                    if ($publicUrl !== null) {
+                        $envVars['APP_URL'] = $envVars['APP_URL'] ?? $publicUrl;
+                        $envVars['FRONTEND_URL'] = $envVars['FRONTEND_URL'] ?? $publicUrl;
+                        $envVars['NEXT_PUBLIC_APP_URL'] = $envVars['NEXT_PUBLIC_APP_URL'] ?? $publicUrl;
+                        $envVars['NEXT_PUBLIC_API_URL'] = $envVars['NEXT_PUBLIC_API_URL'] ?? (rtrim($publicUrl, '/').'/api/v1');
+                        $envVars['API_URL'] = $envVars['API_URL'] ?? $envVars['NEXT_PUBLIC_API_URL'];
+                    }
+                    $deployment->update(['env_values' => $envVars]);
                 }
             }
 
@@ -2790,7 +3053,9 @@ class ContainerDeploymentService
                 $deployment->selected_version,
                 $hostAppPath,
                 $runtime,
-                $documentRoot
+                $documentRoot,
+                serveNextFrontend: $serveNextFrontend,
+                nextFrontendRelativeDir: $nextFrontendRelativeDir,
             );
 
             $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
