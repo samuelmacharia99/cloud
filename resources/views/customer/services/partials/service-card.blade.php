@@ -23,68 +23,112 @@
         isDragging = false;
         $dispatch('service-drag', { id: null, phase: 'end' });
     "
-    class="ui-card ui-card-interactive flex flex-col overflow-hidden group relative cursor-grab active:cursor-grabbing"
+    class="ui-card flex flex-col overflow-hidden group relative cursor-grab active:cursor-grabbing"
     :class="isDragging ? 'opacity-40 ring-2 ring-brand-400' : ''"
-    x-data="{ isDragging: false, showRename: false, showMove: false, showNewProject: false, renameName: @js($service->name), newProjectName: '' }"
+    x-data="{
+        expanded: false,
+        isDragging: false,
+        showRename: false,
+        showMove: false,
+        showNewProject: false,
+        renameName: @js($service->name),
+        newProjectName: '',
+    }"
 >
-    <div class="absolute top-3 left-3 z-10 text-slate-300 dark:text-slate-600 pointer-events-none" title="Drag to a project" aria-hidden="true">
+    <div class="absolute top-3.5 left-3 z-10 text-slate-300 dark:text-slate-600 pointer-events-none" title="Drag to a project" aria-hidden="true">
         <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M7 4a1 1 0 11-2 0 1 1 0 012 0zm0 6a1 1 0 11-2 0 1 1 0 012 0zm0 6a1 1 0 11-2 0 1 1 0 012 0zm8-12a1 1 0 11-2 0 1 1 0 012 0zm0 6a1 1 0 11-2 0 1 1 0 012 0zm0 6a1 1 0 11-2 0 1 1 0 012 0z"/></svg>
     </div>
 
-    <a href="{{ $manageUrl }}" class="block p-5 sm:p-6 flex-1 pl-9" draggable="false">
-        <div class="flex items-start justify-between gap-3 mb-4">
-            <div class="min-w-0">
-                <h3 class="font-semibold text-slate-900 dark:text-white truncate group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors">{{ $service->name }}</h3>
-                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    {{ $service->product->name }}
-                    <span class="text-slate-400 dark:text-slate-500">·</span>
-                    <span class="capitalize">{{ str_replace('_', ' ', $service->product->type) }}</span>
-                </p>
+    {{-- Compact header (always visible) --}}
+    <div class="flex items-start gap-2 p-4 sm:p-5 pl-9">
+        <button
+            type="button"
+            class="min-w-0 flex-1 text-left cursor-pointer"
+            @click="expanded = !expanded"
+            :aria-expanded="expanded.toString()"
+            aria-controls="service-card-body-{{ $service->id }}"
+        >
+            <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                    <h3 class="font-semibold text-slate-900 dark:text-white truncate group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors">{{ $service->name }}</h3>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                        {{ $service->product->name }}
+                        <span class="text-slate-400 dark:text-slate-500">·</span>
+                        <span class="capitalize">{{ str_replace('_', ' ', $service->product->type) }}</span>
+                    </p>
+                    @if(count($nestedContainers) >= 2)
+                        <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400 truncate" x-show="!expanded">
+                            {{ implode(' · ', $nestedContainers) }}
+                        </p>
+                    @endif
+                </div>
+                <div class="flex items-center gap-2 shrink-0">
+                    <x-status-badge :status="$service->status" type="service" />
+                    <span class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 dark:text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+                        <svg class="w-4 h-4 transition-transform duration-200" :class="expanded ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                        </svg>
+                    </span>
+                </div>
             </div>
-            <x-status-badge :status="$service->status" type="service" />
+        </button>
+    </div>
+
+    {{-- Expanded details --}}
+    <div
+        id="service-card-body-{{ $service->id }}"
+        x-show="expanded"
+        x-cloak
+        x-transition:enter="transition ease-out duration-150"
+        x-transition:enter-start="opacity-0 -translate-y-1"
+        x-transition:enter-end="opacity-100 translate-y-0"
+        x-transition:leave="transition ease-in duration-100"
+        x-transition:leave-start="opacity-100"
+        x-transition:leave-end="opacity-0"
+    >
+        <div class="px-4 sm:px-5 pb-4 pl-9">
+            <dl class="space-y-2.5 text-sm border-t border-slate-100 dark:border-slate-800 pt-4">
+                <div class="flex justify-between gap-2">
+                    <dt class="text-slate-500 dark:text-slate-400">Service ID</dt>
+                    <dd class="font-mono font-medium text-slate-900 dark:text-white">#{{ $service->id }}</dd>
+                </div>
+                <div class="flex justify-between gap-2">
+                    <dt class="text-slate-500 dark:text-slate-400">Billing</dt>
+                    <dd class="font-medium capitalize">{{ $service->billing_cycle }}</dd>
+                </div>
+                <div class="flex justify-between gap-2">
+                    <dt class="text-slate-500 dark:text-slate-400">Next due</dt>
+                    <dd class="font-medium
+                        @if($service->next_due_date?->isPast()) text-red-600 dark:text-red-400
+                        @elseif($service->next_due_date && $service->next_due_date->diffInDays(now()) <= 7) text-amber-600 dark:text-amber-400
+                        @else text-slate-900 dark:text-white @endif">
+                        {{ $service->next_due_date?->format('M d, Y') ?? '—' }}
+                    </dd>
+                </div>
+            </dl>
+
+            @if(count($nestedContainers) >= 2)
+                <p class="mt-3 text-xs text-slate-500 dark:text-slate-400">
+                    Containers: {{ implode(' · ', $nestedContainers) }}
+                </p>
+            @endif
         </div>
 
-        <dl class="space-y-2.5 text-sm border-t border-slate-100 dark:border-slate-800 pt-4">
-            <div class="flex justify-between gap-2">
-                <dt class="text-slate-500 dark:text-slate-400">Service ID</dt>
-                <dd class="font-mono font-medium text-slate-900 dark:text-white">#{{ $service->id }}</dd>
-            </div>
-            <div class="flex justify-between gap-2">
-                <dt class="text-slate-500 dark:text-slate-400">Billing</dt>
-                <dd class="font-medium capitalize">{{ $service->billing_cycle }}</dd>
-            </div>
-            <div class="flex justify-between gap-2">
-                <dt class="text-slate-500 dark:text-slate-400">Next due</dt>
-                <dd class="font-medium
-                    @if($service->next_due_date?->isPast()) text-red-600 dark:text-red-400
-                    @elseif($service->next_due_date && $service->next_due_date->diffInDays(now()) <= 7) text-amber-600 dark:text-amber-400
-                    @else text-slate-900 dark:text-white @endif">
-                    {{ $service->next_due_date?->format('M d, Y') ?? '—' }}
-                </dd>
-            </div>
-        </dl>
-
-        @if(count($nestedContainers) >= 2)
-            <p class="mt-3 text-xs text-slate-500 dark:text-slate-400">
-                {{ implode(' · ', $nestedContainers) }}
-            </p>
-        @endif
-    </a>
-
-    <div class="px-5 sm:px-6 py-4 bg-slate-50/80 dark:bg-slate-800/30 border-t border-slate-100 dark:border-slate-800 flex flex-wrap gap-2">
-        <a href="{{ $manageUrl }}" class="{{ $payInvoice ? 'btn-primary' : 'btn-secondary' }} flex-1 btn-sm min-w-[5rem]" draggable="false">
-            {{ $payInvoice ? 'Pay' : 'Manage' }}
-        </a>
-        @if($canRenew)
-            <a href="{{ route('customer.services.renew', $service) }}" class="btn-primary flex-1 btn-sm text-center min-w-[5rem]" draggable="false">Renew</a>
-        @else
-            <button disabled class="btn-secondary flex-1 btn-sm opacity-50 cursor-not-allowed min-w-[5rem]">Renew</button>
-        @endif
-        <button type="button" @click="showRename = true" class="btn-secondary flex-1 btn-sm min-w-[5rem]">Rename</button>
-        <button type="button" @click="showMove = true" class="btn-secondary flex-1 btn-sm min-w-[5rem]">Move</button>
-        @if($isWordpress)
-            <a href="{{ route('customer.services.wordpress-admin', $service) }}" class="btn-primary flex-1 btn-sm text-center min-w-[5rem]" draggable="false">WP Admin</a>
-        @endif
+        <div class="px-4 sm:px-5 py-3 bg-slate-50/80 dark:bg-slate-800/30 border-t border-slate-100 dark:border-slate-800 flex flex-wrap gap-2">
+            <a href="{{ $manageUrl }}" class="{{ $payInvoice ? 'btn-primary' : 'btn-secondary' }} flex-1 btn-sm min-w-[5rem]" draggable="false">
+                {{ $payInvoice ? 'Pay' : 'Manage' }}
+            </a>
+            @if($canRenew)
+                <a href="{{ route('customer.services.renew', $service) }}" class="btn-primary flex-1 btn-sm text-center min-w-[5rem]" draggable="false">Renew</a>
+            @else
+                <button disabled class="btn-secondary flex-1 btn-sm opacity-50 cursor-not-allowed min-w-[5rem]">Renew</button>
+            @endif
+            <button type="button" @click="showRename = true" class="btn-secondary flex-1 btn-sm min-w-[5rem]">Rename</button>
+            <button type="button" @click="showMove = true" class="btn-secondary flex-1 btn-sm min-w-[5rem]">Move</button>
+            @if($isWordpress)
+                <a href="{{ route('customer.services.wordpress-admin', $service) }}" class="btn-primary flex-1 btn-sm text-center min-w-[5rem]" draggable="false">WP Admin</a>
+            @endif
+        </div>
     </div>
 
     <div x-show="showRename" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" @keydown.escape.window="showRename = false">
