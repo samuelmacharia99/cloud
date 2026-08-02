@@ -1300,12 +1300,14 @@ class ContainerDeploymentService
         string $containerName,
         DatabaseTemplate $databaseTemplate,
         array $envVars,
-        int $timeoutSeconds = 180
+        int $timeoutSeconds = 180,
+        ?string $containerPath = null
     ): void {
         $delaySeconds = 5;
         $maxAttempts = max(1, (int) ceil($timeoutSeconds / $delaySeconds));
         $containerArg = escapeshellarg($containerName);
         $lastError = null;
+        $credentialResyncAttempted = false;
 
         for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
             try {
@@ -1323,11 +1325,22 @@ class ContainerDeploymentService
 
                 if ($this->isMissingDatabaseDriverError($lastError)) {
                     throw new \RuntimeException(
-                        'Application could not connect to the database: '.$lastError
-                        .' Install the PDO driver for this database (pdo_pgsql for PostgreSQL) and retry.',
+                        'Application could not connect to the database: PDO driver is missing. '
+                        .'Install the PDO driver for this database (pdo_pgsql for PostgreSQL) and retry.',
                         0,
                         $e
                     );
+                }
+
+                // Password mismatches are common when a volume was kept across env changes.
+                // Re-sync sidecar credentials once, then keep polling.
+                if (
+                    $containerPath
+                    && ! $credentialResyncAttempted
+                    && $this->isDatabasePasswordAuthenticationError($lastError)
+                ) {
+                    $credentialResyncAttempted = true;
+                    $this->ensureDatabaseCredentialsSynced($ssh, $containerPath, $databaseTemplate, $envVars);
                 }
             }
 
@@ -1336,21 +1349,50 @@ class ContainerDeploymentService
             }
         }
 
-        $suffix = $lastError ? ' Last error: '.$lastError : '';
+        $output = $this->extractCommandOutput((string) $lastError);
+        if ($this->isDatabasePasswordAuthenticationError((string) $lastError)) {
+            throw new \RuntimeException(
+                'Application could not connect to the database: password authentication failed. '
+                .'The database volume may still have an older password. '
+                .'Redeploy with “Reset database” to recreate the volume, or retry after credentials are repaired. '
+                .'Detail: '.$output
+            );
+        }
+
+        $suffix = $lastError ? ' Last error: '.$output : '';
 
         throw new \RuntimeException(
             'Application could not connect to the database within '.$timeoutSeconds.' seconds.'.$suffix
         );
     }
 
+    private function extractCommandOutput(string $message): string
+    {
+        if (preg_match('/\bOutput:\s*(.*)\s*\z/s', $message, $matches) === 1) {
+            return trim($matches[1]);
+        }
+
+        return trim($message);
+    }
+
     private function isMissingDatabaseDriverError(string $message): bool
     {
-        $normalized = strtolower($message);
+        // Only inspect command Output. The executed PHP source also contains the
+        // string "missing_pdo_pgsql", which would false-positive on any SSH failure.
+        $output = strtolower($this->extractCommandOutput($message));
 
-        return str_contains($normalized, 'could not find driver')
-            || str_contains($normalized, 'missing_pdo_pgsql')
-            || str_contains($normalized, 'pdo pgsql driver missing')
-            || str_contains($normalized, 'pdo_pgsql');
+        return $output === 'missing_pdo_pgsql'
+            || str_contains($output, 'could not find driver')
+            || str_contains($output, 'pdo pgsql driver missing');
+    }
+
+    private function isDatabasePasswordAuthenticationError(string $message): bool
+    {
+        $output = strtolower($this->extractCommandOutput($message));
+
+        return str_contains($output, 'password authentication failed')
+            || str_contains($output, 'access denied for user')
+            || (str_contains($output, 'authentication failed') && str_contains($output, 'sqlstate'));
     }
 
     private function tearDownStack(SSHService $ssh, string $containerPath, bool $removeVolumes): void
@@ -1629,6 +1671,7 @@ class ContainerDeploymentService
      *
      * Like MySQL, the official postgres image only reads POSTGRES_USER/POSTGRES_PASSWORD
      * on first init (when the data directory is empty). Subsequent env changes are ignored.
+     * Connect via the container's local socket (peer/trust) so a drifted password can still be reset.
      */
     public function syncPostgresqlSidecarCredentials(
         SSHService $ssh,
@@ -1641,28 +1684,84 @@ class ContainerDeploymentService
         $password = (string) ($envVars['DB_PASSWORD'] ?? $envVars['POSTGRES_PASSWORD'] ?? '');
         $adminUser = (string) ($envVars['POSTGRES_USER'] ?? 'postgres');
 
-        $sql = sprintf(
-            'DO $$ BEGIN '
-            ."IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = '%s') THEN "
-            ."CREATE ROLE \"%s\" WITH LOGIN PASSWORD '%s'; "
-            .'END IF; END $$; '
-            ."ALTER ROLE \"%s\" WITH LOGIN PASSWORD '%s'; "
-            ."SELECT 'CREATE DATABASE \"%s\"' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '%s')\\gexec "
-            .'GRANT ALL PRIVILEGES ON DATABASE "%s" TO "%s";',
-            addcslashes($username, "'"),
-            addcslashes($username, '"'), addcslashes($password, "'"),
-            addcslashes($username, '"'), addcslashes($password, "'"),
-            addcslashes($database, '"'), addcslashes($database, "'"),
-            addcslashes($database, '"'), addcslashes($username, '"')
-        );
+        $roleLiteral = "'".str_replace("'", "''", $username)."'";
+        $dbLiteral = "'".str_replace("'", "''", $database)."'";
+        $userIdent = '"'.str_replace('"', '""', $username).'"';
+        $dbIdent = '"'.str_replace('"', '""', $database).'"';
+        $passwordTag = 'ts'.bin2hex(random_bytes(4));
+        $passwordLiteral = '$'.$passwordTag.'$'.$password.'$'.$passwordTag.'$';
 
-        $sqlArg = escapeshellarg($sql);
+        $roleSql = 'DO $$ BEGIN '
+            .'IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = '.$roleLiteral.') THEN '
+            .'CREATE ROLE '.$userIdent.' WITH LOGIN PASSWORD '.$passwordLiteral.'; '
+            .'ELSE '
+            .'ALTER ROLE '.$userIdent.' WITH LOGIN PASSWORD '.$passwordLiteral.'; '
+            .'END IF; '
+            .'END $$;';
+
+        $createDbSql = 'SELECT 1 FROM pg_database WHERE datname = '.$dbLiteral;
+        $createDbIfMissingSql = 'CREATE DATABASE '.$dbIdent.' OWNER '.$userIdent;
+        $ownerSql = 'ALTER DATABASE '.$dbIdent.' OWNER TO '.$userIdent;
+        $grantSql = 'GRANT ALL PRIVILEGES ON DATABASE '.$dbIdent.' TO '.$userIdent;
+        $schemaSql = 'GRANT ALL ON SCHEMA public TO '.$userIdent.'; '
+            .'ALTER SCHEMA public OWNER TO '.$userIdent.';';
+
+        $adminUserArg = escapeshellarg($adminUser);
         $adminPassword = escapeshellarg((string) ($envVars['POSTGRES_PASSWORD'] ?? $envVars['DB_PASSWORD'] ?? ''));
 
-        $command = "cd {$pathArg} && docker compose exec -T -e PGPASSWORD={$adminPassword} db "
-            .'psql -U '.escapeshellarg($adminUser)." -d postgres -c {$sqlArg}";
+        $run = function (string $sql, string $databaseName = 'postgres') use ($ssh, $pathArg, $adminUserArg, $adminPassword): void {
+            $sqlArg = escapeshellarg($sql);
+            $dbArg = escapeshellarg($databaseName);
 
-        $ssh->exec($command, 30);
+            // Prefer local socket auth (no password) so drifted POSTGRES_PASSWORD still works.
+            try {
+                $ssh->exec(
+                    "cd {$pathArg} && docker compose exec -T db "
+                    ."psql -v ON_ERROR_STOP=1 -U {$adminUserArg} -d {$dbArg} -c {$sqlArg}",
+                    30
+                );
+
+                return;
+            } catch (\Throwable) {
+            }
+
+            $ssh->exec(
+                "cd {$pathArg} && docker compose exec -T -e PGPASSWORD={$adminPassword} db "
+                ."psql -v ON_ERROR_STOP=1 -U {$adminUserArg} -d {$dbArg} -c {$sqlArg}",
+                30
+            );
+        };
+
+        $run($roleSql);
+
+        $exists = false;
+        try {
+            $output = trim($ssh->exec(
+                "cd {$pathArg} && docker compose exec -T db "
+                ."psql -U {$adminUserArg} -d postgres -Atc ".escapeshellarg($createDbSql),
+                20
+            ));
+            $exists = $output === '1';
+        } catch (\Throwable) {
+            try {
+                $output = trim($ssh->exec(
+                    "cd {$pathArg} && docker compose exec -T -e PGPASSWORD={$adminPassword} db "
+                    ."psql -U {$adminUserArg} -d postgres -Atc ".escapeshellarg($createDbSql),
+                    20
+                ));
+                $exists = $output === '1';
+            } catch (\Throwable) {
+                $exists = false;
+            }
+        }
+
+        if (! $exists) {
+            $run($createDbIfMissingSql);
+        }
+
+        $run($ownerSql);
+        $run($grantSql);
+        $run($schemaSql, $database);
     }
 
     /**

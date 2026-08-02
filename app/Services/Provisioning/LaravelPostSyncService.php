@@ -146,7 +146,9 @@ class LaravelPostSyncService
             $ssh,
             $deployment->container_name,
             $databaseTemplate,
-            $envValues
+            $envValues,
+            180,
+            $containerPath
         );
     }
 
