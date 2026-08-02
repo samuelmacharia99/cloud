@@ -743,6 +743,8 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('my/services/{service}/container/stop', [App\Http\Controllers\Customer\ContainerController::class, 'stop'])->name('customer.services.container.stop');
         Route::post('my/services/{service}/container/start', [App\Http\Controllers\Customer\ContainerController::class, 'start'])->name('customer.services.container.start');
         Route::get('my/services/{service}/container/logs', [App\Http\Controllers\Customer\ContainerController::class, 'logs'])->name('customer.services.container.logs');
+        Route::post('my/services/{service}/container/doctor/diagnose', [App\Http\Controllers\Customer\ContainerController::class, 'doctorDiagnose'])->middleware('throttle:10,1')->name('customer.services.container.doctor.diagnose');
+        Route::post('my/services/{service}/container/doctor/treat', [App\Http\Controllers\Customer\ContainerController::class, 'doctorTreat'])->middleware('throttle:6,1')->name('customer.services.container.doctor.treat');
         Route::get('my/services/{service}/container/metrics', [App\Http\Controllers\Customer\ContainerController::class, 'metrics'])->name('customer.services.container.metrics');
         Route::get('my/services/{service}/container/health', [App\Http\Controllers\Customer\ContainerController::class, 'health'])->name('customer.services.container.health');
         Route::get('my/services/{service}/container/storage-stats', [App\Http\Controllers\Customer\ContainerController::class, 'storageStats'])->name('customer.services.container.storage-stats');

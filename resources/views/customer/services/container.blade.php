@@ -776,18 +776,23 @@
                     <template x-if="hasVisited('logs')">
                         <div x-show="activeTab === 'logs'">
                             <div class="space-y-4">
-                                <div class="flex flex-wrap items-center gap-3">
-                                    <button type="button" @click="loadFullLogs()" :disabled="logsLoading" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg font-medium transition">
-                                        <span x-text="logsLoading ? 'Loading…' : 'Refresh logs'"></span>
-                                    </button>
-                                    <label class="inline-flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
-                                        <input type="checkbox" x-model="logsLive" @change="toggleLiveLogs()" class="rounded border-slate-300 dark:border-slate-600 text-blue-600">
-                                        Live follow (2s)
-                                    </label>
-                                    <span class="text-sm text-slate-500 dark:text-slate-400">Last 200 lines · stdout/stderr</span>
-                                    <span x-show="logsFetchedAt" class="text-xs font-mono text-slate-400" x-text="logsFetchedAt ? `Updated ${logsFetchedAt}` : ''"></span>
+                                @include('customer.services.partials.container-doctor')
+
+                                <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 overflow-hidden">
+                                    <div class="px-5 py-4 border-b border-slate-200 dark:border-slate-700 flex flex-wrap items-center gap-3">
+                                        <h3 class="text-base font-semibold text-slate-900 dark:text-white mr-auto">Container logs</h3>
+                                        <button type="button" @click="loadFullLogs()" :disabled="logsLoading" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg font-medium transition text-sm">
+                                            <span x-text="logsLoading ? 'Loading…' : 'Refresh logs'"></span>
+                                        </button>
+                                        <label class="inline-flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
+                                            <input type="checkbox" x-model="logsLive" @change="toggleLiveLogs()" class="rounded border-slate-300 dark:border-slate-600 text-blue-600">
+                                            Live follow (2s)
+                                        </label>
+                                        <span class="text-sm text-slate-500 dark:text-slate-400">Last 200 lines · stdout/stderr</span>
+                                        <span x-show="logsFetchedAt" class="text-xs font-mono text-slate-400" x-text="logsFetchedAt ? `Updated ${logsFetchedAt}` : ''"></span>
+                                    </div>
+                                    <pre class="bg-slate-900 text-slate-300 p-4 font-mono text-sm overflow-x-auto max-h-[32rem] whitespace-pre-wrap rounded-b-xl" x-ref="fullLogsEl" x-text="fullLogs || 'Loading logs…'"></pre>
                                 </div>
-                                <pre class="bg-slate-900 text-slate-300 p-4 rounded-lg font-mono text-sm overflow-x-auto max-h-[32rem] whitespace-pre-wrap" x-ref="fullLogsEl" x-text="fullLogs || 'Loading logs…'"></pre>
                             </div>
                         </div>
                     </template>
@@ -998,6 +1003,93 @@ function containerTabs(initialTab) {
                 console.error('Error:', error);
             } finally {
                 this.logsLoading = false;
+            }
+        },
+    };
+}
+
+function containerDoctor(config = {}) {
+    return {
+        diagnoseUrl: config.diagnoseUrl,
+        treatUrl: config.treatUrl,
+        logLines: config.logLines || 2000,
+        diagnosing: false,
+        treating: false,
+        treatingAction: null,
+        hasResult: false,
+        healthy: false,
+        findings: [],
+        linesScanned: 0,
+        scannedAt: '',
+        error: '',
+        treatMessage: '',
+        treatOk: false,
+
+        async runDiagnose() {
+            this.diagnosing = true;
+            this.error = '';
+            this.treatMessage = '';
+            try {
+                const response = await fetch(this.diagnoseUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                    },
+                });
+                const data = await response.json();
+                if (!response.ok || data.error) {
+                    this.error = data.error || data.message || 'Doctor scan failed.';
+                    this.hasResult = false;
+                    return;
+                }
+                this.findings = data.findings || [];
+                this.healthy = !!data.healthy;
+                this.linesScanned = data.lines_scanned || 0;
+                this.scannedAt = data.scanned_at
+                    ? new Date(data.scanned_at).toLocaleTimeString()
+                    : '';
+                this.hasResult = true;
+            } catch (e) {
+                this.error = 'Network error while running doctor.';
+                console.error(e);
+            } finally {
+                this.diagnosing = false;
+            }
+        },
+
+        async runTreat(finding) {
+            if (!finding?.treat_action || this.treating) {
+                return;
+            }
+            this.treating = true;
+            this.treatingAction = finding.treat_action;
+            this.treatMessage = '';
+            try {
+                const response = await fetch(this.treatUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                    },
+                    body: JSON.stringify({ action: finding.treat_action }),
+                });
+                const data = await response.json();
+                this.treatOk = !!data.success;
+                this.treatMessage = data.message || (data.success ? 'Done.' : 'Treatment failed.');
+                if (data.success) {
+                    await this.runDiagnose();
+                }
+            } catch (e) {
+                this.treatOk = false;
+                this.treatMessage = 'Network error while treating.';
+                console.error(e);
+            } finally {
+                this.treating = false;
+                this.treatingAction = null;
             }
         },
     };

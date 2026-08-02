@@ -27,6 +27,7 @@ use App\Services\Provisioning\ContainerBackupService;
 use App\Services\Provisioning\ContainerCronService;
 use App\Services\Provisioning\ContainerDeploymentService;
 use App\Services\Provisioning\ContainerDeployOptions;
+use App\Services\Provisioning\ContainerDoctorService;
 use App\Services\Provisioning\ContainerEnvironmentService;
 use App\Services\Provisioning\ContainerFileService;
 use App\Services\Provisioning\ContainerGitCredentialsService;
@@ -1184,6 +1185,58 @@ class ContainerController extends Controller
             \Log::error("Failed to fetch logs for service {$service->id}: ".$e->getMessage());
 
             return response()->json(['error' => 'Failed to fetch logs'], 500);
+        }
+    }
+
+    /**
+     * Scan recent container logs for known issues (in-house doctor).
+     */
+    public function doctorDiagnose(Service $service, ContainerDoctorService $doctor): JsonResponse
+    {
+        abort_if($service->user_id !== auth()->id(), 403);
+
+        if ($service->product?->type !== 'container_hosting') {
+            return response()->json(['error' => 'Invalid service type'], 400);
+        }
+
+        try {
+            return response()->json($doctor->diagnose($service));
+        } catch (\Throwable $e) {
+            \Log::error("Container doctor diagnose failed for service {$service->id}: ".$e->getMessage());
+
+            return response()->json([
+                'error' => 'Doctor could not scan logs right now.',
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Apply a one-click treatment suggested by the container doctor.
+     */
+    public function doctorTreat(Service $service, Request $request, ContainerDoctorService $doctor): JsonResponse
+    {
+        abort_if($service->user_id !== auth()->id(), 403);
+
+        if ($service->product?->type !== 'container_hosting') {
+            return response()->json(['success' => false, 'message' => 'Invalid service type'], 400);
+        }
+
+        $validated = $request->validate([
+            'action' => ['required', 'string', 'max:64'],
+        ]);
+
+        try {
+            $result = $doctor->treat($service, $validated['action']);
+
+            return response()->json($result, $result['success'] ? 200 : 422);
+        } catch (\Throwable $e) {
+            \Log::error("Container doctor treat failed for service {$service->id}: ".$e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Treatment failed: '.$e->getMessage(),
+            ], 500);
         }
     }
 

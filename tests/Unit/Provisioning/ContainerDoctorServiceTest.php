@@ -1,0 +1,90 @@
+<?php
+
+namespace Tests\Unit\Provisioning;
+
+use App\Services\Provisioning\ContainerDoctorService;
+use PHPUnit\Framework\Attributes\Test;
+use Tests\TestCase;
+
+class ContainerDoctorServiceTest extends TestCase
+{
+    #[Test]
+    public function it_detects_postgres_password_authentication_failures(): void
+    {
+        $logs = <<<'LOG'
+[Fri Aug 01 10:00:01] [200]: GET /health
+SQLSTATE[08006] [7] connection to server at "db" failed: FATAL: password authentication failed for user "u193_s163"
+[Fri Aug 01 10:00:02] [500]: GET /
+LOG;
+
+        $findings = app(ContainerDoctorService::class)->analyzeLogs($logs, 'laravel');
+        $ids = array_column($findings, 'id');
+
+        $this->assertContains('postgres_password_auth_failed', $ids);
+        $finding = collect($findings)->firstWhere('id', 'postgres_password_auth_failed');
+        $this->assertSame('sync_database_credentials', $finding['treat_action']);
+        $this->assertSame('critical', $finding['severity']);
+    }
+
+    #[Test]
+    public function it_detects_missing_postgres_database(): void
+    {
+        $logs = 'FATAL: database "u193_s163" does not exist';
+
+        $findings = app(ContainerDoctorService::class)->analyzeLogs($logs, 'laravel');
+
+        $this->assertContains('postgres_database_missing', array_column($findings, 'id'));
+    }
+
+    #[Test]
+    public function it_detects_missing_pdo_pgsql(): void
+    {
+        $logs = 'PDOException: could not find driver';
+
+        $findings = app(ContainerDoctorService::class)->analyzeLogs($logs, 'laravel');
+
+        $this->assertContains('missing_pdo_pgsql', array_column($findings, 'id'));
+    }
+
+    #[Test]
+    public function it_detects_node_not_found(): void
+    {
+        $logs = 'sh: 1: eval: node: not found';
+
+        $findings = app(ContainerDoctorService::class)->analyzeLogs($logs, 'laravel');
+        $finding = collect($findings)->firstWhere('id', 'node_not_found');
+
+        $this->assertNotNull($finding);
+        $this->assertSame('ensure_node', $finding['treat_action']);
+    }
+
+    #[Test]
+    public function it_does_not_match_app_key_from_env_dump_alone(): void
+    {
+        $logs = "APP_KEY=base64:abc\nDB_HOST=db";
+
+        $findings = app(ContainerDoctorService::class)->analyzeLogs($logs, 'laravel');
+
+        $this->assertNotContains('app_key_missing', array_column($findings, 'id'));
+    }
+
+    #[Test]
+    public function it_returns_generic_http_500_when_no_signature_matches(): void
+    {
+        $logs = "[Fri Aug 01 10:00:02] [500]: GET / index.php";
+
+        $findings = app(ContainerDoctorService::class)->analyzeLogs($logs, 'laravel');
+
+        $this->assertSame(['http_500_generic'], array_column($findings, 'id'));
+    }
+
+    #[Test]
+    public function it_skips_stack_specific_rules_for_unrelated_stacks(): void
+    {
+        $logs = 'ext-gd is missing from your system';
+
+        $findings = app(ContainerDoctorService::class)->analyzeLogs($logs, 'nodejs');
+
+        $this->assertNotContains('missing_ext_gd', array_column($findings, 'id'));
+    }
+}
