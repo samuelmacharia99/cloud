@@ -1029,24 +1029,21 @@ class ContainerDeploymentService
                 $frontendDir = '/app/'.trim($nextFrontendRelativeDir, '/');
 
                 if ($serveNextFrontend) {
-                    // Public URL → Next.js; Laravel API listens on loopback for the frontend.
-                    $compose['services'][$containerName]['command'] = [
-                        'sh',
-                        '-lc',
-                        'set -e; '
-                        .'export HOME=/tmp NPM_CONFIG_CACHE=/tmp/.npm npm_config_cache=/tmp/.npm; '
-                        .'mkdir -p /tmp/.npm; '
-                        .'php -S 127.0.0.1:'.$laravelApiPort.' -t '.escapeshellarg($documentRoot)
-                        .' >/tmp/laravel-api.log 2>&1 & '
-                        .'cd '.escapeshellarg($frontendDir).'; '
-                        .'if [ -f .next/standalone/server.js ]; then '
-                        .'export HOSTNAME=0.0.0.0 PORT='.$internalPort.'; exec node .next/standalone/server.js; fi; '
-                        .'if [ -f .next/standalone/frontend/server.js ]; then '
-                        .'export HOSTNAME=0.0.0.0 PORT='.$internalPort.'; exec node .next/standalone/frontend/server.js; fi; '
-                        .'if [ -x node_modules/.bin/next ]; then exec node_modules/.bin/next start -H 0.0.0.0 -p '.$internalPort.'; fi; '
-                        .'if [ -f node_modules/next/dist/bin/next ]; then exec node node_modules/next/dist/bin/next start -H 0.0.0.0 -p '.$internalPort.'; fi; '
-                        .'exec npx next start -H 0.0.0.0 -p '.$internalPort,
-                    ];
+                    // Public URL → gateway: Next for UI, Laravel for /api|/sanctum|/storage|...
+                    $nextInternalPort = $internalPort === 3000 ? 3001 : 3000;
+                    $compose['services'][$containerName]['command'] = LaravelNextGatewayProxy::composeCommand(
+                        $documentRoot,
+                        $frontendDir,
+                        $internalPort,
+                        $laravelApiPort,
+                        $nextInternalPort,
+                    );
+                    $compose['services'][$containerName]['environment']['LARAVEL_API_PORT'] = (string) $laravelApiPort;
+                    $compose['services'][$containerName]['environment']['NEXT_PORT'] = (string) $nextInternalPort;
+                    $compose['services'][$containerName]['environment']['GATEWAY_PUBLIC_PORT'] = (string) $internalPort;
+                    $compose['services'][$containerName]['environment']['INTERNAL_API_URL'] = 'http://127.0.0.1:'.$laravelApiPort;
+                    $compose['services'][$containerName]['environment']['BACKEND_URL'] = 'http://127.0.0.1:'.$laravelApiPort;
+                    $compose['services'][$containerName]['environment']['API_URL'] = 'http://127.0.0.1:'.$laravelApiPort;
                 } else {
                     $compose['services'][$containerName]['command'] = [
                         'php',
@@ -2600,6 +2597,13 @@ class ContainerDeploymentService
         $documentRoot = app(LaravelProjectPathResolver::class)->resolveDocumentRoot($ssh, $hostAppPath) ?: '/app/public';
         $internalPort = (int) ($template->default_port ?: 8000);
         $apiPort = $internalPort === 8001 ? 8002 : 8001;
+        $nextPort = $internalPort === 3000 ? 3001 : 3000;
+
+        $gatewayHostPath = LaravelNextGatewayProxy::hostScriptPath($hostAppPath);
+        $ssh->upload(
+            LaravelNextGatewayProxy::scriptContents($internalPort, $apiPort, $nextPort),
+            $gatewayHostPath
+        );
 
         $envVars = is_array($deployment->env_values) ? $deployment->env_values : [];
         $envVars['HOME'] = '/tmp';
@@ -2607,6 +2611,11 @@ class ContainerDeploymentService
         $envVars['npm_config_cache'] = '/tmp/.npm';
         $envVars['CACHE_STORE'] = $envVars['CACHE_STORE'] ?? 'file';
         $envVars['CACHE_DRIVER'] = $envVars['CACHE_DRIVER'] ?? 'file';
+        $envVars['INTERNAL_API_URL'] = 'http://127.0.0.1:'.$apiPort;
+        $envVars['BACKEND_URL'] = 'http://127.0.0.1:'.$apiPort;
+        $envVars['API_URL'] = 'http://127.0.0.1:'.$apiPort;
+        $envVars['LARAVEL_API_PORT'] = (string) $apiPort;
+        $envVars['NEXT_PORT'] = (string) $nextPort;
 
         $composeYaml = $this->renderCompose(
             $template,
