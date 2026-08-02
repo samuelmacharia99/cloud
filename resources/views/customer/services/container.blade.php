@@ -977,7 +977,7 @@ function containerEnvironmentPanel(initialRows) {
 }
 
 function containerTabs(initialTab) {
-    // Defined inside @if ($deployment); default when the app is not deployed yet.
+    // Tabs list is built when a deployment exists; falls back for pending apps.
     const allowedTabs = @js($containerTabs ?? ['overview']);
 
     return {
