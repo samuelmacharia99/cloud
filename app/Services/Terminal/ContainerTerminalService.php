@@ -49,6 +49,8 @@ class ContainerTerminalService
         // Create new session
         $token = bin2hex(random_bytes(32));
         $now = now();
+        $idleMinutes = max(15, (int) config('terminal.session.idle_minutes', 60));
+        $hardHours = max(1, (int) config('terminal.session.hard_hours', 4));
         $session = ContainerTerminalSession::create([
             'token' => $token,
             'service_id' => $service->id,
@@ -62,8 +64,8 @@ class ContainerTerminalService
             'user_agent' => $request->userAgent(),
             'command_count' => 0,
             'last_activity_at' => $now,
-            'expires_at' => $now->clone()->addMinutes(30),
-            'hard_expires_at' => $now->clone()->addHours(2),
+            'expires_at' => $now->clone()->addMinutes($idleMinutes),
+            'hard_expires_at' => $now->clone()->addHours($hardHours),
         ]);
 
         \Log::info("Terminal session created for service {$service->id}, user {$user->id}");
@@ -185,7 +187,7 @@ class ContainerTerminalService
                 $session->update([
                     'cwd' => $newCwd,
                     'last_activity_at' => now(),
-                    'expires_at' => now()->addMinutes(30),
+                    'expires_at' => now()->addMinutes(max(15, (int) config('terminal.session.idle_minutes', 60))),
                 ]);
                 $session->increment('command_count');
 
@@ -211,6 +213,7 @@ class ContainerTerminalService
                     'exit_code' => $exitCode,
                     'cwd' => $newCwd,
                     'blocked' => false,
+                    'expires_at' => $session->fresh()->expires_at?->toIso8601String(),
                 ];
             } finally {
                 $ssh->disconnect();

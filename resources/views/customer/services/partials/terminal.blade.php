@@ -158,10 +158,7 @@ function containerTerminal() {
                 }
 
                 if (data.expires_at) {
-                    this.updateExpiryDisplay(data.expires_at);
-                    this.expiryUpdateInterval = setInterval(() => {
-                        this.updateExpiryDisplay(data.expires_at);
-                    }, 60000);
+                    this.trackSessionExpiry(data.expires_at);
                 }
 
                 this.terminal.focus();
@@ -409,7 +406,12 @@ function containerTerminal() {
         },
 
         isLongRunningCommand(command) {
-            return /\b(artisan|composer|npm|yarn|pnpm|pecl|migrate|db:seed|db:wipe)\b/i.test(command);
+            // Version checks and short reads should not show the long-running spinner.
+            if (/\b(node|npm|npx|yarn|pnpm|composer|php|artisan)\b[^\n]*\b(-v|--version|version)\b/i.test(command)) {
+                return false;
+            }
+
+            return /\b(artisan\s+\S+|composer\s+(install|update|require|create-project)|npm\s+(install|ci|run|build|start)|yarn\s+(install|build|start)|pnpm\s+(install|run|build)|pecl\s+install|migrate(:\w+)?|db:seed|db:wipe)\b/i.test(command);
         },
 
         startCommandProgress(command) {
@@ -439,7 +441,47 @@ function containerTerminal() {
             this.commandBusy = false;
         },
 
-        async sendCommand(command) {
+        trackSessionExpiry(expiresAt) {
+            if (!expiresAt) {
+                return;
+            }
+
+            if (this.expiryUpdateInterval) {
+                clearInterval(this.expiryUpdateInterval);
+            }
+
+            this.updateExpiryDisplay(expiresAt);
+            this.expiryUpdateInterval = setInterval(() => {
+                this.updateExpiryDisplay(expiresAt);
+            }, 30000);
+        },
+
+        async recreateHttpSession() {
+            const response = await fetch(`/my/services/{{ $service->id }}/terminal`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': document.head.querySelector('meta[name="csrf-token"]').content,
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                },
+            });
+
+            const { data, parseError } = await this.safeJsonResponse(response);
+            if (parseError || !response.ok || !data?.session_token) {
+                throw new Error((data && data.error) || `Failed to refresh terminal session (HTTP ${response.status})`);
+            }
+
+            this.sessionToken = data.session_token;
+            this.cwd = data.cwd || this.cwd || '/app';
+            this.mode = 'http';
+            this.connected = true;
+            this.trackSessionExpiry(data.expires_at);
+
+            return data;
+        },
+
+        async sendCommand(command, options = {}) {
+            const allowRetry = options.allowRetry !== false;
             command = this.normalizeCommand(command);
             this.terminal.write('\r\n');
 
@@ -462,6 +504,8 @@ function containerTerminal() {
 
             this.startCommandProgress(command);
 
+            let skipFinalPrompt = false;
+
             try {
                 const response = await fetch(`/my/services/{{ $service->id }}/terminal/execute`, {
                     method: 'POST',
@@ -478,10 +522,26 @@ function containerTerminal() {
 
                 const { data, parseError } = await this.safeJsonResponse(response);
                 const formatOutput = (text) => (text || '').replace(/\r?\n/g, '\r\n');
+                const sessionExpired = response.status === 401
+                    || (data && data.code === 'session_expired')
+                    || (data && typeof data.error === 'string' && /session expired/i.test(data.error));
 
-                if (parseError || !response.ok) {
+                if (sessionExpired && allowRetry) {
+                    this.stopCommandProgress();
+                    this.terminal.write('\x1b[33mSession expired — reconnecting…\x1b[0m\r\n');
+                    try {
+                        await this.recreateHttpSession();
+                        this.terminal.write('\x1b[32m✓ Reconnected. Retrying command…\x1b[0m\r\n');
+                        skipFinalPrompt = true;
+                        await this.sendCommand(command, { allowRetry: false });
+                        return;
+                    } catch (reconnectError) {
+                        this.terminal.write('❌ ' + reconnectError.message + '\r\n');
+                        this.connected = false;
+                    }
+                } else if (parseError || !response.ok) {
                     this.terminal.write('❌ ' + ((data && data.error) || `Command failed (HTTP ${response.status})`) + '\r\n');
-                    if (response.status === 404) {
+                    if (response.status === 404 || response.status === 401) {
                         this.connected = false;
                     }
                 } else if (data.blocked) {
@@ -494,6 +554,9 @@ function containerTerminal() {
                     }
                     this.cwd = data.cwd || this.cwd;
                     this.commandCount++;
+                    if (data.expires_at) {
+                        this.trackSessionExpiry(data.expires_at);
+                    }
                 }
             } catch (error) {
                 this.terminal.write('❌ Error: ' + error.message + '\r\n');
@@ -501,7 +564,9 @@ function containerTerminal() {
                 this.stopCommandProgress();
             }
 
-            this.writePrompt();
+            if (! skipFinalPrompt) {
+                this.writePrompt();
+            }
         },
 
         writePrompt() {

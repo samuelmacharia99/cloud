@@ -76,9 +76,11 @@ class ContainerTerminalSession extends Model
 
     public function extendExpiry(): void
     {
+        $idleMinutes = max(15, (int) config('terminal.session.idle_minutes', 60));
+
         $this->update([
             'last_activity_at' => now(),
-            'expires_at' => now()->addMinutes(30),
+            'expires_at' => now()->addMinutes($idleMinutes),
         ]);
     }
 

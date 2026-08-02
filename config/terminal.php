@@ -28,6 +28,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Session lifetime
+    |--------------------------------------------------------------------------
+    */
+    'session' => [
+        // Idle timeout: refreshed on each command / PTY activity.
+        'idle_minutes' => (int) env('CONTAINER_TERMINAL_IDLE_MINUTES', 60),
+        // Absolute cap regardless of activity.
+        'hard_hours' => (int) env('CONTAINER_TERMINAL_HARD_HOURS', 4),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | HTTP fallback command timeouts (seconds)
     |--------------------------------------------------------------------------
     |

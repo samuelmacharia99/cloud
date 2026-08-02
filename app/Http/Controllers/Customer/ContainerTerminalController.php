@@ -104,12 +104,22 @@ class ContainerTerminalController extends Controller
         } catch (ModelNotFoundException $e) {
             return response()->json([
                 'error' => 'Terminal session not found or expired',
-            ], 404);
+                'code' => 'session_expired',
+            ], 401);
         } catch (\Exception $e) {
-            \Log::error("Failed to execute terminal command for service {$service->id}: ".$e->getMessage());
+            $message = $e->getMessage();
+            if (str_contains(strtolower($message), 'session expired')
+                || str_contains(strtolower($message), 'session is not active')) {
+                return response()->json([
+                    'error' => 'Terminal session expired. Reconnecting…',
+                    'code' => 'session_expired',
+                ], 401);
+            }
+
+            \Log::error("Failed to execute terminal command for service {$service->id}: ".$message);
 
             return response()->json([
-                'error' => 'Failed to execute command: '.$e->getMessage(),
+                'error' => 'Failed to execute command: '.$message,
             ], 500);
         }
     }
