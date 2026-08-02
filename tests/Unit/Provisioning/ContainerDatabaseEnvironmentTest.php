@@ -57,6 +57,50 @@ class ContainerDatabaseEnvironmentTest extends TestCase
         $this->assertSame('u3_s12', $vars['POSTGRES_USER']);
     }
 
+    public function test_normalize_database_environment_fixes_username_used_as_database(): void
+    {
+        $service = new Service;
+        $service->id = 163;
+        $service->user_id = 193;
+
+        $result = (new ContainerDeploymentService)->normalizeDatabaseEnvironment($service, [
+            'DB_CONNECTION' => 'pgsql',
+            'DB_HOST' => 'db',
+            'DB_PORT' => '5432',
+            'DB_DATABASE' => 'u193_s163',
+            'DB_USERNAME' => 'u193_s163',
+            'DB_PASSWORD' => 'secret',
+            'POSTGRES_DB' => 'u193_s163',
+            'POSTGRES_USER' => 'u193_s163',
+            'POSTGRES_PASSWORD' => 'secret',
+        ], 'postgresql');
+
+        $this->assertTrue($result['corrected']);
+        $this->assertSame('u193_s163', $result['previous_database']);
+        $this->assertSame('s163_db', $result['database']);
+        $this->assertSame('s163_db', $result['env']['DB_DATABASE']);
+        $this->assertSame('s163_db', $result['env']['POSTGRES_DB']);
+        $this->assertSame('u193_s163', $result['env']['DB_USERNAME']);
+        $this->assertStringContainsString('/s163_db', $result['env']['DATABASE_URL']);
+    }
+
+    public function test_normalize_database_environment_keeps_valid_custom_database_name(): void
+    {
+        $service = new Service;
+        $service->id = 163;
+        $service->user_id = 193;
+
+        $result = (new ContainerDeploymentService)->normalizeDatabaseEnvironment($service, [
+            'DB_DATABASE' => 'my_app',
+            'DB_USERNAME' => 'u193_s163',
+            'DB_PASSWORD' => 'secret',
+        ], 'postgresql');
+
+        $this->assertFalse($result['corrected']);
+        $this->assertSame('my_app', $result['database']);
+        $this->assertSame('my_app', $result['env']['DB_DATABASE']);
+    }
+
     /**
      * @param  array<string, string>  $env
      * @return array<string, string>

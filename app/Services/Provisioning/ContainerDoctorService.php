@@ -194,9 +194,9 @@ class ContainerDoctorService
                 'treat_action' => 'sync_database_credentials',
                 'treat_label' => 'Create/sync database',
                 'manual_steps' => [
-                    'Repair credentials to create the missing database and fix ownership.',
-                    'In Terminal, verify: grep DB_DATABASE .env — it should be s{id}_db.',
+                    'Click Create/sync database — Doctor will rename DB_DATABASE to s{id}_db if it was set to the username, create the database, and rewrite .env.',
                     'Then run: php artisan migrate --force',
+                    'If it still fails, Redeploy stack with Reset database (wipes DB data).',
                 ],
             ],
             [
@@ -392,27 +392,76 @@ class ContainerDoctorService
         $deployment = $service->containerDeployment;
         $ssh = SSHService::forNode($deployment->node);
         $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
-        $envVars = is_array($deployment->env_values) ? $deployment->env_values : [];
-        $databaseTemplate = app(ContainerDeploymentService::class)->resolveDatabaseTemplateForService($service);
+        $deploymentService = app(ContainerDeploymentService::class);
+        $databaseTemplate = $deploymentService->resolveDatabaseTemplateForService($service);
 
         if (! $databaseTemplate) {
             return ['success' => false, 'message' => 'No database sidecar is configured for this service.'];
         }
 
         try {
+            $rawEnv = is_array($deployment->env_values) ? $deployment->env_values : [];
+            $normalized = $deploymentService->normalizeDatabaseEnvironment(
+                $service,
+                $rawEnv,
+                (string) $databaseTemplate->type
+            );
+            $envVars = $normalized['env'];
+
+            if ($normalized['corrected'] || $envVars !== $rawEnv) {
+                $deployment->update(['env_values' => $envVars]);
+                $meta = is_array($service->service_meta) ? $service->service_meta : [];
+                $meta['env_values'] = $envVars;
+                $service->update(['service_meta' => $meta]);
+                $deployment->refresh();
+                $service->refresh();
+            }
+
             match ($databaseTemplate->type) {
-                'mysql', 'mariadb' => app(ContainerDeploymentService::class)
+                'mysql', 'mariadb' => $deploymentService
                     ->syncMysqlSidecarCredentials($ssh, $containerPath, $envVars),
-                'postgresql' => app(ContainerDeploymentService::class)
+                'postgresql' => $deploymentService
                     ->syncPostgresqlSidecarCredentials($ssh, $containerPath, $envVars),
-                'mongodb' => app(ContainerDeploymentService::class)
+                'mongodb' => $deploymentService
                     ->syncMongodbSidecarCredentials($ssh, $containerPath, $envVars),
                 default => throw new \RuntimeException('Unsupported database type: '.$databaseTemplate->type),
             };
 
+            $stack = strtolower((string) ($service->product?->containerTemplate?->slug ?? ''));
+            if (in_array($stack, ['laravel', 'php'], true)) {
+                try {
+                    app(LaravelAppInitializationService::class)
+                        ->writeApplicationEnvironment($service, $deployment, $ssh, preserveExisting: true);
+                } catch (\Throwable $e) {
+                    app(ContainerEnvironmentService::class)
+                        ->syncDotEnvFile($ssh, $service, $deployment, $envVars);
+                    \Log::warning('Doctor fell back to .env merge after Laravel env write failed', [
+                        'service_id' => $service->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+
+                try {
+                    $this->clearLaravelCachesQuietly($service, $ssh);
+                } catch (\Throwable) {
+                    // Cache clear is best-effort after credential repair.
+                }
+            } else {
+                app(ContainerEnvironmentService::class)
+                    ->syncDotEnvFile($ssh, $service, $deployment, $envVars);
+            }
+
+            $message = 'Database "'.$normalized['database'].'" is ready and app credentials were synced.';
+            if ($normalized['corrected'] && $normalized['previous_database']) {
+                $message = 'Fixed DB_DATABASE from "'.$normalized['previous_database'].'" to "'
+                    .$normalized['database'].'". '.$message.' Reload the site or run: php artisan migrate --force';
+            } else {
+                $message .= ' Reload the site; if tables are missing run: php artisan migrate --force';
+            }
+
             return [
                 'success' => true,
-                'message' => 'Database credentials repaired. Reload the site; if it still fails, use Clear Laravel caches or run migrations.',
+                'message' => $message,
             ];
         } catch (\Throwable $e) {
             return [
@@ -422,6 +471,27 @@ class ContainerDoctorService
         } finally {
             $ssh->disconnect();
         }
+    }
+
+    private function clearLaravelCachesQuietly(Service $service, SSHService $ssh): void
+    {
+        $deployment = $service->containerDeployment;
+        $init = app(LaravelAppInitializationService::class);
+
+        $locator = 'if [ -f /app/backend/artisan ]; then echo /app/backend; '
+            .'elif [ -f /app/artisan ]; then echo /app; '
+            .'else echo /app; fi';
+        $projectRoot = trim($ssh->exec(
+            'docker exec -u www-data '.escapeshellarg($deployment->container_name)
+            .' sh -lc '.escapeshellarg($locator),
+            15
+        )) ?: '/app';
+
+        $script = 'set -e; cd '.escapeshellarg($projectRoot).'; '
+            .'php artisan optimize:clear --no-interaction 2>/dev/null '
+            .'|| (php artisan config:clear --no-interaction; php artisan cache:clear --no-interaction)';
+
+        $init->dockerExecPublic($ssh, $deployment->container_name, $script, 120);
     }
 
     /**

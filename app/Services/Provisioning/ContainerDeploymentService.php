@@ -1239,6 +1239,108 @@ class ContainerDeploymentService
         return $this->resolveDatabaseTemplate($service, $service->product->containerTemplate);
     }
 
+    /**
+     * @return array{database: string, username: string}
+     */
+    public function canonicalDatabaseIdentifiers(Service $service): array
+    {
+        return $this->defaultDatabaseIdentifiers($service);
+    }
+
+    /**
+     * Fix the common mistake where DB_DATABASE was set to the DB username
+     * (e.g. u193_s163) instead of the platform database name (s163_db).
+     *
+     * @param  array<string, mixed>  $envVars
+     * @return array{env: array<string, string>, corrected: bool, previous_database: ?string, database: string, username: string}
+     */
+    public function normalizeDatabaseEnvironment(Service $service, array $envVars, string $databaseType): array
+    {
+        $canonical = $this->defaultDatabaseIdentifiers($service);
+        $env = [];
+        foreach ($envVars as $key => $value) {
+            if (is_string($key) && $key !== '') {
+                $env[$key] = is_scalar($value) || $value === null ? (string) $value : '';
+            }
+        }
+
+        $username = (string) (
+            $env['DB_USERNAME']
+            ?? $env['POSTGRES_USER']
+            ?? $env['MYSQL_USER']
+            ?? $canonical['username']
+        );
+        $database = (string) (
+            $env['DB_DATABASE']
+            ?? $env['POSTGRES_DB']
+            ?? $env['MYSQL_DATABASE']
+            ?? ''
+        );
+
+        $looksLikeUsernameAsDatabase = $database !== '' && (
+            $database === $username
+            || $database === $canonical['username']
+            || (bool) preg_match('/^u\d+_s\d+$/', $database)
+        );
+
+        $corrected = false;
+        $previous = $database !== '' ? $database : null;
+
+        if ($database === '' || $looksLikeUsernameAsDatabase) {
+            $database = $canonical['database'];
+            $corrected = ($previous !== $database);
+        }
+
+        $env['DB_DATABASE'] = $database;
+        $env['DB_USERNAME'] = $username !== '' ? $username : $canonical['username'];
+
+        if (in_array($databaseType, ['postgresql'], true)) {
+            $env['POSTGRES_DB'] = $database;
+            $env['POSTGRES_USER'] = $env['DB_USERNAME'];
+            if (! empty($env['DB_PASSWORD']) && empty($env['POSTGRES_PASSWORD'])) {
+                $env['POSTGRES_PASSWORD'] = $env['DB_PASSWORD'];
+            }
+            $password = (string) ($env['DB_PASSWORD'] ?? $env['POSTGRES_PASSWORD'] ?? '');
+            $env['DB_CONNECTION'] = $env['DB_CONNECTION'] ?? 'pgsql';
+            $env['DB_HOST'] = $env['DB_HOST'] ?? 'db';
+            $env['DB_PORT'] = $env['DB_PORT'] ?? '5432';
+            $env['DATABASE_URL'] = sprintf(
+                'postgresql://%s:%s@%s:%s/%s',
+                rawurlencode($env['DB_USERNAME']),
+                rawurlencode($password),
+                $env['DB_HOST'],
+                $env['DB_PORT'],
+                rawurlencode($database)
+            );
+        } elseif (in_array($databaseType, ['mysql', 'mariadb'], true)) {
+            $env['MYSQL_DATABASE'] = $database;
+            $env['MYSQL_USER'] = $env['DB_USERNAME'];
+            if (! empty($env['DB_PASSWORD']) && empty($env['MYSQL_PASSWORD'])) {
+                $env['MYSQL_PASSWORD'] = $env['DB_PASSWORD'];
+            }
+            $password = (string) ($env['DB_PASSWORD'] ?? $env['MYSQL_PASSWORD'] ?? '');
+            $env['DB_CONNECTION'] = $env['DB_CONNECTION'] ?? 'mysql';
+            $env['DB_HOST'] = $env['DB_HOST'] ?? 'db';
+            $env['DB_PORT'] = $env['DB_PORT'] ?? '3306';
+            $env['DATABASE_URL'] = sprintf(
+                'mysql://%s:%s@%s:%s/%s',
+                rawurlencode($env['DB_USERNAME']),
+                rawurlencode($password),
+                $env['DB_HOST'],
+                $env['DB_PORT'],
+                rawurlencode($database)
+            );
+        }
+
+        return [
+            'env' => $env,
+            'corrected' => $corrected,
+            'previous_database' => $previous,
+            'database' => $database,
+            'username' => $env['DB_USERNAME'],
+        ];
+    }
+
     public function waitForDatabaseSidecar(
         SSHService $ssh,
         string $containerPath,
