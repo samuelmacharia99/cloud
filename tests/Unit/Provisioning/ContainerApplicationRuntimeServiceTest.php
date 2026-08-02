@@ -171,11 +171,11 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
 
         $this->assertTrue($this->service->packageJsonPostinstallRequiresBuildTools($packageJson));
         $this->assertSame(
-            'npm install --omit=dev --ignore-scripts',
+            'npm install --omit=dev --legacy-peer-deps --ignore-scripts',
             $this->service->npmOmitDevInstallCommand($packageJson)
         );
         $this->assertStringContainsString(
-            'npm install --omit=dev --ignore-scripts',
+            'npm install --omit=dev --legacy-peer-deps --ignore-scripts',
             $this->service->nodeBootstrap($packageJson)
         );
     }
@@ -238,7 +238,7 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
         $runtime = new ContainerApplicationRuntimeService;
 
         $this->assertStringContainsString(
-            'env -i HOME=/tmp NPM_CONFIG_CACHE=/tmp/.npm PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin npm_config_production=false NPM_CONFIG_PRODUCTION=false npm_config_omit= NODE_ENV=development /usr/local/bin/npm install --production=false --include=dev --no-audit --no-fund',
+            'env -i HOME=/tmp NPM_CONFIG_CACHE=/tmp/.npm PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin npm_config_production=false NPM_CONFIG_PRODUCTION=false npm_config_omit= NODE_ENV=development /usr/local/bin/npm install --production=false --include=dev --legacy-peer-deps --no-audit --no-fund',
             $runtime->npmInstallShellCommand()
         );
         $this->assertSame(
@@ -257,7 +257,7 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
             $runtime->npmBuildShellCommand(null, true, $nextPackage)
         );
         $this->assertStringContainsString(
-            '/usr/local/bin/npm ci --include=dev --no-audit --no-fund',
+            '/usr/local/bin/npm ci --include=dev --legacy-peer-deps --no-audit --no-fund',
             $runtime->npmCiShellCommand()
         );
         $this->assertSame(650, $runtime->nodeBuildHeapLimitMb(1000));

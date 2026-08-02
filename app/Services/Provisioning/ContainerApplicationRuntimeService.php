@@ -507,7 +507,7 @@ class ContainerApplicationRuntimeService
 
     public function npmOmitDevInstallCommand(?string $packageJson = null): string
     {
-        $command = 'npm install --omit=dev';
+        $command = 'npm install --omit=dev --legacy-peer-deps';
         if ($this->packageJsonPostinstallRequiresBuildTools($packageJson)) {
             $command .= ' --ignore-scripts';
         }
@@ -636,7 +636,8 @@ class ContainerApplicationRuntimeService
     {
         $forceFlag = $force ? ' --force' : '';
 
-        return 'install --production=false --include=dev --no-audit --no-fund'.$forceFlag;
+        // Peer conflicts (e.g. Next 16 + older @sentry/nextjs) are common; prefer install success.
+        return 'install --production=false --include=dev --legacy-peer-deps --no-audit --no-fund'.$forceFlag;
     }
 
     public function npmInstallShellCommand(bool $force = false): string
@@ -649,7 +650,7 @@ class ContainerApplicationRuntimeService
         $forceFlag = $force ? ' --force' : '';
 
         return $this->nodeCleanNpmCommand(
-            'ci --include=dev --no-audit --no-fund'.$forceFlag,
+            'ci --include=dev --legacy-peer-deps --no-audit --no-fund'.$forceFlag,
             'development'
         );
     }
@@ -657,7 +658,7 @@ class ContainerApplicationRuntimeService
     public function npmInstallNextPeersShellCommand(): string
     {
         return $this->nodeCleanNpmCommand(
-            'install react react-dom --production=false --no-audit --no-fund --no-save',
+            'install react react-dom --production=false --legacy-peer-deps --no-audit --no-fund --no-save',
             'development'
         );
     }
@@ -716,7 +717,10 @@ class ContainerApplicationRuntimeService
             return $this->npmInstallShellCommand();
         }
 
-        return $this->nodeCleanNpmCommand('install --production=false --save-dev --no-audit --no-fund '.$list, 'development');
+        return $this->nodeCleanNpmCommand(
+            'install --production=false --save-dev --legacy-peer-deps --no-audit --no-fund '.$list,
+            'development'
+        );
     }
 
     public function npmBuildShellCommand(

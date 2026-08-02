@@ -959,8 +959,11 @@ class ContainerStackCommandService
             $ciCommand = $this->runtimeService->npmCiShellCommand();
             $installCommand = $this->runtimeService->npmInstallShellCommand();
         } else {
-            $ciCommand = $this->runtimeService->nodeCleanNpmCommand('ci --omit=dev --no-audit --no-fund', 'production');
-            $installCommand = 'npm install --omit=dev';
+            $ciCommand = $this->runtimeService->nodeCleanNpmCommand(
+                'ci --omit=dev --legacy-peer-deps --no-audit --no-fund',
+                'production'
+            );
+            $installCommand = 'npm install --omit=dev --legacy-peer-deps';
         }
 
         if (! $hasLock) {
@@ -972,12 +975,12 @@ class ContainerStackCommandService
         try {
             $runner($ciCommand);
         } catch (\Throwable $e) {
-            if (! $this->isNpmLockfileOutOfSyncError($e)) {
+            if (! $this->isNpmCiRecoverableError($e)) {
                 throw $e;
             }
 
             try {
-                \Log::warning('npm ci failed because package-lock.json is out of sync; falling back to npm install', [
+                \Log::warning('npm ci failed; falling back to npm install', [
                     'host_app_path' => $hostAppPath,
                     'error' => $e->getMessage(),
                 ]);
@@ -991,11 +994,22 @@ class ContainerStackCommandService
 
     public function isNpmLockfileOutOfSyncError(\Throwable $e): bool
     {
+        return $this->isNpmCiRecoverableError($e);
+    }
+
+    /**
+     * Errors where retrying with npm install (still using --legacy-peer-deps) is worthwhile.
+     */
+    public function isNpmCiRecoverableError(\Throwable $e): bool
+    {
         $message = strtolower($e->getMessage());
 
         return str_contains($message, 'are in sync')
             || str_contains($message, 'update your lock file')
             || str_contains($message, 'npm-shrinkwrap.json are in sync')
+            || str_contains($message, 'eresolve')
+            || str_contains($message, 'could not resolve')
+            || str_contains($message, 'conflicting peer dependency')
             || (str_contains($message, 'npm error code eusage') && str_contains($message, 'npm ci'))
             || (str_contains($message, 'eusage') && str_contains($message, 'npm ci') && str_contains($message, 'missing:'));
     }
