@@ -260,6 +260,10 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
             '/usr/local/bin/npm ci --include=dev --legacy-peer-deps --no-audit --no-fund',
             $runtime->npmCiShellCommand()
         );
+        $this->assertStringContainsString(
+            '/usr/local/bin/npm prune --omit=dev --legacy-peer-deps',
+            $runtime->npmPruneShellCommand()
+        );
         $this->assertSame(650, $runtime->nodeBuildHeapLimitMb(1000));
         $this->assertStringContainsString(
             'tailwindcss',

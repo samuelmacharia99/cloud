@@ -878,7 +878,7 @@ class ContainerApplicationRuntimeService
 
     public function npmPruneShellCommand(): string
     {
-        return $this->nodeCleanNpmCommand('prune --omit=dev', 'production');
+        return $this->nodeCleanNpmCommand('prune --omit=dev --legacy-peer-deps', 'production');
     }
 
     /**
