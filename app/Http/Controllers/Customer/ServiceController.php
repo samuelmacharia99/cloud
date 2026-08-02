@@ -18,7 +18,7 @@ use Illuminate\Http\Request;
 
 class ServiceController extends Controller
 {
-    public function index(CustomerProjectService $projectService)
+    public function index(Request $request, CustomerProjectService $projectService)
     {
         $user = auth()->user();
         $projectService->ensureForUser($user);
@@ -33,8 +33,36 @@ class ServiceController extends Controller
             ->get();
 
         $serviceGroups = $projectService->groupForDisplay($services);
+        $projects = $user->customerProjects()
+            ->whereIn('id', $services->pluck('project_id')->filter()->unique())
+            ->orderBy('name')
+            ->get();
 
-        return view('customer.services.index', compact('services', 'serviceGroups'));
+        $selectedProject = $request->query('project', 'all');
+        if ($selectedProject !== 'all' && $selectedProject !== 'ungrouped') {
+            $selectedProject = (string) ((int) $selectedProject);
+            if (! $projects->contains(fn ($p) => (string) $p->id === $selectedProject)) {
+                $selectedProject = 'all';
+            }
+        }
+
+        if ($selectedProject !== 'all') {
+            $serviceGroups = collect($serviceGroups)->filter(function (array $group) use ($selectedProject) {
+                if ($selectedProject === 'ungrouped') {
+                    return ($group['type'] ?? '') !== 'project';
+                }
+
+                return ($group['type'] ?? '') === 'project'
+                    && (string) ($group['project']->id ?? '') === $selectedProject;
+            })->values()->all();
+        }
+
+        return view('customer.services.index', compact(
+            'services',
+            'serviceGroups',
+            'projects',
+            'selectedProject',
+        ));
     }
 
     public function rename(RenameCustomerServiceRequest $request, Service $service)

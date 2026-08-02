@@ -150,4 +150,55 @@ YAML,
         $response->assertDontSee('Rename project');
         $this->assertDatabaseCount('customer_projects', 0);
     }
+
+    public function test_project_switcher_filters_resources(): void
+    {
+        $customer = User::factory()->customer()->create();
+        $appProduct = Product::factory()->containerHosting()->create();
+        $emailProduct = Product::factory()->emailHosting()->create();
+        $sharedProduct = Product::factory()->create(['type' => 'shared_hosting']);
+
+        $project = CustomerProject::factory()->create([
+            'user_id' => $customer->id,
+            'name' => 'Washflow',
+        ]);
+
+        $app = Service::factory()->create([
+            'user_id' => $customer->id,
+            'product_id' => $appProduct->id,
+            'project_id' => $project->id,
+            'name' => 'Washflow App',
+            'status' => 'active',
+            'service_meta' => [],
+        ]);
+        $email = Service::factory()->create([
+            'user_id' => $customer->id,
+            'product_id' => $emailProduct->id,
+            'project_id' => $project->id,
+            'name' => 'Washflow Mail',
+            'status' => 'active',
+        ]);
+        $app->update(['service_meta' => ['bundled_email_service_id' => $email->id]]);
+
+        Service::factory()->create([
+            'user_id' => $customer->id,
+            'product_id' => $sharedProduct->id,
+            'name' => 'Solo Shared',
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($customer)
+            ->get(route('customer.services.index', ['project' => $project->id]))
+            ->assertOk()
+            ->assertSee('Washflow App')
+            ->assertSee('Washflow Mail')
+            ->assertDontSee('Solo Shared')
+            ->assertSee('Rename project');
+
+        $this->actingAs($customer)
+            ->get(route('customer.services.index', ['project' => 'ungrouped']))
+            ->assertOk()
+            ->assertSee('Solo Shared')
+            ->assertDontSee('Washflow App');
+    }
 }
