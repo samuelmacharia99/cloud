@@ -18,7 +18,7 @@ class ContainerGitRepositoryService
         'environment' => 'Configure application environment',
         'composer' => 'Install Composer dependencies',
         'migrations' => 'Run database migrations',
-        'frontend' => 'Install and build frontend (Next/Vite)',
+        'frontend' => 'Build frontend on Node sidecar (Next/Vite)',
         'post_pull' => 'Run stack post-pull steps',
         'permissions' => 'Apply file permissions',
         'runtime' => 'Refresh application runtime',
@@ -294,6 +294,8 @@ class ContainerGitRepositoryService
 
                 $this->runPullStep($pull, 'frontend', function () use ($service, $deployment, $ssh, $forceRebuild) {
                     $hostAppPath = $this->appDirectory->hostAppPath($deployment);
+                    // Shared volume already has the git sync. Build on the Node sidecar;
+                    // Composer/migrations already ran on the PHP backend container.
                     $messages = $this->stackCommands->installLaravelFrontendDependencies(
                         $ssh,
                         $deployment,
@@ -303,8 +305,11 @@ class ContainerGitRepositoryService
                     );
 
                     if ($this->stackCommands->hostHasNextFrontend($ssh, $hostAppPath)) {
+                        $wasSidecar = $this->deploymentService->usesLaravelNextSidecarStack($deployment);
                         $this->deploymentService->refreshLaravelNextFrontendRuntime($ssh, $service, $deployment);
-                        $messages[] = 'Public runtime switched to Next.js frontend.';
+                        $messages[] = $wasSidecar
+                            ? 'Frontend rebuilt on the Node sidecar; PHP backend left running. Domains stay on this service (edge → UI/API).'
+                            : 'Provisioned backend (PHP) + frontend (Node) + edge sidecars. Domains stay on this service.';
                     }
 
                     return $messages !== []

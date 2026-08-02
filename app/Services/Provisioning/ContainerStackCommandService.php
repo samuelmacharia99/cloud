@@ -297,22 +297,42 @@ class ContainerStackCommandService
 
     /**
      * Prefer the Next frontend sidecar when the stack is split; otherwise the app container.
+     * Ensures the frontend service is started so builds do not fall back onto PHP.
      */
     public function resolveFrontendExecContainer(SSHService $ssh, ContainerDeployment $deployment): string
     {
         $frontendName = LaravelNextGatewayProxy::frontendContainerName($deployment->container_name);
 
-        if ($this->deploymentHasNextSidecarStack($deployment)) {
+        if (! $this->deploymentHasNextSidecarStack($deployment)) {
+            return $deployment->container_name;
+        }
+
+        $running = trim($ssh->exec(
+            'docker inspect -f "{{.State.Running}}" '.escapeshellarg($frontendName).' 2>/dev/null || echo false',
+            15
+        ));
+
+        if ($running !== 'true') {
+            $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+            try {
+                $this->deploymentService()->ensureNextSidecarImagesPublic($ssh);
+                @$ssh->exec(
+                    'cd '.escapeshellarg($containerPath)
+                    .' && docker compose -f docker-compose.yml up -d --no-deps --pull never '
+                    .escapeshellarg(LaravelNextGatewayProxy::FRONTEND_SERVICE),
+                    180
+                );
+            } catch (\Throwable) {
+                // Fall through — install may still run on the PHP container as a last resort.
+            }
+
             $running = trim($ssh->exec(
                 'docker inspect -f "{{.State.Running}}" '.escapeshellarg($frontendName).' 2>/dev/null || echo false',
                 15
             ));
-            if ($running === 'true') {
-                return $frontendName;
-            }
         }
 
-        return $deployment->container_name;
+        return $running === 'true' ? $frontendName : $deployment->container_name;
     }
 
     public function deploymentHasNextSidecarStack(ContainerDeployment $deployment): bool

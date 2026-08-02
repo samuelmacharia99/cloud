@@ -2810,7 +2810,8 @@ class ContainerDeploymentService
     }
 
     /**
-     * Re-apply Next.js public runtime after a frontend build (Git pull / Doctor).
+     * After a Git pull / frontend build: keep PHP on backend, refresh the Node frontend sidecar.
+     * Domains stay on this Talksasa service (assigned_port → edge).
      */
     public function refreshLaravelNextFrontendRuntime(SSHService $ssh, Service $service, ContainerDeployment $deployment): void
     {
@@ -2819,7 +2820,42 @@ class ContainerDeploymentService
             return;
         }
 
+        if ($this->usesLaravelNextSidecarStack($deployment)) {
+            $this->syncLaravelNextSidecarComposeFile($ssh, $service, $deployment);
+            $deployment->refresh();
+            $this->ensureNextSidecarImages($ssh);
+            $this->restartLaravelNextFrontendServices($ssh, $deployment);
+
+            return;
+        }
+
         $this->switchLaravelRuntimeToNextFrontend($ssh, $service, $deployment, $hostAppPath);
+    }
+
+    /**
+     * Restart only the Node frontend (and edge) after a build — backend/PHP stays up.
+     */
+    public function restartLaravelNextFrontendServices(SSHService $ssh, ContainerDeployment $deployment): void
+    {
+        $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+        $pathArg = escapeshellarg($containerPath);
+
+        $this->ensureNextSidecarImages($ssh);
+
+        // Bring frontend/edge up without recreating the PHP backend when possible.
+        @$ssh->exec(
+            "cd {$pathArg} && docker compose -f docker-compose.yml up -d --no-deps --pull never "
+            .escapeshellarg(LaravelNextGatewayProxy::FRONTEND_SERVICE).' '
+            .escapeshellarg(LaravelNextGatewayProxy::EDGE_SERVICE),
+            self::DEPLOY_TIMEOUT
+        );
+
+        @$ssh->exec(
+            "cd {$pathArg} && docker compose -f docker-compose.yml restart "
+            .escapeshellarg(LaravelNextGatewayProxy::FRONTEND_SERVICE).' '
+            .escapeshellarg(LaravelNextGatewayProxy::EDGE_SERVICE),
+            self::DEPLOY_TIMEOUT
+        );
     }
 
     private function switchLaravelRuntimeToNextFrontend(
@@ -2919,6 +2955,11 @@ class ContainerDeploymentService
             'frontend_port' => LaravelNextGatewayProxy::FRONTEND_PORT,
             'edge_port' => LaravelNextGatewayProxy::EDGE_INTERNAL_PORT,
         ]);
+    }
+
+    public function ensureNextSidecarImagesPublic(SSHService $ssh): void
+    {
+        $this->ensureNextSidecarImages($ssh);
     }
 
     private function ensureNextSidecarImages(SSHService $ssh): void
