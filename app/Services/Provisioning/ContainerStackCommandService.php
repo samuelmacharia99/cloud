@@ -245,9 +245,31 @@ class ContainerStackCommandService
 
         $needsBuild = $forceRebuild || $hasBuild;
         if ($needsBuild) {
+            // Next 16 defaults to Turbopack; apps with webpack config (PWA/Sentry) need --webpack.
+            // Washflow-sized apps OOM at the default ~1.5G heap on small containers.
+            $heapMb = 3072;
+            try {
+                $mem = (int) ($deployment->memory_limit_mb ?? 0);
+                if ($mem > 0) {
+                    $heapMb = max(1536, min(4096, (int) floor($mem * 0.65)));
+                }
+            } catch (\Throwable) {
+            }
+
             $buildScript = 'set -e; '.$npmPrefix
+                .'export NEXT_TELEMETRY_DISABLED=1 NODE_OPTIONS=--max-old-space-size='.$heapMb.'; '
                 .'cd '.escapeshellarg($containerDir).'; '
-                .'npm run build';
+                .'if [ -x node_modules/.bin/next ] || [ -f node_modules/next/dist/bin/next ]; then '
+                .'npx next build --webpack; '
+                .'else npm run build; fi; '
+                // Standalone output needs static assets copied beside server.js.
+                .'if [ -f .next/standalone/server.js ] || [ -f .next/standalone/frontend/server.js ]; then '
+                .'STANDALONE_DIR=.next/standalone; '
+                .'[ -f .next/standalone/frontend/server.js ] && STANDALONE_DIR=.next/standalone/frontend; '
+                .'mkdir -p "$STANDALONE_DIR/.next"; '
+                .'cp -a .next/static "$STANDALONE_DIR/.next/static" 2>/dev/null || true; '
+                .'cp -a public "$STANDALONE_DIR/public" 2>/dev/null || true; '
+                .'fi';
 
             try {
                 $init->dockerExecPublic($ssh, $deployment->container_name, $buildScript, max(600, $timeout), asRoot: false);

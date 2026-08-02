@@ -202,7 +202,7 @@ class ContainerTerminalService
                     'command' => $rawCommand,
                     'sanitized_command' => $sanitized,
                     'output' => $cleanOutput,
-                    'exit_code' => $exitCode,
+                    'exit_code' => $this->normalizeExitCode($exitCode),
                     'execution_ms' => $executionMs,
                     'cwd' => $session->cwd,
                     'ip_address' => $ip,
@@ -422,8 +422,8 @@ class ContainerTerminalService
             return (int) config('terminal.command_timeouts.artisan', 600);
         }
 
-        if (preg_match('/\b(composer|npm|yarn|pnpm|pecl|wp)\b/i', $command)) {
-            return (int) config('terminal.command_timeouts.build', 300);
+        if (preg_match('/\b(composer|npm|yarn|pnpm|pecl|wp|next\s+build)\b/i', $command)) {
+            return (int) config('terminal.command_timeouts.build', 900);
         }
 
         if (preg_match('/\b(wget|curl|tar|unzip|git\s+clone)\b/i', $command)) {
@@ -450,5 +450,28 @@ class ContainerTerminalService
         }
 
         return '❌ '.$e->getMessage();
+    }
+
+    /**
+     * MySQL signed TINYINT maxed at 127; abort/OOM codes like 134 must be stored safely.
+     */
+    private function normalizeExitCode(mixed $exitCode): ?int
+    {
+        if ($exitCode === null || $exitCode === '') {
+            return null;
+        }
+
+        $code = (int) $exitCode;
+
+        // Keep shell-style 0–255; clamp anything wild.
+        if ($code < 0) {
+            return 255;
+        }
+
+        if ($code > 255) {
+            return 255;
+        }
+
+        return $code;
     }
 }

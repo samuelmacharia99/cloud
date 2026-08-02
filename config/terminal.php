@@ -51,7 +51,7 @@ return [
         'default' => (int) env('CONTAINER_TERMINAL_COMMAND_TIMEOUT', 30),
         'artisan' => (int) env('CONTAINER_TERMINAL_ARTISAN_TIMEOUT', 600),
         'artisan_long' => (int) env('CONTAINER_TERMINAL_ARTISAN_LONG_TIMEOUT', 900),
-        'build' => (int) env('CONTAINER_TERMINAL_BUILD_TIMEOUT', 300),
+        'build' => (int) env('CONTAINER_TERMINAL_BUILD_TIMEOUT', 900),
         'network' => (int) env('CONTAINER_TERMINAL_NETWORK_TIMEOUT', 120),
     ],
 

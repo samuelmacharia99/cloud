@@ -1039,6 +1039,10 @@ class ContainerDeploymentService
                         .'php -S 127.0.0.1:'.$laravelApiPort.' -t '.escapeshellarg($documentRoot)
                         .' >/tmp/laravel-api.log 2>&1 & '
                         .'cd '.escapeshellarg($frontendDir).'; '
+                        .'if [ -f .next/standalone/server.js ]; then '
+                        .'export HOSTNAME=0.0.0.0 PORT='.$internalPort.'; exec node .next/standalone/server.js; fi; '
+                        .'if [ -f .next/standalone/frontend/server.js ]; then '
+                        .'export HOSTNAME=0.0.0.0 PORT='.$internalPort.'; exec node .next/standalone/frontend/server.js; fi; '
                         .'if [ -x node_modules/.bin/next ]; then exec node_modules/.bin/next start -H 0.0.0.0 -p '.$internalPort.'; fi; '
                         .'if [ -f node_modules/next/dist/bin/next ]; then exec node node_modules/next/dist/bin/next start -H 0.0.0.0 -p '.$internalPort.'; fi; '
                         .'exec npx next start -H 0.0.0.0 -p '.$internalPort,
