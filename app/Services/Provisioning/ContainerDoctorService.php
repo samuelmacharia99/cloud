@@ -387,7 +387,8 @@ class ContainerDoctorService
                             'treat_label' => 'Run migrations',
                             'manual_steps' => [
                                 'Click Run migrations (runs php artisan migrate --force).',
-                                'If that reports nothing to migrate, import your SQL dump from the Database tab.',
+                                'If artisan says "Nothing to migrate" with 0 tables, this app does not create schema via migrations — import a SQL dump from the Database tab.',
+                                'Or in Terminal check: ls database/migrations && php artisan migrate:status',
                             ],
                             'source' => 'live',
                         ];
@@ -1327,12 +1328,18 @@ class ContainerDoctorService
             }
 
             if ($tableCount === 0) {
+                $joined = mb_strtolower(implode(' | ', $outputs));
+                $nothingToMigrate = str_contains($joined, 'nothing to migrate');
+
                 return [
                     'success' => false,
-                    'message' => 'Artisan migrate finished but the database still has 0 tables. '
-                        .'This app likely has no migration files (or they target another connection). '
-                        .'Import your SQL dump from the Database tab. '
-                        .'Output: '.mb_substr(implode(' | ', $outputs), 0, 300),
+                    'message' => $nothingToMigrate
+                        ? 'Artisan reports "Nothing to migrate" and the database still has 0 tables. '
+                            .'This project has no pending Laravel migrations for schema creation. '
+                            .'Import your SQL dump from the Database tab (or run your app installer/seed command).'
+                        : 'Artisan migrate finished but the database still has 0 tables. '
+                            .'Import your SQL dump from the Database tab. '
+                            .'Output: '.mb_substr(implode(' | ', $outputs), 0, 300),
                 ];
             }
 
