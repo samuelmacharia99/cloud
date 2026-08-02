@@ -286,40 +286,6 @@ class ContainerDoctorService
             $mergedEnv = $liveEnv === [] ? $platformEnv : array_merge($platformEnv, $liveEnv);
 
             if ($databaseTemplate) {
-                $normalized = $deploymentService->normalizeDatabaseEnvironment(
-                    $service,
-                    $mergedEnv,
-                    (string) $databaseTemplate->type
-                );
-
-                if ($normalized['corrected'] || ! empty($normalized['password_aligned'])) {
-                    $details = [];
-                    if ($normalized['corrected'] && $normalized['previous_database'] !== $normalized['database']) {
-                        $details[] = 'DB_DATABASE is "'.($normalized['previous_database'] ?? '').'" but should be "'.$normalized['database'].'"';
-                    }
-                    if (! empty($normalized['password_aligned'])) {
-                        $details[] = 'DB_PASSWORD, POSTGRES_PASSWORD/MYSQL_PASSWORD, and DATABASE_URL are not the same password';
-                    }
-
-                    $findings[] = [
-                        'id' => 'live_env_credential_drift',
-                        'severity' => 'critical',
-                        'title' => 'Live .env database credentials are inconsistent',
-                        'summary' => 'The running app config still has drifted DB settings that commonly cause HTTP 500s. '
-                            .implode('. ', $details).'.',
-                        'evidence' => $details,
-                        'treat_action' => 'sync_database_credentials',
-                        'treat_label' => 'Repair DB credentials',
-                        'manual_steps' => [
-                            'Click Repair DB credentials to align passwords and rewrite .env.',
-                            'Then reload the site.',
-                        ],
-                        'source' => 'live',
-                    ];
-                }
-
-                // Probe with the credentials Laravel is most likely using right now
-                // (DATABASE_URL wins over DB_* when both are present).
                 $probeEnv = $this->envForRuntimeDatabaseProbe($mergedEnv, (string) $databaseTemplate->type);
                 $probe = $deploymentService->probeApplicationDatabaseAccess(
                     $ssh,
@@ -331,6 +297,38 @@ class ContainerDoctorService
                 $checks['db_error'] = $probe['error'];
 
                 if (! $probe['ok']) {
+                    $normalized = $deploymentService->normalizeDatabaseEnvironment(
+                        $service,
+                        $mergedEnv,
+                        (string) $databaseTemplate->type
+                    );
+
+                    $details = [];
+                    if ($normalized['corrected'] && $normalized['previous_database'] !== $normalized['database']) {
+                        $details[] = 'DB_DATABASE is "'.($normalized['previous_database'] ?? '').'" but should be "'.$normalized['database'].'"';
+                    }
+                    if (! empty($normalized['password_aligned'])) {
+                        $details[] = 'DB_PASSWORD, POSTGRES_PASSWORD/MYSQL_PASSWORD, and DATABASE_URL are not the same password';
+                    }
+
+                    if ($details !== []) {
+                        $findings[] = [
+                            'id' => 'live_env_credential_drift',
+                            'severity' => 'critical',
+                            'title' => 'Live .env database credentials are inconsistent',
+                            'summary' => 'The running app config still has drifted DB settings that commonly cause HTTP 500s. '
+                                .implode('. ', $details).'.',
+                            'evidence' => $details,
+                            'treat_action' => 'sync_database_credentials',
+                            'treat_label' => 'Repair DB credentials',
+                            'manual_steps' => [
+                                'Click Repair DB credentials to align passwords and rewrite .env.',
+                                'Then reload the site.',
+                            ],
+                            'source' => 'live',
+                        ];
+                    }
+
                     if (! empty($probe['driver_missing'])) {
                         $findings[] = [
                             'id' => 'live_missing_pdo',
@@ -375,13 +373,15 @@ class ContainerDoctorService
                     );
                     $checks['table_count'] = $tableCount;
 
-                    if ($tableCount === 0 && in_array($stack, ['laravel', 'php'], true)) {
+                    $hasArtisan = $this->containerHasArtisan($ssh, $deployment);
+
+                    if ($tableCount === 0 && $hasArtisan && in_array($stack, ['laravel', 'php'], true)) {
                         $findings[] = [
                             'id' => 'live_empty_database',
                             'severity' => 'critical',
                             'title' => 'Live check: database has no tables',
-                            'summary' => 'The app can connect to "'.($probeEnv['DB_DATABASE'] ?? '').'", but the schema is empty. '
-                                .'Laravel will 500 until migrations run.',
+                            'summary' => 'DB credentials work for "'.($probeEnv['DB_DATABASE'] ?? '').'", but the schema is empty. '
+                                .'The app will keep returning 500 until migrations/seed run.',
                             'evidence' => ['table_count=0', 'DB_DATABASE='.($probeEnv['DB_DATABASE'] ?? '')],
                             'treat_action' => 'run_migrations',
                             'treat_label' => 'Run migrations',
@@ -402,29 +402,71 @@ class ContainerDoctorService
                     fn ($f) => in_array($f['id'] ?? '', ['live_db_connection_failed', 'live_env_credential_drift', 'live_empty_database', 'live_missing_pdo'], true)
                 );
 
-                $findings[] = [
-                    'id' => 'live_http_5xx',
-                    'severity' => 'critical',
-                    'title' => 'Live check: site returns HTTP '.$httpStatus,
-                    'summary' => $hasDbFinding
-                        ? 'The public URL is returning HTTP '.$httpStatus.'. Fix the database findings above first, then re-scan.'
-                        : 'The public URL is returning HTTP '.$httpStatus.' right now. Clear caches or inspect app logs if DB checks are healthy.',
-                    'evidence' => [
-                        'HTTP '.$httpStatus,
-                        (string) ($deployment->getAccessUrl() ?? ''),
-                    ],
-                    'treat_action' => $hasDbFinding
-                        ? 'sync_database_credentials'
-                        : (in_array($stack, ['laravel', 'php'], true) ? 'clear_laravel_caches' : 'restart_application'),
-                    'treat_label' => $hasDbFinding
-                        ? 'Repair DB credentials'
-                        : (in_array($stack, ['laravel', 'php'], true) ? 'Clear Laravel caches' : 'Restart application'),
-                    'manual_steps' => [
-                        'Re-scan after applying the suggested fix.',
-                        'In Terminal check: tail -n 80 storage/logs/laravel.log',
-                    ],
-                    'source' => 'live',
-                ];
+                $appErrors = $this->readRecentApplicationErrors($ssh, $deployment);
+                $evidence = array_values(array_filter([
+                    'HTTP '.$httpStatus,
+                    (string) ($deployment->getAccessUrl() ?? ''),
+                    ...$appErrors,
+                ]));
+
+                if ($hasDbFinding) {
+                    $findings[] = [
+                        'id' => 'live_http_5xx',
+                        'severity' => 'critical',
+                        'title' => 'Live check: site returns HTTP '.$httpStatus,
+                        'summary' => 'The public URL is returning HTTP '.$httpStatus.'. Fix the database findings above first, then re-scan.',
+                        'evidence' => $evidence,
+                        'treat_action' => 'sync_database_credentials',
+                        'treat_label' => 'Repair DB credentials',
+                        'manual_steps' => [
+                            'Re-scan after applying the suggested fix.',
+                            'In Terminal check: tail -n 80 storage/logs/laravel.log',
+                        ],
+                        'source' => 'live',
+                    ];
+                } elseif (($checks['table_count'] ?? null) === 0 && $this->containerHasArtisan($ssh, $deployment)) {
+                    $findings[] = [
+                        'id' => 'live_http_5xx',
+                        'severity' => 'critical',
+                        'title' => 'Live check: site returns HTTP '.$httpStatus.' (empty database)',
+                        'summary' => 'Database credentials work, but there are no tables yet. Run migrations to clear the 500.',
+                        'evidence' => $evidence,
+                        'treat_action' => 'run_migrations',
+                        'treat_label' => 'Run migrations',
+                        'manual_steps' => [
+                            'Click Run migrations.',
+                            'If migrate fails, inspect the evidence / laravel.log.',
+                        ],
+                        'source' => 'live',
+                    ];
+                } else {
+                    $looksLikeMissingTable = collect($appErrors)->contains(
+                        fn ($line) => (bool) preg_match('/relation .* does not exist|Base table or view not found|no such table/i', (string) $line)
+                    );
+
+                    $findings[] = [
+                        'id' => 'live_http_5xx',
+                        'severity' => 'critical',
+                        'title' => 'Live check: site returns HTTP '.$httpStatus,
+                        'summary' => $looksLikeMissingTable
+                            ? 'DB connects, but the app error looks like missing tables/migrations.'
+                            : 'DB credentials look healthy, but the public URL still returns HTTP '.$httpStatus
+                                .'. This is now an application error (not credential drift).',
+                        'evidence' => $evidence,
+                        'treat_action' => $looksLikeMissingTable
+                            ? 'run_migrations'
+                            : (in_array($stack, ['laravel', 'php'], true) ? 'clear_laravel_caches' : 'restart_application'),
+                        'treat_label' => $looksLikeMissingTable
+                            ? 'Run migrations'
+                            : (in_array($stack, ['laravel', 'php'], true) ? 'Clear Laravel caches' : 'Restart application'),
+                        'manual_steps' => [
+                            'Read the evidence lines from the app log.',
+                            'In Terminal: tail -n 120 storage/logs/laravel.log',
+                            'Fix the application exception, then re-scan.',
+                        ],
+                        'source' => 'live',
+                    ];
+                }
             }
         } catch (\Throwable $e) {
             $findings[] = [
@@ -459,22 +501,42 @@ class ContainerDoctorService
     public function mergeLogAndLiveFindings(array $logFindings, array $live): array
     {
         $liveFindings = $live['findings'] ?? [];
-        $hasLiveDbSignal = collect($liveFindings)->contains(
-            fn ($f) => in_array($f['id'] ?? '', [
-                'live_db_connection_failed',
-                'live_env_credential_drift',
-                'live_empty_database',
-                'live_missing_pdo',
-                'live_http_5xx',
-            ], true)
-        );
+        $checks = $live['checks'] ?? [];
+        $dbOk = ($checks['db_ok'] ?? null) === true;
 
-        if ($hasLiveDbSignal) {
-            $logFindings = array_values(array_filter(
-                $logFindings,
-                fn ($f) => empty($f['stale'])
-            ));
-        }
+        $resolvedLogIds = [
+            'postgres_password_auth_failed',
+            'postgres_database_missing',
+            'mysql_access_denied',
+            'missing_pdo_pgsql',
+        ];
+
+        $logFindings = array_values(array_filter($logFindings, function (array $f) use ($dbOk, $liveFindings, $resolvedLogIds) {
+            if (! empty($f['stale'])) {
+                return false;
+            }
+
+            // If live PDO works, old auth/missing-db log signatures are historical only.
+            if ($dbOk && in_array($f['id'] ?? '', $resolvedLogIds, true)) {
+                return false;
+            }
+
+            $hasLiveDbSignal = collect($liveFindings)->contains(
+                fn ($live) => in_array($live['id'] ?? '', [
+                    'live_db_connection_failed',
+                    'live_env_credential_drift',
+                    'live_empty_database',
+                    'live_missing_pdo',
+                    'live_http_5xx',
+                ], true)
+            );
+
+            if ($hasLiveDbSignal && in_array($f['id'] ?? '', $resolvedLogIds, true)) {
+                return false;
+            }
+
+            return true;
+        }));
 
         $byId = [];
         foreach ($logFindings as $finding) {
@@ -595,6 +657,60 @@ class ContainerDoctorService
         }
 
         return $probe;
+    }
+
+    private function containerHasArtisan(SSHService $ssh, $deployment): bool
+    {
+        try {
+            $result = trim($ssh->exec(
+                'docker exec '.escapeshellarg($deployment->container_name)
+                .' sh -lc '.escapeshellarg('[ -f /app/artisan ] || [ -f /app/backend/artisan ] && echo yes || echo no'),
+                15
+            ));
+
+            return $result === 'yes';
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function readRecentApplicationErrors(SSHService $ssh, $deployment): array
+    {
+        $scripts = [
+            'if [ -f /app/backend/storage/logs/laravel.log ]; then tail -n 80 /app/backend/storage/logs/laravel.log; '
+                .'elif [ -f /app/storage/logs/laravel.log ]; then tail -n 80 /app/storage/logs/laravel.log; fi',
+        ];
+
+        $lines = [];
+        foreach ($scripts as $script) {
+            try {
+                $output = trim($ssh->exec(
+                    'docker exec '.escapeshellarg($deployment->container_name)
+                    .' sh -lc '.escapeshellarg($script),
+                    20
+                ));
+                if ($output === '') {
+                    continue;
+                }
+
+                foreach (preg_split("/\r\n|\n|\r/", $output) ?: [] as $line) {
+                    $line = trim($line);
+                    if ($line === '') {
+                        continue;
+                    }
+                    if (preg_match('/(SQLSTATE|ERROR|Exception|FATAL|relation .* does not exist|Base table or view not found)/i', $line)) {
+                        $lines[] = mb_substr($line, 0, 240);
+                    }
+                }
+            } catch (\Throwable) {
+                continue;
+            }
+        }
+
+        return array_slice(array_values(array_unique($lines)), -5);
     }
 
     private function probeHttpStatus(SSHService $ssh, $deployment): ?int

@@ -150,12 +150,36 @@ LOG;
                 'id' => 'live_db_connection_failed',
                 'severity' => 'critical',
                 'title' => 'Live auth failed',
-            ]]]
+            ]], 'checks' => ['db_ok' => false]]
         );
 
         $ids = array_column($merged, 'id');
         $this->assertNotContains('postgres_database_missing', $ids);
         $this->assertContains('live_db_connection_failed', $ids);
+    }
+
+    #[Test]
+    public function it_drops_resolved_db_log_findings_when_live_db_is_ok(): void
+    {
+        $merged = app(ContainerDoctorService::class)->mergeLogAndLiveFindings(
+            [[
+                'id' => 'postgres_password_auth_failed',
+                'severity' => 'critical',
+                'title' => 'Old auth failure',
+            ]],
+            [
+                'findings' => [[
+                    'id' => 'live_http_5xx',
+                    'severity' => 'critical',
+                    'title' => 'HTTP 500',
+                ]],
+                'checks' => ['db_ok' => true, 'http_status' => 500, 'table_count' => 12],
+            ]
+        );
+
+        $ids = array_column($merged, 'id');
+        $this->assertNotContains('postgres_password_auth_failed', $ids);
+        $this->assertContains('live_http_5xx', $ids);
     }
 
     #[Test]
