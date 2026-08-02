@@ -2026,10 +2026,22 @@ class ContainerDeploymentService
         $adminUserArg = escapeshellarg($admin['username']);
         $adminPasswordArg = escapeshellarg($admin['password']);
         $usePassword = $admin['use_password'];
+        $asOsUser = $admin['as_os_user'] ?? null;
 
-        $run = function (string $sql, string $databaseName = 'postgres') use ($ssh, $pathArg, $adminUserArg, $adminPasswordArg, $usePassword): void {
+        $run = function (string $sql, string $databaseName = 'postgres') use ($ssh, $pathArg, $adminUserArg, $adminPasswordArg, $usePassword, $asOsUser): void {
             $sqlArg = escapeshellarg($sql);
             $dbArg = escapeshellarg($databaseName);
+
+            if (is_string($asOsUser) && $asOsUser !== '') {
+                $osUserArg = escapeshellarg($asOsUser);
+                $ssh->exec(
+                    "cd {$pathArg} && docker compose exec -T -u {$osUserArg} db "
+                    ."psql -v ON_ERROR_STOP=1 -d {$dbArg} -c {$sqlArg}",
+                    30
+                );
+
+                return;
+            }
 
             if (! $usePassword) {
                 $ssh->exec(
@@ -2052,11 +2064,17 @@ class ContainerDeploymentService
 
         $exists = false;
         try {
-            $checkCmd = ! $usePassword
-                ? "cd {$pathArg} && docker compose exec -T db "
-                    ."psql -U {$adminUserArg} -d postgres -Atc ".escapeshellarg($createDbSql)
-                : "cd {$pathArg} && docker compose exec -T -e PGPASSWORD={$adminPasswordArg} db "
+            if (is_string($asOsUser) && $asOsUser !== '') {
+                $osUserArg = escapeshellarg($asOsUser);
+                $checkCmd = "cd {$pathArg} && docker compose exec -T -u {$osUserArg} db "
+                    ."psql -d postgres -Atc ".escapeshellarg($createDbSql);
+            } elseif (! $usePassword) {
+                $checkCmd = "cd {$pathArg} && docker compose exec -T db "
                     ."psql -U {$adminUserArg} -d postgres -Atc ".escapeshellarg($createDbSql);
+            } else {
+                $checkCmd = "cd {$pathArg} && docker compose exec -T -e PGPASSWORD={$adminPasswordArg} db "
+                    ."psql -U {$adminUserArg} -d postgres -Atc ".escapeshellarg($createDbSql);
+            }
             $output = trim($ssh->exec($checkCmd, 20));
             $exists = $output === '1';
         } catch (\Throwable) {
@@ -2073,10 +2091,13 @@ class ContainerDeploymentService
     }
 
     /**
-     * Find a Postgres role that can administer the sidecar (create roles/databases).
+     * Find a Postgres superuser that can administer the sidecar (create/alter roles).
+     *
+     * Non-superuser app roles (e.g. washflow_user) may connect via local trust but cannot
+     * ALTER ROLE passwords on modern PostgreSQL.
      *
      * @param  array<string, mixed>  $envVars
-     * @return array{username: string, password: string, use_password: bool}
+     * @return array{username: string, password: string, use_password: bool, as_os_user: ?string}
      */
     public function resolvePostgresqlAdminConnection(
         SSHService $ssh,
@@ -2086,7 +2107,9 @@ class ContainerDeploymentService
     ): array {
         $pathArg = escapeshellarg($containerPath);
         $canonical = $service ? $this->defaultDatabaseIdentifiers($service)['username'] : null;
+        $appUsername = trim((string) ($envVars['DB_USERNAME'] ?? $envVars['POSTGRES_USER'] ?? ''));
 
+        // Prefer known volume superusers; defer the app role until last and only if it is superuser.
         $usernames = [];
         foreach ([
             $envVars['TALKSASA_PLATFORM_DB_USERNAME'] ?? null,
@@ -2096,9 +2119,16 @@ class ContainerDeploymentService
             $envVars['DB_USERNAME'] ?? null,
         ] as $candidate) {
             $candidate = trim((string) $candidate);
-            if ($candidate !== '') {
-                $usernames[$candidate] = true;
+            if ($candidate === '') {
+                continue;
             }
+            $usernames[$candidate] = true;
+        }
+
+        // Move app username to the end so we don't pick a non-superuser trust login first.
+        if ($appUsername !== '' && isset($usernames[$appUsername])) {
+            unset($usernames[$appUsername]);
+            $usernames[$appUsername] = true;
         }
 
         $passwords = [];
@@ -2113,6 +2143,26 @@ class ContainerDeploymentService
         $passwords = array_values(array_unique($passwords, SORT_STRING));
 
         $errors = [];
+        $superCheck = escapeshellarg("SELECT current_setting('is_superuser')");
+
+        // Peer auth as the container OS postgres user (works on some images).
+        try {
+            $isSuper = strtolower(trim($ssh->exec(
+                "cd {$pathArg} && docker compose exec -T -u postgres db "
+                ."psql -d postgres -Atc {$superCheck}",
+                15
+            )));
+            if ($isSuper === 'on') {
+                return [
+                    'username' => 'postgres',
+                    'password' => '',
+                    'use_password' => false,
+                    'as_os_user' => 'postgres',
+                ];
+            }
+        } catch (\Throwable $e) {
+            $errors[] = 'os:postgres: '.$e->getMessage();
+        }
 
         foreach (array_keys($usernames) as $username) {
             $userArg = escapeshellarg($username);
@@ -2120,30 +2170,40 @@ class ContainerDeploymentService
             foreach ($passwords as $password) {
                 try {
                     if ($password === '') {
-                        $ssh->exec(
+                        $isSuper = strtolower(trim($ssh->exec(
                             "cd {$pathArg} && docker compose exec -T db "
-                            ."psql -U {$userArg} -d postgres -Atc ".escapeshellarg('SELECT 1'),
+                            ."psql -U {$userArg} -d postgres -Atc {$superCheck}",
                             15
-                        );
+                        )));
+                        if ($isSuper !== 'on') {
+                            $errors[] = $username.'@socket: connected but not superuser';
+                            continue;
+                        }
 
                         return [
                             'username' => $username,
                             'password' => '',
                             'use_password' => false,
+                            'as_os_user' => null,
                         ];
                     }
 
                     $passwordArg = escapeshellarg($password);
-                    $ssh->exec(
+                    $isSuper = strtolower(trim($ssh->exec(
                         "cd {$pathArg} && docker compose exec -T -e PGPASSWORD={$passwordArg} db "
-                        ."psql -U {$userArg} -d postgres -Atc ".escapeshellarg('SELECT 1'),
+                        ."psql -U {$userArg} -d postgres -Atc {$superCheck}",
                         15
-                    );
+                    )));
+                    if ($isSuper !== 'on') {
+                        $errors[] = $username.'@password: connected but not superuser';
+                        continue;
+                    }
 
                     return [
                         'username' => $username,
                         'password' => $password,
                         'use_password' => true,
+                        'as_os_user' => null,
                     ];
                 } catch (\Throwable $e) {
                     $errors[] = $username.'@'.($password === '' ? 'socket' : 'password').': '.$e->getMessage();
@@ -2152,9 +2212,9 @@ class ContainerDeploymentService
         }
 
         throw new \RuntimeException(
-            'Could not connect to Postgres as an admin role to repair credentials. '
+            'Could not connect to Postgres as a superuser to repair credentials. '
             .'Tried: '.implode(', ', array_keys($usernames)).'. '
-            .'Last errors: '.mb_substr(implode(' | ', array_slice($errors, -3)), 0, 500)
+            .'Last errors: '.mb_substr(implode(' | ', array_slice($errors, -4)), 0, 600)
         );
     }
 

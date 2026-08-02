@@ -984,19 +984,44 @@ class ContainerDoctorService
 
             // Keep a handle on the volume's original platform role for admin bootstrap.
             $canonical = $deploymentService->canonicalDatabaseIdentifiers($service);
-            if (! empty($platformEnv['DB_USERNAME']) || ! empty($platformEnv['POSTGRES_USER'])) {
-                $rawEnv['TALKSASA_PLATFORM_DB_USERNAME'] = (string) (
-                    $platformEnv['DB_USERNAME']
-                    ?? $platformEnv['POSTGRES_USER']
-                );
-            } else {
-                $rawEnv['TALKSASA_PLATFORM_DB_USERNAME'] = $canonical['username'];
+            $meta = is_array($service->service_meta) ? $service->service_meta : [];
+            $bootstrap = is_array($meta['postgres_bootstrap'] ?? null) ? $meta['postgres_bootstrap'] : [];
+
+            $platformUser = (string) (
+                $bootstrap['username']
+                ?? $platformEnv['DB_USERNAME']
+                ?? $platformEnv['POSTGRES_USER']
+                ?? $canonical['username']
+            );
+            $platformPassword = (string) (
+                $bootstrap['password']
+                ?? $platformEnv['DB_PASSWORD']
+                ?? $platformEnv['POSTGRES_PASSWORD']
+                ?? ''
+            );
+
+            // If platform env was already overwritten with the app role, prefer canonical bootstrap user.
+            if ($platformUser !== '' && $platformUser === (string) ($rawEnv['DB_USERNAME'] ?? '')) {
+                $platformUser = $canonical['username'];
+                if (($bootstrap['password'] ?? '') !== '') {
+                    $platformPassword = (string) $bootstrap['password'];
+                }
             }
-            if (! empty($platformEnv['DB_PASSWORD']) || ! empty($platformEnv['POSTGRES_PASSWORD'])) {
-                $rawEnv['TALKSASA_PLATFORM_DB_PASSWORD'] = (string) (
-                    $platformEnv['DB_PASSWORD']
-                    ?? $platformEnv['POSTGRES_PASSWORD']
-                );
+
+            if ($platformUser !== '') {
+                $rawEnv['TALKSASA_PLATFORM_DB_USERNAME'] = $platformUser;
+            }
+            if ($platformPassword !== '') {
+                $rawEnv['TALKSASA_PLATFORM_DB_PASSWORD'] = $platformPassword;
+            }
+
+            // Persist bootstrap credentials so later repairs can still reach the volume superuser.
+            if ($canonical['username'] !== '' && $platformPassword !== '' && $platformUser === $canonical['username']) {
+                $meta['postgres_bootstrap'] = [
+                    'username' => $canonical['username'],
+                    'password' => $platformPassword,
+                ];
+                $service->update(['service_meta' => $meta]);
             }
 
             $workingPassword = $this->discoverWorkingDatabasePassword(
