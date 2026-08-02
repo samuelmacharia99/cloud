@@ -115,11 +115,12 @@ JS;
     public static function frontendComposeCommand(string $frontendDir, int $port = self::FRONTEND_PORT): array
     {
         // Stay running while waiting for a build on the shared volume (avoids crash-loop).
+        // Use $$ so Docker Compose does not interpolate shell variables from the host.
         $start = 'set -e; '
             .'export HOME=/tmp NPM_CONFIG_CACHE=/tmp/.npm npm_config_cache=/tmp/.npm; '
             .'mkdir -p /tmp/.npm; '
             .'cd '.escapeshellarg($frontendDir).'; '
-            .'for i in $(seq 1 60); do '
+            .'for i in $$(seq 1 60); do '
             .'  if [ -f .next/standalone/server.js ]; then '
             .'    exec env HOSTNAME=0.0.0.0 PORT='.$port.' node .next/standalone/server.js; '
             .'  elif [ -f .next/standalone/frontend/server.js ]; then '
@@ -127,7 +128,7 @@ JS;
             .'  elif [ -d .next ] && { [ -x node_modules/.bin/next ] || [ -f node_modules/next/dist/bin/next ]; }; then '
             .'    break; '
             .'  fi; '
-            .'  echo "Waiting for Next.js build artifacts in '.$frontendDir.' ($i/60)..."; '
+            .'  echo "Waiting for Next.js build artifacts in '.$frontendDir.' ($$i/60)..."; '
             .'  sleep 5; '
             .'done; '
             .'if [ -x node_modules/.bin/next ]; then '
@@ -146,10 +147,11 @@ JS;
      */
     public static function backendComposeCommand(string $documentRoot, int $port = self::BACKEND_PORT): array
     {
+        // $$ escapes for Docker Compose variable interpolation.
         $start = 'set -e; '
-            .'BACKEND_DIR=$(dirname '.escapeshellarg($documentRoot).'); '
-            .'if [ -f "$BACKEND_DIR/artisan" ]; then '
-            .'  cd "$BACKEND_DIR" && exec php artisan serve --host=0.0.0.0 --port='.$port.'; '
+            .'BACKEND_DIR=$$(dirname '.escapeshellarg($documentRoot).'); '
+            .'if [ -f "$$BACKEND_DIR/artisan" ]; then '
+            .'  cd "$$BACKEND_DIR" && exec php artisan serve --host=0.0.0.0 --port='.$port.'; '
             .'else '
             .'  exec php -S 0.0.0.0:'.$port.' -t '.escapeshellarg($documentRoot)
             .' '.escapeshellarg(rtrim($documentRoot, '/').'/index.php').'; '
@@ -173,9 +175,9 @@ JS;
         $start = 'set -e; '
             .'export HOME=/tmp NPM_CONFIG_CACHE=/tmp/.npm npm_config_cache=/tmp/.npm; '
             .'mkdir -p /tmp/.npm; '
-            .'BACKEND_DIR=$(dirname '.escapeshellarg($documentRoot).'); '
-            .'if [ -f "$BACKEND_DIR/artisan" ]; then '
-            .'  (cd "$BACKEND_DIR" && php artisan serve --host=127.0.0.1 --port='.$laravelApiPort.') >/tmp/laravel-api.log 2>&1 & '
+            .'BACKEND_DIR=$$(dirname '.escapeshellarg($documentRoot).'); '
+            .'if [ -f "$$BACKEND_DIR/artisan" ]; then '
+            .'  (cd "$$BACKEND_DIR" && php artisan serve --host=127.0.0.1 --port='.$laravelApiPort.') >/tmp/laravel-api.log 2>&1 & '
             .'else '
             .'  php -S 127.0.0.1:'.$laravelApiPort.' -t '.escapeshellarg($documentRoot)
             .' '.escapeshellarg(rtrim($documentRoot, '/').'/index.php')

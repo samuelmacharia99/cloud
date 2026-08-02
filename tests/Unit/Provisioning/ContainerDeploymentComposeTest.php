@@ -339,6 +339,8 @@ class ContainerDeploymentComposeTest extends TestCase
         );
         $this->assertStringContainsString($hostApp.':/app', $yaml);
         $this->assertStringContainsString("ports:\n      - '31012:8080'", $yaml);
+        $this->assertStringContainsString('$$BACKEND_DIR', $yaml);
+        $this->assertStringNotContainsString('The "BACKEND_DIR" variable', $yaml);
         // Public port belongs to edge only (backend uses expose, not host ports).
         $this->assertMatchesRegularExpression('/backend:[\s\S]*?expose:\s*\n\s*-\s*[\'"]?8000/', $yaml);
     }

@@ -2697,6 +2697,16 @@ class ContainerDeploymentService
             $this->runtimeImages->ensureImage($ssh, $template, $deployment->selected_version, $service, $deployment);
         }
 
+        $hasNextSidecars = $this->usesLaravelNextSidecarStack($deployment)
+            || str_contains((string) $deployment->docker_compose_content, "\n  frontend:\n");
+
+        if ($hasNextSidecars) {
+            // Rewrite compose when older files still interpolate $BACKEND_DIR on the host.
+            $this->syncLaravelNextSidecarComposeFile($ssh, $service, $deployment);
+            $deployment->refresh();
+            $this->ensureNextSidecarImages($ssh);
+        }
+
         if (($template?->slug ?? '') === 'wordpress') {
             $this->wordpressHardening->ensureUploadsIniFile($ssh, $deployment->container_name);
         }
@@ -2929,8 +2939,86 @@ class ContainerDeploymentService
             }
 
             \Log::info('Pulling Next sidecar image', ['image' => $image]);
-            $ssh->exec('docker pull '.$safe, 600);
+            try {
+                $ssh->exec('docker pull '.$safe, 600);
+            } catch (\Throwable $e) {
+                throw new \RuntimeException(
+                    'Failed to pull Next sidecar image '.$image.'. '
+                    .'The node needs outbound Docker Hub access (compose uses --pull never for Laravel runtime images). '
+                    .$e->getMessage(),
+                    0,
+                    $e
+                );
+            }
         }
+    }
+
+    /**
+     * Re-upload sidecar compose + gateway script (no stack recreate).
+     */
+    private function syncLaravelNextSidecarComposeFile(
+        SSHService $ssh,
+        Service $service,
+        ContainerDeployment $deployment
+    ): void {
+        $service->loadMissing('product.containerTemplate');
+        $template = $service->product?->containerTemplate;
+        if (! $template || ($template->slug ?? null) !== 'laravel') {
+            return;
+        }
+
+        $hostAppPath = $this->appDirectory->hostAppPath($deployment);
+        if (! $this->stackCommands->hostHasNextFrontend($ssh, $hostAppPath)
+            && ! $this->usesLaravelNextSidecarStack($deployment)) {
+            return;
+        }
+
+        $relativeDir = $this->stackCommands->resolveLaravelFrontendRelativeDir($ssh, $hostAppPath) ?? 'frontend';
+        $documentRoot = app(LaravelProjectPathResolver::class)->resolveDocumentRoot($ssh, $hostAppPath) ?: '/app/public';
+
+        $ssh->upload(
+            LaravelNextGatewayProxy::scriptContents(
+                LaravelNextGatewayProxy::EDGE_INTERNAL_PORT,
+                LaravelNextGatewayProxy::BACKEND_PORT,
+                LaravelNextGatewayProxy::FRONTEND_PORT,
+            ),
+            LaravelNextGatewayProxy::hostScriptPath($hostAppPath)
+        );
+
+        $envVars = is_array($deployment->env_values) ? $deployment->env_values : [];
+        $envVars['INTERNAL_API_URL'] = 'http://'.LaravelNextGatewayProxy::BACKEND_SERVICE.':'.LaravelNextGatewayProxy::BACKEND_PORT;
+        $envVars['BACKEND_URL'] = $envVars['INTERNAL_API_URL'];
+        $publicUrl = $this->resolvePublicAppUrl($deployment, $envVars);
+        if ($publicUrl !== null) {
+            $envVars['APP_URL'] = $envVars['APP_URL'] ?? $publicUrl;
+            $envVars['FRONTEND_URL'] = $envVars['FRONTEND_URL'] ?? $publicUrl;
+            $envVars['NEXT_PUBLIC_APP_URL'] = $envVars['NEXT_PUBLIC_APP_URL'] ?? $publicUrl;
+            $envVars['NEXT_PUBLIC_API_URL'] = $envVars['NEXT_PUBLIC_API_URL'] ?? (rtrim($publicUrl, '/').'/api/v1');
+            $envVars['API_URL'] = $envVars['API_URL'] ?? $envVars['NEXT_PUBLIC_API_URL'];
+        }
+
+        $composeYaml = $this->renderCompose(
+            $template,
+            $deployment->container_name,
+            (int) $deployment->assigned_port,
+            $envVars,
+            $this->resolveDatabaseTemplateForService($service),
+            $deployment,
+            $deployment->selected_version,
+            $hostAppPath,
+            null,
+            $documentRoot,
+            serveNextFrontend: true,
+            nextFrontendRelativeDir: $relativeDir,
+            laravelApiPort: LaravelNextGatewayProxy::BACKEND_PORT,
+        );
+
+        $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+        $ssh->upload($composeYaml, $containerPath.'/docker-compose.yml');
+        $deployment->update([
+            'docker_compose_content' => $composeYaml,
+            'env_values' => $envVars,
+        ]);
     }
 
     /**

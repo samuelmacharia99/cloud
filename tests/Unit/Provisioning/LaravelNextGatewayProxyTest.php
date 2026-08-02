@@ -15,11 +15,15 @@ class LaravelNextGatewayProxyTest extends TestCase
         $this->assertSame('sh', $backend[0]);
         $this->assertStringContainsString('artisan serve', $backend[2]);
         $this->assertStringContainsString('0.0.0.0', $backend[2]);
+        // Docker Compose treats $VAR as host interpolation — shell vars must be $$.
+        $this->assertStringContainsString('$$BACKEND_DIR', $backend[2]);
+        $this->assertStringNotContainsString('BACKEND_DIR=$(', $backend[2]);
 
         $frontend = LaravelNextGatewayProxy::frontendComposeCommand('/app/frontend', 3000);
         $this->assertStringContainsString('0.0.0.0', $frontend[2]);
         $this->assertStringContainsString('standalone', $frontend[2]);
         $this->assertStringContainsString('Waiting for Next.js build', $frontend[2]);
+        $this->assertStringContainsString('$$(seq', $frontend[2]);
 
         $script = LaravelNextGatewayProxy::scriptContents(8080, 8000, 3000);
         $this->assertStringContainsString("startsWith('/api')", $script);
