@@ -114,15 +114,23 @@ JS;
      */
     public static function frontendComposeCommand(string $frontendDir, int $port = self::FRONTEND_PORT): array
     {
+        // Stay running while waiting for a build on the shared volume (avoids crash-loop).
         $start = 'set -e; '
             .'export HOME=/tmp NPM_CONFIG_CACHE=/tmp/.npm npm_config_cache=/tmp/.npm; '
             .'mkdir -p /tmp/.npm; '
             .'cd '.escapeshellarg($frontendDir).'; '
-            .'if [ -f .next/standalone/server.js ]; then '
-            .'  exec env HOSTNAME=0.0.0.0 PORT='.$port.' node .next/standalone/server.js; '
-            .'elif [ -f .next/standalone/frontend/server.js ]; then '
-            .'  exec env HOSTNAME=0.0.0.0 PORT='.$port.' node .next/standalone/frontend/server.js; '
-            .'elif [ -x node_modules/.bin/next ]; then '
+            .'for i in $(seq 1 60); do '
+            .'  if [ -f .next/standalone/server.js ]; then '
+            .'    exec env HOSTNAME=0.0.0.0 PORT='.$port.' node .next/standalone/server.js; '
+            .'  elif [ -f .next/standalone/frontend/server.js ]; then '
+            .'    exec env HOSTNAME=0.0.0.0 PORT='.$port.' node .next/standalone/frontend/server.js; '
+            .'  elif [ -d .next ] && { [ -x node_modules/.bin/next ] || [ -f node_modules/next/dist/bin/next ]; }; then '
+            .'    break; '
+            .'  fi; '
+            .'  echo "Waiting for Next.js build artifacts in '.$frontendDir.' ($i/60)..."; '
+            .'  sleep 5; '
+            .'done; '
+            .'if [ -x node_modules/.bin/next ]; then '
             .'  exec node_modules/.bin/next start -H 0.0.0.0 -p '.$port.'; '
             .'elif [ -f node_modules/next/dist/bin/next ]; then '
             .'  exec node node_modules/next/dist/bin/next start -H 0.0.0.0 -p '.$port.'; '

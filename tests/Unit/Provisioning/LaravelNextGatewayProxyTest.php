@@ -19,6 +19,7 @@ class LaravelNextGatewayProxyTest extends TestCase
         $frontend = LaravelNextGatewayProxy::frontendComposeCommand('/app/frontend', 3000);
         $this->assertStringContainsString('0.0.0.0', $frontend[2]);
         $this->assertStringContainsString('standalone', $frontend[2]);
+        $this->assertStringContainsString('Waiting for Next.js build', $frontend[2]);
 
         $script = LaravelNextGatewayProxy::scriptContents(8080, 8000, 3000);
         $this->assertStringContainsString("startsWith('/api')", $script);

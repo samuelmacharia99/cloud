@@ -332,6 +332,11 @@ class ContainerDeploymentComposeTest extends TestCase
         $this->assertStringContainsString('NEXT_PUBLIC_APP_URL', $yaml);
         $this->assertStringContainsString('BACKEND_HOST: backend', $yaml);
         $this->assertStringContainsString('FRONTEND_HOST: frontend', $yaml);
+        // Edge must not wait on frontend so /api can come up during Next builds.
+        $this->assertDoesNotMatchRegularExpression(
+            '/edge:[\s\S]*?depends_on:\s*\n(?:\s*-\s*backend\s*\n)?\s*-\s*frontend/m',
+            $yaml
+        );
         $this->assertStringContainsString($hostApp.':/app', $yaml);
         $this->assertStringContainsString("ports:\n      - '31012:8080'", $yaml);
         // Public port belongs to edge only (backend uses expose, not host ports).

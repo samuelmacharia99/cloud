@@ -298,6 +298,8 @@ class ContainerDeploymentService
                 }
 
                 $this->appDirectory->normalizePermissions($ssh, $deployment);
+                // PHP extensions only — Next sidecar switch must run AFTER the Laravel
+                // container passes health (switching compose first left the stack unhealthy).
                 $this->syncPhpExtensionsIfSupported($ssh, $service, $deployment);
 
                 // Health behavior is template-configurable: strict templates fail on timeout,
@@ -338,6 +340,16 @@ class ContainerDeploymentService
                     $template,
                     self::DEPLOY_TIMEOUT
                 );
+
+                // Build Next + switch to backend/frontend/edge after Laravel is healthy.
+                try {
+                    $this->installLaravelFrontendAfterDeploy($ssh, $service, $deployment->fresh());
+                } catch (\Throwable $e) {
+                    \Log::warning('Laravel Next sidecar setup after deploy failed', [
+                        'service_id' => $service->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
 
                 // Get container status
                 $status = $this->getContainerStatus($ssh, $containerName);
@@ -1288,9 +1300,9 @@ class ContainerDeploymentService
                 ? [LaravelNextGatewayProxy::hostScriptPath($hostAppPath).':'.LaravelNextGatewayProxy::scriptPathInContainer().':ro']
                 : [],
             'command' => ['node', LaravelNextGatewayProxy::scriptPathInContainer()],
+            // Edge can serve /api even if Next is still building or restarting.
             'depends_on' => [
                 LaravelNextGatewayProxy::BACKEND_SERVICE,
-                LaravelNextGatewayProxy::FRONTEND_SERVICE,
             ],
             'mem_limit' => $edgeMem.'M',
             'cpus' => $edgeCpu,
@@ -2742,7 +2754,6 @@ class ContainerDeploymentService
             $this->waitForContainerRunning($ssh, $deployment->container_name, 60);
             $extensions->syncEnabledExtensions($service, $deployment, $ssh);
             app(LaravelAppInitializationService::class)->ensureNodeRuntime($ssh, $deployment);
-            $this->installLaravelFrontendAfterDeploy($ssh, $service, $deployment);
         } catch (\Throwable $e) {
             \Log::warning('Failed to sync enabled PHP extensions', [
                 'service_id' => $service->id,
@@ -2874,11 +2885,22 @@ class ContainerDeploymentService
         $meta['frontend'] = $meta['frontend'] ?? 'nextjs';
         $service->update(['service_meta' => $meta]);
 
+        // Runtime Laravel images use --pull never; Node sidecars must be pulled explicitly.
+        $this->ensureNextSidecarImages($ssh);
+
+        @$ssh->exec(
+            'cd '.escapeshellarg($containerPath).' && docker compose -f docker-compose.yml down --remove-orphans',
+            self::DEPLOY_TIMEOUT
+        );
+
         $this->composeUp(
             $ssh,
             $containerPath,
-            $this->runtimeImages->usesRuntimeImage($template)
+            $this->runtimeImages->usesRuntimeImage($template),
+            useExplicitComposeFile: true
         );
+
+        $this->waitForLaravelNextSidecarHealth($ssh, $deployment->container_name, 180);
 
         $this->recordDeploymentEvent($service, $deployment, 'laravel_next_sidecar_stack', [
             'frontend_dir' => $relativeDir,
@@ -2887,6 +2909,69 @@ class ContainerDeploymentService
             'frontend_port' => LaravelNextGatewayProxy::FRONTEND_PORT,
             'edge_port' => LaravelNextGatewayProxy::EDGE_INTERNAL_PORT,
         ]);
+    }
+
+    private function ensureNextSidecarImages(SSHService $ssh): void
+    {
+        $images = array_unique(array_filter([
+            $this->nextSidecarImage('node_image', 'node:20-bookworm-slim'),
+            $this->nextSidecarImage('edge_image', 'node:20-alpine'),
+        ]));
+
+        foreach ($images as $image) {
+            $safe = escapeshellarg($image);
+            $present = trim($ssh->exec(
+                'docker image inspect '.$safe.' >/dev/null 2>&1 && echo yes || echo no',
+                30
+            ));
+            if ($present === 'yes') {
+                continue;
+            }
+
+            \Log::info('Pulling Next sidecar image', ['image' => $image]);
+            $ssh->exec('docker pull '.$safe, 600);
+        }
+    }
+
+    /**
+     * Backend keeps the deployment container_name; edge is required for public traffic.
+     */
+    private function waitForLaravelNextSidecarHealth(
+        SSHService $ssh,
+        string $backendContainerName,
+        int $timeoutSeconds = 180
+    ): void {
+        $edgeName = LaravelNextGatewayProxy::edgeContainerName($backendContainerName);
+        $deadline = time() + max(30, $timeoutSeconds);
+        $lastError = null;
+
+        while (time() < $deadline) {
+            try {
+                $backend = $this->getContainerStatus($ssh, $backendContainerName);
+                $edge = $this->getContainerStatus($ssh, $edgeName);
+
+                if (($backend['running'] ?? false) && ($edge['running'] ?? false)) {
+                    return;
+                }
+
+                $lastError = sprintf(
+                    'backend running=%s state=%s; edge running=%s state=%s',
+                    ($backend['running'] ?? false) ? 'yes' : 'no',
+                    (string) ($backend['state'] ?? 'unknown'),
+                    ($edge['running'] ?? false) ? 'yes' : 'no',
+                    (string) ($edge['state'] ?? 'unknown'),
+                );
+            } catch (\Throwable $e) {
+                $lastError = $e->getMessage();
+            }
+
+            sleep(self::HEALTH_CHECK_DELAY);
+        }
+
+        throw new \RuntimeException(
+            'Laravel Next sidecar stack failed to become healthy after '.$timeoutSeconds.' seconds'
+            .($lastError ? ' ('.$lastError.')' : '.')
+        );
     }
 
     private function resolveHostAppPath($template, string $containerName): ?string
@@ -3068,8 +3153,15 @@ class ContainerDeploymentService
                 $this->runtimeImages->ensureImage($ssh, $template, $deployment->selected_version, $service, $deployment);
             }
 
+            if ($serveNextFrontend) {
+                $this->ensureNextSidecarImages($ssh);
+            }
+
             @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml down --remove-orphans", self::DEPLOY_TIMEOUT);
             $this->composeUp($ssh, $containerPath, $this->runtimeImages->usesRuntimeImage($template), useExplicitComposeFile: true);
+            if ($serveNextFrontend) {
+                $this->waitForLaravelNextSidecarHealth($ssh, $deployment->container_name, 180);
+            }
             $this->syncPhpExtensionsIfSupported($ssh, $service, $deployment);
             $this->syncDatabaseCredentialsAfterStart($ssh, $service, $deployment, $containerPath);
 
