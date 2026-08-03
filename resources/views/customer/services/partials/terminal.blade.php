@@ -82,8 +82,8 @@
         </div>
 
         <div
-            id="terminal"
-            class="text-sm font-mono text-slate-100 flex-1"
+            x-ref="panesHost"
+            class="relative text-sm font-mono text-slate-100 flex-1"
             :style="fullscreen ? 'min-height: 0; height: 100%;' : 'height: 480px;'"
             @contextmenu.prevent="onContextMenu($event)"
         ></div>
@@ -154,35 +154,17 @@ function containerTerminal() {
     };
 
     return {
-        terminal: null,
-        fitAddon: null,
-        searchAddon: null,
         terminalVisible: false,
         sessionStarting: false,
         connected: false,
         connectionState: 'idle',
         mode: null,
-        sessionToken: null,
-        websocketUrl: null,
-        websocketPath: '/container-terminal',
-        websocketEnabled: true,
-        ws: null,
         cwd: '/app',
         shellUser: 'app',
         containerName: CONTAINER_NAME,
-        inputBuffer: '',
-        history: [],
-        historyIndex: 0,
         commandCount: 0,
         commandBusy: false,
-        commandProgressTimer: null,
         sessionExpires: null,
-        expiresAtIso: null,
-        expiryUpdateInterval: null,
-        keepaliveInterval: null,
-        reconnectAttempts: 0,
-        reconnectTimer: null,
-        intentionalClose: false,
         fullscreen: false,
         fontSize: 14,
         themeName: 'slate',
@@ -193,6 +175,8 @@ function containerTerminal() {
         tabs: [],
         activeTabIndex: 0,
         tabSeq: 0,
+        websocketEnabled: true,
+        expiryUpdateInterval: null,
 
         get shellIdentity() {
             if (!this.terminalVisible || !this.connected) {
@@ -206,12 +190,16 @@ function containerTerminal() {
             window.addEventListener('resize', () => this.fitAndResize());
         },
 
+        activeTab() {
+            return this.tabs[this.activeTabIndex] || null;
+        },
+
         statusLabel() {
             switch (this.connectionState) {
                 case 'connecting': return 'Connecting…';
                 case 'live': return 'Live PTY';
                 case 'http': return 'HTTP fallback (one command at a time)';
-                case 'reconnecting': return `Reconnecting… (${this.reconnectAttempts})`;
+                case 'reconnecting': return `Reconnecting… (${this.activeTab()?.reconnectAttempts || 0})`;
                 case 'expired': return 'Session expired';
                 case 'error': return 'Connection error';
                 case 'disconnected': return 'Disconnected';
@@ -227,6 +215,29 @@ function containerTerminal() {
             };
         },
 
+        syncUiFromTab(tab) {
+            if (!tab) {
+                this.connected = false;
+                this.connectionState = 'idle';
+                this.mode = null;
+                this.cwd = '/app';
+                this.commandCount = 0;
+                this.commandBusy = false;
+                this.sessionExpires = null;
+                return;
+            }
+
+            this.connected = !!tab.connected;
+            this.connectionState = tab.connectionState || 'disconnected';
+            this.mode = tab.mode;
+            this.cwd = tab.cwd || '/app';
+            this.shellUser = tab.shellUser || 'app';
+            this.containerName = tab.containerName || CONTAINER_NAME;
+            this.commandCount = tab.commandCount || 0;
+            this.commandBusy = !!tab.commandBusy;
+            this.trackSessionExpiry(tab.expiresAtIso);
+        },
+
         async toggleTerminal() {
             if (this.terminalVisible) {
                 await this.closeAllTabs();
@@ -237,338 +248,64 @@ function containerTerminal() {
 
         async openTerminal() {
             this.terminalVisible = true;
-            this.intentionalClose = false;
             await this.$nextTick();
-            if (!this.terminal) {
-                this.initializeTerminal();
-            }
-            await this.createTabSession(true);
+            await this.createTabSession();
         },
 
         async addTab() {
             if (this.tabs.length >= this.maxTabs) {
-                this.terminal.write('\r\n\x1b[33mMaximum number of terminal tabs reached.\x1b[0m\r\n');
+                const tab = this.activeTab();
+                tab?.terminal?.write('\r\n\x1b[33mMaximum number of terminal tabs reached.\x1b[0m\r\n');
                 return;
             }
-            await this.createTabSession(false);
+            await this.createTabSession();
         },
 
-        persistActiveTab() {
-            if (!this.tabs[this.activeTabIndex]) {
-                return;
-            }
-            const tab = this.tabs[this.activeTabIndex];
-            tab.sessionToken = this.sessionToken;
-            tab.websocketUrl = this.websocketUrl;
-            tab.websocketPath = this.websocketPath;
-            tab.mode = this.mode;
-            tab.cwd = this.cwd;
-            tab.shellUser = this.shellUser;
-            tab.containerName = this.containerName;
-            tab.commandCount = this.commandCount;
-            tab.connectionState = this.connectionState;
-            tab.connected = this.connected;
-            tab.expiresAtIso = this.expiresAtIso;
-            tab.history = [...this.history];
-            tab.inputBuffer = this.inputBuffer;
-        },
-
-        loadTab(tab) {
-            this.sessionToken = tab.sessionToken;
-            this.websocketUrl = tab.websocketUrl;
-            this.websocketPath = tab.websocketPath || '/container-terminal';
-            this.mode = tab.mode;
-            this.cwd = tab.cwd || '/app';
-            this.shellUser = tab.shellUser || 'app';
-            this.containerName = tab.containerName || CONTAINER_NAME;
-            this.commandCount = tab.commandCount || 0;
-            this.connectionState = tab.connectionState || 'disconnected';
-            this.connected = !!tab.connected;
-            this.expiresAtIso = tab.expiresAtIso;
-            this.history = tab.history || [];
-            this.historyIndex = this.history.length;
-            this.inputBuffer = tab.inputBuffer || '';
-            this.trackSessionExpiry(this.expiresAtIso);
-        },
-
-        async switchTab(index) {
-            if (index === this.activeTabIndex || !this.tabs[index]) {
-                return;
-            }
-            this.persistActiveTab();
-            this.stopKeepalive();
-            if (this.ws) {
-                this.intentionalClose = true;
-                this.ws.close();
-                this.ws = null;
-                this.intentionalClose = false;
-            }
-            this.activeTabIndex = index;
-            this.loadTab(this.tabs[index]);
-            this.terminal.clear();
-            this.terminal.write(`\x1b[90m— ${this.tabs[index].label} —\x1b[0m\r\n`);
-            if (this.mode === 'pty' && this.sessionToken) {
-                try {
-                    this.connectionState = 'reconnecting';
-                    await this.connectWebSocket({ reconnecting: true });
-                    this.mode = 'pty';
-                    this.connected = true;
-                    this.connectionState = 'live';
-                    this.startKeepalive();
-                    this.terminal.write('\x1b[32m✓ Tab attached (PTY)\x1b[0m\r\n');
-                } catch (e) {
-                    this.enableHttpFallback({ welcome_message: 'Using HTTP mode for this tab.' });
-                }
-            } else if (this.mode === 'http') {
-                this.connectionState = 'http';
-                this.connected = true;
-                this.writePrompt();
-            }
-            this.persistActiveTab();
-            this.terminal.focus();
-        },
-
-        async closeTab(index) {
-            const tab = this.tabs[index];
-            if (!tab) {
-                return;
-            }
-            if (tab.sessionToken) {
-                try {
-                    await fetch(`/my/services/${SERVICE_ID}/terminal`, {
-                        method: 'DELETE',
-                        headers: this.csrfHeaders(),
-                        body: JSON.stringify({ session_token: tab.sessionToken }),
-                    });
-                } catch (e) {}
-            }
-            this.tabs.splice(index, 1);
-            if (this.tabs.length === 0) {
-                await this.closeTerminalUi();
-                return;
-            }
-            const next = Math.min(index, this.tabs.length - 1);
-            this.activeTabIndex = next;
-            this.loadTab(this.tabs[next]);
-            if (this.mode === 'pty' && this.sessionToken) {
-                try {
-                    await this.connectWebSocket({ reconnecting: true });
-                    this.connectionState = 'live';
-                    this.connected = true;
-                    this.startKeepalive();
-                } catch (e) {
-                    this.enableHttpFallback({ welcome_message: '' });
-                }
-            }
-        },
-
-        async createTabSession(isFirst) {
-            this.sessionStarting = true;
-            this.connectionState = 'connecting';
-            this.connected = false;
-            try {
-                const response = await fetch(`/my/services/${SERVICE_ID}/terminal`, {
-                    method: 'POST',
-                    headers: this.csrfHeaders(),
-                });
-                const { data, parseError } = await this.safeJsonResponse(response);
-                if (parseError || !response.ok) {
-                    this.connectionState = 'error';
-                    this.terminal.write('\r\n❌ ' + ((data && data.error) || 'Failed to create terminal session') + '\r\n');
+        showActivePane() {
+            this.tabs.forEach((tab, index) => {
+                if (!tab.paneEl) {
                     return;
                 }
-
-                this.tabSeq += 1;
-                const tab = {
-                    id: `t${this.tabSeq}`,
-                    label: `Terminal ${this.tabSeq}`,
-                    sessionToken: data.session_token,
-                    websocketUrl: data.websocket_url,
-                    websocketPath: data.websocket_path || '/container-terminal',
-                    mode: null,
-                    cwd: data.cwd || '/app',
-                    shellUser: data.shell_user || 'app',
-                    containerName: data.container_name || CONTAINER_NAME,
-                    commandCount: 0,
-                    connectionState: 'connecting',
-                    connected: false,
-                    expiresAtIso: data.expires_at,
-                    history: [],
-                    inputBuffer: '',
-                };
-
-                if (!isFirst) {
-                    this.persistActiveTab();
-                    if (this.ws) {
-                        this.intentionalClose = true;
-                        this.ws.close();
-                        this.ws = null;
-                        this.intentionalClose = false;
-                    }
-                    this.stopKeepalive();
-                }
-
-                this.tabs.push(tab);
-                this.activeTabIndex = this.tabs.length - 1;
-                this.loadTab(tab);
-                this.websocketEnabled = data.websocket_enabled !== false;
-                this.terminal.write(isFirst ? '\r\n' : `\r\n\x1b[90m— ${tab.label} —\x1b[0m\r\n`);
-
-                try {
-                    if (!this.websocketEnabled) {
-                        throw new Error('WebSocket disabled');
-                    }
-                    await this.connectWebSocket();
-                    this.mode = 'pty';
-                    this.connected = true;
-                    this.connectionState = 'live';
-                    this.reconnectAttempts = 0;
-                    this.terminal.write('✓ ' + (data.welcome_message || 'Connected.') + '\r\n');
-                    this.startKeepalive();
-                } catch (error) {
-                    this.enableHttpFallback(data);
-                }
-
-                this.persistActiveTab();
-                this.terminal.focus();
-            } catch (error) {
-                this.connectionState = 'error';
-                this.terminal.write('\r\n❌ Error: ' + error.message + '\r\n');
-            } finally {
-                this.sessionStarting = false;
-            }
-        },
-
-        buildWebSocketUrl() {
-            const token = encodeURIComponent(this.sessionToken);
-            if (this.websocketUrl) {
-                return `${this.websocketUrl}?token=${token}`;
-            }
-            const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const path = this.websocketPath.startsWith('/') ? this.websocketPath : `/${this.websocketPath}`;
-            return `${scheme}//${window.location.host}${path}?token=${token}`;
-        },
-
-        connectWebSocket(options = {}) {
-            return new Promise((resolve, reject) => {
-                if (this.ws) {
-                    this.intentionalClose = true;
-                    this.ws.close();
-                    this.ws = null;
-                    this.intentionalClose = false;
-                }
-
-                this.ws = new WebSocket(this.buildWebSocketUrl());
-                let settled = false;
-
-                this.ws.onopen = () => {
-                    settled = true;
-                    this.sendResize();
-                    resolve();
-                };
-
-                this.ws.onmessage = (event) => {
-                    this.terminal.write(event.data);
-                };
-
-                this.ws.onerror = () => {
-                    if (!settled) {
-                        settled = true;
-                        reject(new Error('WebSocket connection failed'));
-                    }
-                };
-
-                this.ws.onclose = () => {
-                    if (this.intentionalClose) {
-                        return;
-                    }
-                    if (this.mode === 'pty') {
-                        this.connected = false;
-                        this.connectionState = 'disconnected';
-                        this.schedulePtyReconnect();
-                    }
-                };
+                const active = index === this.activeTabIndex;
+                tab.paneEl.style.visibility = active ? 'visible' : 'hidden';
+                tab.paneEl.style.pointerEvents = active ? 'auto' : 'none';
+                tab.paneEl.style.zIndex = active ? '2' : '1';
             });
         },
 
-        schedulePtyReconnect() {
-            if (this.intentionalClose || !this.terminalVisible || !this.sessionToken) {
+        switchTab(index) {
+            if (index === this.activeTabIndex || !this.tabs[index]) {
                 return;
             }
-            if (this.reconnectAttempts >= 8) {
-                this.connectionState = 'error';
-                this.terminal.write('\r\n\x1b[31m✗ Could not reconnect PTY. Switching to HTTP fallback.\x1b[0m\r\n');
-                this.enableHttpFallback({ welcome_message: 'HTTP fallback after reconnect failure.' });
-                return;
-            }
-            this.reconnectAttempts += 1;
-            this.connectionState = 'reconnecting';
-            const delay = Math.min(10000, 500 * Math.pow(2, this.reconnectAttempts - 1));
-            clearTimeout(this.reconnectTimer);
-            this.reconnectTimer = setTimeout(async () => {
-                try {
-                    await this.connectWebSocket({ reconnecting: true });
-                    this.mode = 'pty';
-                    this.connected = true;
-                    this.connectionState = 'live';
-                    this.reconnectAttempts = 0;
-                    this.startKeepalive();
-                    this.terminal.write('\r\n\x1b[32m✓ Reconnected to PTY\x1b[0m\r\n');
-                    this.persistActiveTab();
-                } catch (e) {
-                    this.schedulePtyReconnect();
-                }
-            }, delay);
+
+            this.activeTabIndex = index;
+            this.showActivePane();
+            this.syncUiFromTab(this.tabs[index]);
+            this.$nextTick(() => {
+                this.fitAndResize();
+                this.tabs[index].terminal?.focus();
+            });
         },
 
-        startKeepalive() {
-            this.stopKeepalive();
-            this.keepaliveInterval = setInterval(() => {
-                if (this.mode === 'pty' && this.ws && this.ws.readyState === WebSocket.OPEN) {
-                    this.ws.send(JSON.stringify({ type: 'ping' }));
-                }
-            }, 120000);
-        },
-
-        stopKeepalive() {
-            if (this.keepaliveInterval) {
-                clearInterval(this.keepaliveInterval);
-                this.keepaliveInterval = null;
+        createPaneTerminal(tab) {
+            const host = this.$refs.panesHost;
+            if (!host) {
+                throw new Error('Terminal host is not ready');
             }
-        },
 
-        enableHttpFallback(data) {
-            if (this.ws) {
-                this.intentionalClose = true;
-                this.ws.close();
-                this.ws = null;
-                this.intentionalClose = false;
-            }
-            this.stopKeepalive();
-            this.mode = 'http';
-            this.connected = true;
-            this.connectionState = 'http';
-            this.terminal.write('\x1b[33m⚠ Interactive WebSocket unavailable. Using HTTP command mode (one line at a time).\x1b[0m\r\n');
-            this.terminal.write('\x1b[90m  Long commands (artisan, composer, npm) show progress while running.\x1b[0m\r\n');
-            if (TEMPLATE_SLUG === 'laravel') {
-                this.terminal.write('  Tip: use Overview → Clear /app if Initialize Laravel is blocked by leftover files.\r\n');
-            } else if (TEMPLATE_SLUG === 'nodejs') {
-                this.terminal.write('  Tip: for Node apps, prefer Git → Pull with Force clean rebuild instead of manual npm run build.\r\n');
-            }
-            if (data?.welcome_message) {
-                this.terminal.write('✓ ' + data.welcome_message + '\r\n');
-            }
-            this.writePrompt();
-            this.persistActiveTab();
-        },
+            const paneEl = document.createElement('div');
+            paneEl.className = 'absolute inset-0';
+            paneEl.dataset.tabId = tab.id;
+            paneEl.style.visibility = 'hidden';
+            host.appendChild(paneEl);
+            tab.paneEl = paneEl;
 
-        themes() {
-            return THEMES;
-        },
-
-        initializeTerminal() {
             const TerminalClass = window.Terminal;
-            this.terminal = new TerminalClass({
+            const FitAddonClass = (window.FitAddon && window.FitAddon.FitAddon) ? window.FitAddon.FitAddon : window.FitAddon;
+            const SearchAddonClass = (window.SearchAddon && window.SearchAddon.SearchAddon) ? window.SearchAddon.SearchAddon : window.SearchAddon;
+            const WebLinksAddonClass = (window.WebLinksAddon && window.WebLinksAddon.WebLinksAddon) ? window.WebLinksAddon.WebLinksAddon : window.WebLinksAddon;
+
+            const terminal = new TerminalClass({
                 theme: THEMES[this.themeName] || THEMES.slate,
                 fontFamily: 'Menlo, Monaco, "Cascadia Code", "Ubuntu Mono", Consolas, monospace',
                 fontSize: this.fontSize,
@@ -579,22 +316,18 @@ function containerTerminal() {
                 allowProposedApi: true,
             });
 
-            const FitAddonClass = (window.FitAddon && window.FitAddon.FitAddon) ? window.FitAddon.FitAddon : window.FitAddon;
-            const SearchAddonClass = (window.SearchAddon && window.SearchAddon.SearchAddon) ? window.SearchAddon.SearchAddon : window.SearchAddon;
-            const WebLinksAddonClass = (window.WebLinksAddon && window.WebLinksAddon.WebLinksAddon) ? window.WebLinksAddon.WebLinksAddon : window.WebLinksAddon;
-
-            this.fitAddon = new FitAddonClass();
-            this.searchAddon = new SearchAddonClass();
-            this.terminal.loadAddon(this.fitAddon);
-            this.terminal.loadAddon(this.searchAddon);
+            const fitAddon = new FitAddonClass();
+            const searchAddon = new SearchAddonClass();
+            terminal.loadAddon(fitAddon);
+            terminal.loadAddon(searchAddon);
             if (WebLinksAddonClass) {
-                this.terminal.loadAddon(new WebLinksAddonClass());
+                terminal.loadAddon(new WebLinksAddonClass());
             }
 
-            this.terminal.open(document.getElementById('terminal'));
-            try { this.fitAddon.fit(); } catch (e) {}
+            terminal.open(paneEl);
+            try { fitAddon.fit(); } catch (e) {}
 
-            this.terminal.attachCustomKeyEventHandler((event) => {
+            terminal.attachCustomKeyEventHandler((event) => {
                 const mod = event.metaKey || event.ctrlKey;
                 if (mod && event.shiftKey && event.key.toLowerCase() === 'c') {
                     event.preventDefault();
@@ -615,41 +348,353 @@ function containerTerminal() {
                 return true;
             });
 
-            this.terminal.onData((data) => {
-                if (this.mode === 'pty' && this.ws && this.ws.readyState === WebSocket.OPEN) {
-                    this.ws.send(data);
+            terminal.onData((data) => {
+                // Only the active tab accepts keyboard input into its session.
+                if (this.activeTab()?.id !== tab.id) {
                     return;
                 }
-                if (this.mode === 'http') {
-                    this.handleHttpInput(data);
+                if (tab.mode === 'pty' && tab.ws && tab.ws.readyState === WebSocket.OPEN) {
+                    tab.ws.send(data);
+                    return;
+                }
+                if (tab.mode === 'http') {
+                    this.handleHttpInput(tab, data);
                 }
             });
 
-            if (typeof this.terminal.onResize === 'function') {
-                this.terminal.onResize(({ cols, rows }) => this.sendResize(cols, rows));
+            if (typeof terminal.onResize === 'function') {
+                terminal.onResize(({ cols, rows }) => {
+                    if (this.activeTab()?.id === tab.id) {
+                        this.sendResize(tab, cols, rows);
+                    }
+                });
             }
 
-            const terminalElement = document.getElementById('terminal');
-            if (terminalElement) {
-                terminalElement.addEventListener('click', () => this.terminal.focus());
+            paneEl.addEventListener('click', () => {
+                if (this.activeTab()?.id === tab.id) {
+                    terminal.focus();
+                }
+            });
+
+            tab.terminal = terminal;
+            tab.fitAddon = fitAddon;
+            tab.searchAddon = searchAddon;
+        },
+
+        destroyTabResources(tab) {
+            if (!tab) {
+                return;
+            }
+
+            tab.intentionalClose = true;
+            clearTimeout(tab.reconnectTimer);
+            if (tab.keepaliveInterval) {
+                clearInterval(tab.keepaliveInterval);
+                tab.keepaliveInterval = null;
+            }
+            if (tab.commandProgressTimer) {
+                clearInterval(tab.commandProgressTimer);
+                tab.commandProgressTimer = null;
+            }
+            if (tab.ws) {
+                try { tab.ws.close(); } catch (e) {}
+                tab.ws = null;
+            }
+            try { tab.terminal?.dispose(); } catch (e) {}
+            tab.terminal = null;
+            tab.fitAddon = null;
+            tab.searchAddon = null;
+            if (tab.paneEl?.parentNode) {
+                tab.paneEl.parentNode.removeChild(tab.paneEl);
+            }
+            tab.paneEl = null;
+        },
+
+        async closeTab(index) {
+            const tab = this.tabs[index];
+            if (!tab) {
+                return;
+            }
+
+            if (tab.sessionToken) {
+                try {
+                    await fetch(`/my/services/${SERVICE_ID}/terminal`, {
+                        method: 'DELETE',
+                        headers: this.csrfHeaders(),
+                        body: JSON.stringify({ session_token: tab.sessionToken }),
+                    });
+                } catch (e) {}
+            }
+
+            this.destroyTabResources(tab);
+            this.tabs.splice(index, 1);
+
+            if (this.tabs.length === 0) {
+                await this.closeTerminalUi();
+                return;
+            }
+
+            this.activeTabIndex = Math.min(index, this.tabs.length - 1);
+            this.showActivePane();
+            this.syncUiFromTab(this.tabs[this.activeTabIndex]);
+            this.$nextTick(() => {
+                this.fitAndResize();
+                this.tabs[this.activeTabIndex].terminal?.focus();
+            });
+        },
+
+        async createTabSession() {
+            this.sessionStarting = true;
+            try {
+                const response = await fetch(`/my/services/${SERVICE_ID}/terminal`, {
+                    method: 'POST',
+                    headers: this.csrfHeaders(),
+                });
+                const { data, parseError } = await this.safeJsonResponse(response);
+                if (parseError || !response.ok) {
+                    const active = this.activeTab();
+                    if (active?.terminal) {
+                        active.connectionState = 'error';
+                        this.syncUiFromTab(active);
+                        active.terminal.write('\r\n❌ ' + ((data && data.error) || 'Failed to create terminal session') + '\r\n');
+                    }
+                    return;
+                }
+
+                this.tabSeq += 1;
+                const tab = {
+                    id: `t${this.tabSeq}`,
+                    label: `Terminal ${this.tabSeq}`,
+                    sessionToken: data.session_token,
+                    websocketUrl: data.websocket_url,
+                    websocketPath: data.websocket_path || '/container-terminal',
+                    mode: null,
+                    cwd: data.cwd || '/app',
+                    shellUser: data.shell_user || 'app',
+                    containerName: data.container_name || CONTAINER_NAME,
+                    commandCount: 0,
+                    connectionState: 'connecting',
+                    connected: false,
+                    expiresAtIso: data.expires_at,
+                    history: [],
+                    historyIndex: 0,
+                    inputBuffer: '',
+                    commandBusy: false,
+                    commandProgressTimer: null,
+                    ws: null,
+                    terminal: null,
+                    fitAddon: null,
+                    searchAddon: null,
+                    paneEl: null,
+                    keepaliveInterval: null,
+                    reconnectAttempts: 0,
+                    reconnectTimer: null,
+                    intentionalClose: false,
+                };
+
+                this.createPaneTerminal(tab);
+                this.tabs.push(tab);
+                this.activeTabIndex = this.tabs.length - 1;
+                this.websocketEnabled = data.websocket_enabled !== false;
+                this.showActivePane();
+                this.syncUiFromTab(tab);
+                this.$nextTick(() => this.fitAndResize());
+
+                try {
+                    if (!this.websocketEnabled) {
+                        throw new Error('WebSocket disabled');
+                    }
+                    await this.connectWebSocket(tab);
+                    tab.mode = 'pty';
+                    tab.connected = true;
+                    tab.connectionState = 'live';
+                    tab.reconnectAttempts = 0;
+                    tab.terminal.write('✓ ' + (data.welcome_message || 'Connected.') + '\r\n');
+                    this.startKeepalive(tab);
+                } catch (error) {
+                    this.enableHttpFallback(tab, data);
+                }
+
+                this.syncUiFromTab(tab);
+                tab.terminal.focus();
+            } catch (error) {
+                const active = this.activeTab();
+                if (active) {
+                    active.connectionState = 'error';
+                    this.syncUiFromTab(active);
+                    active.terminal?.write('\r\n❌ Error: ' + error.message + '\r\n');
+                }
+            } finally {
+                this.sessionStarting = false;
+            }
+        },
+
+        buildWebSocketUrl(tab) {
+            const token = encodeURIComponent(tab.sessionToken);
+            if (tab.websocketUrl) {
+                return `${tab.websocketUrl}?token=${token}`;
+            }
+            const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const path = (tab.websocketPath || '/container-terminal').startsWith('/')
+                ? (tab.websocketPath || '/container-terminal')
+                : `/${tab.websocketPath}`;
+            return `${scheme}//${window.location.host}${path}?token=${token}`;
+        },
+
+        connectWebSocket(tab) {
+            return new Promise((resolve, reject) => {
+                if (tab.ws) {
+                    tab.intentionalClose = true;
+                    tab.ws.close();
+                    tab.ws = null;
+                    tab.intentionalClose = false;
+                }
+
+                tab.ws = new WebSocket(this.buildWebSocketUrl(tab));
+                let settled = false;
+
+                tab.ws.onopen = () => {
+                    settled = true;
+                    this.sendResize(tab);
+                    resolve();
+                };
+
+                tab.ws.onmessage = (event) => {
+                    // Always write into this tab's buffer, even when inactive.
+                    tab.terminal?.write(event.data);
+                };
+
+                tab.ws.onerror = () => {
+                    if (!settled) {
+                        settled = true;
+                        reject(new Error('WebSocket connection failed'));
+                    }
+                };
+
+                tab.ws.onclose = () => {
+                    if (tab.intentionalClose) {
+                        return;
+                    }
+                    if (tab.mode === 'pty') {
+                        tab.connected = false;
+                        tab.connectionState = 'disconnected';
+                        if (this.activeTab()?.id === tab.id) {
+                            this.syncUiFromTab(tab);
+                        }
+                        this.schedulePtyReconnect(tab);
+                    }
+                };
+            });
+        },
+
+        schedulePtyReconnect(tab) {
+            if (tab.intentionalClose || !this.terminalVisible || !tab.sessionToken) {
+                return;
+            }
+            if (tab.reconnectAttempts >= 8) {
+                tab.connectionState = 'error';
+                tab.terminal?.write('\r\n\x1b[31m✗ Could not reconnect PTY. Switching to HTTP fallback.\x1b[0m\r\n');
+                this.enableHttpFallback(tab, { welcome_message: 'HTTP fallback after reconnect failure.' });
+                if (this.activeTab()?.id === tab.id) {
+                    this.syncUiFromTab(tab);
+                }
+                return;
+            }
+
+            tab.reconnectAttempts += 1;
+            tab.connectionState = 'reconnecting';
+            if (this.activeTab()?.id === tab.id) {
+                this.syncUiFromTab(tab);
+            }
+
+            const delay = Math.min(10000, 500 * Math.pow(2, tab.reconnectAttempts - 1));
+            clearTimeout(tab.reconnectTimer);
+            tab.reconnectTimer = setTimeout(async () => {
+                try {
+                    await this.connectWebSocket(tab);
+                    tab.mode = 'pty';
+                    tab.connected = true;
+                    tab.connectionState = 'live';
+                    tab.reconnectAttempts = 0;
+                    this.startKeepalive(tab);
+                    tab.terminal?.write('\r\n\x1b[32m✓ Reconnected to PTY\x1b[0m\r\n');
+                    if (this.activeTab()?.id === tab.id) {
+                        this.syncUiFromTab(tab);
+                    }
+                } catch (e) {
+                    this.schedulePtyReconnect(tab);
+                }
+            }, delay);
+        },
+
+        startKeepalive(tab) {
+            if (tab.keepaliveInterval) {
+                clearInterval(tab.keepaliveInterval);
+            }
+            tab.keepaliveInterval = setInterval(() => {
+                if (tab.mode === 'pty' && tab.ws && tab.ws.readyState === WebSocket.OPEN) {
+                    tab.ws.send(JSON.stringify({ type: 'ping' }));
+                }
+            }, 120000);
+        },
+
+        enableHttpFallback(tab, data) {
+            if (tab.ws) {
+                tab.intentionalClose = true;
+                tab.ws.close();
+                tab.ws = null;
+                tab.intentionalClose = false;
+            }
+            if (tab.keepaliveInterval) {
+                clearInterval(tab.keepaliveInterval);
+                tab.keepaliveInterval = null;
+            }
+
+            tab.mode = 'http';
+            tab.connected = true;
+            tab.connectionState = 'http';
+            tab.terminal.write('\x1b[33m⚠ Interactive WebSocket unavailable. Using HTTP command mode (one line at a time).\x1b[0m\r\n');
+            tab.terminal.write('\x1b[90m  Long commands (artisan, composer, npm) show progress while running.\x1b[0m\r\n');
+            if (TEMPLATE_SLUG === 'laravel') {
+                tab.terminal.write('  Tip: use Overview → Clear /app if Initialize Laravel is blocked by leftover files.\r\n');
+            } else if (TEMPLATE_SLUG === 'nodejs') {
+                tab.terminal.write('  Tip: for Node apps, prefer Git → Pull with Force clean rebuild instead of manual npm run build.\r\n');
+            }
+            if (data?.welcome_message) {
+                tab.terminal.write('✓ ' + data.welcome_message + '\r\n');
+            }
+            this.writePrompt(tab);
+            if (this.activeTab()?.id === tab.id) {
+                this.syncUiFromTab(tab);
             }
         },
 
         applyTheme() {
-            if (!this.terminal) return;
-            this.terminal.options.theme = THEMES[this.themeName] || THEMES.slate;
+            const theme = THEMES[this.themeName] || THEMES.slate;
+            this.tabs.forEach((tab) => {
+                if (tab.terminal) {
+                    tab.terminal.options.theme = theme;
+                }
+            });
         },
 
         applyFontSize() {
-            if (!this.terminal) return;
-            this.terminal.options.fontSize = this.fontSize;
+            this.tabs.forEach((tab) => {
+                if (tab.terminal) {
+                    tab.terminal.options.fontSize = this.fontSize;
+                }
+            });
             this.fitAndResize();
         },
 
         fitAndResize() {
+            const tab = this.activeTab();
+            if (!tab?.fitAddon || !tab.terminal) {
+                return;
+            }
             try {
-                this.fitAddon?.fit();
-                this.sendResize();
+                tab.fitAddon.fit();
+                this.sendResize(tab);
             } catch (e) {}
         },
 
@@ -657,7 +702,7 @@ function containerTerminal() {
             this.fullscreen = !this.fullscreen;
             this.$nextTick(() => {
                 this.fitAndResize();
-                this.terminal?.focus();
+                this.activeTab()?.terminal?.focus();
             });
         },
 
@@ -677,146 +722,149 @@ function containerTerminal() {
         },
 
         findNext() {
-            if (!this.searchAddon || !this.searchQuery) return;
-            this.searchAddon.findNext(this.searchQuery, { caseSensitive: false });
+            const tab = this.activeTab();
+            if (!tab?.searchAddon || !this.searchQuery) return;
+            tab.searchAddon.findNext(this.searchQuery, { caseSensitive: false });
         },
 
         findPrevious() {
-            if (!this.searchAddon || !this.searchQuery) return;
-            this.searchAddon.findPrevious(this.searchQuery, { caseSensitive: false });
+            const tab = this.activeTab();
+            if (!tab?.searchAddon || !this.searchQuery) return;
+            tab.searchAddon.findPrevious(this.searchQuery, { caseSensitive: false });
         },
 
         clearSearch() {
-            try { this.searchAddon?.clearDecorations(); } catch (e) {}
+            try { this.activeTab()?.searchAddon?.clearDecorations(); } catch (e) {}
         },
 
         async copySelection() {
-            if (!this.terminal) return;
-            const selection = this.terminal.getSelection();
+            const tab = this.activeTab();
+            if (!tab?.terminal) return;
+            const selection = tab.terminal.getSelection();
             if (!selection) {
-                this.terminal.write('\r\n\x1b[90m(no selection to copy)\x1b[0m\r\n');
-                if (this.mode === 'http') this.writePrompt();
+                tab.terminal.write('\r\n\x1b[90m(no selection to copy)\x1b[0m\r\n');
+                if (tab.mode === 'http') this.writePrompt(tab);
                 return;
             }
             try {
                 await navigator.clipboard.writeText(selection);
             } catch (e) {
-                this.terminal.write('\r\n⚠ Could not write clipboard.\r\n');
+                tab.terminal.write('\r\n⚠ Could not write clipboard.\r\n');
             }
-            this.terminal.focus();
+            tab.terminal.focus();
         },
 
         async pasteFromClipboard() {
-            if (!this.connected || !this.terminal) return;
+            const tab = this.activeTab();
+            if (!tab?.connected || !tab.terminal) return;
             try {
                 const text = await navigator.clipboard.readText();
                 if (!text) return;
-                if (this.mode === 'pty' && this.ws && this.ws.readyState === WebSocket.OPEN) {
-                    this.ws.send(text);
-                } else if (this.mode === 'http') {
-                    this.insertText(text);
+                if (tab.mode === 'pty' && tab.ws && tab.ws.readyState === WebSocket.OPEN) {
+                    tab.ws.send(text);
+                } else if (tab.mode === 'http') {
+                    this.insertText(tab, text);
                 }
-                this.terminal.focus();
+                tab.terminal.focus();
             } catch (error) {
-                this.terminal.write('\r\n⚠ Could not read clipboard. Use Ctrl+Shift+V.\r\n');
-                if (this.mode === 'http') this.writePrompt();
+                tab.terminal.write('\r\n⚠ Could not read clipboard. Use Ctrl+Shift+V.\r\n');
+                if (tab.mode === 'http') this.writePrompt(tab);
             }
         },
 
-        onContextMenu(event) {
-            // Prefer browser paste via Ctrl/Cmd+Shift+V; provide quick paste action.
+        onContextMenu() {
             this.pasteFromClipboard();
         },
 
-        handleHttpInput(data) {
-            if (!this.connected || this.mode !== 'http') return;
+        handleHttpInput(tab, data) {
+            if (!tab.connected || tab.mode !== 'http') return;
 
             if (data.startsWith('\x1b[200~')) {
-                this.insertText(data.replace(/^\x1b\[200~/, '').replace(/\x1b\[201~$/, ''));
+                this.insertText(tab, data.replace(/^\x1b\[200~/, '').replace(/\x1b\[201~$/, ''));
                 return;
             }
             if (data.length > 1) {
-                this.insertText(data);
+                this.insertText(tab, data);
                 return;
             }
 
             const key = data;
             if (key === '\x03') {
-                this.inputBuffer = '';
-                this.terminal.write('^C\r\n');
-                this.writePrompt();
+                tab.inputBuffer = '';
+                tab.terminal.write('^C\r\n');
+                this.writePrompt(tab);
                 return;
             }
             if (key === '\x0c') {
-                this.terminal.clear();
-                this.writePrompt();
+                tab.terminal.clear();
+                this.writePrompt(tab);
                 return;
             }
             if (key === '\r' || key === '\n') {
-                if (this.inputBuffer.trim()) {
-                    this.sendCommand(this.inputBuffer);
-                    this.history.push(this.inputBuffer);
-                    this.historyIndex = this.history.length;
-                    this.inputBuffer = '';
+                if (tab.inputBuffer.trim()) {
+                    this.sendCommand(tab, tab.inputBuffer);
+                    tab.history.push(tab.inputBuffer);
+                    tab.historyIndex = tab.history.length;
+                    tab.inputBuffer = '';
                 } else {
-                    this.terminal.write('\r\n');
-                    this.writePrompt();
+                    tab.terminal.write('\r\n');
+                    this.writePrompt(tab);
                 }
                 return;
             }
             if (key === '\x7f') {
-                if (this.inputBuffer.length > 0) {
-                    this.inputBuffer = this.inputBuffer.slice(0, -1);
-                    this.terminal.write('\b \b');
+                if (tab.inputBuffer.length > 0) {
+                    tab.inputBuffer = tab.inputBuffer.slice(0, -1);
+                    tab.terminal.write('\b \b');
                 }
                 return;
             }
-            if (key === '\x1b[A' && this.historyIndex > 0) {
-                this.historyIndex--;
-                this.restoreHistory();
+            if (key === '\x1b[A' && tab.historyIndex > 0) {
+                tab.historyIndex--;
+                this.restoreHistory(tab);
                 return;
             }
             if (key === '\x1b[B') {
-                if (this.historyIndex < this.history.length - 1) {
-                    this.historyIndex++;
-                    this.restoreHistory();
-                } else if (this.historyIndex === this.history.length - 1) {
-                    this.historyIndex++;
-                    this.clearInput();
+                if (tab.historyIndex < tab.history.length - 1) {
+                    tab.historyIndex++;
+                    this.restoreHistory(tab);
+                } else if (tab.historyIndex === tab.history.length - 1) {
+                    tab.historyIndex++;
+                    this.clearInput(tab);
                 }
                 return;
             }
             if (key.length === 1 && key.charCodeAt(0) >= 32 && key.charCodeAt(0) < 127) {
-                this.inputBuffer += key;
-                this.terminal.write(key);
+                tab.inputBuffer += key;
+                tab.terminal.write(key);
             }
         },
 
-        insertText(text) {
+        insertText(tab, text) {
             const normalized = String(text).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
             for (const char of normalized) {
                 if (char === '\n') continue;
                 const code = char.charCodeAt(0);
                 if (code >= 32 && code < 127) {
-                    this.inputBuffer += char;
-                    this.terminal.write(char);
+                    tab.inputBuffer += char;
+                    tab.terminal.write(char);
                 }
             }
         },
 
-        restoreHistory() {
-            this.clearInput();
-            if (this.historyIndex < this.history.length) {
-                this.inputBuffer = this.history[this.historyIndex];
-                this.terminal.write(this.inputBuffer);
+        restoreHistory(tab) {
+            this.clearInput(tab);
+            if (tab.historyIndex < tab.history.length) {
+                tab.inputBuffer = tab.history[tab.historyIndex];
+                tab.terminal.write(tab.inputBuffer);
             }
         },
 
-        clearInput() {
-            for (let i = 0; i < this.inputBuffer.length; i++) {
-                this.terminal.write('\b \b');
+        clearInput(tab) {
+            for (let i = 0; i < tab.inputBuffer.length; i++) {
+                tab.terminal.write('\b \b');
             }
-            this.inputBuffer = '';
+            tab.inputBuffer = '';
         },
 
         normalizeCommand(command) {
@@ -833,59 +881,73 @@ function containerTerminal() {
             return /\b(artisan\s+\S+|composer\s+(install|update|require|create-project)|npm\s+(install|ci|run|build|start)|yarn\s+(install|build|start)|pnpm\s+(install|run|build)|pecl\s+install|migrate(:\w+)?|db:seed|db:wipe)\b/i.test(command);
         },
 
-        startCommandProgress(command) {
-            this.stopCommandProgress();
-            this.commandBusy = true;
+        startCommandProgress(tab, command) {
+            this.stopCommandProgress(tab);
+            tab.commandBusy = true;
+            if (this.activeTab()?.id === tab.id) {
+                this.commandBusy = true;
+            }
             if (!this.isLongRunningCommand(command)) return;
-            this.terminal.write(`\x1b[33m▶ Running:\x1b[0m ${command}\r\n`);
-            this.terminal.write('\x1b[90m   Please wait — output appears when the command finishes.\x1b[0m\r\n');
+            tab.terminal.write(`\x1b[33m▶ Running:\x1b[0m ${command}\r\n`);
+            tab.terminal.write('\x1b[90m   Please wait — output appears when the command finishes.\x1b[0m\r\n');
             let elapsedSeconds = 0;
-            this.commandProgressTimer = setInterval(() => {
+            tab.commandProgressTimer = setInterval(() => {
                 elapsedSeconds += 5;
-                this.terminal.write(`\x1b[90m   … still running (${elapsedSeconds}s)\x1b[0m\r\n`);
+                tab.terminal.write(`\x1b[90m   … still running (${elapsedSeconds}s)\x1b[0m\r\n`);
             }, 5000);
         },
 
-        stopCommandProgress() {
-            if (this.commandProgressTimer) {
-                clearInterval(this.commandProgressTimer);
-                this.commandProgressTimer = null;
+        stopCommandProgress(tab) {
+            if (tab.commandProgressTimer) {
+                clearInterval(tab.commandProgressTimer);
+                tab.commandProgressTimer = null;
             }
-            this.commandBusy = false;
+            tab.commandBusy = false;
+            if (this.activeTab()?.id === tab.id) {
+                this.commandBusy = false;
+            }
         },
 
         trackSessionExpiry(expiresAt) {
-            if (!expiresAt) return;
-            this.expiresAtIso = expiresAt;
+            if (!expiresAt) {
+                this.sessionExpires = null;
+                return;
+            }
             if (this.expiryUpdateInterval) clearInterval(this.expiryUpdateInterval);
             this.updateExpiryDisplay(expiresAt);
-            this.expiryUpdateInterval = setInterval(() => this.updateExpiryDisplay(expiresAt), 30000);
+            this.expiryUpdateInterval = setInterval(() => {
+                const tab = this.activeTab();
+                if (tab?.expiresAtIso) {
+                    this.updateExpiryDisplay(tab.expiresAtIso);
+                }
+            }, 30000);
         },
 
         async extendSession() {
-            if (!this.sessionToken) return;
+            const tab = this.activeTab();
+            if (!tab?.sessionToken) return;
             try {
                 const response = await fetch(`/my/services/${SERVICE_ID}/terminal/extend`, {
                     method: 'POST',
                     headers: this.csrfHeaders(),
-                    body: JSON.stringify({ session_token: this.sessionToken }),
+                    body: JSON.stringify({ session_token: tab.sessionToken }),
                 });
                 const { data, parseError } = await this.safeJsonResponse(response);
                 if (parseError || !response.ok) {
-                    this.terminal.write('\r\n❌ ' + ((data && data.error) || 'Could not extend session') + '\r\n');
-                    if (this.mode === 'http') this.writePrompt();
+                    tab.terminal.write('\r\n❌ ' + ((data && data.error) || 'Could not extend session') + '\r\n');
+                    if (tab.mode === 'http') this.writePrompt(tab);
                     return;
                 }
+                tab.expiresAtIso = data.expires_at;
                 this.trackSessionExpiry(data.expires_at);
-                this.persistActiveTab();
-                this.terminal.write('\r\n\x1b[32m✓ Session extended\x1b[0m\r\n');
-                if (this.mode === 'http') this.writePrompt();
+                tab.terminal.write('\r\n\x1b[32m✓ Session extended\x1b[0m\r\n');
+                if (tab.mode === 'http') this.writePrompt(tab);
             } catch (e) {
-                this.terminal.write('\r\n❌ ' + e.message + '\r\n');
+                tab.terminal.write('\r\n❌ ' + e.message + '\r\n');
             }
         },
 
-        async recreateHttpSession() {
+        async recreateHttpSession(tab) {
             const response = await fetch(`/my/services/${SERVICE_ID}/terminal`, {
                 method: 'POST',
                 headers: this.csrfHeaders(),
@@ -894,46 +956,48 @@ function containerTerminal() {
             if (parseError || !response.ok || !data?.session_token) {
                 throw new Error((data && data.error) || `Failed to refresh terminal session (HTTP ${response.status})`);
             }
-            this.sessionToken = data.session_token;
-            this.cwd = data.cwd || this.cwd || '/app';
-            this.shellUser = data.shell_user || this.shellUser;
-            this.containerName = data.container_name || this.containerName;
-            this.mode = 'http';
-            this.connected = true;
-            this.connectionState = 'http';
-            this.trackSessionExpiry(data.expires_at);
-            this.persistActiveTab();
+            tab.sessionToken = data.session_token;
+            tab.cwd = data.cwd || tab.cwd || '/app';
+            tab.shellUser = data.shell_user || tab.shellUser;
+            tab.containerName = data.container_name || tab.containerName;
+            tab.mode = 'http';
+            tab.connected = true;
+            tab.connectionState = 'http';
+            tab.expiresAtIso = data.expires_at;
+            if (this.activeTab()?.id === tab.id) {
+                this.syncUiFromTab(tab);
+            }
             return data;
         },
 
-        async sendCommand(command, options = {}) {
+        async sendCommand(tab, command, options = {}) {
             const allowRetry = options.allowRetry !== false;
             command = this.normalizeCommand(command);
-            this.terminal.write('\r\n');
+            tab.terminal.write('\r\n');
 
             if (!command) {
-                this.writePrompt();
+                this.writePrompt(tab);
                 return;
             }
-            if (this.commandBusy) {
-                this.terminal.write('\x1b[33m⚠ Another command is still running. Wait for it to finish.\x1b[0m\r\n');
-                this.writePrompt();
+            if (tab.commandBusy) {
+                tab.terminal.write('\x1b[33m⚠ Another command is still running. Wait for it to finish.\x1b[0m\r\n');
+                this.writePrompt(tab);
                 return;
             }
-            if (!this.sessionToken) {
-                this.terminal.write('❌ No active session\r\n');
-                this.writePrompt();
+            if (!tab.sessionToken) {
+                tab.terminal.write('❌ No active session\r\n');
+                this.writePrompt(tab);
                 return;
             }
 
-            this.startCommandProgress(command);
+            this.startCommandProgress(tab, command);
             let skipFinalPrompt = false;
 
             try {
                 const response = await fetch(`/my/services/${SERVICE_ID}/terminal/execute`, {
                     method: 'POST',
                     headers: this.csrfHeaders(),
-                    body: JSON.stringify({ session_token: this.sessionToken, command }),
+                    body: JSON.stringify({ session_token: tab.sessionToken, command }),
                 });
                 const { data, parseError } = await this.safeJsonResponse(response);
                 const formatOutput = (text) => (text || '').replace(/\r?\n/g, '\r\n');
@@ -942,105 +1006,107 @@ function containerTerminal() {
                     || (data && typeof data.error === 'string' && /session expired/i.test(data.error));
 
                 if (sessionExpired && allowRetry) {
-                    this.stopCommandProgress();
-                    this.connectionState = 'reconnecting';
-                    this.terminal.write('\x1b[33mSession expired — reconnecting…\x1b[0m\r\n');
+                    this.stopCommandProgress(tab);
+                    tab.connectionState = 'reconnecting';
+                    if (this.activeTab()?.id === tab.id) this.syncUiFromTab(tab);
+                    tab.terminal.write('\x1b[33mSession expired — reconnecting…\x1b[0m\r\n');
                     try {
-                        await this.recreateHttpSession();
-                        this.terminal.write('\x1b[32m✓ Reconnected. Retrying command…\x1b[0m\r\n');
+                        await this.recreateHttpSession(tab);
+                        tab.terminal.write('\x1b[32m✓ Reconnected. Retrying command…\x1b[0m\r\n');
                         skipFinalPrompt = true;
-                        await this.sendCommand(command, { allowRetry: false });
+                        await this.sendCommand(tab, command, { allowRetry: false });
                         return;
                     } catch (reconnectError) {
-                        this.terminal.write('❌ ' + reconnectError.message + '\r\n');
-                        this.connected = false;
-                        this.connectionState = 'expired';
+                        tab.terminal.write('❌ ' + reconnectError.message + '\r\n');
+                        tab.connected = false;
+                        tab.connectionState = 'expired';
+                        if (this.activeTab()?.id === tab.id) this.syncUiFromTab(tab);
                     }
                 } else if (parseError || !response.ok) {
-                    this.terminal.write('❌ ' + ((data && data.error) || `Command failed (HTTP ${response.status})`) + '\r\n');
+                    tab.terminal.write('❌ ' + ((data && data.error) || `Command failed (HTTP ${response.status})`) + '\r\n');
                     if (data?.block_hint) {
-                        this.terminal.write('\x1b[90m  ' + data.block_hint + '\x1b[0m\r\n');
+                        tab.terminal.write('\x1b[90m  ' + data.block_hint + '\x1b[0m\r\n');
                     }
                     if (response.status === 404 || response.status === 401) {
-                        this.connected = false;
-                        this.connectionState = 'expired';
+                        tab.connected = false;
+                        tab.connectionState = 'expired';
+                        if (this.activeTab()?.id === tab.id) this.syncUiFromTab(tab);
                     }
                 } else if (data.blocked) {
-                    this.terminal.write('\x1b[31m' + formatOutput(data.output) + '\x1b[0m\r\n');
+                    tab.terminal.write('\x1b[31m' + formatOutput(data.output) + '\x1b[0m\r\n');
                     if (data.block_hint) {
-                        this.terminal.write('\x1b[90m  Tip: ' + data.block_hint + '\x1b[0m\r\n');
+                        tab.terminal.write('\x1b[90m  Tip: ' + data.block_hint + '\x1b[0m\r\n');
                     }
                 } else {
                     if (data.output) {
-                        this.terminal.write(formatOutput(data.output) + '\r\n');
+                        tab.terminal.write(formatOutput(data.output) + '\r\n');
                     } else if (this.isLongRunningCommand(command)) {
-                        this.terminal.write('\x1b[90m(command completed with no output)\x1b[0m\r\n');
+                        tab.terminal.write('\x1b[90m(command completed with no output)\x1b[0m\r\n');
                     }
-                    this.cwd = data.cwd || this.cwd;
-                    this.commandCount++;
-                    if (data.expires_at) this.trackSessionExpiry(data.expires_at);
-                    this.persistActiveTab();
+                    tab.cwd = data.cwd || tab.cwd;
+                    tab.commandCount++;
+                    if (data.expires_at) {
+                        tab.expiresAtIso = data.expires_at;
+                    }
+                    if (this.activeTab()?.id === tab.id) {
+                        this.syncUiFromTab(tab);
+                    }
                 }
             } catch (error) {
-                this.terminal.write('❌ Error: ' + error.message + '\r\n');
+                tab.terminal.write('❌ Error: ' + error.message + '\r\n');
             } finally {
-                this.stopCommandProgress();
+                this.stopCommandProgress(tab);
             }
 
-            if (!skipFinalPrompt) this.writePrompt();
+            if (!skipFinalPrompt) this.writePrompt(tab);
         },
 
-        writePrompt() {
-            this.terminal.write(`\x1b[32m${this.shellUser}@${this.containerName}\x1b[0m:\x1b[34m${this.cwd}\x1b[0m$ `);
+        writePrompt(tab) {
+            tab.terminal.write(`\x1b[32m${tab.shellUser}@${tab.containerName}\x1b[0m:\x1b[34m${tab.cwd}\x1b[0m$ `);
         },
 
-        sendResize(cols, rows) {
-            if (!this.ws || this.ws.readyState !== WebSocket.OPEN || this.mode !== 'pty') return;
-            this.ws.send(JSON.stringify({
+        sendResize(tab, cols, rows) {
+            if (!tab?.ws || tab.ws.readyState !== WebSocket.OPEN || tab.mode !== 'pty' || !tab.terminal) return;
+            tab.ws.send(JSON.stringify({
                 type: 'resize',
-                cols: cols || this.terminal.cols,
-                rows: rows || this.terminal.rows,
+                cols: cols || tab.terminal.cols,
+                rows: rows || tab.terminal.rows,
             }));
         },
 
         async closeAllTabs() {
-            this.intentionalClose = true;
-            clearTimeout(this.reconnectTimer);
-            this.stopKeepalive();
-            if (this.ws) {
-                this.ws.close();
-                this.ws = null;
-            }
-            for (const tab of this.tabs) {
-                if (!tab.sessionToken) continue;
-                try {
-                    await fetch(`/my/services/${SERVICE_ID}/terminal`, {
-                        method: 'DELETE',
-                        headers: this.csrfHeaders(),
-                        body: JSON.stringify({ session_token: tab.sessionToken }),
-                    });
-                } catch (e) {}
+            const tabs = [...this.tabs];
+            for (const tab of tabs) {
+                tab.intentionalClose = true;
+                if (tab.sessionToken) {
+                    try {
+                        await fetch(`/my/services/${SERVICE_ID}/terminal`, {
+                            method: 'DELETE',
+                            headers: this.csrfHeaders(),
+                            body: JSON.stringify({ session_token: tab.sessionToken }),
+                        });
+                    } catch (e) {}
+                }
+                this.destroyTabResources(tab);
             }
             await this.closeTerminalUi();
         },
 
         async closeTerminalUi() {
-            this.connected = false;
-            this.mode = null;
-            this.sessionToken = null;
-            this.inputBuffer = '';
             this.tabs = [];
             this.activeTabIndex = 0;
+            this.connected = false;
+            this.mode = null;
             this.connectionState = 'idle';
-            this.stopCommandProgress();
-            this.stopKeepalive();
+            this.commandBusy = false;
             this.terminalVisible = false;
             this.fullscreen = false;
             this.searchOpen = false;
             this.showShortcuts = false;
+            this.sessionExpires = null;
             if (this.expiryUpdateInterval) clearInterval(this.expiryUpdateInterval);
-            if (this.terminal) {
-                this.terminal.write('\r\n\r\n✓ Terminal closed\r\n');
+            if (this.$refs.panesHost) {
+                this.$refs.panesHost.innerHTML = '';
             }
         },
 
@@ -1049,7 +1115,6 @@ function containerTerminal() {
             const diffMins = Math.floor((expiryDate - new Date()) / 60000);
             if (diffMins < 0) {
                 this.sessionExpires = 'Expired';
-                this.connectionState = 'expired';
             } else if (diffMins < 60) {
                 this.sessionExpires = `Expires in ${diffMins}m`;
             } else {
