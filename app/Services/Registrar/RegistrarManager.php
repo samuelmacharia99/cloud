@@ -5,6 +5,7 @@ namespace App\Services\Registrar;
 use App\Enums\RegistrarDriver;
 use App\Models\DomainExtension;
 use App\Models\Registrar;
+use App\Services\Registrar\Drivers\CosmotownRegistrarDriver;
 use App\Services\Registrar\Drivers\CustomRegistrarDriver;
 use App\Services\Registrar\Drivers\ManualRegistrarDriver;
 use App\Services\Registrar\Drivers\OpenproviderRegistrarDriver;
@@ -16,6 +17,7 @@ class RegistrarManager
         return match ($registrar->driver) {
             RegistrarDriver::Manual => new ManualRegistrarDriver,
             RegistrarDriver::Openprovider => new OpenproviderRegistrarDriver,
+            RegistrarDriver::Cosmotown => new CosmotownRegistrarDriver,
             RegistrarDriver::Custom => new CustomRegistrarDriver,
         };
     }

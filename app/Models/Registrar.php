@@ -70,7 +70,9 @@ class Registrar extends Model
     {
         return str_contains($key, 'secret')
             || str_contains($key, 'password')
-            || $key === 'api_key';
+            || str_contains($key, 'token')
+            || $key === 'api_key'
+            || $key === 'api_token';
     }
 
     public function toAdminArray(): array
