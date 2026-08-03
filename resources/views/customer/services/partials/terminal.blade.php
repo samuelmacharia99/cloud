@@ -12,31 +12,29 @@
     <div class="flex flex-wrap items-center justify-between gap-2">
         <h3 class="text-lg font-semibold text-slate-900 dark:text-white" :class="fullscreen ? 'text-white' : ''">Terminal</h3>
         <div class="flex flex-wrap items-center gap-2">
-            <template x-if="terminalVisible">
-                <div class="flex flex-wrap items-center gap-1.5">
-                    <button type="button" @click="copySelection()" class="px-2.5 py-1.5 rounded text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700" title="Copy selection (Ctrl/Cmd+Shift+C)">Copy</button>
-                    <button type="button" @click="pasteFromClipboard()" class="px-2.5 py-1.5 rounded text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700" title="Paste (Ctrl/Cmd+Shift+V)">Paste</button>
-                    <button type="button" @click="fontSize = Math.max(10, fontSize - 1); applyFontSize()" class="px-2 py-1.5 rounded text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300" title="Decrease font">A−</button>
-                    <button type="button" @click="fontSize = Math.min(24, fontSize + 1); applyFontSize()" class="px-2 py-1.5 rounded text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300" title="Increase font">A+</button>
-                    <button type="button" @click="searchOpen = !searchOpen; $nextTick(() => { if (searchOpen) $refs.searchInput?.focus(); })" class="px-2.5 py-1.5 rounded text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300" title="Search (Ctrl/Cmd+Shift+F)">Find</button>
-                    <select x-model="themeName" @change="applyTheme()" class="px-2 py-1.5 rounded text-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-0">
-                        <option value="slate">Slate</option>
-                        <option value="classic">Classic</option>
-                        <option value="light">Light</option>
-                    </select>
-                    <button type="button" @click="showShortcuts = !showShortcuts" class="px-2.5 py-1.5 rounded text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300" title="Keyboard shortcuts">?</button>
-                    <button type="button" @click="extendSession()" class="px-2.5 py-1.5 rounded text-xs font-medium bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300" title="Extend session">Extend</button>
-                    <button type="button" @click="toggleFullscreen()" class="px-2.5 py-1.5 rounded text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300" x-text="fullscreen ? 'Exit full screen' : 'Full screen'"></button>
-                    <button type="button" @click="addTab()" :disabled="tabs.length >= maxTabs || sessionStarting" class="px-2.5 py-1.5 rounded text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 disabled:opacity-40" title="New tab">+ Tab</button>
-                </div>
-            </template>
+            <div x-show="terminalVisible" class="flex items-center gap-1.5 overflow-x-auto max-w-full pb-0.5">
+                <button type="button" @click="copySelection()" class="shrink-0 px-2.5 py-1.5 rounded text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700" title="Copy selection (Ctrl/Cmd+Shift+C)">Copy</button>
+                <button type="button" @click="pasteFromClipboard()" class="shrink-0 px-2.5 py-1.5 rounded text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700" title="Paste (Ctrl/Cmd+Shift+V)">Paste</button>
+                <button type="button" @click="fontSize = Math.max(10, fontSize - 1); applyFontSize()" class="shrink-0 px-2 py-1.5 rounded text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300" title="Decrease font">A−</button>
+                <button type="button" @click="fontSize = Math.min(24, fontSize + 1); applyFontSize()" class="shrink-0 px-2 py-1.5 rounded text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300" title="Increase font">A+</button>
+                <button type="button" @click="searchOpen = !searchOpen; $nextTick(() => { if (searchOpen) $refs.searchInput?.focus(); })" class="shrink-0 px-2.5 py-1.5 rounded text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300" title="Search (Ctrl/Cmd+Shift+F)">Find</button>
+                <select x-model="themeName" @change="applyTheme()" class="shrink-0 px-2 py-1.5 rounded text-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-0">
+                    <option value="slate">Slate</option>
+                    <option value="classic">Classic</option>
+                    <option value="light">Light</option>
+                </select>
+                <button type="button" @click="showShortcuts = !showShortcuts" class="shrink-0 px-2.5 py-1.5 rounded text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300" title="Keyboard shortcuts">?</button>
+                <button type="button" @click="extendSession()" class="shrink-0 px-2.5 py-1.5 rounded text-xs font-medium bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300" title="Extend session">Extend</button>
+                <button type="button" @click="toggleFullscreen()" class="shrink-0 px-2.5 py-1.5 rounded text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300" x-text="fullscreen ? 'Exit full screen' : 'Full screen'"></button>
+                <button type="button" @click="addTab()" :disabled="tabs.length >= maxTabs || sessionStarting" class="shrink-0 px-2.5 py-1.5 rounded text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 disabled:opacity-40" title="New tab">+ Tab</button>
+            </div>
             <button @click="toggleTerminal()" :class="terminalVisible ? 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300' : 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300'" class="px-3 py-1.5 rounded text-sm font-medium transition">
                 <span x-text="terminalVisible ? 'Close Terminal' : 'Open Terminal'"></span>
             </button>
         </div>
     </div>
 
-    <div x-show="terminalVisible" class="bg-slate-900 rounded-lg overflow-hidden border border-slate-700 flex flex-col" :class="fullscreen ? 'h-full rounded-xl' : ''">
+    <div x-show="terminalVisible" x-cloak class="bg-slate-900 rounded-lg overflow-hidden border border-slate-700 flex flex-col min-h-0" :class="fullscreen ? 'h-full rounded-xl' : ''">
         <div class="flex items-center gap-1 px-2 pt-2 bg-slate-950 border-b border-slate-800 overflow-x-auto" x-show="tabs.length > 0">
             <template x-for="(tab, index) in tabs" :key="tab.id">
                 <button
@@ -83,10 +81,21 @@
 
         <div
             x-ref="panesHost"
-            class="relative text-sm font-mono text-slate-100 flex-1"
+            class="relative text-sm font-mono text-slate-100 overflow-hidden bg-slate-950"
+            style="height: 480px;"
             :style="fullscreen ? 'min-height: 0; height: 100%;' : 'height: 480px;'"
             @contextmenu.prevent="onContextMenu($event)"
-        ></div>
+        >
+            <div
+                x-show="sessionStarting && tabs.length === 0"
+                class="absolute inset-0 z-10 flex items-center justify-center bg-slate-950/90"
+            >
+                <div class="inline-flex items-center gap-2 text-slate-300 text-sm">
+                    <div class="w-4 h-4 bg-blue-500 rounded-full animate-bounce"></div>
+                    <span>Starting terminal session...</span>
+                </div>
+            </div>
+        </div>
 
         <div class="bg-slate-800 border-t border-slate-700 px-3 py-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
             <div class="flex flex-wrap items-center gap-2 min-w-0">
@@ -107,7 +116,7 @@
         </div>
     </div>
 
-    <div x-show="!terminalVisible && !sessionStarting" class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 space-y-2">
+    <div x-show="!terminalVisible" class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 space-y-2">
         <p class="text-sm text-blue-800 dark:text-blue-200">
             @if (in_array($terminalTemplateSlug, ['laravel', 'php'], true))
                 Interactive shell for your app. Supports <code class="font-mono text-xs">composer</code>, <code class="font-mono text-xs">php artisan</code>, and file cleanup in <code class="font-mono text-xs">/app</code>.
@@ -124,23 +133,15 @@
             Supports tabs, full screen, search, themes, and session extend. Dangerous host commands stay blocked.
         </p>
     </div>
-
-    <div x-show="sessionStarting" class="flex items-center justify-center py-8">
-        <div class="inline-flex items-center gap-2">
-            <div class="w-4 h-4 bg-blue-500 rounded-full animate-bounce"></div>
-            <span class="text-slate-600 dark:text-slate-400">Starting terminal session...</span>
-        </div>
-    </div>
 </div>
 
+@push('scripts')
+{{-- Load outside Alpine x-if so browsers actually execute these scripts. --}}
+<link rel="stylesheet" href="{{ asset('css/xterm.min.css') }}">
 <script src="{{ asset('js/xterm/xterm.js') }}"></script>
 <script src="{{ asset('js/xterm/xterm-addon-fit.js') }}"></script>
 <script src="{{ asset('js/xterm/xterm-addon-search.js') }}"></script>
 <script src="{{ asset('js/xterm/xterm-addon-web-links.js') }}"></script>
-<link rel="stylesheet" href="{{ asset('css/xterm.min.css') }}">
-<link rel="stylesheet" href="{{ asset('css/xterm-addon-fit.min.css') }}">
-
-@push('scripts')
 <script>
 function containerTerminal() {
     const SERVICE_ID = {{ (int) $service->id }};
@@ -247,9 +248,90 @@ function containerTerminal() {
         },
 
         async openTerminal() {
+            this.sessionStarting = true;
             this.terminalVisible = true;
-            await this.$nextTick();
-            await this.createTabSession();
+
+            try {
+                await this.$nextTick();
+                await this.waitForPaint();
+                await this.ensureXtermReady();
+
+                // panesHost is inside x-show; wait until it has real dimensions.
+                await this.waitForPanesHost();
+                await this.createTabSession();
+            } catch (error) {
+                this.sessionStarting = false;
+                console.error('Failed to open terminal:', error);
+                // Keep panel open so the user sees the error instead of a blank flash.
+                const host = this.$refs.panesHost;
+                if (host && !this.tabs.length) {
+                    const notice = document.createElement('div');
+                    notice.className = 'absolute inset-0 flex items-center justify-center p-4 text-sm text-red-300';
+                    notice.textContent = 'Failed to start terminal: ' + (error?.message || 'unknown error');
+                    host.appendChild(notice);
+                }
+            }
+        },
+
+        waitForPaint() {
+            return new Promise((resolve) => {
+                requestAnimationFrame(() => requestAnimationFrame(resolve));
+            });
+        },
+
+        async waitForPanesHost(timeoutMs = 2000) {
+            const started = Date.now();
+            while (Date.now() - started < timeoutMs) {
+                const host = this.$refs.panesHost;
+                if (host && host.offsetWidth > 0 && host.offsetHeight > 0) {
+                    return host;
+                }
+                await this.waitForPaint();
+            }
+            if (!this.$refs.panesHost) {
+                throw new Error('Terminal panel did not mount');
+            }
+            return this.$refs.panesHost;
+        },
+
+        loadScriptOnce(src) {
+            return new Promise((resolve, reject) => {
+                const existing = document.querySelector(`script[src="${src}"]`);
+                if (existing) {
+                    if (existing.dataset.loaded === '1') {
+                        resolve();
+                        return;
+                    }
+                    existing.addEventListener('load', () => resolve(), { once: true });
+                    existing.addEventListener('error', () => reject(new Error('Failed to load ' + src)), { once: true });
+                    return;
+                }
+                const script = document.createElement('script');
+                script.src = src;
+                script.async = false;
+                script.onload = () => {
+                    script.dataset.loaded = '1';
+                    resolve();
+                };
+                script.onerror = () => reject(new Error('Failed to load ' + src));
+                document.head.appendChild(script);
+            });
+        },
+
+        async ensureXtermReady() {
+            if (window.Terminal && window.FitAddon) {
+                return;
+            }
+
+            const base = @json(asset('js/xterm'));
+            await this.loadScriptOnce(`${base}/xterm.js`);
+            await this.loadScriptOnce(`${base}/xterm-addon-fit.js`);
+            await this.loadScriptOnce(`${base}/xterm-addon-search.js`);
+            await this.loadScriptOnce(`${base}/xterm-addon-web-links.js`);
+
+            if (!window.Terminal) {
+                throw new Error('xterm failed to load');
+            }
         },
 
         async addTab() {
@@ -258,6 +340,7 @@ function containerTerminal() {
                 tab?.terminal?.write('\r\n\x1b[33mMaximum number of terminal tabs reached.\x1b[0m\r\n');
                 return;
             }
+            await this.ensureXtermReady();
             await this.createTabSession();
         },
 
@@ -293,17 +376,26 @@ function containerTerminal() {
                 throw new Error('Terminal host is not ready');
             }
 
+            const TerminalClass = window.Terminal;
+            if (!TerminalClass) {
+                throw new Error('xterm is not available');
+            }
+
             const paneEl = document.createElement('div');
             paneEl.className = 'absolute inset-0';
             paneEl.dataset.tabId = tab.id;
             paneEl.style.visibility = 'hidden';
+            paneEl.style.overflow = 'hidden';
             host.appendChild(paneEl);
             tab.paneEl = paneEl;
 
-            const TerminalClass = window.Terminal;
             const FitAddonClass = (window.FitAddon && window.FitAddon.FitAddon) ? window.FitAddon.FitAddon : window.FitAddon;
             const SearchAddonClass = (window.SearchAddon && window.SearchAddon.SearchAddon) ? window.SearchAddon.SearchAddon : window.SearchAddon;
             const WebLinksAddonClass = (window.WebLinksAddon && window.WebLinksAddon.WebLinksAddon) ? window.WebLinksAddon.WebLinksAddon : window.WebLinksAddon;
+
+            if (!FitAddonClass) {
+                throw new Error('xterm FitAddon is not available');
+            }
 
             const terminal = new TerminalClass({
                 theme: THEMES[this.themeName] || THEMES.slate,
@@ -317,15 +409,16 @@ function containerTerminal() {
             });
 
             const fitAddon = new FitAddonClass();
-            const searchAddon = new SearchAddonClass();
+            const searchAddon = SearchAddonClass ? new SearchAddonClass() : null;
             terminal.loadAddon(fitAddon);
-            terminal.loadAddon(searchAddon);
+            if (searchAddon) {
+                terminal.loadAddon(searchAddon);
+            }
             if (WebLinksAddonClass) {
                 terminal.loadAddon(new WebLinksAddonClass());
             }
 
             terminal.open(paneEl);
-            try { fitAddon.fit(); } catch (e) {}
 
             terminal.attachCustomKeyEventHandler((event) => {
                 const mod = event.metaKey || event.ctrlKey;
@@ -379,6 +472,12 @@ function containerTerminal() {
             tab.terminal = terminal;
             tab.fitAddon = fitAddon;
             tab.searchAddon = searchAddon;
+
+            // Fit after the pane is visible and laid out.
+            requestAnimationFrame(() => {
+                try { fitAddon.fit(); } catch (e) {}
+                this.sendResize(tab);
+            });
         },
 
         destroyTabResources(tab) {
@@ -498,7 +597,9 @@ function containerTerminal() {
                 this.websocketEnabled = data.websocket_enabled !== false;
                 this.showActivePane();
                 this.syncUiFromTab(tab);
-                this.$nextTick(() => this.fitAndResize());
+                await this.$nextTick();
+                await this.waitForPaint();
+                this.fitAndResize();
 
                 try {
                     if (!this.websocketEnabled) {
@@ -516,6 +617,7 @@ function containerTerminal() {
                 }
 
                 this.syncUiFromTab(tab);
+                this.fitAndResize();
                 tab.terminal.focus();
             } catch (error) {
                 const active = this.activeTab();
@@ -523,6 +625,8 @@ function containerTerminal() {
                     active.connectionState = 'error';
                     this.syncUiFromTab(active);
                     active.terminal?.write('\r\n❌ Error: ' + error.message + '\r\n');
+                } else {
+                    throw error;
                 }
             } finally {
                 this.sessionStarting = false;
