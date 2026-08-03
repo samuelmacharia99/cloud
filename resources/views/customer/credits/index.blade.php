@@ -72,7 +72,7 @@
 
     <!-- Top-up Modal -->
     <div x-show="openTopupForm" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" style="display: none;">
-        <div class="modal-form ui-card p-6 w-full max-w-md max-h-screen overflow-y-auto" x-data="{ paymentMethod: '{{ array_key_first($availableGateways ?? []) ?? 'mpesa' }}' }">
+        <div class="modal-form ui-card p-6 w-full max-w-md max-h-screen overflow-y-auto" x-data="{ paymentMethod: '{{ array_key_first($availableGateways ?? []) ?? 'mpesa' }}', mpesaPhone: @js(old('phone', auth()->user()->phone ?? '')) }">
             <div class="flex items-center justify-between mb-6">
                 <h3 class="text-lg font-semibold text-slate-900 dark:text-white">Buy Account Credits</h3>
                 <button type="button" @click="openTopupForm = false" class="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300">✕</button>

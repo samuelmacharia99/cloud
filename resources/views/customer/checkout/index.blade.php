@@ -4,9 +4,12 @@
 
 @section('content')
 <div class="space-y-6">
-    <div>
-        <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Checkout</h1>
-        <p class="text-slate-600 dark:text-slate-400 mt-1">Review and place your order</p>
+    <div class="space-y-3">
+        <x-checkout.steps current="review" class="max-w-xl" />
+        <div>
+            <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Checkout</h1>
+            <p class="text-slate-600 dark:text-slate-400 mt-1">Review your order, then continue to payment</p>
+        </div>
     </div>
 
     <form action="{{ route('customer.checkout.process') }}" method="POST"
@@ -151,29 +154,26 @@
                 @endif
 
                 <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-6">
-                    <h2 class="text-lg font-bold text-blue-900 dark:text-blue-100 mb-2">Payment</h2>
+                    <h2 class="text-lg font-bold text-blue-900 dark:text-blue-100 mb-2">Next: payment</h2>
                     <p class="text-blue-800 dark:text-blue-200" x-show="!applyCredits || amountDue() > 0">
-                        An invoice will be generated after you place your order. Pay any remaining balance using M-Pesa, bank transfer, or other available payment methods.
+                        After you place this order, you will choose M-Pesa, card, PayPal, or bank transfer to pay the invoice and activate your services.
                     </p>
                     <p class="text-blue-800 dark:text-blue-200" x-show="applyCredits && amountDue() <= 0">
                         Your credit balance covers this order. Services activate once the order is placed.
                     </p>
                 </div>
 
-                <label class="flex items-start gap-3 cursor-pointer">
-                    <input type="checkbox" name="agree_terms" value="1" required x-model="agree" class="mt-1 rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
-                    <span class="text-sm text-slate-600 dark:text-slate-400">
-                        I agree to the Terms of Service and understand that an invoice will be generated after placing this order
-                    </span>
-                </label>
+                <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 p-4">
+                    <x-checkout.terms-agreement variant="order" model="agree" />
+                </div>
 
                 <div class="flex gap-3">
                     <a href="{{ route('customer.cart.index') }}" class="flex-1 px-6 py-3 text-center text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 font-medium transition">
-                        Back to Cart
+                        Back to cart
                     </a>
-                    <button type="submit" :disabled="!agree" :class="!agree ? 'opacity-50 cursor-not-allowed' : ''"
-                        class="flex-1 px-6 py-3 bg-green-600 hover:bg-green-700 disabled:bg-slate-400 text-white rounded-lg font-medium transition">
-                        Place Order
+                    <button type="submit" :disabled="!agree" :class="!agree ? 'opacity-50 cursor-not-allowed bg-slate-400' : 'bg-blue-600 hover:bg-blue-700'"
+                        class="flex-1 px-6 py-3 text-white rounded-lg font-medium transition">
+                        Place order &amp; continue to pay
                     </button>
                 </div>
             </div>

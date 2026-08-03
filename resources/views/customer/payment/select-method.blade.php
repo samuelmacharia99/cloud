@@ -3,426 +3,331 @@
 @section('title', 'Select Payment Method')
 
 @section('content')
-<div class="space-y-6">
-    <!-- Header -->
-    <div>
-        <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Pay Invoice</h1>
-        <p class="text-slate-600 dark:text-slate-400 mt-1">Invoice #{{ $invoice->invoice_number }} — {{ $invoice->formatMoney($amountRemaining ?? $invoice->getAmountRemaining()) }} remaining</p>
-    </div>
+@php
+    $amountDue = $amountRemaining ?? $invoice->getAmountRemaining();
+    $defaultGateway = array_key_first($availableGateways ?? []) ?: 'mpesa';
+    $customerPhone = old('phone', auth()->user()->phone ?? '');
+@endphp
 
-    <!-- Invoice Summary -->
-    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
-        <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Invoice Details</h2>
-
-        @php
-            $upgradePricing = null;
-            $upgradeItem = null;
-            foreach ($invoice->items as $item) {
-                $options = is_array($item->custom_options) ? $item->custom_options : [];
-                if (! empty($options['pricing_summary'])) {
-                    $upgradePricing = $options['pricing_summary'];
-                    $upgradeItem = $item;
-                    break;
-                }
-                if (! empty($options['hosting_upgrade']) || ! empty($options['hosting_plan_change'])) {
-                    $upgradeItem = $item;
-                }
+<div
+    class="space-y-6"
+    x-data="{
+        selectedMethod: @js($defaultGateway),
+        mpesaPhoneNumber: @js($customerPhone),
+        agreeTerms: false,
+        showManualModal: false,
+        ctaLabel() {
+            return {
+                mpesa: 'Send M-Pesa prompt',
+                stripe: 'Continue to Stripe',
+                paypal: 'Continue to PayPal',
+                manual: 'Enter payment details',
+                bank_transfer: 'Continue to bank transfer',
+            }[this.selectedMethod] || 'Continue to payment';
+        },
+        canPay() {
+            if (! this.agreeTerms || ! this.selectedMethod) {
+                return false;
             }
-        @endphp
-
-        @if ($upgradePricing && ($upgradePricing['is_prorated'] ?? false))
-            <div class="mb-5 rounded-lg border border-brand-200 dark:border-brand-800 bg-brand-50/60 dark:bg-brand-950/20 p-4">
-                <p class="text-sm font-semibold text-slate-900 dark:text-white">Prorated hosting upgrade</p>
-                <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                    You're paying the difference between
-                    <strong>{{ $upgradePricing['current_plan_name'] ?? 'your current plan' }}</strong>
-                    and
-                    <strong>{{ $upgradePricing['target_plan_name'] ?? 'the new plan' }}</strong>
-                    for
-                    <strong>{{ $upgradePricing['days_remaining'] ?? 0 }}</strong>
-                    {{ \Illuminate\Support\Str::plural('day', (int) ($upgradePricing['days_remaining'] ?? 0)) }}
-                    remaining in your current billing period
-                    @if (! empty($upgradePricing['next_due_date']))
-                        (until {{ \Illuminate\Support\Carbon::parse($upgradePricing['next_due_date'])->format('M d, Y') }})
-                    @endif
-                    — not the full plan price.
-                </p>
-                <div class="mt-3 space-y-1 text-sm text-slate-700 dark:text-slate-300">
-                    <div class="flex justify-between">
-                        <span>New plan rate ({{ ucfirst(str_replace('-', ' ', $upgradePricing['target_cycle'] ?? 'annual')) }})</span>
-                        <span>{{ $invoice->formatMoney($upgradePricing['target_plan_price'] ?? 0) }}</span>
-                    </div>
-                    <div class="flex justify-between">
-                        <span>Current plan rate ({{ ucfirst(str_replace('-', ' ', $upgradePricing['current_cycle'] ?? 'annual')) }})</span>
-                        <span>− {{ $invoice->formatMoney($upgradePricing['current_plan_price'] ?? 0) }}</span>
-                    </div>
-                    <div class="flex justify-between font-medium">
-                        <span>Prorated upgrade (before tax)</span>
-                        <span>{{ $invoice->formatMoney($upgradePricing['prorated_subtotal'] ?? 0) }}</span>
-                    </div>
-                </div>
-            </div>
-        @elseif ($upgradeItem)
-            <div class="mb-5 rounded-lg border border-brand-200 dark:border-brand-800 bg-brand-50/60 dark:bg-brand-950/20 p-4">
-                <p class="text-sm font-semibold text-slate-900 dark:text-white">Hosting plan change</p>
-                <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                    This invoice is a <strong>prorated upgrade charge</strong> for the rest of your current billing period — not the full annual plan price.
-                </p>
-            </div>
-        @endif
-
-        <div class="space-y-3">
-            <div class="flex justify-between">
-                <span class="text-slate-600 dark:text-slate-400">Invoice Number</span>
-                <span class="font-semibold text-slate-900 dark:text-white">{{ $invoice->invoice_number }}</span>
-            </div>
-            <div class="flex justify-between">
-                <span class="text-slate-600 dark:text-slate-400">Issue Date</span>
-                <span class="font-semibold text-slate-900 dark:text-white">{{ $invoice->created_at->format('M d, Y') }}</span>
-            </div>
-            <div class="flex justify-between">
-                <span class="text-slate-600 dark:text-slate-400">Due Date</span>
-                <span class="font-semibold text-slate-900 dark:text-white">{{ $invoice->due_date->format('M d, Y') }}</span>
-            </div>
-            @if ($invoice->items->isNotEmpty())
-                <hr class="my-4 border-slate-200 dark:border-slate-700">
-                <div class="space-y-2">
-                    <p class="text-sm font-semibold text-slate-900 dark:text-white">Line items</p>
-                    @foreach ($invoice->items as $item)
-                        <div class="flex justify-between gap-4 text-sm">
-                            <span class="text-slate-600 dark:text-slate-400">{{ $item->description }}</span>
-                            <span class="font-medium text-slate-900 dark:text-white shrink-0">{{ $invoice->formatMoney($item->amount) }}</span>
-                        </div>
-                    @endforeach
-                    @if ($invoice->tax > 0)
-                        <div class="flex justify-between gap-4 text-sm">
-                            <span class="text-slate-600 dark:text-slate-400">Tax</span>
-                            <span class="font-medium text-slate-900 dark:text-white shrink-0">{{ $invoice->formatMoney($invoice->tax) }}</span>
-                        </div>
-                    @endif
-                </div>
-            @endif
-            <hr class="my-4 border-slate-200 dark:border-slate-700">
-            @if(($appliedCredits ?? 0) > 0)
-            <div class="flex justify-between">
-                <span class="text-slate-600 dark:text-slate-400">Credits applied</span>
-                <span class="font-semibold text-emerald-600">− {{ $invoice->formatMoney($appliedCredits) }}</span>
-            </div>
-            @endif
-            <div class="flex justify-between text-lg">
-                <span class="font-semibold text-slate-900 dark:text-white">Amount Due</span>
-                <span class="font-bold text-blue-600 dark:text-blue-400">{{ $invoice->formatMoney($amountRemaining ?? $invoice->getAmountRemaining()) }}</span>
-            </div>
-        </div>
-    </div>
-
-    @if (($creditBalance ?? 0) > 0 && ($amountRemaining ?? $invoice->total) > 0)
-    <div class="bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 rounded-xl p-5 flex flex-wrap items-center justify-between gap-4">
+            if (this.selectedMethod === 'mpesa' && ! String(this.mpesaPhoneNumber || '').trim()) {
+                return false;
+            }
+            return true;
+        }
+    }"
+>
+    <div class="space-y-3">
+        <x-checkout.steps current="pay" class="max-w-xl" />
         <div>
-            <p class="font-semibold text-emerald-900 dark:text-emerald-300">Account credit available</p>
-            <p class="text-sm text-emerald-800 dark:text-emerald-400 mt-1">
-                <x-currency-formatter :amount="$creditBalance" :convertFromKES="true" /> account credit can be applied to this invoice.
+            <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Pay invoice</h1>
+            <p class="text-slate-600 dark:text-slate-400 mt-1">
+                Invoice #{{ $invoice->invoice_number }} — choose how you want to pay.
             </p>
         </div>
-        <form method="POST" action="{{ route('customer.payment.apply-credits', $invoice) }}">
-            @csrf
-            <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg text-sm">Apply credits</button>
-        </form>
     </div>
+
+    @if (session('success'))
+        <div class="rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/30 px-4 py-3 text-sm text-emerald-800 dark:text-emerald-200">
+            {{ session('success') }}
+        </div>
+    @endif
+    @if (session('error'))
+        <div class="rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 px-4 py-3 text-sm text-red-800 dark:text-red-200">
+            {{ session('error') }}
+        </div>
+    @endif
+    @if (session('info'))
+        <div class="rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 px-4 py-3 text-sm text-blue-800 dark:text-blue-200">
+            {{ session('info') }}
+        </div>
     @endif
 
-    <!-- Payment Methods -->
-    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6" x-data="{ selectedMethod: null, showManualModal: false, mpesaPhoneNumber: '' }">
-        <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-2">Select Payment Method</h2>
-        @if ($invoice->displayCurrency() !== config('currency.paypal_settlement', 'USD'))
-            <p class="text-sm text-slate-600 dark:text-slate-400 mb-6">
-                Prices are shown in <strong>{{ $invoice->displayCurrency() }}</strong>.
-                PayPal checkout settles in <strong>{{ config('currency.paypal_settlement', 'USD') }}</strong> at the locked exchange rate.
-            </p>
-        @else
-            <div class="mb-6"></div>
-        @endif
-
-        @if (session('success'))
-            <div class="mb-6 p-4 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700 rounded-lg">
-                <p class="text-emerald-700 dark:text-emerald-300 text-sm">{{ session('success') }}</p>
+    @if (($creditBalance ?? 0) > 0 && $amountDue > 0)
+        <div class="bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 rounded-xl p-5 flex flex-wrap items-center justify-between gap-4">
+            <div>
+                <p class="font-semibold text-emerald-900 dark:text-emerald-300">Account credit available</p>
+                <p class="text-sm text-emerald-800 dark:text-emerald-400 mt-1">
+                    <x-currency-formatter :amount="$creditBalance" :convertFromKES="true" /> can be applied to this invoice.
+                </p>
             </div>
-        @endif
-
-        @if (session('error'))
-            <div class="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg">
-                <p class="text-red-700 dark:text-red-300 text-sm">{{ session('error') }}</p>
-            </div>
-        @endif
-
-        <!-- Payment Methods Grid -->
-        @if (count($availableGateways) === 0)
-            <div class="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-4">
-                <p class="text-sm text-amber-900 dark:text-amber-200">No online payment methods are currently available. Apply account credit above or contact support.</p>
-            </div>
-        @else
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-            @foreach ($availableGateways as $method => $gateway)
-                <button type="button" @click="selectedMethod = '{{ $method }}'; @if($method === 'manual') showManualModal = true @endif" class="relative group overflow-hidden rounded-lg border-2 transition-all duration-300 p-4 text-center hover:shadow-lg" :class="selectedMethod === '{{ $method }}' ? (selectedMethod === 'mpesa' ? 'border-green-500 dark:border-green-400 bg-green-50 dark:bg-slate-800 shadow-lg' : (selectedMethod === 'stripe' ? 'border-purple-500 dark:border-purple-400 bg-purple-50 dark:bg-slate-800 shadow-lg' : 'border-blue-500 dark:border-blue-400 bg-blue-50 dark:bg-slate-800 shadow-lg')) : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-600'">
-
-                    <!-- Glow effect for mpesa when selected -->
-                    @if ($method === 'mpesa')
-                        <div class="absolute inset-0 bg-gradient-to-br from-green-400/0 to-green-400/0" :class="selectedMethod === 'mpesa' ? 'from-green-400/10' : ''"></div>
-                        <div class="absolute -top-1 -right-1 z-20" x-show="selectedMethod === 'mpesa'">
-                            <span class="relative flex h-3 w-3">
-                                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                                <span class="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
-                            </span>
-                        </span>
-                        </div>
-                    @endif
-
-                    <!-- Badge -->
-                    @if ($method === 'mpesa')
-                        <div class="inline-flex items-center justify-center w-14 h-14 rounded-xl mb-2 mx-auto overflow-hidden bg-white dark:bg-slate-800 p-2">
-                            <img src="/storage/branding/logo/M-PESA-logo-2.png" alt="M-PESA" class="w-full h-full object-contain">
-                        </div>
-                    @elseif ($method === 'stripe')
-                        <div class="inline-flex items-center justify-center w-12 h-12 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl mb-2 mx-auto">
-                            <span class="text-white font-bold text-lg">S</span>
-                        </div>
-                    @elseif ($method === 'paypal')
-                        <div class="inline-flex items-center justify-center w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl mb-2 mx-auto">
-                            <span class="text-white font-bold text-lg">P</span>
-                        </div>
-                    @else
-                        <div class="inline-flex items-center justify-center w-12 h-12 bg-gradient-to-br from-slate-500 to-slate-600 rounded-xl mb-2 mx-auto">
-                            <svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
-                                <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/>
-                            </svg>
-                        </div>
-                    @endif
-
-                    <!-- Label -->
-                    <h3 class="text-sm font-semibold text-slate-900 dark:text-white">{{ $gateway['label'] }}</h3>
-                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">{{ $gateway['description'] }}</p>
-
-                    @if ($method === 'mpesa' && count($availableGateways) > 1)
-                        <p class="text-xs text-green-700 dark:text-green-300 font-medium mt-1">Recommended</p>
-                    @endif
-                </button>
-            @endforeach
-        </div>
-        @endif
-
-        <!-- Input Section (appears when method selected) -->
-        <div x-show="selectedMethod !== null && selectedMethod !== 'manual' && selectedMethod !== 'bank_transfer'" class="border-2 border-slate-200 dark:border-slate-700 rounded-lg p-6 bg-slate-50 dark:bg-slate-800/50" x-transition>
-
-            <!-- M-Pesa Input -->
-            <div x-show="selectedMethod === 'mpesa'" class="space-y-4" x-transition>
-                <h3 class="text-lg font-semibold text-slate-900 dark:text-white">M-PESA Payment</h3>
-                <p class="text-sm text-slate-600 dark:text-slate-400">Enter your M-PESA phone number to receive the payment prompt</p>
-
-                <div>
-                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Phone Number</label>
-                    <input type="tel" id="mpesaPhone" placeholder="0712345678 or 254712345678" class="w-full px-4 py-3 border-2 border-green-300 dark:border-green-700 rounded-lg text-base bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:border-green-500 focus:ring-2 focus:ring-green-200 dark:focus:ring-green-900/50 transition-all placeholder-slate-400 dark:placeholder-slate-500" required x-model="mpesaPhoneNumber">
-                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">Format: 0712345678 or 254712345678</p>
-                </div>
-            </div>
-
-            <!-- Stripe Input -->
-            <div x-show="selectedMethod === 'stripe'" class="space-y-4" x-transition>
-                <h3 class="text-lg font-semibold text-slate-900 dark:text-white">Stripe Payment</h3>
-                <p class="text-sm text-slate-600 dark:text-slate-400">You'll be redirected to Stripe's secure checkout</p>
-            </div>
-
-            <!-- PayPal Input -->
-            <div x-show="selectedMethod === 'paypal'" class="space-y-4" x-transition>
-                <h3 class="text-lg font-semibold text-slate-900 dark:text-white">PayPal Payment</h3>
-                <p class="text-sm text-slate-600 dark:text-slate-400">You'll be redirected to PayPal's secure checkout</p>
-            </div>
-        </div>
-
-        <!-- Submit Button -->
-        <div class="mt-6 flex gap-3">
-            <form id="paymentForm" method="POST" action="{{ route('customer.payment.initiate', $invoice) }}" x-show="selectedMethod !== 'manual' && selectedMethod !== 'bank_transfer'">
+            <form method="POST" action="{{ route('customer.payment.apply-credits', $invoice) }}">
                 @csrf
-                <input type="hidden" name="payment_method" x-bind:value="selectedMethod">
-                <!-- Pass the phone number from Alpine.js reactive variable -->
-                <input type="hidden" name="phone" x-bind:value="mpesaPhoneNumber">
-
-                <button type="submit" :disabled="!selectedMethod || (selectedMethod === 'mpesa' && !mpesaPhoneNumber)" :class="selectedMethod && !(selectedMethod === 'mpesa' && !mpesaPhoneNumber) ? 'bg-blue-600 hover:bg-blue-700' : 'opacity-50 cursor-not-allowed bg-slate-400'" class="flex-1 px-6 py-3 text-white rounded-lg font-semibold transition">
-                    Continue to Payment
-                </button>
+                <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg text-sm">Apply credits</button>
             </form>
+        </div>
+    @endif
 
-            <a x-show="selectedMethod === 'bank_transfer'" href="{{ route('customer.payment.bank-transfer-form', $invoice) }}" class="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition text-center">
-                Continue to bank transfer
-            </a>
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="lg:col-span-2 space-y-6">
+            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 space-y-5">
+                <div>
+                    <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Payment method</h2>
+                    @if ($invoice->displayCurrency() !== config('currency.paypal_settlement', 'USD'))
+                        <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                            Amounts are shown in <strong>{{ $invoice->displayCurrency() }}</strong>.
+                            PayPal settles in <strong>{{ config('currency.paypal_settlement', 'USD') }}</strong> at the locked exchange rate.
+                        </p>
+                    @endif
+                </div>
 
-            <button type="button" x-show="selectedMethod === 'manual'" @click="showManualModal = true" :disabled="!selectedMethod" class="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition">
-                Enter Payment Details
-            </button>
+                <x-payment-method-options
+                    :availableGateways="$availableGateways ?? []"
+                    :defaultMethod="$defaultGateway"
+                    method-model="selectedMethod"
+                    phone-model="mpesaPhoneNumber"
+                    :defaultPhone="$customerPhone"
+                    recommended="mpesa"
+                />
 
-            <a href="{{ route('customer.invoices.show', $invoice) }}" class="px-6 py-3 border-2 border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 transition">
-                Cancel
-            </a>
+                <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-4">
+                    <x-checkout.terms-agreement variant="payment" model="agreeTerms" :required="false" />
+                </div>
+
+                <div class="flex flex-wrap gap-3 pt-1">
+                    <form
+                        id="paymentForm"
+                        method="POST"
+                        action="{{ route('customer.payment.initiate', $invoice) }}"
+                        x-show="selectedMethod !== 'manual' && selectedMethod !== 'bank_transfer'"
+                        class="flex-1 min-w-[12rem]"
+                    >
+                        @csrf
+                        <input type="hidden" name="payment_method" :value="selectedMethod">
+                        <input type="hidden" name="phone" :value="mpesaPhoneNumber">
+                        <button
+                            type="submit"
+                            :disabled="!canPay()"
+                            :class="canPay() ? 'bg-blue-600 hover:bg-blue-700' : 'bg-slate-400 cursor-not-allowed'"
+                            class="w-full px-6 py-3 text-white rounded-lg font-semibold transition"
+                            x-text="ctaLabel()"
+                        ></button>
+                    </form>
+
+                    <a
+                        x-show="selectedMethod === 'bank_transfer'"
+                        x-cloak
+                        href="{{ route('customer.payment.bank-transfer-form', $invoice) }}"
+                        class="flex-1 min-w-[12rem] px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition text-center"
+                        :class="!agreeTerms ? 'pointer-events-none opacity-50' : ''"
+                    >
+                        Continue to bank transfer
+                    </a>
+
+                    <button
+                        type="button"
+                        x-show="selectedMethod === 'manual'"
+                        x-cloak
+                        @click="if (agreeTerms) showManualModal = true"
+                        :disabled="!agreeTerms"
+                        :class="agreeTerms ? 'bg-blue-600 hover:bg-blue-700' : 'bg-slate-400 cursor-not-allowed'"
+                        class="flex-1 min-w-[12rem] px-6 py-3 text-white rounded-lg font-semibold transition"
+                    >
+                        Enter payment details
+                    </button>
+
+                    <a
+                        href="{{ route('customer.invoices.show', $invoice) }}"
+                        class="px-6 py-3 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+                    >
+                        Cancel
+                    </a>
+                </div>
+
+                <p class="text-xs text-slate-500 dark:text-slate-400">
+                    Secure checkout · SSL encrypted · Amount due is locked for this invoice
+                </p>
+            </div>
         </div>
 
-        <!-- Manual Payment Modal -->
-        <div x-show="showManualModal" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="showManualModal = false" x-transition>
-            <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-                <!-- Modal Header -->
-                <div class="sticky top-0 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-6 py-4 flex justify-between items-center">
-                    <h2 class="text-xl font-bold text-slate-900 dark:text-white">Submit Manual Payment</h2>
-                    <button type="button" @click="showManualModal = false" class="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
-                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                        </svg>
-                    </button>
+        <div class="lg:col-span-1">
+            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 sticky top-4 space-y-4">
+                <h3 class="text-lg font-bold text-slate-900 dark:text-white">Order summary</h3>
+
+                @php
+                    $upgradePricing = null;
+                    $upgradeItem = null;
+                    foreach ($invoice->items as $item) {
+                        $options = is_array($item->custom_options) ? $item->custom_options : [];
+                        if (! empty($options['pricing_summary'])) {
+                            $upgradePricing = $options['pricing_summary'];
+                            $upgradeItem = $item;
+                            break;
+                        }
+                        if (! empty($options['hosting_upgrade']) || ! empty($options['hosting_plan_change'])) {
+                            $upgradeItem = $item;
+                        }
+                    }
+                @endphp
+
+                @if ($upgradePricing && ($upgradePricing['is_prorated'] ?? false))
+                    <div class="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50/60 dark:bg-blue-950/20 p-3 text-sm text-slate-700 dark:text-slate-300">
+                        Prorated upgrade for {{ $upgradePricing['days_remaining'] ?? 0 }}
+                        {{ \Illuminate\Support\Str::plural('day', (int) ($upgradePricing['days_remaining'] ?? 0)) }} remaining
+                        — not the full plan price.
+                    </div>
+                @elseif ($upgradeItem)
+                    <div class="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50/60 dark:bg-blue-950/20 p-3 text-sm text-slate-700 dark:text-slate-300">
+                        This invoice is a prorated hosting upgrade charge for the rest of your billing period.
+                    </div>
+                @endif
+
+                <div class="space-y-2 text-sm">
+                    <div class="flex justify-between gap-3">
+                        <span class="text-slate-600 dark:text-slate-400">Invoice</span>
+                        <span class="font-medium text-slate-900 dark:text-white">{{ $invoice->invoice_number }}</span>
+                    </div>
+                    <div class="flex justify-between gap-3">
+                        <span class="text-slate-600 dark:text-slate-400">Due</span>
+                        <span class="font-medium text-slate-900 dark:text-white">{{ $invoice->due_date?->format('M d, Y') }}</span>
+                    </div>
                 </div>
 
-                <!-- Modal Content -->
-                <div class="p-6 space-y-6">
-                    @php
-                        $bankName = \App\Models\Setting::getValue('bank_name', '');
-                        $bankAccountName = \App\Models\Setting::getValue('bank_account_name', '');
-                        $bankAccountNumber = \App\Models\Setting::getValue('bank_account_number', '');
-                        $bankBranch = \App\Models\Setting::getValue('bank_branch', '');
-                        $bankSwiftCode = \App\Models\Setting::getValue('bank_swift_code', '');
-                    @endphp
-
-                    <!-- Where to Pay Section -->
-                    @if($bankName || $bankAccountName || $bankAccountNumber)
-                        <div class="border-2 border-emerald-200 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/20 rounded-xl p-5">
-                            <h3 class="text-lg font-bold text-emerald-900 dark:text-emerald-300 mb-4 flex items-center gap-2">
-                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-                                </svg>
-                                Pay to This Account
-                            </h3>
-
-                            <div class="space-y-3 bg-white dark:bg-slate-800 rounded-lg p-4">
-                                @if($bankName)
-                                    <div>
-                                        <p class="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">Bank Name</p>
-                                        <p class="text-lg font-bold text-slate-900 dark:text-white">{{ $bankName }}</p>
-                                    </div>
-                                @endif
-
-                                @if($bankAccountName)
-                                    <div>
-                                        <p class="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">Account Name</p>
-                                        <p class="text-lg font-bold text-slate-900 dark:text-white">{{ $bankAccountName }}</p>
-                                    </div>
-                                @endif
-
-                                @if($bankAccountNumber)
-                                    <div class="flex items-center gap-3">
-                                        <div class="flex-1">
-                                            <p class="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">Account Number</p>
-                                            <p class="text-lg font-mono font-bold text-slate-900 dark:text-white">{{ $bankAccountNumber }}</p>
-                                        </div>
-                                        <button type="button" @click="navigator.clipboard.writeText('{{ $bankAccountNumber }}'); alert('Account number copied!')" class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded font-medium transition">
-                                            Copy
-                                        </button>
-                                    </div>
-                                @endif
-
-                                @if($bankBranch)
-                                    <div>
-                                        <p class="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">Branch</p>
-                                        <p class="text-sm text-slate-700 dark:text-slate-300">{{ $bankBranch }}</p>
-                                    </div>
-                                @endif
-
-                                @if($bankSwiftCode)
-                                    <div>
-                                        <p class="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">SWIFT/BIC Code</p>
-                                        <p class="text-sm font-mono text-slate-700 dark:text-slate-300">{{ $bankSwiftCode }}</p>
-                                    </div>
-                                @endif
+                @if ($invoice->items->isNotEmpty())
+                    <div class="border-t border-slate-200 dark:border-slate-700 pt-4 space-y-2">
+                        @foreach ($invoice->items as $item)
+                            <div class="flex justify-between gap-3 text-sm">
+                                <span class="text-slate-600 dark:text-slate-400">{{ $item->description }}</span>
+                                <span class="font-medium text-slate-900 dark:text-white shrink-0">{{ $invoice->formatMoney($item->amount) }}</span>
                             </div>
-
-                            <div class="mt-3 p-3 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg border border-emerald-200 dark:border-emerald-700">
-                                <p class="text-sm text-emerald-900 dark:text-emerald-300">
-                                    ✓ <strong>Amount to Transfer:</strong> <span class="font-bold"><x-invoice-money :invoice="$invoice" :amount="$amountRemaining" /></span>
-                                </p>
+                        @endforeach
+                        @if ($invoice->tax > 0)
+                            <div class="flex justify-between gap-3 text-sm">
+                                <span class="text-slate-600 dark:text-slate-400">Tax</span>
+                                <span class="font-medium text-slate-900 dark:text-white shrink-0">{{ $invoice->formatMoney($invoice->tax) }}</span>
                             </div>
-                        </div>
-                    @else
-                        <div class="p-4 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg">
-                            <p class="text-sm text-amber-900 dark:text-amber-300">
-                                ⚠️ Bank account details are not configured. Please contact support.
-                            </p>
-                        </div>
-                    @endif
+                        @endif
+                    </div>
+                @endif
 
-                    <!-- Form Section -->
-                    <form method="POST" action="{{ route('customer.payment.manual-submit', $invoice) }}" class="space-y-4">
-                        @csrf
+                @if (($appliedCredits ?? 0) > 0)
+                    <div class="flex justify-between text-sm">
+                        <span class="text-emerald-700 dark:text-emerald-300">Credits applied</span>
+                        <span class="font-semibold text-emerald-600">− {{ $invoice->formatMoney($appliedCredits) }}</span>
+                    </div>
+                @endif
 
-                        <div class="p-3 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-                            <p class="text-sm text-blue-900 dark:text-blue-300">
-                                <strong>Next:</strong> Fill in the details below to confirm your payment submission. An admin will verify and approve it.
-                            </p>
-                        </div>
-
-                        <!-- Payment Reference -->
-                        <div>
-                            <label for="manual_payment_reference" class="block text-sm font-medium text-slate-900 dark:text-white mb-1">
-                                Transaction Reference / Slip Number
-                            </label>
-                            <input type="text"
-                                   id="manual_payment_reference"
-                                   name="payment_reference"
-                                   placeholder="e.g., Bank slip or mobile money reference"
-                                   class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm">
-                        </div>
-
-                        <!-- Bank Name -->
-                        <div>
-                            <label for="manual_bank_name" class="block text-sm font-medium text-slate-900 dark:text-white mb-1">
-                                Bank / Payment Method
-                            </label>
-                            <input type="text"
-                                   id="manual_bank_name"
-                                   name="bank_name"
-                                   placeholder="e.g., KCB, Equity, M-Pesa"
-                                   class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm">
-                        </div>
-
-                        <!-- Account Name -->
-                        <div>
-                            <label for="manual_account_name" class="block text-sm font-medium text-slate-900 dark:text-white mb-1">
-                                Your Name on Account
-                            </label>
-                            <input type="text"
-                                   id="manual_account_name"
-                                   name="account_name"
-                                   placeholder="{{ auth()->user()->name }}"
-                                   value="{{ auth()->user()->name }}"
-                                   class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm">
-                        </div>
-
-                        <!-- Notes -->
-                        <div>
-                            <label for="manual_notes" class="block text-sm font-medium text-slate-900 dark:text-white mb-1">
-                                Additional Notes (optional)
-                            </label>
-                            <textarea id="manual_notes"
-                                      name="notes"
-                                      rows="3"
-                                      placeholder="Any extra details to help verify the payment..."
-                                      class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm resize-none"></textarea>
-                        </div>
-
-                        <!-- Buttons -->
-                        <div class="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
-                            <button type="button" @click="showManualModal = false" class="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition">
-                                Cancel
-                            </button>
-                            <button type="submit" class="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition">
-                                Submit Payment
-                            </button>
-                        </div>
-                    </form>
+                <div class="border-t border-slate-200 dark:border-slate-700 pt-4 flex justify-between items-baseline gap-3">
+                    <span class="font-semibold text-slate-900 dark:text-white">Amount due</span>
+                    <span class="text-2xl font-bold text-blue-600 dark:text-blue-400">{{ $invoice->formatMoney($amountDue) }}</span>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    {{-- Manual payment modal --}}
+    <div x-show="showManualModal" x-cloak class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="showManualModal = false" x-transition>
+        <div class="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-slate-200 dark:border-slate-800">
+            <div class="sticky top-0 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-6 py-4 flex justify-between items-center">
+                <h2 class="text-xl font-bold text-slate-900 dark:text-white">Submit manual payment</h2>
+                <button type="button" @click="showManualModal = false" class="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300" aria-label="Close">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="p-6 space-y-6">
+                @php
+                    $bankName = $bankDetails['bank_name'] ?? \App\Models\Setting::getValue('bank_name', '');
+                    $bankAccountName = $bankDetails['bank_account_name'] ?? \App\Models\Setting::getValue('bank_account_name', '');
+                    $bankAccountNumber = $bankDetails['bank_account_number'] ?? \App\Models\Setting::getValue('bank_account_number', '');
+                    $bankBranch = $bankDetails['bank_branch'] ?? \App\Models\Setting::getValue('bank_branch', '');
+                    $bankSwiftCode = $bankDetails['bank_swift_code'] ?? \App\Models\Setting::getValue('bank_swift_code', '');
+                @endphp
+
+                @if ($bankName || $bankAccountName || $bankAccountNumber)
+                    <div class="border border-emerald-200 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/20 rounded-xl p-5 space-y-3">
+                        <h3 class="text-lg font-bold text-emerald-900 dark:text-emerald-300">Pay to this account</h3>
+                        <div class="space-y-3 bg-white dark:bg-slate-800 rounded-lg p-4">
+                            @if ($bankName)
+                                <div>
+                                    <p class="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">Bank name</p>
+                                    <p class="text-lg font-bold text-slate-900 dark:text-white">{{ $bankName }}</p>
+                                </div>
+                            @endif
+                            @if ($bankAccountName)
+                                <div>
+                                    <p class="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">Account name</p>
+                                    <p class="text-lg font-bold text-slate-900 dark:text-white">{{ $bankAccountName }}</p>
+                                </div>
+                            @endif
+                            @if ($bankAccountNumber)
+                                <div class="flex items-center gap-3">
+                                    <div class="flex-1">
+                                        <p class="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">Account number</p>
+                                        <p class="text-lg font-mono font-bold text-slate-900 dark:text-white">{{ $bankAccountNumber }}</p>
+                                    </div>
+                                    <button type="button" @click="navigator.clipboard.writeText(@js($bankAccountNumber))" class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded font-medium transition">
+                                        Copy
+                                    </button>
+                                </div>
+                            @endif
+                            @if ($bankBranch)
+                                <div>
+                                    <p class="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">Branch</p>
+                                    <p class="text-sm text-slate-700 dark:text-slate-300">{{ $bankBranch }}</p>
+                                </div>
+                            @endif
+                            @if ($bankSwiftCode)
+                                <div>
+                                    <p class="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">SWIFT/BIC</p>
+                                    <p class="text-sm font-mono text-slate-700 dark:text-slate-300">{{ $bankSwiftCode }}</p>
+                                </div>
+                            @endif
+                        </div>
+                        <p class="text-sm text-emerald-900 dark:text-emerald-300">
+                            Amount to transfer: <strong>{{ $invoice->formatMoney($amountDue) }}</strong>
+                        </p>
+                    </div>
+                @else
+                    <div class="p-4 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                        <p class="text-sm text-amber-900 dark:text-amber-300">Bank account details are not configured. Please contact support.</p>
+                    </div>
+                @endif
+
+                <form method="POST" action="{{ route('customer.payment.manual-submit', $invoice) }}" class="space-y-4">
+                    @csrf
+                    <div>
+                        <label for="manual_payment_reference" class="block text-sm font-medium text-slate-900 dark:text-white mb-1">Transaction reference / slip number</label>
+                        <input type="text" id="manual_payment_reference" name="payment_reference" placeholder="e.g., Bank slip or mobile money reference" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white text-sm">
+                    </div>
+                    <div>
+                        <label for="manual_bank_name" class="block text-sm font-medium text-slate-900 dark:text-white mb-1">Bank / payment method</label>
+                        <input type="text" id="manual_bank_name" name="bank_name" placeholder="e.g., KCB, Equity, M-Pesa" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white text-sm">
+                    </div>
+                    <div>
+                        <label for="manual_account_name" class="block text-sm font-medium text-slate-900 dark:text-white mb-1">Your name on account</label>
+                        <input type="text" id="manual_account_name" name="account_name" value="{{ auth()->user()->name }}" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white text-sm">
+                    </div>
+                    <div>
+                        <label for="manual_notes" class="block text-sm font-medium text-slate-900 dark:text-white mb-1">Additional notes (optional)</label>
+                        <textarea id="manual_notes" name="notes" rows="3" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white text-sm resize-none"></textarea>
+                    </div>
+                    <div class="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
+                        <button type="button" @click="showManualModal = false" class="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition">Cancel</button>
+                        <button type="submit" class="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition">Submit payment</button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>

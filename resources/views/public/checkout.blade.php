@@ -294,7 +294,7 @@
                                     <label class="flex items-start gap-3 cursor-pointer">
                                         <input type="checkbox" name="agree_terms" class="mt-1" required>
                                         <span class="text-sm text-slate-300">
-                                            I authorize the charge for this order.
+                                            I agree to the <a href="{{ route('terms') }}" class="text-cyan-400 hover:underline">Terms of Service</a> and <a href="{{ route('privacy') }}" class="text-cyan-400 hover:underline">Privacy Policy</a>, and authorize the charge for this order.
                                         </span>
                                     </label>
                                 </div>
