@@ -772,6 +772,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
 
         // Container terminal (throttled separately)
         Route::post('my/services/{service}/terminal', [ContainerTerminalController::class, 'create'])->middleware('throttle:5,1')->name('customer.services.container.terminal.create');
+        Route::post('my/services/{service}/terminal/extend', [ContainerTerminalController::class, 'extend'])->middleware('throttle:30,1')->name('customer.services.container.terminal.extend');
         Route::post('my/services/{service}/terminal/execute', [ContainerTerminalController::class, 'execute'])->middleware('throttle:60,1')->name('customer.services.container.terminal.execute');
         Route::delete('my/services/{service}/terminal', [ContainerTerminalController::class, 'close'])->name('customer.services.container.terminal.close');
 

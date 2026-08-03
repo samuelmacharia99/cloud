@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ContainerTerminalSession;
 use App\Models\Service;
 use App\Services\Terminal\ContainerTerminalService;
+use App\Services\Terminal\TerminalSecurityGuard;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -25,7 +26,7 @@ class ContainerTerminalController extends Controller
      */
     public function create(Service $service): JsonResponse
     {
-        abort_if($service->user_id !== auth()->id(), 403);
+        $this->authorize('accessTerminal', $service);
 
         try {
             if ($service->product?->type !== 'container_hosting') {
@@ -48,15 +49,21 @@ class ContainerTerminalController extends Controller
             }
 
             $session = $this->terminalService->createSession($service, auth()->user(), request());
+            $meta = $this->terminalService->sessionMeta($session);
 
             return response()->json([
                 'session_token' => $session->token,
-                'cwd' => $session->cwd,
+                'cwd' => $meta['cwd'],
+                'shell_user' => $meta['shell_user'],
+                'container_name' => $meta['container_name'],
                 'expires_at' => $session->expires_at->toIso8601String(),
+                'hard_expires_at' => $session->hard_expires_at?->toIso8601String(),
                 'websocket_url' => $this->terminalService->resolveWebSocketUrl(),
                 'websocket_path' => $this->terminalService->resolveWebSocketPath(),
+                'websocket_enabled' => $meta['websocket_enabled'],
+                'max_command_length' => $meta['max_command_length'],
                 'mode' => 'pty',
-                'welcome_message' => "Connected to application: {$deployment->container_name}\nInteractive shell. Type 'exit' to close.",
+                'welcome_message' => "Connected to application: {$meta['container_name']}\nInteractive shell. Type 'exit' to close.",
             ]);
         } catch (\Exception $e) {
             \Log::error("Failed to create terminal session for service {$service->id}: ".$e->getMessage());
@@ -68,17 +75,59 @@ class ContainerTerminalController extends Controller
     }
 
     /**
+     * Extend an active terminal session (keep-alive).
+     * POST /my/services/{service}/terminal/extend
+     */
+    public function extend(Service $service, Request $request): JsonResponse
+    {
+        $this->authorize('accessTerminal', $service);
+
+        try {
+            $validated = $request->validate([
+                'session_token' => 'required|string|max:64',
+            ]);
+
+            $session = $this->findOwnedSession($service, $validated['session_token']);
+            $session = $this->terminalService->extendSession($session);
+
+            return response()->json([
+                'expires_at' => $session->expires_at?->toIso8601String(),
+                'hard_expires_at' => $session->hard_expires_at?->toIso8601String(),
+                'message' => 'Session extended',
+            ]);
+        } catch (ModelNotFoundException $e) {
+            return response()->json([
+                'error' => 'Terminal session not found or expired',
+                'code' => 'session_expired',
+            ], 401);
+        } catch (\Exception $e) {
+            $message = $e->getMessage();
+            if (str_contains(strtolower($message), 'session expired')) {
+                return response()->json([
+                    'error' => 'Terminal session expired',
+                    'code' => 'session_expired',
+                ], 401);
+            }
+
+            return response()->json([
+                'error' => 'Failed to extend session: '.$message,
+            ], 500);
+        }
+    }
+
+    /**
      * Execute a command in the terminal
      * POST /my/services/{service}/terminal/execute
      */
     public function execute(Service $service, Request $request): JsonResponse
     {
-        abort_if($service->user_id !== auth()->id(), 403);
+        $this->authorize('accessTerminal', $service);
 
         try {
+            $maxLength = (new TerminalSecurityGuard)->maxCommandLength();
             $validated = $request->validate([
                 'session_token' => 'required|string|max:64',
-                'command' => 'required|string|max:1024',
+                'command' => 'required|string|max:'.$maxLength,
             ]);
 
             if ($service->product?->type !== 'container_hosting') {
@@ -87,13 +136,8 @@ class ContainerTerminalController extends Controller
                 ], 400);
             }
 
-            // Load session by token and verify ownership
-            $session = ContainerTerminalSession::where('token', $validated['session_token'])
-                ->where('user_id', auth()->id())
-                ->where('service_id', $service->id)
-                ->firstOrFail();
+            $session = $this->findOwnedSession($service, $validated['session_token']);
 
-            // Execute command
             $result = $this->terminalService->executeCommand(
                 $session,
                 $validated['command'],
@@ -130,17 +174,14 @@ class ContainerTerminalController extends Controller
      */
     public function close(Service $service, Request $request): JsonResponse
     {
-        abort_if($service->user_id !== auth()->id(), 403);
+        $this->authorize('accessTerminal', $service);
 
         try {
             $validated = $request->validate([
                 'session_token' => 'required|string|max:64',
             ]);
 
-            $session = ContainerTerminalSession::where('token', $validated['session_token'])
-                ->where('user_id', auth()->id())
-                ->where('service_id', $service->id)
-                ->firstOrFail();
+            $session = $this->findOwnedSession($service, $validated['session_token']);
 
             $this->terminalService->closeSession($session);
 
@@ -158,5 +199,13 @@ class ContainerTerminalController extends Controller
                 'error' => 'Failed to close session: '.$e->getMessage(),
             ], 500);
         }
+    }
+
+    private function findOwnedSession(Service $service, string $token): ContainerTerminalSession
+    {
+        return ContainerTerminalSession::where('token', $token)
+            ->where('user_id', auth()->id())
+            ->where('service_id', $service->id)
+            ->firstOrFail();
     }
 }

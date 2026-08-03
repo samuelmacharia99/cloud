@@ -76,11 +76,26 @@ class ContainerTerminalSession extends Model
 
     public function extendExpiry(): void
     {
-        $idleMinutes = max(15, (int) config('terminal.session.idle_minutes', 60));
+        $idleMinutes = max(5, (int) config('terminal.session.idle_minutes', 240));
 
         $this->update([
             'last_activity_at' => now(),
             'expires_at' => now()->addMinutes($idleMinutes),
+        ]);
+    }
+
+    /**
+     * Explicit user-requested keep-alive (Extend button).
+     */
+    public function extendSession(?int $minutes = null): void
+    {
+        $minutes = max(15, $minutes ?? (int) config('terminal.session.extend_minutes', 240));
+        $hardHours = max(1, (int) config('terminal.session.hard_hours', 12));
+
+        $this->update([
+            'last_activity_at' => now(),
+            'expires_at' => now()->addMinutes($minutes),
+            'hard_expires_at' => now()->addHours($hardHours),
         ]);
     }
 

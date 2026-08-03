@@ -49,8 +49,10 @@ return [
     |
     */
     'session' => [
-        'timeout' => 120,              // Minutes until session expires
-        'idle_timeout' => 60,          // Minutes of inactivity before logout
+        // Temporarily disabled for development (set SESSION_LIFETIME / SESSION_IDLE_TIMEOUT when re-enabling).
+        'timeout' => (int) env('SESSION_LIFETIME', 525600), // Minutes until absolute session cookie expiry
+        'idle_timeout' => (int) env('SESSION_IDLE_TIMEOUT', 0), // 0 = no inactivity logout
+        'authenticate_session' => (bool) env('SESSION_AUTHENTICATE_SESSION', false), // password-hash session guard
         'secure_cookies' => true,      // HTTPS only cookies
         'http_only' => true,           // No JavaScript access to session cookies
         'same_site' => 'lax',          // CSRF protection

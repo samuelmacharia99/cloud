@@ -37,13 +37,18 @@ class SSHInteractiveSession
         $this->ssh->enablePTY();
         $this->ssh->setWindowSize($cols, $rows);
 
-        $shell = (string) config('terminal.pty.shell', '/bin/sh');
+        $preferredShell = preg_replace('/[^a-zA-Z0-9_\/.-]/', '', (string) config('terminal.pty.shell', '/bin/bash')) ?: '/bin/bash';
+        $fallbackShell = preg_replace('/[^a-zA-Z0-9_\/.-]/', '', (string) config('terminal.pty.shell_fallback', '/bin/sh')) ?: '/bin/sh';
         $userFlag = $execUser !== null ? '-u '.escapeshellarg($execUser).' ' : '';
+
+        // Prefer bash when present so history/completion feel like a normal terminal.
+        $shellBootstrap = "if [ -x {$preferredShell} ]; then exec {$preferredShell} -l; elif [ -x {$fallbackShell} ]; then exec {$fallbackShell} -l; else exec sh -l; fi";
+
         $command = sprintf(
-            'docker exec -i %s-w /app -e TERM=xterm-256color -e COLORTERM=truecolor -e PATH=/usr/local/bin:/usr/bin:/bin -e HOME=/tmp -e NPM_CONFIG_CACHE=/tmp/.npm -e npm_config_cache=/tmp/.npm %s %s -l',
+            'docker exec -i %s-w /app -e TERM=xterm-256color -e COLORTERM=truecolor -e PATH=/usr/local/bin:/usr/bin:/bin -e HOME=/tmp -e NPM_CONFIG_CACHE=/tmp/.npm -e npm_config_cache=/tmp/.npm %s /bin/sh -c %s',
             $userFlag,
             escapeshellarg($containerName),
-            escapeshellarg($shell)
+            escapeshellarg($shellBootstrap)
         );
 
         $this->ssh->exec($command, function (string $output) use ($onOutput) {

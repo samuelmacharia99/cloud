@@ -24,7 +24,7 @@ class ContainerTerminalService
 
     public function createSession(Service $service, User $user, Request $request): ContainerTerminalSession
     {
-        if ($service->user_id !== $user->id) {
+        if ($service->user_id !== $user->id && ! $user->isAdmin()) {
             throw new Exception('Unauthorized access to service');
         }
 
@@ -37,27 +37,31 @@ class ContainerTerminalService
             throw new Exception('Container is not running');
         }
 
-        // Close any existing active sessions for this user+service
-        ContainerTerminalSession::where('service_id', $service->id)
+        // Cap concurrent tabs; close oldest when at the limit.
+        $maxSessions = max(1, (int) config('terminal.session.max_per_user_service', 3));
+        $activeSessions = ContainerTerminalSession::where('service_id', $service->id)
             ->where('user_id', $user->id)
             ->active()
-            ->update([
-                'status' => 'closed',
-                'expires_at' => now(),
-            ]);
+            ->orderBy('created_at')
+            ->get();
 
-        // Create new session
+        while ($activeSessions->count() >= $maxSessions) {
+            $oldest = $activeSessions->shift();
+            if ($oldest) {
+                $oldest->close();
+            }
+        }
+
         $token = bin2hex(random_bytes(32));
         $now = now();
-        $idleMinutes = max(15, (int) config('terminal.session.idle_minutes', 60));
-        $hardHours = max(1, (int) config('terminal.session.hard_hours', 4));
+        $idleMinutes = max(5, (int) config('terminal.session.idle_minutes', 240));
+        $hardHours = max(1, (int) config('terminal.session.hard_hours', 12));
         $session = ContainerTerminalSession::create([
             'token' => $token,
             'service_id' => $service->id,
             'user_id' => $user->id,
             'deployment_id' => $deployment->id,
             'container_name' => $deployment->container_name,
-            // Enforce app-root landing for customer terminal sessions.
             'cwd' => '/app',
             'status' => 'active',
             'ip_address' => $request->ip(),
@@ -71,6 +75,32 @@ class ContainerTerminalService
         \Log::info("Terminal session created for service {$service->id}, user {$user->id}");
 
         return $session;
+    }
+
+    public function sessionMeta(ContainerTerminalSession $session): array
+    {
+        $session->loadMissing('service.product.containerTemplate', 'deployment');
+        $templateSlug = $session->service?->product?->containerTemplate?->slug;
+        $shellUser = ContainerDockerExecUserResolver::execUser($templateSlug) ?? 'app';
+
+        return [
+            'shell_user' => $shellUser,
+            'container_name' => $session->deployment?->container_name ?: $session->container_name,
+            'cwd' => $session->cwd ?: '/app',
+            'websocket_enabled' => (bool) config('terminal.websocket.enabled', true),
+            'max_command_length' => (new TerminalSecurityGuard)->maxCommandLength(),
+        ];
+    }
+
+    public function extendSession(ContainerTerminalSession $session, ?int $minutes = null): ContainerTerminalSession
+    {
+        if ($session->isExpired() || $session->status !== 'active') {
+            throw new Exception('Session expired');
+        }
+
+        $session->extendSession($minutes);
+
+        return $session->fresh();
     }
 
     public function resolveWebSocketUrl(): ?string
@@ -113,6 +143,8 @@ class ContainerTerminalService
         $sanitized = $validation['sanitized'];
 
         if (! $validation['allowed']) {
+            $blockMessage = $this->guard->formatBlockMessage($validation);
+
             // Log blocked command
             ContainerTerminalLog::create([
                 'session_id' => $session->id,
@@ -120,7 +152,7 @@ class ContainerTerminalService
                 'service_id' => $session->service_id,
                 'command' => $rawCommand,
                 'sanitized_command' => $sanitized,
-                'output' => "Error: {$validation['reason']}",
+                'output' => $blockMessage,
                 'exit_code' => 1,
                 'cwd' => $session->cwd,
                 'ip_address' => $ip,
@@ -132,10 +164,12 @@ class ContainerTerminalService
             $session->extendExpiry();
 
             return [
-                'output' => "❌ Command blocked: {$validation['reason']}",
+                'output' => '❌ '.$blockMessage,
                 'exit_code' => 1,
                 'cwd' => $session->cwd,
                 'blocked' => true,
+                'block_reason' => $validation['reason'],
+                'block_hint' => $validation['hint'] ?? null,
             ];
         }
 
@@ -190,7 +224,7 @@ class ContainerTerminalService
                 $session->update([
                     'cwd' => $newCwd,
                     'last_activity_at' => now(),
-                    'expires_at' => now()->addMinutes(max(15, (int) config('terminal.session.idle_minutes', 60))),
+                    'expires_at' => now()->addMinutes(max(5, (int) config('terminal.session.idle_minutes', 240))),
                 ]);
                 $session->increment('command_count');
 

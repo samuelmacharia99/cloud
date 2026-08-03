@@ -38,15 +38,22 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
-        $middleware->web(append: [
+        $webAppend = [
             StartSession::class,
             ResolveResellerTenant::class,
             ShareErrorsFromSession::class,
             VerifyCsrfToken::class,
-            AuthenticateSession::class,
             SecurityHeaders::class,
             LogActivity::class,
-        ]);
+        ];
+
+        // Temporarily off by default — AuthenticateSession can log users out
+        // unexpectedly during development. Re-enable via SESSION_AUTHENTICATE_SESSION=true.
+        if (filter_var(env('SESSION_AUTHENTICATE_SESSION', false), FILTER_VALIDATE_BOOLEAN)) {
+            array_splice($webAppend, 4, 0, [AuthenticateSession::class]);
+        }
+
+        $middleware->web(append: $webAppend);
 
         $middleware->api(prepend: [
             EnsureFrontendRequestsAreStateful::class,

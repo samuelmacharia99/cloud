@@ -16,7 +16,7 @@ class ContainerTerminalServiceTest extends TestCase
         config([
             'terminal.command_timeouts.artisan_long' => 900,
             'terminal.command_timeouts.artisan' => 600,
-            'terminal.command_timeouts.default' => 30,
+            'terminal.command_timeouts.default' => 120,
         ]);
 
         $service = new ContainerTerminalService;
@@ -32,7 +32,7 @@ class ContainerTerminalServiceTest extends TestCase
             $method->invoke($service, 'php artisan config:cache')
         );
         $this->assertSame(
-            30,
+            120,
             $method->invoke($service, 'ls -la')
         );
     }

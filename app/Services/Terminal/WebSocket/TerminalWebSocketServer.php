@@ -158,7 +158,11 @@ class TerminalWebSocketServer
             $wsConnection->onClose(function () use ($wsConnection, $bridge, $session) {
                 unset($this->bridges[$wsConnection->id()]);
                 $bridge->close();
-                $session->close();
+                // Keep the DB session active so the browser can reconnect with the same token.
+                // Idle/hard expiry + terminal:cleanup still reclaim abandoned sessions.
+                if ($session->status === 'active') {
+                    $session->extendExpiry();
+                }
             });
         });
     }

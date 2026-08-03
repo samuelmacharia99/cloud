@@ -76,8 +76,9 @@ class ContainerTerminalPtyBridge
                 if ($line !== '') {
                     $validation = $this->guard->validate($line);
                     if (! $validation['allowed']) {
+                        $message = $this->guard->formatBlockMessage($validation);
                         $this->logBlockedCommand($line, (string) $validation['reason']);
-                        $this->connection->send("\r\n\x1b[31mCommand blocked: {$validation['reason']}\x1b[0m\r\n");
+                        $this->connection->send("\r\n\x1b[31m{$message}\x1b[0m\r\n");
                         $this->ssh?->write("\x03");
 
                         continue;
@@ -131,6 +132,12 @@ class ContainerTerminalPtyBridge
             $cols = (int) ($json['cols'] ?? config('terminal.pty.default_cols', 120));
             $rows = (int) ($json['rows'] ?? config('terminal.pty.default_rows', 30));
             $this->ssh?->resize($cols, $rows);
+
+            return true;
+        }
+
+        if (($json['type'] ?? null) === 'ping') {
+            $this->session->extendExpiry();
 
             return true;
         }
