@@ -520,6 +520,8 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
             Route::post('reseller/customer-orders', [CustomerOrderController::class, 'store'])->name('reseller.customer-orders.store');
             Route::resource('reseller/customers', App\Http\Controllers\Reseller\CustomerController::class)->names('reseller.customers');
             Route::post('reseller/customers/{customer}/impersonate', [App\Http\Controllers\Reseller\CustomerController::class, 'impersonate'])->name('reseller.customers.impersonate');
+            Route::post('reseller/customers/{customer}/add-domain', [App\Http\Controllers\Reseller\CustomerController::class, 'addDomain'])->name('reseller.customers.add-domain');
+            Route::post('reseller/customers/{customer}/add-service', [App\Http\Controllers\Reseller\CustomerController::class, 'addService'])->name('reseller.customers.add-service');
             Route::post('reseller/directadmin-accounts/link', [App\Http\Controllers\Reseller\HostedDirectAdminAccountController::class, 'link'])->name('reseller.directadmin-accounts.link');
             Route::post('reseller/directadmin-accounts/bulk-link', [App\Http\Controllers\Reseller\HostedDirectAdminAccountController::class, 'bulkLink'])->name('reseller.directadmin-accounts.bulk-link');
             Route::post('reseller/services/{service}/connect-billing', [App\Http\Controllers\Reseller\HostedDirectAdminAccountController::class, 'connectBilling'])->name('reseller.directadmin-accounts.connect-billing');

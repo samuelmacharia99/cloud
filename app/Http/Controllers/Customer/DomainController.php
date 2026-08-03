@@ -59,7 +59,7 @@ class DomainController extends Controller
         $dns = app(DomainCloudflareDnsService::class);
 
         if (! $dns->isAvailableForCustomer($request->user())) {
-            return back()->with('error', 'Managed DNS is not available for your account. DNS is handled through your hosting control panel.')->withInput();
+            return back()->with('error', 'Managed DNS is not available right now. Contact support if this continues.')->withInput();
         }
 
         $validated = $request->validate([

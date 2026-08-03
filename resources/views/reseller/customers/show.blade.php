@@ -10,12 +10,14 @@
             <h1 class="text-3xl font-bold text-slate-900 dark:text-white">{{ $customer->name }}</h1>
             <p class="text-slate-600 dark:text-slate-400 mt-1">{{ $customer->email }}</p>
         </div>
-        <div class="flex gap-2">
+        <div class="flex flex-wrap gap-2 justify-end">
             <form method="POST" action="{{ route('reseller.customers.impersonate', $customer) }}" class="inline">
                 @csrf
                 <button type="submit" class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition text-sm">View as customer</button>
             </form>
-            <a href="{{ route('reseller.domains.index', ['customer' => $customer->id]) }}" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition text-sm">Add domain</a>
+            <button type="button" @click="addDomainModal = true" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition text-sm">Add domain</button>
+            <button type="button" @click="addServiceModal = true" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg transition text-sm">Add service</button>
+            <a href="{{ route('reseller.domains.index', ['customer' => $customer->id]) }}" class="px-4 py-2 border border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 font-medium rounded-lg transition text-sm">Register domain</a>
             <a href="{{ route('reseller.customer-invoices.create', ['customer' => $customer->id]) }}" class="px-4 py-2 border border-purple-300 text-purple-700 font-medium rounded-lg transition text-sm">New invoice</a>
             <a href="{{ route('reseller.customers.edit', $customer) }}" class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium rounded-lg transition text-sm">Edit</a>
         </div>
@@ -135,7 +137,10 @@
             <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
                 <div class="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Services</h2>
-                    <span class="text-sm font-medium text-slate-600 dark:text-slate-400">{{ $customer->services->count() }} total</span>
+                    <div class="flex items-center gap-3">
+                        <span class="text-sm font-medium text-slate-600 dark:text-slate-400">{{ $customer->services->count() }} total</span>
+                        <button type="button" @click="addServiceModal = true" class="px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition">Add service</button>
+                    </div>
                 </div>
                 @if ($customer->services->count() > 0)
                     <div class="divide-y divide-slate-200 dark:divide-slate-800">
@@ -165,8 +170,47 @@
                         @endforeach
                     </div>
                 @else
-                    <div class="p-12 text-center">
+                    <div class="p-12 text-center space-y-3">
                         <p class="text-slate-500 dark:text-slate-400">No services yet</p>
+                        <button type="button" @click="addServiceModal = true" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition">Add service</button>
+                    </div>
+                @endif
+            </div>
+
+            <!-- Domains List -->
+            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                <div class="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                    <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Domains</h2>
+                    <div class="flex items-center gap-3">
+                        <span class="text-sm font-medium text-slate-600 dark:text-slate-400">{{ $customer->domains->count() }} total</span>
+                        <button type="button" @click="addDomainModal = true" class="px-3 py-1.5 text-xs font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition">Add domain</button>
+                    </div>
+                </div>
+                @if ($customer->domains->count() > 0)
+                    <div class="divide-y divide-slate-200 dark:divide-slate-800">
+                        @foreach ($customer->domains as $domain)
+                            <a href="{{ route('reseller.domains.show', $domain) }}" class="block p-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                                <div class="flex items-center justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <p class="font-medium text-slate-900 dark:text-white truncate">{{ $domain->name }}{{ $domain->extension }}</p>
+                                        <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">
+                                            {{ $domain->expires_at ? 'Expires '.$domain->expires_at->format('M d, Y') : 'No expiry set' }}
+                                            @if ($domain->cloudflare_dns_enabled)
+                                                · Managed DNS
+                                            @endif
+                                        </p>
+                                    </div>
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ $domain->status === 'active' ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400' }}">
+                                        {{ ucfirst($domain->status) }}
+                                    </span>
+                                </div>
+                            </a>
+                        @endforeach
+                    </div>
+                @else
+                    <div class="p-12 text-center space-y-3">
+                        <p class="text-slate-500 dark:text-slate-400">No domains yet</p>
+                        <button type="button" @click="addDomainModal = true" class="px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition">Add domain</button>
                     </div>
                 @endif
             </div>
@@ -209,6 +253,173 @@
         <p class="text-slate-600 dark:text-slate-400 text-sm leading-relaxed">{{ $customer->notes }}</p>
     </div>
     @endif
+
+    <!-- Add Domain Modal -->
+    <div
+        x-show="addDomainModal"
+        x-cloak
+        class="fixed inset-0 z-50 overflow-y-auto"
+        role="dialog"
+        aria-modal="true"
+        @keydown.escape.window="addDomainModal = false"
+    >
+        <div class="fixed inset-0 bg-black/50" @click="addDomainModal = false"></div>
+        <div class="flex min-h-full items-end sm:items-center justify-center p-4">
+            <div class="relative bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden" @click.stop>
+                <div class="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-800">
+                    <div>
+                        <h2 class="text-xl font-bold text-slate-900 dark:text-white">Add domain</h2>
+                        <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">Manually attach a domain to {{ $customer->name }}</p>
+                    </div>
+                    <button type="button" @click="addDomainModal = false" class="text-slate-500 hover:text-slate-800 dark:hover:text-white">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                </div>
+                <form method="POST" action="{{ route('reseller.customers.add-domain', $customer) }}" class="p-6 space-y-4 overflow-y-auto flex-1">
+                    @csrf
+                    <div>
+                        <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Domain name <span class="text-red-500">*</span></label>
+                        <input type="text" name="domain_name" value="{{ old('domain_name') }}" required placeholder="example.co.ke"
+                               class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
+                        @error('domain_name') <p class="text-xs text-red-600 mt-1">{{ $message }}</p> @enderror
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Status <span class="text-red-500">*</span></label>
+                        <select name="status" required class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
+                            <option value="active" @selected(old('status', 'active') === 'active')>Active</option>
+                            <option value="pending" @selected(old('status') === 'pending')>Pending</option>
+                            <option value="expired" @selected(old('status') === 'expired')>Expired</option>
+                            <option value="suspended" @selected(old('status') === 'suspended')>Suspended</option>
+                        </select>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Registered</label>
+                            <input type="date" name="registered_at" value="{{ old('registered_at') }}"
+                                   class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Expires <span class="text-red-500">*</span></label>
+                            <input type="date" name="expires_at" value="{{ old('expires_at', now()->addYear()->format('Y-m-d')) }}" required
+                                   class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Nameserver 1</label>
+                            <input type="text" name="nameserver_1" value="{{ old('nameserver_1') }}"
+                                   class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Nameserver 2</label>
+                            <input type="text" name="nameserver_2" value="{{ old('nameserver_2') }}"
+                                   class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
+                        </div>
+                    </div>
+                    <label class="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                        <input type="checkbox" name="auto_renew" value="1" @checked(old('auto_renew')) class="rounded border-slate-300 text-purple-600 focus:ring-purple-500">
+                        Auto-renew
+                    </label>
+                    @if ($cloudflareDnsAvailable ?? false)
+                        <label class="inline-flex items-start gap-2 text-sm text-slate-700 dark:text-slate-300">
+                            <input type="checkbox" name="enable_cloudflare_dns" value="1" @checked(old('enable_cloudflare_dns', true)) class="mt-0.5 rounded border-slate-300 text-purple-600 focus:ring-purple-500">
+                            <span>Enable managed DNS (platform Cloudflare)</span>
+                        </label>
+                    @endif
+                    <div>
+                        <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Notes</label>
+                        <textarea name="notes" rows="2" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white">{{ old('notes') }}</textarea>
+                    </div>
+                    <div class="flex gap-3 pt-2">
+                        <button type="button" @click="addDomainModal = false" class="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-300">Cancel</button>
+                        <button type="submit" class="flex-1 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium">Add domain</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Service Modal -->
+    <div
+        x-show="addServiceModal"
+        x-cloak
+        class="fixed inset-0 z-50 overflow-y-auto"
+        role="dialog"
+        aria-modal="true"
+        @keydown.escape.window="addServiceModal = false"
+    >
+        <div class="fixed inset-0 bg-black/50" @click="addServiceModal = false"></div>
+        <div class="flex min-h-full items-end sm:items-center justify-center p-4">
+            <div class="relative bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden" @click.stop>
+                <div class="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-800">
+                    <div>
+                        <h2 class="text-xl font-bold text-slate-900 dark:text-white">Add service</h2>
+                        <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">Assign a catalog plan to {{ $customer->name }}</p>
+                    </div>
+                    <button type="button" @click="addServiceModal = false" class="text-slate-500 hover:text-slate-800 dark:hover:text-white">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                </div>
+                <form method="POST" action="{{ route('reseller.customers.add-service', $customer) }}" class="p-6 space-y-4 overflow-y-auto flex-1">
+                    @csrf
+                    <div>
+                        <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Catalog product <span class="text-red-500">*</span></label>
+                        <select name="reseller_product_id" x-model="addServiceProductId" required
+                                class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
+                            <option value="">Select a plan…</option>
+                            <template x-for="product in catalogProducts" :key="product.id">
+                                <option :value="String(product.id)" x-text="catalogLabel(product)"></option>
+                            </template>
+                        </select>
+                        @error('reseller_product_id') <p class="text-xs text-red-600 mt-1">{{ $message }}</p> @enderror
+                        @if (empty($catalogProductsForJs))
+                            <p class="text-xs text-amber-600 mt-1">No active catalog products. <a href="{{ route('reseller.catalog.create') }}" class="underline">Create one</a> first.</p>
+                        @endif
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Billing cycle <span class="text-red-500">*</span></label>
+                        <select name="billing_cycle" required class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
+                            <option value="monthly" @selected(old('billing_cycle', 'monthly') === 'monthly')>Monthly</option>
+                            <option value="quarterly" @selected(old('billing_cycle') === 'quarterly')>Quarterly</option>
+                            <option value="semi-annual" @selected(old('billing_cycle') === 'semi-annual')>Semi-annual</option>
+                            <option value="annual" @selected(old('billing_cycle') === 'annual')>Annual</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Order type <span class="text-red-500">*</span></label>
+                        <select name="order_type" x-model="addServiceOrderType" required class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
+                            <option value="provision">Create service (provision when paid / immediately if no charge)</option>
+                            <option value="invoice_only">Invoice only (no service yet)</option>
+                        </select>
+                    </div>
+                    <div x-show="addServiceNeedsDomain()">
+                        <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Primary domain <span class="text-red-500">*</span></label>
+                        <input type="text" name="primary_domain" value="{{ old('primary_domain') }}" placeholder="example.com"
+                               class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
+                        @error('primary_domain') <p class="text-xs text-red-600 mt-1">{{ $message }}</p> @enderror
+                    </div>
+                    <div x-show="addServiceOrderType === 'invoice_only' || addServiceBillCustomer">
+                        <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Invoice due date</label>
+                        <input type="date" name="due_date" value="{{ old('due_date') }}"
+                               class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
+                    </div>
+                    <label class="inline-flex items-start gap-2 text-sm text-slate-700 dark:text-slate-300">
+                        <input type="hidden" name="bill_customer" :value="addServiceBillCustomer ? '1' : '0'">
+                        <input type="checkbox" x-model="addServiceBillCustomer" class="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                        <span>Bill the customer (uncheck to add at no charge / without a customer invoice)</span>
+                    </label>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Notes</label>
+                        <textarea name="notes" rows="2" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white">{{ old('notes') }}</textarea>
+                    </div>
+                    <div class="flex gap-3 pt-2">
+                        <button type="button" @click="addServiceModal = false" class="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-300">Cancel</button>
+                        <button type="submit" class="flex-1 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium" :disabled="catalogProducts.length === 0">Add service</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
 
     <!-- Edit Service Modal -->
 <div
@@ -328,6 +539,11 @@
 <script>
 function resellerCustomerPage() {
     return {
+        addDomainModal: @json($errors->has('domain_name') || old('domain_name')),
+        addServiceModal: @json($errors->has('reseller_product_id') || $errors->has('primary_domain') || old('reseller_product_id')),
+        addServiceProductId: @json(old('reseller_product_id', '')),
+        addServiceOrderType: @json(old('order_type', 'provision')),
+        addServiceBillCustomer: @json(old('bill_customer', true) ? true : false),
         editServiceModal: false,
         editServiceId: null,
         editServiceName: '',
@@ -343,6 +559,11 @@ function resellerCustomerPage() {
         editDomain: '',
         services: @json($servicesForJs),
         catalogProducts: @json($catalogProductsForJs),
+
+        addServiceNeedsDomain() {
+            const product = this.catalogProducts.find(p => String(p.id) === String(this.addServiceProductId));
+            return !!product?.requires_primary_domain || !!product?.uses_direct_admin_package;
+        },
 
         openEditService(serviceId) {
             const service = this.services.find(s => s.id === serviceId);

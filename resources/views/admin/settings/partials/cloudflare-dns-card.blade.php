@@ -4,7 +4,7 @@
     <fieldset>
         <legend class="text-lg font-semibold text-slate-900 dark:text-white mb-2">Cloudflare DNS</legend>
         <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">
-            Managed DNS for domain-only customers and application hosting. Uses your Cloudflare account with branded nameservers.
+            Managed DNS for platform and reseller customers, plus application hosting. Uses your (super admin) Cloudflare account with branded nameservers — resellers do not need their own Cloudflare account.
         </p>
         <div class="mb-4 rounded-lg border border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
             <p class="font-medium mb-1">API token permissions (required)</p>
@@ -24,7 +24,7 @@
                 <input type="hidden" name="settings[cloudflare_enabled]" value="0">
                 <label class="flex items-center gap-2">
                     <input type="checkbox" name="settings[cloudflare_enabled]" value="1" @checked(in_array($settings['cloudflare_enabled'] ?? 'false', ['1', 'true'], true)) class="rounded" />
-                    <span class="text-slate-700 dark:text-slate-300">Enable Cloudflare DNS management for customers</span>
+                    <span class="text-slate-700 dark:text-slate-300">Enable Cloudflare DNS management for customers (including reseller customers)</span>
                 </label>
             </div>
 

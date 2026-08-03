@@ -8,7 +8,6 @@ use App\Models\Service;
 use App\Models\User;
 use App\Services\NodeNameserverService;
 use App\Services\Provisioning\MailDnsService;
-use App\Services\ResellerCustomerCatalogService;
 use Illuminate\Support\Facades\Log;
 
 class DomainCloudflareDnsService
@@ -24,15 +23,12 @@ class DomainCloudflareDnsService
     }
 
     /**
-     * Platform Cloudflare DNS is for direct platform customers only.
-     * Reseller customers use DirectAdmin / reseller nameservers.
+     * Platform Cloudflare DNS for any customer when admin Cloudflare is configured.
+     * Reseller customers use the same super-admin Cloudflare account (they do not need their own).
+     * Shared hosting with DirectAdmin still takes precedence via hasDirectAdminDns().
      */
     public function isAvailableForCustomer(?User $user): bool
     {
-        if ($user && app(ResellerCustomerCatalogService::class)->isResellerCustomer($user)) {
-            return false;
-        }
-
         return $this->isAvailable();
     }
 
@@ -106,9 +102,7 @@ class DomainCloudflareDnsService
         if (! $this->isAvailableForCustomer($domain->user)) {
             return [
                 'success' => false,
-                'message' => app(ResellerCustomerCatalogService::class)->isResellerCustomer($domain->user)
-                    ? 'DNS for your domains is managed through hosting (DirectAdmin), not Cloudflare.'
-                    : 'Cloudflare DNS is not configured. Contact support.',
+                'message' => 'Cloudflare DNS is not configured. Contact support.',
             ];
         }
 

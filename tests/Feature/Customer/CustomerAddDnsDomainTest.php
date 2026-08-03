@@ -103,7 +103,7 @@ class CustomerAddDnsDomainTest extends TestCase
             ->assertSessionHasErrors('domain');
     }
 
-    public function test_reseller_customer_cannot_add_cloudflare_dns_domain(): void
+    public function test_reseller_customer_can_add_cloudflare_dns_domain(): void
     {
         $this->enableCloudflare();
 
@@ -113,18 +113,34 @@ class CustomerAddDnsDomainTest extends TestCase
             'enabled' => true,
         ]);
 
+        Http::fake([
+            'api.cloudflare.com/client/v4/zones' => Http::response([
+                'success' => true,
+                'result' => [
+                    'id' => 'zone-reseller-abc',
+                    'name_servers' => ['albert.ns.cloudflare.com', 'aliza.ns.cloudflare.com'],
+                ],
+            ], 200),
+        ]);
+
         $reseller = User::factory()->reseller()->create();
         $customer = User::factory()->customer()->create(['reseller_id' => $reseller->id]);
 
-        $this->actingAs($customer)
-            ->post(route('customer.domains.dns.store'), ['domain' => 'mybiz.com'])
-            ->assertRedirect()
-            ->assertSessionHas('error');
+        $response = $this->actingAs($customer)->post(route('customer.domains.dns.store'), [
+            'domain' => 'mybiz.com',
+        ]);
 
-        $this->assertSame(0, Domain::query()->where('name', 'mybiz')->count());
+        $domain = Domain::query()->where('name', 'mybiz')->where('extension', '.com')->first();
+        $this->assertNotNull($domain);
+        $this->assertSame('dns', $domain->type);
+        $this->assertTrue($domain->cloudflare_dns_enabled);
+        $this->assertSame('zone-reseller-abc', $domain->cloudflare_zone_id);
+        $this->assertSame($customer->id, $domain->user_id);
+
+        $response->assertRedirect(route('customer.domains.dns.index', $domain));
     }
 
-    public function test_reseller_customer_does_not_see_cloudflare_on_domains_index(): void
+    public function test_reseller_customer_sees_cloudflare_on_domains_index(): void
     {
         $this->enableCloudflare();
 
@@ -134,10 +150,10 @@ class CustomerAddDnsDomainTest extends TestCase
         $this->actingAs($customer)
             ->get(route('customer.domains.index'))
             ->assertOk()
-            ->assertViewHas('cloudflareDnsAvailable', false);
+            ->assertViewHas('cloudflareDnsAvailable', true);
     }
 
-    public function test_reseller_customer_cannot_toggle_cloudflare_dns_in_cart(): void
+    public function test_reseller_customer_can_toggle_cloudflare_dns_in_cart(): void
     {
         $this->enableCloudflare();
 
@@ -158,8 +174,12 @@ class CustomerAddDnsDomainTest extends TestCase
             ->postJson(route('customer.cart.cloudflare-dns', ['key' => 'domain_example_com']), [
                 'enabled' => true,
             ])
-            ->assertStatus(422)
-            ->assertJson(['success' => false]);
+            ->assertOk()
+            ->assertJson(['success' => true]);
+
+        $item = session('cart.domain_example_com');
+        $this->assertTrue($item['cloudflare_dns']);
+        $this->assertSame('albert.ns.cloudflare.com', $item['nameservers']['ns1']);
     }
 
     public function test_saving_platform_nameservers_clears_cloudflare_dns_in_cart(): void
