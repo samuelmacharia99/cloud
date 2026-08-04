@@ -107,29 +107,29 @@
                 <button
                     type="button"
                     @click="selectProduct({{ $product->id }}, {{ $product->reseller_product_id ?? 'null' }}, @js($product->name), {{ $monthly }}, {{ $yearly }})"
-                    class="relative flex flex-col h-full text-left rounded-2xl border bg-white dark:bg-slate-900 p-5 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950"
+                    class="relative flex flex-col h-full text-left rounded-2xl border bg-white/90 dark:bg-ink-900/80 p-5 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-ink-950"
                     :class="selectedProductId === {{ $product->id }}
-                        ? 'border-brand-600 dark:border-brand-400 ring-2 ring-brand-600/15 dark:ring-brand-400/25 shadow-card-hover'
-                        : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-600 hover:shadow-card'"
+                        ? 'border-brand-500 dark:border-brand-400 ring-2 ring-brand-500/20 shadow-glow'
+                        : 'border-ink-200 dark:border-ink-800 hover:border-brand-400/50 dark:hover:border-brand-600/40 hover:shadow-card'"
                 >
                     @if($isFeatured)
-                        <span class="absolute top-3 right-3 inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-950/50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-200">
+                        <span class="absolute top-3 right-3 inline-flex items-center rounded-md bg-ink-950 dark:bg-brand-400 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-brand-300 dark:text-ink-950">
                             Popular
                         </span>
                     @endif
 
                     <div class="flex items-start justify-between gap-3 mb-4 pr-12">
                         <div>
-                            <h3 class="font-display text-lg font-bold text-zinc-950 dark:text-white leading-snug">{{ $product->name }}</h3>
+                            <h3 class="font-display text-lg font-bold text-ink-950 dark:text-white leading-snug">{{ $product->name }}</h3>
                             @if($product->description)
-                                <p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400 line-clamp-2">{{ $product->description }}</p>
+                                <p class="mt-1 text-sm text-ink-500 dark:text-ink-400 line-clamp-2">{{ $product->description }}</p>
                             @endif
                         </div>
                         <span
                             class="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2"
                             :class="selectedProductId === {{ $product->id }}
-                                ? 'border-brand-600 bg-brand-600 text-white'
-                                : 'border-zinc-300 dark:border-zinc-600'"
+                                ? 'border-brand-600 bg-brand-500 text-ink-950'
+                                : 'border-ink-300 dark:border-ink-600'"
                             aria-hidden="true"
                         >
                             <svg x-show="selectedProductId === {{ $product->id }}" class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>
@@ -138,8 +138,8 @@
 
                     <div class="mb-5">
                         <div class="flex items-baseline gap-1">
-                            <span class="font-display text-3xl font-bold tracking-tight text-zinc-950 dark:text-white">{{ $symbol }}{{ number_format($monthly, 0) }}</span>
-                            <span class="text-sm text-zinc-500 dark:text-zinc-400">/mo</span>
+                            <span class="font-display text-3xl font-bold tracking-tight text-ink-950 dark:text-white">{{ $symbol }}{{ number_format($monthly, 0) }}</span>
+                            <span class="text-sm text-ink-500 dark:text-ink-400">/mo</span>
                         </div>
                         @if($product->yearly_price)
                             <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">

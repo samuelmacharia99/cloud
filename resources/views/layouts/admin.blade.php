@@ -23,7 +23,7 @@
                             <img src="{{ $adminLogoUrl }}" alt="Logo" class="h-8 w-auto max-w-[120px] object-contain">
                         @else
                             <div class="brand-mark">
-                                <span class="text-white font-bold text-sm">TC</span>
+                                <span>TC</span>
                             </div>
                         @endif
                         <div>

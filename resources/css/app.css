@@ -9,22 +9,24 @@
 @layer base {
     :root {
         --surface: 255 255 255;
-        --surface-muted: 250 250 250;
-        --border: 228 228 231;
-        --text: 9 9 11;
-        --text-muted: 113 113 122;
-        --accent: 8 145 178;
-        --accent-soft: 236 254 255;
+        --surface-muted: 246 245 244;
+        --border: 232 230 227;
+        --text: 28 25 23;
+        --text-muted: 116 108 98;
+        --accent: 217 119 6;
+        --accent-soft: 255 251 235;
+        --rail: 12 10 9;
     }
 
     .dark {
-        --surface: 24 24 27;
-        --surface-muted: 9 9 11;
-        --border: 39 39 42;
-        --text: 250 250 250;
-        --text-muted: 161 161 170;
-        --accent: 34 211 238;
-        --accent-soft: 8 51 68;
+        --surface: 28 25 23;
+        --surface-muted: 12 10 9;
+        --border: 67 62 58;
+        --text: 250 250 249;
+        --text-muted: 168 162 158;
+        --accent: 251 191 36;
+        --accent-soft: 69 26 3;
+        --rail: 12 10 9;
     }
 
     html {
@@ -34,14 +36,15 @@
 
     body {
         overflow-x: hidden;
-        font-feature-settings: 'ss01' on, 'cv11' on;
+        font-feature-settings: 'ss01' on;
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
     }
 
     h1, h2, h3, .font-display {
-        font-family: Outfit, "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
-        letter-spacing: -0.025em;
+        font-family: Syne, Sora, ui-sans-serif, system-ui, sans-serif;
+        letter-spacing: -0.035em;
+        font-weight: 700;
     }
 
     img,
@@ -52,64 +55,97 @@
     }
 
     ::selection {
-        @apply bg-brand-200 dark:bg-brand-800 text-brand-950 dark:text-brand-50;
+        @apply bg-brand-300 text-ink-950;
     }
 
-    /* Form controls — quieter, premium */
     input:not([type='checkbox']):not([type='radio']):not([type='range']),
     select,
     textarea {
-        @apply rounded-xl border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900
-            focus:border-brand-500 focus:ring-brand-500/30;
+        @apply rounded-xl border-ink-200 dark:border-ink-700 bg-white dark:bg-ink-900
+            focus:border-brand-500 focus:ring-brand-500/25;
     }
 }
 
 @layer components {
-    /* App shell — soft aurora on zinc */
+    /*
+     | Ember Grid — Talksasa signature shell
+     | Warm stone canvas + technical grid + always-dark rail sidebar
+     */
     .app-shell {
-        @apply bg-zinc-50 text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50;
+        @apply bg-ink-50 text-ink-950 dark:bg-ink-950 dark:text-ink-50;
         background-image:
-            radial-gradient(ellipse 90% 60% at 10% -10%, rgb(6 182 212 / 0.09), transparent 55%),
-            radial-gradient(ellipse 70% 50% at 95% 0%, rgb(16 185 129 / 0.06), transparent 50%),
-            radial-gradient(ellipse 50% 40% at 50% 100%, rgb(8 145 178 / 0.04), transparent 60%);
+            radial-gradient(ellipse 70% 45% at 85% -10%, rgb(245 158 11 / 0.12), transparent 55%),
+            radial-gradient(ellipse 50% 35% at 0% 100%, rgb(28 25 23 / 0.04), transparent 50%),
+            linear-gradient(to right, rgb(28 25 23 / 0.035) 1px, transparent 1px),
+            linear-gradient(to bottom, rgb(28 25 23 / 0.035) 1px, transparent 1px);
+        background-size: auto, auto, 48px 48px, 48px 48px;
         background-attachment: fixed;
     }
 
     .dark .app-shell {
         background-image:
-            radial-gradient(ellipse 90% 55% at 15% -15%, rgb(6 182 212 / 0.14), transparent 55%),
-            radial-gradient(ellipse 60% 45% at 100% 0%, rgb(16 185 129 / 0.08), transparent 50%),
-            radial-gradient(ellipse 40% 30% at 50% 110%, rgb(8 145 178 / 0.06), transparent);
+            radial-gradient(ellipse 70% 45% at 80% -15%, rgb(245 158 11 / 0.14), transparent 55%),
+            radial-gradient(ellipse 45% 30% at 10% 110%, rgb(251 191 36 / 0.05), transparent 50%),
+            linear-gradient(to right, rgb(255 255 255 / 0.03) 1px, transparent 1px),
+            linear-gradient(to bottom, rgb(255 255 255 / 0.03) 1px, transparent 1px);
+        background-size: auto, auto, 48px 48px, 48px 48px;
     }
 
     .app-header {
-        @apply sticky top-0 z-20 border-b border-zinc-200/70 dark:border-zinc-800/70
-            bg-white/80 dark:bg-zinc-950/75 backdrop-blur-xl
-            supports-[backdrop-filter]:bg-white/65 dark:supports-[backdrop-filter]:bg-zinc-950/60;
+        @apply sticky top-0 z-20 border-b border-ink-200/60 dark:border-ink-800/60
+            bg-ink-50/85 dark:bg-ink-950/80 backdrop-blur-xl
+            supports-[backdrop-filter]:bg-ink-50/70 dark:supports-[backdrop-filter]:bg-ink-950/65;
     }
 
+    /* Always-dark navigation rail — signature chrome */
     .app-sidebar {
-        @apply bg-white/90 dark:bg-zinc-950/90 backdrop-blur-xl
-            border-r border-zinc-200/80 dark:border-zinc-800/80;
+        @apply border-r border-white/5 text-ink-100;
+        background:
+            radial-gradient(ellipse 80% 40% at 0% 0%, rgb(245 158 11 / 0.12), transparent 55%),
+            linear-gradient(180deg, #1c1917 0%, #0c0a09 100%);
+        box-shadow: inset -1px 0 0 rgb(255 255 255 / 0.04);
+    }
+
+    .app-sidebar .border-b,
+    .app-sidebar .border-t {
+        border-color: rgb(255 255 255 / 0.08) !important;
+    }
+
+    .app-sidebar a p,
+    .app-sidebar .text-slate-900,
+    .app-sidebar .dark\:text-white,
+    .app-sidebar p.text-sm.font-bold {
+        color: rgb(250 250 249) !important;
+    }
+
+    .app-sidebar .text-slate-500,
+    .app-sidebar .text-xs.text-slate-500,
+    .app-sidebar .dark\:text-slate-400 {
+        color: rgb(168 162 158) !important;
     }
 
     .brand-mark {
-        @apply w-8 h-8 rounded-xl bg-gradient-to-br from-brand-400 via-brand-600 to-emerald-600
-            flex items-center justify-center shadow-glow shrink-0;
+        @apply w-9 h-9 rounded-lg flex items-center justify-center shrink-0
+            bg-gradient-to-br from-brand-400 to-brand-700 shadow-glow
+            ring-1 ring-brand-300/40;
+    }
+
+    .brand-mark span {
+        @apply font-display font-extrabold tracking-tight text-ink-950;
     }
 
     /* Cards */
     .ui-card {
-        @apply bg-white/90 dark:bg-zinc-900/80 rounded-2xl border border-zinc-200/80 dark:border-zinc-800
+        @apply bg-white/90 dark:bg-ink-900/80 rounded-2xl border border-ink-200/70 dark:border-ink-800
             shadow-card backdrop-blur-sm transition-all duration-200;
     }
 
     .ui-card-interactive {
-        @apply ui-card hover:border-brand-300/70 dark:hover:border-brand-700/50 hover:shadow-card-hover;
+        @apply ui-card hover:border-brand-400/50 dark:hover:border-brand-600/40 hover:shadow-card-hover;
     }
 
     .ui-card-header {
-        @apply px-5 py-4 sm:px-6 sm:py-5 border-b border-zinc-100 dark:border-zinc-800/80;
+        @apply px-5 py-4 sm:px-6 sm:py-5 border-b border-ink-100 dark:border-ink-800/80;
     }
 
     .ui-card-body {
@@ -120,18 +156,18 @@
     .btn {
         @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold
             transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2
-            dark:focus-visible:ring-offset-zinc-950 disabled:opacity-50 disabled:pointer-events-none;
+            dark:focus-visible:ring-offset-ink-950 disabled:opacity-50 disabled:pointer-events-none;
     }
 
     .btn-primary {
-        @apply btn text-white shadow-sm
-            bg-gradient-to-b from-brand-500 to-brand-600 hover:from-brand-400 hover:to-brand-600
+        @apply btn text-ink-950 shadow-sm
+            bg-gradient-to-b from-brand-400 to-brand-500 hover:from-brand-300 hover:to-brand-500
             focus-visible:ring-brand-500 hover:shadow-glow active:scale-[0.98];
     }
 
     .btn-secondary {
-        @apply btn bg-zinc-100 hover:bg-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:hover:bg-zinc-700
-            dark:text-zinc-100 focus-visible:ring-zinc-400 border border-zinc-200/80 dark:border-zinc-700;
+        @apply btn bg-white hover:bg-ink-50 text-ink-800 dark:bg-ink-800 dark:hover:bg-ink-700
+            dark:text-ink-100 focus-visible:ring-ink-400 border border-ink-200 dark:border-ink-700;
     }
 
     .btn-success {
@@ -139,8 +175,8 @@
     }
 
     .btn-ghost {
-        @apply btn bg-transparent hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400
-            hover:text-zinc-900 dark:hover:text-white;
+        @apply btn bg-transparent hover:bg-ink-100 dark:hover:bg-ink-800 text-ink-600 dark:text-ink-400
+            hover:text-ink-950 dark:hover:text-white;
     }
 
     .btn-sm {
@@ -149,42 +185,61 @@
 
     .action-icon-btn {
         @apply inline-flex items-center justify-center w-9 h-9 shrink-0 rounded-xl transition-colors
-            hover:bg-zinc-100 dark:hover:bg-zinc-800;
+            hover:bg-ink-100 dark:hover:bg-ink-800;
     }
 
     .action-icon-btn svg {
         @apply w-5 h-5 shrink-0 pointer-events-none;
     }
 
-    /* Navigation */
+    /* Navigation — tuned for dark rail */
     .nav-section-label {
-        @apply px-3 py-2 text-[10px] font-semibold text-zinc-400 dark:text-zinc-500
-            uppercase tracking-[0.14em];
+        @apply px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em];
+        color: rgb(146 140 132) !important;
     }
 
     .nav-link {
-        @apply flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-zinc-600
-            dark:text-zinc-400 transition-all duration-200
-            hover:text-zinc-950 dark:hover:text-white hover:bg-zinc-100/90 dark:hover:bg-zinc-800/70;
+        @apply flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200;
+        color: rgb(214 211 209) !important;
+    }
+
+    .nav-link:hover {
+        color: rgb(255 255 255) !important;
+        background: rgb(255 255 255 / 0.06);
     }
 
     .nav-link-active {
-        @apply nav-link bg-brand-50 text-brand-800 dark:bg-brand-950/70 dark:text-brand-200
-            shadow-sm ring-1 ring-brand-200/80 dark:ring-brand-800/60;
+        @apply nav-link shadow-rail;
+        color: rgb(255 251 235) !important;
+        background: linear-gradient(90deg, rgb(245 158 11 / 0.18), rgb(255 255 255 / 0.04)) !important;
+        box-shadow: inset 3px 0 0 0 rgb(245 158 11);
     }
 
     .nav-link-accent {
-        @apply nav-link bg-gradient-to-r from-emerald-50 to-brand-50 dark:from-emerald-950/40 dark:to-brand-950/40
-            text-emerald-800 dark:text-emerald-200;
+        @apply nav-link;
+        color: rgb(253 230 138) !important;
+        background: rgb(245 158 11 / 0.08);
     }
 
-    /* Page titles */
+    .nav-link-accent:hover {
+        background: rgb(245 158 11 / 0.14);
+    }
+
+    /* Fallback for hard-coded active classes inside dark rail */
+    .app-sidebar a.bg-brand-50,
+    .app-sidebar a[class*='bg-brand-'],
+    .app-sidebar a[class*='ring-brand'] {
+        color: rgb(255 251 235) !important;
+        background: linear-gradient(90deg, rgb(245 158 11 / 0.18), rgb(255 255 255 / 0.04)) !important;
+        box-shadow: inset 3px 0 0 0 rgb(245 158 11);
+    }
+
     .page-title {
-        @apply font-display text-3xl font-bold tracking-tight text-zinc-950 dark:text-white;
+        @apply font-display text-3xl font-bold tracking-tighter text-ink-950 dark:text-white;
     }
 
     .page-subtitle {
-        @apply text-sm text-zinc-500 dark:text-zinc-400 mt-1;
+        @apply text-sm text-ink-500 dark:text-ink-400 mt-1.5 max-w-2xl;
     }
 
     /* Tables */
@@ -197,24 +252,24 @@
     }
 
     .ui-table thead {
-        @apply bg-zinc-50/90 dark:bg-zinc-900/80;
+        @apply bg-ink-50/90 dark:bg-ink-900/80;
     }
 
     .ui-table th {
-        @apply px-5 py-3.5 text-left text-[11px] font-semibold text-zinc-500 dark:text-zinc-400
-            uppercase tracking-[0.08em] whitespace-nowrap;
+        @apply px-5 py-3.5 text-left text-[11px] font-semibold text-ink-500 dark:text-ink-400
+            uppercase tracking-[0.1em] whitespace-nowrap;
     }
 
     .ui-table tbody {
-        @apply divide-y divide-zinc-100 dark:divide-zinc-800;
+        @apply divide-y divide-ink-100 dark:divide-ink-800;
     }
 
     .ui-table td {
-        @apply px-5 py-4 text-zinc-700 dark:text-zinc-300;
+        @apply px-5 py-4 text-ink-700 dark:text-ink-300;
     }
 
     .ui-table tbody tr {
-        @apply transition-colors hover:bg-zinc-50/90 dark:hover:bg-zinc-800/40;
+        @apply transition-colors hover:bg-brand-50/40 dark:hover:bg-ink-800/50;
     }
 
     .status-pill {
@@ -226,18 +281,21 @@
     }
 
     .hero-banner {
-        @apply relative overflow-hidden rounded-3xl border border-brand-400/20
-            bg-gradient-to-br from-brand-600 via-brand-700 to-emerald-700
-            dark:from-brand-800 dark:via-brand-900 dark:to-emerald-950
+        @apply relative overflow-hidden rounded-3xl border border-brand-500/30
+            bg-gradient-to-br from-ink-950 via-ink-900 to-ink-800
             text-white shadow-glow;
     }
 
     .hero-banner::before {
         content: '';
-        @apply absolute inset-0 opacity-40;
-        background-image:
-            radial-gradient(circle at 15% 85%, rgb(255 255 255 / 0.18) 0%, transparent 45%),
-            radial-gradient(circle at 85% 15%, rgb(255 255 255 / 0.12) 0%, transparent 40%);
+        @apply absolute inset-0;
+        background:
+            radial-gradient(circle at 85% 15%, rgb(245 158 11 / 0.35) 0%, transparent 40%),
+            radial-gradient(circle at 10% 90%, rgb(251 191 36 / 0.15) 0%, transparent 45%),
+            linear-gradient(to right, rgb(255 255 255 / 0.03) 1px, transparent 1px),
+            linear-gradient(to bottom, rgb(255 255 255 / 0.03) 1px, transparent 1px);
+        background-size: auto, auto, 32px 32px, 32px 32px;
+        opacity: 0.9;
     }
 
     .page-enter > * {
@@ -246,9 +304,9 @@
     }
 
     .page-enter > *:nth-child(1) { animation-delay: 0ms; }
-    .page-enter > *:nth-child(2) { animation-delay: 50ms; }
-    .page-enter > *:nth-child(3) { animation-delay: 100ms; }
-    .page-enter > *:nth-child(4) { animation-delay: 150ms; }
+    .page-enter > *:nth-child(2) { animation-delay: 45ms; }
+    .page-enter > *:nth-child(3) { animation-delay: 90ms; }
+    .page-enter > *:nth-child(4) { animation-delay: 135ms; }
 
     @media (max-width: 639px) {
         main > div > .space-y-6 > :first-child.flex.items-center.justify-between,
@@ -257,9 +315,7 @@
             align-items: stretch;
             gap: 1rem;
         }
-    }
 
-    @media (max-width: 639px) {
         main h1.text-3xl,
         .page-title {
             font-size: 1.5rem;
@@ -270,17 +326,15 @@
             font-size: 1.25rem;
             line-height: 1.75rem;
         }
-    }
 
-    .overflow-x-auto > table {
-        min-width: 640px;
-    }
-
-    @media (max-width: 639px) {
         main .rounded-2xl.border.p-6,
         .ui-card .ui-card-body {
             padding: 1rem;
         }
+    }
+
+    .overflow-x-auto > table {
+        min-width: 640px;
     }
 }
 

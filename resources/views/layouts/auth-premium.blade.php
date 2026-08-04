@@ -41,9 +41,9 @@
         }
 
         body {
-            font-family: 'Inter', sans-serif;
-            background: white;
-            color: #1e293b;
+            font-family: Sora, ui-sans-serif, system-ui, sans-serif;
+            background: #f6f5f4;
+            color: #1c1917;
         }
 
         /* SPLIT SCREEN GRID - CORE LAYOUT */
@@ -83,12 +83,12 @@
 
         @media (prefers-color-scheme: dark) {
             .auth-panel {
-                background: #0f172a !important;
+                background: #0c0a09 !important;
             }
         }
 
         html.dark .auth-panel {
-            background: #0f172a !important;
+            background: #0c0a09 !important;
         }
 
         /* HEADER */
@@ -245,7 +245,9 @@
             height: 100vh !important;
             width: 100% !important;
             overflow: hidden !important;
-            background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #3d1f47 100%) !important;
+            background:
+                radial-gradient(ellipse 70% 50% at 100% 0%, rgba(245, 158, 11, 0.28), transparent 55%),
+                linear-gradient(165deg, #1c1917 0%, #0c0a09 100%) !important;
             flex-direction: column !important;
             align-items: center !important;
             justify-content: center !important;
@@ -281,11 +283,11 @@
         }
 
         .glow-purple {
-            background: linear-gradient(135deg, #c084fc 0%, #a855f7 100%) !important;
+            background: linear-gradient(135deg, #fbbf24 0%, #d97706 100%) !important;
         }
 
         .glow-blue {
-            background: linear-gradient(135deg, #38bdf8 0%, #0284c7 100%) !important;
+            background: linear-gradient(135deg, #f59e0b 0%, #92400e 100%) !important;
         }
 
         /* ANIMATION */
@@ -492,33 +494,34 @@
         .auth-btn-primary {
             width: 100% !important;
             padding: 0.75rem 1rem !important;
-            background: #0f172a !important;
-            color: white !important;
+            background: linear-gradient(180deg, #fbbf24 0%, #d97706 100%) !important;
+            color: #0c0a09 !important;
             border: none !important;
-            border-radius: 0.375rem !important;
-            font-weight: 600 !important;
+            border-radius: 0.75rem !important;
+            font-weight: 700 !important;
             font-size: 0.875rem !important;
             cursor: pointer !important;
             transition: all 0.2s !important;
             font-family: inherit !important;
+            box-shadow: 0 0 0 1px rgba(217, 119, 6, 0.25), 0 10px 28px -8px rgba(217, 119, 6, 0.45) !important;
         }
 
         @media (prefers-color-scheme: dark) {
             .auth-btn-primary {
-                background: white !important;
-                color: #0f172a !important;
+                background: linear-gradient(180deg, #fbbf24 0%, #d97706 100%) !important;
+                color: #0c0a09 !important;
             }
         }
 
         .auth-btn-primary:hover {
-            background: #1e293b !important;
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1) !important;
+            background: linear-gradient(180deg, #fcd34d 0%, #f59e0b 100%) !important;
+            box-shadow: 0 0 0 1px rgba(217, 119, 6, 0.35), 0 14px 32px -8px rgba(217, 119, 6, 0.55) !important;
         }
 
         @media (prefers-color-scheme: dark) {
             .auth-btn-primary:hover {
-                background: #f1f5f9 !important;
-                box-shadow: 0 10px 15px -3px rgba(168, 85, 244, 0.05) !important;
+                background: linear-gradient(180deg, #fcd34d 0%, #f59e0b 100%) !important;
+                box-shadow: 0 0 0 1px rgba(217, 119, 6, 0.35), 0 14px 32px -8px rgba(217, 119, 6, 0.55) !important;
             }
         }
 
@@ -582,30 +585,30 @@
 
         .auth-form-container a {
             text-decoration: none !important;
-            color: #a855f7 !important;
+            color: #b45309 !important;
             font-weight: 600 !important;
         }
 
         .auth-form-container a:hover {
-            color: #9333ea !important;
+            color: #92400e !important;
         }
 
         @media (prefers-color-scheme: dark) {
             .auth-form-container a {
-                color: #d8b4fe !important;
+                color: #fbbf24 !important;
             }
 
             .auth-form-container a:hover {
-                color: #c084fc !important;
+                color: #fcd34d !important;
             }
         }
 
         html.dark .auth-form-container a {
-            color: #d8b4fe !important;
+            color: #fbbf24 !important;
         }
 
         html.dark .auth-form-container a:hover {
-            color: #c084fc !important;
+            color: #fcd34d !important;
         }
     </style>
 </head>
@@ -620,13 +623,13 @@
                     @if(!empty($resellerBranding['logo_url']))
                         <img src="{{ $resellerBranding['logo_url'] }}" alt="Logo" class="h-11 w-auto max-w-[140px] object-contain">
                     @else
-                    <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-purple-600 to-purple-700 flex items-center justify-center text-white font-bold text-lg shadow-lg group-hover:shadow-xl group-hover:shadow-purple-500/20 transition-shadow">
-                        {{ strtoupper(substr($resellerBranding['company_name'] ?? 'T', 0, 1)) }}
+                    <div class="brand-mark w-11 h-11">
+                        <span class="text-lg">{{ strtoupper(substr($resellerBranding['company_name'] ?? 'T', 0, 1)) }}</span>
                     </div>
                     @endif
                     <div>
-                        <div class="font-bold text-base leading-tight tracking-tight text-slate-900 dark:text-white">{{ $resellerBranding['company_name'] ?? config('app.name', 'Talksasa') }}</div>
-                        <div class="text-xs font-medium text-slate-500 dark:text-slate-400 tracking-wide">{{ strtoupper($resellerBranding['tagline'] ?? 'CLOUD') }}</div>
+                        <div class="font-display font-bold text-base leading-tight tracking-tight text-ink-950 dark:text-white">{{ $resellerBranding['company_name'] ?? config('app.name', 'Talksasa') }}</div>
+                        <div class="text-[10px] font-semibold text-brand-700 dark:text-brand-400 tracking-[0.18em] uppercase">{{ $resellerBranding['tagline'] ?? 'Cloud' }}</div>
                     </div>
                 </a>
             </div>
@@ -661,44 +664,51 @@
             <div class="glow-orb glow-blue w-96 h-96 -bottom-20 -left-32"></div>
             <div class="glow-orb glow-purple w-80 h-80 top-1/3 right-1/3"></div>
 
-            <!-- Content: Floating cards -->
             <div class="auth-visual-content">
                 <div class="relative w-full max-w-lg">
-                    <!-- Central card -->
-                    <div class="float-animation bg-white/8 border border-white/15 rounded-2xl p-8 backdrop-blur-xl shadow-2xl">
+                    <div class="mb-10 max-w-md">
+                        <p class="text-brand-400 text-xs font-semibold uppercase tracking-[0.2em] mb-3">Talksasa Cloud</p>
+                        <h2 class="font-display text-4xl font-extrabold tracking-tighter text-white leading-[1.1]">
+                            Ship stacks.<br>Bill cleanly.
+                        </h2>
+                        <p class="mt-4 text-ink-300 text-sm leading-relaxed">
+                            Provision containers, renewals, and reseller catalogs from one ember-lit rail.
+                        </p>
+                    </div>
+
+                    <div class="float-animation bg-white/5 border border-white/10 rounded-2xl p-8 backdrop-blur-xl shadow-2xl">
                         <div class="space-y-6">
                             <div class="flex items-center justify-between">
-                                <div class="text-sm font-semibold text-white/90 tracking-wider">INFRASTRUCTURE</div>
-                                <div class="w-2.5 h-2.5 rounded-full bg-gradient-to-r from-purple-400 to-blue-400 animate-pulse shadow-lg shadow-purple-500/50"></div>
+                                <div class="text-sm font-semibold text-white/90 tracking-[0.14em]">INFRASTRUCTURE</div>
+                                <div class="w-2.5 h-2.5 rounded-full bg-brand-400 animate-pulse shadow-lg shadow-brand-500/40"></div>
                             </div>
                             <div class="space-y-3">
                                 <div class="flex items-center gap-3">
-                                    <div class="w-2 h-2 rounded-full bg-emerald-400/80 shadow-lg shadow-emerald-500/30"></div>
+                                    <div class="w-2 h-2 rounded-full bg-emerald-400/80"></div>
                                     <div class="text-xs text-white/70 font-medium">Services: 3 running</div>
                                 </div>
                                 <div class="flex items-center gap-3">
-                                    <div class="w-2 h-2 rounded-full bg-blue-400/80 shadow-lg shadow-blue-500/30"></div>
+                                    <div class="w-2 h-2 rounded-full bg-brand-400/90"></div>
                                     <div class="text-xs text-white/70 font-medium">Status: All systems healthy</div>
                                 </div>
                                 <div class="flex items-center gap-3">
-                                    <div class="w-2 h-2 rounded-full bg-purple-400/80 shadow-lg shadow-purple-500/30"></div>
+                                    <div class="w-2 h-2 rounded-full bg-brand-300/80"></div>
                                     <div class="text-xs text-white/70 font-medium">Uptime: 99.98%</div>
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Top-right card -->
-                    <div class="absolute -top-16 -right-16 w-56 h-40 float-animation" style="animation-delay: 1.2s;">
-                        <div class="bg-white/8 border border-white/15 rounded-2xl p-4 backdrop-blur-xl h-full shadow-lg">
-                            <div class="text-xs font-semibold text-white/80 mb-3 tracking-wider">DEPLOYMENT</div>
+                    <div class="absolute -top-4 -right-8 w-56 h-40 float-animation" style="animation-delay: 1.2s;">
+                        <div class="bg-white/5 border border-white/10 rounded-2xl p-4 backdrop-blur-xl h-full shadow-lg">
+                            <div class="text-xs font-semibold text-white/80 mb-3 tracking-[0.14em]">DEPLOYMENT</div>
                             <div class="space-y-2">
                                 <div class="flex items-center gap-2">
                                     <div class="h-1 bg-white/30 rounded-full flex-1"></div>
                                     <span class="text-xs text-white/50 font-medium">78%</span>
                                 </div>
                                 <div class="flex items-center gap-2">
-                                    <div class="h-1 bg-gradient-to-r from-purple-400 to-blue-400 rounded-full flex-1" style="width: 85%"></div>
+                                    <div class="h-1 bg-gradient-to-r from-brand-300 to-brand-600 rounded-full flex-1" style="width: 85%"></div>
                                     <span class="text-xs text-white/50 font-medium">85%</span>
                                 </div>
                                 <div class="flex items-center gap-2">
@@ -709,37 +719,19 @@
                         </div>
                     </div>
 
-                    <!-- Bottom-left card -->
-                    <div class="absolute -bottom-12 -left-20 w-48 h-32 float-animation" style="animation-delay: 2.4s;">
-                        <div class="bg-white/8 border border-white/15 rounded-2xl p-4 backdrop-blur-xl h-full flex items-center shadow-lg">
+                    <div class="absolute -bottom-8 -left-12 w-48 h-32 float-animation" style="animation-delay: 2.4s;">
+                        <div class="bg-white/5 border border-white/10 rounded-2xl p-4 backdrop-blur-xl h-full flex items-center shadow-lg">
                             <div>
-                                <div class="text-xs font-semibold text-white/70 mb-2 tracking-wider">LATENCY</div>
-                                <div class="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-300 to-blue-300">42ms</div>
+                                <div class="text-xs font-semibold text-white/70 mb-2 tracking-[0.14em]">LATENCY</div>
+                                <div class="font-display text-3xl font-extrabold text-brand-300">42ms</div>
                                 <div class="text-xs text-white/50 mt-1 font-medium">avg response</div>
                             </div>
                         </div>
                     </div>
-
-                    <!-- Connecting lines -->
-                    <svg class="absolute inset-0 w-full h-full opacity-30" style="filter: drop-shadow(0 0 30px rgba(168, 85, 247, 0.2))">
-                        <line x1="50%" y1="10%" x2="75%" y2="25%" stroke="url(#grad1)" stroke-width="1.5" vector-effect="non-scaling-stroke" />
-                        <line x1="50%" y1="90%" x2="25%" y2="75%" stroke="url(#grad2)" stroke-width="1.5" vector-effect="non-scaling-stroke" />
-                        <defs>
-                            <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
-                                <stop offset="0%" style="stop-color:#c084fc;stop-opacity:0.8" />
-                                <stop offset="100%" style="stop-color:#38bdf8;stop-opacity:0" />
-                            </linearGradient>
-                            <linearGradient id="grad2" x1="0%" y1="0%" x2="100%" y2="100%">
-                                <stop offset="0%" style="stop-color:#38bdf8;stop-opacity:0.8" />
-                                <stop offset="100%" style="stop-color:#c084fc;stop-opacity:0" />
-                            </linearGradient>
-                        </defs>
-                    </svg>
                 </div>
             </div>
 
-            <!-- Bottom accent -->
-            <div class="absolute bottom-0 right-0 w-[600px] h-[600px] rounded-full bg-gradient-to-t from-purple-600/15 via-transparent to-transparent blur-3xl"></div>
+            <div class="absolute bottom-0 right-0 w-[600px] h-[600px] rounded-full bg-gradient-to-t from-brand-600/20 via-transparent to-transparent blur-3xl"></div>
         </div>
     </div>
     <x-app-dialog />

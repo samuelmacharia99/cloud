@@ -8,9 +8,9 @@
     <div class="hero-banner p-6 sm:p-8">
         <div class="relative flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
-                <p class="text-brand-100 text-sm font-semibold uppercase tracking-wider">Customer portal</p>
-                <h1 class="text-2xl sm:text-3xl font-bold mt-1">Welcome back, {{ auth()->user()->name }}</h1>
-                <p class="text-blue-100/90 mt-2 max-w-xl text-sm sm:text-base">Manage services, domains, invoices, and support — all in one place.</p>
+                <p class="text-brand-400 text-xs font-semibold uppercase tracking-[0.18em]">Customer portal</p>
+                <h1 class="font-display text-2xl sm:text-4xl font-extrabold tracking-tighter mt-2">Welcome back, {{ auth()->user()->name }}</h1>
+                <p class="text-ink-300 mt-3 max-w-xl text-sm sm:text-base">Manage services, domains, invoices, and support — all in one place.</p>
             </div>
             <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/15 backdrop-blur-sm border border-white/20 text-sm font-semibold shrink-0">
                 <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>

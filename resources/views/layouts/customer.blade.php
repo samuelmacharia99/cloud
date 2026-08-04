@@ -26,7 +26,7 @@
                             <img src="{{ $resellerBranding['logo_url'] }}" alt="Logo" class="h-8 w-auto max-w-[120px] object-contain">
                         @else
                             <div class="brand-mark">
-                                <span class="text-white font-bold text-sm">{{ strtoupper(substr($resellerBranding['company_name'] ?? 'TC', 0, 2)) }}</span>
+                                <span>{{ strtoupper(substr($resellerBranding['company_name'] ?? 'TC', 0, 2)) }}</span>
                             </div>
                         @endif
                         <div class="min-w-0">
