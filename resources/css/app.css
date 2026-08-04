@@ -9,20 +9,22 @@
 @layer base {
     :root {
         --surface: 255 255 255;
-        --surface-muted: 248 250 252;
-        --border: 226 232 240;
-        --text: 15 23 42;
-        --text-muted: 100 116 139;
-        --accent: 37 99 235;
+        --surface-muted: 250 250 250;
+        --border: 228 228 231;
+        --text: 9 9 11;
+        --text-muted: 113 113 122;
+        --accent: 8 145 178;
+        --accent-soft: 236 254 255;
     }
 
     .dark {
-        --surface: 15 23 42;
-        --surface-muted: 2 6 23;
-        --border: 51 65 85;
-        --text: 248 250 252;
-        --text-muted: 148 163 184;
-        --accent: 96 165 250;
+        --surface: 24 24 27;
+        --surface-muted: 9 9 11;
+        --border: 39 39 42;
+        --text: 250 250 250;
+        --text-muted: 161 161 170;
+        --accent: 34 211 238;
+        --accent-soft: 8 51 68;
     }
 
     html {
@@ -32,7 +34,14 @@
 
     body {
         overflow-x: hidden;
-        font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+        font-feature-settings: 'ss01' on, 'cv11' on;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+    }
+
+    h1, h2, h3, .font-display {
+        font-family: Outfit, "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+        letter-spacing: -0.025em;
     }
 
     img,
@@ -45,47 +54,62 @@
     ::selection {
         @apply bg-brand-200 dark:bg-brand-800 text-brand-950 dark:text-brand-50;
     }
+
+    /* Form controls — quieter, premium */
+    input:not([type='checkbox']):not([type='radio']):not([type='range']),
+    select,
+    textarea {
+        @apply rounded-xl border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900
+            focus:border-brand-500 focus:ring-brand-500/30;
+    }
 }
 
 @layer components {
-    /* App shell — subtle cloud atmosphere */
+    /* App shell — soft aurora on zinc */
     .app-shell {
-        @apply bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100;
+        @apply bg-zinc-50 text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50;
         background-image:
-            radial-gradient(ellipse 80% 50% at 50% -20%, rgb(59 130 246 / 0.08), transparent),
-            radial-gradient(ellipse 60% 40% at 100% 0%, rgb(14 165 233 / 0.05), transparent);
+            radial-gradient(ellipse 90% 60% at 10% -10%, rgb(6 182 212 / 0.09), transparent 55%),
+            radial-gradient(ellipse 70% 50% at 95% 0%, rgb(16 185 129 / 0.06), transparent 50%),
+            radial-gradient(ellipse 50% 40% at 50% 100%, rgb(8 145 178 / 0.04), transparent 60%);
+        background-attachment: fixed;
     }
 
     .dark .app-shell {
         background-image:
-            radial-gradient(ellipse 80% 50% at 50% -20%, rgb(37 99 235 / 0.12), transparent),
-            radial-gradient(ellipse 60% 40% at 100% 0%, rgb(6 182 212 / 0.06), transparent);
+            radial-gradient(ellipse 90% 55% at 15% -15%, rgb(6 182 212 / 0.14), transparent 55%),
+            radial-gradient(ellipse 60% 45% at 100% 0%, rgb(16 185 129 / 0.08), transparent 50%),
+            radial-gradient(ellipse 40% 30% at 50% 110%, rgb(8 145 178 / 0.06), transparent);
     }
 
-    /* Glass header */
     .app-header {
-        @apply sticky top-0 z-20 border-b border-slate-200/80 dark:border-slate-800/80
-            bg-white/85 dark:bg-slate-900/85 backdrop-blur-md supports-[backdrop-filter]:bg-white/70
-            dark:supports-[backdrop-filter]:bg-slate-900/70;
+        @apply sticky top-0 z-20 border-b border-zinc-200/70 dark:border-zinc-800/70
+            bg-white/80 dark:bg-zinc-950/75 backdrop-blur-xl
+            supports-[backdrop-filter]:bg-white/65 dark:supports-[backdrop-filter]:bg-zinc-950/60;
     }
 
-    /* Sidebar */
     .app-sidebar {
-        @apply bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm border-r border-slate-200 dark:border-slate-800;
+        @apply bg-white/90 dark:bg-zinc-950/90 backdrop-blur-xl
+            border-r border-zinc-200/80 dark:border-zinc-800/80;
+    }
+
+    .brand-mark {
+        @apply w-8 h-8 rounded-xl bg-gradient-to-br from-brand-400 via-brand-600 to-emerald-600
+            flex items-center justify-center shadow-glow shrink-0;
     }
 
     /* Cards */
     .ui-card {
-        @apply bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800
-            shadow-card transition-all duration-200;
+        @apply bg-white/90 dark:bg-zinc-900/80 rounded-2xl border border-zinc-200/80 dark:border-zinc-800
+            shadow-card backdrop-blur-sm transition-all duration-200;
     }
 
     .ui-card-interactive {
-        @apply ui-card hover:border-brand-300/60 dark:hover:border-brand-700/60 hover:shadow-card-hover;
+        @apply ui-card hover:border-brand-300/70 dark:hover:border-brand-700/50 hover:shadow-card-hover;
     }
 
     .ui-card-header {
-        @apply px-5 py-4 sm:px-6 sm:py-5 border-b border-slate-200/80 dark:border-slate-800;
+        @apply px-5 py-4 sm:px-6 sm:py-5 border-b border-zinc-100 dark:border-zinc-800/80;
     }
 
     .ui-card-body {
@@ -95,27 +119,28 @@
     /* Buttons */
     .btn {
         @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold
-            transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2
-            dark:focus-visible:ring-offset-slate-900 disabled:opacity-50 disabled:pointer-events-none;
+            transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2
+            dark:focus-visible:ring-offset-zinc-950 disabled:opacity-50 disabled:pointer-events-none;
     }
 
     .btn-primary {
-        @apply btn bg-brand-600 hover:bg-brand-700 text-white shadow-sm hover:shadow-glow
-            focus-visible:ring-brand-500;
+        @apply btn text-white shadow-sm
+            bg-gradient-to-b from-brand-500 to-brand-600 hover:from-brand-400 hover:to-brand-600
+            focus-visible:ring-brand-500 hover:shadow-glow active:scale-[0.98];
     }
 
     .btn-secondary {
-        @apply btn bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700
-            dark:text-slate-100 focus-visible:ring-slate-400;
+        @apply btn bg-zinc-100 hover:bg-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:hover:bg-zinc-700
+            dark:text-zinc-100 focus-visible:ring-zinc-400 border border-zinc-200/80 dark:border-zinc-700;
     }
 
     .btn-success {
-        @apply btn bg-emerald-600 hover:bg-emerald-700 text-white focus-visible:ring-emerald-500;
+        @apply btn bg-emerald-600 hover:bg-emerald-500 text-white focus-visible:ring-emerald-500;
     }
 
     .btn-ghost {
-        @apply btn bg-transparent hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400
-            hover:text-slate-900 dark:hover:text-white;
+        @apply btn bg-transparent hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400
+            hover:text-zinc-900 dark:hover:text-white;
     }
 
     .btn-sm {
@@ -123,7 +148,8 @@
     }
 
     .action-icon-btn {
-        @apply inline-flex items-center justify-center w-9 h-9 shrink-0 rounded-lg transition-colors;
+        @apply inline-flex items-center justify-center w-9 h-9 shrink-0 rounded-xl transition-colors
+            hover:bg-zinc-100 dark:hover:bg-zinc-800;
     }
 
     .action-icon-btn svg {
@@ -132,24 +158,33 @@
 
     /* Navigation */
     .nav-section-label {
-        @apply px-4 py-2 text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest;
+        @apply px-3 py-2 text-[10px] font-semibold text-zinc-400 dark:text-zinc-500
+            uppercase tracking-[0.14em];
     }
 
     .nav-link {
-        @apply flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-600
-            dark:text-slate-400 transition-all duration-150
-            hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/80;
+        @apply flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-zinc-600
+            dark:text-zinc-400 transition-all duration-200
+            hover:text-zinc-950 dark:hover:text-white hover:bg-zinc-100/90 dark:hover:bg-zinc-800/70;
     }
 
     .nav-link-active {
-        @apply nav-link bg-brand-50 text-brand-700 dark:bg-brand-950/60 dark:text-brand-300
-            shadow-sm ring-1 ring-brand-100 dark:ring-brand-900/50;
+        @apply nav-link bg-brand-50 text-brand-800 dark:bg-brand-950/70 dark:text-brand-200
+            shadow-sm ring-1 ring-brand-200/80 dark:ring-brand-800/60;
     }
 
     .nav-link-accent {
-        @apply nav-link bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/50 dark:to-teal-950/50
-            text-emerald-700 dark:text-emerald-300 hover:from-emerald-100 hover:to-teal-100
-            dark:hover:from-emerald-900/50 dark:hover:to-teal-900/50;
+        @apply nav-link bg-gradient-to-r from-emerald-50 to-brand-50 dark:from-emerald-950/40 dark:to-brand-950/40
+            text-emerald-800 dark:text-emerald-200;
+    }
+
+    /* Page titles */
+    .page-title {
+        @apply font-display text-3xl font-bold tracking-tight text-zinc-950 dark:text-white;
+    }
+
+    .page-subtitle {
+        @apply text-sm text-zinc-500 dark:text-zinc-400 mt-1;
     }
 
     /* Tables */
@@ -162,27 +197,26 @@
     }
 
     .ui-table thead {
-        @apply bg-slate-50/80 dark:bg-slate-800/50;
+        @apply bg-zinc-50/90 dark:bg-zinc-900/80;
     }
 
     .ui-table th {
-        @apply px-5 py-3.5 text-left text-[11px] font-bold text-slate-500 dark:text-slate-400
-            uppercase tracking-wider whitespace-nowrap;
+        @apply px-5 py-3.5 text-left text-[11px] font-semibold text-zinc-500 dark:text-zinc-400
+            uppercase tracking-[0.08em] whitespace-nowrap;
     }
 
     .ui-table tbody {
-        @apply divide-y divide-slate-100 dark:divide-slate-800;
+        @apply divide-y divide-zinc-100 dark:divide-zinc-800;
     }
 
     .ui-table td {
-        @apply px-5 py-4 text-slate-700 dark:text-slate-300;
+        @apply px-5 py-4 text-zinc-700 dark:text-zinc-300;
     }
 
     .ui-table tbody tr {
-        @apply transition-colors hover:bg-slate-50/80 dark:hover:bg-slate-800/40;
+        @apply transition-colors hover:bg-zinc-50/90 dark:hover:bg-zinc-800/40;
     }
 
-    /* Status pills */
     .status-pill {
         @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold;
     }
@@ -191,33 +225,31 @@
         @apply w-1.5 h-1.5 rounded-full shrink-0;
     }
 
-    /* Hero banner */
     .hero-banner {
-        @apply relative overflow-hidden rounded-2xl border border-brand-500/20
-            bg-gradient-to-br from-brand-600 via-brand-600 to-cyan-600
-            dark:from-brand-800 dark:via-brand-900 dark:to-cyan-900
-            text-white shadow-lg;
+        @apply relative overflow-hidden rounded-3xl border border-brand-400/20
+            bg-gradient-to-br from-brand-600 via-brand-700 to-emerald-700
+            dark:from-brand-800 dark:via-brand-900 dark:to-emerald-950
+            text-white shadow-glow;
     }
 
     .hero-banner::before {
         content: '';
-        @apply absolute inset-0 opacity-30;
-        background-image: radial-gradient(circle at 20% 80%, rgb(255 255 255 / 0.15) 0%, transparent 50%),
-            radial-gradient(circle at 80% 20%, rgb(255 255 255 / 0.1) 0%, transparent 40%);
+        @apply absolute inset-0 opacity-40;
+        background-image:
+            radial-gradient(circle at 15% 85%, rgb(255 255 255 / 0.18) 0%, transparent 45%),
+            radial-gradient(circle at 85% 15%, rgb(255 255 255 / 0.12) 0%, transparent 40%);
     }
 
-    /* Page enter animation */
     .page-enter > * {
         @apply animate-slide-up;
         animation-fill-mode: both;
     }
 
     .page-enter > *:nth-child(1) { animation-delay: 0ms; }
-    .page-enter > *:nth-child(2) { animation-delay: 60ms; }
-    .page-enter > *:nth-child(3) { animation-delay: 120ms; }
-    .page-enter > *:nth-child(4) { animation-delay: 180ms; }
+    .page-enter > *:nth-child(2) { animation-delay: 50ms; }
+    .page-enter > *:nth-child(3) { animation-delay: 100ms; }
+    .page-enter > *:nth-child(4) { animation-delay: 150ms; }
 
-    /* Stack common page headers on small screens */
     @media (max-width: 639px) {
         main > div > .space-y-6 > :first-child.flex.items-center.justify-between,
         main > div > .space-y-8 > :first-child.flex.items-center.justify-between {

@@ -7,26 +7,24 @@
 
         <title>@yield('title', 'Sign In') — {{ config('app.name', 'Talksasa Cloud') }}</title>
 
-        <!-- Fonts -->
-        <link rel="preconnect" href="https://fonts.bunny.net">
-        <link href="https://fonts.bunny.net/css?family=figtree:400,500,600&display=swap" rel="stylesheet" />
+        @include('layouts.partials.fonts')
 
         <!-- Scripts -->
         @vite(['resources/css/app.css', 'resources/js/app.js'])
         <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     </head>
-    <body class="font-sans antialiased bg-white dark:bg-slate-950 text-slate-900 dark:text-white">
+    <body class="font-sans antialiased app-shell">
         <div class="min-h-screen flex">
             <!-- Left Brand Panel (hidden on mobile) -->
-            <div class="hidden lg:flex lg:w-5/12 bg-gradient-to-br from-blue-600 to-blue-800 text-white flex-col justify-between p-12">
+            <div class="hidden lg:flex lg:w-5/12 bg-gradient-to-br from-brand-700 via-brand-800 to-emerald-900 text-white flex-col justify-between p-12">
                 <div>
                     <a href="/" class="inline-flex items-center gap-2 mb-12">
-                        <div class="w-10 h-10 rounded-xl bg-white/20 backdrop-blur flex items-center justify-center">
+                        <div class="brand-mark bg-white/15 shadow-none ring-1 ring-white/20">
                             <span class="text-white font-bold">TC</span>
                         </div>
-                        <div class="font-bold">
+                        <div class="font-display font-bold">
                             <span class="text-lg">Talksasa</span>
-                            <span class="text-xs block opacity-90">Cloud</span>
+                            <span class="text-xs block opacity-90 font-sans font-medium">Cloud</span>
                         </div>
                     </a>
                     <div class="space-y-8 mt-12">

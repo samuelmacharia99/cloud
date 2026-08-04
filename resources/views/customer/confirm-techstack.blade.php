@@ -32,8 +32,8 @@
 >
     <div class="flex items-start justify-between gap-4">
         <div>
-            <h1 class="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Choose Your Hosting Package</h1>
-            <p class="text-slate-600 dark:text-slate-400 mt-1">Plans are listed from lowest to highest monthly price.</p>
+            <h1 class="page-title text-balance">Choose Your Hosting Package</h1>
+            <p class="page-subtitle">Plans are listed from lowest to highest monthly price.</p>
         </div>
         <a href="{{ route('customer.cart.index') }}" class="relative shrink-0 mt-1" title="Cart">
             <svg class="w-6 h-6 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -109,8 +109,8 @@
                     @click="selectProduct({{ $product->id }}, {{ $product->reseller_product_id ?? 'null' }}, @js($product->name), {{ $monthly }}, {{ $yearly }})"
                     class="relative flex flex-col h-full text-left rounded-2xl border bg-white dark:bg-slate-900 p-5 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950"
                     :class="selectedProductId === {{ $product->id }}
-                        ? 'border-blue-600 dark:border-blue-500 ring-2 ring-blue-600/20 dark:ring-blue-400/30 shadow-md'
-                        : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-600 hover:shadow-sm'"
+                        ? 'border-brand-600 dark:border-brand-400 ring-2 ring-brand-600/15 dark:ring-brand-400/25 shadow-card-hover'
+                        : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-600 hover:shadow-card'"
                 >
                     @if($isFeatured)
                         <span class="absolute top-3 right-3 inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-950/50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-200">
@@ -120,16 +120,16 @@
 
                     <div class="flex items-start justify-between gap-3 mb-4 pr-12">
                         <div>
-                            <h3 class="text-lg font-bold text-slate-900 dark:text-white leading-snug">{{ $product->name }}</h3>
+                            <h3 class="font-display text-lg font-bold text-zinc-950 dark:text-white leading-snug">{{ $product->name }}</h3>
                             @if($product->description)
-                                <p class="mt-1 text-sm text-slate-500 dark:text-slate-400 line-clamp-2">{{ $product->description }}</p>
+                                <p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400 line-clamp-2">{{ $product->description }}</p>
                             @endif
                         </div>
                         <span
                             class="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2"
                             :class="selectedProductId === {{ $product->id }}
-                                ? 'border-blue-600 bg-blue-600 text-white'
-                                : 'border-slate-300 dark:border-slate-600'"
+                                ? 'border-brand-600 bg-brand-600 text-white'
+                                : 'border-zinc-300 dark:border-zinc-600'"
                             aria-hidden="true"
                         >
                             <svg x-show="selectedProductId === {{ $product->id }}" class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>
@@ -138,31 +138,31 @@
 
                     <div class="mb-5">
                         <div class="flex items-baseline gap-1">
-                            <span class="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">{{ $symbol }}{{ number_format($monthly, 0) }}</span>
-                            <span class="text-sm text-slate-500 dark:text-slate-400">/mo</span>
+                            <span class="font-display text-3xl font-bold tracking-tight text-zinc-950 dark:text-white">{{ $symbol }}{{ number_format($monthly, 0) }}</span>
+                            <span class="text-sm text-zinc-500 dark:text-zinc-400">/mo</span>
                         </div>
                         @if($product->yearly_price)
-                            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
                                 or {{ $symbol }}{{ number_format($yearly, 0) }}/year
                             </p>
                         @endif
                     </div>
 
                     @if($cpu !== null || $memoryLabel !== null || $diskGb !== null)
-                        <div class="grid grid-cols-3 gap-2 mb-5 rounded-xl bg-slate-50 dark:bg-slate-800/60 p-3">
+                        <div class="grid grid-cols-3 gap-2 mb-5 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 p-3 ring-1 ring-zinc-100 dark:ring-zinc-800">
                             <div class="text-center">
-                                <p class="text-[10px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">CPU</p>
-                                <p class="mt-0.5 text-sm font-semibold text-slate-900 dark:text-white">
+                                <p class="text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">CPU</p>
+                                <p class="mt-0.5 text-sm font-semibold text-zinc-950 dark:text-white">
                                     {{ $cpu !== null ? rtrim(rtrim(number_format((float) $cpu, 2), '0'), '.') : '—' }}
                                 </p>
                             </div>
-                            <div class="text-center border-x border-slate-200 dark:border-slate-700">
-                                <p class="text-[10px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">RAM</p>
-                                <p class="mt-0.5 text-sm font-semibold text-slate-900 dark:text-white">{{ $memoryLabel ?? '—' }}</p>
+                            <div class="text-center border-x border-zinc-200 dark:border-zinc-700">
+                                <p class="text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">RAM</p>
+                                <p class="mt-0.5 text-sm font-semibold text-zinc-950 dark:text-white">{{ $memoryLabel ?? '—' }}</p>
                             </div>
                             <div class="text-center">
-                                <p class="text-[10px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Disk</p>
-                                <p class="mt-0.5 text-sm font-semibold text-slate-900 dark:text-white">
+                                <p class="text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Disk</p>
+                                <p class="mt-0.5 text-sm font-semibold text-zinc-950 dark:text-white">
                                     {{ $diskGb !== null ? rtrim(rtrim(number_format((float) $diskGb, 1), '0'), '.').' GB' : '—' }}
                                 </p>
                             </div>
@@ -172,8 +172,8 @@
                     @if(!empty($product->features) && count($product->features) > 0)
                         <ul class="space-y-2 mb-5 flex-1">
                             @foreach(array_slice($product->features, 0, 4) as $feature)
-                                <li class="flex items-start gap-2 text-sm text-slate-600 dark:text-slate-300">
-                                    <svg class="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                                <li class="flex items-start gap-2 text-sm text-zinc-600 dark:text-zinc-300">
+                                    <svg class="mt-0.5 h-4 w-4 shrink-0 text-brand-600 dark:text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
                                     <span>{{ $feature }}</span>
                                 </li>
                             @endforeach
@@ -183,8 +183,8 @@
                     @endif
 
                     <div
-                        class="mt-auto pt-4 border-t border-slate-100 dark:border-slate-800 text-sm font-semibold"
-                        :class="selectedProductId === {{ $product->id }} ? 'text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400'"
+                        class="mt-auto pt-4 border-t border-zinc-100 dark:border-zinc-800 text-sm font-semibold"
+                        :class="selectedProductId === {{ $product->id }} ? 'text-brand-700 dark:text-brand-300' : 'text-zinc-500 dark:text-zinc-400'"
                         x-text="selectedProductId === {{ $product->id }} ? 'Selected' : 'Select plan'"
                     ></div>
                 </button>
@@ -246,10 +246,10 @@
                 </div>
 
                 <div class="flex flex-col sm:flex-row gap-3 pt-1">
-                    <button type="submit" class="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition">
+                    <button type="submit" class="btn-primary flex-1 px-6 py-3">
                         Add to cart
                     </button>
-                    <a href="{{ route('customer.select-techstack') }}" class="px-6 py-3 text-center border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition">
+                    <a href="{{ route('customer.select-techstack') }}" class="btn-secondary px-6 py-3 text-center">
                         Change stack
                     </a>
                 </div>

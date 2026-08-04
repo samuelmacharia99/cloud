@@ -25,7 +25,7 @@
                         @if(!empty($resellerBranding['logo_url']))
                             <img src="{{ $resellerBranding['logo_url'] }}" alt="Logo" class="h-8 w-auto max-w-[120px] object-contain">
                         @else
-                            <div class="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center flex-shrink-0">
+                            <div class="brand-mark">
                                 <span class="text-white font-bold text-sm">{{ strtoupper(substr($resellerBranding['company_name'] ?? 'TC', 0, 2)) }}</span>
                             </div>
                         @endif
@@ -137,7 +137,7 @@
                     <!-- Reseller -->
                     <div class="space-y-2">
                         <p class="px-4 py-2 text-xs font-semibold text-purple-500 dark:text-purple-400 uppercase tracking-wider">Reseller</p>
-                        <a href="{{ route('reseller.packages.index') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all {{ request()->routeIs('reseller.packages.*') ? 'bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800' }}">
+                        <a href="{{ route('reseller.packages.index') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all {{ request()->routeIs('reseller.packages.*') ? 'nav-link-active' : 'nav-link' }}">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m0 0l8-4m0 0l8 4m0 0v10l-8 4m0-10L4 7m0 10v10l8 4m8-4v-10l-8-4"/>
                             </svg>

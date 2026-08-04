@@ -2,7 +2,7 @@
     <!-- Logo -->
     <div class="h-16 flex items-center px-6 border-b border-slate-200 dark:border-slate-800">
         <div class="flex items-center gap-2">
-            <div class="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
+            <div class="w-8 h-8 rounded-xl bg-gradient-to-br from-brand-400 via-brand-600 to-emerald-600 flex items-center justify-center">
                 <span class="text-white font-bold text-sm">TC</span>
             </div>
             <div>
