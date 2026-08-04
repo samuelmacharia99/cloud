@@ -3,14 +3,39 @@
 @section('title', 'Confirm Techstack & Choose Package')
 
 @section('content')
-<div class="space-y-6" x-data="packageConfigurator('{{ $currencyCode }}', '{{ $currency?->symbol ?? 'KES' }}', {{ $currency?->exchange_rate ?? 1 }})">
-    <!-- Header -->
-    <div class="flex items-center justify-between">
+@php
+    $rate = (float) ($currency?->exchange_rate ?? 1);
+    $symbol = $currency?->symbol ?? 'KES';
+    $productCount = $products->count();
+    $gridClass = match (true) {
+        $productCount === 1 => 'grid-cols-1 max-w-md mx-auto',
+        $productCount === 2 => 'grid-cols-1 sm:grid-cols-2 max-w-3xl mx-auto',
+        $productCount === 3 => 'grid-cols-1 md:grid-cols-3',
+        default => 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3',
+    };
+@endphp
+<div
+    class="space-y-8"
+    x-data="packageConfigurator(@js($currencyCode), @js($symbol), {{ $rate }})"
+    x-init="
+        @if($products->isNotEmpty())
+            @php $first = $products->first(); @endphp
+            selectProduct(
+                {{ $first->id }},
+                {{ $first->reseller_product_id ?? 'null' }},
+                @js($first->name),
+                {{ (float) $first->monthly_price * $rate }},
+                {{ (float) ($first->yearly_price ?? ($first->monthly_price * 12)) * $rate }}
+            );
+        @endif
+    "
+>
+    <div class="flex items-start justify-between gap-4">
         <div>
-            <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Choose Your Hosting Package</h1>
-            <p class="text-slate-600 dark:text-slate-400 mt-1">Select a plan that matches your needs</p>
+            <h1 class="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Choose Your Hosting Package</h1>
+            <p class="text-slate-600 dark:text-slate-400 mt-1">Plans are listed from lowest to highest monthly price.</p>
         </div>
-        <a href="{{ route('customer.cart.index') }}" class="relative">
+        <a href="{{ route('customer.cart.index') }}" class="relative shrink-0 mt-1" title="Cart">
             <svg class="w-6 h-6 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/>
             </svg>
@@ -21,223 +46,235 @@
     </div>
 
     @if(!empty($attachDomain))
-        <div class="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-xl p-4 text-sm text-blue-900 dark:text-blue-100">
+        <div class="rounded-xl border border-sky-200 dark:border-sky-800 bg-sky-50 dark:bg-sky-950/30 px-4 py-3 text-sm text-sky-900 dark:text-sky-100">
             <p class="font-semibold">Linked domain: {{ $attachDomain['fqdn'] }}</p>
-            <p class="mt-1 text-blue-800 dark:text-blue-200">This plan will use the domain already in your cart. One invoice at checkout.</p>
+            <p class="mt-0.5 text-sky-800/90 dark:text-sky-200/90">This plan will use the domain already in your cart. One invoice at checkout.</p>
         </div>
     @endif
 
-    <!-- Techstack Summary -->
-    <div class="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-slate-800 dark:to-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 p-6">
-        <h3 class="font-semibold text-slate-900 dark:text-white mb-4">Your Selection</h3>
-        <p class="text-sm text-slate-700 dark:text-slate-300 mb-4">{{ $stackSummary ?? ($language->name.' · '.($database?->name ?? 'No database')) }}</p>
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div>
-                <p class="text-xs text-slate-600 dark:text-slate-400 mb-1">App / Backend</p>
-                <p class="font-semibold text-slate-900 dark:text-white">{{ $language->name }}</p>
-            </div>
+    {{-- Stack summary --}}
+    <div class="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-5 py-4">
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+            <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Your stack</h2>
+            <a href="{{ route('customer.select-techstack') }}" class="text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline">Change stack</a>
+        </div>
+        <div class="flex flex-wrap gap-2">
+            <span class="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 px-3 py-1.5 text-sm text-slate-800 dark:text-slate-200">
+                <span class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">App</span>
+                {{ $language->name }}
+            </span>
             @if(!empty($stackSelection['framework']))
-            <div>
-                <p class="text-xs text-slate-600 dark:text-slate-400 mb-1">Framework</p>
-                <p class="font-semibold text-slate-900 dark:text-white">{{ config('stack_builder.framework_labels.'.$stackSelection['framework'], $stackSelection['framework']) }}</p>
-            </div>
+                <span class="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 px-3 py-1.5 text-sm text-slate-800 dark:text-slate-200">
+                    <span class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Framework</span>
+                    {{ config('stack_builder.framework_labels.'.$stackSelection['framework'], $stackSelection['framework']) }}
+                </span>
             @endif
-            <div>
-                <p class="text-xs text-slate-600 dark:text-slate-400 mb-1">Frontend</p>
-                <p class="font-semibold text-slate-900 dark:text-white">
-                    {{ config('stack_builder.frontend_labels.'.($stackSelection['frontend'] ?? 'none'), $stackSelection['frontend'] ?? 'None') }}
-                    @if(!empty($stackSelection['frontend']) && $stackSelection['frontend'] !== 'none')
-                        <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(Node.js for builds)</span>
+            <span class="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 px-3 py-1.5 text-sm text-slate-800 dark:text-slate-200">
+                <span class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Frontend</span>
+                {{ config('stack_builder.frontend_labels.'.($stackSelection['frontend'] ?? 'none'), $stackSelection['frontend'] ?? 'None') }}
+            </span>
+            <span class="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 px-3 py-1.5 text-sm text-slate-800 dark:text-slate-200">
+                <span class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Database</span>
+                {{ $database?->name ?? 'None' }}
+            </span>
+        </div>
+        @if(($stackSelection['frontend'] ?? null) === 'nextjs' && ($language->slug ?? '') === 'laravel')
+            <p class="mt-3 text-sm text-slate-600 dark:text-slate-300">
+                Includes separate <strong class="font-semibold text-slate-900 dark:text-white">API</strong> and <strong class="font-semibold text-slate-900 dark:text-white">Web</strong> containers under one project — billed as a single plan.
+            </p>
+        @endif
+    </div>
+
+    {{-- Packages --}}
+    <div>
+        <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Select a plan</h2>
+        <div class="grid {{ $gridClass }} gap-4">
+            @foreach($products as $product)
+                @php
+                    $limits = is_array($product->resource_limits ?? null) ? $product->resource_limits : [];
+                    $cpu = $limits['cpu'] ?? null;
+                    $memoryMb = $limits['memory'] ?? null;
+                    $diskGb = $limits['disk'] ?? null;
+                    $memoryLabel = $memoryMb !== null
+                        ? ((float) $memoryMb >= 1024
+                            ? rtrim(rtrim(number_format(((float) $memoryMb) / 1024, 1), '0'), '.').' GB'
+                            : number_format((float) $memoryMb, 0).' MB')
+                        : null;
+                    $monthly = (float) $product->monthly_price * $rate;
+                    $yearly = (float) ($product->yearly_price ?? ($product->monthly_price * 12)) * $rate;
+                    $isFeatured = (bool) ($product->featured ?? false);
+                @endphp
+                <button
+                    type="button"
+                    @click="selectProduct({{ $product->id }}, {{ $product->reseller_product_id ?? 'null' }}, @js($product->name), {{ $monthly }}, {{ $yearly }})"
+                    class="relative flex flex-col h-full text-left rounded-2xl border bg-white dark:bg-slate-900 p-5 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950"
+                    :class="selectedProductId === {{ $product->id }}
+                        ? 'border-blue-600 dark:border-blue-500 ring-2 ring-blue-600/20 dark:ring-blue-400/30 shadow-md'
+                        : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-600 hover:shadow-sm'"
+                >
+                    @if($isFeatured)
+                        <span class="absolute top-3 right-3 inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-950/50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-200">
+                            Popular
+                        </span>
                     @endif
-                </p>
-            </div>
-            <div>
-                <p class="text-xs text-slate-600 dark:text-slate-400 mb-1">Database</p>
-                <p class="font-semibold text-slate-900 dark:text-white">{{ $database?->name ?? 'None' }}</p>
-            </div>
-            <div>
-                <p class="text-xs text-slate-600 dark:text-slate-400 mb-1">Hosting Type</p>
-                <p class="font-semibold text-slate-900 dark:text-white">Application hosting</p>
-            </div>
-            @if(($stackSelection['frontend'] ?? null) === 'nextjs' && ($language->slug ?? '') === 'laravel')
-                <div class="md:col-span-4 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50/80 dark:bg-blue-950/30 px-4 py-3 text-sm text-blue-900 dark:text-blue-100">
-                    Includes separate <strong>API</strong> and <strong>Web</strong> containers under one project — billed as a single plan.
-                </div>
-            @endif
-            <div class="md:col-span-4 text-right">
-                <a href="{{ route('customer.select-techstack') }}" class="text-sm text-blue-600 dark:text-blue-400 hover:underline">Change →</a>
-            </div>
+
+                    <div class="flex items-start justify-between gap-3 mb-4 pr-12">
+                        <div>
+                            <h3 class="text-lg font-bold text-slate-900 dark:text-white leading-snug">{{ $product->name }}</h3>
+                            @if($product->description)
+                                <p class="mt-1 text-sm text-slate-500 dark:text-slate-400 line-clamp-2">{{ $product->description }}</p>
+                            @endif
+                        </div>
+                        <span
+                            class="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2"
+                            :class="selectedProductId === {{ $product->id }}
+                                ? 'border-blue-600 bg-blue-600 text-white'
+                                : 'border-slate-300 dark:border-slate-600'"
+                            aria-hidden="true"
+                        >
+                            <svg x-show="selectedProductId === {{ $product->id }}" class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>
+                        </span>
+                    </div>
+
+                    <div class="mb-5">
+                        <div class="flex items-baseline gap-1">
+                            <span class="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">{{ $symbol }}{{ number_format($monthly, 0) }}</span>
+                            <span class="text-sm text-slate-500 dark:text-slate-400">/mo</span>
+                        </div>
+                        @if($product->yearly_price)
+                            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                or {{ $symbol }}{{ number_format($yearly, 0) }}/year
+                            </p>
+                        @endif
+                    </div>
+
+                    @if($cpu !== null || $memoryLabel !== null || $diskGb !== null)
+                        <div class="grid grid-cols-3 gap-2 mb-5 rounded-xl bg-slate-50 dark:bg-slate-800/60 p-3">
+                            <div class="text-center">
+                                <p class="text-[10px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">CPU</p>
+                                <p class="mt-0.5 text-sm font-semibold text-slate-900 dark:text-white">
+                                    {{ $cpu !== null ? rtrim(rtrim(number_format((float) $cpu, 2), '0'), '.') : '—' }}
+                                </p>
+                            </div>
+                            <div class="text-center border-x border-slate-200 dark:border-slate-700">
+                                <p class="text-[10px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">RAM</p>
+                                <p class="mt-0.5 text-sm font-semibold text-slate-900 dark:text-white">{{ $memoryLabel ?? '—' }}</p>
+                            </div>
+                            <div class="text-center">
+                                <p class="text-[10px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Disk</p>
+                                <p class="mt-0.5 text-sm font-semibold text-slate-900 dark:text-white">
+                                    {{ $diskGb !== null ? rtrim(rtrim(number_format((float) $diskGb, 1), '0'), '.').' GB' : '—' }}
+                                </p>
+                            </div>
+                        </div>
+                    @endif
+
+                    @if(!empty($product->features) && count($product->features) > 0)
+                        <ul class="space-y-2 mb-5 flex-1">
+                            @foreach(array_slice($product->features, 0, 4) as $feature)
+                                <li class="flex items-start gap-2 text-sm text-slate-600 dark:text-slate-300">
+                                    <svg class="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                                    <span>{{ $feature }}</span>
+                                </li>
+                            @endforeach
+                        </ul>
+                    @else
+                        <div class="flex-1"></div>
+                    @endif
+
+                    <div
+                        class="mt-auto pt-4 border-t border-slate-100 dark:border-slate-800 text-sm font-semibold"
+                        :class="selectedProductId === {{ $product->id }} ? 'text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400'"
+                        x-text="selectedProductId === {{ $product->id }} ? 'Selected' : 'Select plan'"
+                    ></div>
+                </button>
+            @endforeach
         </div>
     </div>
 
-    <!-- Available Packages Grid -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-        @foreach($products as $product)
-        <button
-            type="button"
-            @click="selectProduct({{ $product->id }}, {{ $product->reseller_product_id ?? 'null' }}, @js($product->name), {{ $product->monthly_price * ($currency?->exchange_rate ?? 1) }}, {{ ($product->yearly_price ?? ($product->monthly_price * 12)) * ($currency?->exchange_rate ?? 1) }})"
-            class="relative group overflow-hidden rounded-xl border-2 transition-all duration-300 p-6 text-left hover:shadow-lg"
-            :class="selectedProductId === {{ $product->id }}
-                ? 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-slate-800 shadow-lg'
-                : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-blue-400 dark:hover:border-blue-600'"
-        >
-            <!-- Selected Badge -->
-            <template x-if="selectedProductId === {{ $product->id }}">
-                <div class="absolute top-0 right-0 bg-blue-600 text-white px-3 py-1 text-xs font-semibold">SELECTED</div>
-            </template>
-
-            <!-- Plan Name -->
-            <h3 class="text-xl font-bold text-slate-900 dark:text-white mb-2">{{ $product->name }}</h3>
-
-            <!-- Price -->
-            <div class="mb-4">
-                <p class="text-3xl font-bold text-blue-600 dark:text-blue-400">
-                    {{ $currency?->symbol ?? 'KES' }}
-                    {{ number_format(($product->monthly_price * ($currency?->exchange_rate ?? 1)), 0) }}
-                </p>
-                <p class="text-sm text-slate-600 dark:text-slate-400">per month</p>
-            </div>
-
-            <!-- Description -->
-            <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">{{ $product->description }}</p>
-
-            <!-- Features -->
-            @if($product->features && count($product->features) > 0)
-            <ul class="space-y-2 mb-4">
-                @foreach(array_slice($product->features, 0, 3) as $feature)
-                <li class="text-sm text-slate-700 dark:text-slate-300 flex items-center gap-2">
-                    <svg class="w-4 h-4 text-green-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
-                    </svg>
-                    {{ $feature }}
-                </li>
-                @endforeach
-                @if(count($product->features) > 3)
-                <li class="text-sm text-slate-600 dark:text-slate-400">+ {{ count($product->features) - 3 }} more features</li>
-                @endif
-            </ul>
-            @endif
-
-            <!-- Click Prompt -->
-            <div class="pt-4 border-t border-slate-200 dark:border-slate-700">
-                <p class="text-xs text-slate-500 dark:text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-200 transition">Click to select this plan →</p>
-            </div>
-        </button>
-        @endforeach
-    </div>
-
-    <!-- Add to Cart Section -->
     <template x-if="selectedProductId">
-    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8">
-        <h2 class="text-2xl font-bold text-slate-900 dark:text-white mb-6">Finalize Your Order</h2>
-
-        <form action="{{ route('customer.cart.add') }}" method="POST" class="space-y-4" x-init="updatePrice()">
-            @csrf
-            <input type="hidden" name="type" value="{{ $isResellerCustomer ? 'reseller_product' : 'product' }}">
-            @if ($isResellerCustomer)
-                <input type="hidden" name="reseller_product_id" :value="selectedResellerProductId">
-            @else
-                <input type="hidden" name="product_id" :value="selectedProductId">
-            @endif
-            <input type="hidden" name="billing_cycle" x-bind:value="cycle">
-            @if($language->versions && count($language->versions) > 0)
-                <input type="hidden" name="version" x-bind:value="version">
-            @endif
-
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <!-- Version Selector -->
-                @if($language->versions && count($language->versions) > 0)
+        <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 md:p-8">
+            <div class="flex flex-wrap items-end justify-between gap-2 mb-6">
                 <div>
-                    <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">{{ $language->name }} Version</label>
-                    <select x-model="version" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
-                        @foreach($language->versions as $version)
-                            <option value="{{ $version }}">v{{ $version }}</option>
-                        @endforeach
-                    </select>
+                    <h2 class="text-xl font-bold text-slate-900 dark:text-white">Finalize your order</h2>
+                    <p class="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+                        Plan: <span class="font-medium text-slate-800 dark:text-slate-200" x-text="selectedProductName"></span>
+                    </p>
                 </div>
+            </div>
+
+            <form action="{{ route('customer.cart.add') }}" method="POST" class="space-y-5" x-init="updatePrice()">
+                @csrf
+                <input type="hidden" name="type" value="{{ $isResellerCustomer ? 'reseller_product' : 'product' }}">
+                @if ($isResellerCustomer)
+                    <input type="hidden" name="reseller_product_id" :value="selectedResellerProductId">
+                @else
+                    <input type="hidden" name="product_id" :value="selectedProductId">
+                @endif
+                <input type="hidden" name="billing_cycle" x-bind:value="cycle">
+                @if($language->versions && count($language->versions) > 0)
+                    <input type="hidden" name="version" x-bind:value="version">
                 @endif
 
-                <!-- Billing Cycle -->
-                <div>
-                    <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Billing Cycle</label>
-                    <select x-model="cycle" @change="updatePrice()" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
-                        <option value="monthly">Monthly</option>
-                        <option value="quarterly">Quarterly</option>
-                        <option value="semi-annual">Semi-Annual</option>
-                        <option value="annual">Annual</option>
-                    </select>
-                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    @if($language->versions && count($language->versions) > 0)
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">{{ $language->name }} version</label>
+                            <select x-model="version" class="w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm">
+                                @foreach($language->versions as $version)
+                                    <option value="{{ $version }}">v{{ $version }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                    @endif
 
-                <!-- Summary with Dynamic Pricing -->
-                <div class="bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-200 dark:border-blue-700 rounded-lg p-4">
-                    <p class="text-xs text-blue-700 dark:text-blue-400 mb-1">Total Amount Due</p>
-                    <p class="text-3xl font-bold text-blue-600 dark:text-blue-400" x-text="currencySymbol + ' ' + formatPrice(calculatedPrice)"></p>
-                    <p class="text-sm text-blue-700 dark:text-blue-300 mt-2" x-text="getPricingLabel()"></p>
-                </div>
-            </div>
-
-            <!-- Pricing Breakdown -->
-            <div class="bg-slate-50 dark:bg-slate-800 rounded-lg p-4 space-y-2">
-                <div class="flex justify-between text-sm">
-                    <span class="text-slate-600 dark:text-slate-400">Base Price (Monthly)</span>
-                    <span class="font-semibold text-slate-900 dark:text-white" x-text="currencySymbol + ' ' + formatPrice(basePrice)"></span>
-                </div>
-                <template x-if="billingMonths > 1">
-                    <div class="flex justify-between text-sm">
-                        <span class="text-slate-600 dark:text-slate-400" x-text="cycle === 'annual' ? 'Annual price' : `${billingMonths} months × base price`"></span>
-                        <span class="font-semibold text-slate-900 dark:text-white" x-text="currencySymbol + ' ' + formatPrice(calculatedPrice)"></span>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Billing cycle</label>
+                        <select x-model="cycle" @change="updatePrice()" class="w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm">
+                            <option value="monthly">Monthly</option>
+                            <option value="quarterly">Quarterly</option>
+                            <option value="semi-annual">Semi-Annual</option>
+                            <option value="annual">Annual</option>
+                        </select>
                     </div>
-                </template>
-                <div class="flex justify-between text-base font-bold border-t border-slate-300 dark:border-slate-600 pt-2 mt-2">
-                    <span class="text-slate-900 dark:text-white">Total Due</span>
-                    <span class="text-blue-600 dark:text-blue-400" x-text="currencySymbol + ' ' + formatPrice(calculatedPrice)"></span>
+
+                    <div class="rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 px-4 py-3">
+                        <p class="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Due now</p>
+                        <p class="text-2xl font-bold text-slate-900 dark:text-white mt-1" x-text="currencySymbol + ' ' + formatPrice(calculatedPrice)"></p>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1" x-text="getPricingLabel()"></p>
+                    </div>
                 </div>
-            </div>
 
-            <!-- Action Buttons -->
-            <div class="flex gap-3 pt-4">
-                <button type="submit" class="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition">
-                    Add to Cart
-                </button>
-                <a href="{{ route('customer.select-techstack') }}" class="px-6 py-3 border-2 border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 transition">
-                    Change Techstack
-                </a>
-            </div>
-        </form>
-    </div>
-    </template>
-
-    <!-- No Selection Placeholder -->
-    <template x-if="!selectedProductId">
-    <div class="bg-slate-50 dark:bg-slate-800 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-600 p-12 text-center">
-        <p class="text-slate-600 dark:text-slate-400 text-lg">Select a package above to continue</p>
-    </div>
+                <div class="flex flex-col sm:flex-row gap-3 pt-1">
+                    <button type="submit" class="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition">
+                        Add to cart
+                    </button>
+                    <a href="{{ route('customer.select-techstack') }}" class="px-6 py-3 text-center border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition">
+                        Change stack
+                    </a>
+                </div>
+            </form>
+        </div>
     </template>
 </div>
 
 <script>
 function packageConfigurator(currencyCode, currencySymbol, exchangeRate) {
     return {
-        // Currency Info
         currencyCode: currencyCode,
         currencySymbol: currencySymbol,
         exchangeRate: exchangeRate,
-
-        // Package Selection
         selectedProductId: null,
         selectedResellerProductId: null,
         selectedProductName: '',
         selectedProductPrice: 0,
-
-        // Order Configuration
         cycle: 'monthly',
-        version: '{{ $language->versions[0] ?? '' }}',
+        version: @js($language->versions[0] ?? ''),
         basePrice: 0,
         yearlyPrice: 0,
         calculatedPrice: 0,
         billingMonths: 1,
 
-        // Select a product
         selectProduct(productId, resellerProductId, productName, productPrice, yearlyPrice) {
             this.selectedProductId = productId;
             this.selectedResellerProductId = resellerProductId;
@@ -245,43 +282,34 @@ function packageConfigurator(currencyCode, currencySymbol, exchangeRate) {
             this.selectedProductPrice = productPrice;
             this.basePrice = productPrice;
             this.yearlyPrice = yearlyPrice;
-            this.cycle = 'monthly'; // Reset to monthly when selecting new product
             this.updatePrice();
         },
 
-        // Update price based on billing cycle (matches backend priceForBillingCycle)
         updatePrice() {
             const cycles = {
-                'monthly': { months: 1 },
-                'quarterly': { months: 3 },
+                monthly: { months: 1 },
+                quarterly: { months: 3 },
                 'semi-annual': { months: 6 },
-                'annual': { months: 12 }
+                annual: { months: 12 }
             };
-
-            const config = cycles[this.cycle] || cycles['monthly'];
+            const config = cycles[this.cycle] || cycles.monthly;
             this.billingMonths = config.months;
-
-            if (this.cycle === 'annual') {
-                this.calculatedPrice = this.yearlyPrice;
-            } else {
-                this.calculatedPrice = this.basePrice * config.months;
-            }
+            this.calculatedPrice = this.cycle === 'annual'
+                ? this.yearlyPrice
+                : this.basePrice * config.months;
         },
 
-        // Format price with thousands separator
         formatPrice(amount) {
             return Math.round(amount).toLocaleString('en-US');
         },
 
-        // Get billing period label
         getPricingLabel() {
-            const labels = {
-                'monthly': 'Per month',
-                'quarterly': 'Per 3 months',
+            return {
+                monthly: 'Per month',
+                quarterly: 'Per 3 months',
                 'semi-annual': 'Per 6 months',
-                'annual': 'Per year'
-            };
-            return labels[this.cycle] || 'Per month';
+                annual: 'Per year'
+            }[this.cycle] || 'Per month';
         }
     };
 }

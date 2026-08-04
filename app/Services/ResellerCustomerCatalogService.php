@@ -279,6 +279,8 @@ class ResellerCustomerCatalogService
                 'yearly_price' => $product->yearly_price !== null ? (float) $product->yearly_price : null,
                 'features' => $product->features ?? [],
                 'slug' => $product->slug,
+                'featured' => (bool) $product->featured,
+                'resource_limits' => is_array($product->resource_limits) ? $product->resource_limits : [],
             ]);
         }
 
@@ -331,6 +333,9 @@ class ResellerCustomerCatalogService
     private function mapListingToTechstackProduct(ResellerProduct $listing): object
     {
         $product = $listing->provisionProduct();
+        $limits = is_array($listing->resource_limits) && $listing->resource_limits !== []
+            ? $listing->resource_limits
+            : (is_array($product?->resource_limits) ? $product->resource_limits : []);
 
         return (object) [
             'id' => $product->id,
@@ -341,6 +346,8 @@ class ResellerCustomerCatalogService
             'yearly_price' => $listing->yearly_price !== null ? (float) $listing->yearly_price : null,
             'features' => $listing->features ?? $product?->features ?? [],
             'slug' => $product?->slug,
+            'featured' => (bool) ($product?->featured ?? false),
+            'resource_limits' => $limits,
         ];
     }
 

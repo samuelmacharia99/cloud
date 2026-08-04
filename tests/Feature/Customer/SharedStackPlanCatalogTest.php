@@ -134,6 +134,11 @@ class SharedStackPlanCatalogTest extends TestCase
             'container_template_id' => null,
             'monthly_price' => 450,
             'order' => 99,
+            'resource_limits' => [
+                'cpu' => 1,
+                'memory' => 2048,
+                'disk' => 50,
+            ],
         ]);
 
         session([
@@ -153,7 +158,12 @@ class SharedStackPlanCatalogTest extends TestCase
                 'Project Starter',
                 'Project Pro',
                 'Project Growth',
-            ], false);
+            ], false)
+            ->assertSee('Select a plan', false)
+            ->assertSee('CPU', false)
+            ->assertSee('RAM', false)
+            ->assertSee('Disk', false)
+            ->assertSee('2 GB', false);
     }
 
     public function test_shared_plan_checkout_stores_stack_meta_and_resolves_template(): void
