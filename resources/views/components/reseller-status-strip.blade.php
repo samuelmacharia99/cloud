@@ -66,16 +66,29 @@
         </div>
     </a>
 
-    <a href="{{ $hasDirectAdmin ? route('reseller.customers.index', ['link' => $unlinkedDaCount > 0 ? 'unlinked' : 'all']) : route('reseller.settings.index', ['tab' => 'hosting']) }}" class="flex items-center gap-3 p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-purple-300 dark:hover:border-purple-700 transition">
+    <a
+        href="{{ $hasDirectAdmin ? route('reseller.dashboard.directadmin.panel-login') : route('reseller.settings.index', ['tab' => 'hosting']) }}"
+        @if ($hasDirectAdmin) title="Open DirectAdmin panel" @endif
+        class="flex items-center gap-3 p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-brand-400 dark:hover:border-brand-600 transition"
+    >
         <div class="min-w-0 flex-1">
             <p class="text-xs font-medium text-slate-500 uppercase tracking-wide">DirectAdmin</p>
             @if ($hasDirectAdmin)
                 <p class="text-sm font-semibold text-emerald-600">Connected</p>
-                <p class="text-xs text-slate-500">{{ $unlinkedDaCount > 0 ? $unlinkedDaCount.' unlinked account(s)' : 'All accounts linked' }}</p>
+                <p class="text-xs text-slate-500">
+                    @if ($unlinkedDaCount > 0)
+                        {{ $unlinkedDaCount }} unlinked account(s)
+                    @else
+                        Click to open panel
+                    @endif
+                </p>
             @else
                 <p class="text-sm font-semibold text-slate-600 dark:text-slate-400">Not connected</p>
             @endif
         </div>
+        @if ($hasDirectAdmin)
+            <svg class="w-4 h-4 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+        @endif
     </a>
 </div>
 

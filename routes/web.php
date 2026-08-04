@@ -426,6 +426,10 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
             ->middleware('throttle:20,1')
             ->name('reseller.dashboard.directadmin-panel');
 
+        Route::get('reseller/dashboard/directadmin/panel-login', [DashboardDirectAdminController::class, 'panelLogin'])
+            ->middleware('throttle:10,1')
+            ->name('reseller.dashboard.directadmin.panel-login');
+
         Route::get('reseller/dashboard/activity', DashboardActivityController::class)
             ->middleware('throttle:60,1')
             ->name('reseller.dashboard.activity');
