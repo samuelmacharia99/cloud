@@ -54,6 +54,12 @@ class ApplicationSchedule
                 continue;
             }
 
+            if ($this->isRetiredCommand($job->command)) {
+                $this->disableMissingCommand($job);
+
+                continue;
+            }
+
             if (! $job->next_run_at) {
                 $job->refreshNextRunAt();
             }
@@ -71,6 +77,28 @@ class ApplicationSchedule
                 $this->logCronFailure($job);
             });
         }
+    }
+
+    private function isRetiredCommand(string $commandLine): bool
+    {
+        $name = trim(explode(' ', $commandLine)[0] ?? '');
+
+        return $name !== '' && in_array($name, config('scheduler.retired_commands', []), true);
+    }
+
+    private function disableMissingCommand(CronJob $job): void
+    {
+        if (! $job->enabled) {
+            return;
+        }
+
+        $job->update(['enabled' => false]);
+
+        Log::warning('Disabled cron job because artisan command was retired/removed', [
+            'cron_job_id' => $job->id,
+            'name' => $job->name,
+            'command' => $job->command,
+        ]);
     }
 
     private function registerHeartbeat(Schedule $schedule): void

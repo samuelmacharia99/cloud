@@ -31,11 +31,23 @@
             <td>{{ $latestLog->duration_formatted }}</td>
         </tr>
         <tr>
-            <td><strong>Status:</strong></td>
-            <td><strong style="color: #dc2626;">Failed</strong></td>
+            <td><strong>Log status:</strong></td>
+            <td><strong style="color: {{ ($latestLog->status ?? '') === 'success' ? '#b45309' : '#dc2626' }};">{{ ucfirst($latestLog->status ?? 'unknown') }}</strong></td>
+        </tr>
+        <tr>
+            <td><strong>Alert:</strong></td>
+            <td><strong style="color: #dc2626;">Scheduler reported failure</strong></td>
         </tr>
     @endif
 </table>
+
+@if($latestLog && ($latestLog->status ?? null) === 'success')
+    <div class="alert alert-warning">
+        <strong>Note:</strong> The latest stored log is marked success, but the scheduler still reported a failure
+        (often a missing artisan command after a deploy). Confirm that <code>{{ $job->command }}</code> still exists
+        and that this cron row should remain enabled.
+    </div>
+@endif
 
 @if($latestLog && $latestLog->exception)
     <h2>Error Details</h2>

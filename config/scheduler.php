@@ -56,6 +56,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Retired commands
+    |--------------------------------------------------------------------------
+    |
+    | Artisan commands removed from the codebase but that may still exist as
+    | enabled rows in cron_jobs on older environments. The scheduler disables
+    | these automatically instead of alerting every hour.
+    |
+    */
+    'retired_commands' => [
+        'cron:collect-mail-usage-snapshots',
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | cron.log rotation
     |--------------------------------------------------------------------------
     */

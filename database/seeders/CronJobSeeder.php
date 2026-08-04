@@ -321,5 +321,11 @@ class CronJobSeeder extends Seeder
 
             $model->refreshNextRunAt();
         }
+
+        // Commands removed from the codebase but still present in older environments.
+        CronJob::query()
+            ->whereIn('command', config('scheduler.retired_commands', []))
+            ->where('enabled', true)
+            ->update(['enabled' => false]);
     }
 }
