@@ -61,7 +61,7 @@ class TechStackRoutingService
         return Product::where('type', 'container_hosting')
             ->forTechstackLanguage((int) $language->id)
             ->where('is_active', true)
-            ->orderByRaw('container_template_id is null')
+            ->orderByRaw('COALESCE(monthly_price, price, 0) ASC')
             ->first();
     }
 

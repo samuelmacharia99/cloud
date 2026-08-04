@@ -111,6 +111,51 @@ class SharedStackPlanCatalogTest extends TestCase
         $this->assertTrue($plan->fresh()->isSharedStackPlan());
     }
 
+    public function test_confirm_techstack_lists_packages_cheapest_first(): void
+    {
+        $customer = User::factory()->customer()->create();
+        [$laravel] = $this->seedStacksAndSharedPlan();
+
+        Product::factory()->create([
+            'type' => 'container_hosting',
+            'name' => 'Project Pro',
+            'slug' => 'project-pro',
+            'is_active' => true,
+            'container_template_id' => null,
+            'monthly_price' => 999,
+            'order' => 1,
+        ]);
+
+        Product::factory()->create([
+            'type' => 'container_hosting',
+            'name' => 'Project Starter',
+            'slug' => 'project-starter',
+            'is_active' => true,
+            'container_template_id' => null,
+            'monthly_price' => 450,
+            'order' => 99,
+        ]);
+
+        session([
+            'selected_techstack' => [
+                'language_id' => $laravel->id,
+                'language_name' => 'Laravel',
+                'language_slug' => 'laravel',
+                'frontend' => null,
+                'hosting_type' => 'container',
+            ],
+        ]);
+
+        $this->actingAs($customer)
+            ->get(route('customer.confirm-techstack'))
+            ->assertOk()
+            ->assertSeeInOrder([
+                'Project Starter',
+                'Project Pro',
+                'Project Growth',
+            ], false);
+    }
+
     public function test_shared_plan_checkout_stores_stack_meta_and_resolves_template(): void
     {
         $customer = User::factory()->customer()->create();

@@ -227,6 +227,7 @@ class ResellerCustomerCatalogService
 
         return $matched
             ->map(fn (ResellerProduct $listing) => $this->mapListingToTechstackProduct($listing))
+            ->sortBy(fn (object $product) => (float) ($product->monthly_price ?? 0))
             ->values();
     }
 

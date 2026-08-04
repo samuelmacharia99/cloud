@@ -283,7 +283,8 @@ class ServiceBrowserController extends Controller
             ->where('is_active', true)
             ->where('type', 'container_hosting')
             ->forTechstackLanguage((int) $language->id)
-            ->orderBy('order')
+            ->orderByRaw('COALESCE(monthly_price, price, 0) ASC')
+            ->orderBy('name')
             ->get();
 
         return $this->catalogService->mapProductsForTechstackDisplay(
@@ -346,7 +347,7 @@ class ServiceBrowserController extends Controller
             $query = $this->catalogService->scopePlatformProducts($query, $user);
             $products = $this->catalogService->mapProductsForTechstackDisplay(
                 $user,
-                $query->orderBy('order')->get(),
+                $query->orderByRaw('COALESCE(monthly_price, price, 0) ASC')->orderBy('name')->get(),
                 $request->integer('database_id') ?: null,
             );
         }
@@ -383,7 +384,10 @@ class ServiceBrowserController extends Controller
             $query->where('type', '!=', 'shared_hosting');
         }
 
-        $products = $query->orderBy('category')->orderBy('order')->get();
+        $products = $query->orderBy('category')
+            ->orderByRaw('COALESCE(monthly_price, price, 0) ASC')
+            ->orderBy('name')
+            ->get();
 
         // Group products by type
         $groupedProducts = $products->groupBy('type');
@@ -418,8 +422,8 @@ class ServiceBrowserController extends Controller
         $products = Product::query()
             ->where('is_active', true)
             ->where('type', 'email_hosting')
-            ->orderBy('order')
-            ->orderBy('monthly_price')
+            ->orderByRaw('COALESCE(monthly_price, price, 0) ASC')
+            ->orderBy('name')
             ->get();
 
         return view('customer.email-hosting', [
