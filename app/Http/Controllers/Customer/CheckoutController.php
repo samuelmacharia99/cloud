@@ -20,9 +20,10 @@ use App\Rules\ValidCountryCode;
 use App\Services\Billing\InvoiceSettlementService;
 use App\Services\Checkout\ContainerEmailBundleService;
 use App\Services\Checkout\EmailHostingCheckoutService;
+use App\Services\Checkout\ProjectHostingCheckoutService;
 use App\Services\Checkout\SharedHostingCheckoutService;
-use App\Services\Customer\CustomerProjectService;
 use App\Services\CreditService;
+use App\Services\Customer\CustomerProjectService;
 use App\Services\Dns\DomainCloudflareDnsService;
 use App\Services\DomainTransferService;
 use App\Services\EmailVerificationService;
@@ -486,6 +487,41 @@ class CheckoutController extends Controller
                         $provisioningDriver = $product->provisioning_driver_key;
                         if (! $provisioningDriver && Product::isServerType($product->type)) {
                             $provisioningDriver = 'server';
+                        }
+
+                        if ($product->type === 'container_hosting') {
+                            $domainHint = $serviceMeta['primary_domain']
+                                ?? $request->input("primary_domain.{$item['key']}")
+                                ?? $request->input("domain.{$item['key']}")
+                                ?? null;
+
+                            $projectBundle = app(ProjectHostingCheckoutService::class)->createFromCartItem(
+                                $user,
+                                $product,
+                                $order,
+                                $orderItem,
+                                $invoice,
+                                $item,
+                                $serviceMeta,
+                                is_string($domainHint) ? $domainHint : null,
+                            );
+
+                            if ($projectBundle !== null) {
+                                if ($request) {
+                                    app(ContainerEmailBundleService::class)->attachToContainerService(
+                                        $request,
+                                        $item['key'],
+                                        $user,
+                                        $product,
+                                        $projectBundle['billing_service'],
+                                        $invoice,
+                                        $order,
+                                        $item,
+                                    );
+                                }
+
+                                continue;
+                            }
                         }
 
                         // Create Service
@@ -1286,6 +1322,41 @@ class CheckoutController extends Controller
                             }
                             if (! empty($item['location_city'])) {
                                 $serviceMeta['location_city'] = $item['location_city'];
+                            }
+                        }
+
+                        if ($product->type === 'container_hosting') {
+                            $domainHint = $serviceMeta['primary_domain']
+                                ?? ($request ? $request->input("primary_domain.{$item['key']}") : null)
+                                ?? ($request ? $request->input("domain.{$item['key']}") : null)
+                                ?? null;
+
+                            $projectBundle = app(ProjectHostingCheckoutService::class)->createFromCartItem(
+                                $user,
+                                $product,
+                                $order,
+                                $orderItem,
+                                $invoice,
+                                $item,
+                                $serviceMeta,
+                                is_string($domainHint) ? $domainHint : null,
+                            );
+
+                            if ($projectBundle !== null) {
+                                if ($request) {
+                                    app(ContainerEmailBundleService::class)->attachToContainerService(
+                                        $request,
+                                        $item['key'],
+                                        $user,
+                                        $product,
+                                        $projectBundle['billing_service'],
+                                        $invoice,
+                                        $order,
+                                        $item,
+                                    );
+                                }
+
+                                continue;
                             }
                         }
 

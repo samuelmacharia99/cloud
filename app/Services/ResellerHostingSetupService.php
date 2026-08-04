@@ -53,12 +53,7 @@ class ResellerHostingSetupService
         }
 
         if ($driver === 'container') {
-            if (! $adminProduct->container_template_id) {
-                throw new \InvalidArgumentException(
-                    'This container plan is not fully configured (missing deployment template). Contact your provider.'
-                );
-            }
-
+            // Shared size plans may omit product template; deploy resolves from selected stack meta.
             $adminProduct->loadMissing('containerTemplate');
 
             $meta = [];

@@ -142,7 +142,7 @@ class ProductController extends Controller
             'description' => 'nullable|string',
             'category' => 'nullable|string|max:255',
             'type' => 'required|in:'.implode(',', array_keys(Product::TYPES)),
-            'container_template_id' => 'nullable|required_if:type,container_hosting|exists:container_templates,id',
+            'container_template_id' => 'nullable|exists:container_templates,id',
             'monthly_price' => 'nullable|numeric|min:0',
             'yearly_price' => 'nullable|numeric|min:0',
             'setup_fee' => 'nullable|numeric|min:0',
@@ -269,6 +269,9 @@ class ProductController extends Controller
             $validated['wholesale_monthly_price'] = null;
             $validated['wholesale_yearly_price'] = null;
             $validated['direct_admin_package_id'] = null;
+            $validated['container_template_id'] = filled($validated['container_template_id'] ?? null)
+                ? (int) $validated['container_template_id']
+                : null;
             $validated['resource_limits'] = $this->normalizeContainerResourceLimits($validated['resource_limits'] ?? null);
             $validated['bundled_email_product_id'] = filled($validated['bundled_email_product_id'] ?? null)
                 ? (int) $validated['bundled_email_product_id']

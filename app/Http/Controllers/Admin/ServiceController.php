@@ -362,10 +362,16 @@ class ServiceController extends Controller
             }
         }
 
-        // Container services must have a product with container template
+        // Container services need a resolvable stack template (product FK or service meta).
         if ($driver === 'container') {
-            if (! $service->product->container_template_id) {
-                throw new \Exception('Container services must have a product linked to a container template.');
+            $meta = is_array($service->service_meta) ? $service->service_meta : [];
+            $hasProductTemplate = (bool) $service->product?->container_template_id;
+            $hasMetaTemplate = ! empty($meta['container_template_id'])
+                || ! empty($meta['provision_template_slug'])
+                || ! empty($meta['language_slug']);
+
+            if (! $hasProductTemplate && ! $hasMetaTemplate) {
+                throw new \Exception('Container services must have a stack template on the product or service metadata.');
             }
         }
     }

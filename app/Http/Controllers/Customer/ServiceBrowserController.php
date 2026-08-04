@@ -282,7 +282,7 @@ class ServiceBrowserController extends Controller
         $products = Product::query()
             ->where('is_active', true)
             ->where('type', 'container_hosting')
-            ->where('container_template_id', $language->id)
+            ->forTechstackLanguage((int) $language->id)
             ->orderBy('order')
             ->get();
 
@@ -340,7 +340,7 @@ class ServiceBrowserController extends Controller
                 ->where('is_active', true);
 
             if ($request->template_id) {
-                $query->where('container_template_id', $request->template_id);
+                $query->forTechstackLanguage((int) $request->template_id);
             }
 
             $query = $this->catalogService->scopePlatformProducts($query, $user);

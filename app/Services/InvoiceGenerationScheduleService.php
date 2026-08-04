@@ -8,6 +8,7 @@ use App\Models\InvoiceItem;
 use App\Models\Service;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\Billing\ProjectRecipeService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -177,6 +178,11 @@ class InvoiceGenerationScheduleService
     public function isServiceDueForRenewalInvoice(Service $service, ?Carbon $reference = null): bool
     {
         if (! $service->next_due_date || $service->status !== ServiceStatus::Active) {
+            return false;
+        }
+
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        if (app(ProjectRecipeService::class)->shouldSkipRenewalInvoice($meta)) {
             return false;
         }
 

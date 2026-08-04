@@ -59,8 +59,9 @@ class TechStackRoutingService
         DatabaseTemplate $database
     ): ?Product {
         return Product::where('type', 'container_hosting')
-            ->where('container_template_id', $language->id)
+            ->forTechstackLanguage((int) $language->id)
             ->where('is_active', true)
+            ->orderByRaw('container_template_id is null')
             ->first();
     }
 

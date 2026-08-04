@@ -39,6 +39,10 @@ class ContainerStagingService
     {
         $service->loadMissing('product');
         $templateId = $service->product?->container_template_id;
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        if (! $templateId && ! empty($meta['container_template_id'])) {
+            $templateId = (int) $meta['container_template_id'];
+        }
 
         return Service::query()
             ->where('user_id', $service->user_id)
@@ -46,7 +50,10 @@ class ContainerStagingService
             ->whereHas('product', function ($q) use ($templateId) {
                 $q->where('type', 'container_hosting');
                 if ($templateId) {
-                    $q->where('container_template_id', $templateId);
+                    $q->where(function ($inner) use ($templateId) {
+                        $inner->whereNull('container_template_id')
+                            ->orWhere('container_template_id', $templateId);
+                    });
                 }
             })
             ->whereHas('containerDeployment')

@@ -233,12 +233,7 @@ class CatalogController extends Controller
             }
 
             if ($product->type === 'container_hosting') {
-                if (! $product->container_template_id) {
-                    throw ValidationException::withMessages([
-                        'product_id' => 'This container package is missing a tech stack. Choose another or contact support.',
-                    ]);
-                }
-
+                // Shared size plans (null template) are allowed — deploy uses the customer's selected stack.
                 $validated['container_template_id'] = $product->container_template_id;
                 $validated['resource_limits'] = null;
                 $validated['database_template_id'] = null;

@@ -7,6 +7,7 @@ use App\Models\Invoice;
 use App\Models\Service;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\Customer\CustomerProjectService;
 use App\Services\Provisioning\ProvisioningService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -578,6 +579,24 @@ class ResellerEnforcementService
         $meta = $service->fresh()->service_meta ?? [];
         $meta[self::META_SUSPENSION_REASON] = $reason;
         $service->update(['service_meta' => $meta]);
+
+        $fresh = $service->fresh();
+        $meta = is_array($fresh?->service_meta) ? $fresh->service_meta : [];
+        if (! empty($meta['project_billing_anchor']) && $fresh) {
+            foreach (app(CustomerProjectService::class)->siblingRoleServices($fresh) as $sibling) {
+                if ($sibling->status !== ServiceStatus::Active) {
+                    continue;
+                }
+                try {
+                    $this->provisioning()->suspend($sibling->fresh());
+                    $siblingMeta = $sibling->fresh()->service_meta ?? [];
+                    $siblingMeta[self::META_SUSPENSION_REASON] = $reason;
+                    $sibling->update(['service_meta' => $siblingMeta]);
+                } catch (\Throwable $e) {
+                    report($e);
+                }
+            }
+        }
     }
 
     protected function wasSuspendedByResellerEnforcement(Service $service): bool

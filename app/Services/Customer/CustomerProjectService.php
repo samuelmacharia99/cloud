@@ -94,12 +94,29 @@ class CustomerProjectService
             }
 
             $primary = $members->first(fn (Service $s) => $s->isContainerHosting()) ?? $members->first();
+            $containers = $this->composeContainerLabels($primary);
+
+            // Prefer explicit role labels from split project recipe services.
+            $roleLabels = $members
+                ->map(function (Service $s) {
+                    $meta = is_array($s->service_meta) ? $s->service_meta : [];
+
+                    return $meta['project_role_label'] ?? null;
+                })
+                ->filter()
+                ->unique()
+                ->values()
+                ->all();
+
+            if ($roleLabels !== []) {
+                $containers = $roleLabels;
+            }
 
             $groups[] = [
                 'type' => 'project',
                 'project' => $project,
                 'services' => $members->values(),
-                'containers' => $this->composeContainerLabels($primary),
+                'containers' => $containers,
             ];
 
             foreach ($members as $member) {
@@ -222,12 +239,19 @@ class CustomerProjectService
             }
         }
 
-        // Laravel + Next is one billed service; sidecars may not exist in compose yet.
-        if ($this->intendsLaravelNextStack($service)) {
+        // Laravel + Next as separate project role services.
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        if (($meta['project_role'] ?? null) === 'backend') {
+            $labels['API'] = true;
+        } elseif (($meta['project_role'] ?? null) === 'frontend') {
+            $labels['Web'] = true;
+        }
+
+        // Legacy Laravel + Next is one billed service; sidecars may not exist in compose yet.
+        if ($this->intendsLaravelNextStack($service) && empty($meta['project_recipe'])) {
             $labels['Backend'] = true;
             $labels['Frontend'] = true;
             $labels['Edge'] = true;
-            $meta = is_array($service->service_meta) ? $service->service_meta : [];
             $db = strtolower((string) ($meta['database'] ?? $meta['database_id'] ?? ''));
             if ($db !== '' && $db !== 'none' && $db !== 'sqlite') {
                 $labels['Database'] = true;
@@ -261,6 +285,12 @@ class CustomerProjectService
         }
 
         $meta = is_array($service->service_meta) ? $service->service_meta : [];
+
+        // Split project recipe (API + Web services) is not the legacy Compose sidecar stack.
+        if (! empty($meta['project_recipe'])) {
+            return false;
+        }
+
         $frontend = strtolower((string) ($meta['frontend'] ?? ''));
 
         if (in_array($frontend, ['nextjs', 'next', 'next.js'], true)) {
@@ -332,7 +362,14 @@ class CustomerProjectService
         $meta = is_array($service->service_meta) ? $service->service_meta : [];
         $ids = [];
 
-        foreach (['bundled_email_service_id', 'staging_service_id', 'production_service_id'] as $key) {
+        foreach ([
+            'bundled_email_service_id',
+            'staging_service_id',
+            'production_service_id',
+            'sibling_service_id',
+            'backend_service_id',
+            'frontend_service_id',
+        ] as $key) {
             $id = (int) ($meta[$key] ?? 0);
             if ($id > 0) {
                 $ids[] = $id;
@@ -340,6 +377,73 @@ class CustomerProjectService
         }
 
         return $ids;
+    }
+
+    /**
+     * Suspend or restore all non-anchor project role siblings when the billing anchor changes status.
+     *
+     * @return list<Service>
+     */
+    public function siblingRoleServices(Service $anchor): array
+    {
+        $meta = is_array($anchor->service_meta) ? $anchor->service_meta : [];
+        if (empty($meta['project_billing_anchor']) || empty($meta['project_recipe'])) {
+            return [];
+        }
+
+        $ids = [];
+        foreach (['frontend_service_id', 'sibling_service_id'] as $key) {
+            $id = (int) ($meta[$key] ?? 0);
+            if ($id > 0 && $id !== (int) $anchor->id) {
+                $ids[] = $id;
+            }
+        }
+
+        if ($anchor->project_id) {
+            $projectSiblings = Service::query()
+                ->where('project_id', $anchor->project_id)
+                ->where('id', '!=', $anchor->id)
+                ->where('product_id', $anchor->product_id)
+                ->get();
+
+            foreach ($projectSiblings as $sibling) {
+                $siblingMeta = is_array($sibling->service_meta) ? $sibling->service_meta : [];
+                if (($siblingMeta['project_recipe'] ?? null) === ($meta['project_recipe'] ?? null)
+                    && empty($siblingMeta['project_billing_anchor'])) {
+                    $ids[] = (int) $sibling->id;
+                }
+            }
+        }
+
+        $ids = array_values(array_unique($ids));
+        if ($ids === []) {
+            return [];
+        }
+
+        return Service::query()->whereIn('id', $ids)->get()->all();
+    }
+
+    public function syncStatusToProjectRoles(Service $anchor, string $status): void
+    {
+        foreach ($this->siblingRoleServices($anchor) as $sibling) {
+            if ($sibling->status === $status) {
+                continue;
+            }
+            $sibling->status = $status;
+            $sibling->save();
+        }
+    }
+
+    /**
+     * @return list<int>
+     */
+    public function pendingProjectRoleServiceIds(Service $anchor): array
+    {
+        return collect($this->siblingRoleServices($anchor))
+            ->filter(fn (Service $s) => in_array($s->status, ['pending', 'provisioning'], true))
+            ->map(fn (Service $s) => (int) $s->id)
+            ->values()
+            ->all();
     }
 
     /**

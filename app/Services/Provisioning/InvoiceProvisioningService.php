@@ -73,7 +73,20 @@ class InvoiceProvisioningService
             return ['provisioned' => 0, 'failed' => [], 'skipped' => true];
         }
 
-        $services = $this->resolvePendingServices($invoice);
+        $services = $this->resolvePendingServices($invoice)
+            ->sortBy(function (Service $service) {
+                $meta = is_array($service->service_meta) ? $service->service_meta : [];
+                // Provision billing-anchor (API) before included roles (Web).
+                if (! empty($meta['project_billing_anchor'])) {
+                    return 0;
+                }
+                if (! empty($meta['project_role'])) {
+                    return 1;
+                }
+
+                return 2;
+            })
+            ->values();
         $provisioned = 0;
         $failed = [];
 

@@ -16,7 +16,17 @@ class CustomerProject extends Model
     protected $fillable = [
         'user_id',
         'name',
+        'billing_service_id',
+        'recipe_key',
+        'resource_pool',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'resource_pool' => 'array',
+        ];
+    }
 
     public function user(): BelongsTo
     {
@@ -26,5 +36,10 @@ class CustomerProject extends Model
     public function services(): HasMany
     {
         return $this->hasMany(Service::class, 'project_id');
+    }
+
+    public function billingService(): BelongsTo
+    {
+        return $this->belongsTo(Service::class, 'billing_service_id');
     }
 }

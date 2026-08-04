@@ -59,6 +59,11 @@
                 <p class="text-xs text-slate-600 dark:text-slate-400 mb-1">Hosting Type</p>
                 <p class="font-semibold text-slate-900 dark:text-white">Application hosting</p>
             </div>
+            @if(($stackSelection['frontend'] ?? null) === 'nextjs' && ($language->slug ?? '') === 'laravel')
+                <div class="md:col-span-4 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50/80 dark:bg-blue-950/30 px-4 py-3 text-sm text-blue-900 dark:text-blue-100">
+                    Includes separate <strong>API</strong> and <strong>Web</strong> containers under one project — billed as a single plan.
+                </div>
+            @endif
             <div class="md:col-span-4 text-right">
                 <a href="{{ route('customer.select-techstack') }}" class="text-sm text-blue-600 dark:text-blue-400 hover:underline">Change →</a>
             </div>

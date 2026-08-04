@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Services\ResellerProvisionProductResolver;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -101,6 +102,28 @@ class Product extends Model
     public function hasEmailBundle(): bool
     {
         return $this->type === 'container_hosting' && filled($this->bundled_email_product_id);
+    }
+
+    /**
+     * Application Hosting plan usable with any tech stack (size tier only).
+     */
+    public function isSharedStackPlan(): bool
+    {
+        return $this->type === 'container_hosting' && $this->container_template_id === null;
+    }
+
+    /**
+     * Plans for a selected language: stack-specific match or shared (null template).
+     *
+     * @param  Builder<Product>  $query
+     * @return Builder<Product>
+     */
+    public function scopeForTechstackLanguage($query, int $languageId)
+    {
+        return $query->where(function ($q) use ($languageId) {
+            $q->whereNull('container_template_id')
+                ->orWhere('container_template_id', $languageId);
+        });
     }
 
     public function invoiceItems()

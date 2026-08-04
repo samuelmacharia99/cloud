@@ -2,13 +2,17 @@
 
 namespace Tests\Unit\Provisioning;
 
+use App\Models\ContainerDeployment;
 use App\Models\ContainerTemplate;
 use App\Models\Product;
 use App\Models\Service;
 use App\Services\Provisioning\ApplicationRuntime;
+use App\Services\Provisioning\ContainerAppDirectoryService;
 use App\Services\Provisioning\ContainerDeploymentService;
+use App\Services\Provisioning\ContainerStackCommandService;
 use App\Services\Provisioning\ContainerTemplateEnvironmentService;
 use App\Services\Provisioning\RuntimeImageProvisioner;
+use App\Services\SSH\SSHService;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
@@ -343,5 +347,41 @@ class ContainerDeploymentComposeTest extends TestCase
         $this->assertStringNotContainsString('The "BACKEND_DIR" variable', $yaml);
         // Public port belongs to edge only (backend uses expose, not host ports).
         $this->assertMatchesRegularExpression('/backend:[\s\S]*?expose:\s*\n\s*-\s*[\'"]?8000/', $yaml);
+    }
+
+    #[Test]
+    public function project_recipe_skips_laravel_next_sidecar_install(): void
+    {
+        $stackCommands = $this->createMock(ContainerStackCommandService::class);
+        $stackCommands->expects($this->never())->method('installLaravelFrontendDependencies');
+        $stackCommands->expects($this->never())->method('hostHasNextFrontend');
+
+        $appDirectory = $this->createMock(ContainerAppDirectoryService::class);
+        $appDirectory->expects($this->never())->method('hostAppPath');
+
+        $deployer = new ContainerDeploymentService(
+            appDirectory: $appDirectory,
+            templateEnvironment: new ContainerTemplateEnvironmentService,
+            stackCommands: $stackCommands,
+        );
+
+        $service = new Service;
+        $service->id = 42;
+        $service->service_meta = [
+            'project_recipe' => 'laravel_next',
+            'project_role' => 'backend',
+            'project_billing_anchor' => true,
+            'frontend' => 'nextjs',
+        ];
+
+        $deployment = new ContainerDeployment;
+        $deployment->id = 7;
+        $deployment->container_name = 'user-1-service-42-api';
+
+        $ssh = $this->createMock(SSHService::class);
+
+        $method = new ReflectionMethod(ContainerDeploymentService::class, 'installLaravelFrontendAfterDeploy');
+        $method->setAccessible(true);
+        $method->invoke($deployer, $ssh, $service, $deployment);
     }
 }

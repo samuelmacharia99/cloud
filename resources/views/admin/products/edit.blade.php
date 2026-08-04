@@ -87,14 +87,14 @@
 
                     <!-- Container Template (conditional - only for application hosting) -->
                     <div x-show="productType === 'container_hosting'">
-                        <label for="container_template_id" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Stack Template <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(required for application hosting)</span></label>
+                        <label for="container_template_id" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Stack Template <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
                         <select id="container_template_id" name="container_template_id" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('container_template_id') border-red-500 @enderror">
-                            <option value="">Select a stack template...</option>
+                            <option value="">All stacks (shared size plan)</option>
                             @foreach(\App\Models\ContainerTemplate::all() as $template)
                                 <option value="{{ $template->id }}" @selected(old('container_template_id', $product->container_template_id) == $template->id)>{{ $template->name }}</option>
                             @endforeach
                         </select>
-                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Select which stack template this package is for (PHP, Node.js, Python, etc.)</p>
+                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Leave as “All stacks” for size tiers that work with any language. Or lock the plan to one stack.</p>
                         @error('container_template_id')
                             <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
                         @enderror

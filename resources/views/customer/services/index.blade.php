@@ -133,6 +133,9 @@
                                     @if(count($containers) >= 2)
                                         · {{ implode(', ', $containers) }}
                                     @endif
+                                    @if(!empty($project->recipe_key))
+                                        · billed as one project
+                                    @endif
                                     · drop here
                                 </p>
                             </div>

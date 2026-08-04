@@ -7,6 +7,7 @@ use App\Exceptions\SSH\SSHConnectionException;
 use App\Models\ContainerDeployment;
 use App\Models\ContainerDeploymentEvent;
 use App\Models\ContainerDomain;
+use App\Models\ContainerTemplate;
 use App\Models\DatabaseTemplate;
 use App\Models\Node;
 use App\Models\Service;
@@ -77,17 +78,17 @@ class ContainerDeploymentService
             // Load relationships
             $service->load('product.containerTemplate', 'user', 'node');
 
-            // Validation
-            if (! $service->product || ! $service->product->containerTemplate) {
+            $template = $this->resolveContainerTemplate($service);
+            if (! $template) {
                 throw new \DomainException('Service must have a container template');
             }
 
-            $template = $service->product->containerTemplate;
             \Log::info('Container deploy started', [
                 'service_id' => $service->id,
                 'user_id' => $service->user_id,
                 'template_id' => $template->id,
                 'template_slug' => $template->slug,
+                'project_role' => $service->service_meta['project_role'] ?? null,
             ]);
             $this->recordDeploymentEvent($service, null, 'deploy_started', [
                 'template_id' => $template->id,
@@ -133,6 +134,7 @@ class ContainerDeploymentService
             if ($existingDeployment && is_array($existingDeployment->env_values)) {
                 $envValues = array_merge($existingDeployment->env_values, $envValues);
             }
+            $envValues = array_merge($envValues, $this->projectRoleLinkEnv($service));
             $envVars = [];
 
             // Reserve port and persist deployment with retry in case of concurrent allocation collisions.
@@ -2775,7 +2777,15 @@ class ContainerDeploymentService
 
     private function installLaravelFrontendAfterDeploy(SSHService $ssh, Service $service, ContainerDeployment $deployment): void
     {
-        $slug = $service->product?->containerTemplate?->slug ?? '';
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        // Project recipe deploys Next as a separate service — never attach Compose sidecars.
+        if (! empty($meta['project_recipe'])) {
+            return;
+        }
+
+        $slug = $this->resolveContainerTemplate($service)?->slug
+            ?? $service->product?->containerTemplate?->slug
+            ?? '';
         if (! in_array($slug, ['laravel', 'php'], true)) {
             return;
         }
@@ -3925,8 +3935,10 @@ class ContainerDeploymentService
     {
         $service->loadMissing('product.containerTemplate', 'containerDeployment');
 
+        $template = $this->resolveContainerTemplate($service) ?? $service->product?->containerTemplate;
+
         $included = $service->product?->getIncludedContainerLimits(
-            $service->product?->containerTemplate,
+            $template,
             $service->containerDeployment
         ) ?? [];
 
@@ -3947,6 +3959,97 @@ class ContainerDeploymentService
             $payload['memory_limit_mb'] = (int) $included['memory_mb'];
         }
 
+        $cpuShare = (float) ($meta['resource_share']['cpu'] ?? 0);
+        $memShare = (float) ($meta['resource_share']['memory'] ?? 0);
+        if ($cpuShare > 0 && $cpuShare < 1 && isset($payload['cpu_limit'])) {
+            $payload['cpu_limit'] = max(0.25, round($payload['cpu_limit'] * $cpuShare, 2));
+        }
+        if ($memShare > 0 && $memShare < 1 && isset($payload['memory_limit_mb'])) {
+            $payload['memory_limit_mb'] = max(128, (int) round($payload['memory_limit_mb'] * $memShare));
+        }
+
         return $payload;
+    }
+
+    private function resolveContainerTemplate(Service $service): ?ContainerTemplate
+    {
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        $slug = $meta['provision_template_slug'] ?? null;
+
+        if (is_string($slug) && $slug !== '') {
+            $override = ContainerTemplate::query()
+                ->where('slug', $slug)
+                ->where('is_active', true)
+                ->first();
+
+            if ($override) {
+                return $override;
+            }
+        }
+
+        $metaTemplateId = (int) ($meta['container_template_id'] ?? 0);
+        if ($metaTemplateId > 0) {
+            $fromMeta = ContainerTemplate::query()
+                ->where('id', $metaTemplateId)
+                ->where('is_active', true)
+                ->first();
+
+            if ($fromMeta) {
+                return $fromMeta;
+            }
+        }
+
+        $languageSlug = $meta['language_slug'] ?? null;
+        if (is_string($languageSlug) && $languageSlug !== '') {
+            $fromSlug = ContainerTemplate::query()
+                ->where('slug', $languageSlug)
+                ->where('is_active', true)
+                ->first();
+
+            if ($fromSlug) {
+                return $fromSlug;
+            }
+        }
+
+        return $service->product?->containerTemplate;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function projectRoleLinkEnv(Service $service): array
+    {
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        if (($meta['project_role'] ?? null) !== 'frontend') {
+            return [];
+        }
+
+        $backendId = (int) ($meta['backend_service_id'] ?? 0);
+        if ($backendId <= 0) {
+            return [];
+        }
+
+        $backend = Service::query()->with('containerDeployment')->find($backendId);
+        $deployment = $backend?->containerDeployment;
+        if (! $deployment) {
+            return [];
+        }
+
+        $host = $deployment->hostname
+            ?: $deployment->container_name
+            ?: null;
+
+        if (! is_string($host) || $host === '') {
+            return [];
+        }
+
+        $port = $deployment->host_port ?: 8000;
+        $url = str_starts_with($host, 'http') ? $host : "http://{$host}:{$port}";
+
+        return [
+            'BACKEND_URL' => $url,
+            'NEXT_PUBLIC_API_URL' => $url,
+            'API_URL' => $url,
+        ];
     }
 }

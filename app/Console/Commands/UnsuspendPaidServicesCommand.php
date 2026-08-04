@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Services\Customer\CustomerProjectService;
 use App\Services\NotificationService;
 use App\Services\Provisioning\ProvisioningService;
 use App\Services\ServiceOverdueEnforcementService;
@@ -36,6 +37,18 @@ class UnsuspendPaidServicesCommand extends BaseCronCommand
                 $enforcement->clearInvoiceSuspensionMeta($service);
                 $provisioningService->unsuspend($service->fresh());
                 $notificationService->notifyServiceUnsuspended($service->fresh());
+
+                $meta = is_array($service->service_meta) ? $service->service_meta : [];
+                if (! empty($meta['project_billing_anchor'])) {
+                    foreach (app(CustomerProjectService::class)->siblingRoleServices($service->fresh()) as $sibling) {
+                        try {
+                            $enforcement->clearInvoiceSuspensionMeta($sibling);
+                            $provisioningService->unsuspend($sibling->fresh());
+                        } catch (\Throwable $e) {
+                            report($e);
+                        }
+                    }
+                }
 
                 Log::info('Service unsuspended - invoice paid', [
                     'service_id' => $service->id,

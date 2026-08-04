@@ -307,7 +307,12 @@ class ResellerCustomerCatalogService
     {
         $templateId = $listing->container_template_id ?? $listing->adminProduct?->container_template_id;
 
-        return $templateId !== null && (int) $templateId === (int) $language->id;
+        // Null = shared size plan — available for every stack.
+        if ($templateId === null) {
+            return true;
+        }
+
+        return (int) $templateId === (int) $language->id;
     }
 
     /**

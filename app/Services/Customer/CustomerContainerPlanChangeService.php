@@ -2,6 +2,7 @@
 
 namespace App\Services\Customer;
 
+use App\Models\ContainerTemplate;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Product;
@@ -35,7 +36,8 @@ class CustomerContainerPlanChangeService
             return 'Only application hosting services can use this plan change.';
         }
 
-        if (! $service->product?->containerTemplate) {
+        $effectiveTemplateId = $this->effectiveStackTemplateId($service);
+        if (! $effectiveTemplateId) {
             return 'This service has no container template.';
         }
 
@@ -51,26 +53,32 @@ class CustomerContainerPlanChangeService
      */
     public function optionsForService(Service $service): Collection
     {
-        $service->loadMissing('product.containerTemplate');
+        $service->loadMissing('product.containerTemplate', 'containerDeployment');
         $current = $service->product;
-        $templateId = $current?->container_template_id;
+        $templateId = $this->effectiveStackTemplateId($service);
 
         if (! $current || $current->type !== 'container_hosting' || ! $templateId) {
             return collect();
         }
 
-        $currentLimits = $current->getIncludedContainerLimits($current->containerTemplate, $service->containerDeployment);
+        $limitTemplate = $current->containerTemplate
+            ?? ContainerTemplate::query()->find($templateId);
+
+        $currentLimits = $current->getIncludedContainerLimits($limitTemplate, $service->containerDeployment);
         $currentScore = $this->resourceScore($currentLimits);
 
         return Product::query()
             ->where('type', 'container_hosting')
             ->where('is_active', true)
-            ->where('container_template_id', $templateId)
+            ->forTechstackLanguage($templateId)
             ->where('id', '!=', $current->id)
             ->orderBy('price')
             ->get()
-            ->map(function (Product $product) use ($currentScore, $service) {
-                $limits = $product->getIncludedContainerLimits($product->containerTemplate, $service->containerDeployment);
+            ->map(function (Product $product) use ($currentScore, $service, $limitTemplate) {
+                $limits = $product->getIncludedContainerLimits(
+                    $product->containerTemplate ?? $limitTemplate,
+                    $service->containerDeployment
+                );
                 $score = $this->resourceScore($limits);
                 $changeType = $score > $currentScore ? 'upgrade' : ($score < $currentScore ? 'downgrade' : 'lateral');
 
@@ -220,6 +228,34 @@ class CustomerContainerPlanChangeService
         }
 
         $this->applyPlanChange($service, $product, $cycle);
+    }
+
+    /**
+     * Stack template for this service: product FK, or checkout/session meta on shared plans.
+     */
+    private function effectiveStackTemplateId(Service $service): ?int
+    {
+        $productId = $service->product?->container_template_id;
+        if ($productId) {
+            return (int) $productId;
+        }
+
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        $metaId = (int) ($meta['container_template_id'] ?? 0);
+        if ($metaId > 0) {
+            return $metaId;
+        }
+
+        $slug = $meta['language_slug'] ?? $meta['provision_template_slug'] ?? null;
+        if (is_string($slug) && $slug !== '') {
+            $id = ContainerTemplate::query()
+                ->where('slug', $slug)
+                ->value('id');
+
+            return $id ? (int) $id : null;
+        }
+
+        return null;
     }
 
     /**
