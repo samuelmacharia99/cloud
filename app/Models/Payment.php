@@ -65,22 +65,11 @@ class Payment extends Model
     }
 
     /**
-     * Check if this payment is an overpayment
+     * Check if this payment is an overpayment (relative to what the invoice still owed before this payment).
      */
     public function isOverpayment(): bool
     {
-        if (! $this->invoice) {
-            return false;
-        }
-
-        $currencyService = app(InvoiceCurrencyService::class);
-        $paymentInInvoice = $currencyService->paymentAmountInInvoiceCurrency(
-            $this->invoice,
-            (float) $this->amount,
-            $this->currency ?? config('currency.base', 'KES')
-        );
-
-        return $paymentInInvoice > $this->invoice->getAmountRemaining() + 0.01;
+        return $this->getOverpaymentAmount() > 0.01;
     }
 
     /**
@@ -88,24 +77,43 @@ class Payment extends Model
      */
     public function getOverpaymentAmount(): float
     {
-        if (! $this->invoice || ! $this->isOverpayment()) {
+        if (! $this->invoice) {
             return 0;
         }
 
         return app(InvoiceCurrencyService::class)->paymentOverpaymentInKes(
             $this->invoice,
             (float) $this->amount,
-            $this->currency ?? config('currency.base', 'KES')
+            $this->currency ?? config('currency.base', 'KES'),
+            $this
         );
     }
 
     /**
-     * Process overpayment as credit
+     * Whether an overpayment credit has already been issued for this payment.
+     */
+    public function hasOverpaymentCredit(): bool
+    {
+        return Credit::query()
+            ->where('payment_id', $this->id)
+            ->where('source', 'overpayment')
+            ->exists();
+    }
+
+    /**
+     * Process overpayment as credit (admin-authorized only — not called automatically).
      */
     public function createCreditFromOverpayment(): ?Credit
     {
         if (! $this->isOverpayment()) {
             return null;
+        }
+
+        if ($this->hasOverpaymentCredit()) {
+            return Credit::query()
+                ->where('payment_id', $this->id)
+                ->where('source', 'overpayment')
+                ->first();
         }
 
         return CreditService::createFromOverpayment($this);

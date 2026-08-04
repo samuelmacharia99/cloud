@@ -128,12 +128,12 @@ class InvoiceSettlementService
         }
 
         if ($payment->isOverpayment()) {
-            $payment->createCreditFromOverpayment();
-
-            Log::info('Overpayment credited to customer account', [
+            // Do not auto-issue account credit. Admin must authorize overpayment credits.
+            Log::warning('Payment overpayment detected — credit not issued automatically', [
                 'payment_id' => $payment->id,
                 'invoice_id' => $invoice->id,
-                'overpayment_amount' => $payment->getOverpaymentAmount(),
+                'overpayment_amount_kes' => $payment->getOverpaymentAmount(),
+                'has_credit' => $payment->hasOverpaymentCredit(),
             ]);
         }
 

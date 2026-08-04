@@ -26,7 +26,20 @@
             </div>
 
             <!-- Action buttons -->
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2 flex-wrap justify-end">
+                @if ($payment->status->isCompleted() && $payment->isOverpayment() && ! $payment->hasOverpaymentCredit())
+                    <form action="{{ route('admin.payments.credit-overpayment', $payment) }}" method="POST" class="inline"
+                          data-confirm="Issue KES {{ number_format($payment->getOverpaymentAmount(), 2) }} account credit to this customer for the overpayment?">
+                        @csrf
+                        <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg transition text-sm">
+                            Authorize overpayment credit
+                        </button>
+                    </form>
+                @elseif ($payment->hasOverpaymentCredit())
+                    <span class="px-3 py-2 text-sm font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 rounded-lg">
+                        Overpayment credit issued
+                    </span>
+                @endif
                 <a href="{{ route('admin.payments.edit', $payment) }}" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-sm">
                     Edit Payment
                 </a>

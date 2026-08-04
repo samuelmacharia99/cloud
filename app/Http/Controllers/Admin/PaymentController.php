@@ -469,4 +469,45 @@ class PaymentController extends Controller
             return back()->with('error', 'Failed to reject payment. '.$e->getMessage());
         }
     }
+
+    /**
+     * Admin-authorize issuing account credit for a recorded overpayment.
+     */
+    public function creditOverpayment(Payment $payment)
+    {
+        $this->authorize('update', $payment);
+
+        $payment->loadMissing('invoice', 'user');
+
+        if (! $payment->status->isCompleted()) {
+            return back()->with('error', 'Only completed payments can be credited.');
+        }
+
+        if (! $payment->isOverpayment()) {
+            return back()->with('error', 'This payment has no overpayment to credit.');
+        }
+
+        if ($payment->hasOverpaymentCredit()) {
+            return back()->with('error', 'An overpayment credit was already issued for this payment.');
+        }
+
+        $credit = $payment->createCreditFromOverpayment();
+
+        if (! $credit) {
+            return back()->with('error', 'Could not create overpayment credit.');
+        }
+
+        \Log::info('Admin authorized overpayment credit', [
+            'payment_id' => $payment->id,
+            'credit_id' => $credit->id,
+            'amount' => $credit->amount,
+            'authorized_by_admin_id' => auth()->id(),
+            'authorized_by_admin_name' => auth()->user()->name,
+        ]);
+
+        return back()->with(
+            'success',
+            'Issued KES '.number_format((float) $credit->amount, 2).' account credit for this overpayment.'
+        );
+    }
 }

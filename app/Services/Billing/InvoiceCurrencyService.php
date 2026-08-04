@@ -5,6 +5,7 @@ namespace App\Services\Billing;
 use App\Models\Currency;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
+use App\Models\Payment;
 use App\Models\User;
 use App\Services\CurrencyConversionService;
 use App\Services\UserCurrencyService;
@@ -276,11 +277,37 @@ class InvoiceCurrencyService
         );
     }
 
-    public function paymentOverpaymentInKes(Invoice $invoice, float $paymentAmount, string $paymentCurrency): float
-    {
+    public function paymentOverpaymentInKes(
+        Invoice $invoice,
+        float $paymentAmount,
+        string $paymentCurrency,
+        ?Payment $forPayment = null
+    ): float {
         $invoiceCurrency = $invoice->displayCurrency();
         $paymentInInvoice = $this->paymentAmountInInvoiceCurrency($invoice, $paymentAmount, $paymentCurrency);
-        $overInInvoice = max(0, $paymentInInvoice - $invoice->getAmountRemaining());
+
+        $walletApplied = (float) ($invoice->wallet_amount_applied ?? 0);
+        $appliedCredits = (float) $invoice->getAppliedCredits();
+
+        $paidExcluding = 0.0;
+        $invoice->payments()
+            ->where('status', 'completed')
+            ->when($forPayment?->id, fn ($q) => $q->where('id', '!=', $forPayment->id))
+            ->get()
+            ->each(function (Payment $payment) use ($invoice, &$paidExcluding) {
+                $paidExcluding += $this->paymentAmountInInvoiceCurrency(
+                    $invoice,
+                    (float) $payment->amount,
+                    $payment->currency ?? config('currency.base', 'KES')
+                );
+            });
+
+        $owedBeforePayment = max(0, round(
+            (float) $invoice->total - $walletApplied - $appliedCredits - $paidExcluding,
+            2
+        ));
+
+        $overInInvoice = max(0, round($paymentInInvoice - $owedBeforePayment, 2));
 
         if ($overInInvoice <= 0) {
             return 0;

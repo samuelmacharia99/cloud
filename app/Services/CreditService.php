@@ -25,11 +25,21 @@ class CreditService
         $overpaidAmount = app(InvoiceCurrencyService::class)->paymentOverpaymentInKes(
             $payment->invoice,
             (float) $payment->amount,
-            $payment->currency ?? config('currency.base', 'KES')
+            $payment->currency ?? config('currency.base', 'KES'),
+            $payment
         );
 
         if ($overpaidAmount <= 0) {
             return null;
+        }
+
+        $existing = Credit::query()
+            ->where('payment_id', $payment->id)
+            ->where('source', 'overpayment')
+            ->first();
+
+        if ($existing) {
+            return $existing;
         }
 
         return Credit::create([
@@ -38,7 +48,7 @@ class CreditService
             'source' => 'overpayment',
             'payment_id' => $payment->id,
             'invoice_id' => $payment->invoice_id,
-            'notes' => "Overpayment from payment #{$payment->id} on invoice {$payment->invoice->invoice_number}",
+            'notes' => "Overpayment from payment #{$payment->id} on invoice {$payment->invoice->invoice_number} (admin authorized)",
             'status' => 'active',
             'expires_at' => now()->addYear(), // Credits expire after 1 year
         ]);

@@ -212,6 +212,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('admin/activity-logs', [AdminActivityLogController::class, 'index'])->name('admin.activity-logs.index');
         Route::post('admin/payments/{payment}/approve-manual', [App\Http\Controllers\Admin\PaymentController::class, 'approveManual'])->name('admin.payments.approve-manual');
         Route::post('admin/payments/{payment}/reject-manual', [App\Http\Controllers\Admin\PaymentController::class, 'rejectManual'])->name('admin.payments.reject-manual');
+        Route::post('admin/payments/{payment}/credit-overpayment', [App\Http\Controllers\Admin\PaymentController::class, 'creditOverpayment'])->name('admin.payments.credit-overpayment');
         Route::resource('admin/services', ServiceController::class)->names('admin.services');
         Route::get('admin/services/create', [ServiceController::class, 'create'])->name('admin.services.create');
         Route::post('admin/services', [ServiceController::class, 'store'])->name('admin.services.store');
