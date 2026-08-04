@@ -132,6 +132,18 @@ class ProductController extends Controller
             ->with('success', 'Product duplicated. Review settings and activate when ready.');
     }
 
+    public function toggleActive(Product $product)
+    {
+        $product->is_active = ! $product->is_active;
+        $product->save();
+
+        $label = $product->is_active ? 'activated' : 'deactivated';
+
+        return redirect()
+            ->back()
+            ->with('success', "{$product->name} {$label}. Existing services keep billing as usual.");
+    }
+
     private function validationRules(string $type, ?Product $product = null): array
     {
         $productId = $product?->id;

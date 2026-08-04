@@ -105,11 +105,27 @@
                                 @endif
                             </td>
                             <td class="px-6 py-4">
-                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ $product->is_active ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400' }}">
-                                    {{ $product->is_active ? 'Active' : 'Inactive' }}
-                                </span>
+                                <form action="{{ route('admin.products.toggle-active', $product) }}" method="POST" class="inline-flex items-center gap-2">
+                                    @csrf
+                                    <button
+                                        type="submit"
+                                        role="switch"
+                                        aria-checked="{{ $product->is_active ? 'true' : 'false' }}"
+                                        title="{{ $product->is_active ? 'Deactivate plan' : 'Activate plan' }}"
+                                        class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-slate-900 {{ $product->is_active ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600' }}"
+                                    >
+                                        <span class="sr-only">{{ $product->is_active ? 'Deactivate' : 'Activate' }}</span>
+                                        <span
+                                            aria-hidden="true"
+                                            class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition {{ $product->is_active ? 'translate-x-5' : 'translate-x-0' }}"
+                                        ></span>
+                                    </button>
+                                    <span class="text-xs font-medium {{ $product->is_active ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-500 dark:text-slate-400' }}">
+                                        {{ $product->is_active ? 'Active' : 'Inactive' }}
+                                    </span>
+                                </form>
                                 @if ($product->featured)
-                                    <span class="inline-flex items-center ml-2 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300">
+                                    <span class="inline-flex items-center mt-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300">
                                         Featured
                                     </span>
                                 @endif
