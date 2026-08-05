@@ -88,6 +88,7 @@ class InvoiceItem extends Model
             'reseller_package' => $this->resellerPackageNameFromDescription() ?? 'Reseller Package',
             'reseller_disk_usage' => 'Disk Usage',
             'reseller_disk_overage' => 'Disk Overage',
+            'project_bandwidth_overage' => 'Project Bandwidth',
             'Domain' => 'Domain',
             default => $this->product?->name
                 ?? $this->inferTitleFromDescription()

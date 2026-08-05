@@ -32,6 +32,16 @@ class InvoiceItemDisplayTest extends TestCase
         $this->assertSame('Turbo', $item->displayTitle());
     }
 
+    public function test_project_bandwidth_overage_item_displays_title(): void
+    {
+        $item = InvoiceItem::make([
+            'product_type' => 'project_bandwidth_overage',
+            'description' => 'Project Bandwidth Overage — 10 GB above 100 GB included',
+        ]);
+
+        $this->assertSame('Project Bandwidth', $item->displayTitle());
+    }
+
     public function test_legacy_subscription_invoice_synthesizes_package_line_for_display(): void
     {
         $reseller = User::factory()->reseller()->create();

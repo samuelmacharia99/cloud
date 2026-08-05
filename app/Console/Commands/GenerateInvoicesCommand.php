@@ -11,6 +11,7 @@ use App\Services\Billing\ServiceRenewalPricingService;
 use App\Services\ContainerOverageBillingService;
 use App\Services\InvoiceGenerationScheduleService;
 use App\Services\NotificationService;
+use App\Services\ProjectBandwidthBillingService;
 use App\Services\TaxService;
 use Carbon\Carbon;
 
@@ -73,6 +74,13 @@ class GenerateInvoicesCommand extends BaseCronCommand
 
                     if ($service->product->overage_enabled && $service->containerDeployment) {
                         app(ContainerOverageBillingService::class)->addOverageItemsToInvoice(
+                            $invoice,
+                            $service,
+                        );
+                    }
+
+                    if ($service->product->bandwidth_overage_enabled) {
+                        app(ProjectBandwidthBillingService::class)->addBandwidthItemsToInvoice(
                             $invoice,
                             $service,
                         );

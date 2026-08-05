@@ -11,6 +11,7 @@ use App\Models\Setting;
 use App\Services\Billing\InvoiceNumberService;
 use App\Services\Billing\ServiceRenewalPricingService;
 use App\Services\ContainerOverageBillingService;
+use App\Services\ProjectBandwidthBillingService;
 use App\Services\DomainRenewalService;
 use App\Services\InvoiceGenerationScheduleService;
 use App\Services\NotificationService;
@@ -126,6 +127,13 @@ class GenerateInvoicesByDateCommand extends Command
 
                     if ($service->product->overage_enabled && $service->containerDeployment) {
                         app(ContainerOverageBillingService::class)->addOverageItemsToInvoice(
+                            $invoice,
+                            $service,
+                        );
+                    }
+
+                    if ($service->product->bandwidth_overage_enabled) {
+                        app(ProjectBandwidthBillingService::class)->addBandwidthItemsToInvoice(
                             $invoice,
                             $service,
                         );

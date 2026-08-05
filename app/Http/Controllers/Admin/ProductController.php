@@ -166,6 +166,8 @@ class ProductController extends Controller
             'cpu_overage_rate' => 'nullable|numeric|min:0',
             'ram_overage_rate' => 'nullable|numeric|min:0',
             'disk_overage_rate' => 'nullable|numeric|min:0',
+            'bandwidth_overage_enabled' => 'boolean',
+            'bandwidth_overage_rate' => 'nullable|numeric|min:0',
         ];
 
         if ($type === 'shared_hosting') {
@@ -186,6 +188,7 @@ class ProductController extends Controller
             $rules['resource_limits.cpu'] = 'nullable|numeric|min:0';
             $rules['resource_limits.memory'] = 'nullable|integer|min:0';
             $rules['resource_limits.disk'] = 'nullable|numeric|min:0';
+            $rules['resource_limits.bandwidth_gb'] = 'nullable|numeric|min:0';
             $rules['bundled_email_product_id'] = [
                 'nullable',
                 'exists:products,id',
@@ -285,6 +288,11 @@ class ProductController extends Controller
                 ? (int) $validated['container_template_id']
                 : null;
             $validated['resource_limits'] = $this->normalizeContainerResourceLimits($validated['resource_limits'] ?? null);
+            $validated['overage_enabled'] = filter_var($validated['overage_enabled'] ?? false, FILTER_VALIDATE_BOOLEAN);
+            $validated['bandwidth_overage_enabled'] = filter_var(
+                $validated['bandwidth_overage_enabled'] ?? false,
+                FILTER_VALIDATE_BOOLEAN
+            );
             $validated['bundled_email_product_id'] = filled($validated['bundled_email_product_id'] ?? null)
                 ? (int) $validated['bundled_email_product_id']
                 : null;
@@ -381,6 +389,10 @@ class ProductController extends Controller
 
         if (array_key_exists('disk', $limits) && $limits['disk'] !== '' && $limits['disk'] !== null) {
             $normalized['disk'] = (float) $limits['disk'];
+        }
+
+        if (array_key_exists('bandwidth_gb', $limits) && $limits['bandwidth_gb'] !== '' && $limits['bandwidth_gb'] !== null) {
+            $normalized['bandwidth_gb'] = (float) $limits['bandwidth_gb'];
         }
 
         return $normalized === [] ? null : $normalized;

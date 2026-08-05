@@ -4,9 +4,9 @@
 
 <div class="border-t border-slate-200 dark:border-slate-800 pt-6" x-show="productType === 'container_hosting'" x-cloak>
     <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-1">Package Resource Limits</h3>
-    <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Define the CPU, memory, and disk included with this application hosting package.</p>
+    <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Define the CPU, memory, disk, and project bandwidth included with this application hosting package.</p>
 
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <div>
             <label for="container_cpu" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">CPU Cores</label>
             <input
@@ -54,6 +54,24 @@
                 class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('resource_limits.disk') border-red-500 @enderror"
             >
             @error('resource_limits.disk')
+                <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+            @enderror
+        </div>
+
+        <div>
+            <label for="container_bandwidth_gb" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Included Bandwidth (GB)</label>
+            <input
+                type="number"
+                id="container_bandwidth_gb"
+                name="resource_limits[bandwidth_gb]"
+                value="{{ old('resource_limits.bandwidth_gb', $limits['bandwidth_gb'] ?? '') }}"
+                step="1"
+                min="0"
+                placeholder="e.g. 100"
+                class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('resource_limits.bandwidth_gb') border-red-500 @enderror"
+            >
+            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Project-wide transfer pool (all containers)</p>
+            @error('resource_limits.bandwidth_gb')
                 <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
             @enderror
         </div>

@@ -95,4 +95,44 @@ class ContainerMetric extends Model
 
         return (float) ($avg ?? 0);
     }
+
+    /**
+     * Total network transfer (RX+TX) for a deployment in a period.
+     * net_io_* counters are cumulative since container start and reset on restart —
+     * so we delta consecutive samples and treat decreases as a new baseline.
+     */
+    public static function transferBytesForPeriod(ContainerDeployment $deployment, Carbon $from, Carbon $to): int
+    {
+        $samples = self::query()
+            ->where('container_deployment_id', $deployment->id)
+            ->usageSamples()
+            ->inBillingPeriod($from, $to)
+            ->orderBy('recorded_at')
+            ->orderBy('id')
+            ->get(['net_io_rx_bytes', 'net_io_tx_bytes']);
+
+        if ($samples->count() < 2) {
+            return 0;
+        }
+
+        $total = 0;
+        $previous = null;
+
+        foreach ($samples as $sample) {
+            $current = (int) ($sample->net_io_rx_bytes ?? 0) + (int) ($sample->net_io_tx_bytes ?? 0);
+
+            if ($previous !== null) {
+                if ($current >= $previous) {
+                    $total += $current - $previous;
+                } else {
+                    // Counter reset (container restart) — count from the new baseline.
+                    $total += $current;
+                }
+            }
+
+            $previous = $current;
+        }
+
+        return $total;
+    }
 }

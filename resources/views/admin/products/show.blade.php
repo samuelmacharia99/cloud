@@ -318,6 +318,22 @@
                 </dl>
             </div>
         @endif
+
+        @if ($product->type === 'container_hosting' && $product->bandwidth_overage_enabled)
+            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+                <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Project Bandwidth Billing</h3>
+                <dl class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <dt class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Included Bandwidth</dt>
+                        <dd class="text-sm text-slate-900 dark:text-white mt-1">{{ number_format((float) (($product->resource_limits['bandwidth_gb'] ?? 0)), 0) }} GB / period</dd>
+                    </div>
+                    <div>
+                        <dt class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Overage Rate</dt>
+                        <dd class="text-sm text-slate-900 dark:text-white mt-1">KES {{ number_format((float) ($product->bandwidth_overage_rate ?? 0), 4) }} / GB</dd>
+                    </div>
+                </dl>
+            </div>
+        @endif
     </div>
 
     <!-- Services Tab -->

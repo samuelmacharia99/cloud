@@ -278,6 +278,27 @@
                         </div>
                     </div>
                 </div>
+
+                <div class="border-t border-slate-200 dark:border-slate-800 pt-6">
+                    <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Project Bandwidth Billing</h3>
+                    <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Separate from per-container CPU/RAM/disk overage. Transfer is summed across all containers in the project and billed only on the billing-anchor renewal invoice.</p>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div>
+                            <label class="flex items-center gap-3 cursor-pointer">
+                                <input type="checkbox" name="bandwidth_overage_enabled" value="1" class="w-4 h-4 text-blue-600 rounded" @checked(old('bandwidth_overage_enabled', $product->bandwidth_overage_enabled))>
+                                <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Enable project bandwidth overage</span>
+                            </label>
+                            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Uses included bandwidth (GB) from Package Resource Limits above</p>
+                        </div>
+                        <div>
+                            <label for="bandwidth_overage_rate" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Bandwidth Overage Rate (KES/GB)</label>
+                            <input type="number" id="bandwidth_overage_rate" name="bandwidth_overage_rate" value="{{ old('bandwidth_overage_rate', $product->bandwidth_overage_rate ?? 0) }}" step="0.0001" min="0" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('bandwidth_overage_rate') border-red-500 @enderror">
+                            @error('bandwidth_overage_rate')
+                                <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                            @enderror
+                        </div>
+                    </div>
+                </div>
             @endif
 
             @include('admin.products.partials.server-configuration', ['limits' => $product->resource_limits ?? [], 'productType' => old('type', $product->type)])

@@ -36,7 +36,9 @@ class Product extends Model
         'cpu_overage_rate',
         'ram_overage_rate',
         'disk_overage_rate',
+        'bandwidth_overage_rate',
         'overage_enabled',
+        'bandwidth_overage_enabled',
         'is_active',
         'visible_to_resellers',
         'featured',
@@ -60,7 +62,9 @@ class Product extends Model
         'cpu_overage_rate' => 'float',
         'ram_overage_rate' => 'float',
         'disk_overage_rate' => 'float',
+        'bandwidth_overage_rate' => 'float',
         'overage_enabled' => 'boolean',
+        'bandwidth_overage_enabled' => 'boolean',
     ];
 
     const TYPES = [
