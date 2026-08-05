@@ -13,6 +13,54 @@ class ResellerDomainTransferService
         protected DatabaseManager $db,
     ) {}
 
+    /**
+     * Immediately move a domain between two customers owned by the same reseller.
+     */
+    public function transferBetweenOwnedCustomers(Domain $domain, User $fromCustomer, User $toCustomer, User $reseller): Domain
+    {
+        if ((int) $fromCustomer->reseller_id !== (int) $reseller->id) {
+            throw new \InvalidArgumentException('Source customer is not managed by this reseller.');
+        }
+
+        if ((int) $toCustomer->reseller_id !== (int) $reseller->id) {
+            throw new \InvalidArgumentException('Target customer is not managed by this reseller.');
+        }
+
+        if ((int) $domain->user_id !== (int) $fromCustomer->id) {
+            throw new \InvalidArgumentException('Domain is not owned by the source customer.');
+        }
+
+        if ((int) $fromCustomer->id === (int) $toCustomer->id) {
+            throw new \InvalidArgumentException('Domain is already assigned to this customer.');
+        }
+
+        return $this->db->transaction(function () use ($domain, $fromCustomer, $toCustomer) {
+            $notes = $domain->notes ?? [];
+            if (! is_array($notes)) {
+                $notes = [];
+            }
+
+            $notes[] = [
+                'type' => 'domain_transfer',
+                'from' => $fromCustomer->name,
+                'to' => $toCustomer->name,
+                'mode' => 'reseller_direct',
+                'transferred_at' => now()->toIso8601String(),
+            ];
+
+            $domain->update([
+                'user_id' => $toCustomer->id,
+                'reseller_id' => $toCustomer->reseller_id,
+                'pending_transfer_to_user_id' => null,
+                'transfer_token' => null,
+                'transfer_requested_at' => null,
+                'notes' => $notes,
+            ]);
+
+            return $domain->fresh();
+        });
+    }
+
     public function initiate(Domain $domain, User $fromCustomer, User $toCustomer, User $reseller): void
     {
         $this->db->transaction(function () use ($domain, $fromCustomer, $toCustomer, $reseller) {

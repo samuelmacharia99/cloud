@@ -274,10 +274,6 @@ class DomainController extends Controller
 
         $reseller = auth()->user();
 
-        if ($domain->pending_transfer_to_user_id) {
-            return back()->with('error', 'A transfer is already pending approval for this domain.');
-        }
-
         $validated = $request->validate([
             'to_customer_id' => [
                 'required',
@@ -296,11 +292,11 @@ class DomainController extends Controller
         }
 
         try {
-            $this->domainTransfer->initiate($domain, $fromCustomer, $toCustomer, $reseller);
+            $this->domainTransfer->transferBetweenOwnedCustomers($domain, $fromCustomer, $toCustomer, $reseller);
 
-            return back()->with('success', "Transfer request sent to {$toCustomer->name}. They must approve before ownership changes.");
+            return back()->with('success', "Domain transferred to {$toCustomer->name}.");
         } catch (\Throwable $e) {
-            return back()->with('error', 'Could not initiate transfer: '.$e->getMessage());
+            return back()->with('error', 'Could not transfer domain: '.$e->getMessage());
         }
     }
 

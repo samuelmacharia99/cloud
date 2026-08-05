@@ -81,11 +81,11 @@
 
         <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
             <h2 class="font-semibold text-slate-900 dark:text-white mb-4">Transfer to another customer</h2>
-            <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Moves ownership between your managed customers after the recipient approves.</p>
+            <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Immediately moves ownership to another customer you manage. No recipient approval required.</p>
             @if($transferTargets->isEmpty())
                 <p class="text-sm text-slate-500">Add another customer to enable transfers.</p>
             @else
-                <form method="POST" action="{{ route('reseller.domains.transfer', $domain) }}" class="space-y-3" data-confirm="Send transfer request to the selected customer?">
+                <form method="POST" action="{{ route('reseller.domains.transfer', $domain) }}" class="space-y-3" data-confirm="Transfer this domain to the selected customer now?" data-confirm-title="Transfer domain">
                     @csrf
                     <select name="to_customer_id" required class="w-full px-3 py-2 text-sm border rounded-lg bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600">
                         <option value="">Select customer…</option>
@@ -93,8 +93,8 @@
                             <option value="{{ $customer->id }}" @selected(old('to_customer_id') == $customer->id)>{{ $customer->name }} ({{ $customer->email }})</option>
                         @endforeach
                     </select>
-                    <button type="submit" class="px-4 py-2 border border-purple-300 text-purple-700 dark:text-purple-300 rounded-lg text-sm font-medium" @disabled($domain->pending_transfer_to_user_id)>
-                        Request transfer
+                    <button type="submit" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium">
+                        Transfer domain
                     </button>
                 </form>
             @endif

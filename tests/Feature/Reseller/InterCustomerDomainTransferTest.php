@@ -5,7 +5,6 @@ namespace Tests\Feature\Reseller;
 use App\Models\Domain;
 use App\Models\ResellerPackage;
 use App\Models\User;
-use App\Services\ResellerDomainTransferService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -52,13 +51,8 @@ class InterCustomerDomainTransferTest extends TestCase
             ->assertSessionHas('success');
 
         $domain->refresh();
-        $this->assertSame($to->id, $domain->pending_transfer_to_user_id);
-        $this->assertNotNull($domain->transfer_token);
-
-        app(ResellerDomainTransferService::class)->approve($domain->fresh()->transfer_token, $to);
-
-        $domain->refresh();
         $this->assertSame($to->id, $domain->user_id);
         $this->assertNull($domain->transfer_token);
+        $this->assertNull($domain->pending_transfer_to_user_id);
     }
 }

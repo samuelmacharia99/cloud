@@ -5,14 +5,17 @@ namespace App\Http\Controllers\Reseller;
 use App\Enums\ServiceStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Service;
+use App\Models\User;
 use App\Services\Provisioning\ProvisioningService;
 use App\Services\ResellerManagedServiceUpdateService;
 use App\Services\ResellerScopeService;
 use App\Services\ServiceDeletionService;
 use App\Services\ServiceEnforcementInsightService;
 use App\Services\ServiceInfrastructureProbeService;
+use App\Services\ServiceTransferService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class ManagedServiceController extends Controller
 {
@@ -60,6 +63,14 @@ class ManagedServiceController extends Controller
         $enforcementInsight = app(ServiceEnforcementInsightService::class)->forService($service);
         $infrastructureAbsent = app(ServiceInfrastructureProbeService::class)->infrastructureAlreadyAbsent($service);
 
+        $transferTargets = User::query()
+            ->where('reseller_id', auth()->id())
+            ->where('id', '!=', $service->user_id)
+            ->where('is_admin', false)
+            ->where('is_reseller', false)
+            ->orderBy('name')
+            ->get(['id', 'name', 'email']);
+
         return view('reseller.services.show', [
             'service' => $service,
             'canSuspend' => $actions['canSuspend'],
@@ -69,11 +80,13 @@ class ManagedServiceController extends Controller
             'managementLinks' => $managementLinks,
             'enforcementInsight' => $enforcementInsight,
             'infrastructureAbsent' => $infrastructureAbsent,
+            'transferTargets' => $transferTargets,
+            'canTransfer' => $actions['canTransfer'] && $transferTargets->isNotEmpty(),
         ]);
     }
 
     /**
-     * @return array{canSuspend: bool, canUnsuspend: bool, canTerminate: bool, canDelete: bool}
+     * @return array{canSuspend: bool, canUnsuspend: bool, canTerminate: bool, canDelete: bool, canTransfer: bool}
      */
     private function serviceActionFlags(Service $service): array
     {
@@ -86,6 +99,7 @@ class ManagedServiceController extends Controller
             'canUnsuspend' => $status === 'suspended',
             'canTerminate' => ! in_array($status, ['terminated', 'cancelled'], true),
             'canDelete' => true,
+            'canTransfer' => ! in_array($status, ['terminated', 'cancelled'], true) && $service->user_id !== null,
         ];
     }
 
@@ -158,6 +172,55 @@ class ManagedServiceController extends Controller
             return back()->with('success', 'Service terminated successfully.');
         } catch (\Exception $e) {
             return back()->with('error', 'Termination failed: '.$e->getMessage());
+        }
+    }
+
+    public function transfer(Request $request, Service $service, ServiceTransferService $transferService): RedirectResponse
+    {
+        $this->ensureManaged($service);
+
+        if (! $this->serviceActionFlags($service)['canTransfer']) {
+            return back()->with('error', 'This service cannot be transferred in its current state.');
+        }
+
+        $reseller = auth()->user();
+
+        $validated = $request->validate([
+            'to_customer_id' => [
+                'required',
+                'integer',
+                Rule::exists('users', 'id')->where(fn ($q) => $q
+                    ->where('reseller_id', $reseller->id)
+                    ->where('is_admin', false)
+                    ->where('is_reseller', false)
+                    ->where('id', '!=', $service->user_id)),
+            ],
+            'transfer_domain' => 'sometimes|boolean',
+        ]);
+
+        $targetCustomer = User::query()->findOrFail($validated['to_customer_id']);
+
+        try {
+            $result = $transferService->transferWithinReseller(
+                $service,
+                $targetCustomer,
+                $reseller,
+                $request->boolean('transfer_domain'),
+            );
+
+            $flash = "Service transferred to {$result['to_customer']}.";
+            if ($result['domain_transferred']) {
+                $flash .= ' Attached domain moved with the service.';
+            }
+            if (! empty($result['invoices_transferred'])) {
+                $flash .= ' Invoices moved: '.implode(', ', $result['invoices_transferred']).'.';
+            }
+
+            return redirect()
+                ->route('reseller.services.show', $service)
+                ->with('success', $flash);
+        } catch (\InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage());
         }
     }
 

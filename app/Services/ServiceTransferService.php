@@ -59,6 +59,47 @@ class ServiceTransferService
     {
         $this->assertTransferAllowed($service, $targetCustomer);
 
+        return $this->performTransfer($service, $targetCustomer, $transferDomain);
+    }
+
+    /**
+     * Transfer a service between two customers owned by the same reseller.
+     */
+    public function transferWithinReseller(
+        Service $service,
+        User $targetCustomer,
+        User $reseller,
+        bool $transferDomain = false,
+    ): array {
+        $owner = $service->user;
+        $managedByReseller = (int) ($service->reseller_id ?? 0) === (int) $reseller->id
+            || (int) ($owner?->reseller_id ?? 0) === (int) $reseller->id;
+
+        if (! $managedByReseller) {
+            throw new \InvalidArgumentException('Service is not managed by this reseller.');
+        }
+
+        if ((int) $targetCustomer->reseller_id !== (int) $reseller->id) {
+            throw new \InvalidArgumentException('Target customer is not managed by this reseller.');
+        }
+
+        $this->assertTransferAllowed($service, $targetCustomer);
+
+        return $this->performTransfer($service, $targetCustomer, $transferDomain);
+    }
+
+    /**
+     * @return array{
+     *     from_customer: string,
+     *     to_customer: string,
+     *     domain_transferred: bool,
+     *     catalog_warnings: list<string>,
+     *     da_warnings: list<string>,
+     *     invoices_transferred: list<string>
+     * }
+     */
+    private function performTransfer(Service $service, User $targetCustomer, bool $transferDomain): array
+    {
         $fromCustomer = $service->user->fresh();
         $previousResellerId = $service->reseller_id;
         $catalogWarnings = [];

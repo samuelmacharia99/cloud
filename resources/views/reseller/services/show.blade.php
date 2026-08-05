@@ -72,6 +72,33 @@
 
     <x-service-enforcement-panel :insight="$enforcementInsight" />
 
+    @if ($canTransfer ?? false)
+        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <h2 class="font-semibold text-slate-900 dark:text-white mb-2">Transfer to another customer</h2>
+            <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Immediately reassigns this service to another customer you manage. Related invoices for this service move with it.</p>
+            <form method="POST" action="{{ route('reseller.services.transfer', $service) }}" class="space-y-3" data-confirm="Transfer this service to the selected customer now?" data-confirm-title="Transfer service">
+                @csrf
+                <select name="to_customer_id" required class="w-full px-3 py-2 text-sm border rounded-lg bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600">
+                    <option value="">Select customer…</option>
+                    @foreach ($transferTargets as $customer)
+                        <option value="{{ $customer->id }}" @selected(old('to_customer_id') == $customer->id)>{{ $customer->name }} ({{ $customer->email }})</option>
+                    @endforeach
+                </select>
+                @if ($service->attachedDomainName())
+                    <label class="flex items-start gap-3 cursor-pointer">
+                        <input type="checkbox" name="transfer_domain" value="1" class="mt-1 rounded border-slate-300 dark:border-slate-600 text-purple-600 focus:ring-purple-500" @checked(old('transfer_domain'))>
+                        <span class="text-sm text-slate-700 dark:text-slate-300">
+                            Also transfer attached domain <code class="font-mono text-xs">{{ $service->attachedDomainName() }}</code> if owned by the current customer
+                        </span>
+                    </label>
+                @endif
+                <button type="submit" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium">
+                    Transfer service
+                </button>
+            </form>
+        </div>
+    @endif
+
     @if (!empty($managementLinks['username']) || !empty($managementLinks['panel_url']) || ($managementLinks['driver'] ?? '') === 'directadmin')
         <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
             <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
