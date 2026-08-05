@@ -50,6 +50,7 @@ return [
         'cron:auto-restart-containers',
         'cron:backup-containers',
         'cron:provision-pending-containers',
+        'cron:provision-pending-mailcow',
         'directadmin:provision-pending',
         'cron:provision-reseller-ssl',
     ],

@@ -285,7 +285,7 @@
                                 <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase mb-2">Username</p>
                                 <div class="bg-white dark:bg-slate-900 rounded border border-slate-200 dark:border-slate-700 p-3 flex items-center justify-between">
                                     <p class="text-sm font-mono text-slate-900 dark:text-white">{{ $hostingCredentials['username'] }}</p>
-                                    <button type="button" class="text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300" @click="navigator.clipboard.writeText('{{ $hostingCredentials['username'] }}')">
+                                    <button type="button" class="text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300" @click="navigator.clipboard.writeText(@js($hostingCredentials['username']))">
                                         Copy
                                     </button>
                                 </div>
@@ -294,13 +294,13 @@
                             <div>
                                 <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase mb-2">Password</p>
                                 <div class="bg-white dark:bg-slate-900 rounded border border-slate-200 dark:border-slate-700 p-3 flex items-center justify-between">
-                                    <p class="text-sm font-mono text-slate-900 dark:text-white" x-text="showPassword ? '{{ $hostingCredentials['password'] }}' : '•'.repeat(16)"></p>
+                                    <p class="text-sm font-mono text-slate-900 dark:text-white" x-text="showPassword ? @js($hostingCredentials['password']) : '•'.repeat(16)"></p>
                                     <div class="flex items-center gap-2">
                                         <button type="button" class="text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300" @click="showPassword = !showPassword">
                                             <span x-show="!showPassword">Show</span>
                                             <span x-show="showPassword">Hide</span>
                                         </button>
-                                        <button type="button" class="text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300" @click="navigator.clipboard.writeText('{{ $hostingCredentials['password'] }}')">
+                                        <button type="button" class="text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300" @click="navigator.clipboard.writeText(@js($hostingCredentials['password']))">
                                             Copy
                                         </button>
                                     </div>
@@ -335,7 +335,7 @@
                                 <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase mb-2">Username</p>
                                 <div class="bg-white dark:bg-slate-900 rounded border border-slate-200 dark:border-slate-700 p-3 flex items-center justify-between">
                                     <p class="text-sm font-mono text-slate-900 dark:text-white">{{ json_decode($service->credentials)->username }}</p>
-                                    <button class="text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300" @click="navigator.clipboard.writeText('{{ json_decode($service->credentials)->username }}')">
+                                    <button class="text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300" @click="navigator.clipboard.writeText(@js(json_decode($service->credentials)->username))">
                                         Copy
                                     </button>
                                 </div>
@@ -345,13 +345,13 @@
                             <div>
                                 <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase mb-2">Password</p>
                                 <div class="bg-white dark:bg-slate-900 rounded border border-slate-200 dark:border-slate-700 p-3 flex items-center justify-between">
-                                    <p class="text-sm font-mono text-slate-900 dark:text-white" x-text="showPassword ? '{{ json_decode($service->credentials)->password }}' : '•'.repeat(16)"></p>
+                                    <p class="text-sm font-mono text-slate-900 dark:text-white" x-text="showPassword ? @js(json_decode($service->credentials)->password) : '•'.repeat(16)"></p>
                                     <div class="flex items-center gap-2">
                                         <button class="text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300" @click="showPassword = !showPassword">
                                             <span x-show="!showPassword">Show</span>
                                             <span x-show="showPassword">Hide</span>
                                         </button>
-                                        <button class="text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300" @click="navigator.clipboard.writeText('{{ json_decode($service->credentials)->password }}')">
+                                        <button class="text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300" @click="navigator.clipboard.writeText(@js(json_decode($service->credentials)->password))">
                                             Copy
                                         </button>
                                     </div>

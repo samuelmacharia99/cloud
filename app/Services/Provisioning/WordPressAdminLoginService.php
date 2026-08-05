@@ -12,9 +12,9 @@ class WordPressAdminLoginService
 
     private const MU_PLUGIN_RELATIVE = 'wp-content/mu-plugins/talksasa-admin-sso.php';
 
-    private const TOKEN_RELATIVE = 'wp-content/uploads/.talksasa-admin-sso.json';
+    private const TOKEN_RELATIVE = 'wp-content/mu-plugins/.talksasa-admin-sso.json';
 
-    private const MU_PLUGIN_VERSION = 'TALKASA_SSO_V3';
+    private const MU_PLUGIN_VERSION = 'TALKASA_SSO_V4';
 
     /**
      * Ensure the SSO mu-plugin is present, mint a one-time token, and return the login URL.
@@ -81,7 +81,7 @@ class WordPressAdminLoginService
             ], JSON_THROW_ON_ERROR);
 
             $tokenPath = $hostAppPath.'/'.self::TOKEN_RELATIVE;
-            $ssh->mkdirp($hostAppPath.'/wp-content/uploads');
+            $ssh->mkdirp($hostAppPath.'/wp-content/mu-plugins');
             $ssh->upload($payload, $tokenPath);
             $ssh->exec(
                 'chown 33:33 '.escapeshellarg($tokenPath)
@@ -156,7 +156,7 @@ if (! defined('ABSPATH')) {
     }
 
     \$token = preg_replace('/[^a-f0-9]/', '', (string) \$_GET['talksasa_admin_sso']);
-    \$file = WP_CONTENT_DIR . '/uploads/.talksasa-admin-sso.json';
+    \$file = WP_CONTENT_DIR . '/mu-plugins/.talksasa-admin-sso.json';
 
     if (\$token === '' || ! is_readable(\$file)) {
         return; // Fall through to normal login form (token missing/unreadable).

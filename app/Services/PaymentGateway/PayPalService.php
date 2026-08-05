@@ -363,18 +363,37 @@ class PayPalService implements PaymentGatewayInterface
             $resource = $data['resource'] ?? [];
 
             if ($eventType === 'CHECKOUT.ORDER.COMPLETED' || $eventType === 'PAYMENT.CAPTURE.COMPLETED') {
-                $orderId = $resource['id'] ?? null;
+                $isCaptureEvent = $eventType === 'PAYMENT.CAPTURE.COMPLETED';
                 $status = $resource['status'] ?? null;
 
-                if (! $orderId) {
-                    return ['success' => false, 'message' => 'No order ID'];
+                // ORDER.COMPLETED uses resource id as order ID; CAPTURE.COMPLETED uses capture id —
+                // resolve the PayPal order ID from supplementary_data (same as denied path).
+                $orderId = $isCaptureEvent
+                    ? ($resource['supplementary_data']['related_ids']['order_id'] ?? null)
+                    : ($resource['id'] ?? null);
+
+                $payment = $orderId
+                    ? Payment::where('transaction_reference', $orderId)->first()
+                    : null;
+
+                if (! $payment && $isCaptureEvent) {
+                    $invoiceId = $resource['custom_id'] ?? null;
+                    if ($invoiceId) {
+                        $payment = Payment::query()
+                            ->where('invoice_id', $invoiceId)
+                            ->where('payment_method', 'paypal')
+                            ->where('status', 'pending')
+                            ->latest()
+                            ->first();
+                    }
                 }
 
-                // Find or create payment
-                $payment = Payment::where('transaction_reference', $orderId)->first();
-
                 if (! $payment) {
-                    // Try to find by invoice
+                    // Never create a payment keyed by capture ID when the order ID is unknown.
+                    if (! $orderId) {
+                        return ['success' => false, 'message' => 'No order ID'];
+                    }
+
                     $invoiceId = $resource['custom_id'] ?? null;
                     if (! $invoiceId) {
                         return ['success' => false, 'message' => 'Invoice ID not found'];
@@ -396,16 +415,13 @@ class PayPalService implements PaymentGatewayInterface
                         'paid_at' => $status === 'COMPLETED' ? now() : null,
                         'notes' => json_encode(['webhook_event' => $eventType]),
                     ]);
-                } else {
-                    if ($status === 'COMPLETED') {
-                        $payment->update([
-                            'status' => 'completed',
-                            'paid_at' => now(),
-                        ]);
-                    }
+                } elseif ($status === 'COMPLETED') {
+                    $payment->update([
+                        'status' => 'completed',
+                        'paid_at' => now(),
+                    ]);
                 }
 
-                // Update invoice if payment completed
                 if ($status === 'COMPLETED') {
                     if ($payment->payment_purpose === 'credit_topup') {
                         app(CustomerCreditTopupService::class)->processTopupPayment($payment);

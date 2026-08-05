@@ -13,6 +13,7 @@ use App\Models\Node;
 use App\Models\Registrar;
 use App\Models\Setting;
 use App\Models\SmsTemplate;
+use App\Services\CurrencyConversionService;
 use App\Services\Dns\CloudflareDnsService;
 use App\Services\PaymentGateway\MpesaService;
 use App\Services\PaymentGateway\PayPalConnectService;
@@ -629,11 +630,11 @@ class SettingController extends Controller
         $this->authorize('batchUpdate', Setting::class);
 
         try {
-            // This would call an external API to fetch current exchange rates
-            // For now, just return success
+            $rates = (new CurrencyConversionService)->forceUpdateRates();
+
             return response()->json([
                 'success' => true,
-                'message' => 'Exchange rates refreshed successfully.',
+                'message' => 'Exchange rates updated for '.count($rates).' currencies.',
             ]);
         } catch (\Exception $e) {
             return response()->json([

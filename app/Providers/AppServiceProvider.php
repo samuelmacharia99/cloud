@@ -25,6 +25,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 
@@ -63,6 +64,7 @@ class AppServiceProvider extends ServiceProvider
         Event::listen(CommandStarting::class, BlockDestructiveProductionCommands::class);
 
         $this->configureRateLimiting();
+        $this->configureHttps();
 
         // Load mail settings from database
         $this->loadMailConfigFromDatabase();
@@ -70,6 +72,17 @@ class AppServiceProvider extends ServiceProvider
         $this->shareResellerWalletData();
         $this->shareAdminAttentionData();
         $this->shareCustomerNotificationData();
+    }
+
+    private function configureHttps(): void
+    {
+        $forceHttps = filter_var(env('FORCE_HTTPS', false), FILTER_VALIDATE_BOOLEAN);
+        $productionHttps = $this->app->environment('production')
+            && str_starts_with((string) config('app.url'), 'https://');
+
+        if ($forceHttps || $productionHttps) {
+            URL::forceScheme('https');
+        }
     }
 
     private function shareCustomerNotificationData(): void

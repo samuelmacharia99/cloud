@@ -167,7 +167,9 @@ class ContainerApiTest extends TestCase
         $response = $this->getJson('/api/health');
 
         $response->assertStatus(200)
-            ->assertJsonPath('status', 'ok');
+            ->assertJsonPath('status', 'ok')
+            ->assertJsonPath('database', 'connected')
+            ->assertJsonPath('cache', 'working');
     }
 
     public function test_admin_health_endpoint_requires_admin(): void

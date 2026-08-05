@@ -515,8 +515,8 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('reseller/invoices/{invoice}/download', [App\Http\Controllers\Reseller\InvoiceController::class, 'download'])->name('reseller.invoices.download');
 
         Route::get('reseller/wallet', [WalletController::class, 'index'])->name('reseller.wallet.index');
-        Route::post('reseller/wallet/topup', [WalletController::class, 'initiateTopup'])->name('reseller.wallet.topup');
-        Route::get('reseller/wallet/topup/status/{invoice}', [WalletController::class, 'checkTopupStatus'])->name('reseller.wallet.topup.status');
+        Route::post('reseller/wallet/topup', [WalletController::class, 'initiateTopup'])->middleware('throttle:10,1')->name('reseller.wallet.topup');
+        Route::get('reseller/wallet/topup/status/{invoice}', [WalletController::class, 'checkTopupStatus'])->middleware('throttle:30,1')->name('reseller.wallet.topup.status');
         Route::get('reseller/wallet/transactions', [WalletController::class, 'transactions'])->name('reseller.wallet.transactions');
         Route::get('reseller/wallet/export', [WalletController::class, 'exportPdf'])->name('reseller.wallet.export');
 
@@ -567,9 +567,9 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::match(['get', 'post'], 'reseller/exit-impersonation', [App\Http\Controllers\Reseller\CustomerController::class, 'exitImpersonation'])->name('reseller.exit-impersonation');
 
         Route::get('reseller/invoices/{invoice}/pay', [App\Http\Controllers\Reseller\PaymentController::class, 'selectMethod'])->name('reseller.payment.select-method');
-        Route::post('reseller/invoices/{invoice}/pay', [App\Http\Controllers\Reseller\PaymentController::class, 'initiate'])->name('reseller.payment.initiate');
-        Route::get('reseller/invoices/{invoice}/pay/mpesa/verify', [App\Http\Controllers\Reseller\PaymentController::class, 'verifyMpesa'])->name('reseller.payment.verify-mpesa');
-        Route::get('reseller/invoices/{invoice}/pay/mpesa/status', [App\Http\Controllers\Reseller\PaymentController::class, 'mpesaStatus'])->name('reseller.payment.mpesa-status');
+        Route::post('reseller/invoices/{invoice}/pay', [App\Http\Controllers\Reseller\PaymentController::class, 'initiate'])->middleware('throttle:10,1')->name('reseller.payment.initiate');
+        Route::get('reseller/invoices/{invoice}/pay/mpesa/verify', [App\Http\Controllers\Reseller\PaymentController::class, 'verifyMpesa'])->middleware('throttle:30,1')->name('reseller.payment.verify-mpesa');
+        Route::get('reseller/invoices/{invoice}/pay/mpesa/status', [App\Http\Controllers\Reseller\PaymentController::class, 'mpesaStatus'])->middleware('throttle:30,1')->name('reseller.payment.mpesa-status');
         Route::get('reseller/invoices/{invoice}/payment/success', [App\Http\Controllers\Reseller\PaymentController::class, 'success'])->name('reseller.payment.success');
         Route::get('reseller/invoices/{invoice}/payment/stripe/success', [App\Http\Controllers\Reseller\PaymentController::class, 'stripeSuccess'])->name('reseller.payment.stripe.success');
         Route::get('reseller/invoices/{invoice}/payment/stripe/cancel', [App\Http\Controllers\Reseller\PaymentController::class, 'stripeCancel'])->name('reseller.payment.stripe.cancel');
@@ -644,8 +644,8 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::resource('my/orders', App\Http\Controllers\Customer\OrderController::class)->only(['index', 'show'])->names('customer.orders');
         Route::post('my/orders/{order}/cancel', [App\Http\Controllers\Customer\OrderController::class, 'cancel'])->name('customer.orders.cancel');
         Route::get('my/credits', [App\Http\Controllers\Customer\CreditController::class, 'index'])->name('customer.credits.index');
-        Route::post('my/credits/topup', [App\Http\Controllers\Customer\CreditController::class, 'initiateTopup'])->name('customer.credits.topup');
-        Route::get('my/credits/topup/status/{invoice}', [App\Http\Controllers\Customer\CreditController::class, 'checkTopupStatus'])->name('customer.credits.topup.status');
+        Route::post('my/credits/topup', [App\Http\Controllers\Customer\CreditController::class, 'initiateTopup'])->middleware('throttle:10,1')->name('customer.credits.topup');
+        Route::get('my/credits/topup/status/{invoice}', [App\Http\Controllers\Customer\CreditController::class, 'checkTopupStatus'])->middleware('throttle:30,1')->name('customer.credits.topup.status');
         Route::resource('my/invoices', App\Http\Controllers\Customer\InvoiceController::class)->only(['index', 'show'])->names('customer.invoices');
         Route::get('my/invoices/{invoice}/download', [App\Http\Controllers\Customer\InvoiceController::class, 'download'])->name('customer.invoices.download');
         Route::get('my/invoices/{invoice}/preview', [App\Http\Controllers\Customer\InvoiceController::class, 'preview'])->name('customer.invoices.preview');
@@ -714,9 +714,9 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         // Payment methods (resource routes already defined above, these are additional payment workflows)
         Route::get('/invoices/{invoice}/pay', [PaymentController::class, 'selectMethod'])->name('customer.payment.select-method');
         Route::post('/invoices/{invoice}/apply-credits', [PaymentController::class, 'applyCredits'])->name('customer.payment.apply-credits');
-        Route::post('/invoices/{invoice}/pay', [PaymentController::class, 'initiate'])->name('customer.payment.initiate');
-        Route::get('/invoices/{invoice}/pay/mpesa/verify', [PaymentController::class, 'verifyMpesa'])->name('customer.payment.verify-mpesa');
-        Route::get('/invoices/{invoice}/pay/mpesa/status', [PaymentController::class, 'mpesaStatus'])->name('customer.payment.mpesa-status');
+        Route::post('/invoices/{invoice}/pay', [PaymentController::class, 'initiate'])->middleware('throttle:10,1')->name('customer.payment.initiate');
+        Route::get('/invoices/{invoice}/pay/mpesa/verify', [PaymentController::class, 'verifyMpesa'])->middleware('throttle:30,1')->name('customer.payment.verify-mpesa');
+        Route::get('/invoices/{invoice}/pay/mpesa/status', [PaymentController::class, 'mpesaStatus'])->middleware('throttle:30,1')->name('customer.payment.mpesa-status');
         Route::get('/invoices/{invoice}/payment/success', [PaymentController::class, 'success'])->name('customer.payment.success');
         Route::get('/invoices/{invoice}/payment/stripe/success', [PaymentController::class, 'stripeSuccess'])->name('customer.payment.stripe.success');
         Route::get('/invoices/{invoice}/payment/stripe/cancel', [PaymentController::class, 'stripeCancel'])->name('customer.payment.stripe.cancel');

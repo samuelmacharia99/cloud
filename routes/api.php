@@ -1,13 +1,48 @@
 <?php
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\V1\ContainerApiController;
 use App\Http\Controllers\Api\V1\ContainerTemplateApiController;
 use App\Http\Controllers\Api\V1\NodeApiController;
 
+$healthCheck = function () {
+    $database = 'connected';
+    $cache = 'working';
+    $ok = true;
+
+    try {
+        DB::connection()->getPdo();
+    } catch (\Throwable) {
+        $database = 'error';
+        $ok = false;
+    }
+
+    try {
+        $key = 'healthcheck:'.uniqid('', true);
+        Cache::put($key, '1', 10);
+        if (Cache::get($key) !== '1') {
+            throw new \RuntimeException('cache read mismatch');
+        }
+        Cache::forget($key);
+    } catch (\Throwable) {
+        $cache = 'error';
+        $ok = false;
+    }
+
+    $payload = [
+        'status' => $ok ? 'ok' : 'degraded',
+        'database' => $database,
+        'cache' => $cache,
+    ];
+
+    return response()->json($payload, $ok ? 200 : 503);
+};
+
 // Public endpoint for health check
-Route::get('/health', fn() => response()->json(['status' => 'ok']));
+Route::get('/health', $healthCheck);
 
 // Protected endpoints
 Route::middleware('auth:sanctum')->group(function () {
@@ -49,10 +84,6 @@ Route::middleware('auth:sanctum')->group(function () {
 });
 
 // Admin-only health endpoints
-Route::middleware(['auth:sanctum', 'admin'])->group(function () {
-    Route::get('/admin/health', fn() => response()->json([
-        'status' => 'ok',
-        'database' => 'connected',
-        'cache' => 'working',
-    ]));
+Route::middleware(['auth:sanctum', 'admin'])->group(function () use ($healthCheck) {
+    Route::get('/admin/health', $healthCheck);
 });

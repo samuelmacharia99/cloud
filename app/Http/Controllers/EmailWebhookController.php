@@ -10,7 +10,7 @@ class EmailWebhookController extends Controller
 {
     public function bounce(Request $request, EmailDeliveryService $emailDelivery)
     {
-        $token = config('services.email_bounce.token', env('EMAIL_BOUNCE_TOKEN'));
+        $token = (string) (config('services.email_bounce.token') ?: env('EMAIL_BOUNCE_TOKEN', ''));
 
         if ($token === '') {
             if (app()->environment('production')) {
@@ -19,6 +19,10 @@ class EmailWebhookController extends Controller
                 return response()->json(['error' => 'Unauthorized'], 401);
             }
         } elseif (! hash_equals($token, (string) $request->header('X-Email-Bounce-Token', ''))) {
+            Log::warning('Email bounce webhook rejected: invalid token', [
+                'ip' => $request->ip(),
+            ]);
+
             return response()->json(['error' => 'Unauthorized'], 401);
         }
 

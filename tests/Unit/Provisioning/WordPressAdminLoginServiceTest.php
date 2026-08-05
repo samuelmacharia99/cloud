@@ -44,10 +44,10 @@ class WordPressAdminLoginServiceTest extends TestCase
 
         $this->assertStringContainsString('talksasa_admin_sso', $contents);
         $this->assertStringContainsString('wp_set_auth_cookie', $contents);
-        $this->assertStringContainsString('.talksasa-admin-sso.json', $contents);
+        $this->assertStringContainsString('mu-plugins/.talksasa-admin-sso.json', $contents);
         $this->assertStringContainsString('admin_url(', $contents);
         $this->assertStringContainsString('login_init', $contents);
-        $this->assertStringContainsString('TALKASA_SSO_V3', $contents);
+        $this->assertStringContainsString('TALKASA_SSO_V4', $contents);
     }
 
     #[Test]

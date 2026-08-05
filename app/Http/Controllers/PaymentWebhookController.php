@@ -118,9 +118,11 @@ class PaymentWebhookController extends Controller
     private function isValidMpesaCallback(Request $request): bool
     {
         $token = Setting::getValue('mpesa_callback_token', '');
+        $requiresToken = app()->environment('production')
+            || Setting::getValue('mpesa_environment', 'sandbox') === 'production';
 
         if ($token === '') {
-            if (Setting::getValue('mpesa_environment', 'sandbox') === 'production') {
+            if ($requiresToken) {
                 Log::error('M-Pesa callback token is not configured in production');
 
                 return false;

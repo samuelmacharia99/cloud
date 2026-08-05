@@ -5,6 +5,7 @@ namespace App\Services\PaymentGateway;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\Setting;
+use App\Services\Billing\InvoiceCurrencyService;
 use App\Services\CustomerCreditTopupService;
 use App\Support\CurrencyFormatter;
 use Illuminate\Support\Facades\Log;
@@ -57,31 +58,31 @@ class StripeService implements PaymentGatewayInterface
             }
 
             $user = $invoice->user;
-            $currency = strtolower($invoice->displayCurrency());
-            $lineItems = [];
+            $settlement = app(InvoiceCurrencyService::class)->settlementAmount(
+                $invoice,
+                $invoice->displayCurrency()
+            );
 
-            // Get invoice items
-            $invoiceItems = $invoice->items()->with('product')->get();
-            foreach ($invoiceItems as $item) {
-                $lineItems[] = [
-                    'price_data' => [
-                        'currency' => $currency,
-                        'unit_amount' => CurrencyFormatter::toMinorUnits((float) $item->amount, $invoice->displayCurrency()),
-                        'product_data' => [
-                            'name' => $item->description,
-                            'metadata' => [
-                                'invoice_id' => $invoice->id,
-                                'service_id' => $item->service_id,
-                            ],
+            $settlementCurrency = $settlement['currency'];
+            $settlementTotal = $settlement['amount'];
+
+            if ($settlementTotal <= 0) {
+                throw new \Exception('Invoice has no remaining balance');
+            }
+
+            $lineItems = [[
+                'price_data' => [
+                    'currency' => strtolower($settlementCurrency),
+                    'unit_amount' => CurrencyFormatter::toMinorUnits((float) $settlementTotal, $settlementCurrency),
+                    'product_data' => [
+                        'name' => "Invoice {$invoice->invoice_number}",
+                        'metadata' => [
+                            'invoice_id' => $invoice->id,
                         ],
                     ],
-                    'quantity' => 1,
-                ];
-            }
-
-            if (empty($lineItems)) {
-                throw new \Exception('No items in invoice');
-            }
+                ],
+                'quantity' => 1,
+            ]];
 
             // Create checkout session
             $session = Session::create([
@@ -103,8 +104,8 @@ class StripeService implements PaymentGatewayInterface
             Payment::create([
                 'user_id' => $user->id,
                 'invoice_id' => $invoice->id,
-                'amount' => $invoice->getAmountRemaining(),
-                'currency' => strtoupper($invoice->displayCurrency()),
+                'amount' => $settlementTotal,
+                'currency' => strtoupper($settlementCurrency),
                 'payment_method' => 'stripe',
                 'transaction_reference' => $session->id,
                 'status' => 'pending',
