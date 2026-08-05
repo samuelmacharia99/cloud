@@ -14,7 +14,7 @@ class EmailPolicy
 
     public function view(User $user, Email $email): bool
     {
-        return $user->is_admin;
+        return $user->is_admin && $email->isVisibleOnAdminLog();
     }
 
     public function create(User $user): bool
@@ -24,6 +24,8 @@ class EmailPolicy
 
     public function resend(User $user, Email $email): bool
     {
-        return $user->is_admin && in_array($email->status, ['failed', 'bounced'], true);
+        return $user->is_admin
+            && $email->isVisibleOnAdminLog()
+            && in_array($email->status, ['failed', 'bounced'], true);
     }
 }

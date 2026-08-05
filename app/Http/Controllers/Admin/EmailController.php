@@ -25,14 +25,14 @@ class EmailController extends Controller
     {
         $today = now()->startOfDay();
 
-        // Stats
-        $totalSentToday = Email::sent()->where('created_at', '>=', $today)->count();
-        $totalFailedToday = Email::failed()->where('created_at', '>=', $today)->count();
-        $totalAllTime = Email::count();
+        // Stats (platform log only — excludes reseller mail)
+        $totalSentToday = Email::query()->forAdminLog()->sent()->where('created_at', '>=', $today)->count();
+        $totalFailedToday = Email::query()->forAdminLog()->failed()->where('created_at', '>=', $today)->count();
+        $totalAllTime = Email::query()->forAdminLog()->count();
 
         // Filter by status
         $status = $request->get('status', 'all');
-        $query = Email::with('sentBy')->latest('created_at');
+        $query = Email::query()->forAdminLog()->with('sentBy')->latest('created_at');
 
         if ($status !== 'all') {
             $query->where('status', $status);

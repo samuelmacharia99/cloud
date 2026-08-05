@@ -41,4 +41,33 @@ class Email extends Model
     {
         return $query->where('status', 'bounced');
     }
+
+    /**
+     * Platform admin inbox: hide reseller-sent mail and mail to reseller-managed customers.
+     */
+    public function scopeForAdminLog($query)
+    {
+        return $query
+            ->where(function ($q) {
+                $q->whereNull('sent_by')
+                    ->orWhereDoesntHave('sentBy', fn ($user) => $user->where('is_reseller', true));
+            })
+            ->where(function ($q) {
+                $q->whereNull('user_id')
+                    ->orWhereDoesntHave('user', fn ($user) => $user->whereNotNull('reseller_id'));
+            });
+    }
+
+    public function isVisibleOnAdminLog(): bool
+    {
+        if ($this->sentBy?->is_reseller) {
+            return false;
+        }
+
+        if ($this->user?->reseller_id) {
+            return false;
+        }
+
+        return true;
+    }
 }

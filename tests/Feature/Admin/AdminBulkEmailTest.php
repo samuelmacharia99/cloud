@@ -194,4 +194,81 @@ class AdminBulkEmailTest extends TestCase
         $response->assertSessionHas('error');
         Queue::assertNothingPushed();
     }
+
+    public function test_admin_emails_index_hides_reseller_sent_and_reseller_customer_mail(): void
+    {
+        $admin = $this->admin();
+        $platform = $this->platformCustomer(['email' => 'platform@example.com']);
+        $reseller = User::factory()->create([
+            'is_admin' => false,
+            'is_reseller' => true,
+            'reseller_id' => null,
+            'name' => 'Acme Reseller',
+        ]);
+        $managed = $this->platformCustomer([
+            'email' => 'managed@example.com',
+            'reseller_id' => $reseller->id,
+        ]);
+
+        Email::create([
+            'recipient' => $platform->email,
+            'user_id' => $platform->id,
+            'subject' => 'Platform hello',
+            'body' => 'Hi platform',
+            'status' => 'sent',
+            'sent_by' => $admin->id,
+            'created_at' => now(),
+        ]);
+
+        Email::create([
+            'recipient' => $managed->email,
+            'user_id' => $managed->id,
+            'subject' => 'Reseller customer notice',
+            'body' => 'Hi managed',
+            'status' => 'sent',
+            'sent_by' => $reseller->id,
+            'created_at' => now(),
+        ]);
+
+        Email::create([
+            'recipient' => 'someone@example.com',
+            'user_id' => null,
+            'subject' => 'Reseller broadcast',
+            'body' => 'From reseller',
+            'status' => 'sent',
+            'sent_by' => $reseller->id,
+            'created_at' => now(),
+        ]);
+
+        $response = $this->actingAs($admin)->get(route('admin.emails.index'));
+
+        $response->assertOk();
+        $response->assertSee('Platform hello');
+        $response->assertDontSee('Reseller customer notice');
+        $response->assertDontSee('Reseller broadcast');
+    }
+
+    public function test_admin_cannot_open_reseller_email_detail(): void
+    {
+        $admin = $this->admin();
+        $reseller = User::factory()->create([
+            'is_admin' => false,
+            'is_reseller' => true,
+            'reseller_id' => null,
+        ]);
+
+        $email = Email::create([
+            'recipient' => 'managed@example.com',
+            'user_id' => null,
+            'subject' => 'Hidden reseller mail',
+            'body' => 'Secret',
+            'status' => 'sent',
+            'sent_by' => $reseller->id,
+            'created_at' => now(),
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('admin.emails.show', $email))
+            ->assertForbidden();
+    }
 }
