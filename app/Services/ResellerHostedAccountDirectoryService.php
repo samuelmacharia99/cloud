@@ -31,21 +31,9 @@ class ResellerHostedAccountDirectoryService
      */
     public function paginatedForReseller(User $reseller, Request $request): array
     {
-        $usesDirectAdmin = $this->resellerDirectAdmin->hasDirectAdminBinding($reseller);
-
-        if (! $usesDirectAdmin) {
-            return $this->paginatedPortalCustomersOnly($reseller, $request);
-        }
-
-        $rows = $this->cachedRowsForReseller($reseller, $request->boolean('refresh'));
-        $filtered = $this->applyFilters($rows, $request, false);
-        $stats = $this->statsFromRows($rows, true);
-
-        return [
-            'rows' => $this->paginateCollection($filtered, $request),
-            'stats' => $stats,
-            'uses_directadmin' => true,
-        ];
+        // Reseller customers page lists portal accounts only (manual create + reseller storefront signup).
+        // DirectAdmin-synced directory remains available for admin tooling via paginatedForAdmin().
+        return $this->paginatedPortalCustomersOnly($reseller, $request);
     }
 
     /**

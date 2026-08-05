@@ -34,18 +34,6 @@ class CustomerController extends Controller
         $customerCount = $reseller->getResellerUserCountForLimits();
         $hostedUserCountSource = $reseller->getResellerUserCountBreakdown()['source'];
 
-        $catalogListings = ResellerProduct::query()
-            ->where('reseller_id', $reseller->id)
-            ->where('is_active', true)
-            ->where('type', 'shared_hosting')
-            ->orderBy('name')
-            ->get(['id', 'name', 'direct_admin_package_name', 'monthly_price', 'yearly_price']);
-
-        $managedCustomers = User::query()
-            ->where('reseller_id', $reseller->id)
-            ->orderBy('name')
-            ->get(['id', 'name', 'email']);
-
         return view('reseller.customers.index', [
             'customers' => $directoryResult['rows'],
             'directoryStats' => $directoryResult['stats'],
@@ -53,8 +41,8 @@ class CustomerController extends Controller
             'resellerPackage' => $resellerPackage,
             'customerCount' => $customerCount,
             'hostedUserCountSource' => $hostedUserCountSource,
-            'catalogListings' => $catalogListings,
-            'managedCustomers' => $managedCustomers,
+            'catalogListings' => collect(),
+            'managedCustomers' => collect(),
         ]);
     }
 

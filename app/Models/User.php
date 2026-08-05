@@ -262,7 +262,8 @@ class User extends Authenticatable implements MustVerifyEmail
     }
 
     /**
-     * User count for package limits: DirectAdmin hosted users when configured, else portal customers.
+     * User count for package limits: portal customers managed by this reseller
+     * (manually created or signed up via the reseller storefront).
      */
     public function getResellerUserCountForLimits(): int
     {
@@ -274,13 +275,6 @@ class User extends Authenticatable implements MustVerifyEmail
      */
     public function getResellerUserCountBreakdown(): array
     {
-        if ($this->is_reseller && filled($this->directadmin_username)) {
-            $daCount = app(ResellerDirectAdminService::class)->fetchHostedUserCount($this);
-            if ($daCount !== null) {
-                return ['count' => $daCount, 'source' => 'directadmin'];
-            }
-        }
-
         return ['count' => $this->getManagedCustomersCount(), 'source' => 'portal'];
     }
 

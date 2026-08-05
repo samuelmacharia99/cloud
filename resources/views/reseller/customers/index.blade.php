@@ -9,11 +9,7 @@
         <div>
             <h1 class="text-3xl font-bold text-slate-900 dark:text-white">My Customers</h1>
             <p class="text-slate-600 dark:text-slate-400 mt-1">
-                @if ($usesDirectAdminDirectory ?? false)
-                    All hosted users from DirectAdmin, with platform link and billing status.
-                @else
-                    Manage your customer accounts and subscriptions.
-                @endif
+                Manage customers you added manually or who signed up through your storefront.
             </p>
         </div>
         <a href="{{ route('reseller.customers.create') }}" class="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition">
