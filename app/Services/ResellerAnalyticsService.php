@@ -46,6 +46,9 @@ class ResellerAnalyticsService
         $activeServices = (int) ($serviceCounts[ServiceStatus::Active->value] ?? $serviceCounts['active'] ?? 0);
         $suspendedServices = (int) ($serviceCounts[ServiceStatus::Suspended->value] ?? $serviceCounts['suspended'] ?? 0);
         $totalServices = (int) $serviceCounts->sum();
+        $serviceSlotBreakdown = $reseller->getServiceSlotCountBreakdown();
+        $serviceSlotsInUse = $serviceSlotBreakdown['count'];
+        $serviceSlotSource = $serviceSlotBreakdown['source'];
 
         $invoiceStatusCounts = (clone $invoicesQuery)
             ->selectRaw('status, COUNT(*) as aggregate')
@@ -87,7 +90,9 @@ class ResellerAnalyticsService
         return [
             'resellerPackage' => $reseller->resellerPackage,
             'maxServices' => $maxServices,
-            'activeServices' => $activeServices,
+            'activeServices' => $serviceSlotsInUse,
+            'serviceSlotSource' => $serviceSlotSource,
+            'portalActiveServices' => $activeServices,
             'suspendedServices' => $suspendedServices,
             'totalServices' => $totalServices,
             'managedCustomers' => $this->scope->managedCustomersQuery($reseller)->orderBy('name')->limit(6)->get(),

@@ -100,18 +100,24 @@
                     <div>
                         <div class="flex justify-between items-center mb-2">
                             <span class="font-medium text-slate-900 dark:text-white">Service Slots</span>
-                            <span class="text-sm text-slate-600 dark:text-slate-400">{{ $currentServices }} / {{ $user->resellerPackage->storage_space }}</span>
+                            <span class="text-sm text-slate-600 dark:text-slate-400">{{ $currentServices }} / {{ $user->resellerPackage->max_services }}</span>
                         </div>
                         @php
-                            $servicePct = $user->resellerPackage->storage_space > 0
-                                ? min(100, round(($currentServices / $user->resellerPackage->storage_space) * 100))
+                            $servicePct = $user->resellerPackage->max_services > 0
+                                ? min(100, round(($currentServices / $user->resellerPackage->max_services) * 100))
                                 : 0;
                             $serviceColor = $servicePct >= 90 ? 'bg-red-500' : ($servicePct >= 75 ? 'bg-amber-500' : 'bg-emerald-500');
                         @endphp
                         <div class="w-full h-3 bg-slate-300 dark:bg-slate-700 rounded-full overflow-hidden">
                             <div class="{{ $serviceColor }} h-3 rounded-full transition-all" style="width: {{ $servicePct }}%"></div>
                         </div>
-                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Active services managed by your account</p>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                            @if (($serviceSlotSource ?? 'portal') === 'directadmin')
+                                DirectAdmin users under your reseller account (extra domains on the same user do not use extra slots)
+                            @else
+                                Active portal services (link DirectAdmin to count hosting users instead)
+                            @endif
+                        </p>
                     </div>
 
                     <!-- Hosted users -->

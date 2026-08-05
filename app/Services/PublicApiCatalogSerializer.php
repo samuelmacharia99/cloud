@@ -139,7 +139,7 @@ class PublicApiCatalogSerializer
             'disk_overage_rate' => (float) ($package->disk_overage_rate ?? 0),
             'features' => [
                 'Up to '.$package->max_users.' customers',
-                'Up to '.$package->max_services.' active services',
+                'Up to '.$package->max_services.' DirectAdmin hosting users',
                 number_format($package->disk_pool_gb).' GB disk pool',
             ],
         ];

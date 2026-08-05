@@ -30,6 +30,7 @@ class PackageController extends Controller
             ->get();
 
         $currentServices = $user->getManagedActiveServicesCount();
+        $serviceSlotSource = $user->getServiceSlotCountBreakdown()['source'];
         $currentCustomers = $user->getResellerUserCountForLimits();
         $hostedUserCountSource = $user->getResellerUserCountBreakdown()['source'];
         $pendingInvoice = $this->subscriptions->pendingSubscriptionInvoice($user);
@@ -60,6 +61,7 @@ class PackageController extends Controller
             'packages',
             'billingCycle',
             'currentServices',
+            'serviceSlotSource',
             'currentCustomers',
             'hostedUserCountSource',
             'pendingInvoice',

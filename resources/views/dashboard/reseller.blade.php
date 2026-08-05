@@ -49,9 +49,15 @@
             <p class="text-xs text-slate-500 mt-2">{{ $customerSubtitle }}</p>
         </a>
         <a href="{{ route('reseller.services.index') }}" class="block bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 hover:border-emerald-300 dark:hover:border-emerald-700 transition shadow-sm">
-            <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Active services</p>
-            <p class="text-3xl font-bold text-slate-900 dark:text-white mt-1">{{ $activeServices }}</p>
-            <p class="text-xs text-slate-500 mt-2">{{ $suspendedServices }} suspended · view all</p>
+            <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Service slots</p>
+            <p class="text-3xl font-bold text-slate-900 dark:text-white mt-1">{{ $activeServices }}{{ $maxServices ? ' / '.$maxServices : '' }}</p>
+            <p class="text-xs text-slate-500 mt-2">
+                @if (($serviceSlotSource ?? 'portal') === 'directadmin')
+                    DirectAdmin users · {{ $suspendedServices }} portal suspended
+                @else
+                    {{ $suspendedServices }} suspended · view all
+                @endif
+            </p>
         </a>
         <a href="{{ route('reseller.customer-invoices.index', ['status' => 'unpaid']) }}" class="block bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 hover:border-amber-300 dark:hover:border-amber-700 transition shadow-sm">
             <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Outstanding</p>

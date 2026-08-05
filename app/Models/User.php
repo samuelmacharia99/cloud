@@ -214,7 +214,7 @@ class User extends Authenticatable implements MustVerifyEmail
     }
 
     /**
-     * Count of services this reseller manages, regardless of status.
+     * Count of services this reseller manages, regardless of status (portal records).
      */
     public function getManagedServicesCount(): int
     {
@@ -222,13 +222,32 @@ class User extends Authenticatable implements MustVerifyEmail
     }
 
     /**
-     * Count of active services managed by this reseller (used as storage proxy).
+     * Service slots in use for package limits.
+     * Prefer DirectAdmin hosted users (one DA account = one slot); fall back to active portal services.
      */
     public function getManagedActiveServicesCount(): int
     {
-        return Service::where('reseller_id', $this->id)
-            ->where('status', 'active')
-            ->count();
+        return $this->getServiceSlotCountBreakdown()['count'];
+    }
+
+    /**
+     * @return array{count: int, source: 'directadmin'|'portal'}
+     */
+    public function getServiceSlotCountBreakdown(): array
+    {
+        if ($this->is_reseller && filled($this->directadmin_username)) {
+            $daCount = app(ResellerDirectAdminService::class)->fetchHostedUserCount($this);
+            if ($daCount !== null) {
+                return ['count' => $daCount, 'source' => 'directadmin'];
+            }
+        }
+
+        return [
+            'count' => Service::where('reseller_id', $this->id)
+                ->where('status', 'active')
+                ->count(),
+            'source' => 'portal',
+        ];
     }
 
     /**
@@ -284,7 +303,7 @@ class User extends Authenticatable implements MustVerifyEmail
     }
 
     /**
-     * Returns true if the reseller has hit or exceeded the service (storage proxy) limit.
+     * True when DirectAdmin hosted-user count (or portal fallback) is at the package service-slot limit.
      */
     public function isAtServiceLimit(): bool
     {
