@@ -24,6 +24,10 @@ class ManagedServiceController extends Controller
     {
         $query = $this->scope->managedServicesQuery(auth()->user())
             ->with(['user', 'product'])
+            ->whereNotIn('status', [
+                ServiceStatus::Terminated->value,
+                ServiceStatus::Cancelled->value,
+            ])
             ->latest();
 
         if ($request->filled('status') && $request->status !== 'all') {

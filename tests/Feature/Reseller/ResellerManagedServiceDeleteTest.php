@@ -80,6 +80,32 @@ class ResellerManagedServiceDeleteTest extends TestCase
         $this->assertDatabaseHas('services', ['id' => $service->id]);
     }
 
+    public function test_reseller_services_index_hides_terminated_services(): void
+    {
+        $reseller = $this->createReseller();
+        $customer = User::factory()->customer()->create(['reseller_id' => $reseller->id]);
+
+        Service::factory()->create([
+            'user_id' => $customer->id,
+            'reseller_id' => $reseller->id,
+            'name' => 'Active Hosting',
+            'status' => 'active',
+        ]);
+
+        Service::factory()->create([
+            'user_id' => $customer->id,
+            'reseller_id' => $reseller->id,
+            'name' => 'Terminated Hosting',
+            'status' => 'terminated',
+        ]);
+
+        $this->actingAs($reseller)
+            ->get(route('reseller.services.index'))
+            ->assertOk()
+            ->assertSee('Active Hosting')
+            ->assertDontSee('Terminated Hosting');
+    }
+
     public function test_reseller_can_suspend_active_service_from_index_route(): void
     {
         $reseller = $this->createReseller();

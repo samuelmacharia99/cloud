@@ -13,7 +13,7 @@
         <input type="text" name="search" value="{{ request('search') }}" placeholder="Search service or customer..." class="flex-1 min-w-[200px] px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800">
         <select name="status" class="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800">
             <option value="all">All statuses</option>
-            @foreach (['active','pending','suspended','terminated'] as $status)
+            @foreach (['active','pending','provisioning','suspended','failed'] as $status)
                 <option value="{{ $status }}" @selected(request('status') === $status)>{{ ucfirst($status) }}</option>
             @endforeach
         </select>
