@@ -99,7 +99,7 @@ class CustomerContainerPlanChangeService
         Service $service,
         User $customer,
         Product $target,
-        string $billingCycle
+        ?string $billingCycle = null
     ): Invoice {
         if ($service->user_id !== $customer->id) {
             throw new \InvalidArgumentException('You can only change your own services.');
@@ -111,15 +111,11 @@ class CustomerContainerPlanChangeService
             throw new \InvalidArgumentException('That plan is not available for this service.');
         }
 
-        $currentPrice = (float) ($service->custom_price ?? $service->product->price ?? 0);
-        $targetPrice = (float) $target->price;
-        $cycleFactor = match ($billingCycle) {
-            'quarterly' => 3,
-            'semi-annual' => 6,
-            'annual' => 12,
-            default => 1,
-        };
-        $priceDiff = max(0, ($targetPrice - $currentPrice) * $cycleFactor);
+        // Lock to the cycle chosen at order time — plan change does not switch monthly/annual.
+        $billingCycle = $service->billing_cycle ?? 'monthly';
+        $currentPrice = $this->priceForCycle($service->product, $billingCycle, $service->custom_price);
+        $targetPrice = $this->priceForCycle($target, $billingCycle);
+        $priceDiff = max(0, $targetPrice - $currentPrice);
         // Simple mid-cycle estimate: charge half a cycle of the difference for upgrades; free for down/lateral
         $prorated = $match['change_type'] === 'upgrade'
             ? round($priceDiff * 0.5, 2)
@@ -127,7 +123,7 @@ class CustomerContainerPlanChangeService
 
         $tax = TaxService::calculateForUser($prorated, $customer);
 
-        return DB::transaction(function () use ($service, $customer, $target, $billingCycle, $prorated, $tax, $match) {
+        return DB::transaction(function () use ($service, $customer, $target, $billingCycle, $prorated, $tax, $match, $targetPrice) {
             $invoice = Invoice::create([
                 'user_id' => $customer->id,
                 'invoice_number' => 'INV-'.strtoupper(Str::random(10)),
@@ -159,14 +155,14 @@ class CustomerContainerPlanChangeService
             ]);
 
             if ($prorated <= 0) {
-                $this->applyPlanChange($service, $target, $billingCycle);
+                $this->applyPlanChange($service, $target, $billingCycle, $targetPrice);
             }
 
             return $invoice->fresh(['items']);
         });
     }
 
-    public function applyPlanChange(Service $service, Product $target, string $billingCycle): void
+    public function applyPlanChange(Service $service, Product $target, ?string $billingCycle = null, ?float $renewalPrice = null): void
     {
         $service->loadMissing('product.containerTemplate', 'containerDeployment.node');
         $deployment = $service->containerDeployment;
@@ -176,11 +172,13 @@ class CustomerContainerPlanChangeService
         }
 
         $limits = $target->getIncludedContainerLimits($target->containerTemplate, $deployment);
+        $lockedCycle = $service->billing_cycle ?? 'monthly';
+        $price = $renewalPrice ?? $this->priceForCycle($target, $lockedCycle);
 
         $service->update([
             'product_id' => $target->id,
-            'billing_cycle' => $billingCycle,
-            'custom_price' => null,
+            'billing_cycle' => $lockedCycle,
+            'custom_price' => $price,
         ]);
 
         $deployment->update([
@@ -222,12 +220,23 @@ class CustomerContainerPlanChangeService
             return;
         }
 
-        $cycle = $service->billing_cycle ?? 'monthly';
-        if (preg_match('/\((monthly|quarterly|semi-annual|annual)\)/', $invoice->notes ?? '', $cm)) {
-            $cycle = $cm[1];
+        // Always preserve the service's ordered billing cycle.
+        $this->applyPlanChange($service, $product);
+    }
+
+    private function priceForCycle(Product $product, string $cycle, ?float $customPrice = null): float
+    {
+        if ($customPrice !== null) {
+            return (float) $customPrice;
         }
 
-        $this->applyPlanChange($service, $product, $cycle);
+        return match ($cycle) {
+            'monthly' => (float) ($product->monthly_price ?: $product->price),
+            'quarterly' => (float) (($product->monthly_price ?: $product->price) * 3),
+            'semi-annual' => (float) (($product->monthly_price ?: $product->price) * 6),
+            'annual' => (float) ($product->yearly_price ?: (($product->monthly_price ?: $product->price) * 12)),
+            default => (float) ($product->price ?: $product->monthly_price),
+        };
     }
 
     /**

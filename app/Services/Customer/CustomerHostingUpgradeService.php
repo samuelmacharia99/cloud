@@ -514,12 +514,19 @@ class CustomerHostingUpgradeService
 
         $meta = $this->clearPackageLimitEnforcementMeta($meta);
 
+        $lockedCycle = $this->resolveTargetBillingCycle($service, $billingCycle);
+        $service->loadMissing('user');
+        $renewalPrice = $listing
+            ? $this->effectiveListingCyclePrice($listing, $lockedCycle)
+            : $this->effectiveCyclePrice($service->user, $targetProduct, $lockedCycle);
+
         $service->update([
             'product_id' => $targetProduct->id,
             'name' => $targetProduct->name,
             'provisioning_driver_key' => 'directadmin',
             'service_meta' => $meta,
-            ...($billingCycle ? ['billing_cycle' => $billingCycle] : []),
+            'billing_cycle' => $lockedCycle,
+            'custom_price' => $renewalPrice,
         ]);
 
         $fresh = $service->fresh(['user', 'product', 'node']);
@@ -1074,10 +1081,12 @@ class CustomerHostingUpgradeService
 
     public function resolveTargetBillingCycle(Service $service, ?string $billingCycle = null): string
     {
-        $cycle = $billingCycle ?? $service->billing_cycle ?? 'monthly';
+        // Keep the cycle chosen at order time. Plan changes only move resources/plan;
+        // customers cannot switch monthly ↔ annual (etc.) via self-serve upgrades.
+        $cycle = $service->billing_cycle ?? 'monthly';
 
         if (! in_array($cycle, self::BILLING_CYCLES, true)) {
-            throw new \InvalidArgumentException('Invalid billing cycle selected.');
+            return 'monthly';
         }
 
         return $cycle;

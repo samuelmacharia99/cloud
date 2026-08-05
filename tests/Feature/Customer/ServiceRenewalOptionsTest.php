@@ -280,7 +280,7 @@ class ServiceRenewalOptionsTest extends TestCase
         $this->assertSame('Silver', $options['upgrades']->first()['name']);
     }
 
-    public function test_upgrade_invoice_uses_selected_billing_cycle(): void
+    public function test_upgrade_invoice_keeps_service_billing_cycle(): void
     {
         ['node' => $node, 'bronze' => $bronze, 'silver' => $silver] = $this->createHostingStack();
 
@@ -303,6 +303,7 @@ class ServiceRenewalOptionsTest extends TestCase
             ->shouldReceive('notifyInvoiceGenerated')
             ->once();
 
+        // Requesting monthly must not switch an annual service off its ordered cycle.
         $invoice = app(CustomerHostingUpgradeService::class)->createUpgradeInvoice(
             $service,
             $customer,
@@ -312,8 +313,8 @@ class ServiceRenewalOptionsTest extends TestCase
         );
 
         $item = $invoice->items()->first();
-        $this->assertSame('monthly', $item->custom_options['to_billing_cycle']);
-        $this->assertStringContainsString('Monthly', $item->description);
+        $this->assertSame('annual', $item->custom_options['to_billing_cycle']);
+        $this->assertStringContainsString('Annual', $item->description);
         $this->assertTrue($item->custom_options['pricing_summary']['is_prorated'] ?? false);
         $this->assertGreaterThan(0, $item->custom_options['pricing_summary']['prorated_subtotal'] ?? 0);
         $this->assertStringContainsString('Prorated upgrade', $item->description);

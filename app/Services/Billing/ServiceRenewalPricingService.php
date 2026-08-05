@@ -54,7 +54,7 @@ class ServiceRenewalPricingService
                 );
 
                 return (float) $pricing['unit_price'];
-            } catch (\Throwable) {
+            } catch (\Throwable $e) {
                 report($e);
             }
         }

@@ -81,7 +81,7 @@ class ServiceUpgradeController extends Controller
         $validated = $request->validate([
             'product_id' => 'required|exists:products,id',
             'reseller_product_id' => 'nullable|exists:reseller_products,id',
-            'billing_cycle' => 'required|in:'.implode(',', CustomerHostingUpgradeService::BILLING_CYCLES),
+            'billing_cycle' => 'nullable|in:'.implode(',', CustomerHostingUpgradeService::BILLING_CYCLES),
         ]);
 
         $targetProduct = Product::findOrFail($validated['product_id']);
@@ -95,7 +95,7 @@ class ServiceUpgradeController extends Controller
                 auth()->user(),
                 $targetProduct,
                 $resellerProductId,
-                $validated['billing_cycle'],
+                $service->billing_cycle ?? 'monthly',
             );
             $settlement->applyAvailableCredits($invoice);
 
@@ -181,7 +181,7 @@ class ServiceUpgradeController extends Controller
     ) {
         $validated = $request->validate([
             'product_id' => 'required|exists:products,id',
-            'billing_cycle' => 'required|in:'.implode(',', CustomerHostingUpgradeService::BILLING_CYCLES),
+            'billing_cycle' => 'nullable|in:'.implode(',', CustomerHostingUpgradeService::BILLING_CYCLES),
         ]);
 
         try {
@@ -190,7 +190,7 @@ class ServiceUpgradeController extends Controller
                 $service,
                 auth()->user(),
                 $target,
-                $validated['billing_cycle'],
+                $service->billing_cycle ?? 'monthly',
             );
             $settlement->applyAvailableCredits($invoice);
 

@@ -55,31 +55,21 @@
             <input type="hidden" name="reseller_product_id" id="reseller_product_id" x-ref="resellerProductId" value="{{ old('reseller_product_id') }}">
 
             <div class="ui-card p-5">
-                <label for="billing_cycle" class="block text-sm font-semibold text-slate-900 dark:text-white mb-2">
-                    Billing cycle for the new plan
-                </label>
-                <select
-                    id="billing_cycle"
-                    name="billing_cycle"
-                    x-model="cycle"
-                    class="w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
-                >
-                    @foreach ($billingCycles as $cycleOption)
-                        <option value="{{ $cycleOption }}" @selected(old('billing_cycle', $billingCycle) === $cycleOption)>
-                            {{ ucfirst(str_replace('-', ' ', $cycleOption)) }}
-                        </option>
-                    @endforeach
-                </select>
+                <p class="block text-sm font-semibold text-slate-900 dark:text-white mb-2">
+                    Billing cycle
+                </p>
+                <input type="hidden" name="billing_cycle" value="{{ $billingCycle }}">
+                <div class="flex items-center justify-between gap-3 px-4 py-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60">
+                    <span class="text-sm font-medium text-slate-900 dark:text-white capitalize">{{ str_replace('-', ' ', $billingCycle) }}</span>
+                    <span class="text-xs text-slate-500 dark:text-slate-400">Locked to your order</span>
+                </div>
                 <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">
                     @if (!empty($isContainerPlanChange))
-                        Upgrade charges are an estimated mid-cycle prorate of the plan difference. Downgrades and same-tier switches apply at no extra cost.
+                        Plan changes keep your current billing cycle. Upgrade charges are an estimated mid-cycle prorate of the plan difference. Downgrades and same-tier switches apply at no extra cost.
                     @else
-                        Upgrade charges are prorated for the rest of your current billing period. Your service will renew on the selected cycle after the next invoice.
+                        Plan changes keep your current billing cycle. Upgrade charges are prorated for the rest of your current billing period.
                     @endif
                 </p>
-                @error('billing_cycle')
-                    <p class="text-sm text-red-600 mt-2">{{ $message }}</p>
-                @enderror
             </div>
 
             @foreach ($planOptions as $option)
