@@ -10,13 +10,6 @@
             'tone' => 'emerald',
         ],
         [
-            'label' => 'Orders',
-            'count' => $attention['orders'] ?? 0,
-            'new' => $attention['orders_new'] ?? 0,
-            'href' => route('admin.orders.index', ['status' => 'pending']),
-            'tone' => 'blue',
-        ],
-        [
             'label' => 'Tickets',
             'count' => $attention['tickets'] ?? 0,
             'new' => $attention['tickets_new'] ?? 0,
@@ -24,10 +17,10 @@
             'tone' => 'violet',
         ],
         [
-            'label' => 'Payments',
+            'label' => 'Payments to approve',
             'count' => $attention['payments'] ?? 0,
             'new' => $attention['payments_new'] ?? 0,
-            'href' => route('admin.payments.index'),
+            'href' => route('admin.payments.index', ['status' => 'pending']),
             'tone' => 'amber',
         ],
         [
@@ -38,10 +31,10 @@
             'tone' => 'cyan',
         ],
         [
-            'label' => 'Provisioning',
-            'count' => $attention['services_provisioning'] ?? 0,
+            'label' => 'Failed services',
+            'count' => $attention['services_failed'] ?? $attention['services_provisioning'] ?? 0,
             'new' => $attention['services_new'] ?? 0,
-            'href' => route('admin.services.index'),
+            'href' => route('admin.services.index', ['status' => 'failed']),
             'tone' => 'rose',
         ],
     ], fn ($item) => $item['count'] > 0);
@@ -105,7 +98,7 @@
     </span>
     <div>
         <p class="text-sm font-semibold text-slate-900 dark:text-white">All caught up</p>
-        <p class="text-xs text-slate-600 dark:text-slate-400">No domain orders, tickets, or payments waiting on you.</p>
+        <p class="text-xs text-slate-600 dark:text-slate-400">No domain orders, tickets, or approvals waiting on you.</p>
     </div>
 </div>
 @endif

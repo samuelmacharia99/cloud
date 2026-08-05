@@ -77,7 +77,11 @@ class DashboardController extends Controller
         $unpaidInvoiceTotal = (float) ($invoiceStatusSums['unpaid'] ?? 0);
         $overdueInvoiceTotal = (float) ($invoiceStatusSums['overdue'] ?? 0);
         $totalRevenue = (float) ($paymentStatusSums['completed'] ?? 0);
-        $pendingPayments = (float) ($paymentStatusSums['pending'] ?? 0);
+        $collectedToday = (float) Payment::query()
+            ->platformRevenue()
+            ->where('status', 'completed')
+            ->whereRaw('DATE(COALESCE(paid_at, created_at)) = ?', [now()->toDateString()])
+            ->sum('amount');
         $openTickets = Ticket::visibleToAdmin()->where('status', '!=', 'closed')->count();
         $urgentTickets = Ticket::visibleToAdmin()->where('status', '!=', 'closed')->where('priority', 'urgent')->count();
 
@@ -161,7 +165,7 @@ class DashboardController extends Controller
             'unpaidInvoiceTotal' => $unpaidInvoiceTotal,
             'overdueInvoiceTotal' => $overdueInvoiceTotal,
             'totalRevenue' => $totalRevenue,
-            'pendingPayments' => $pendingPayments,
+            'collectedToday' => $collectedToday,
             'openTickets' => $openTickets,
             'urgentTickets' => $urgentTickets,
 

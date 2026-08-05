@@ -114,12 +114,12 @@
             <p class="text-xs text-slate-500 dark:text-slate-500 mt-4">Payment due · view overdue</p>
         </a>
 
-        <!-- Pending Payments -->
-        <a href="{{ route('admin.payments.index') }}" class="block bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 hover:border-blue-300 dark:hover:border-blue-700 transition-all shadow-card hover:shadow-card-hover">
+        <!-- Collected Today -->
+        <a href="{{ route('admin.payments.index', ['status' => 'completed', 'from_date' => now()->toDateString(), 'to_date' => now()->toDateString()]) }}" class="block bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 hover:border-blue-300 dark:hover:border-blue-700 transition-all shadow-card hover:shadow-card-hover">
             <div class="flex items-center justify-between">
                 <div>
-                    <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Pending Payments</p>
-                    <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2">KSH {{ number_format($pendingPayments, 2) }}</p>
+                    <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Collected Today</p>
+                    <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2">KSH {{ number_format($collectedToday, 2) }}</p>
                 </div>
                 <div class="w-12 h-12 rounded-xl bg-blue-100 dark:bg-blue-950 flex items-center justify-center">
                     <svg class="w-6 h-6 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -127,7 +127,7 @@
                     </svg>
                 </div>
             </div>
-            <p class="text-xs text-slate-500 dark:text-slate-500 mt-4">In progress · review payments</p>
+            <p class="text-xs text-slate-500 dark:text-slate-500 mt-4">Platform revenue · {{ now()->format('M j, Y') }}</p>
         </a>
 
         <!-- Urgent Tickets -->

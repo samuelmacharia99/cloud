@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\Enums\PaymentStatus;
 use App\Models\DomainRenewalOrder;
-use App\Models\Order;
 use App\Models\Payment;
 use App\Models\ResellerDomainOrder;
 use App\Models\Service;
@@ -25,6 +24,16 @@ class AdminAttentionService
         'tickets',
         'payments',
         'services',
+    ];
+
+    /**
+     * Payment methods that require an admin to approve (not auto-settled gateways).
+     *
+     * @var list<string>
+     */
+    public const PAYMENTS_NEEDING_REVIEW = [
+        'manual',
+        'bank_transfer',
     ];
 
     /**
@@ -67,34 +76,49 @@ class AdminAttentionService
     {
         $seen = $user->settings['admin_seen'] ?? [];
 
+        // Platform domain registrations waiting on admin / registrar push.
         $domainOrdersPending = ResellerDomainOrder::query()
             ->whereIn('status', ['queued', 'pushed', 'failed']);
 
-        $ordersPending = Order::query()->where('status', 'pending');
+        // Paid renewals that still need registrar fulfillment (or failed).
         $renewalsPending = DomainRenewalOrder::query()->whereIn('status', ['paid', 'pushed', 'failed']);
+
+        // Platform-handled tickets only (reseller-handled are excluded).
         $ticketsOpen = Ticket::query()->visibleToAdmin()->where('status', '!=', 'closed');
-        $paymentsPending = Payment::query()->where('status', PaymentStatus::Pending);
-        $servicesProvisioning = Service::query()->whereIn('status', ['pending', 'provisioning']);
+
+        // Only payments that actually need an admin decision — not in-flight M-Pesa/Stripe/PayPal.
+        $paymentsPending = Payment::query()
+            ->where('status', PaymentStatus::Pending)
+            ->whereIn('payment_method', self::PAYMENTS_NEEDING_REVIEW);
+
+        // Automated provisioning is not an attention item; failed services are.
+        $servicesFailed = Service::query()->where('status', 'failed');
 
         $counts = [
             'domain_orders' => (clone $domainOrdersPending)->count(),
-            'orders' => (clone $ordersPending)->count(),
+            // Abandoned unpaid checkouts are not admin work.
+            'orders' => 0,
             'domain_renewals' => (clone $renewalsPending)->count(),
             'tickets' => (clone $ticketsOpen)->count(),
             'payments' => (clone $paymentsPending)->count(),
-            'services_provisioning' => (clone $servicesProvisioning)->count(),
+            'services_provisioning' => (clone $servicesFailed)->count(),
+            'services_failed' => (clone $servicesFailed)->count(),
         ];
 
         $new = [
             'domain_orders' => $this->countNewSince($seen['domain_orders'] ?? null, clone $domainOrdersPending),
-            'orders' => $this->countNewSince($seen['orders'] ?? null, clone $ordersPending),
+            'orders' => 0,
             'domain_renewals' => $this->countNewSince($seen['domain_renewals'] ?? null, clone $renewalsPending),
             'tickets' => $this->countNewSince($seen['tickets'] ?? null, clone $ticketsOpen),
             'payments' => $this->countNewSince($seen['payments'] ?? null, clone $paymentsPending),
-            'services' => $this->countNewSince($seen['services'] ?? null, clone $servicesProvisioning),
+            'services' => $this->countNewSince($seen['services'] ?? null, clone $servicesFailed),
         ];
 
-        $counts['total'] = array_sum($counts);
+        $counts['total'] = $counts['domain_orders']
+            + $counts['domain_renewals']
+            + $counts['tickets']
+            + $counts['payments']
+            + $counts['services_failed'];
         $newTotal = array_sum($new);
 
         foreach ($new as $key => $value) {
@@ -172,34 +196,36 @@ class AdminAttentionService
         Payment::query()
             ->with('user:id,name')
             ->where('status', PaymentStatus::Pending)
+            ->whereIn('payment_method', self::PAYMENTS_NEEDING_REVIEW)
             ->latest()
             ->limit(3)
             ->get()
             ->each(function (Payment $payment) use ($items) {
+                $method = $payment->payment_method?->label() ?? 'Payment';
                 $items->push([
                     'type' => 'payment',
                     'title' => 'KES '.number_format((float) $payment->amount, 2),
-                    'meta' => ($payment->user?->name ?? 'Unknown').' · pending approval',
+                    'meta' => ($payment->user?->name ?? 'Unknown').' · '.$method.' awaiting approval',
                     'url' => route('admin.payments.show', $payment),
                     'at' => $payment->created_at?->diffForHumans() ?? '',
                     'sort' => $payment->created_at,
                 ]);
             });
 
-        Order::query()
-            ->with('user:id,name')
-            ->where('status', 'pending')
+        Service::query()
+            ->with(['user:id,name', 'product:id,name'])
+            ->where('status', 'failed')
             ->latest()
             ->limit(3)
             ->get()
-            ->each(function (Order $order) use ($items) {
+            ->each(function (Service $service) use ($items) {
                 $items->push([
-                    'type' => 'order',
-                    'title' => $order->order_number,
-                    'meta' => ($order->user?->name ?? 'Unknown').' · pending checkout',
-                    'url' => route('admin.orders.show', $order),
-                    'at' => $order->created_at?->diffForHumans() ?? '',
-                    'sort' => $order->created_at,
+                    'type' => 'service',
+                    'title' => $service->product?->name ?? $service->name ?? 'Service',
+                    'meta' => ($service->user?->name ?? 'Unknown').' · provisioning failed',
+                    'url' => route('admin.services.show', $service),
+                    'at' => $service->created_at?->diffForHumans() ?? '',
+                    'sort' => $service->updated_at ?? $service->created_at,
                 ]);
             });
 
