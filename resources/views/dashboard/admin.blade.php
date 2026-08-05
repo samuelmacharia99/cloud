@@ -52,7 +52,7 @@
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Unpaid Invoices</p>
-                    <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2">KSH {{ number_format($unpaidInvoiceTotal, 2) }}</p>
+                    <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2">KES {{ number_format($unpaidInvoiceTotal, 2) }}</p>
                 </div>
                 <div class="w-12 h-12 rounded-xl bg-amber-100 dark:bg-amber-950 flex items-center justify-center">
                     <svg class="w-6 h-6 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -60,7 +60,7 @@
                     </svg>
                 </div>
             </div>
-            <p class="text-xs text-slate-500 dark:text-slate-500 mt-4">Awaiting payment · view invoices</p>
+            <p class="text-xs text-slate-500 dark:text-slate-500 mt-4">Platform AR remaining · view invoices</p>
         </a>
 
         <!-- Total Revenue -->
@@ -68,7 +68,7 @@
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Platform Revenue</p>
-                    <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2">KSH {{ number_format($totalRevenue, 2) }}</p>
+                    <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2">KES {{ number_format($totalRevenue, 2) }}</p>
                 </div>
                 <div class="w-12 h-12 rounded-xl bg-violet-100 dark:bg-violet-950 flex items-center justify-center">
                     <svg class="w-6 h-6 text-violet-600 dark:text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -76,7 +76,7 @@
                     </svg>
                 </div>
             </div>
-            <p class="text-xs text-slate-500 dark:text-slate-500 mt-4">Direct customers &amp; resellers · view payments</p>
+            <p class="text-xs text-slate-500 dark:text-slate-500 mt-4">Direct customers &amp; resellers · base KES</p>
         </a>
     </div>
 
@@ -103,7 +103,7 @@
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Overdue Invoices</p>
-                    <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2">KSH {{ number_format($overdueInvoiceTotal, 2) }}</p>
+                    <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2">KES {{ number_format($overdueInvoiceTotal, 2) }}</p>
                 </div>
                 <div class="w-12 h-12 rounded-xl bg-red-100 dark:bg-red-950 flex items-center justify-center">
                     <svg class="w-6 h-6 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -111,15 +111,15 @@
                     </svg>
                 </div>
             </div>
-            <p class="text-xs text-slate-500 dark:text-slate-500 mt-4">Payment due · view overdue</p>
+            <p class="text-xs text-slate-500 dark:text-slate-500 mt-4">Platform AR remaining · view overdue</p>
         </a>
 
         <!-- Collected Today -->
-        <a href="{{ route('admin.payments.index', ['status' => 'completed', 'from_date' => now()->toDateString(), 'to_date' => now()->toDateString()]) }}" class="block bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 hover:border-blue-300 dark:hover:border-blue-700 transition-all shadow-card hover:shadow-card-hover">
+        <a href="{{ route('admin.payments.index', ['status' => 'completed', 'from_date' => $collectedTodayDate ?? now()->toDateString(), 'to_date' => $collectedTodayDate ?? now()->toDateString()]) }}" class="block bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 hover:border-blue-300 dark:hover:border-blue-700 transition-all shadow-card hover:shadow-card-hover">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Collected Today</p>
-                    <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2">KSH {{ number_format($collectedToday, 2) }}</p>
+                    <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2">KES {{ number_format($collectedToday, 2) }}</p>
                 </div>
                 <div class="w-12 h-12 rounded-xl bg-blue-100 dark:bg-blue-950 flex items-center justify-center">
                     <svg class="w-6 h-6 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -127,7 +127,7 @@
                     </svg>
                 </div>
             </div>
-            <p class="text-xs text-slate-500 dark:text-slate-500 mt-4">Platform revenue · {{ now()->format('M j, Y') }}</p>
+            <p class="text-xs text-slate-500 dark:text-slate-500 mt-4">Platform revenue · {{ \Illuminate\Support\Carbon::parse($collectedTodayDate ?? now())->format('M j, Y') }}</p>
         </a>
 
         <!-- Urgent Tickets -->
@@ -158,7 +158,7 @@
         <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
             <div class="p-6 border-b border-slate-200 dark:border-slate-800">
                 <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Platform Revenue Trend</h2>
-                <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">Last 30 days · excludes reseller customer retail</p>
+                <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">Last 30 days · base KES · excludes reseller customer retail</p>
             </div>
             <div class="p-6">
                 <canvas id="revenueChart"></canvas>
@@ -168,8 +168,8 @@
         <!-- Signup Trend Chart -->
         <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
             <div class="p-6 border-b border-slate-200 dark:border-slate-800">
-                <h2 class="text-lg font-semibold text-slate-900 dark:text-white">New Signups</h2>
-                <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">Last 7 days</p>
+                <h2 class="text-lg font-semibold text-slate-900 dark:text-white">New Platform Signups</h2>
+                <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">Last 7 days · excludes reseller-managed customers</p>
             </div>
             <div class="p-6">
                 <canvas id="signupChart"></canvas>
@@ -185,14 +185,18 @@
             <div class="space-y-4">
                 @php
                     $statusColors = [
-                        'active' => ['bg' => 'bg-emerald-500', 'text' => 'text-emerald-700 dark:text-emerald-400'],
-                        'suspended' => ['bg' => 'bg-amber-500', 'text' => 'text-amber-700 dark:text-amber-400'],
-                        'terminated' => ['bg' => 'bg-red-500', 'text' => 'text-red-700 dark:text-red-400'],
-                        'cancelled' => ['bg' => 'bg-slate-500', 'text' => 'text-slate-700 dark:text-slate-400'],
+                        'active' => ['bg' => 'bg-emerald-500'],
+                        'pending' => ['bg' => 'bg-blue-500'],
+                        'provisioning' => ['bg' => 'bg-cyan-500'],
+                        'suspended' => ['bg' => 'bg-amber-500'],
+                        'failed' => ['bg' => 'bg-rose-500'],
+                        'terminated' => ['bg' => 'bg-red-500'],
+                        'cancelled' => ['bg' => 'bg-slate-500'],
                     ];
                     $total = array_sum($serviceStatus);
                 @endphp
                 @foreach($serviceStatus as $status => $count)
+                    @continue($count < 1 && ! in_array($status, ['active', 'suspended', 'failed'], true))
                     @php $percentage = $total > 0 ? round(($count / $total) * 100) : 0; @endphp
                     <div>
                         <div class="flex items-center justify-between mb-1">
@@ -200,7 +204,7 @@
                             <span class="text-sm font-semibold text-slate-900 dark:text-white">{{ $count }} ({{ $percentage }}%)</span>
                         </div>
                         <div class="w-full bg-slate-200 dark:bg-slate-800 rounded-full h-2">
-                            <div class="h-2 rounded-full {{ $statusColors[$status]['bg'] }}" style="width: {{ $percentage }}%"></div>
+                            <div class="h-2 rounded-full {{ $statusColors[$status]['bg'] ?? 'bg-slate-400' }}" style="width: {{ $percentage }}%"></div>
                         </div>
                     </div>
                 @endforeach
@@ -209,7 +213,7 @@
 
         <!-- Invoice Status -->
         <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
-            <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-6">Invoice Status Breakdown</h2>
+            <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-6">Platform Invoice Status</h2>
             <div class="space-y-4">
                 @php
                     $invoiceStatusColors = [
@@ -310,7 +314,7 @@
                                 <p class="text-sm font-medium text-slate-900 dark:text-white">{{ $payment->user?->name ?? 'Unknown' }}</p>
                                 <p class="text-xs text-slate-600 dark:text-slate-400">{{ $payment->payment_method?->label() ?? 'Manual' }}</p>
                             </div>
-                            <p class="text-sm font-semibold text-slate-900 dark:text-white">KSH {{ number_format($payment->amount, 2) }}</p>
+                            <p class="text-sm font-semibold text-slate-900 dark:text-white">KES {{ number_format($payment->amount, 2) }}</p>
                         </div>
                     </a>
                 @empty
@@ -341,7 +345,7 @@
                                 <p class="text-xs text-slate-600 dark:text-slate-400">{{ $invoice->user?->name ?? 'Unknown' }}</p>
                             </div>
                             <div class="text-right">
-                                <p class="text-sm font-semibold text-slate-900 dark:text-white">KSH {{ number_format($invoice->total, 2) }}</p>
+                                <p class="text-sm font-semibold text-slate-900 dark:text-white">KES {{ number_format($invoice->total_base_kes ?? $invoice->total, 2) }}</p>
                             </div>
                         </div>
                     </a>
@@ -394,7 +398,7 @@
                         <div class="flex items-center justify-between gap-3">
                             <div class="flex-1 min-w-0">
                                 <p class="text-sm font-medium text-slate-900 dark:text-white truncate">{{ $product->name }}</p>
-                                <p class="text-xs text-slate-600 dark:text-slate-400">{{ $currency?->symbol ?? 'KES' }}{{ number_format(($product->monthly_price ?? $product->yearly_price ?? 0) * ($currency?->exchange_rate ?? 1), 2) }}</p>
+                                <p class="text-xs text-slate-600 dark:text-slate-400">KES {{ number_format((float) ($product->monthly_price ?? $product->yearly_price ?? 0), 2) }}</p>
                             </div>
                             <div class="text-right">
                                 <p class="text-sm font-semibold text-slate-900 dark:text-white">{{ $product->services_count }}</p>
@@ -420,19 +424,14 @@
     const revenueCtx = document.getElementById('revenueChart');
     if (revenueCtx) {
         const revenueData = {!! $revenueData !!};
-        const last30Days = [];
-        for (let i = 29; i >= 0; i--) {
-            const date = new Date();
-            date.setDate(date.getDate() - i);
-            last30Days.push(date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
-        }
+        const revenueLabels = {!! $revenueLabels !!};
 
         new Chart(revenueCtx, {
             type: 'line',
             data: {
-                labels: last30Days,
+                labels: revenueLabels,
                 datasets: [{
-                    label: 'Platform revenue',
+                    label: 'Platform revenue (KES)',
                     data: revenueData,
                     borderColor: '#8b5cf6',
                     backgroundColor: 'rgba(139, 92, 246, 0.1)',
@@ -495,20 +494,14 @@
     const signupCtx = document.getElementById('signupChart');
     if (signupCtx) {
         const signupData = {!! $signupData !!};
-        const last7Days = [];
-        const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-        for (let i = 6; i >= 0; i--) {
-            const date = new Date();
-            date.setDate(date.getDate() - i);
-            last7Days.push(dayNames[date.getDay()] + ' ' + date.getDate());
-        }
+        const signupLabels = {!! $signupLabels !!};
 
         new Chart(signupCtx, {
             type: 'bar',
             data: {
-                labels: last7Days,
+                labels: signupLabels,
                 datasets: [{
-                    label: 'New Signups',
+                    label: 'Platform signups',
                     data: signupData,
                     backgroundColor: '#3b82f6',
                     borderRadius: 6,

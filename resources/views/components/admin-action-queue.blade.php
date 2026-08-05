@@ -6,7 +6,7 @@
             'label' => 'Domain orders',
             'count' => $attention['domain_orders'] ?? 0,
             'new' => $attention['domain_orders_new'] ?? 0,
-            'href' => route('admin.domain-orders.index', ['status' => 'queued']),
+            'href' => route('admin.domain-orders.index', ['status' => 'queued,pushed,failed']),
             'tone' => 'emerald',
         ],
         [
@@ -20,7 +20,7 @@
             'label' => 'Payments to approve',
             'count' => $attention['payments'] ?? 0,
             'new' => $attention['payments_new'] ?? 0,
-            'href' => route('admin.payments.index', ['status' => 'pending']),
+            'href' => route('admin.payments.index', ['status' => 'pending', 'needs_approval' => 1]),
             'tone' => 'amber',
         ],
         [

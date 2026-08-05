@@ -326,9 +326,12 @@ class InvoiceCurrencyService
         return round(Currency::convert($overInInvoice, $invoiceCurrency, config('currency.base', 'KES')), 2);
     }
 
-    public function remainingBaseKes(Invoice $invoice): float
+    public function remainingBaseKes(Invoice $invoice, bool $refresh = true): float
     {
-        $invoice->refresh();
+        if ($refresh) {
+            $invoice->refresh();
+        }
+
         $totalKes = (float) ($invoice->total_base_kes ?? $invoice->total);
         $remaining = $invoice->getAmountRemaining();
         $invoiceTotal = (float) $invoice->total;

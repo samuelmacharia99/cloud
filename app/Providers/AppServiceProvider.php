@@ -93,7 +93,7 @@ class AppServiceProvider extends ServiceProvider
 
     private function shareAdminAttentionData(): void
     {
-        View::composer(['layouts.admin', 'dashboard.admin'], function ($view) {
+        View::composer('layouts.admin', function ($view) {
             if (! auth()->check() || ! auth()->user()->isAdmin()) {
                 return;
             }

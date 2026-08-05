@@ -62,6 +62,7 @@
                                     @case('ticket') bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300 @break
                                     @case('payment') bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300 @break
                                     @case('service') bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300 @break
+                                    @case('renewal') bg-cyan-100 text-cyan-700 dark:bg-cyan-950 dark:text-cyan-300 @break
                                     @default bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300
                                 @endswitch">
                                 {{ str_replace('_', ' ', $item['type']) }}

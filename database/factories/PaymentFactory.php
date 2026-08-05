@@ -13,11 +13,11 @@ class PaymentFactory extends Factory
         $status = fake()->randomElement(['pending', 'completed', 'failed', 'reversed']);
         $paidAt = $status === 'completed' ? fake()->dateTimeBetween('-30 days', 'now') : null;
 
-        // 60% M-PESA, 20% card, 20% bank
+        // Prefer valid PaymentMethod enum values
         $paymentMethod = fake()->randomElement(
             array_merge(
                 array_fill(0, 6, 'mpesa'),
-                array_fill(0, 2, 'card'),
+                array_fill(0, 2, 'stripe'),
                 array_fill(0, 2, 'bank_transfer')
             )
         );

@@ -19,7 +19,16 @@ class DomainOrderController extends Controller
         $query = ResellerDomainOrder::with('reseller', 'customer');
 
         if ($request->filled('status') && $request->input('status') !== 'all') {
-            $query->where('status', $request->input('status'));
+            $statuses = array_values(array_filter(array_map(
+                'trim',
+                explode(',', (string) $request->input('status'))
+            )));
+
+            if (count($statuses) === 1) {
+                $query->where('status', $statuses[0]);
+            } elseif (count($statuses) > 1) {
+                $query->whereIn('status', $statuses);
+            }
         }
 
         if ($request->filled('reseller_id')) {

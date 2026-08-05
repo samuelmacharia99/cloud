@@ -116,6 +116,35 @@ class AdminAttentionServiceTest extends TestCase
         $this->assertSame(4, $snapshot['total']);
     }
 
+    public function test_new_ticket_count_includes_escalations_after_seen(): void
+    {
+        $admin = User::factory()->create([
+            'is_admin' => true,
+            'settings' => [
+                'admin_seen' => [
+                    'tickets' => now()->subHour()->toIso8601String(),
+                ],
+            ],
+        ]);
+        $customer = User::factory()->customer()->create();
+
+        Ticket::create([
+            'user_id' => $customer->id,
+            'title' => 'Old ticket',
+            'description' => 'Created earlier',
+            'status' => 'open',
+            'priority' => 'normal',
+            'handled_by' => 'platform',
+            'created_at' => now()->subDays(2),
+            'escalated_at' => now()->subMinutes(10),
+        ]);
+
+        $snapshot = app(AdminAttentionService::class)->snapshot($admin);
+
+        $this->assertSame(1, $snapshot['tickets']);
+        $this->assertSame(1, $snapshot['tickets_new']);
+    }
+
     protected function tearDown(): void
     {
         Mockery::close();

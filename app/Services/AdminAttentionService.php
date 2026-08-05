@@ -61,12 +61,17 @@ class AdminAttentionService
         $user->forceFill(['settings' => $settings])->save();
 
         Cache::forget('admin_attention_'.$user->id);
-        Cache::forget('admin_attention_counts');
+        $this->clearCache();
     }
 
     public function clearCache(): void
     {
         Cache::forget('admin_attention_counts');
+
+        User::query()
+            ->where('is_admin', true)
+            ->pluck('id')
+            ->each(fn ($id) => Cache::forget('admin_attention_'.$id));
     }
 
     /**
@@ -76,27 +81,21 @@ class AdminAttentionService
     {
         $seen = $user->settings['admin_seen'] ?? [];
 
-        // Platform domain registrations waiting on admin / registrar push.
         $domainOrdersPending = ResellerDomainOrder::query()
             ->whereIn('status', ['queued', 'pushed', 'failed']);
 
-        // Paid renewals that still need registrar fulfillment (or failed).
         $renewalsPending = DomainRenewalOrder::query()->whereIn('status', ['paid', 'pushed', 'failed']);
 
-        // Platform-handled tickets only (reseller-handled are excluded).
         $ticketsOpen = Ticket::query()->visibleToAdmin()->where('status', '!=', 'closed');
 
-        // Only payments that actually need an admin decision — not in-flight M-Pesa/Stripe/PayPal.
         $paymentsPending = Payment::query()
             ->where('status', PaymentStatus::Pending)
             ->whereIn('payment_method', self::PAYMENTS_NEEDING_REVIEW);
 
-        // Automated provisioning is not an attention item; failed services are.
         $servicesFailed = Service::query()->where('status', 'failed');
 
         $counts = [
             'domain_orders' => (clone $domainOrdersPending)->count(),
-            // Abandoned unpaid checkouts are not admin work.
             'orders' => 0,
             'domain_renewals' => (clone $renewalsPending)->count(),
             'tickets' => (clone $ticketsOpen)->count(),
@@ -106,12 +105,12 @@ class AdminAttentionService
         ];
 
         $new = [
-            'domain_orders' => $this->countNewSince($seen['domain_orders'] ?? null, clone $domainOrdersPending),
+            'domain_orders' => $this->countNewSince($seen['domain_orders'] ?? null, clone $domainOrdersPending, 'created_at'),
             'orders' => 0,
-            'domain_renewals' => $this->countNewSince($seen['domain_renewals'] ?? null, clone $renewalsPending),
-            'tickets' => $this->countNewSince($seen['tickets'] ?? null, clone $ticketsOpen),
-            'payments' => $this->countNewSince($seen['payments'] ?? null, clone $paymentsPending),
-            'services' => $this->countNewSince($seen['services'] ?? null, clone $servicesFailed),
+            'domain_renewals' => $this->countNewSince($seen['domain_renewals'] ?? null, clone $renewalsPending, 'created_at'),
+            'tickets' => $this->countNewTicketsSince($seen['tickets'] ?? null, clone $ticketsOpen),
+            'payments' => $this->countNewSince($seen['payments'] ?? null, clone $paymentsPending, 'created_at'),
+            'services' => $this->countNewSince($seen['services'] ?? null, clone $servicesFailed, 'updated_at'),
         ];
 
         $counts['total'] = $counts['domain_orders']
@@ -142,17 +141,34 @@ class AdminAttentionService
     /**
      * @param  Builder<Model>  $query
      */
-    private function countNewSince(?string $seenAt, Builder $query): int
+    private function countNewSince(?string $seenAt, Builder $query, string $column): int
     {
         if ($seenAt) {
-            $query->where('created_at', '>', Carbon::parse($seenAt));
+            $query->where($column, '>', Carbon::parse($seenAt));
         }
 
         return $query->count();
     }
 
     /**
-     * @return list<array{type: string, title: string, meta: string, url: string, at: string, is_new: bool}>
+     * @param  Builder<Ticket>  $query
+     */
+    private function countNewTicketsSince(?string $seenAt, Builder $query): int
+    {
+        if (! $seenAt) {
+            return $query->count();
+        }
+
+        $since = Carbon::parse($seenAt);
+
+        return $query->where(function (Builder $outer) use ($since) {
+            $outer->where('created_at', '>', $since)
+                ->orWhere('escalated_at', '>', $since);
+        })->count();
+    }
+
+    /**
+     * @return list<array{type: string, title: string, meta: string, url: string, at: string}>
      */
     private function recentFeed(): array
     {
@@ -189,7 +205,7 @@ class AdminAttentionService
                     'meta' => ucfirst($ticket->priority ?? 'normal').' · '.($ticket->user?->name ?? 'Unknown'),
                     'url' => route('tickets.show', $ticket),
                     'at' => $ticket->created_at?->diffForHumans() ?? '',
-                    'sort' => $ticket->created_at,
+                    'sort' => $ticket->escalated_at ?? $ticket->created_at,
                 ]);
             });
 
@@ -212,10 +228,27 @@ class AdminAttentionService
                 ]);
             });
 
+        DomainRenewalOrder::query()
+            ->with('domain:id,name')
+            ->whereIn('status', ['paid', 'pushed', 'failed'])
+            ->latest()
+            ->limit(3)
+            ->get()
+            ->each(function (DomainRenewalOrder $renewal) use ($items) {
+                $items->push([
+                    'type' => 'renewal',
+                    'title' => $renewal->domain?->name ?? ('Renewal #'.$renewal->id),
+                    'meta' => ucfirst((string) $renewal->status).' · domain renewal',
+                    'url' => route('admin.domain-renewals.show', $renewal),
+                    'at' => $renewal->created_at?->diffForHumans() ?? '',
+                    'sort' => $renewal->created_at,
+                ]);
+            });
+
         Service::query()
             ->with(['user:id,name', 'product:id,name'])
             ->where('status', 'failed')
-            ->latest()
+            ->latest('updated_at')
             ->limit(3)
             ->get()
             ->each(function (Service $service) use ($items) {
@@ -224,7 +257,7 @@ class AdminAttentionService
                     'title' => $service->product?->name ?? $service->name ?? 'Service',
                     'meta' => ($service->user?->name ?? 'Unknown').' · provisioning failed',
                     'url' => route('admin.services.show', $service),
-                    'at' => $service->created_at?->diffForHumans() ?? '',
+                    'at' => $service->updated_at?->diffForHumans() ?? '',
                     'sort' => $service->updated_at ?? $service->created_at,
                 ]);
             });

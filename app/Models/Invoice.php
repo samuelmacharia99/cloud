@@ -207,6 +207,22 @@ class Invoice extends Model
     }
 
     /**
+     * Platform (admin) billing — direct customers + reseller subscription invoices.
+     * Excludes reseller-managed customer retail (matches Payment::platformRevenue intent).
+     */
+    public function scopePlatformBilling($query)
+    {
+        return $query->where(function ($outer) {
+            $outer->where('type', 'reseller_subscription')
+                ->orWhereHas('user', function ($user) {
+                    $user->whereNull('reseller_id')
+                        ->where('is_reseller', false)
+                        ->where('is_admin', false);
+                });
+        });
+    }
+
+    /**
      * Line items for invoice display, including a synthetic package row for legacy subscription invoices.
      *
      * @return Collection<int, InvoiceItem>

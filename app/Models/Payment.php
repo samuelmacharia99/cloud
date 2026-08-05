@@ -163,4 +163,46 @@ class Payment extends Model
                 });
         });
     }
+
+    /**
+     * Filter by effective payment datetime (paid_at, falling back to created_at).
+     */
+    public function scopeWhereEffectivePaidBetween(Builder $query, mixed $start, mixed $end): Builder
+    {
+        return $query->where(function (Builder $outer) use ($start, $end) {
+            $outer->whereBetween('paid_at', [$start, $end])
+                ->orWhere(function (Builder $inner) use ($start, $end) {
+                    $inner->whereNull('paid_at')
+                        ->whereBetween('created_at', [$start, $end]);
+                });
+        });
+    }
+
+    /**
+     * SQL fragment that converts payment amount to base KES using the currencies table.
+     */
+    public static function amountKesSumSql(string $amountColumn = 'payments.amount', string $currencyColumn = 'payments.currency'): string
+    {
+        $base = addslashes(config('currency.base', 'KES'));
+
+        return "COALESCE(SUM(CASE
+            WHEN {$currencyColumn} IS NULL OR {$currencyColumn} = '{$base}' THEN {$amountColumn}
+            ELSE {$amountColumn} / NULLIF((
+                SELECT exchange_rate FROM currencies
+                WHERE currencies.code = {$currencyColumn}
+                LIMIT 1
+            ), 0)
+        END), 0)";
+    }
+
+    /**
+     * Sum payment amounts in base KES for the current query.
+     */
+    public function scopeSumAmountKes(Builder $query): float
+    {
+        return (float) (clone $query)
+            ->reorder()
+            ->selectRaw(self::amountKesSumSql().' as aggregate')
+            ->value('aggregate');
+    }
 }

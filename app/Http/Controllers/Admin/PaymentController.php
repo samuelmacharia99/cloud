@@ -31,9 +31,22 @@ class PaymentController extends Controller
             $query->where('user_id', $request->user_id);
         }
 
-        // Filter by payment method
+        // Filter by payment method (supports comma-separated for attention links)
         if ($request->filled('payment_method')) {
-            $query->where('payment_method', $request->payment_method);
+            $methods = array_values(array_filter(array_map(
+                'trim',
+                explode(',', (string) $request->payment_method)
+            )));
+
+            if (count($methods) === 1) {
+                $query->where('payment_method', $methods[0]);
+            } elseif (count($methods) > 1) {
+                $query->whereIn('payment_method', $methods);
+            }
+        }
+
+        if ($request->boolean('needs_approval')) {
+            $query->whereIn('payment_method', \App\Services\AdminAttentionService::PAYMENTS_NEEDING_REVIEW);
         }
 
         // Filter by status
@@ -41,12 +54,34 @@ class PaymentController extends Controller
             $query->where('status', $request->status);
         }
 
-        // Filter by date range
-        if ($request->filled('from_date')) {
-            $query->whereDate('created_at', '>=', $request->from_date);
-        }
-        if ($request->filled('to_date')) {
-            $query->whereDate('created_at', '<=', $request->to_date);
+        // Filter by effective paid date (paid_at, else created_at)
+        if ($request->filled('from_date') || $request->filled('to_date')) {
+            $from = $request->filled('from_date')
+                ? \Carbon\Carbon::parse($request->from_date)->startOfDay()
+                : null;
+            $to = $request->filled('to_date')
+                ? \Carbon\Carbon::parse($request->to_date)->endOfDay()
+                : null;
+
+            $query->where(function ($outer) use ($from, $to) {
+                $outer->where(function ($paid) use ($from, $to) {
+                    $paid->whereNotNull('paid_at');
+                    if ($from) {
+                        $paid->where('paid_at', '>=', $from);
+                    }
+                    if ($to) {
+                        $paid->where('paid_at', '<=', $to);
+                    }
+                })->orWhere(function ($created) use ($from, $to) {
+                    $created->whereNull('paid_at');
+                    if ($from) {
+                        $created->where('created_at', '>=', $from);
+                    }
+                    if ($to) {
+                        $created->where('created_at', '<=', $to);
+                    }
+                });
+            });
         }
 
         // Filter by amount range
@@ -64,7 +99,7 @@ class PaymentController extends Controller
             'users' => User::where('is_admin', false)->orderBy('name')->get(),
             'paymentMethods' => PaymentMethod::options(),
             'statuses' => PaymentStatus::options(),
-            'filters' => $request->only(['user_id', 'payment_method', 'status', 'from_date', 'to_date', 'min_amount', 'max_amount']),
+            'filters' => $request->only(['user_id', 'payment_method', 'status', 'from_date', 'to_date', 'min_amount', 'max_amount', 'needs_approval']),
         ]);
     }
 
