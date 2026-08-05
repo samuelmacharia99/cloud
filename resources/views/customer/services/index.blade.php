@@ -7,11 +7,6 @@
     $deployUrl = auth()->user()->reseller_id
         ? route('customer.catalog.index')
         : route('customer.select-techstack');
-    $usedProjectIds = collect($serviceGroups ?? [])
-        ->filter(fn ($g) => ($g['type'] ?? '') === 'project')
-        ->map(fn ($g) => $g['project']->id)
-        ->all();
-    $emptyProjects = ($projects ?? collect())->reject(fn ($p) => in_array($p->id, $usedProjectIds, true));
 @endphp
 
 <div
@@ -78,7 +73,7 @@
     <div x-show="showNewProject" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" @keydown.escape.window="showNewProject = false">
         <div class="w-full max-w-md rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-xl p-6" @click.outside="showNewProject = false">
             <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-1">New project</h3>
-            <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Then drag services onto it.</p>
+            <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Then use Move on a service card to add it. Empty projects stay hidden until they have a service.</p>
             <form method="POST" action="{{ route('customer.projects.store') }}" class="space-y-4">
                 @csrf
                 <input type="text" name="name" x-model="newProjectName" required minlength="2" maxlength="100" class="w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800">
@@ -178,42 +173,6 @@
                                     ) ? $containers : [],
                                 ])
                             @endforeach
-                        </div>
-                    </div>
-                </section>
-            @endforeach
-
-            @foreach ($emptyProjects as $emptyProject)
-                <section
-                    class="rounded-xl border border-dashed bg-white dark:bg-slate-900 transition-colors min-h-[8rem]"
-                    :class="dropTarget === @js((string) $emptyProject->id) && draggingId
-                        ? 'border-brand-400 dark:border-brand-500 ring-2 ring-brand-300/60 bg-brand-50/40 dark:bg-brand-950/20'
-                        : 'border-slate-300 dark:border-slate-600'"
-                    @dragover.prevent="onDragOver($event, @js((string) $emptyProject->id))"
-                    @dragleave="onDragLeave($event, @js((string) $emptyProject->id))"
-                    @drop.prevent="onDrop($event, {{ $emptyProject->id }})"
-                >
-                    <div
-                        class="flex flex-wrap items-center justify-between gap-2 px-4 sm:px-5 py-3"
-                        x-data="{ showRenameProject: false, renameProjectName: @js($emptyProject->name) }"
-                    >
-                        <div>
-                            <h2 class="font-semibold text-slate-900 dark:text-white">{{ $emptyProject->name }}</h2>
-                            <p class="text-xs text-slate-500 dark:text-slate-400">Empty — drop a service card here.</p>
-                        </div>
-                        <button type="button" @click="showRenameProject = true" class="text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-brand-600">Rename project</button>
-                        <div x-show="showRenameProject" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" @keydown.escape.window="showRenameProject = false">
-                            <div class="w-full max-w-md rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-xl p-6" @click.outside="showRenameProject = false">
-                                <form method="POST" action="{{ route('customer.projects.rename', $emptyProject) }}" class="space-y-4">
-                                    @csrf
-                                    @method('PATCH')
-                                    <input type="text" name="name" x-model="renameProjectName" required minlength="2" maxlength="100" class="w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800">
-                                    <div class="flex gap-2">
-                                        <button type="button" @click="showRenameProject = false" class="btn-secondary flex-1 btn-sm">Cancel</button>
-                                        <button type="submit" class="btn-primary flex-1 btn-sm">Save</button>
-                                    </div>
-                                </form>
-                            </div>
                         </div>
                     </div>
                 </section>

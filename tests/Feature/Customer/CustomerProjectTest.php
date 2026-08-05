@@ -220,4 +220,27 @@ YAML,
 
         $this->assertDatabaseCount('customer_projects', 0);
     }
+
+    public function test_empty_projects_are_hidden_on_services_index(): void
+    {
+        $customer = User::factory()->customer()->create();
+        $product = Product::factory()->create(['type' => 'shared_hosting', 'name' => 'Shared']);
+        Service::factory()->create([
+            'user_id' => $customer->id,
+            'product_id' => $product->id,
+            'name' => 'Solo Shared',
+            'status' => 'active',
+        ]);
+        CustomerProject::factory()->create([
+            'user_id' => $customer->id,
+            'name' => 'Orphan Empty Project',
+        ]);
+
+        $this->actingAs($customer)
+            ->get(route('customer.services.index'))
+            ->assertOk()
+            ->assertSee('Solo Shared')
+            ->assertDontSee('Empty — drop a service card here')
+            ->assertDontSee('>Orphan Empty Project</h2>', false);
+    }
 }
