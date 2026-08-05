@@ -55,21 +55,21 @@
             <section class="space-y-4">
                 <header>
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Two-Factor Authentication</h2>
-                    <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">Require an SMS code when signing in for extra security.</p>
+                    <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">Require a verification code by email and/or SMS when signing in.</p>
                 </header>
                 <div class="p-4 rounded-lg {{ $user->two_factor_enabled ? 'bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800' : 'bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700' }}">
                     <p class="font-medium">{{ $user->two_factor_enabled ? 'Enabled' : 'Disabled' }}</p>
                     <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
                         @if ($user->two_factor_enabled)
-                            SMS codes required at login{{ $user->two_factor_recovery_codes ? ' ('.count($user->two_factor_recovery_codes).' recovery codes)' : '' }}
-                        @elseif ($user->phone)
-                            Codes will be sent to {{ $user->phone }}
+                            Login codes sent by email{{ $user->phone ? ' and SMS' : '' }}{{ $user->two_factor_recovery_codes ? ' ('.count($user->two_factor_recovery_codes).' recovery codes)' : '' }}
+                        @elseif ($canDeliverTwoFactor ?? false)
+                            Codes will be sent to {{ $user->email }}{{ $user->phone ? ' and '.$user->phone : '' }}
                         @else
-                            <a href="{{ route('profile.edit') }}" class="text-brand-600 hover:underline">Add a phone number</a> on your profile to enable 2FA.
+                            Add a <a href="{{ route('profile.edit') }}" class="text-brand-600 hover:underline">phone number</a> or ask an admin to configure email delivery to enable 2FA.
                         @endif
                     </p>
                 </div>
-                @if (! $user->two_factor_enabled && $user->phone)
+                @if (! $user->two_factor_enabled && ($canDeliverTwoFactor ?? false))
                     <form method="POST" action="{{ route('profile.two-factor.enable') }}">
                         @csrf
                         <button type="submit" class="btn-primary">Enable 2FA</button>

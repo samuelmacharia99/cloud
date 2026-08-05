@@ -31,10 +31,13 @@ class ProfileController extends Controller
     /**
      * Display the user's security settings.
      */
-    public function security(Request $request): View
+    public function security(Request $request, TwoFactorService $twoFactorService): View
     {
+        $user = $request->user();
+
         return view('profile.security', [
-            'user' => $request->user(),
+            'user' => $user,
+            'canDeliverTwoFactor' => $twoFactorService->canDeliverCode($user),
         ]);
     }
 
@@ -97,16 +100,16 @@ class ProfileController extends Controller
     {
         $user = $request->user();
 
-        if (! $user->phone) {
-            return Redirect::route('profile.edit')
-                ->with('error', 'Please set your phone number on your profile before enabling 2FA.');
+        if (! $twoFactorService->canDeliverCode($user)) {
+            return Redirect::route('profile.security')
+                ->with('error', 'Add a phone number or configure email delivery before enabling 2FA.');
         }
 
         try {
             $recoveryCodes = $twoFactorService->enable($user);
 
             return Redirect::route('profile.security')
-                ->with('success', 'Two-factor authentication enabled successfully.')
+                ->with('success', 'Two-factor authentication enabled successfully. Login codes will be sent by email and/or SMS.')
                 ->with('recovery_codes', $recoveryCodes);
         } catch (\Exception $e) {
             return Redirect::route('profile.security')

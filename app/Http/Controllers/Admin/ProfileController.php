@@ -24,7 +24,7 @@ class ProfileController extends Controller
     /**
      * Show the admin profile edit page
      */
-    public function edit()
+    public function edit(TwoFactorService $twoFactorService)
     {
         $admin = auth()->user();
 
@@ -33,7 +33,9 @@ class ProfileController extends Controller
             'admin_name' => $admin->name,
         ]);
 
-        return view('admin.profile.edit', compact('admin'));
+        $canDeliverTwoFactor = $twoFactorService->canDeliverCode($admin);
+
+        return view('admin.profile.edit', compact('admin', 'canDeliverTwoFactor'));
     }
 
     /**
@@ -108,10 +110,9 @@ class ProfileController extends Controller
     {
         $admin = auth()->user();
 
-        // Check if admin has a phone number
-        if (!$admin->phone) {
+        if (! $twoFactorService->canDeliverCode($admin)) {
             return redirect()->route('admin.profile.edit')
-                ->with('error', 'Please set your phone number first before enabling 2FA.');
+                ->with('error', 'Add a phone number or ensure email (SMTP) is configured before enabling 2FA.');
         }
 
         try {
@@ -123,7 +124,7 @@ class ProfileController extends Controller
             ]);
 
             return redirect()->route('admin.profile.edit')
-                ->with('success', 'Two-factor authentication enabled successfully!')
+                ->with('success', 'Two-factor authentication enabled successfully! Login codes will be sent by email and/or SMS.')
                 ->with('recovery_codes', $recoveryCodes);
         } catch (\Exception $e) {
             \Log::error('Failed to enable 2FA', [
@@ -132,7 +133,7 @@ class ProfileController extends Controller
             ]);
 
             return redirect()->route('admin.profile.edit')
-                ->with('error', 'Failed to enable 2FA. ' . $e->getMessage());
+                ->with('error', 'Failed to enable 2FA. '.$e->getMessage());
         }
     }
 

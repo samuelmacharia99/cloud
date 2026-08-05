@@ -32,6 +32,10 @@ class TwoFactorController extends Controller
 
         return view('auth.two-factor-verify', [
             'user' => $user,
+            'delivery' => $request->session()->get('two_factor_delivery', ['email' => false, 'sms' => false]),
+            'deliverySummary' => TwoFactorService::deliverySummary(
+                $request->session()->get('two_factor_delivery', ['email' => false, 'sms' => false])
+            ),
         ]);
     }
 

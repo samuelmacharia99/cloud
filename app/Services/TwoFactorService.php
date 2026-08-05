@@ -2,15 +2,23 @@
 
 namespace App\Services;
 
+use App\Mail\TwoFactorCodeMail;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\View;
 use Illuminate\Validation\ValidationException;
 
 class TwoFactorService
 {
-    public function __construct(private AuthCodeSmsService $authCodeSms) {}
+    private const CODE_EXPIRY_MINUTES = 5;
+
+    public function __construct(
+        private AuthCodeSmsService $authCodeSms,
+        private ResellerMailService $mailService,
+    ) {}
 
     /**
      * Enable 2FA for a user and generate recovery codes
@@ -51,60 +59,106 @@ class TwoFactorService
     }
 
     /**
-     * Send 2FA code via SMS to user's primary phone
+     * Whether the user has at least one channel that can receive a login OTP.
      */
-    public function sendCode(User $user): bool
+    public function canDeliverCode(User $user): bool
     {
-        if (! $this->authCodeSms->canSend($user)) {
-            Log::error('Cannot send 2FA code: phone or SMS not available', [
+        return $this->canSendEmail($user) || $this->authCodeSms->canSend($user);
+    }
+
+    /**
+     * Send 2FA code via email and/or SMS. Succeeds if at least one channel delivers.
+     *
+     * @return array{email: bool, sms: bool}
+     */
+    public function sendCode(User $user): array
+    {
+        $delivery = ['email' => false, 'sms' => false];
+
+        if (! $this->canDeliverCode($user)) {
+            Log::error('Cannot send 2FA code: no email or SMS channel available', [
                 'user_id' => $user->id,
+                'has_email' => filled($user->email),
                 'has_phone' => (bool) $user->phone,
+                'mail_configured' => $this->mailService->isConfigured(),
                 'sms_configured' => $this->authCodeSms->isConfiguredFor($user),
             ]);
 
-            return false;
+            return $delivery;
         }
 
         try {
-            // Generate 6-digit code
             $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
 
-            // Store hashed code with 5-minute expiry
             $user->update([
                 'two_factor_code' => Hash::make($code),
-                'two_factor_code_expires_at' => now()->addMinutes(5),
+                'two_factor_code_expires_at' => now()->addMinutes(self::CODE_EXPIRY_MINUTES),
             ]);
 
-            $siteName = $this->authCodeSms->siteNameFor($user);
-            $message = "Your {$siteName} login code is: {$code}. Valid for 5 minutes. Do not share this code.";
-            $smsResult = $this->authCodeSms->send($user, $message);
+            $delivery['email'] = $this->sendEmailCode($user, $code);
+            $delivery['sms'] = $this->sendSmsCode($user, $code);
 
-            if ($smsResult['success'] ?? false) {
-                Log::info('2FA code sent to user', [
-                    'user_id' => $user->id,
-                    'phone' => substr((string) $user->phone, -4),
-                    'channel' => $smsResult['channel'] ?? null,
+            if (! $delivery['email'] && ! $delivery['sms']) {
+                $user->update([
+                    'two_factor_code' => null,
+                    'two_factor_code_expires_at' => null,
                 ]);
 
-                return true;
+                Log::error('2FA code delivery failed on all channels', [
+                    'user_id' => $user->id,
+                ]);
+
+                return $delivery;
             }
 
-            Log::error('2FA SMS delivery failed', [
+            Log::info('2FA code sent to user', [
                 'user_id' => $user->id,
-                'phone' => substr((string) $user->phone, -4),
-                'sms_message' => $smsResult['message'] ?? 'Unknown error',
+                'email_sent' => $delivery['email'],
+                'sms_sent' => $delivery['sms'],
+                'phone' => $user->phone ? substr((string) $user->phone, -4) : null,
             ]);
 
-            return false;
+            return $delivery;
         } catch (\Exception $e) {
             Log::error('Failed to send 2FA code', [
                 'user_id' => $user->id,
-                'phone' => substr((string) $user->phone, -4),
                 'error' => $e->getMessage(),
             ]);
 
-            return false;
+            return ['email' => false, 'sms' => false];
         }
+    }
+
+    /**
+     * @param  array{email: bool, sms: bool}  $delivery
+     */
+    public static function deliverySucceeded(array $delivery): bool
+    {
+        return ($delivery['email'] ?? false) || ($delivery['sms'] ?? false);
+    }
+
+    /**
+     * @param  array{email: bool, sms: bool}  $delivery
+     */
+    public static function deliverySummary(array $delivery): string
+    {
+        $channels = [];
+        if ($delivery['email'] ?? false) {
+            $channels[] = 'email';
+        }
+        if ($delivery['sms'] ?? false) {
+            $channels[] = 'phone (SMS)';
+        }
+
+        if ($channels === []) {
+            return 'your registered contact methods';
+        }
+
+        if (count($channels) === 1) {
+            return 'your '.$channels[0];
+        }
+
+        return 'your '.implode(' and ', $channels);
     }
 
     /**
@@ -239,5 +293,96 @@ class TwoFactorService
         }
 
         return count($user->two_factor_recovery_codes);
+    }
+
+    private function canSendEmail(User $user): bool
+    {
+        if (! filled($user->email)) {
+            return false;
+        }
+
+        if ($user->reseller_id !== null) {
+            $reseller = app(ResellerBrandingResolver::class)->resellerForCustomer($user);
+            if ($reseller && $this->mailService->resellerSmtpEnabled($reseller)) {
+                return true;
+            }
+        }
+
+        return $this->mailService->isConfigured();
+    }
+
+    private function sendEmailCode(User $user, string $code): bool
+    {
+        if (! filled($user->email)) {
+            return false;
+        }
+
+        $mailable = new TwoFactorCodeMail($user->name, $code, self::CODE_EXPIRY_MINUTES);
+
+        if ($user->reseller_id !== null) {
+            $reseller = app(ResellerBrandingResolver::class)->resellerForCustomer($user);
+
+            if ($reseller && $this->mailService->resellerSmtpEnabled($reseller)) {
+                try {
+                    $this->mailService->sendToCustomer($user, $mailable);
+
+                    return true;
+                } catch (\Throwable $e) {
+                    Log::error('Failed to send reseller-branded 2FA email', [
+                        'user_id' => $user->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            } else {
+                Log::warning('Reseller SMTP unavailable for 2FA email — trying platform SMTP', [
+                    'user_id' => $user->id,
+                    'reseller_id' => $user->reseller_id,
+                ]);
+            }
+        }
+
+        if (! $this->mailService->isConfigured()) {
+            Log::warning('2FA email skipped — SMTP not configured', ['user_id' => $user->id]);
+
+            return false;
+        }
+
+        try {
+            View::share('emailBranding', app(ResellerBrandingResolver::class)->forCustomer($user));
+            Mail::to($user->email)->sendNow($mailable);
+
+            return true;
+        } catch (\Throwable $e) {
+            Log::error('Failed to send 2FA email', [
+                'user_id' => $user->id,
+                'email' => $user->email,
+                'error' => $e->getMessage(),
+            ]);
+
+            return false;
+        }
+    }
+
+    private function sendSmsCode(User $user, string $code): bool
+    {
+        if (! $this->authCodeSms->canSend($user)) {
+            return false;
+        }
+
+        $siteName = $this->authCodeSms->siteNameFor($user);
+        $message = "Your {$siteName} login code is: {$code}. Valid for ".self::CODE_EXPIRY_MINUTES.' minutes. Do not share this code.';
+        $smsResult = $this->authCodeSms->send($user, $message);
+
+        if ($smsResult['success'] ?? false) {
+            return true;
+        }
+
+        Log::error('2FA SMS delivery failed', [
+            'user_id' => $user->id,
+            'phone' => $user->phone ? substr((string) $user->phone, -4) : null,
+            'sms_message' => $smsResult['message'] ?? 'Unknown error',
+        ]);
+
+        return false;
     }
 }

@@ -31,19 +31,19 @@ class AuthenticatedSessionController extends Controller
         $user = Auth::user();
 
         // Check if user has 2FA enabled
-        if ($user->two_factor_enabled && $user->phone) {
-            // Send 2FA code
-            $codeSent = $twoFactorService->sendCode($user);
+        if ($user->two_factor_enabled) {
+            $delivery = $twoFactorService->sendCode($user);
 
-            // If SMS failed, show error
-            if (!$codeSent) {
+            if (! TwoFactorService::deliverySucceeded($delivery)) {
                 Auth::logout();
+
                 return redirect()->route('login')
-                    ->with('error', 'Failed to send 2FA code. SMS service may be unavailable. Please try again or contact support.');
+                    ->with('error', 'Failed to send 2FA code by email or SMS. Please try again or contact support.');
             }
 
             // Store the user ID in session for later verification
             $request->session()->put('two_factor_user_id', $user->id);
+            $request->session()->put('two_factor_delivery', $delivery);
 
             // Log out temporarily (don't create session yet)
             Auth::logout();

@@ -370,15 +370,16 @@ class StorefrontController extends Controller
                 ->withErrors(['email' => 'This account is not registered with '.$company.'.']);
         }
 
-        if ($user->two_factor_enabled && $user->phone) {
-            $codeSent = $twoFactorService->sendCode($user);
-            if (! $codeSent) {
+        if ($user->two_factor_enabled) {
+            $delivery = $twoFactorService->sendCode($user);
+            if (! TwoFactorService::deliverySucceeded($delivery)) {
                 Auth::logout();
 
-                return back()->withErrors(['email' => 'Failed to send 2FA code. Please try again.']);
+                return back()->withErrors(['email' => 'Failed to send 2FA code by email or SMS. Please try again.']);
             }
 
             $request->session()->put('two_factor_user_id', $user->id);
+            $request->session()->put('two_factor_delivery', $delivery);
             $request->session()->put('url.intended', route('customer.checkout.show'));
             Auth::logout();
 

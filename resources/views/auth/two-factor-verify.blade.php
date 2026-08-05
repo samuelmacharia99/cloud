@@ -12,7 +12,7 @@
         </div>
         <h1 class="text-4xl font-bold tracking-tight">Two-Factor Authentication</h1>
         <p class="text-base text-slate-600 dark:text-slate-400 font-medium">
-            Enter the 6-digit code sent to your phone
+            Enter the 6-digit code sent to {{ $deliverySummary ?? 'your email and/or phone' }}
         </p>
     </div>
 
@@ -68,7 +68,7 @@
                 autocomplete="off"
                 class="auth-input font-mono uppercase"
             />
-            <p class="text-xs text-slate-500 dark:text-slate-400">Use this if you don't have access to your phone</p>
+            <p class="text-xs text-slate-500 dark:text-slate-400">Use this if you don't have access to your email or phone</p>
             @error('recovery_code')
                 <p class="mt-1.5 text-xs font-medium text-red-600 dark:text-red-400">{{ $message }}</p>
             @enderror

@@ -185,7 +185,7 @@
                 <!-- Info Box -->
                 <div class="mb-6 p-4 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
                     <p class="text-sm text-blue-900 dark:text-blue-300">
-                        <strong>🔒 Enhanced Security:</strong> 2FA adds an extra layer of security by requiring a code sent to your phone when you log in. You need a phone number set to enable this feature.
+                        <strong>Enhanced Security:</strong> 2FA requires a code sent to your email and/or phone when you log in.
                     </p>
                 </div>
 
@@ -198,9 +198,9 @@
                             </p>
                             <p class="text-sm {{ $admin->two_factor_enabled ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-600 dark:text-slate-400' }} mt-1">
                                 @if ($admin->two_factor_enabled)
-                                    SMS codes are required when logging in{{ $admin->two_factor_recovery_codes ? ' (' . count($admin->two_factor_recovery_codes) . ' recovery codes available)' : '' }}
+                                    Login codes are sent by email{{ $admin->phone ? ' and SMS' : '' }}{{ $admin->two_factor_recovery_codes ? ' (' . count($admin->two_factor_recovery_codes) . ' recovery codes available)' : '' }}
                                 @else
-                                    Add a phone number and enable 2FA for stronger account security
+                                    Enable 2FA for stronger account security (email and/or SMS)
                                 @endif
                             </p>
                         </div>
@@ -210,18 +210,20 @@
                 <!-- Actions -->
                 <div class="space-y-3">
                     @if (!$admin->two_factor_enabled)
-                        @if ($admin->phone)
+                        @if ($canDeliverTwoFactor ?? false)
                             <form method="POST" action="{{ route('admin.profile.two-factor.enable') }}">
                                 @csrf
                                 <button type="submit" class="w-full px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg transition">
                                     Enable Two-Factor Authentication
                                 </button>
                             </form>
-                            <p class="text-xs text-slate-600 dark:text-slate-400">SMS codes will be sent to {{ $admin->phone }}</p>
+                            <p class="text-xs text-slate-600 dark:text-slate-400">
+                                Codes will be sent to {{ $admin->email }}{{ $admin->phone ? ' and '.$admin->phone : '' }}
+                            </p>
                         @else
                             <div class="px-4 py-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg">
                                 <p class="text-sm text-red-700 dark:text-red-300">
-                                    Please set your primary phone number above before enabling 2FA.
+                                    Set a phone number or configure SMTP before enabling 2FA.
                                 </p>
                             </div>
                         @endif
