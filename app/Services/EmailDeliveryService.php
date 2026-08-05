@@ -171,6 +171,61 @@ class EmailDeliveryService
         return $this->sendPlatformMailable($email, $mailable, $subject, $event, $user, $body);
     }
 
+    /**
+     * Admin-initiated broadcast to a platform (admin-owned) customer.
+     * Skips per-user notification preferences; still requires platform SMTP.
+     * Sends immediately (callers that need spacing should use SendAdminBroadcastEmailJob).
+     */
+    public function sendAdminBroadcast(User $customer, string $subject, string $body, ?int $sentById = null): bool
+    {
+        if ($customer->is_admin || $customer->is_reseller || $customer->reseller_id !== null) {
+            return false;
+        }
+
+        if (! $this->mailConfiguredFor($customer)) {
+            return false;
+        }
+
+        $event = NotificationEvent::AdminBroadcast;
+        $email = $customer->email;
+
+        if (! $email) {
+            return false;
+        }
+
+        // Higher ceiling for intentional admin broadcasts (per recipient / hour).
+        if (! $this->rateLimiter->allow($email, $event, 50)) {
+            Log::warning('Admin broadcast email rate limited', ['email' => $email]);
+
+            return false;
+        }
+
+        $mailable = new GenericNotificationMail($subject, $subject, $body);
+        $actorId = $sentById ?? auth()->id();
+
+        try {
+            View::share('emailBranding', $this->brandingResolver->defaults());
+
+            // Always send now inside the paced job — spacing is handled by the job chain.
+            Mail::to($email)->sendNow($mailable);
+
+            $content = $this->captureMailableContent($mailable, $customer, $body, forcePlatformBranding: true);
+            $this->logEmail($email, $subject, 'sent', null, $content['body'], $event, $customer->id, null, $content['html_body'], $actorId);
+
+            return true;
+        } catch (\Throwable $e) {
+            $content = $this->captureMailableContent($mailable, $customer, $body, forcePlatformBranding: true);
+            $this->logEmail($email, $subject, 'failed', $e->getMessage(), $content['body'], $event, $customer->id, null, $content['html_body'], $actorId);
+            Log::error('Admin broadcast email failed', [
+                'email' => $email,
+                'user_id' => $customer->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return false;
+        }
+    }
+
     public function markBounced(string $messageId, ?string $reason = null): void
     {
         Email::where('message_id', $messageId)->update([
@@ -262,6 +317,7 @@ class EmailDeliveryService
         ?int $userId = null,
         ?string $messageId = null,
         ?string $htmlBody = null,
+        ?int $sentById = null,
     ): void {
         try {
             Email::create([
@@ -274,7 +330,7 @@ class EmailDeliveryService
                 'html_body' => $htmlBody,
                 'status' => $status,
                 'response' => $error,
-                'sent_by' => auth()->id(),
+                'sent_by' => $sentById ?? auth()->id(),
                 'created_at' => now(),
             ]);
         } catch (\Throwable $e) {

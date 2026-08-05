@@ -17,6 +17,11 @@ class EmailPolicy
         return $user->is_admin;
     }
 
+    public function create(User $user): bool
+    {
+        return $user->is_admin;
+    }
+
     public function resend(User $user, Email $email): bool
     {
         return $user->is_admin && in_array($email->status, ['failed', 'bounced'], true);
