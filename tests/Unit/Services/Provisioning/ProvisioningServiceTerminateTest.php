@@ -63,7 +63,8 @@ class ProvisioningServiceTerminateTest extends TestCase
         $this->assertSame('terminated', $service->fresh()->status->value);
 
         Http::assertNotSent(function ($request) {
-            return str_contains($request->url(), 'CMD_API_ACCOUNT_USER');
+            return str_contains($request->url(), 'CMD_API_SELECT_USERS')
+                && ($request['delete'] ?? null) === 'yes';
         });
     }
 }

@@ -24,7 +24,10 @@
                 </form>
             @endif
             @if ($canTerminate ?? false)
-                <form method="POST" action="{{ route('reseller.services.terminate', $service) }}" onsubmit="return confirm('Terminate permanently?');">@csrf<button type="submit" class="px-4 py-2 bg-red-600 text-white rounded-lg text-sm">Terminate</button></form>
+                <form method="POST" action="{{ route('reseller.services.terminate', $service) }}" data-confirm="Permanently terminate this hosting account on DirectAdmin? The DA user and its websites will be deleted." data-confirm-title="Terminate hosting account">
+                    @csrf
+                    <button type="submit" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm">Terminate</button>
+                </form>
             @endif
             @if ($canDelete ?? false)
                 <form

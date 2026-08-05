@@ -93,9 +93,10 @@ class DirectAdminServiceTest extends TestCase
         $this->assertTrue((new DirectAdminService($node))->terminateAccount($service));
 
         Http::assertSent(function ($request) {
-            return str_contains($request->url(), 'CMD_API_ACCOUNT_USER')
-                && $request['action'] === 'delete'
-                && $request['user'] === 'cust001';
+            return str_contains($request->url(), 'CMD_API_SELECT_USERS')
+                && $request['delete'] === 'yes'
+                && $request['confirmed'] === 'Confirm'
+                && $request['select0'] === 'cust001';
         });
     }
 
@@ -112,7 +113,7 @@ class DirectAdminServiceTest extends TestCase
         $this->assertTrue((new DirectAdminService($node))->terminateAccount($service, 'reseller1'));
 
         Http::assertSent(function ($request) {
-            return str_contains($request->url(), 'CMD_API_ACCOUNT_USER')
+            return str_contains($request->url(), 'CMD_API_SELECT_USERS')
                 && $request->hasHeader('Authorization', 'Basic '.base64_encode('admin|reseller1:secret'));
         });
     }
@@ -130,7 +131,9 @@ class DirectAdminServiceTest extends TestCase
         $this->assertTrue($da->terminateAccount($service));
 
         Http::assertSent(function ($request) {
-            return str_contains($request->url(), 'CMD_API_ACCOUNT_USER')
+            return str_contains($request->url(), 'CMD_API_SELECT_USERS')
+                && $request['delete'] === 'yes'
+                && $request['select0'] === 'wambuiesther7516'
                 && $request->hasHeader('Authorization', 'Basic '.base64_encode('reseller1:login-key'));
         });
     }

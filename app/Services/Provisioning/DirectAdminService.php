@@ -811,7 +811,8 @@ class DirectAdminService
     }
 
     /**
-     * Terminate a hosting account on DirectAdmin
+     * Terminate a hosting account on DirectAdmin.
+     * Uses CMD_API_SELECT_USERS (documented delete API) so reseller login keys can delete their users.
      */
     public function terminateAccount(Service $service, ?string $ownerResellerUsername = null): bool
     {
@@ -830,7 +831,7 @@ class DirectAdminService
                 : null;
         }
 
-        $endpoint = rtrim($this->apiUrl, '/').'/CMD_API_ACCOUNT_USER';
+        $endpoint = rtrim($this->apiUrl, '/').'/CMD_API_SELECT_USERS';
 
         Log::info('TERMINATE_API_CALL', [
             'service_id' => $service->id,
@@ -842,12 +843,12 @@ class DirectAdminService
 
         try {
             $response = $this->httpClient($ownerResellerUsername)
+                ->timeout(120)
                 ->asForm()
                 ->post($endpoint, [
-                    'action' => 'delete',
-                    'delete' => 'yes',
                     'confirmed' => 'Confirm',
-                    'user' => $username,
+                    'delete' => 'yes',
+                    'select0' => $username,
                 ]);
 
             $parsed = $this->parseApiResponse($response->body(), $response->status());
@@ -864,6 +865,7 @@ class DirectAdminService
                     'service_id' => $service->id,
                     'username' => $username,
                     'message' => $parsed['message'],
+                    'body' => Str::limit($response->body(), 500),
                 ]);
             }
 
