@@ -11,14 +11,15 @@ class ResellerDomainTransferService
 {
     public function __construct(
         protected DatabaseManager $db,
+        protected ResellerScopeService $scope,
     ) {}
 
     /**
-     * Immediately move a domain between two customers owned by the same reseller.
+     * Immediately move a domain between the reseller (or a managed customer) and another managed customer.
      */
     public function transferBetweenOwnedCustomers(Domain $domain, User $fromCustomer, User $toCustomer, User $reseller): Domain
     {
-        if ((int) $fromCustomer->reseller_id !== (int) $reseller->id) {
+        if (! $this->resellerCanTransferFrom($reseller, $fromCustomer, $domain)) {
             throw new \InvalidArgumentException('Source customer is not managed by this reseller.');
         }
 
@@ -34,7 +35,7 @@ class ResellerDomainTransferService
             throw new \InvalidArgumentException('Domain is already assigned to this customer.');
         }
 
-        return $this->db->transaction(function () use ($domain, $fromCustomer, $toCustomer) {
+        return $this->db->transaction(function () use ($domain, $fromCustomer, $toCustomer, $reseller) {
             $notes = $domain->notes ?? [];
             if (! is_array($notes)) {
                 $notes = [];
@@ -50,7 +51,8 @@ class ResellerDomainTransferService
 
             $domain->update([
                 'user_id' => $toCustomer->id,
-                'reseller_id' => $toCustomer->reseller_id,
+                // Keep the domain under this reseller even if the target row is missing reseller_id.
+                'reseller_id' => $toCustomer->reseller_id ?: $reseller->id,
                 'pending_transfer_to_user_id' => null,
                 'transfer_token' => null,
                 'transfer_requested_at' => null,
@@ -59,6 +61,23 @@ class ResellerDomainTransferService
 
             return $domain->fresh();
         });
+    }
+
+    /**
+     * Source may be the reseller (wholesale domain) or any customer the reseller manages.
+     */
+    private function resellerCanTransferFrom(User $reseller, User $fromCustomer, Domain $domain): bool
+    {
+        if ((int) $fromCustomer->id === (int) $reseller->id) {
+            return true;
+        }
+
+        if ($this->scope->ownsCustomer($reseller, $fromCustomer)) {
+            return true;
+        }
+
+        // Domain tagged to this reseller (admin-added / portfolio) even if user.reseller_id is stale.
+        return (int) ($domain->reseller_id ?? 0) === (int) $reseller->id;
     }
 
     public function initiate(Domain $domain, User $fromCustomer, User $toCustomer, User $reseller): void

@@ -58,6 +58,55 @@ class ResellerOwnedAssetTransferTest extends TestCase
         $this->assertNull($domain->pending_transfer_to_user_id);
     }
 
+    public function test_reseller_can_transfer_own_wholesale_domain_to_managed_customer(): void
+    {
+        $reseller = $this->createReseller();
+        $to = User::factory()->customer()->create(['reseller_id' => $reseller->id]);
+
+        $domain = Domain::create([
+            'user_id' => $reseller->id,
+            'reseller_id' => $reseller->id,
+            'name' => 'wholesale',
+            'extension' => '.com',
+            'status' => 'active',
+            'type' => 'registration',
+        ]);
+
+        $this->actingAs($reseller)
+            ->post(route('reseller.domains.transfer', $domain), ['to_customer_id' => $to->id])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $domain->refresh();
+        $this->assertSame($to->id, $domain->user_id);
+        $this->assertSame($reseller->id, $domain->reseller_id);
+    }
+
+    public function test_reseller_can_transfer_domain_tagged_to_reseller_when_owner_reseller_id_is_stale(): void
+    {
+        $reseller = $this->createReseller();
+        $from = User::factory()->customer()->create(['reseller_id' => null]);
+        $to = User::factory()->customer()->create(['reseller_id' => $reseller->id]);
+
+        $domain = Domain::create([
+            'user_id' => $from->id,
+            'reseller_id' => $reseller->id,
+            'name' => 'staleowner',
+            'extension' => '.com',
+            'status' => 'active',
+            'type' => 'registration',
+        ]);
+
+        $this->actingAs($reseller)
+            ->post(route('reseller.domains.transfer', $domain), ['to_customer_id' => $to->id])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $domain->refresh();
+        $this->assertSame($to->id, $domain->user_id);
+        $this->assertSame($reseller->id, $domain->reseller_id);
+    }
+
     public function test_reseller_cannot_transfer_domain_to_foreign_customer(): void
     {
         $reseller = $this->createReseller();
