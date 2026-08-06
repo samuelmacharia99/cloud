@@ -79,10 +79,86 @@ class ContainerMetric extends Model
     {
         $peak = self::query()
             ->where('container_deployment_id', $deployment->id)
+            ->usageSamples()
             ->inBillingPeriod($from, $to)
             ->max('memory_used_mb');
 
         return (float) ($peak ?? 0);
+    }
+
+    /**
+     * Time-weighted RAM overage GB-hours for a billing period.
+     * Each sample's excess above included memory is held until the next sample
+     * (or period end), so brief spikes are not billed for the whole period.
+     *
+     * @return array{gb_hours: float, avg_usage_gb: float, peak_usage_gb: float}
+     */
+    public static function memoryOverageGbHours(
+        ContainerDeployment $deployment,
+        Carbon $from,
+        Carbon $to,
+        float $includedMemoryGb,
+    ): array {
+        $samples = self::query()
+            ->where('container_deployment_id', $deployment->id)
+            ->usageSamples()
+            ->inBillingPeriod($from, $to)
+            ->orderBy('recorded_at')
+            ->orderBy('id')
+            ->get(['memory_used_mb', 'recorded_at']);
+
+        if ($samples->isEmpty()) {
+            return [
+                'gb_hours' => 0.0,
+                'avg_usage_gb' => 0.0,
+                'peak_usage_gb' => 0.0,
+            ];
+        }
+
+        $gbHours = 0.0;
+        $weightedUsageGb = 0.0;
+        $totalHours = 0.0;
+        $peakMb = 0;
+
+        foreach ($samples as $index => $sample) {
+            $memoryMb = (int) ($sample->memory_used_mb ?? 0);
+            $peakMb = max($peakMb, $memoryMb);
+
+            $intervalStart = Carbon::parse($sample->recorded_at);
+            $intervalEnd = $index + 1 < $samples->count()
+                ? Carbon::parse($samples[$index + 1]->recorded_at)
+                : $to->copy();
+
+            if ($intervalStart->lt($from)) {
+                $intervalStart = $from->copy();
+            }
+
+            if ($intervalEnd->gt($to)) {
+                $intervalEnd = $to->copy();
+            }
+
+            if ($intervalEnd->lessThanOrEqualTo($intervalStart)) {
+                continue;
+            }
+
+            $hours = max(0, $intervalStart->diffInSeconds($intervalEnd) / 3600);
+            if ($hours <= 0) {
+                continue;
+            }
+
+            $usageGb = $memoryMb / 1024;
+            $excessGb = max(0, $usageGb - $includedMemoryGb);
+
+            $gbHours += $excessGb * $hours;
+            $weightedUsageGb += $usageGb * $hours;
+            $totalHours += $hours;
+        }
+
+        return [
+            'gb_hours' => $gbHours,
+            'avg_usage_gb' => $totalHours > 0 ? $weightedUsageGb / $totalHours : 0.0,
+            'peak_usage_gb' => $peakMb / 1024,
+        ];
     }
 
     public static function averageDiskUsedGb(ContainerDeployment $deployment, Carbon $from, Carbon $to): float

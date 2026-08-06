@@ -218,7 +218,7 @@ class ContainerOverageBillingServiceTest extends TestCase
         Carbon::setTestNow();
     }
 
-    public function test_ram_overage_uses_peak_memory_not_average(): void
+    public function test_ram_overage_uses_time_weighted_samples_not_peak_times_full_period(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-03-15 12:00:00'));
 
@@ -232,7 +232,7 @@ class ContainerOverageBillingServiceTest extends TestCase
                 'disk' => 10,
             ],
             'overage_enabled' => true,
-            'cpu_overage_rate' => 10,
+            'cpu_overage_rate' => 0,
             'ram_overage_rate' => 5,
             'disk_overage_rate' => 0,
         ]);
@@ -255,6 +255,7 @@ class ContainerOverageBillingServiceTest extends TestCase
             'memory_limit_mb' => 512,
         ]);
 
+        // Within included limit for most of the window.
         ContainerMetric::create([
             'container_deployment_id' => $deployment->id,
             'sample_type' => ContainerMetric::SAMPLE_USAGE,
@@ -266,6 +267,7 @@ class ContainerOverageBillingServiceTest extends TestCase
             'recorded_at' => Carbon::parse('2026-03-10 10:00:00'),
         ]);
 
+        // Brief spike to 2 GB, then we end the sample window an hour later.
         ContainerMetric::create([
             'container_deployment_id' => $deployment->id,
             'sample_type' => ContainerMetric::SAMPLE_USAGE,
@@ -274,7 +276,18 @@ class ContainerOverageBillingServiceTest extends TestCase
             'memory_limit_mb' => 2048,
             'memory_percentage' => 100,
             'disk_used_gb' => 2,
-            'recorded_at' => Carbon::parse('2026-03-11 10:00:00'),
+            'recorded_at' => Carbon::parse('2026-03-14 11:00:00'),
+        ]);
+
+        ContainerMetric::create([
+            'container_deployment_id' => $deployment->id,
+            'sample_type' => ContainerMetric::SAMPLE_USAGE,
+            'cpu_percentage' => 10,
+            'memory_used_mb' => 256,
+            'memory_limit_mb' => 512,
+            'memory_percentage' => 50,
+            'disk_used_gb' => 2,
+            'recorded_at' => Carbon::parse('2026-03-14 12:00:00'),
         ]);
 
         $invoice = Invoice::factory()->create([
@@ -287,11 +300,15 @@ class ContainerOverageBillingServiceTest extends TestCase
 
         $this->billing->addOverageItemsToInvoice($invoice, $service);
 
-        $invoice->refresh();
-        $items = $invoice->items()->pluck('description')->all();
+        $item = $invoice->items()->where('description', 'like', 'RAM Overage%')->first();
+        $this->assertNotNull($item);
 
-        $this->assertTrue(collect($items)->contains(fn (string $line) => str_contains($line, 'RAM Overage')));
-        $this->assertTrue(collect($items)->contains(fn (string $line) => str_contains($line, 'peak usage: 2 GB')));
+        // Excess for the 1-hour spike: (2 - 0.5) GB × 1 hour = 1.5 GB-hours → KES 7.50
+        // Must not use peak × full period (~1.5 × hundreds of hours).
+        $this->assertEqualsWithDelta(1.5, (float) $item->quantity, 0.01);
+        $this->assertEqualsWithDelta(7.5, (float) $item->amount, 0.01);
+        $this->assertStringContainsString('avg usage:', $item->description);
+        $this->assertStringContainsString('peak: 2 GB', $item->description);
 
         Carbon::setTestNow();
     }
