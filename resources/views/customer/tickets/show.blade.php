@@ -16,7 +16,7 @@
             </div>
 
             <!-- Status Card -->
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <div class="flex justify-between items-center">
                     <div>
                         <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300">Status</h3>
@@ -44,7 +44,7 @@
             </div>
 
             <!-- Ticket Details -->
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <p class="text-gray-700 dark:text-gray-300 whitespace-pre-line">{{ $ticket->description }}</p>
                 <x-ticket-attachments :attachments="$ticket->attachments" :ticket="$ticket" route-name="customer.tickets.attachments.show" />
                 <div class="mt-6 pt-6 border-t border-slate-200 dark:border-slate-700 text-sm text-gray-600 dark:text-gray-400">
@@ -57,7 +57,7 @@
                 <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Replies ({{ $ticket->replies->count() }})</h2>
 
                 @forelse($ticket->replies as $reply)
-                <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 {{ $reply->is_staff_reply ? 'border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20' : '' }}">
+                <div class="ui-card p-6 {{ $reply->is_staff_reply ? 'border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20' : '' }}">
                     <div class="flex justify-between items-start mb-4">
                         <div>
                             <p class="font-semibold text-gray-900 dark:text-white">
@@ -81,7 +81,7 @@
 
             <!-- Reply Form -->
             @if($ticket->isOpen())
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Add Reply</h3>
                 <form action="{{ route('customer.tickets.reply', $ticket) }}" method="POST" class="space-y-4">
                     @csrf
@@ -109,7 +109,7 @@
             <!-- Close Ticket Form -->
             @can('close', $ticket)
             @if(!$ticket->isClosed())
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Close Ticket</h3>
                 <form action="{{ route('customer.tickets.close', $ticket) }}" method="POST" data-confirm='Are you sure you want to close this ticket?'>
                     @csrf

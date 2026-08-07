@@ -2,7 +2,7 @@
     $hosting = $hostingSettings ?? [];
 @endphp
 
-<div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+<div class="ui-card overflow-hidden">
     <div class="bg-gradient-to-r from-purple-600 to-purple-700 px-6 py-4">
         <h3 class="text-lg font-bold text-white">DirectAdmin & hosting</h3>
         <p class="text-sm text-purple-100 mt-1">Connection status and account linking for your whitelabel hosting.</p>

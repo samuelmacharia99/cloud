@@ -28,7 +28,7 @@
         <!-- Main Details -->
         <div class="lg:col-span-2 space-y-6">
             <!-- What Happens Next -->
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h2 class="text-xl font-bold text-slate-900 dark:text-white mb-4">What Happens Next</h2>
                 <div class="space-y-4">
                     <div class="flex gap-4">
@@ -76,7 +76,7 @@
             </div>
 
             <!-- Submission Information -->
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h2 class="text-xl font-bold text-slate-900 dark:text-white mb-4">Your Submission</h2>
                 <div class="space-y-3">
                     @php
@@ -115,7 +115,7 @@
 
         <!-- Sidebar - Quick Links -->
         <div class="lg:col-span-1">
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 sticky top-6 space-y-4">
+            <div class="ui-card p-6 sticky top-6 space-y-4">
                 <h3 class="font-bold text-slate-900 dark:text-white">Quick Links</h3>
 
                 <a href="{{ route('reseller.invoices.show', $payment->invoice) }}"

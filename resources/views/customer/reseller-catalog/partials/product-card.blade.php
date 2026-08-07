@@ -1,4 +1,4 @@
-<div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 flex flex-col">
+<div class="ui-card ui-card-interactive p-6 flex flex-col">
     <div class="flex items-start justify-between gap-3">
         <h3 class="text-xl font-semibold text-slate-900 dark:text-white">{{ $product->name }}</h3>
         @if ($product->usesDirectAdminPackage())

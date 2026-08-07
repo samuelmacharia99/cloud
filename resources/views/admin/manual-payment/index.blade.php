@@ -15,7 +15,7 @@
     </div>
 
     <!-- Main Card -->
-    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8">
+    <div class="ui-card p-8">
         <!-- Success Message -->
         @if (session('success'))
             <div class="mb-6 p-4 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700 rounded-lg">

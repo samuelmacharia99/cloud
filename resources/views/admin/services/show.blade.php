@@ -166,7 +166,7 @@
     @endif
 
     <!-- Header -->
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
+    <div class="ui-card p-8">
         <div class="flex items-start justify-between">
             <div>
                 <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Service #{{ $service->id }}</h1>
@@ -330,7 +330,7 @@
         <!-- Main Content -->
         <div class="lg:col-span-2 space-y-6">
             <!-- Service Details -->
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <div class="flex items-center justify-between mb-6">
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Service Details</h2>
                     <button @click="editDetailsModal = true" class="px-3 py-1.5 text-xs bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-900 font-medium rounded-lg transition inline-flex items-center gap-1.5">
@@ -392,7 +392,7 @@
             </div>
 
             <!-- Configuration -->
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <div class="flex items-center justify-between mb-4">
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Configuration</h2>
                     @if ($service->status->value === 'provisioning')
@@ -527,7 +527,7 @@
 
             <!-- Service Metadata -->
             @if ($service->service_meta)
-                <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+                <div class="ui-card p-6">
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Service Metadata</h2>
                     <pre class="bg-slate-50 dark:bg-slate-800 p-4 rounded-lg text-xs text-slate-900 dark:text-slate-100 overflow-x-auto">{{ json_encode($service->service_meta, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre>
                 </div>
@@ -535,7 +535,7 @@
 
             <!-- Server Credentials (VPS / Dedicated Server) -->
             @if ($service->product && \App\Models\Product::isServerType($service->product->type) && $service->credentials)
-                <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+                <div class="ui-card p-6">
                     <div class="flex items-center justify-between mb-4">
                         <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Server Credentials</h2>
                         <form method="POST" action="{{ route('admin.services.resend-credentials', $service) }}" class="inline">
@@ -566,7 +566,7 @@
                     $directAdminAccount = $service->service_meta['directadmin_account'] ?? null;
                 @endphp
                 @if (is_array($directAdminAccount))
-                    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+                    <div class="ui-card p-6">
                         <div class="flex items-center justify-between mb-4">
                             <h2 class="text-lg font-semibold text-slate-900 dark:text-white">DirectAdmin Account</h2>
                             @if (!empty($directAdminAccount['checked_at']))
@@ -617,7 +617,7 @@
                         </div>
                     </div>
                 @endif
-                <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+                <div class="ui-card p-6">
                     <div class="flex items-center justify-between mb-4">
                         <h2 class="text-lg font-semibold text-slate-900 dark:text-white">DirectAdmin Credentials</h2>
                         <form method="POST" action="{{ route('admin.services.resend-credentials', $service) }}" class="inline">
@@ -663,7 +663,7 @@
             @endif
 
             <!-- Customer Info -->
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Customer</h3>
                 <div class="space-y-3">
                     <div class="flex items-center gap-3">
@@ -685,7 +685,7 @@
             </div>
 
             <!-- Product Info -->
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Product</h3>
                 <div class="space-y-3">
                     <div>
@@ -700,7 +700,7 @@
 
             <!-- Related Invoice -->
             @if ($service->invoice)
-                <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+                <div class="ui-card p-6">
                     <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Invoice</h3>
                     <div class="space-y-3">
                         <p class="text-sm text-slate-900 dark:text-white">Invoice #{{ str_pad($service->invoice->id, 5, '0', STR_PAD_LEFT) }}</p>
@@ -712,7 +712,7 @@
             @endif
 
             <!-- Timeline -->
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Timeline</h3>
                 <div class="space-y-3 text-sm">
                     <div>

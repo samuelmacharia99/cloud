@@ -6,7 +6,7 @@
 <div class="space-y-6">
     <!-- Success Card -->
     <div class="max-w-md mx-auto">
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8 text-center">
+        <div class="ui-card p-8 text-center">
             <!-- Success Icon -->
             <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-900/20 mb-6">
                 <svg class="w-8 h-8 text-emerald-600 dark:text-emerald-400" fill="currentColor" viewBox="0 0 20 20">

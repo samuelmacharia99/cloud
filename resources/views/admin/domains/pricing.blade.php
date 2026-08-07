@@ -43,7 +43,7 @@
     <!-- Extensions Grid -->
     <div class="space-y-3">
         @forelse ($extensions as $extension)
-            <div x-data="{ expanded: false }" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+            <div x-data="{ expanded: false }" class="ui-card overflow-hidden">
                 <!-- Card Header (Always Visible) -->
                 <button
                     @click="expanded = !expanded"
@@ -149,7 +149,7 @@
                 </div>
             </div>
         @empty
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-12 text-center">
+            <div class="ui-card p-12 text-center">
                 <svg class="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.658 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
                 </svg>
@@ -161,7 +161,7 @@
 
     <!-- Add Extension Modal -->
     <div x-show="showAddExtensionModal" @click.outside="closeAddExtensionModal()" x-transition class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" style="display: none;">
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 max-w-md w-full mx-4 p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+        <div class="ui-card max-w-md w-full mx-4 p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <h3 class="text-lg font-bold text-slate-900 dark:text-white">Add Domain Extension</h3>
             <p class="text-sm text-slate-600 dark:text-slate-400">Create a new domain extension (.com, .co.ke, etc.)</p>
 
@@ -364,7 +364,7 @@
 
     <!-- Edit Pricing Modal -->
     <div x-show="showPricingModal" @click.outside="showPricingModal = false" x-transition class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" style="display: none;">
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 max-w-xl w-full mx-4 p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+        <div class="ui-card max-w-xl w-full mx-4 p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <h3 class="text-lg font-bold text-slate-900 dark:text-white">Edit Pricing</h3>
             <p class="text-sm text-slate-600 dark:text-slate-400">Configure both retail (customer) and wholesale (reseller) pricing. Setup fees are not applicable to domain renewals.</p>
 

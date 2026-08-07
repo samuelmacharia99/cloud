@@ -45,7 +45,7 @@
                     </div>
                 @endif
 
-                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                <div class="ui-card overflow-hidden">
                     <div class="overflow-x-auto">
                         <table class="w-full">
                             <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
@@ -218,7 +218,7 @@
                     </div>
                 </div>
             @else
-                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-12 text-center">
+                <div class="ui-card p-12 text-center">
                     <svg class="w-16 h-16 mx-auto text-slate-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/>
                     </svg>
@@ -233,7 +233,7 @@
         <!-- Summary -->
         @if($itemCount > 0)
             <div class="lg:col-span-1">
-                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 sticky top-4">
+                <div class="ui-card p-6 sticky top-4">
                     <h3 class="text-lg font-bold text-slate-900 dark:text-white mb-4">Order Summary</h3>
 
                     <div class="space-y-3 mb-4 pb-4 border-b border-slate-200 dark:border-slate-700">

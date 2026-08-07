@@ -25,7 +25,7 @@
             <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Your Servers</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 @foreach ($services as $service)
-                    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 hover:shadow-lg transition">
+                    <div class="ui-card p-6 hover:shadow-lg transition">
                         <!-- Status Row -->
                         <div class="flex items-center gap-3 mb-4">
                             <span class="w-2 h-2 rounded-full" style="background-color: @switch($service->status->value) @case('active') rgb(16, 185, 129) @break @case('pending') rgb(59, 130, 246) @break @case('provisioning') rgb(245, 158, 11) @break @case('suspended') rgb(249, 115, 22) @break @case('terminated') @case('failed') rgb(239, 68, 68) @break @default rgb(107, 114, 128) @endswitch"></span>
@@ -88,7 +88,7 @@
         </div>
     @else
         <!-- Empty State -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-12 text-center">
+        <div class="ui-card p-12 text-center">
             <svg class="w-16 h-16 text-slate-300 dark:text-slate-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"/>
             </svg>

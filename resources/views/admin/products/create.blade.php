@@ -19,7 +19,7 @@
     </div>
 
     <!-- Form -->
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
+    <div class="ui-card p-8">
         <form method="POST" action="{{ route('admin.products.store') }}" class="space-y-8" x-data="{ name: '{{ old('name') }}', productType: '{{ old('type', '') }}' }" @change="productType = document.getElementById('type').value">
             @csrf
 

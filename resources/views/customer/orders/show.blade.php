@@ -50,7 +50,7 @@
 
     <!-- Order Items -->
     @if ($order->items->count() > 0)
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Order Items</h2>
             <div class="overflow-x-auto">
                 <table class="w-full text-sm">
@@ -102,7 +102,7 @@
 
     <!-- Notes -->
     @if ($order->notes)
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-3">Notes</h2>
             <p class="text-sm text-slate-600 dark:text-slate-400">{{ $order->notes }}</p>
         </div>

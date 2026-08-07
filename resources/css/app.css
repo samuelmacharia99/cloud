@@ -9,24 +9,26 @@
 @layer base {
     :root {
         --surface: 255 255 255;
-        --surface-muted: 246 245 244;
+        --surface-muted: 244 244 245;
         --border: 232 230 227;
         --text: 28 25 23;
         --text-muted: 116 108 98;
         --accent: 217 119 6;
         --accent-soft: 255 251 235;
         --rail: 12 10 9;
+        --soft-glow: 245 158 11;
     }
 
     .dark {
-        --surface: 28 25 23;
-        --surface-muted: 12 10 9;
-        --border: 67 62 58;
+        --surface: 30 41 59;
+        --surface-muted: 15 23 42;
+        --border: 51 65 85;
         --text: 250 250 249;
         --text-muted: 168 162 158;
         --accent: 251 191 36;
         --accent-soft: 69 26 3;
         --rail: 12 10 9;
+        --soft-glow: 251 191 36;
     }
 
     html {
@@ -61,43 +63,47 @@
     input:not([type='checkbox']):not([type='radio']):not([type='range']),
     select,
     textarea {
-        @apply rounded-xl border-ink-200 dark:border-ink-700 bg-white dark:bg-ink-900
-            focus:border-brand-500 focus:ring-brand-500/25;
+        @apply rounded-xl border border-ink-200/80 dark:border-ink-700
+            bg-white dark:bg-ink-900/80
+            shadow-soft-inset
+            focus:border-brand-500 focus:ring-brand-500/25 focus:shadow-none;
     }
 }
 
 @layer components {
     /*
-     | Ember Grid — Talksasa signature shell
-     | Warm stone canvas + technical grid + always-dark rail sidebar
+     | Ember Grid + Refined Soft UI
+     | Soft canvas + light technical grid + always-dark rail sidebar
      */
     .app-shell {
-        @apply bg-ink-50 text-ink-950 dark:bg-ink-950 dark:text-ink-50;
+        @apply text-ink-950 dark:text-ink-50;
+        background-color: #f4f4f5;
         background-image:
-            radial-gradient(ellipse 70% 45% at 85% -10%, rgb(245 158 11 / 0.12), transparent 55%),
-            radial-gradient(ellipse 50% 35% at 0% 100%, rgb(28 25 23 / 0.04), transparent 50%),
-            linear-gradient(to right, rgb(28 25 23 / 0.035) 1px, transparent 1px),
-            linear-gradient(to bottom, rgb(28 25 23 / 0.035) 1px, transparent 1px);
+            radial-gradient(ellipse 70% 45% at 85% -10%, rgb(245 158 11 / 0.1), transparent 55%),
+            radial-gradient(ellipse 50% 35% at 0% 100%, rgb(255 255 255 / 0.65), transparent 50%),
+            linear-gradient(to right, rgb(28 25 23 / 0.028) 1px, transparent 1px),
+            linear-gradient(to bottom, rgb(28 25 23 / 0.028) 1px, transparent 1px);
         background-size: auto, auto, 48px 48px, 48px 48px;
         background-attachment: fixed;
     }
 
     .dark .app-shell {
+        background-color: #020617;
         background-image:
-            radial-gradient(ellipse 70% 45% at 80% -15%, rgb(245 158 11 / 0.14), transparent 55%),
-            radial-gradient(ellipse 45% 30% at 10% 110%, rgb(251 191 36 / 0.05), transparent 50%),
-            linear-gradient(to right, rgb(255 255 255 / 0.03) 1px, transparent 1px),
-            linear-gradient(to bottom, rgb(255 255 255 / 0.03) 1px, transparent 1px);
+            radial-gradient(ellipse 70% 45% at 80% -15%, rgb(245 158 11 / 0.12), transparent 55%),
+            radial-gradient(ellipse 45% 30% at 10% 110%, rgb(30 41 59 / 0.55), transparent 50%),
+            linear-gradient(to right, rgb(255 255 255 / 0.025) 1px, transparent 1px),
+            linear-gradient(to bottom, rgb(255 255 255 / 0.025) 1px, transparent 1px);
         background-size: auto, auto, 48px 48px, 48px 48px;
     }
 
     .app-header {
-        @apply sticky top-0 z-20 border-b border-ink-200/60 dark:border-ink-800/60
-            bg-ink-50/85 dark:bg-ink-950/80 backdrop-blur-xl
-            supports-[backdrop-filter]:bg-ink-50/70 dark:supports-[backdrop-filter]:bg-ink-950/65;
+        @apply sticky top-0 z-20 border-b border-ink-200/50 dark:border-ink-800/50
+            bg-white/70 dark:bg-ink-950/75 backdrop-blur-xl
+            supports-[backdrop-filter]:bg-white/55 dark:supports-[backdrop-filter]:bg-ink-950/60;
     }
 
-    /* Always-dark navigation rail — signature chrome */
+    /* Always-dark navigation rail — signature chrome (unchanged Soft UI) */
     .app-sidebar {
         @apply border-r border-white/5 text-ink-100;
         background:
@@ -134,25 +140,65 @@
         @apply font-display font-extrabold tracking-tight text-ink-950;
     }
 
-    /* Cards */
+    /* Soft raised cards */
     .ui-card {
-        @apply bg-white/90 dark:bg-ink-900/80 rounded-2xl border border-ink-200/70 dark:border-ink-800
-            shadow-card backdrop-blur-sm transition-all duration-200;
+        @apply rounded-2xl border border-white/80 dark:border-ink-700/50
+            transition-all duration-300 ease-out;
+        background: linear-gradient(165deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 250, 252, 0.94) 100%);
+        box-shadow:
+            0 1px 0 rgba(255, 255, 255, 0.9) inset,
+            0 10px 24px -8px rgba(28, 25, 23, 0.12),
+            0 18px 36px -16px rgba(245, 158, 11, 0.14);
+    }
+
+    .dark .ui-card {
+        background: linear-gradient(165deg, rgba(30, 41, 59, 0.92) 0%, rgba(15, 23, 42, 0.96) 100%);
+        box-shadow:
+            0 1px 0 rgba(255, 255, 255, 0.04) inset,
+            0 12px 28px -10px rgba(0, 0, 0, 0.5),
+            0 18px 36px -16px rgba(251, 191, 36, 0.1);
     }
 
     .ui-card-interactive {
-        @apply ui-card hover:border-brand-400/50 dark:hover:border-brand-600/40 hover:shadow-card-hover;
+        @apply ui-card;
+    }
+
+    .ui-card-interactive:hover {
+        transform: translateY(-3px);
+        border-color: rgb(245 158 11 / 0.28);
+        box-shadow:
+            0 1px 0 rgba(255, 255, 255, 0.95) inset,
+            0 16px 32px -10px rgba(28, 25, 23, 0.16),
+            0 24px 44px -14px rgba(245, 158, 11, 0.28);
+    }
+
+    .dark .ui-card-interactive:hover {
+        border-color: rgb(251 191 36 / 0.35);
+        box-shadow:
+            0 1px 0 rgba(255, 255, 255, 0.05) inset,
+            0 16px 34px -10px rgba(0, 0, 0, 0.55),
+            0 24px 44px -12px rgba(251, 191, 36, 0.18);
     }
 
     .ui-card-header {
-        @apply px-5 py-4 sm:px-6 sm:py-5 border-b border-ink-100 dark:border-ink-800/80;
+        @apply px-5 py-4 sm:px-6 sm:py-5 border-b border-ink-100/90 dark:border-ink-800/70;
     }
 
     .ui-card-body {
         @apply p-5 sm:p-6;
     }
 
-    /* Buttons */
+    /* Soft panels for one-off surfaces */
+    .ui-soft-panel {
+        @apply ui-card;
+    }
+
+    .ui-soft-inset {
+        @apply rounded-xl border border-ink-200/70 dark:border-ink-700/60
+            bg-ink-50/80 dark:bg-ink-950/50 shadow-soft-inset;
+    }
+
+    /* Buttons — soft raised */
     .btn {
         @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold
             transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2
@@ -160,18 +206,44 @@
     }
 
     .btn-primary {
-        @apply btn text-ink-950 shadow-sm
+        @apply btn text-ink-950
             bg-gradient-to-b from-brand-400 to-brand-500 hover:from-brand-300 hover:to-brand-500
-            focus-visible:ring-brand-500 hover:shadow-glow active:scale-[0.98];
+            focus-visible:ring-brand-500 active:scale-[0.98];
+        box-shadow:
+            0 1px 0 rgb(255 255 255 / 0.35) inset,
+            0 8px 20px -8px rgb(217 119 6 / 0.45);
+    }
+
+    .btn-primary:hover {
+        box-shadow:
+            0 1px 0 rgb(255 255 255 / 0.4) inset,
+            0 12px 28px -8px rgb(217 119 6 / 0.55);
     }
 
     .btn-secondary {
-        @apply btn bg-white hover:bg-ink-50 text-ink-800 dark:bg-ink-800 dark:hover:bg-ink-700
-            dark:text-ink-100 focus-visible:ring-ink-400 border border-ink-200 dark:border-ink-700;
+        @apply btn text-ink-800 dark:text-ink-100 focus-visible:ring-ink-400
+            border border-white/80 dark:border-ink-700/60;
+        background: linear-gradient(165deg, #ffffff 0%, #f4f4f5 100%);
+        box-shadow:
+            0 1px 0 rgb(255 255 255 / 0.9) inset,
+            0 8px 18px -10px rgb(28 25 23 / 0.14);
+    }
+
+    .btn-secondary:hover {
+        @apply bg-ink-50 dark:bg-ink-800;
+        transform: translateY(-1px);
+    }
+
+    .dark .btn-secondary {
+        background: linear-gradient(165deg, rgba(30, 41, 59, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%);
+        box-shadow:
+            0 1px 0 rgb(255 255 255 / 0.04) inset,
+            0 8px 18px -10px rgb(0 0 0 / 0.45);
     }
 
     .btn-success {
         @apply btn bg-emerald-600 hover:bg-emerald-500 text-white focus-visible:ring-emerald-500;
+        box-shadow: 0 8px 20px -8px rgb(16 185 129 / 0.45);
     }
 
     .btn-ghost {
@@ -184,8 +256,23 @@
     }
 
     .action-icon-btn {
-        @apply inline-flex items-center justify-center w-9 h-9 shrink-0 rounded-xl transition-colors
-            hover:bg-ink-100 dark:hover:bg-ink-800;
+        @apply inline-flex items-center justify-center w-9 h-9 shrink-0 rounded-xl transition-all duration-200
+            border border-transparent hover:border-white/70 dark:hover:border-ink-700/50;
+        box-shadow: none;
+    }
+
+    .action-icon-btn:hover {
+        background: linear-gradient(165deg, #ffffff 0%, #f4f4f5 100%);
+        box-shadow:
+            0 1px 0 rgb(255 255 255 / 0.9) inset,
+            0 6px 14px -8px rgb(28 25 23 / 0.14);
+    }
+
+    .dark .action-icon-btn:hover {
+        background: linear-gradient(165deg, rgba(30, 41, 59, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%);
+        box-shadow:
+            0 1px 0 rgb(255 255 255 / 0.04) inset,
+            0 6px 14px -8px rgb(0 0 0 / 0.4);
     }
 
     .action-icon-btn svg {
@@ -225,7 +312,6 @@
         background: rgb(245 158 11 / 0.14);
     }
 
-    /* Fallback for hard-coded active classes inside dark rail */
     .app-sidebar a.bg-brand-50,
     .app-sidebar a[class*='bg-brand-'],
     .app-sidebar a[class*='ring-brand'] {
@@ -252,7 +338,7 @@
     }
 
     .ui-table thead {
-        @apply bg-ink-50/90 dark:bg-ink-900/80;
+        @apply bg-ink-50/90 dark:bg-ink-900/60;
     }
 
     .ui-table th {
@@ -335,6 +421,168 @@
 
     .overflow-x-auto > table {
         min-width: 640px;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .ui-card-interactive:hover,
+        .btn-secondary:hover {
+            transform: none;
+        }
+    }
+
+    /* Techstack soft cards — shared Soft UI + per-stack brand glow */
+    @keyframes techstack-card-in {
+        from { opacity: 0; transform: translateY(10px) scale(0.96); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .techstack-soft-canvas {
+        @apply ui-soft-inset rounded-3xl;
+        background:
+            radial-gradient(ellipse 90% 70% at 10% -20%, rgba(245, 158, 11, 0.08), transparent 55%),
+            radial-gradient(ellipse 60% 50% at 100% 100%, rgba(255, 255, 255, 0.7), transparent 50%),
+            linear-gradient(165deg, #f4f4f5 0%, #e8e8ec 100%);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+        border-color: transparent;
+    }
+
+    .dark .techstack-soft-canvas {
+        background:
+            radial-gradient(ellipse 90% 70% at 10% -20%, rgba(245, 158, 11, 0.1), transparent 55%),
+            radial-gradient(ellipse 60% 50% at 100% 110%, rgba(30, 41, 59, 0.5), transparent 50%),
+            linear-gradient(165deg, #111827 0%, #020617 100%);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    }
+
+    .techstack-soft-logo {
+        transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+        filter: drop-shadow(0 6px 12px rgba(15, 23, 42, 0.12));
+    }
+
+    .dark .techstack-soft-logo {
+        filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.4));
+    }
+
+    .techstack-soft-card:hover .techstack-soft-logo {
+        transform: translateY(-3px) scale(1.06);
+    }
+
+    .techstack-soft-card {
+        @apply ui-card;
+        isolation: isolate;
+        overflow: visible;
+        animation: techstack-card-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+        animation-delay: var(--enter-delay, 0ms);
+        box-shadow:
+            0 1px 0 rgba(255, 255, 255, 0.9) inset,
+            0 10px 24px -8px rgba(15, 23, 42, 0.12),
+            0 18px 36px -16px rgba(var(--stack-glow, 245, 158, 11), 0.28);
+    }
+
+    .techstack-soft-card::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        background: radial-gradient(circle at 50% 18%, rgba(var(--stack-glow, 245, 158, 11), 0.14), transparent 55%);
+        opacity: 0;
+        transition: opacity 0.35s ease;
+        pointer-events: none;
+    }
+
+    .techstack-soft-card::after {
+        content: '';
+        position: absolute;
+        inset: auto 18% -10% 18%;
+        height: 36%;
+        border-radius: 999px;
+        background: radial-gradient(ellipse at center, rgba(var(--stack-glow, 245, 158, 11), 0.5), transparent 72%);
+        filter: blur(16px);
+        pointer-events: none;
+        z-index: -1;
+        opacity: 0.55;
+        transition: opacity 0.35s ease, transform 0.35s ease;
+    }
+
+    .techstack-soft-card:hover {
+        transform: translateY(-5px);
+        border-color: rgba(var(--stack-glow, 245, 158, 11), 0.28);
+        box-shadow:
+            0 1px 0 rgba(255, 255, 255, 0.95) inset,
+            0 16px 32px -10px rgba(15, 23, 42, 0.16),
+            0 24px 44px -14px rgba(var(--stack-glow, 245, 158, 11), 0.42);
+    }
+
+    .techstack-soft-card:hover::before,
+    .techstack-soft-card.is-selected::before { opacity: 1; }
+
+    .techstack-soft-card:hover::after,
+    .techstack-soft-card.is-selected::after {
+        opacity: 0.95;
+        transform: scale(1.08);
+    }
+
+    .techstack-soft-card.is-selected {
+        transform: translateY(-3px);
+        border-color: rgba(var(--stack-glow, 245, 158, 11), 0.45);
+        box-shadow:
+            0 0 0 1.5px rgba(var(--stack-glow, 245, 158, 11), 0.35),
+            0 16px 32px -10px rgba(15, 23, 42, 0.14),
+            0 24px 44px -12px rgba(var(--stack-glow, 245, 158, 11), 0.48);
+    }
+
+    .techstack-soft-card:active {
+        transform: translateY(-1px) scale(0.985);
+    }
+
+    .dark .techstack-soft-card {
+        box-shadow:
+            0 1px 0 rgba(255, 255, 255, 0.04) inset,
+            0 12px 28px -10px rgba(0, 0, 0, 0.55),
+            0 18px 36px -16px rgba(var(--stack-glow, 251, 191, 36), 0.22);
+    }
+
+    .dark .techstack-soft-card:hover,
+    .dark .techstack-soft-card.is-selected {
+        border-color: rgba(var(--stack-glow, 251, 191, 36), 0.4);
+        box-shadow:
+            0 0 0 1.5px rgba(var(--stack-glow, 251, 191, 36), 0.3),
+            0 16px 34px -10px rgba(0, 0, 0, 0.6),
+            0 24px 44px -12px rgba(var(--stack-glow, 251, 191, 36), 0.35);
+    }
+
+    .techstack-soft-option {
+        @apply ui-card;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    }
+
+    .techstack-soft-option:hover {
+        transform: translateY(-1px);
+    }
+
+    .techstack-soft-option.is-selected {
+        border-color: rgba(245, 158, 11, 0.55);
+        background: linear-gradient(145deg, #fffbeb 0%, #ffffff 100%);
+        box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.2), 0 8px 18px -10px rgba(245, 158, 11, 0.35);
+    }
+
+    .dark .techstack-soft-option.is-selected {
+        border-color: rgba(251, 191, 36, 0.45);
+        background: linear-gradient(145deg, rgba(69, 26, 3, 0.45) 0%, rgba(15, 23, 42, 0.9) 100%);
+        box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.2);
+    }
+
+    .techstack-soft-modal {
+        @apply ui-card;
+        max-height: 90vh;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .techstack-soft-card { animation: none; }
+        .techstack-soft-card,
+        .techstack-soft-card:hover,
+        .techstack-soft-card.is-selected,
+        .techstack-soft-logo { transition: none; }
     }
 }
 

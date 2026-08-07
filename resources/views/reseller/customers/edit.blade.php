@@ -16,7 +16,7 @@
         @method('PATCH')
 
         <!-- Basic Information -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-6">Basic Information</h2>
 
             <div class="space-y-4">
@@ -116,7 +116,7 @@
         </div>
 
         <!-- Contact & Company Information -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-6">Contact Information</h2>
 
             <div class="space-y-4">

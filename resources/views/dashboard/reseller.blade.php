@@ -43,12 +43,12 @@
     <x-reseller-action-queue :queue="$actionQueue ?? []" />
 
     <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-        <a href="{{ route('reseller.customers.index') }}" class="block bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 hover:border-purple-300 dark:hover:border-purple-700 transition shadow-sm">
+        <a href="{{ route('reseller.customers.index') }}" class="block ui-card p-5 hover:border-purple-300 dark:hover:border-purple-700 transition shadow-sm">
             <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Customers</p>
             <p class="text-3xl font-bold text-slate-900 dark:text-white mt-1">{{ $customerCount }}</p>
             <p class="text-xs text-slate-500 mt-2">{{ $customerSubtitle }}</p>
         </a>
-        <a href="{{ route('reseller.services.index') }}" class="block bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 hover:border-emerald-300 dark:hover:border-emerald-700 transition shadow-sm">
+        <a href="{{ route('reseller.services.index') }}" class="block ui-card p-5 hover:border-emerald-300 dark:hover:border-emerald-700 transition shadow-sm">
             <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Service slots</p>
             <p class="text-3xl font-bold text-slate-900 dark:text-white mt-1">{{ $activeServices }}{{ $maxServices ? ' / '.$maxServices : '' }}</p>
             <p class="text-xs text-slate-500 mt-2">
@@ -59,19 +59,19 @@
                 @endif
             </p>
         </a>
-        <a href="{{ route('reseller.customer-invoices.index', ['status' => 'unpaid']) }}" class="block bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 hover:border-amber-300 dark:hover:border-amber-700 transition shadow-sm">
+        <a href="{{ route('reseller.customer-invoices.index', ['status' => 'unpaid']) }}" class="block ui-card p-5 hover:border-amber-300 dark:hover:border-amber-700 transition shadow-sm">
             <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Outstanding</p>
             <p class="text-3xl font-bold text-amber-600 mt-1">KSH {{ number_format($outstandingBalance, 0) }}</p>
             <p class="text-xs text-slate-500 mt-2">{{ ($invoiceStatus['unpaid'] ?? 0) + ($invoiceStatus['overdue'] ?? 0) }} open invoice(s)</p>
         </a>
-        <a href="{{ route('reseller.customer-payments.index') }}" class="block bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 hover:border-emerald-300 dark:hover:border-emerald-700 transition shadow-sm">
+        <a href="{{ route('reseller.customer-payments.index') }}" class="block ui-card p-5 hover:border-emerald-300 dark:hover:border-emerald-700 transition shadow-sm">
             <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Collected (30d)</p>
             <p class="text-3xl font-bold text-emerald-600 mt-1">KSH {{ number_format($revenue30d ?? 0, 0) }}</p>
             <p class="text-xs text-slate-500 mt-2">KSH {{ number_format($totalRevenue, 0) }} all-time paid</p>
         </a>
     </div>
 
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+    <div class="ui-card overflow-hidden">
         <div class="flex border-b border-slate-200 dark:border-slate-800 overflow-x-auto">
             @if ($hasServerPulse)
                 <button type="button" @click="dashboardTab = 'server'" :class="dashboardTab === 'server' ? 'border-b-2 border-purple-600 text-purple-700 dark:text-purple-300' : 'text-slate-600 dark:text-slate-400'" class="px-5 py-3 text-sm font-medium whitespace-nowrap">Server pulse</button>

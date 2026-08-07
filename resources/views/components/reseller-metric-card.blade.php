@@ -21,9 +21,9 @@
 @endphp
 
 @if ($href)
-    <a href="{{ $href }}" class="block bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-5 sm:p-6 transition-all shadow-sm hover:shadow-md {{ str_contains($toneClasses, 'hover:border') ? $toneClasses : 'hover:border-purple-300 dark:hover:border-purple-700' }}">
+    <a href="{{ $href }}" class="block ui-card ui-card-interactive p-5 sm:p-6 {{ str_contains($toneClasses, 'hover:border') ? $toneClasses : 'hover:border-purple-300 dark:hover:border-purple-700' }}">
 @else
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-5 sm:p-6 shadow-sm">
+    <div class="ui-card p-5 sm:p-6">
 @endif
     <div class="flex items-start justify-between gap-3">
         <div class="min-w-0">

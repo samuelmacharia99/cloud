@@ -16,7 +16,7 @@
     <!-- Primary Metrics -->
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <!-- Total Customers -->
-        <a href="{{ route('admin.customers.index') }}" class="block bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 hover:border-blue-300 dark:hover:border-blue-700 transition-all shadow-card hover:shadow-card-hover">
+        <a href="{{ route('admin.customers.index') }}" class="block ui-card ui-card-interactive p-6">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Customers</p>
@@ -32,7 +32,7 @@
         </a>
 
         <!-- Active Services -->
-        <a href="{{ route('admin.services.index') }}" class="block bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 hover:border-emerald-300 dark:hover:border-emerald-700 transition-all shadow-card hover:shadow-card-hover">
+        <a href="{{ route('admin.services.index') }}" class="block ui-card ui-card-interactive p-6">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Active Services</p>
@@ -48,7 +48,7 @@
         </a>
 
         <!-- Unpaid Invoices -->
-        <a href="{{ route('admin.invoices.index', ['status' => 'unpaid']) }}" class="block bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 hover:border-amber-300 dark:hover:border-amber-700 transition-all shadow-card hover:shadow-card-hover">
+        <a href="{{ route('admin.invoices.index', ['status' => 'unpaid']) }}" class="block ui-card ui-card-interactive p-6">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Unpaid Invoices</p>
@@ -64,7 +64,7 @@
         </a>
 
         <!-- Total Revenue -->
-        <a href="{{ route('admin.payments.index') }}" class="block bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 hover:border-violet-300 dark:hover:border-violet-700 transition-all shadow-card hover:shadow-card-hover">
+        <a href="{{ route('admin.payments.index') }}" class="block ui-card ui-card-interactive p-6">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Platform Revenue</p>
@@ -83,7 +83,7 @@
     <!-- Secondary Metrics -->
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <!-- Suspended Services -->
-        <a href="{{ route('admin.services.index') }}" class="block bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 hover:border-amber-300 dark:hover:border-amber-700 transition-all shadow-card hover:shadow-card-hover">
+        <a href="{{ route('admin.services.index') }}" class="block ui-card ui-card-interactive p-6">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Suspended Services</p>
@@ -99,7 +99,7 @@
         </a>
 
         <!-- Overdue Invoices -->
-        <a href="{{ route('admin.invoices.index', ['status' => 'overdue']) }}" class="block bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 hover:border-red-300 dark:hover:border-red-700 transition-all shadow-card hover:shadow-card-hover">
+        <a href="{{ route('admin.invoices.index', ['status' => 'overdue']) }}" class="block ui-card ui-card-interactive p-6">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Overdue Invoices</p>
@@ -115,7 +115,7 @@
         </a>
 
         <!-- Collected Today -->
-        <a href="{{ route('admin.payments.index', ['status' => 'completed', 'from_date' => $collectedTodayDate ?? now()->toDateString(), 'to_date' => $collectedTodayDate ?? now()->toDateString()]) }}" class="block bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 hover:border-blue-300 dark:hover:border-blue-700 transition-all shadow-card hover:shadow-card-hover">
+        <a href="{{ route('admin.payments.index', ['status' => 'completed', 'from_date' => $collectedTodayDate ?? now()->toDateString(), 'to_date' => $collectedTodayDate ?? now()->toDateString()]) }}" class="block ui-card ui-card-interactive p-6">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Collected Today</p>
@@ -131,7 +131,7 @@
         </a>
 
         <!-- Urgent Tickets -->
-        <a href="{{ route('tickets.index') }}" class="block bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 hover:border-red-300 dark:hover:border-red-800 transition-all shadow-card hover:shadow-card-hover {{ $openTickets > 0 ? 'ring-1 ring-red-200/60 dark:ring-red-900/40' : '' }}">
+        <a href="{{ route('tickets.index') }}" class="block ui-card ui-card-interactive p-6 {{ $openTickets > 0 ? 'ring-1 ring-red-200/60 dark:ring-red-900/40' : '' }}">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400 flex items-center gap-2">
@@ -155,7 +155,7 @@
     <!-- Analytics Section -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <!-- Revenue Trend Chart -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+        <div class="ui-card overflow-hidden">
             <div class="p-6 border-b border-slate-200 dark:border-slate-800">
                 <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Platform Revenue Trend</h2>
                 <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">Last 30 days · base KES · excludes reseller customer retail</p>
@@ -166,7 +166,7 @@
         </div>
 
         <!-- Signup Trend Chart -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+        <div class="ui-card overflow-hidden">
             <div class="p-6 border-b border-slate-200 dark:border-slate-800">
                 <h2 class="text-lg font-semibold text-slate-900 dark:text-white">New Platform Signups</h2>
                 <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">Last 7 days · excludes reseller-managed customers</p>
@@ -180,7 +180,7 @@
     <!-- Status Breakdowns -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <!-- Service Status -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-6">Service Status Breakdown</h2>
             <div class="space-y-4">
                 @php
@@ -212,7 +212,7 @@
         </div>
 
         <!-- Invoice Status -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-6">Platform Invoice Status</h2>
             <div class="space-y-4">
                 @php
@@ -243,7 +243,7 @@
     <!-- Activity Feeds -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Recent Customers -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+        <div class="ui-card overflow-hidden">
             <div class="p-6 border-b border-slate-200 dark:border-slate-800">
                 <div class="flex items-center justify-between">
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Recent Customers</h2>
@@ -272,7 +272,7 @@
         </div>
 
         <!-- Recent Services -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+        <div class="ui-card overflow-hidden">
             <div class="p-6 border-b border-slate-200 dark:border-slate-800">
                 <div class="flex items-center justify-between">
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Recent Services</h2>
@@ -299,7 +299,7 @@
         </div>
 
         <!-- Recent Payments -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+        <div class="ui-card overflow-hidden">
             <div class="p-6 border-b border-slate-200 dark:border-slate-800">
                 <div class="flex items-center justify-between">
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Recent Payments</h2>
@@ -329,7 +329,7 @@
     <!-- More Activity Feeds -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Recent Invoices -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+        <div class="ui-card overflow-hidden">
             <div class="p-6 border-b border-slate-200 dark:border-slate-800">
                 <div class="flex items-center justify-between">
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Recent Invoices</h2>
@@ -358,7 +358,7 @@
         </div>
 
         <!-- Open Tickets -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+        <div class="ui-card overflow-hidden">
             <div class="p-6 border-b border-slate-200 dark:border-slate-800">
                 <div class="flex items-center justify-between">
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Open Tickets</h2>
@@ -385,7 +385,7 @@
         </div>
 
         <!-- Top Products -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+        <div class="ui-card overflow-hidden">
             <div class="p-6 border-b border-slate-200 dark:border-slate-800">
                 <div class="flex items-center justify-between">
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Top Products</h2>

@@ -13,7 +13,7 @@
 @section('content')
 <div class="space-y-6">
     <!-- Header -->
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
+    <div class="ui-card p-8">
         <div class="flex items-start justify-between">
             <div>
                 <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Payment #{{ str_pad($payment->id, 5, '0', STR_PAD_LEFT) }}</h1>
@@ -52,7 +52,7 @@
         <!-- Main Content -->
         <div class="lg:col-span-2 space-y-6">
             <!-- Payment Details -->
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-6">Payment Details</h2>
                 <div class="grid grid-cols-2 gap-6">
                     <div>
@@ -94,7 +94,7 @@
 
             <!-- Related Invoice -->
             @if ($payment->invoice)
-                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+                <div class="ui-card p-6">
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Related Invoice</h2>
                     <div class="flex items-center justify-between p-4 border border-slate-200 dark:border-slate-800 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                         <div>
@@ -114,7 +114,7 @@
 
             <!-- Notes -->
             @if ($payment->notes)
-                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+                <div class="ui-card p-6">
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-3">Notes</h2>
                     <p class="text-sm text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 px-3 py-2 rounded border border-slate-200 dark:border-slate-700">{{ $payment->notes }}</p>
                 </div>
@@ -124,7 +124,7 @@
         <!-- Sidebar -->
         <div class="space-y-6">
             <!-- Customer Info -->
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Customer</h3>
                 <div class="space-y-3">
                     <div class="flex items-center gap-3">
@@ -143,7 +143,7 @@
             </div>
 
             <!-- Payment Method -->
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Payment Method</h3>
                 <div class="flex items-center gap-3">
                     <x-payment-method-icon :method="$payment->payment_method" class="w-6 h-6" />
@@ -152,7 +152,7 @@
             </div>
 
             <!-- Timeline -->
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Timeline</h3>
                 <div class="space-y-3 text-sm">
                     <div>

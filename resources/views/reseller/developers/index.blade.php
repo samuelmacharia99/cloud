@@ -59,7 +59,7 @@
 
     {{-- Credentials --}}
     <div class="grid lg:grid-cols-2 gap-6">
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-5">
+        <div class="ui-card p-6 space-y-5">
             <div class="flex items-start justify-between gap-4">
                 <div>
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white">API credentials</h2>
@@ -138,7 +138,7 @@
             </div>
         </div>
 
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-4">
+        <div class="ui-card p-6 space-y-4">
             <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Quick start</h2>
             <ol class="space-y-3 text-sm text-slate-600 dark:text-slate-400">
                 <li class="flex gap-3">
@@ -174,7 +174,7 @@
     {{-- Documentation --}}
     <div class="flex flex-col xl:flex-row gap-8">
         <nav class="xl:w-56 shrink-0">
-            <div class="xl:sticky xl:top-24 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 space-y-1">
+            <div class="xl:sticky xl:top-24 ui-card p-4 space-y-1">
                 <p class="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Documentation</p>
                 @foreach(['overview' => 'Overview', 'auth' => 'Authentication', 'domains' => 'Domains', 'services' => 'Services', 'email' => 'Email hosting', 'cart' => 'Checkout flow', 'examples' => 'Code examples', 'errors' => 'Errors'] as $id => $label)
                     <button type="button" @click="scrollTo('{{ $id }}')"

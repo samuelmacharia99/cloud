@@ -21,7 +21,7 @@
     </div>
 
     <!-- Mode Toggle -->
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+    <div class="ui-card p-6">
         <div class="flex gap-4">
             <button @click="mode = 'admin'; $nextTick(() => selectProduct()); $nextTick(() => calculateMargin())" :class="{ 'bg-purple-600 text-white': mode === 'admin', 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300': mode !== 'admin' }" class="px-6 py-2 font-medium rounded-lg transition">
                 Add from Admin Catalog
@@ -33,7 +33,7 @@
     </div>
 
     <!-- Form -->
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
+    <div class="ui-card p-8">
         <form method="POST" action="{{ route('reseller.catalog.store') }}" class="space-y-8">
             @csrf
 

@@ -18,7 +18,7 @@
         <p class="text-slate-600 dark:text-slate-400 mt-1">Register or transfer domains for your account (wholesale) or bill a managed customer at your retail prices.</p>
     </div>
 
-    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4">
+    <div class="ui-card p-4">
         <form method="POST" action="{{ route('reseller.cart.context') }}" class="flex flex-wrap gap-3 items-end">
             @csrf
             <div class="flex-1 min-w-[200px]">
@@ -38,7 +38,7 @@
     </div>
 
     <!-- Domain Search Section -->
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8" x-data="domainSearchManager(@js(['customerMode' => ($cartContext['mode'] ?? 'self') === 'customer', 'knownExtensions' => $knownExtensions]))">
+    <div class="ui-card p-8" x-data="domainSearchManager(@js(['customerMode' => ($cartContext['mode'] ?? 'self') === 'customer', 'knownExtensions' => $knownExtensions]))">
         <h2 class="text-xl font-bold text-slate-900 dark:text-white mb-2">Register a New Domain</h2>
         <p class="text-sm text-slate-600 dark:text-slate-400 mb-6" x-show="!customerMode">
             Prices shown are your <strong class="text-purple-700 dark:text-purple-300">wholesale</strong> rates for your account.
@@ -141,7 +141,7 @@
     </div>
 
     <!-- Domain Transfer Section -->
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8" x-data="domainTransferManager(@js(['customerMode' => ($cartContext['mode'] ?? 'self') === 'customer', 'knownExtensions' => $knownExtensions]))">
+    <div class="ui-card p-8" x-data="domainTransferManager(@js(['customerMode' => ($cartContext['mode'] ?? 'self') === 'customer', 'knownExtensions' => $knownExtensions]))">
         <h2 class="text-xl font-bold text-slate-900 dark:text-white mb-2">Transfer a Domain to Us</h2>
         <p class="text-sm text-slate-600 dark:text-slate-400 mb-6" x-show="!customerMode">
             Move a domain you own elsewhere into your reseller account at <strong class="text-purple-700 dark:text-purple-300">wholesale transfer</strong> rates.

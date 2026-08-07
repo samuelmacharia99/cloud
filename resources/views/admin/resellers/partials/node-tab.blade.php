@@ -77,7 +77,7 @@
             </div>
 
             <div class="space-y-4">
-                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5">
+                <div class="ui-card p-5">
                     <p class="text-xs font-medium text-slate-500 uppercase mb-2">Hosted users</p>
                     <p class="text-2xl font-bold text-slate-900 dark:text-white">
                         {{ $d['hosted_user_count'] ?? '—' }}
@@ -91,7 +91,7 @@
                         </div>
                     @endif
                 </div>
-                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5">
+                <div class="ui-card p-5">
                     <p class="text-xs font-medium text-slate-500 uppercase mb-2">Disk pool</p>
                     <p class="text-2xl font-bold text-slate-900 dark:text-white">
                         @if($d['disk_used_gb'] !== null && $d['disk_pool_gb'] > 0)
@@ -111,7 +111,7 @@
             </div>
         </div>
 
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+        <div class="ui-card overflow-hidden">
             <div class="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center">
                 <h4 class="font-semibold text-slate-900 dark:text-white">Reseller packages on DirectAdmin</h4>
                 <span class="text-sm text-slate-500">{{ count($d['packages']) }} package(s)</span>

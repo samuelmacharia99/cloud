@@ -17,7 +17,7 @@
         <p class="text-slate-600 dark:text-slate-400 mt-1">Add a manual credit to a customer account.</p>
     </div>
 
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
+    <div class="ui-card p-8">
         <form method="POST" action="{{ route('admin.credits.store') }}" class="space-y-6">
             @csrf
 

@@ -13,7 +13,7 @@
         <p class="text-slate-600 dark:text-slate-400 mt-1">Revenue, reseller commissions, and customer ownership overview.</p>
     </div>
 
-    <form method="GET" action="{{ route('admin.reports.index') }}" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 flex flex-wrap gap-4 items-end">
+    <form method="GET" action="{{ route('admin.reports.index') }}" class="ui-card p-6 flex flex-wrap gap-4 items-end">
         <div>
             <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">From</label>
             <input type="date" name="from" value="{{ $from }}" class="px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-sm">
@@ -26,41 +26,41 @@
     </form>
 
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5">
+        <div class="ui-card p-5">
             <p class="text-sm text-slate-500 mb-1">Platform customers</p>
             <p class="text-2xl font-bold text-slate-900 dark:text-white">{{ $platformCustomers }}</p>
         </div>
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5">
+        <div class="ui-card p-5">
             <p class="text-sm text-slate-500 mb-1">Reseller-managed</p>
             <p class="text-2xl font-bold text-slate-900 dark:text-white">{{ $managedCustomers }}</p>
         </div>
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5">
+        <div class="ui-card p-5">
             <p class="text-sm text-slate-500 mb-1">Platform revenue (period)</p>
             <p class="text-2xl font-bold text-slate-900 dark:text-white">KES {{ number_format($revenueInPeriod, 2) }}</p>
         </div>
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5">
+        <div class="ui-card p-5">
             <p class="text-sm text-slate-500 mb-1">Outstanding invoices</p>
             <p class="text-2xl font-bold text-amber-600">KES {{ number_format($outstandingTotal, 2) }}</p>
         </div>
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5">
+        <div class="ui-card p-5">
             <p class="text-sm text-slate-500 mb-1">Reseller margin (period)</p>
             <p class="text-2xl font-bold text-emerald-600">KES {{ number_format($totals['margin_total'], 2) }}</p>
             <p class="text-xs text-slate-500 mt-1">{{ $totals['entry_count'] }} ledger entries</p>
         </div>
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5">
+        <div class="ui-card p-5">
             <p class="text-sm text-slate-500 mb-1">Retail (period)</p>
             <p class="text-2xl font-bold text-slate-900 dark:text-white">KES {{ number_format($totals['retail_total'], 2) }}</p>
         </div>
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5">
+        <div class="ui-card p-5">
             <p class="text-sm text-slate-500 mb-1">Wholesale (period)</p>
             <p class="text-2xl font-bold text-slate-900 dark:text-white">KES {{ number_format($totals['wholesale_total'], 2) }}</p>
         </div>
     </div>
 
-    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+    <div class="ui-card overflow-hidden">
         <div class="px-6 py-4 border-b border-slate-200 dark:border-slate-800">
             <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Commission by Reseller</h2>
             <p class="text-sm text-slate-500">{{ $resellerCount }} active resellers on platform</p>
@@ -101,7 +101,7 @@
         </div>
     </div>
 
-    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+    <div class="ui-card overflow-hidden">
         <div class="px-6 py-4 border-b border-slate-200 dark:border-slate-800">
             <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Recent Margin Ledger</h2>
         </div>

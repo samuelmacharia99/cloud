@@ -4,7 +4,7 @@
 
 @section('content')
 <div class="max-w-lg mx-auto space-y-6">
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
+    <div class="ui-card p-8">
         <h1 class="text-2xl font-bold text-slate-900 dark:text-white">Domain transfer request</h1>
         <p class="text-slate-600 dark:text-slate-400 mt-2 text-sm">
             <strong class="font-mono text-slate-900 dark:text-white">{{ $domain->name }}{{ $domain->extension }}</strong>

@@ -9,7 +9,7 @@
         <p class="text-slate-600 dark:text-slate-400 mt-1">Customer domain registrations and transfers — auto-push to admin when your wallet has funds after the customer pays; otherwise push manually once funded.</p>
     </div>
 
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+    <div class="ui-card p-6">
         <form method="GET" class="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
                 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Search</label>

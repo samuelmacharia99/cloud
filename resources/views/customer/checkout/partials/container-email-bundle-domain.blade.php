@@ -1,5 +1,5 @@
 @if (!empty($bundledContainerItems))
-    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+    <div class="ui-card p-6">
         <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-2">App &amp; email domain</h2>
         <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">
             This plan includes email. Enter the domain you will use for your application — the same domain is used for mailboxes.

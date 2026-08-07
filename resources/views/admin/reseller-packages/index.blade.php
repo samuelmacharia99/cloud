@@ -19,7 +19,7 @@
     </div>
 
     <!-- Billing Cycle Tabs -->
-    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
+    <div class="ui-card">
         <div class="flex border-b border-slate-200 dark:border-slate-800">
             <a href="{{ route('admin.reseller-packages.index', ['cycle' => 'monthly']) }}" class="flex-1 px-6 py-4 text-center font-medium {{ $cycle === 'monthly' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white' }} transition-colors">
                 Monthly Packages ({{ $monthly }})

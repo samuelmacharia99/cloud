@@ -16,15 +16,15 @@
 
     <!-- Stats Cards -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Sent Today</p>
             <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2">{{ $totalSentToday }}</p>
         </div>
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Failed Today</p>
             <p class="text-3xl font-bold text-red-600 dark:text-red-400 mt-2">{{ $totalFailedToday }}</p>
         </div>
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Total Sent</p>
             <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2">{{ $totalAllTime }}</p>
         </div>
@@ -33,7 +33,7 @@
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Compose -->
         <div class="lg:col-span-2">
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 space-y-6">
+            <div class="ui-card p-6 space-y-6">
                 <div>
                     <h2 class="text-xl font-bold text-slate-900 dark:text-white">Compose broadcast</h2>
                     <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">
@@ -186,7 +186,7 @@
 
         <!-- Filters sidebar-ish -->
         <div class="lg:col-span-1">
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-4">Log filters</h2>
                 <div class="flex flex-col gap-2">
                     <a href="{{ route('admin.emails.index') }}" class="px-4 py-2 rounded-lg font-medium text-sm transition-all {{ $status === 'all' ? 'bg-teal-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700' }}">
@@ -207,7 +207,7 @@
     </div>
 
     <!-- Email Table -->
-    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+    <div class="ui-card overflow-hidden">
         <div class="px-6 py-4 border-b border-slate-200 dark:border-slate-700">
             <h2 class="text-lg font-bold text-slate-900 dark:text-white">Email log</h2>
         </div>

@@ -49,12 +49,12 @@
 
     <!-- Overview Cards -->
     <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <p class="text-sm text-slate-600 dark:text-slate-400 mb-2">Type</p>
             <p class="text-lg font-semibold text-slate-900 dark:text-white">{{ $node->getTypeLabel() }}</p>
         </div>
 
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <p class="text-sm text-slate-600 dark:text-slate-400 mb-2">Status</p>
             <div class="flex items-center gap-2">
                 <span class="w-2 h-2 rounded-full
@@ -72,12 +72,12 @@
             </div>
         </div>
 
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <p class="text-sm text-slate-600 dark:text-slate-400 mb-2">Active Services</p>
             <p class="text-lg font-semibold text-slate-900 dark:text-white">{{ $nodeServices->total() }}</p>
         </div>
 
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <p class="text-sm text-slate-600 dark:text-slate-400 mb-2">Last Heartbeat</p>
             <p class="text-lg font-semibold text-slate-900 dark:text-white">{{ $node->last_heartbeat_at?->diffForHumans() ?? 'Never' }}</p>
         </div>
@@ -85,7 +85,7 @@
 
     <!-- Utilization (not for DirectAdmin control panel servers) -->
     @if($node->type !== 'directadmin')
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
+    <div class="ui-card p-8">
         <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-6">Resource Utilization</h2>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
             <!-- CPU -->
@@ -141,7 +141,7 @@
         @endphp
         <div
             x-data="{ expanded: {{ $monitoringExpandedDefault }} }"
-            class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden"
+            class="ui-card overflow-hidden"
         >
             <button
                 type="button"
@@ -370,7 +370,7 @@
 
     <!-- DirectAdmin Packages (DA nodes only) -->
     @if($node->type === 'directadmin')
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8 mb-6">
+        <div class="ui-card p-8 mb-6">
             <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Domain Nameservers</h2>
             <dl class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                 <div><dt class="text-slate-500 dark:text-slate-400">NS1</dt><dd class="font-medium text-slate-900 dark:text-white">{{ $node->nameserver_1 ?: '—' }}</dd></div>
@@ -387,7 +387,7 @@
             </div>
         @endif
 
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
+        <div class="ui-card p-8">
             <div class="flex items-center justify-between flex-wrap gap-3 mb-6">
                 <div>
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white">DirectAdmin User Packages</h2>
@@ -524,7 +524,7 @@
         </div>
 
         {{-- Admin reseller packages (live from DirectAdmin) --}}
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8 mb-6">
+        <div class="ui-card p-8 mb-6">
             <div class="flex items-center justify-between flex-wrap gap-3 mb-6">
                 <div>
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white">DirectAdmin Reseller Packages</h2>
@@ -611,7 +611,7 @@
         </div>
 
         {{-- Platform resellers linked to this node --}}
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8 mb-6">
+        <div class="ui-card p-8 mb-6">
             <div class="flex items-center justify-between flex-wrap gap-3 mb-6">
                 <div>
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Resellers on This Node</h2>
@@ -717,7 +717,7 @@
     <!-- Node Information -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <!-- Hardware & Location -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
+        <div class="ui-card p-8">
             <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-6">Hardware & Location</h2>
             <div class="space-y-4">
                 <div class="flex justify-between items-center pb-4 border-b border-slate-200 dark:border-slate-800">
@@ -744,7 +744,7 @@
         </div>
 
         <!-- Connection Details -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
+        <div class="ui-card p-8">
             <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-6">Connection Details</h2>
             <div class="space-y-4">
                 <div class="pb-4 border-b border-slate-200 dark:border-slate-800">
@@ -787,7 +787,7 @@
     @endphp
     <div
         x-data="{ expanded: {{ $servicesExpandedDefault }} }"
-        class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden"
+        class="ui-card overflow-hidden"
     >
         <button
             type="button"
@@ -883,7 +883,7 @@
     </div>
 
     <!-- Node Metadata -->
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
+    <div class="ui-card p-8">
         <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-6">Metadata</h2>
         <div class="space-y-4">
             @if($node->description)

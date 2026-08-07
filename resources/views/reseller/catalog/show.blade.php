@@ -47,7 +47,7 @@
         <!-- Main Content -->
         <div class="lg:col-span-2 space-y-6">
             <!-- Details Card -->
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
+            <div class="ui-card p-8">
                 <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-6">Product Information</h2>
 
                 <div class="space-y-6">
@@ -121,7 +121,7 @@
             </div>
 
             <!-- Pricing Card -->
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
+            <div class="ui-card p-8">
                 <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-6">Pricing</h2>
 
                 <div class="space-y-4">
@@ -170,7 +170,7 @@
         <div class="space-y-6">
             @if(!$catalogItem->isCustom())
                 <!-- Base Product Info -->
-                <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+                <div class="ui-card p-6">
                     <h3 class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Admin Product</h3>
 
                     <div class="space-y-4 text-sm">

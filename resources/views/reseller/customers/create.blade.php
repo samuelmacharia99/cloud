@@ -15,7 +15,7 @@
         @csrf
 
         <!-- Basic Information -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-6">Basic Information</h2>
 
             <div class="space-y-4">
@@ -124,7 +124,7 @@
         </div>
 
         <!-- Contact & Company Information -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-6">Contact Information</h2>
 
             <div class="space-y-4">
@@ -182,7 +182,7 @@
         </div>
 
         <!-- Welcome email -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <label class="flex items-start gap-3 cursor-pointer">
                 <input type="hidden" name="send_welcome_email" value="0">
                 <input type="checkbox" name="send_welcome_email" value="1" @checked(old('send_welcome_email')) class="mt-1 rounded text-purple-600">

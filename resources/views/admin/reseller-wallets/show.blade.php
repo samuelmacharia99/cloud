@@ -34,7 +34,7 @@
     </div>
 
     <!-- Adjustment Form -->
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+    <div class="ui-card p-6">
         <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Adjust Balance</h3>
         <form method="POST" action="{{ route('admin.reseller-wallets.adjust', $reseller) }}" class="space-y-4">
             @csrf
@@ -54,7 +54,7 @@
     </div>
 
     <!-- Transactions Table -->
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+    <div class="ui-card overflow-hidden">
         <div class="px-6 py-4 border-b border-slate-200 dark:border-slate-800">
             <h3 class="text-lg font-semibold text-slate-900 dark:text-white">Recent Transactions</h3>
         </div>

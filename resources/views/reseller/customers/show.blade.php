@@ -26,7 +26,7 @@
     <!-- Key Info Cards -->
     <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
         <!-- Services -->
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Active Services</p>
@@ -41,7 +41,7 @@
         </div>
 
         <!-- Invoices -->
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Total Invoices</p>
@@ -56,7 +56,7 @@
         </div>
 
         <!-- Status -->
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Account Status</p>
@@ -73,7 +73,7 @@
         </div>
 
         <!-- Domains -->
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Domains</p>
@@ -105,7 +105,7 @@
     <!-- Customer Details -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Contact Info -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Contact Information</h2>
             <div class="space-y-3 text-sm">
                 <div>
@@ -134,7 +134,7 @@
         <!-- Services (left column spans 2) -->
         <div class="lg:col-span-2 space-y-6">
             <!-- Services List -->
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+            <div class="ui-card overflow-hidden">
                 <div class="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Services</h2>
                     <div class="flex items-center gap-3">
@@ -178,7 +178,7 @@
             </div>
 
             <!-- Domains List -->
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+            <div class="ui-card overflow-hidden">
                 <div class="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Domains</h2>
                     <div class="flex items-center gap-3">
@@ -216,7 +216,7 @@
             </div>
 
             <!-- Recent Invoices -->
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+            <div class="ui-card overflow-hidden">
                 <div class="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Recent Invoices</h2>
                 </div>
@@ -248,7 +248,7 @@
 
     <!-- Notes Section -->
     @if ($customer->notes)
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+    <div class="ui-card p-6">
         <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Notes</h2>
         <p class="text-slate-600 dark:text-slate-400 text-sm leading-relaxed">{{ $customer->notes }}</p>
     </div>

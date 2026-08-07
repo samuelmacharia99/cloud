@@ -40,7 +40,7 @@
         </div>
     @endif
 
-    <form method="POST" action="{{ route('admin.domains.update', $domain) }}" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 space-y-6">
+    <form method="POST" action="{{ route('admin.domains.update', $domain) }}" class="ui-card p-6 space-y-6">
         @csrf
         @method('PATCH')
 

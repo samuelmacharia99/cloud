@@ -14,7 +14,7 @@
         'test' => route('admin.registrars.test', ['registrar' => '__ID__']),
     ],
 ]))">
-    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 sm:p-8">
+    <div class="ui-card p-6 sm:p-8">
         <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-6">
             <div>
                 <h2 class="text-xl font-semibold text-slate-900 dark:text-white">Domain registrars</h2>

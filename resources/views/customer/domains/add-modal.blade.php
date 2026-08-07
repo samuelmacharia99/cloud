@@ -4,7 +4,7 @@
 
 @section('content')
 <div class="max-w-2xl mx-auto">
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xl">
+    <div class="ui-card overflow-hidden shadow-xl">
         <!-- Header -->
         <div class="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
             <h2 class="text-xl font-bold text-slate-900 dark:text-white">Add Domain</h2>

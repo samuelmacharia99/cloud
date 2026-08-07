@@ -10,7 +10,7 @@
         <p class="text-slate-600 dark:text-slate-400">{{ $invoice->user?->name }}</p>
     </div>
 
-    <form method="POST" action="{{ route('reseller.customer-invoices.update', $invoice) }}" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-6">
+    <form method="POST" action="{{ route('reseller.customer-invoices.update', $invoice) }}" class="ui-card p-6 space-y-6">
         @csrf
         @method('PUT')
 

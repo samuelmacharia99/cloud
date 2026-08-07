@@ -52,7 +52,7 @@
     </div>
 
     <!-- Filters -->
-    <form method="GET" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+    <form method="GET" class="ui-card p-6">
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
                 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Search</label>
@@ -93,7 +93,7 @@
     </form>
 
     <!-- Services list -->
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+    <div class="ui-card overflow-hidden">
         <div class="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
             <p class="text-sm text-slate-600 dark:text-slate-400">
                 <span class="font-semibold text-slate-900 dark:text-white">{{ $services->total() }}</span> service(s)

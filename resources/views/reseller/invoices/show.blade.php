@@ -30,7 +30,7 @@
     </div>
 
     <!-- Invoice Card -->
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+    <div class="ui-card overflow-hidden">
         <!-- Top Stripe -->
         <div class="h-1 bg-gradient-to-r
             @if($invoice->status->value === 'paid')

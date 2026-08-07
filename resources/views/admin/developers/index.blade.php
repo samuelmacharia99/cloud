@@ -63,7 +63,7 @@
     @endif
 
     <div class="grid lg:grid-cols-2 gap-6">
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-5">
+        <div class="ui-card p-6 space-y-5">
             <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Website API settings</h2>
 
             <form method="POST" action="{{ route('admin.developers.settings.update') }}" class="space-y-4">
@@ -149,7 +149,7 @@
             </div>
         </div>
 
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-4">
+        <div class="ui-card p-6 space-y-4">
             <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Quick start</h2>
             <ol class="space-y-3 text-sm text-slate-600 dark:text-slate-400">
                 <li class="flex gap-3"><span class="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 text-xs font-bold flex items-center justify-center shrink-0">1</span><span>Enable the API and save allowed origins if your marketing site is on a different domain.</span></li>
@@ -162,7 +162,7 @@
 
     <div class="flex flex-col xl:flex-row gap-8">
         <nav class="xl:w-56 shrink-0">
-            <div class="xl:sticky xl:top-24 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 space-y-1">
+            <div class="xl:sticky xl:top-24 ui-card p-4 space-y-1">
                 @foreach(['overview' => 'Overview', 'auth' => 'Authentication', 'domains' => 'Domains', 'services' => 'Services', 'email' => 'Email hosting', 'reseller-packages' => 'Reseller plans', 'cart' => 'Checkout', 'examples' => 'Examples', 'errors' => 'Errors'] as $id => $label)
                     <button type="button" @click="scrollTo('{{ $id }}')" :class="active === '{{ $id }}' ? 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'" class="w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition">{{ $label }}</button>
                 @endforeach

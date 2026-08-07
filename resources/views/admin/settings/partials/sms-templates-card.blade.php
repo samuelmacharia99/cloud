@@ -11,7 +11,7 @@
     ])->values();
 @endphp
 
-<div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden" x-data="smsTemplates(@js($smsTemplatesPayload))">
+<div class="ui-card overflow-hidden" x-data="smsTemplates(@js($smsTemplatesPayload))">
     <div class="px-6 py-5 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
             <h2 class="text-lg font-semibold text-slate-900 dark:text-white">SMS Templates</h2>

@@ -38,7 +38,7 @@
         </div>
     </div>
 
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+    <div class="ui-card p-6">
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <div>
                 <p class="text-xs text-slate-500 uppercase">Total</p>
@@ -68,7 +68,7 @@
     </div>
 
     @if ($invoice->payments->count())
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <h2 class="font-semibold mb-4">Payments</h2>
             <ul class="space-y-2 text-sm">
                 @foreach ($invoice->payments as $payment)

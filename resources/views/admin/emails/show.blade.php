@@ -36,7 +36,7 @@
 
     <!-- Delivery metadata -->
     <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <p class="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Recipient</p>
             <p class="text-base font-semibold text-slate-900 dark:text-white mt-2 break-all">{{ $email->recipient }}</p>
             @if ($recipientUser)
@@ -46,7 +46,7 @@
             @endif
         </div>
 
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <p class="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Status</p>
             <div class="mt-2">
                 <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium {{ $email->status === 'sent' ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' : ($email->status === 'failed' ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300') }}">
@@ -55,14 +55,14 @@
             </div>
         </div>
 
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <p class="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Notification</p>
             <p class="text-base font-semibold text-slate-900 dark:text-white mt-2">
                 {{ $eventLabel ?? '—' }}
             </p>
         </div>
 
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <p class="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Sent By</p>
             <p class="text-base font-semibold text-slate-900 dark:text-white mt-2">
                 @if ($email->sentBy)
@@ -73,14 +73,14 @@
             </p>
         </div>
 
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <p class="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Sent At</p>
             <p class="text-base font-semibold text-slate-900 dark:text-white mt-2">{{ $email->created_at->format('M d, Y H:i') }}</p>
         </div>
     </div>
 
     <!-- Customer inbox preview -->
-    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+    <div class="ui-card overflow-hidden">
         <div class="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-4 flex-wrap">
             <div>
                 <h2 class="text-lg font-bold text-slate-900 dark:text-white">Customer inbox preview</h2>
@@ -175,7 +175,7 @@
 
     <!-- Raw logged body (admin debug) -->
     @if (filled($email->body) && $email->body !== $plainTextContent)
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-2">Logged message text</h2>
             <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Original text stored when the email was sent (before HTML wrapping).</p>
             <div class="bg-slate-50 dark:bg-slate-800 rounded-lg p-6 text-slate-700 dark:text-slate-300 whitespace-pre-wrap break-words text-sm leading-relaxed max-h-64 overflow-y-auto border border-slate-200 dark:border-slate-700">
@@ -185,7 +185,7 @@
     @endif
 
     @if ($email->status !== 'sent' && $email->response)
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-4">Error Response</h2>
             <div class="bg-red-50 dark:bg-red-900/20 rounded-lg p-6 text-red-700 dark:text-red-300 font-mono text-sm overflow-x-auto border border-red-200 dark:border-red-800 max-h-64 overflow-y-auto">
                 {{ $email->response }}

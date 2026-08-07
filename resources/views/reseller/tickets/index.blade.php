@@ -28,7 +28,7 @@
     </div>
 
     @if ($tickets->count())
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+        <div class="ui-card overflow-hidden">
             <table class="w-full">
                 <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800">
                     <tr>
@@ -70,7 +70,7 @@
         </div>
         {{ $tickets->links() }}
     @else
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-12 text-center text-slate-500">No tickets yet.</div>
+        <div class="ui-card p-12 text-center text-slate-500">No tickets yet.</div>
     @endif
 </div>
 @endsection

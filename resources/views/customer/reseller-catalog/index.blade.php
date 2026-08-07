@@ -34,7 +34,7 @@
     @endif
 
     @if ($orderable->isEmpty() && $unavailable->isEmpty())
-        <div class="p-12 text-center bg-white dark:bg-slate-900 rounded-2xl border text-slate-500">
+        <div class="ui-card p-12 text-center text-slate-500">
             No services are available to order right now.
         </div>
     @else
@@ -68,7 +68,7 @@
                 <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Unavailable</h2>
                 <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                     @foreach ($unavailable as $product)
-                        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 opacity-70">
+                        <div class="ui-card p-6 opacity-70">
                             <h3 class="text-xl font-semibold text-slate-900 dark:text-white">{{ $product->name }}</h3>
                             <p class="mt-4 text-sm text-amber-600 dark:text-amber-400">Contact support to order this plan.</p>
                         </div>

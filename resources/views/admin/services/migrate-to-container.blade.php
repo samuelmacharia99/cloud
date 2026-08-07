@@ -56,7 +56,7 @@
     @endif
 
     {{-- Always show what this DA service is --}}
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-4">
+    <div class="ui-card p-6 space-y-4">
         <div class="flex items-center justify-between gap-3 flex-wrap">
             <h2 class="font-semibold text-lg text-slate-900 dark:text-white">DirectAdmin service</h2>
             <a href="{{ route('admin.services.show', $service) }}" class="text-sm text-indigo-600 dark:text-indigo-400 hover:underline">Open full service page</a>
@@ -240,7 +240,7 @@
     </div>
 
     @if ($preflight)
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-4">
+        <div class="ui-card p-6 space-y-4">
             <h2 class="font-semibold text-lg">Email inventory</h2>
             @if (!($preflight['email']['success'] ?? false))
                 <p class="text-sm text-red-600">{{ $preflight['email']['message'] ?? 'Failed' }}</p>
@@ -273,7 +273,7 @@
         </div>
     @endif
 
-    <form method="POST" action="{{ route('admin.services.migrate-to-container.store', $service) }}" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-4">
+    <form method="POST" action="{{ route('admin.services.migrate-to-container.store', $service) }}" class="ui-card p-6 space-y-4">
         @csrf
         <div>
             <label class="block text-sm font-medium mb-2">Application Hosting product for {{ str_replace('_', ' ', $detectedStack) }} (billing at next renewal)</label>

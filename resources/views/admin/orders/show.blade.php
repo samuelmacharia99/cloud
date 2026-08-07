@@ -65,7 +65,7 @@
 
     <!-- Status Cards Row -->
     <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Order Status</p>
@@ -95,7 +95,7 @@
             </div>
         </div>
 
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Payment Status</p>
@@ -123,7 +123,7 @@
             </div>
         </div>
 
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Items</p>
@@ -137,7 +137,7 @@
             </div>
         </div>
 
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Total Amount</p>
@@ -158,7 +158,7 @@
         <div class="lg:col-span-2 space-y-6">
             <!-- Order Items -->
             @if ($order->items->count() > 0)
-                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                <div class="ui-card overflow-hidden">
                     <div class="p-6 border-b border-slate-200 dark:border-slate-800">
                         <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Order Items</h2>
                     </div>
@@ -250,7 +250,7 @@
 
             <!-- Notes Section -->
             @if ($order->notes)
-                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+                <div class="ui-card p-6">
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Order Notes</h2>
                     <p class="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">{{ $order->notes }}</p>
                 </div>
@@ -258,7 +258,7 @@
 
             @if($order->isDomainRenewalFulfillment() && $order->domainRenewalOrder)
                 @php $renewal = $order->domainRenewalOrder; @endphp
-                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+                <div class="ui-card p-6">
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Domain Renewal</h2>
                     <div class="space-y-3 text-sm">
                         <div class="flex justify-between gap-4">
@@ -290,7 +290,7 @@
         <!-- Sidebar -->
         <div class="space-y-6">
             <!-- Customer Card -->
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Customer</h3>
                 <div class="space-y-4">
                     <div class="flex items-center gap-3">
@@ -367,7 +367,7 @@
             </div>
 
             <!-- Timeline Card -->
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Timeline</h3>
                 <div class="space-y-4">
                     <div>

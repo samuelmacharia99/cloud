@@ -25,7 +25,7 @@
     @endif
 
     <!-- Header -->
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8" x-data="{ tab: 'overview' }">
+    <div class="ui-card p-8" x-data="{ tab: 'overview' }">
         <div class="flex items-start justify-between mb-6">
             <div>
                 <h1 class="text-3xl font-bold text-slate-900 dark:text-white">{{ $service->product->name }}</h1>

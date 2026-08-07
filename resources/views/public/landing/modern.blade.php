@@ -112,7 +112,7 @@
     @include('public.landing.partials.domain-results', [
         'resultsClass' => 'bg-slate-50 border-y border-slate-200',
         'resultsHeadingClass' => 'display text-2xl font-semibold text-slate-900 mb-4',
-        'resultsCardClass' => 'bg-white rounded-2xl border border-slate-200 overflow-hidden',
+        'resultsCardClass' => 'ui-card overflow-hidden',
         'orderBtnClass' => 'brand-btn text-white text-sm font-semibold px-4 py-2 rounded-full disabled:opacity-60',
     ])
 
@@ -123,7 +123,7 @@
                 <p class="mt-2 text-slate-600">Clear yearly rates for popular extensions.</p>
                 <div class="mt-8 grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     @foreach ($extensions as $ext)
-                        <div class="rounded-2xl border border-slate-200 p-5 hover:border-slate-300 transition">
+                        <div class="ui-card ui-card-interactive p-5">
                             <p class="text-lg font-semibold text-slate-900">{{ $ext['extension'] }}</p>
                             <p class="mt-2 text-2xl font-bold brand-text">KES {{ number_format((float) $ext['price'], 0) }}</p>
                             <p class="text-xs text-slate-500 mt-1">
@@ -163,7 +163,7 @@
                                         ? (int) round((($monthly * 12 - $yearly) / ($monthly * 12)) * 100)
                                         : null;
                                 @endphp
-                                <article class="bg-white rounded-2xl border border-slate-200 p-6 flex flex-col shadow-sm">
+                                <article class="ui-card ui-card-interactive p-6 flex flex-col">
                                     <h4 class="text-xl font-semibold text-slate-900">{{ $product['name'] }}</h4>
                                     @if (! empty($product['description']))
                                         <p class="mt-2 text-sm text-slate-600">{{ \Illuminate\Support\Str::limit($product['description'], 120) }}</p>

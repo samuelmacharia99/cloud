@@ -13,7 +13,7 @@
 @section('content')
 <div class="space-y-6" x-data="initCustomerData()">
     <!-- Header -->
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
+    <div class="ui-card p-8">
         <div class="flex items-start justify-between">
             <div class="flex items-start gap-4">
                 <!-- Avatar -->
@@ -119,7 +119,7 @@
     <div x-show="tab === 'overview'" class="space-y-6">
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <!-- Profile Info Card -->
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Profile Information</h3>
                 <div class="space-y-4">
                     <div>
@@ -164,7 +164,7 @@
             <!-- Account Summary Card -->
             <div class="space-y-6">
                 <!-- Stats -->
-                <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+                <div class="ui-card p-6">
                     <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Account Summary</h3>
                     <div class="space-y-4">
                         <div class="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
@@ -192,7 +192,7 @@
 
                 <!-- Notes -->
                 @if ($customer->notes)
-                    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+                    <div class="ui-card p-6">
                         <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Notes</h3>
                         <p class="text-sm text-slate-600 dark:text-slate-400">{{ $customer->notes }}</p>
                     </div>
@@ -217,7 +217,7 @@
         </div>
 
         <!-- Services Section -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+        <div class="ui-card overflow-hidden">
             <div class="overflow-x-auto">
                 @if ($customer->services->count() > 0)
                     <table class="w-full">
@@ -295,7 +295,7 @@
         </div>
 
         <!-- Domains Section -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+        <div class="ui-card overflow-hidden">
             <div class="px-6 py-4 border-b border-slate-200 dark:border-slate-800">
                 <h3 class="text-lg font-semibold text-slate-900 dark:text-white">Domains</h3>
             </div>
@@ -346,7 +346,7 @@
     </div>
 
     <!-- Invoices Tab -->
-    <div x-show="tab === 'invoices'" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+    <div x-show="tab === 'invoices'" class="ui-card overflow-hidden">
         <div class="overflow-x-auto">
             @if ($customer->invoices->count() > 0)
                 <table class="w-full">
@@ -395,7 +395,7 @@
     </div>
 
     <!-- Payments Tab -->
-    <div x-show="tab === 'payments'" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+    <div x-show="tab === 'payments'" class="ui-card overflow-hidden">
         <div class="overflow-x-auto">
             @if ($customer->payments->count() > 0)
                 <table class="w-full">
@@ -435,7 +435,7 @@
     </div>
 
     <!-- Tickets Tab -->
-    <div x-show="tab === 'tickets'" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+    <div x-show="tab === 'tickets'" class="ui-card overflow-hidden">
         <div class="overflow-x-auto">
             @if ($customer->tickets->count() > 0)
                 <table class="w-full">
@@ -481,7 +481,7 @@
     </div>
 
     <!-- Activity Tab -->
-    <div x-show="tab === 'activity'" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
+    <div x-show="tab === 'activity'" class="ui-card p-8">
         <div class="text-center py-12">
             <p class="text-slate-600 dark:text-slate-400">Full activity log coming soon.</p>
         </div>

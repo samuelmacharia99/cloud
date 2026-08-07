@@ -16,15 +16,15 @@
 
     <!-- Stats Cards -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Sent Today</p>
             <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2">{{ $totalSentToday }}</p>
         </div>
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Failed Today</p>
             <p class="text-3xl font-bold text-red-600 dark:text-red-400 mt-2">{{ $totalFailedToday }}</p>
         </div>
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Total Sent</p>
             <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2">{{ $totalAllTime }}</p>
         </div>
@@ -33,7 +33,7 @@
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Compose Section -->
         <div class="lg:col-span-2">
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 space-y-6">
+            <div class="ui-card p-6 space-y-6">
                 <h2 class="text-xl font-bold text-slate-900 dark:text-white">Compose Message</h2>
 
                 <form action="{{ route('admin.sms.send') }}" method="POST" @submit="submitForm">
@@ -168,7 +168,7 @@
 
         <!-- Recent Logs -->
         <div class="lg:col-span-1">
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-4">Recent Logs</h2>
 
                 <div class="space-y-3 max-h-96 overflow-y-auto">

@@ -45,7 +45,7 @@
         </div>
     @endif
 
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-4">
+    <div class="ui-card p-6 space-y-4">
         <dl class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
             <div>
                 <dt class="text-slate-500 text-xs uppercase">Domain</dt>
@@ -66,7 +66,7 @@
         @endif
     </div>
 
-    <form method="POST" action="{{ route('admin.services.migrate-mail.store', $service) }}" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-4">
+    <form method="POST" action="{{ route('admin.services.migrate-mail.store', $service) }}" class="ui-card p-6 space-y-4">
         @csrf
         <div>
             <label class="block text-sm font-medium mb-1">Email product</label>

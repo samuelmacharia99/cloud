@@ -21,7 +21,7 @@
     </div>
 
     <!-- Service Info Card -->
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
+    <div class="ui-card p-8">
         <h2 class="text-xl font-bold text-slate-900 dark:text-white mb-4">Service Information</h2>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
@@ -70,7 +70,7 @@
     </div>
 
     <!-- Migration Form -->
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
+    <div class="ui-card p-8">
         <form method="POST" action="{{ route('admin.services.container.migrate.confirm', $service) }}" class="space-y-6">
             @csrf
 

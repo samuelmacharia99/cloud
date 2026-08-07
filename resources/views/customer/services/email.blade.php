@@ -79,7 +79,7 @@
     </div>
 
     <div x-show="tab==='mailboxes'" class="space-y-6">
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <div class="flex items-center justify-between mb-4">
                 <h2 class="font-semibold text-lg">Mailboxes</h2>
                 <p class="text-sm text-slate-500">{{ count($mailboxes) }} / {{ $limits['mailboxes'] }}</p>
@@ -128,7 +128,7 @@
             </div>
         </div>
 
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <h2 class="font-semibold text-lg mb-4">Create mailbox</h2>
             <form method="POST" action="{{ route('customer.services.email.mailboxes.store', $service) }}" class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 @csrf
@@ -183,7 +183,7 @@
     </div>
 
     <div x-show="tab==='manage'" x-cloak class="space-y-6">
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <h2 class="font-semibold text-lg mb-1">Change mailbox password</h2>
             <p class="text-sm text-slate-500 mb-4">Reset a mailbox password without opening SOGo.</p>
             @if (count($mailboxes) === 0)
@@ -263,7 +263,7 @@
             @endif
         </div>
 
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <h2 class="font-semibold text-lg mb-1">Display name</h2>
             <p class="text-sm text-slate-500 mb-4">Shown as the From name in outgoing mail.</p>
             @if (count($mailboxes) === 0)
@@ -291,7 +291,7 @@
             @endif
         </div>
 
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <h2 class="font-semibold text-lg mb-1">Out of office</h2>
             <p class="text-sm text-slate-500 mb-4">Auto-reply for a mailbox. Uses a Mailcow sieve filter managed from Talksasa.</p>
             @if (count($mailboxes) === 0)
@@ -345,7 +345,7 @@
     </div>
 
     <div x-show="tab==='aliases'" x-cloak class="space-y-6">
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <h2 class="font-semibold text-lg mb-4">Aliases</h2>
             <div class="overflow-x-auto mb-6">
                 <table class="min-w-full text-sm">
@@ -397,7 +397,7 @@
     </div>
 
     <div x-show="tab==='delivery'" x-cloak class="space-y-6">
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <h2 class="font-semibold text-lg mb-1">Test delivery</h2>
             <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">
                 Send a real message from one of your mailboxes to verify outbound SMTP. Uses a temporary app password — your mailbox password is not required.
@@ -431,7 +431,7 @@
     </div>
 
     <div x-show="tab==='dns'" x-cloak class="space-y-6">
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <div class="flex items-center justify-between gap-3 flex-wrap mb-4">
                 <div>
                     <h2 class="font-semibold text-lg">DNS checklist</h2>
@@ -468,7 +468,7 @@
     </div>
 
     <div x-show="tab==='connect'" x-cloak>
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-3 text-sm">
+        <div class="ui-card p-6 space-y-3 text-sm">
             <h2 class="font-semibold text-lg mb-2">Client settings</h2>
             <p><span class="text-slate-500">IMAP:</span> <span class="font-mono">{{ $connection['imap_host'] ?? '—' }}:{{ $connection['imap_port'] ?? 993 }}</span> (SSL/TLS)</p>
             <p><span class="text-slate-500">SMTP:</span> <span class="font-mono">{{ $connection['smtp_host'] ?? '—' }}:{{ $connection['smtp_port'] ?? 587 }}</span> (STARTTLS) or <span class="font-mono">:{{ $connection['smtp_ssl_port'] ?? 465 }}</span> (SSL)</p>

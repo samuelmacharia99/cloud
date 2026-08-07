@@ -57,14 +57,14 @@
         </div>
     @endif
 
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+    <div class="ui-card p-6">
         <p class="text-slate-700 dark:text-slate-300 whitespace-pre-wrap">{{ $ticket->description }}</p>
         <x-ticket-attachments :attachments="$ticket->attachments" :ticket="$ticket" route-name="reseller.tickets.attachments.show" />
     </div>
 
     <div class="space-y-4">
         @foreach ($ticket->replies as $reply)
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4">
+            <div class="ui-card p-4">
                 <p class="text-xs text-slate-500 mb-2">{{ $reply->user?->name }} · {{ $reply->created_at->diffForHumans() }}</p>
                 <p class="text-slate-700 dark:text-slate-300 whitespace-pre-wrap">{{ $reply->message }}</p>
                 <x-ticket-attachments :attachments="$reply->attachments" :ticket="$ticket" route-name="reseller.tickets.attachments.show" />
@@ -73,7 +73,7 @@
     </div>
 
     @if (!$ticket->isClosed())
-        <form action="{{ route('reseller.tickets.reply', $ticket) }}" method="POST" enctype="multipart/form-data" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-4">
+        <form action="{{ route('reseller.tickets.reply', $ticket) }}" method="POST" enctype="multipart/form-data" class="ui-card p-6 space-y-4">
             @csrf
             <label class="block text-sm font-medium text-slate-700 dark:text-slate-300">Reply</label>
             <textarea name="message" rows="4" required class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg"></textarea>

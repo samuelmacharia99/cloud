@@ -13,7 +13,7 @@
 @section('content')
 <div class="space-y-6">
     <!-- Header Card -->
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
+    <div class="ui-card p-8">
         <div class="flex items-start justify-between">
             <div class="flex items-center gap-4">
                 <div class="w-16 h-16 rounded-full bg-gradient-to-br from-purple-400 to-purple-600 flex items-center justify-center text-white font-bold text-2xl">
@@ -94,22 +94,22 @@
 
     <!-- Stats Grid -->
     <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <p class="text-sm font-medium text-slate-600 dark:text-slate-400 uppercase">Services Managed</p>
             <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2">{{ $services->count() }}</p>
         </div>
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <p class="text-sm font-medium text-slate-600 dark:text-slate-400 uppercase">Customers Served</p>
             <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2">{{ $customerIds->count() }}</p>
         </div>
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <p class="text-sm font-medium text-slate-600 dark:text-slate-400 uppercase">Package</p>
             <p class="text-lg font-bold text-slate-900 dark:text-white mt-2">{{ $user->resellerPackage?->name ?? '—' }}</p>
             @if($user->resellerPackage)
                 <p class="text-xs text-slate-500 mt-1">Ksh {{ number_format($user->resellerPackage->price, 0) }}/{{ $user->resellerPackage->billing_cycle === 'monthly' ? 'mo' : 'yr' }}</p>
             @endif
         </div>
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <p class="text-sm font-medium text-slate-600 dark:text-slate-400 uppercase">Wallet Balance</p>
             <p class="text-lg font-bold text-purple-700 dark:text-purple-300 mt-2">{{ $wallet->getFormattedBalance() }}</p>
             <button type="button" @click="activeTab = 'wallet'" class="text-xs text-blue-600 dark:text-blue-400 hover:underline mt-1">Manage wallet</button>
@@ -119,7 +119,7 @@
     <!-- Tabbed Content -->
     <div x-data="{ activeTab: '{{ request('tab', request()->has('domains_page') ? 'domains' : 'overview') }}', addDomainModal: false, addServiceModal: false, upgradeModal: false, editBillingModal: false }"
          x-init="@if($errors->any() && old('_form') === 'add_service') addServiceModal = true; activeTab = 'services' @elseif($errors->any() && (old('amount') !== null || old('reason') !== null)) activeTab = 'wallet' @elseif($errors->any() && (old('directadmin_username') !== null || old('reseller_node_id') !== null)) activeTab = 'node' @elseif($errors->any()) addDomainModal = true; activeTab = 'domains' @endif"
-         class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
+         class="ui-card">
         <!-- Tab Navigation -->
         <div class="border-b border-slate-200 dark:border-slate-800">
             <div class="flex gap-1 px-6">

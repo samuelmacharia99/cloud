@@ -37,7 +37,7 @@
             </div>
 
             <!-- Payment Details Card -->
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-6">Payment Details</h2>
                 <div class="space-y-4">
                     <!-- Method -->
@@ -80,7 +80,7 @@
 
             <!-- Related Invoice (if exists) -->
             @if ($payment->invoice)
-                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+                <div class="ui-card p-6">
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Related Invoice</h2>
                     <div class="flex items-center justify-between p-4 border border-slate-200 dark:border-slate-800 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                         <div>
@@ -100,7 +100,7 @@
 
             <!-- Notes (if exists) -->
             @if ($payment->notes)
-                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+                <div class="ui-card p-6">
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-3">Notes</h2>
                     <p class="text-sm text-slate-600 dark:text-slate-400 whitespace-pre-wrap">{{ $payment->notes }}</p>
                 </div>
@@ -110,7 +110,7 @@
         <!-- Right Sidebar -->
         <div class="space-y-6">
             <!-- Quick Info Card -->
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h3 class="text-sm font-semibold text-slate-900 dark:text-white uppercase text-xs tracking-wide mb-4">Payment Summary</h3>
                 <div class="space-y-4">
                     <div>
@@ -136,7 +136,7 @@
             </div>
 
             <!-- Timeline -->
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h3 class="text-sm font-semibold text-slate-900 dark:text-white uppercase text-xs tracking-wide mb-4">Timeline</h3>
                 <div class="space-y-3 text-sm">
                     <div>

@@ -44,7 +44,7 @@
     @endif
 
     <!-- Tab Navigation -->
-    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
+    <div class="ui-card">
         <div class="flex border-b border-slate-200 dark:border-slate-800">
             <!-- Payment Gateways Tab -->
             <button type="button" @click="setTab('payment')" :class="activeTab === 'payment' ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/30' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="flex-1 px-6 py-4 font-medium transition flex items-center justify-center gap-2">
@@ -98,7 +98,7 @@
             <!-- Payment Gateways Tab Content -->
             <div x-show="activeTab === 'payment'" x-transition>
                 <!-- M-Pesa Settings -->
-                <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden mb-6">
+                <div class="ui-card overflow-hidden mb-6">
                     <div class="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4">
                         <div class="flex items-center gap-3">
                             <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -220,7 +220,7 @@
 
             <!-- SMS Tab Content -->
             <div x-show="activeTab === 'sms'" x-transition>
-                <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                <div class="ui-card overflow-hidden">
                     <div class="bg-gradient-to-r from-green-600 to-green-700 px-6 py-4">
                         <div class="flex items-center gap-3">
                             <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -297,7 +297,7 @@
 
             <!-- Email Tab Content -->
             <div x-show="activeTab === 'email'" x-transition>
-                <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                <div class="ui-card overflow-hidden">
                     <div class="bg-gradient-to-r from-purple-600 to-purple-700 px-6 py-4">
                         <div class="flex items-center gap-3">
                             <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -452,7 +452,7 @@
 
             <!-- Branding Tab Content -->
             <div id="settings-branding-panel" x-show="activeTab === 'branding'" x-transition>
-                <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                <div class="ui-card overflow-hidden">
                     <div class="bg-gradient-to-r from-amber-600 to-amber-700 px-6 py-4">
                         <div class="flex items-center gap-3">
                             <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -997,7 +997,7 @@
 
             <!-- Nameservers Tab Content -->
             <div x-show="activeTab === 'nameservers'" x-transition class="space-y-6">
-                <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                <div class="ui-card overflow-hidden">
                     <div class="bg-gradient-to-r from-cyan-600 to-cyan-700 px-6 py-4">
                         <div class="flex items-center gap-3">
                             <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -13,7 +13,7 @@
 @section('content')
 <div class="space-y-6" x-data="{ tab: 'overview' }">
     <!-- Header -->
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
+    <div class="ui-card p-8">
         <div class="flex items-start justify-between">
             <div>
                 <h1 class="text-3xl font-bold text-slate-900 dark:text-white">{{ $product->name }}</h1>
@@ -72,12 +72,12 @@
     <div x-show="tab === 'overview'" class="space-y-6">
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <!-- Stats Cards -->
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Active Services</p>
                 <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2">{{ $product->services_count ?? 0 }}</p>
             </div>
 
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Monthly Revenue</p>
                 <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2">
                     @if ($product->monthly_price)
@@ -88,7 +88,7 @@
                 </p>
             </div>
 
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Yearly Revenue</p>
                 <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2">
                     @if ($product->yearly_price)
@@ -102,7 +102,7 @@
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <!-- Product Information -->
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Product Information</h3>
                 <div class="space-y-4">
                     <div>
@@ -131,7 +131,7 @@
             </div>
 
             <!-- Pricing Information -->
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Pricing</h3>
                 <div class="space-y-4">
                     <div>
@@ -169,7 +169,7 @@
         </div>
 
         @if ($product->resource_limits)
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">{{ in_array($product->type, ['vps', 'dedicated_server'], true) ? 'Server Configuration' : 'Resource Limits' }}</h3>
                 @if ($product->type === 'container_hosting')
                     <dl class="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -300,7 +300,7 @@
         @endif
 
         @if ($product->type === 'container_hosting' && $product->overage_enabled)
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Overage Billing</h3>
                 <dl class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div>
@@ -320,7 +320,7 @@
         @endif
 
         @if ($product->type === 'container_hosting' && $product->bandwidth_overage_enabled)
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Project Bandwidth Billing</h3>
                 <dl class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
@@ -337,7 +337,7 @@
     </div>
 
     <!-- Services Tab -->
-    <div x-show="tab === 'services'" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+    <div x-show="tab === 'services'" class="ui-card overflow-hidden">
         <div class="overflow-x-auto">
             @if ($product->services->count() > 0)
                 <table class="w-full">

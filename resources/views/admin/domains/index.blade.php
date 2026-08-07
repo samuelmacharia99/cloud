@@ -23,7 +23,7 @@
     </div>
 
     <!-- Filters -->
-    <form method="GET" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-4">
+    <form method="GET" class="ui-card p-6 space-y-4">
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <!-- Search by domain name -->
             <div>
@@ -112,7 +112,7 @@
     </form>
 
     <!-- Domains Table -->
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+    <div class="ui-card overflow-hidden">
         <div class="overflow-x-auto">
             <table class="w-full">
                 <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800">

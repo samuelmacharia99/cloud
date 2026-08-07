@@ -13,7 +13,7 @@
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Form -->
         <div class="lg:col-span-2">
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
+            <div class="ui-card p-8">
                 <form method="POST" action="{{ route('customer.payment.manual-submit', $invoice) }}" class="space-y-6">
                     @csrf
 
@@ -107,7 +107,7 @@
 
         <!-- Invoice Summary -->
         <div class="lg:col-span-1">
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 sticky top-6">
+            <div class="ui-card p-6 sticky top-6">
                 <h3 class="text-lg font-bold text-slate-900 dark:text-white mb-4">Invoice Summary</h3>
 
                 <div class="space-y-3">

@@ -13,7 +13,7 @@
 @section('content')
 <div class="space-y-6" x-data="{ paymentModal: false, transferModal: false }">
     <!-- Header -->
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
+    <div class="ui-card p-8">
         <div class="flex items-start justify-between">
             <div>
                 <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Invoice #{{ str_pad($invoice->id, 5, '0', STR_PAD_LEFT) }}</h1>
@@ -58,7 +58,7 @@
 
                 <!-- Delete Confirmation Modal -->
                 <div x-show="deleteConfirm" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" @click.self="deleteConfirm = false">
-                    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8 max-w-md">
+                    <div class="ui-card p-8 max-w-md">
                         <h3 class="text-xl font-bold text-slate-900 dark:text-white mb-2">Delete Invoice?</h3>
                         <p class="text-slate-600 dark:text-slate-400 mb-6">Are you sure you want to delete this invoice? This action cannot be undone.</p>
                         <div class="flex gap-3 justify-end">
@@ -84,7 +84,7 @@
         <!-- Main Content -->
         <div class="lg:col-span-2 space-y-6">
             <!-- Invoice Details -->
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-6">Invoice Details</h2>
                 <div class="grid grid-cols-2 gap-6">
                     <div>
@@ -111,7 +111,7 @@
 
             <!-- Line Items -->
             @if ($invoice->itemsForDisplay()->isNotEmpty())
-                <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+                <div class="ui-card p-6">
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Line Items</h2>
                     <div class="overflow-x-auto">
                         <table class="w-full text-sm">
@@ -160,7 +160,7 @@
             @endif
 
             <!-- Payments -->
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <div class="flex items-center justify-between mb-4">
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Payments</h2>
                     @if(!in_array($invoice->status, ['paid', 'cancelled']))
@@ -219,7 +219,7 @@
 
             <!-- Notes -->
             @if ($invoice->notes)
-                <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+                <div class="ui-card p-6">
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-3">Notes</h2>
                     <p class="text-sm text-slate-600 dark:text-slate-400">{{ $invoice->notes }}</p>
                 </div>
@@ -313,7 +313,7 @@
         <!-- Sidebar -->
         <div class="space-y-6">
             <!-- Customer Info -->
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Customer</h3>
                 <div class="space-y-3">
                     <div class="flex items-center gap-3">
@@ -335,7 +335,7 @@
             </div>
 
             <div x-show="transferModal" x-cloak class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" @click.self="transferModal = false">
-                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8 max-w-lg w-full">
+                <div class="ui-card p-8 max-w-lg w-full">
                     <h3 class="text-xl font-bold text-slate-900 dark:text-white mb-2">Transfer invoice</h3>
                     <p class="text-sm text-slate-600 dark:text-slate-400 mb-6">
                         Reassign this invoice and its payments to another customer. Services listed on this invoice will move with it.
@@ -369,7 +369,7 @@
             </div>
 
             <!-- Timeline -->
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Timeline</h3>
                 <div class="space-y-3 text-sm">
                     <div>

@@ -9,7 +9,7 @@
         <h1 class="text-3xl font-bold text-slate-900 dark:text-white mt-2">New Support Ticket</h1>
     </div>
 
-    <form action="{{ route('reseller.tickets.store') }}" method="POST" enctype="multipart/form-data" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-4">
+    <form action="{{ route('reseller.tickets.store') }}" method="POST" enctype="multipart/form-data" class="ui-card p-6 space-y-4">
         @csrf
         <div>
             <label class="block text-sm font-medium mb-2">Title</label>

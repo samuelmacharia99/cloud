@@ -15,7 +15,7 @@
     </div>
 
     <!-- Profile Form Card -->
-    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
+    <div class="ui-card">
         <!-- Success Message -->
         @if (session('success'))
             <div class="bg-emerald-50 dark:bg-emerald-900/20 border-b border-emerald-200 dark:border-emerald-700 p-4">
@@ -164,7 +164,7 @@
     </div>
 
     <!-- 2FA Card -->
-    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
+    <div class="ui-card">
         <!-- Success/Warning Messages -->
         @if (session('recovery_codes'))
             <div class="bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-700 p-4">

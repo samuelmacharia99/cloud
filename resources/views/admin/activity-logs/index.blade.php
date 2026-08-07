@@ -13,7 +13,7 @@
         <p class="text-slate-600 dark:text-slate-400 mt-1">Sensitive admin actions: transfers, wallet adjustments, impersonation, and payment approvals.</p>
     </div>
 
-    <form method="GET" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+    <form method="GET" class="ui-card p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
             <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Search</label>
             <input type="text" name="search" value="{{ request('search') }}" placeholder="Description or action" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-sm">
@@ -33,7 +33,7 @@
         </div>
     </form>
 
-    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+    <div class="ui-card overflow-hidden">
         <div class="overflow-x-auto">
             <table class="w-full text-sm">
                 <thead class="bg-slate-50 dark:bg-slate-800">

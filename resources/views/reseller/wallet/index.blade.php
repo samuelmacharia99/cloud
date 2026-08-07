@@ -87,7 +87,7 @@
     <!-- Top-up Modal Overlay -->
     <div x-show="openTopupForm" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" style="display: none;">
         <!-- Top-up Form Card -->
-        <div class="modal-form bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 w-full max-w-md max-h-screen overflow-y-auto" x-data="{ paymentMethod: 'mpesa' }">
+        <div class="modal-form ui-card p-6 w-full max-w-md max-h-screen overflow-y-auto" x-data="{ paymentMethod: 'mpesa' }">
             <div class="flex items-center justify-between mb-6">
                 <h3 class="text-lg font-semibold text-slate-900 dark:text-white">Top Up Wallet</h3>
                 <button type="button" @click="openTopupForm = false" class="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300">✕</button>
@@ -194,7 +194,7 @@
     </div>
 
     <!-- Recent Transactions -->
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+    <div class="ui-card overflow-hidden">
         <div class="px-6 py-4 border-b border-slate-200 dark:border-slate-800">
             <h3 class="text-lg font-semibold text-slate-900 dark:text-white">Recent Transactions</h3>
         </div>

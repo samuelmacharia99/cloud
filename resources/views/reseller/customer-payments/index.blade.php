@@ -18,17 +18,17 @@
     />
 
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5">
+        <div class="ui-card p-5">
             <p class="text-sm text-slate-500">All-time collected</p>
             <p class="text-2xl font-bold text-emerald-600 mt-1">KSH {{ number_format($totalCollected, 2) }}</p>
         </div>
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5">
+        <div class="ui-card p-5">
             <p class="text-sm text-slate-500">Last 30 days</p>
             <p class="text-2xl font-bold text-emerald-600 mt-1">KSH {{ number_format($collected30d, 2) }}</p>
         </div>
     </div>
 
-    <form method="GET" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 flex flex-wrap gap-3">
+    <form method="GET" class="ui-card p-4 flex flex-wrap gap-3">
         <input type="text" name="search" value="{{ request('search') }}" placeholder="Customer, invoice, reference..." class="flex-1 min-w-[12rem] px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800">
         <select name="status" class="px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800">
             <option value="all" @selected(request('status', 'all') === 'all')>All statuses</option>
@@ -39,7 +39,7 @@
         <button type="submit" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg">Filter</button>
     </form>
 
-    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+    <div class="ui-card overflow-hidden">
         <table class="w-full text-sm">
             <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800">
                 <tr>

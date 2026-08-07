@@ -42,7 +42,7 @@
 
         body {
             font-family: Sora, ui-sans-serif, system-ui, sans-serif;
-            background: #f6f5f4;
+            background: #f4f4f5;
             color: #1c1917;
         }
 
@@ -75,7 +75,9 @@
             height: 100dvh !important;
             width: 100% !important;
             min-width: 0 !important;
-            background: white !important;
+            background:
+                radial-gradient(ellipse 70% 45% at 90% -10%, rgba(245, 158, 11, 0.08), transparent 55%),
+                linear-gradient(165deg, #ffffff 0%, #f4f4f5 100%) !important;
             position: relative !important;
             z-index: 10 !important;
             overflow: hidden !important;
@@ -83,12 +85,16 @@
 
         @media (prefers-color-scheme: dark) {
             .auth-panel {
-                background: #0c0a09 !important;
+                background:
+                    radial-gradient(ellipse 70% 45% at 90% -10%, rgba(245, 158, 11, 0.1), transparent 55%),
+                    linear-gradient(165deg, #111827 0%, #0c0a09 100%) !important;
             }
         }
 
         html.dark .auth-panel {
-            background: #0c0a09 !important;
+            background:
+                radial-gradient(ellipse 70% 45% at 90% -10%, rgba(245, 158, 11, 0.1), transparent 55%),
+                linear-gradient(165deg, #111827 0%, #0c0a09 100%) !important;
         }
 
         /* HEADER */
@@ -278,8 +284,8 @@
         .glow-orb {
             position: absolute !important;
             border-radius: 50% !important;
-            filter: blur(50px) !important;
-            opacity: 0.25 !important;
+            filter: blur(60px) !important;
+            opacity: 0.18 !important;
         }
 
         .glow-purple {
@@ -287,7 +293,7 @@
         }
 
         .glow-blue {
-            background: linear-gradient(135deg, #f59e0b 0%, #92400e 100%) !important;
+            background: linear-gradient(135deg, #f59e0b 0%, #78350f 100%) !important;
         }
 
         /* ANIMATION */
@@ -676,7 +682,8 @@
                         </p>
                     </div>
 
-                    <div class="float-animation bg-white/5 border border-white/10 rounded-2xl p-8 backdrop-blur-xl shadow-2xl">
+                    <div class="float-animation rounded-2xl p-8 border border-white/15 bg-white/[0.07] backdrop-blur-xl"
+                         style="box-shadow: 0 1px 0 rgba(255,255,255,0.08) inset, 0 20px 40px -16px rgba(0,0,0,0.45), 0 24px 44px -14px rgba(245,158,11,0.2);">
                         <div class="space-y-6">
                             <div class="flex items-center justify-between">
                                 <div class="text-sm font-semibold text-white/90 tracking-[0.14em]">INFRASTRUCTURE</div>
@@ -700,7 +707,8 @@
                     </div>
 
                     <div class="absolute -top-4 -right-8 w-56 h-40 float-animation" style="animation-delay: 1.2s;">
-                        <div class="bg-white/5 border border-white/10 rounded-2xl p-4 backdrop-blur-xl h-full shadow-lg">
+                        <div class="rounded-2xl p-4 border border-white/15 bg-white/[0.07] backdrop-blur-xl h-full"
+                             style="box-shadow: 0 1px 0 rgba(255,255,255,0.08) inset, 0 16px 32px -12px rgba(0,0,0,0.4);">
                             <div class="text-xs font-semibold text-white/80 mb-3 tracking-[0.14em]">DEPLOYMENT</div>
                             <div class="space-y-2">
                                 <div class="flex items-center gap-2">
@@ -720,7 +728,8 @@
                     </div>
 
                     <div class="absolute -bottom-8 -left-12 w-48 h-32 float-animation" style="animation-delay: 2.4s;">
-                        <div class="bg-white/5 border border-white/10 rounded-2xl p-4 backdrop-blur-xl h-full flex items-center shadow-lg">
+                        <div class="rounded-2xl p-4 border border-white/15 bg-white/[0.07] backdrop-blur-xl h-full flex items-center"
+                             style="box-shadow: 0 1px 0 rgba(255,255,255,0.08) inset, 0 16px 32px -12px rgba(0,0,0,0.4);">
                             <div>
                                 <div class="text-xs font-semibold text-white/70 mb-2 tracking-[0.14em]">LATENCY</div>
                                 <div class="font-display text-3xl font-extrabold text-brand-300">42ms</div>

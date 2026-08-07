@@ -4,7 +4,7 @@
 
 @section('content')
 <div class="space-y-6 max-w-2xl mx-auto">
-    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8">
+    <div class="ui-card p-8">
         <div class="text-center">
             <div class="mb-6">
                 <div class="w-16 h-16 bg-purple-100 dark:bg-purple-900/30 rounded-full flex items-center justify-center mx-auto">

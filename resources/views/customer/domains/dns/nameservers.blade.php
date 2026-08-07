@@ -34,7 +34,7 @@
         <!-- Main Content -->
         <div class="lg:col-span-2 space-y-6">
             <!-- Update Form -->
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-6">Update Nameservers</h2>
 
                 <form action="{{ route('customer.domains.dns.update-nameservers', $domain) }}" method="POST" class="space-y-4">
@@ -77,7 +77,7 @@
             </div>
 
             <!-- Current Nameservers -->
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-4">Current Nameservers</h2>
 
                 <div class="space-y-3">
@@ -119,7 +119,7 @@
             </div>
 
             <!-- Common Providers -->
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h3 class="font-bold text-slate-900 dark:text-white mb-3">Common Nameservers</h3>
                 <div class="space-y-2 text-xs">
                     <div class="p-2 bg-slate-50 dark:bg-slate-800 rounded">

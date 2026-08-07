@@ -6,7 +6,7 @@
 @endphp
 
 <div
-    class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden"
+    class="ui-card overflow-hidden"
     @if ($connected)
         x-data="resellerDirectAdminLive(@js([
             'live_url' => $m['live_url'] ?? '',

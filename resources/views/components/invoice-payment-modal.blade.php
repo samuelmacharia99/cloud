@@ -126,7 +126,7 @@
     </button>
 
     <div x-show="showPaymentModal" x-transition class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" @click.self="closePaymentModal()">
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 max-w-lg w-full mx-4">
+        <div class="ui-card max-w-lg w-full mx-4">
             <div class="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-700">
                 <h3 class="text-lg font-semibold text-slate-900 dark:text-white">Select Payment Method</h3>
                 <button type="button" @click="closePaymentModal()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">

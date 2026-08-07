@@ -49,11 +49,11 @@
 
     @if ($usesDirectAdminDirectory ?? false)
         <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4">
+            <div class="ui-card p-4">
                 <p class="text-xs uppercase tracking-wide text-slate-500">Total users</p>
                 <p class="text-2xl font-bold text-slate-900 dark:text-white mt-1">{{ $directoryStats['total'] ?? 0 }}</p>
             </div>
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4">
+            <div class="ui-card p-4">
                 <p class="text-xs uppercase tracking-wide text-slate-500">On DirectAdmin</p>
                 <p class="text-2xl font-bold text-slate-900 dark:text-white mt-1">{{ $directoryStats['directadmin_total'] ?? 0 }}</p>
             </div>
@@ -73,7 +73,7 @@
     @endif
 
     <!-- Filters -->
-    <form method="GET" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+    <form method="GET" class="ui-card p-6">
         @if ($usesDirectAdminDirectory ?? false)
             <input type="hidden" name="directory" value="shared_hosting">
         @endif
@@ -171,7 +171,7 @@
     @endif
 
     <!-- Table -->
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+    <div class="ui-card overflow-hidden">
         <div class="overflow-x-auto">
             <table class="w-full">
                 <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800">
@@ -366,7 +366,7 @@
 
                                     @if(!$customer->is_reseller)
                                         <div x-show="convertModal" x-cloak class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" @click.self="convertModal = false">
-                                            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 max-w-sm w-full">
+                                            <div class="ui-card p-6 max-w-sm w-full">
                                                 <h3 class="text-lg font-bold text-slate-900 dark:text-white mb-2">Convert to Reseller?</h3>
                                                 <p class="text-slate-600 dark:text-slate-400 mb-6 text-sm">Convert <strong>{{ $customer->name }}</strong> to a reseller account? They will be able to manage their own customers and packages.</p>
                                                 <div class="flex gap-3 justify-end">
@@ -385,7 +385,7 @@
                                     @endif
 
                                     <div x-show="transferModal" x-cloak class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" @click.self="transferModal = false">
-                                        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto">
+                                        <div class="ui-card p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto">
                                             <h3 class="text-lg font-bold text-slate-900 dark:text-white mb-2">Transfer to Reseller</h3>
                                             <p class="text-slate-600 dark:text-slate-400 mb-3 text-sm">
                                                 Move <strong>{{ $customer->name }}</strong> to a reseller partner. The customer keeps their login; services and domains are reassigned. Open invoices are cancelled so the reseller can start fresh billing.

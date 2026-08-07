@@ -18,7 +18,7 @@
         </a>
     </div>
 
-    <form method="GET" action="{{ route('admin.credits.index') }}" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 grid grid-cols-1 md:grid-cols-4 gap-4">
+    <form method="GET" action="{{ route('admin.credits.index') }}" class="ui-card p-6 grid grid-cols-1 md:grid-cols-4 gap-4">
         <div>
             <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Search</label>
             <input type="text" name="search" value="{{ request('search') }}" placeholder="Customer name or email" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white text-sm">
@@ -47,7 +47,7 @@
         </div>
     </form>
 
-    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+    <div class="ui-card overflow-hidden">
         <div class="overflow-x-auto">
             <table class="w-full">
                 <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">

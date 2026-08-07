@@ -9,7 +9,7 @@
         <p class="text-slate-600 dark:text-slate-400 mt-1">Services provisioned for your customers.</p>
     </div>
 
-    <form method="GET" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 flex flex-wrap gap-4">
+    <form method="GET" class="ui-card p-4 flex flex-wrap gap-4">
         <input type="text" name="search" value="{{ request('search') }}" placeholder="Search service or customer..." class="flex-1 min-w-[200px] px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800">
         <select name="status" class="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800">
             <option value="all">All statuses</option>
@@ -21,7 +21,7 @@
     </form>
 
     @if ($services->count())
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+        <div class="ui-card overflow-hidden">
             <table class="w-full">
                 <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800">
                     <tr>
@@ -50,7 +50,7 @@
         </div>
         {{ $services->links() }}
     @else
-        <div class="p-12 text-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 text-slate-500">No services found.</div>
+        <div class="p-12 text-center ui-card text-slate-500">No services found.</div>
     @endif
 </div>
 @endsection

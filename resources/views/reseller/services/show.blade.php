@@ -51,13 +51,13 @@
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-3">
+        <div class="ui-card p-6 space-y-3">
             <h2 class="font-semibold">Customer</h2>
             <p class="text-sm">{{ $service->user?->name }}</p>
             <p class="text-sm text-slate-500">{{ $service->user?->email }}</p>
             <a href="{{ route('reseller.customers.show', $service->user) }}" class="text-sm text-purple-600">Customer profile →</a>
         </div>
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-3">
+        <div class="ui-card p-6 space-y-3">
             <h2 class="font-semibold">Billing</h2>
             <p class="text-sm">Cycle: {{ ucfirst($service->billing_cycle ?? 'n/a') }}</p>
             <p class="text-sm">Next due: {{ $service->next_due_date?->format('M d, Y') ?? 'N/A' }}</p>
@@ -73,7 +73,7 @@
     <x-service-enforcement-panel :insight="$enforcementInsight" />
 
     @if ($canTransfer ?? false)
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <h2 class="font-semibold text-slate-900 dark:text-white mb-2">Transfer to another customer</h2>
             <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Immediately reassigns this service to another customer you manage. Related invoices for this service move with it.</p>
             <form method="POST" action="{{ route('reseller.services.transfer', $service) }}" class="space-y-3" data-confirm="Transfer this service to the selected customer now?" data-confirm-title="Transfer service">
@@ -100,7 +100,7 @@
     @endif
 
     @if (!empty($managementLinks['username']) || !empty($managementLinks['panel_url']) || ($managementLinks['driver'] ?? '') === 'directadmin')
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
                 <h2 class="font-semibold">Hosting account</h2>
                 @if ($service->user)

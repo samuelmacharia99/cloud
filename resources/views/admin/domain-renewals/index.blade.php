@@ -13,7 +13,7 @@
     </div>
 
     <!-- Filters -->
-    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+    <div class="ui-card p-6">
         <form action="{{ route('admin.domain-renewals.index') }}" method="GET" class="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
                 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Status</label>
@@ -45,7 +45,7 @@
     </div>
 
     <!-- Table -->
-    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+    <div class="ui-card overflow-hidden">
         <div class="overflow-x-auto">
             <table class="w-full">
                 <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">

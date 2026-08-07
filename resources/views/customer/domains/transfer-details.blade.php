@@ -23,7 +23,7 @@
     </div>
 
     <!-- Status Summary Card -->
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+    <div class="ui-card overflow-hidden">
         <!-- Status Header -->
         <div class="bg-gradient-to-r from-blue-600 to-blue-700 p-6 text-white">
             <div class="flex items-center justify-between">
@@ -66,7 +66,7 @@
     </div>
 
     <!-- Timeline -->
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+    <div class="ui-card p-6">
         <h3 class="text-lg font-bold text-slate-900 dark:text-white mb-6">Transfer Timeline</h3>
 
         <div class="space-y-6">

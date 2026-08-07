@@ -26,7 +26,7 @@
         <!-- Main Content -->
         <div class="lg:col-span-2 space-y-6">
             <!-- Order Details -->
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-4">Renewal Details</h2>
 
                 <div class="space-y-4">
@@ -64,7 +64,7 @@
             </div>
 
             <!-- Terms -->
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-4">Order Confirmation</h2>
 
                 <form action="{{ route('customer.domains.renewal-checkout-confirm') }}" method="POST" class="space-y-6">
@@ -105,7 +105,7 @@
 
         <!-- Order Summary Sidebar -->
         <div>
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 sticky top-6 space-y-4">
+            <div class="ui-card p-6 sticky top-6 space-y-4">
                 <h3 class="font-bold text-slate-900 dark:text-white">Order Summary</h3>
 
                 <div class="space-y-3">

@@ -23,7 +23,7 @@
         </div>
     @endif
 
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+    <div class="ui-card p-6">
         <div class="flex gap-2 border-b border-slate-200 dark:border-slate-800">
             @foreach($periods as $period)
                 <button @click="selectedPeriod = {{ $period }}; $nextTick(() => filterExtensions())"
@@ -35,7 +35,7 @@
         </div>
     </div>
 
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+    <div class="ui-card overflow-hidden">
         <div class="overflow-x-auto">
             <table class="w-full min-w-[56rem]">
                 <thead>
@@ -97,7 +97,7 @@
     <div x-show="showModal" @click="showModal = false" class="fixed inset-0 bg-black/50 z-40"></div>
 
     <div x-show="showModal" x-transition class="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div @click.stop class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-xl">
+        <div @click.stop class="ui-card w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-xl">
             <div class="p-6 sm:p-8">
                 <div class="mb-6">
                     <h2 class="text-2xl font-bold text-slate-900 dark:text-white">Edit Domain Pricing</h2>

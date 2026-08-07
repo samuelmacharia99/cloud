@@ -15,7 +15,7 @@
         </div>
     </div>
 
-    <form method="GET" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 flex flex-wrap gap-4">
+    <form method="GET" class="ui-card p-4 flex flex-wrap gap-4">
         <select name="customer" class="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800">
             <option value="">All customers</option>
             @foreach ($customers as $customer)
@@ -32,7 +32,7 @@
     </form>
 
     @if ($invoices->count())
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+        <div class="ui-card overflow-hidden">
             <table class="w-full">
                 <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800">
                     <tr>
@@ -62,7 +62,7 @@
         </div>
         {{ $invoices->links() }}
     @else
-        <div class="p-12 text-center bg-white dark:bg-slate-900 rounded-2xl border text-slate-500">No customer invoices found.</div>
+        <div class="ui-card p-12 text-center text-slate-500">No customer invoices found.</div>
     @endif
 </div>
 @endsection

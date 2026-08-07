@@ -28,7 +28,7 @@
         <!-- Main Content -->
         <div class="lg:col-span-2 space-y-6">
             <!-- Renewal Details -->
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-4">Renewal Details</h2>
 
                 <div class="space-y-4">
@@ -102,7 +102,7 @@
             </div>
 
             <!-- Customer Info -->
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-4">Billing Account</h2>
 
                 <div class="space-y-3 text-sm">
@@ -123,7 +123,7 @@
 
             <!-- Action Forms -->
             @if(in_array($renewal->status, ['pushed', 'failed'], true))
-                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 space-y-6">
+                <div class="ui-card p-6 space-y-6">
                     <div>
                         <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-1">Mark as renewed (manual)</h2>
                         <p class="text-sm text-slate-600 dark:text-slate-400">
@@ -210,7 +210,7 @@
         <div class="space-y-6">
             <!-- Related Invoices -->
             @if($renewal->invoice || $renewal->adminInvoice)
-                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+                <div class="ui-card p-6">
                     <h3 class="font-bold text-slate-900 dark:text-white mb-4">Related Invoices</h3>
 
                     <div class="space-y-3">
@@ -236,7 +236,7 @@
             @endif
 
             <!-- Domain Info -->
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h3 class="font-bold text-slate-900 dark:text-white mb-4">Domain Information</h3>
 
                 <div class="space-y-3 text-sm">

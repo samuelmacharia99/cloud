@@ -12,7 +12,7 @@
 
 @section('content')
 <div class="max-w-2xl mx-auto">
-    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8">
+    <div class="ui-card p-8">
         <h1 class="text-2xl font-bold text-slate-900 dark:text-white mb-6">Create New Service</h1>
 
         <form action="{{ route('admin.services.store') }}" method="POST" x-data="{ productType: '', showDomainField: false }">

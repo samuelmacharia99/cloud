@@ -13,7 +13,7 @@
     </div>
 
     <!-- Form -->
-    <form action="{{ route('admin.reseller-packages.update', $package) }}" method="POST" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8 space-y-6">
+    <form action="{{ route('admin.reseller-packages.update', $package) }}" method="POST" class="ui-card p-8 space-y-6">
         @csrf
         @method('PUT')
 

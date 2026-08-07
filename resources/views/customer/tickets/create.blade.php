@@ -16,7 +16,7 @@
             </div>
 
             <!-- Form Card -->
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
+            <div class="ui-card p-8">
                 <form action="{{ route('customer.tickets.store') }}" method="POST" enctype="multipart/form-data" class="space-y-6">
                     @csrf
 

@@ -13,7 +13,7 @@
     <!-- Extension Cards Grid -->
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         @forelse ($extensions as $extension)
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden hover:shadow-lg transition-shadow">
+            <div class="ui-card overflow-hidden hover:shadow-lg transition-shadow">
                 <!-- Header -->
                 <div class="px-6 py-4 bg-gradient-to-r from-blue-50 to-blue-100 dark:from-blue-950 dark:to-blue-900 border-b border-slate-200 dark:border-slate-700">
                     <h2 class="text-2xl font-bold text-slate-900 dark:text-white">{{ $extension->extension }}</h2>
@@ -98,7 +98,7 @@
                 </div>
             </div>
         @empty
-            <div class="col-span-full bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-12 text-center">
+            <div class="col-span-full ui-card p-12 text-center">
                 <p class="text-slate-600 dark:text-slate-400">No domain extensions available at this time.</p>
             </div>
         @endforelse

@@ -50,7 +50,7 @@
             <form method="POST" action="{{ route('reseller.checkout.process') }}" class="space-y-6">
                 @csrf
 
-                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+                <div class="ui-card p-6">
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Domain Orders</h2>
                     <div class="space-y-4">
                         @foreach($items as $key => $item)
@@ -92,7 +92,7 @@
                 </div>
 
             @if ($isCustomerCheckout ?? false)
-                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+                <div class="ui-card p-6">
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Bill to customer</h2>
                     <p class="font-semibold">{{ $checkoutCustomer->name }}</p>
                     <p class="text-sm text-slate-500">{{ $checkoutCustomer->email }}</p>
@@ -101,7 +101,7 @@
                     <p class="text-sm text-amber-900 dark:text-amber-200">No wallet charge at checkout. Record payment on the customer invoice after they pay you (M-Pesa, cash, etc.). Domains push when the invoice is fully paid.</p>
                 </div>
             @else
-                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+                <div class="ui-card p-6">
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Your Information</h2>
                     <div class="space-y-4">
                         <div>
@@ -125,7 +125,7 @@
             @endif
 
             <!-- Place Order -->
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 @if(!($isCustomerCheckout ?? false) && $wallet->balance > 0)
                 <div class="mb-6 p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-lg">
                     <div class="flex items-center justify-between mb-3">
@@ -174,7 +174,7 @@
 
         <!-- Summary Sidebar -->
         <div class="lg:col-span-1">
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 sticky top-24">
+            <div class="ui-card p-6 sticky top-24">
                 <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Summary</h3>
 
                 <div class="space-y-3 mb-6 border-b border-slate-200 dark:border-slate-700 pb-6">

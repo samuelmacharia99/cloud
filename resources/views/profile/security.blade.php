@@ -51,7 +51,7 @@
 
     <div class="space-y-6">
         <!-- Two-Factor Authentication -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <section class="space-y-4">
                 <header>
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Two-Factor Authentication</h2>
@@ -93,12 +93,12 @@
         </div>
 
         <!-- Password Change Section -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             @include('profile.partials.update-password-form')
         </div>
 
         <!-- Active Sessions Section -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <section class="space-y-6">
                 <header>
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white">
@@ -149,7 +149,7 @@
         </div>
 
         <!-- Login History Section (Optional - for future enhancement) -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <section class="space-y-6">
                 <header>
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white">

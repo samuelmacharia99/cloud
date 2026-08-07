@@ -5,7 +5,7 @@
 @endphp
 
 <div class="space-y-6">
-    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+    <div class="ui-card overflow-hidden">
         <div class="px-6 py-5 border-b border-slate-200 dark:border-slate-800">
             <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Infrastructure Nameservers</h2>
             <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
@@ -63,7 +63,7 @@
         @endif
     </div>
 
-    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+    <div class="ui-card overflow-hidden">
         <div class="px-6 py-5 border-b border-slate-200 dark:border-slate-800">
             <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Platform Fallback Nameservers</h2>
             <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">

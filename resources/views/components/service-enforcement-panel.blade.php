@@ -1,7 +1,7 @@
 @props(['insight', 'showUpgradeCta' => false])
 
 @if (!empty($insight['alerts']) || !empty($insight['disk']) || !empty($insight['bandwidth']) || !empty($insight['database']))
-    <div {{ $attributes->merge(['class' => 'bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-4']) }}>
+    <div {{ $attributes->merge(['class' => 'ui-card p-6 space-y-4']) }}>
         <div class="flex items-center justify-between gap-3">
             <h2 class="font-semibold text-slate-900 dark:text-white">Plan usage</h2>
             @if ($insight['is_suspended'] ?? false)

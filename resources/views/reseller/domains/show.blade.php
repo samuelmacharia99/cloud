@@ -33,15 +33,15 @@
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <p class="text-sm text-slate-500">Status</p>
             <div class="mt-2"><x-domain-status-badge :status="$domain->status" /></div>
         </div>
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <p class="text-sm text-slate-500">Registered</p>
             <p class="text-lg font-semibold text-slate-900 dark:text-white mt-2">{{ $domain->registered_at?->format('M d, Y') ?? '—' }}</p>
         </div>
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <p class="text-sm text-slate-500">Expires</p>
             <p class="text-lg font-semibold mt-2 {{ $domain->isExpired() ? 'text-red-600' : 'text-slate-900 dark:text-white' }}">
                 {{ $domain->expires_at?->format('M d, Y') ?? '—' }}
@@ -62,7 +62,7 @@
     @endif
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <h2 class="font-semibold text-slate-900 dark:text-white mb-4">Nameservers</h2>
             <form method="POST" action="{{ route('reseller.domains.nameservers', $domain) }}" class="space-y-3">
                 @csrf
@@ -79,7 +79,7 @@
             </form>
         </div>
 
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <h2 class="font-semibold text-slate-900 dark:text-white mb-4">Transfer to another customer</h2>
             <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Immediately moves ownership to another customer you manage. No recipient approval required.</p>
             @if($transferTargets->isEmpty())
@@ -101,7 +101,7 @@
         </div>
     </div>
 
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+    <div class="ui-card p-6">
         <h2 class="font-semibold text-slate-900 dark:text-white mb-4">DNS records</h2>
         <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">
             This is a read-only snapshot of locally stored DNS records. To edit DNS, impersonate the customer and manage records in their portal, or use your DirectAdmin / DNS provider panel.

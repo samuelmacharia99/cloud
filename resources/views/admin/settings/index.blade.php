@@ -22,7 +22,7 @@
 
         <div x-data="{ activeTab: @js($activeTab) }" class="space-y-6">
             <!-- Tab Navigation -->
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
+            <div class="ui-card">
                 <div class="flex gap-1 px-6 overflow-x-auto">
                     <button @click="activeTab = 'general'" :class="activeTab === 'general' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors text-sm whitespace-nowrap">General</button>
                     <button @click="activeTab = 'billing'" :class="activeTab === 'billing' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors text-sm whitespace-nowrap">Billing</button>
@@ -41,7 +41,7 @@
 
             <!-- Tab: General -->
             <div x-show="activeTab === 'general'" class="space-y-6">
-                <form method="POST" action="{{ route('admin.settings.update') }}" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8 space-y-6" @submit.prevent="window.submitForm($el)">
+                <form method="POST" action="{{ route('admin.settings.update') }}" class="ui-card p-8 space-y-6" @submit.prevent="window.submitForm($el)">
                     @csrf
 
                     <fieldset>
@@ -106,7 +106,7 @@
 
             <!-- Tab: Billing -->
             <div x-show="activeTab === 'billing'" class="space-y-6">
-                <form method="POST" action="{{ route('admin.settings.update') }}" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8 space-y-6" @submit.prevent="window.submitForm($el)">
+                <form method="POST" action="{{ route('admin.settings.update') }}" class="ui-card p-8 space-y-6" @submit.prevent="window.submitForm($el)">
                     @csrf
 
                     <fieldset>
@@ -208,7 +208,7 @@
 
             <!-- Tab: Tax -->
             <div x-show="activeTab === 'tax'" class="space-y-6">
-                <form method="POST" action="{{ route('admin.settings.update') }}" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8 space-y-6" @submit.prevent="window.submitForm($el)">
+                <form method="POST" action="{{ route('admin.settings.update') }}" class="ui-card p-8 space-y-6" @submit.prevent="window.submitForm($el)">
                     @csrf
 
                     <fieldset>
@@ -265,7 +265,7 @@
             <!-- Tab: Payment Methods -->
             <div x-show="activeTab === 'payment_methods'" class="space-y-6" x-data="paymentGateways()">
                 <!-- M-Pesa Card -->
-                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                <div class="ui-card overflow-hidden">
                     <div class="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-blue-50 dark:from-slate-800 to-blue-50/50 dark:to-slate-900 cursor-pointer" @click="open.mpesa = !open.mpesa">
                         <div class="flex items-center gap-4 flex-1">
                             <svg class="w-6 h-6 text-blue-600" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z"/></svg>
@@ -562,7 +562,7 @@
                 </div>
 
                 <!-- Stripe Card -->
-                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                <div class="ui-card overflow-hidden">
                     <div class="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-purple-50 dark:from-slate-800 to-purple-50/50 dark:to-slate-900 cursor-pointer" @click="open.stripe = !open.stripe">
                         <div class="flex items-center gap-4 flex-1">
                             <svg class="w-6 h-6 text-purple-600" fill="currentColor" viewBox="0 0 24 24"><path d="M23.014 12.233c0 6.14-4.934 11.167-11.014 11.167C5.933 23.4 1 18.373 1 12.233c0-6.14 4.933-11.167 11.014-11.167 6.08 0 11.014 5.027 11.014 11.167zm-6.49 1.134H7.28V10.85h9.244v2.517z"/></svg>
@@ -621,7 +621,7 @@
                 </div>
 
                 <!-- PayPal Card -->
-                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                <div class="ui-card overflow-hidden">
                     <div class="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-yellow-50 dark:from-slate-800 to-yellow-50/50 dark:to-slate-900 cursor-pointer" @click="open.paypal = !open.paypal">
                         <div class="flex items-center gap-4 flex-1">
                             <svg class="w-6 h-6 text-yellow-600" fill="currentColor" viewBox="0 0 24 24"><path d="M9.343 17.657c0-1.328 2.686-2.404 6-2.404s6 1.076 6 2.404m0-6c0 1.328-2.686 2.404-6 2.404s-6-1.076-6-2.404m0-6c0 1.328 2.686 2.404 6 2.404s6-1.076 6-2.404M3 5.657c0-1.328 2.686-2.404 6-2.404s6 1.076 6 2.404v10c0 1.328-2.686 2.404-6 2.404s-6-1.076-6-2.404V5.657z"/></svg>
@@ -799,7 +799,7 @@
                 </div>
 
                 <!-- Bank Transfer Card -->
-                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                <div class="ui-card overflow-hidden">
                     <div class="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-green-50 dark:from-slate-800 to-green-50/50 dark:to-slate-900 cursor-pointer" @click="open.bank = !open.bank">
                         <div class="flex items-center gap-4 flex-1">
                             <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h10m4 0a1 1 0 01-1 1H4a1 1 0 01-1-1m0 0a1 1 0 011-1h16a1 1 0 011 1m0 0v2a2 2 0 01-2 2H5a2 2 0 01-2-2v-2m0-5V7a2 2 0 012-2h14a2 2 0 012 2v3"/></svg>
@@ -868,7 +868,7 @@
                 </div>
 
                 <!-- Manual Payment Card -->
-                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                <div class="ui-card overflow-hidden">
                     <div class="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-slate-50 dark:from-slate-800 to-slate-50/50 dark:to-slate-900 cursor-pointer" @click="open.manual = !open.manual">
                         <div class="flex items-center gap-4 flex-1">
                             <svg class="w-6 h-6 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
@@ -1282,7 +1282,7 @@
 
             <!-- Tab: Provisioning -->
             <div x-show="activeTab === 'provisioning'" class="space-y-6">
-                <form method="POST" action="{{ route('admin.settings.update') }}" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8 space-y-6" @submit.prevent="window.submitForm($el)">
+                <form method="POST" action="{{ route('admin.settings.update') }}" class="ui-card p-8 space-y-6" @submit.prevent="window.submitForm($el)">
                     @csrf
 
                     <fieldset>
@@ -1476,7 +1476,7 @@
 
             <!-- Tab: Branding -->
             <div x-show="activeTab === 'branding'" class="space-y-6">
-                <form method="POST" action="{{ route('admin.settings.update') }}" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8 space-y-6" @submit.prevent="window.submitForm($el)">
+                <form method="POST" action="{{ route('admin.settings.update') }}" class="ui-card p-8 space-y-6" @submit.prevent="window.submitForm($el)">
                     @csrf
 
                     <fieldset>
@@ -1569,7 +1569,7 @@
 
             <!-- Tab: Email -->
             <div x-show="activeTab === 'email'" class="space-y-6">
-                <form method="POST" action="{{ route('admin.settings.update') }}" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8 space-y-6" @submit.prevent="window.submitForm($el)">
+                <form method="POST" action="{{ route('admin.settings.update') }}" class="ui-card p-8 space-y-6" @submit.prevent="window.submitForm($el)">
                     @csrf
 
                     <fieldset>
@@ -1699,7 +1699,7 @@
             </div>
             <div x-show="activeTab === 'notifications'" class="space-y-6">
                 <!-- Notification Triggers Form -->
-                <form method="POST" action="{{ route('admin.settings.update') }}" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8 space-y-6" @submit.prevent="window.submitForm($el)">
+                <form method="POST" action="{{ route('admin.settings.update') }}" class="ui-card p-8 space-y-6" @submit.prevent="window.submitForm($el)">
                     @csrf
 
                     <fieldset>
@@ -1991,7 +1991,7 @@
 
             <!-- Tab: Cron -->
             <div x-show="activeTab === 'cron'" class="space-y-6">
-                <form method="POST" action="{{ route('admin.settings.update') }}" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8 space-y-6" @submit.prevent="window.submitForm($el)">
+                <form method="POST" action="{{ route('admin.settings.update') }}" class="ui-card p-8 space-y-6" @submit.prevent="window.submitForm($el)">
                     @csrf
 
                     <!-- Status -->
@@ -2131,7 +2131,7 @@
 
             <!-- Tab: SMS -->
             <div x-show="activeTab === 'sms'" class="space-y-6">
-                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                <div class="ui-card overflow-hidden">
                     <div class="px-6 py-5 border-b border-slate-200 dark:border-slate-800">
                         <h2 class="text-lg font-semibold text-slate-900 dark:text-white">SMS Configuration</h2>
                         <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">Talksasa SMS API credentials and test sending.</p>
@@ -2201,7 +2201,7 @@
             <div x-show="activeTab === 'security'" class="space-y-6">
                 @include('admin.settings.partials.telegram-monitor-card')
 
-                <form method="POST" action="{{ route('admin.settings.update') }}" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8 space-y-6" @submit.prevent="window.submitForm($el)">
+                <form method="POST" action="{{ route('admin.settings.update') }}" class="ui-card p-8 space-y-6" @submit.prevent="window.submitForm($el)">
                     @csrf
 
                     <fieldset>

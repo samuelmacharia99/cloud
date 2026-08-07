@@ -35,7 +35,7 @@
     </div>
 
     <!-- Transfer Form -->
-    <form id="transferForm" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8 space-y-6">
+    <form id="transferForm" class="ui-card p-8 space-y-6">
         @csrf
 
         <!-- Domain Name -->

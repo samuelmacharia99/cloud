@@ -21,7 +21,7 @@
     </div>
 
     <!-- Filters -->
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+    <div class="ui-card p-6">
         <form method="GET" class="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
                 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Search</label>
@@ -53,7 +53,7 @@
     </div>
 
     <!-- Orders Table -->
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+    <div class="ui-card overflow-hidden">
         <div class="overflow-x-auto">
             <table class="w-full">
                 <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800">
@@ -139,7 +139,7 @@
             @keydown.escape.window="completeOrderId = null"
         >
             <div class="absolute inset-0 bg-slate-900/60" @click="completeOrderId = null"></div>
-            <div class="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xl p-6">
+            <div class="relative w-full max-w-md ui-card shadow-xl p-6">
                 <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-1">Complete domain order</h3>
                 <p class="text-sm text-slate-600 dark:text-slate-400 mb-2" x-text="completeDomain"></p>
                 <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">Use when registration or transfer was done manually (no API registrar). This marks the order completed — it does not call Openprovider.</p>

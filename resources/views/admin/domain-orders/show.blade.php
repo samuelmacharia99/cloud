@@ -26,7 +26,7 @@
     <!-- Details Grid -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         <!-- Reseller / channel Card -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <h3 class="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-4">{{ $order->isPlatformOrder() ? 'Channel' : 'Reseller' }}</h3>
             <div class="space-y-3">
                 @if ($order->isPlatformOrder())
@@ -53,7 +53,7 @@
         </div>
 
         <!-- Customer Card -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <h3 class="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-4">Customer</h3>
             <div class="space-y-3">
                 <div>
@@ -73,7 +73,7 @@
     </div>
 
     <!-- Order Details -->
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+    <div class="ui-card p-6">
         <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Order Details</h3>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
@@ -256,7 +256,7 @@
     @endif
 
     <!-- Timeline -->
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+    <div class="ui-card p-6">
         <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Timeline</h3>
         <div class="space-y-4">
             <div class="flex gap-4">
@@ -331,7 +331,7 @@
     @endif
 
     @if($order->canAdminPush() || $order->canAdminPushToRegistrar() || $order->canCancel() || $order->canAdminDelete())
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+    <div class="ui-card p-6">
         <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Quick Actions</h3>
         <div class="flex flex-wrap items-center gap-2">
             @if($order->canAdminPush())
@@ -382,7 +382,7 @@
     <!-- Actions -->
     @if($order->canAdminComplete())
     <!-- Complete Order Form -->
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+    <div class="ui-card p-6">
         <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-2">Complete Domain Order</h3>
         <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Record a manual registration or transfer (e.g. no API registrar configured). Does not submit to Openprovider.</p>
         <form method="POST" action="{{ route('admin.domain-orders.complete', $order) }}" class="space-y-4">

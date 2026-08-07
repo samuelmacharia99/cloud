@@ -28,7 +28,7 @@
 
     <!-- Stats Cards -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm text-slate-600 dark:text-slate-400">Total Nodes</p>
@@ -40,7 +40,7 @@
             </div>
         </div>
 
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm text-slate-600 dark:text-slate-400">Online</p>
@@ -52,7 +52,7 @@
             </div>
         </div>
 
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm text-slate-600 dark:text-slate-400">Offline</p>
@@ -64,7 +64,7 @@
             </div>
         </div>
 
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm text-slate-600 dark:text-slate-400">Application Hosts</p>
@@ -78,7 +78,7 @@
     </div>
 
     <!-- Filters -->
-    <form method="GET" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+    <form method="GET" class="ui-card p-6">
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
             <div>
                 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Search</label>
@@ -118,7 +118,7 @@
     </form>
 
     <!-- Nodes Table -->
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+    <div class="ui-card overflow-hidden">
         <div class="overflow-x-auto">
             <table class="w-full">
                 <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800">

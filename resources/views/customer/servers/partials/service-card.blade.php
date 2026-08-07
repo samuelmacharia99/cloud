@@ -12,7 +12,7 @@
     $isVps = $service->product->type === 'vps';
 @endphp
 
-<article class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 hover:shadow-md transition-shadow">
+<article class="ui-card p-5 hover:shadow-md transition-shadow">
     <div class="flex items-center justify-between gap-3 mb-4">
         <span @class([
             'inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-full',

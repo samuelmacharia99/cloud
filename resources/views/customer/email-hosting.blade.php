@@ -36,7 +36,7 @@
                     ? rtrim(rtrim(number_format(((float) $limits['mailbox_quota_mb']) / 1024, 2), '0'), '.')
                     : null;
             @endphp
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 hover:border-teal-300 dark:hover:border-teal-700 transition">
+            <div class="ui-card ui-card-interactive p-6">
                 <div class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-teal-100 dark:bg-teal-900 text-teal-800 dark:text-teal-200 mb-3">
                     Email Hosting
                 </div>
@@ -115,7 +115,7 @@
                 </form>
             </div>
         @empty
-            <div class="col-span-full text-center py-12 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
+            <div class="col-span-full text-center py-12 ui-card">
                 <p class="text-slate-500 dark:text-slate-400">No email hosting plans are available yet.</p>
                 <p class="text-sm text-slate-400 dark:text-slate-500 mt-2">Ask an administrator to create an Email Hosting product.</p>
             </div>

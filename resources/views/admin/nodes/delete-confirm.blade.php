@@ -39,7 +39,7 @@
     @endif
 
     @if ($remaining === 0)
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 space-y-4">
+        <div class="ui-card p-6 space-y-4">
             <p class="text-slate-700 dark:text-slate-300">
                 No services@if($isDirectAdmin) or assigned resellers@endif are linked to this node. You can delete it permanently.
             </p>
@@ -77,7 +77,7 @@
             </p>
         </div>
 
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 space-y-5">
+        <div class="ui-card p-6 space-y-5">
             <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Where were the users moved?</h2>
 
             @if ($targets->isEmpty())
@@ -125,7 +125,7 @@
             @endif
         </div>
 
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 space-y-3">
+        <div class="ui-card p-6 space-y-3">
             <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Accounts not on another server?</h2>
             <p class="text-sm text-slate-600 dark:text-slate-400">
                 Use this for leftover suspended/terminated services (like yours) that were never moved, or cannot be found on a destination.
@@ -142,7 +142,7 @@
         </div>
 
         @if (! empty($scanResults['rows']))
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+            <div class="ui-card overflow-hidden">
                 <div class="px-6 py-4 border-b border-slate-200 dark:border-slate-800">
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white">
                         Scan results
@@ -216,7 +216,7 @@
         @endif
 
         @if ($services->isNotEmpty())
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-3">Services still on this node</h2>
                 <ul class="divide-y divide-slate-200 dark:divide-slate-800">
                     @foreach ($services as $service)
@@ -246,7 +246,7 @@
         @endif
 
         @if ($isDirectAdmin && $resellers->isNotEmpty())
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-3">Resellers still assigned to this node</h2>
                 <ul class="divide-y divide-slate-200 dark:divide-slate-800">
                     @foreach ($resellers as $reseller)

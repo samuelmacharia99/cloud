@@ -15,7 +15,7 @@
         </div>
     @endif
 
-    <form method="POST" action="{{ route('profile.notifications.update') }}" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-6">
+    <form method="POST" action="{{ route('profile.notifications.update') }}" class="ui-card p-6 space-y-6">
         @csrf
         @method('PATCH')
 

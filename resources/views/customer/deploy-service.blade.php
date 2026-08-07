@@ -21,7 +21,7 @@
     </div>
 
     <!-- Category Filters -->
-    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4">
+    <div class="ui-card p-4">
         <div class="flex gap-2 flex-wrap">
             <a href="{{ route('customer.browse-services') }}" class="px-4 py-2 rounded-lg font-medium text-sm transition-all {{ !$selectedType || $selectedType === 'all' ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700' }}">
                 All Services
@@ -37,7 +37,7 @@
     <!-- Products Grid -->
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         @forelse($products as $product)
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 hover:border-blue-300 dark:hover:border-blue-700 transition">
+            <div class="ui-card ui-card-interactive p-6">
                 <!-- Type Badge -->
                 <div class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 mb-3">
                     {{ \App\Models\Product::typeLabel($product->type) }}

@@ -12,17 +12,17 @@
 
     <!-- Stats -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Total Payments</p>
             <p class="text-2xl font-bold text-slate-900 dark:text-white mt-2">{{ $payments->total() }}</p>
         </div>
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Total Paid</p>
             <div class="mt-2">
                 <x-currency-formatter :amount="$payments->sum('amount')" currency="KES" class="text-2xl font-bold" />
             </div>
         </div>
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Completed</p>
             <p class="text-2xl font-bold text-green-600 dark:text-green-400 mt-2">{{ $payments->where('status', 'completed')->count() }}</p>
         </div>
@@ -62,7 +62,7 @@
     </form>
 
     <!-- Payments Table -->
-    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+    <div class="ui-card overflow-hidden">
         <div class="overflow-x-auto">
             <table class="w-full">
                 <thead class="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">

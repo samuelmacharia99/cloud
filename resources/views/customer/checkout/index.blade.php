@@ -40,7 +40,7 @@
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div class="lg:col-span-2 space-y-6">
-                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+                <div class="ui-card p-6">
                     <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-4">Order Items</h2>
                     <div class="space-y-3">
                         @foreach($cartItems as $item)
@@ -72,7 +72,7 @@
                     $containerProducts = array_filter($cartItems, fn($item) => ($item['type'] ?? null) === 'container_hosting');
                 @endphp
                 @if (!empty($containerProducts))
-                    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+                    <div class="ui-card p-6">
                         <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-4">Application deploy settings</h2>
                         <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Optional now — you can connect Git and manage Environment secrets from the app console after checkout.</p>
                         <div class="space-y-6">
@@ -94,7 +94,7 @@
                 ])
 
                 @if (!empty($sharedHostingItems))
-                    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+                    <div class="ui-card p-6">
                         <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-4">Shared plan domain (DirectAdmin)</h2>
                         <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Email and classic shared hosting live on DirectAdmin. Prefer application hosting for new websites and Email Hosting (Mailcow) for mail.</p>
                         @include('customer.checkout.partials.shared-hosting-domain', ['linkedHostingDomains' => $linkedHostingDomains ?? []])
@@ -102,7 +102,7 @@
                 @endif
 
                 @if (!empty($emailHostingItems))
-                    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+                    <div class="ui-card p-6">
                         <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-4">Email domain (Mailcow)</h2>
                         <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Register, transfer, or use an existing domain. Talksasa Cloudflare DNS gets MX/SPF/DKIM/DMARC automatically after payment.</p>
                         @include('customer.checkout.partials.email-hosting-domain', [
@@ -115,7 +115,7 @@
                     </div>
                 @endif
 
-                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+                <div class="ui-card p-6">
                     <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-4">Your Information</h2>
                     <div class="space-y-4">
                         <div>
@@ -179,7 +179,7 @@
             </div>
 
             <div class="lg:col-span-1">
-                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 sticky top-4">
+                <div class="ui-card p-6 sticky top-4">
                     <h3 class="text-lg font-bold text-slate-900 dark:text-white mb-4">Order Summary</h3>
                     <div class="space-y-3 mb-4 pb-4 border-b border-slate-200 dark:border-slate-700">
                         <div class="flex justify-between text-sm">

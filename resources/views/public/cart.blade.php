@@ -20,8 +20,8 @@
         .brand-btn:hover { background-color: var(--brand-dark); }
     </style>
 </head>
-<body class="bg-slate-100 text-slate-800 antialiased min-h-screen">
-    <header class="bg-white border-b border-slate-200">
+<body class="app-shell text-ink-800 antialiased min-h-screen">
+    <header class="app-header">
         <div class="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between gap-4">
             <a href="{{ $continueUrl }}" class="flex items-center gap-3 min-w-0">
                 @if (! empty($branding['logo_url']))
@@ -31,11 +31,11 @@
                 @endif
             </a>
             <div class="flex items-center gap-4 text-sm">
-                <a href="{{ $continueUrl }}" class="text-slate-600 hover:text-slate-900">Continue shopping</a>
+                <a href="{{ $continueUrl }}" class="text-ink-600 hover:text-ink-950">Continue shopping</a>
                 @auth
-                    <span class="text-slate-500">{{ auth()->user()->name }}</span>
+                    <span class="text-ink-500">{{ auth()->user()->name }}</span>
                 @else
-                    <a href="{{ $loginUrl }}" class="text-slate-600 hover:text-slate-900">Login</a>
+                    <a href="{{ $loginUrl }}" class="text-ink-600 hover:text-ink-950">Login</a>
                 @endauth
             </div>
         </div>
@@ -43,22 +43,22 @@
 
     <main class="max-w-5xl mx-auto px-4 py-10">
         <div class="mb-8">
-            <h1 class="text-2xl sm:text-3xl font-bold text-slate-900">Shopping Cart</h1>
-            <p class="text-slate-600 mt-1">Review your order, then create an account or log in to pay.</p>
+            <h1 class="page-title text-2xl sm:text-3xl">Shopping Cart</h1>
+            <p class="page-subtitle">Review your order, then create an account or log in to pay.</p>
         </div>
 
         @if (session('success'))
-            <div class="mb-6 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 px-4 py-3 text-sm">{{ session('success') }}</div>
+            <div class="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 text-emerald-800 px-4 py-3 text-sm">{{ session('success') }}</div>
         @endif
         @if (session('error'))
-            <div class="mb-6 rounded-lg border border-rose-200 bg-rose-50 text-rose-800 px-4 py-3 text-sm">{{ session('error') }}</div>
+            <div class="mb-6 rounded-2xl border border-rose-200 bg-rose-50 text-rose-800 px-4 py-3 text-sm">{{ session('error') }}</div>
         @endif
 
         @if ($itemCount === 0)
-            <div class="bg-white rounded-xl border border-slate-200 p-10 text-center">
-                <p class="text-slate-700 font-medium">Your cart is empty.</p>
-                <p class="text-sm text-slate-500 mt-2">Add a domain or hosting plan from the storefront to get started.</p>
-                <a href="{{ $continueUrl }}" class="inline-flex mt-6 brand-btn text-white font-semibold px-5 py-2.5 rounded-lg">Continue shopping</a>
+            <div class="ui-card p-10 text-center">
+                <p class="text-ink-800 font-medium">Your cart is empty.</p>
+                <p class="text-sm text-ink-500 mt-2">Add a domain or hosting plan from the storefront to get started.</p>
+                <a href="{{ $continueUrl }}" class="inline-flex mt-6 brand-btn text-white font-semibold px-5 py-2.5 rounded-xl shadow-soft">Continue shopping</a>
             </div>
         @else
             @php
@@ -67,7 +67,7 @@
             @endphp
             <div class="grid lg:grid-cols-3 gap-6">
                 <div class="lg:col-span-2 space-y-4">
-                    <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                    <div class="ui-card overflow-hidden">
                         <table class="w-full text-sm">
                             <thead class="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                                 <tr>
@@ -142,7 +142,7 @@
                     </div>
                 </div>
 
-                <aside class="bg-white rounded-xl border border-slate-200 p-6 h-fit sticky top-6 space-y-5">
+                <aside class="ui-card p-6 h-fit sticky top-6 space-y-5">
                     <div>
                         <h2 class="font-bold text-slate-900 text-lg">Order Summary</h2>
                         <div class="mt-4 space-y-2 text-sm">

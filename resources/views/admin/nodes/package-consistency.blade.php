@@ -59,21 +59,21 @@
 
     <!-- Summary -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5">
+        <div class="ui-card p-5">
             <p class="text-sm text-slate-600 dark:text-slate-400 mb-1">DA Nodes</p>
             <p class="text-2xl font-bold text-slate-900 dark:text-white">{{ $nodes->count() }}</p>
         </div>
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5">
+        <div class="ui-card p-5">
             <p class="text-sm text-slate-600 dark:text-slate-400 mb-1">Unique Packages</p>
             <p class="text-2xl font-bold text-slate-900 dark:text-white">{{ count($rows) }}</p>
         </div>
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5">
+        <div class="ui-card p-5">
             <p class="text-sm text-slate-600 dark:text-slate-400 mb-1">Mismatches</p>
             <p class="text-2xl font-bold {{ $diffCells > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400' }}">
                 {{ $diffCells }}
             </p>
         </div>
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5">
+        <div class="ui-card p-5">
             <p class="text-sm text-slate-600 dark:text-slate-400 mb-1">Missing</p>
             <p class="text-2xl font-bold {{ $missingCells > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400' }}">
                 {{ $missingCells }}
@@ -99,20 +99,20 @@
 
     <!-- Empty State -->
     @if($nodes->isEmpty())
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-12 text-center">
+        <div class="ui-card p-12 text-center">
             <p class="text-slate-700 dark:text-slate-300 font-medium">No active DirectAdmin nodes configured.</p>
             <a href="{{ route('admin.nodes.create', ['type' => 'directadmin']) }}" class="mt-4 inline-block text-blue-600 dark:text-blue-400 hover:underline">
                 Add a DirectAdmin node →
             </a>
         </div>
     @elseif(empty($rows))
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-12 text-center">
+        <div class="ui-card p-12 text-center">
             <p class="text-slate-700 dark:text-slate-300 font-medium">No packages found on any active DirectAdmin node.</p>
             <p class="text-sm text-slate-500 dark:text-slate-400 mt-2">Make sure the API credentials are correct and the servers have packages defined.</p>
         </div>
     @else
         <!-- Matrix -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+        <div class="ui-card overflow-hidden">
             <div class="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center gap-4 flex-wrap text-xs">
                 <span class="font-semibold text-slate-700 dark:text-slate-300">Legend:</span>
                 <span class="inline-flex items-center gap-1.5">
@@ -224,7 +224,7 @@
     @endif
 
     @if(isset($catalogPackages) && $catalogPackages->isNotEmpty())
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+        <div class="ui-card overflow-hidden">
             <div class="px-6 py-4 border-b border-slate-200 dark:border-slate-800">
                 <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Push Catalog Limits to DirectAdmin</h2>
                 <p class="text-sm text-slate-500 mt-1">Update package quotas on the server from your local catalog records.</p>

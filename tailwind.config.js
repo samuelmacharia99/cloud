@@ -50,8 +50,11 @@ export default {
                 },
             },
             boxShadow: {
-                card: '0 1px 0 rgb(28 25 23 / 0.04), 0 8px 24px -12px rgb(28 25 23 / 0.12)',
-                'card-hover': '0 1px 0 rgb(28 25 23 / 0.06), 0 20px 40px -16px rgb(28 25 23 / 0.2)',
+                card: '0 1px 0 rgb(255 255 255 / 0.9) inset, 0 10px 24px -8px rgb(28 25 23 / 0.12), 0 18px 36px -16px rgb(245 158 11 / 0.14)',
+                'card-hover': '0 1px 0 rgb(255 255 255 / 0.95) inset, 0 16px 32px -10px rgb(28 25 23 / 0.16), 0 24px 44px -14px rgb(245 158 11 / 0.28)',
+                soft: '0 1px 0 rgb(255 255 255 / 0.9) inset, 0 10px 24px -8px rgb(28 25 23 / 0.12), 0 18px 36px -16px rgb(245 158 11 / 0.14)',
+                'soft-hover': '0 1px 0 rgb(255 255 255 / 0.95) inset, 0 16px 32px -10px rgb(28 25 23 / 0.16), 0 24px 44px -14px rgb(245 158 11 / 0.28)',
+                'soft-inset': 'inset 0 2px 6px rgb(28 25 23 / 0.06), inset 0 1px 0 rgb(255 255 255 / 0.5)',
                 glow: '0 0 0 1px rgb(217 119 6 / 0.25), 0 10px 28px -8px rgb(217 119 6 / 0.45)',
                 rail: 'inset 3px 0 0 0 rgb(245 158 11)',
             },

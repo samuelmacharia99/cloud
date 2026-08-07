@@ -80,7 +80,7 @@
                 canProxy(type) { return this.proxyable.includes(String(type || '').toUpperCase()); }
             }"
         >
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-1">Add DNS Record</h2>
                 <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Changes apply on Cloudflare immediately. Proxy (orange cloud) is available for A, AAAA, and CNAME.</p>
                 <form action="{{ route('customer.domains.dns.add-record', $domain) }}" method="POST" class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -124,7 +124,7 @@
                 </form>
             </div>
 
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+            <div class="ui-card overflow-hidden">
                 <div class="px-6 py-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between gap-3">
                     <h2 class="text-lg font-bold text-slate-900 dark:text-white">DNS Records</h2>
                     <span class="text-xs text-slate-500 dark:text-slate-400">Powered by Cloudflare</span>
@@ -256,7 +256,7 @@
             </div>
         </div>
     @elseif(($canProvision ?? false) && ($cloudflareAvailable ?? false))
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8 text-center space-y-4">
+        <div class="ui-card p-8 text-center space-y-4">
             <h3 class="text-lg font-semibold text-slate-900 dark:text-white">Enable managed DNS</h3>
             <p class="text-sm text-slate-600 dark:text-slate-400 max-w-lg mx-auto">Provision a Cloudflare DNS zone for this domain so you can manage records from this page.</p>
             <form action="{{ route('customer.domains.dns.provision', $domain) }}" method="POST">
@@ -270,7 +270,7 @@
         </div>
     @endif
 
-    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+    <div class="ui-card p-6">
         <h3 class="font-bold text-slate-900 dark:text-white mb-3">Nameservers</h3>
         <div class="text-sm text-slate-600 dark:text-slate-400 space-y-1 font-mono">
             <p>NS1: {{ $domain->nameserver_1 ?? '—' }}</p>

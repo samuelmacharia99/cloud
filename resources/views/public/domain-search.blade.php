@@ -7,49 +7,49 @@
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 </head>
-<body class="antialiased bg-white" x-data="domainSearch()">
+<body class="antialiased app-shell" x-data="domainSearch()">
     <!-- Navigation -->
-    <nav class="fixed w-full top-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-100">
+    <nav class="fixed w-full top-0 z-50 bg-white/80 dark:bg-ink-950/80 backdrop-blur-xl border-b border-ink-200/60">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
             <div class="flex items-center gap-2">
                 <a href="/" class="flex items-center gap-2 hover:opacity-75 transition">
-                    <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center">
-                        <span class="text-white font-bold">TC</span>
+                    <div class="brand-mark">
+                        <span class="text-sm">TC</span>
                     </div>
-                    <span class="text-xl font-bold text-gray-900">Talksasa</span>
+                    <span class="text-xl font-bold text-ink-950">Talksasa</span>
                 </a>
             </div>
 
             <div class="flex items-center gap-4">
-                <a href="{{ route('login') }}" class="hidden sm:inline text-gray-700 hover:text-blue-600 transition font-medium">Login</a>
-                <a href="/" class="px-6 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg font-semibold hover:shadow-lg transition">Back Home</a>
+                <a href="{{ route('login') }}" class="hidden sm:inline text-ink-700 hover:text-brand-600 transition font-medium">Login</a>
+                <a href="/" class="btn-primary">Back Home</a>
             </div>
         </div>
     </nav>
 
     <!-- Main Content -->
-    <section class="pt-32 pb-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-br from-slate-50 via-blue-50 to-slate-50 min-h-screen">
+    <section class="pt-32 pb-20 px-4 sm:px-6 lg:px-8 min-h-screen">
         <div class="max-w-4xl mx-auto">
             <!-- Search Header -->
             <div class="mb-12 text-center">
-                <h1 class="text-4xl md:text-5xl font-bold text-gray-900 mb-4">Find Your Perfect Domain</h1>
-                <p class="text-xl text-gray-600 mb-8">Search millions of domains and get started in minutes</p>
+                <h1 class="font-display text-4xl md:text-5xl font-bold text-ink-950 mb-4">Find Your Perfect Domain</h1>
+                <p class="text-xl text-ink-600 mb-8">Search millions of domains and get started in minutes</p>
 
                 <!-- Search Form -->
-                <div class="flex gap-2 max-w-2xl mx-auto">
+                <div class="ui-card p-3 sm:p-4 flex flex-col sm:flex-row gap-2 max-w-2xl mx-auto">
                     <div class="flex-1 relative">
                         <input
                             type="text"
                             x-model="searchQuery"
                             @keydown.enter="searchDomain()"
                             placeholder="e.g., google.com or google"
-                            class="w-full px-6 py-4 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-600 transition text-lg"
+                            class="w-full px-5 py-3.5 rounded-xl text-lg"
                             required
                         >
                     </div>
                     <button
                         @click="searchDomain()"
-                        class="px-8 py-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg font-semibold hover:shadow-lg transition disabled:opacity-50"
+                        class="btn-primary px-8 py-3.5 text-base"
                         :disabled="loading"
                     >
                         <span x-show="!loading">Search</span>
@@ -57,7 +57,7 @@
                     </button>
                 </div>
 
-                <p class="text-center text-sm text-gray-500 mt-4">
+                <p class="text-center text-sm text-ink-500 mt-4">
                     Type full domain (google.com) or just the name (google)
                 </p>
             </div>
@@ -67,14 +67,14 @@
                 <!-- Available Domains -->
                 <template x-if="availableDomains.length > 0">
                     <div>
-                        <h2 class="text-2xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-                            <span class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-green-100 text-green-600 font-bold">✓</span>
+                        <h2 class="text-2xl font-bold text-ink-950 mb-4 flex items-center gap-2">
+                            <span class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 font-bold">✓</span>
                             Available Domains (<span x-text="availableDomains.length"></span>)
                         </h2>
 
                         <div class="space-y-3">
                             <template x-for="domain in availableDomains" :key="domain.full_domain">
-                                <div class="bg-white rounded-xl border border-green-200 p-6 hover:shadow-lg transition">
+                                <div class="ui-card ui-card-interactive p-6">
                                     <div class="flex items-center justify-between gap-4">
                                         <div class="flex-1">
                                             <div class="flex items-center gap-3 mb-2">
@@ -127,7 +127,7 @@
 
                         <div class="space-y-3">
                             <template x-for="domain in unavailableDomains" :key="domain.full_domain">
-                                <div class="bg-white rounded-xl border border-gray-200 p-6 opacity-60">
+                                <div class="ui-card p-6 opacity-70">
                                     <div class="flex items-center justify-between gap-4">
                                         <div class="flex-1">
                                             <div class="flex items-center gap-3 mb-2">
@@ -149,7 +149,7 @@
 
                 <!-- No Results -->
                 <template x-if="resultsDisplayed && availableDomains.length === 0 && unavailableDomains.length === 0">
-                    <div class="bg-white rounded-xl border-2 border-dashed border-gray-300 p-12 text-center">
+                    <div class="ui-card border-dashed p-12 text-center">
                         <svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.658 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
                         </svg>
@@ -160,7 +160,7 @@
 
                 <!-- Alternative Suggestions -->
                 <template x-if="resultsDisplayed && availableDomains.length === 0">
-                    <div class="bg-blue-50 rounded-xl border border-blue-200 p-8">
+                    <div class="ui-soft-inset p-8 border-sky-200/80 bg-sky-50/80">
                         <h3 class="text-lg font-bold text-gray-900 mb-4">Couldn't find what you're looking for?</h3>
                         <p class="text-gray-700 mb-4">Try these alternatives:</p>
                         <div class="space-y-2 text-gray-700">

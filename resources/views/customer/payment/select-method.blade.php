@@ -79,7 +79,7 @@
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div class="lg:col-span-2 space-y-6">
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 space-y-5">
+            <div class="ui-card p-6 space-y-5">
                 <div>
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Payment method</h2>
                     @if ($invoice->displayCurrency() !== config('currency.paypal_settlement', 'USD'))
@@ -160,7 +160,7 @@
         </div>
 
         <div class="lg:col-span-1">
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 sticky top-4 space-y-4">
+            <div class="ui-card p-6 sticky top-4 space-y-4">
                 <h3 class="text-lg font-bold text-slate-900 dark:text-white">Order summary</h3>
 
                 @php

@@ -23,7 +23,7 @@
     </div>
 
     <!-- Filters -->
-    <form method="GET" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+    <form method="GET" class="ui-card p-6">
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
                 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Search</label>
@@ -47,7 +47,7 @@
     </form>
 
     <!-- Table -->
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+    <div class="ui-card overflow-hidden">
         <div class="overflow-x-auto">
             <table class="w-full">
                 <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800">
@@ -119,7 +119,7 @@
 
                                     <!-- Delete Confirmation Modal -->
                                     <div x-show="deleteModal_{{ $invoice->id }}" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" @click.self="deleteModal_{{ $invoice->id }} = false">
-                                        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 max-w-sm mx-4">
+                                        <div class="ui-card p-6 max-w-sm mx-4">
                                             <div class="flex items-center gap-3 mb-4">
                                                 <div class="flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100 dark:bg-red-900/30">
                                                     <svg class="h-6 w-6 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">

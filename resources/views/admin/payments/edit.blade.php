@@ -21,7 +21,7 @@
     </div>
 
     <!-- Form Card -->
-    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8">
+    <div class="ui-card p-8">
         <form action="{{ route('admin.payments.update', $payment) }}" method="POST" class="space-y-6">
             @csrf
             @method('PUT')

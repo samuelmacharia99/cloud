@@ -34,7 +34,7 @@
         <!-- Main Content -->
         <div class="lg:col-span-2 space-y-6">
             <!-- Ticket Details -->
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <div class="mb-6 pb-6 border-b border-slate-200 dark:border-slate-700">
                     <p class="text-gray-700 dark:text-gray-300 whitespace-pre-line">{{ $ticket->description }}</p>
                     <x-ticket-attachments :attachments="$ticket->attachments" :ticket="$ticket" />
@@ -55,7 +55,7 @@
                 <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Replies ({{ $ticket->replies->count() }})</h2>
 
                 @forelse($ticket->replies as $reply)
-                <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 {{ $reply->is_staff_reply ? 'border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20' : '' }}">
+                <div class="ui-card p-6 {{ $reply->is_staff_reply ? 'border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20' : '' }}">
                     <div class="flex justify-between items-start mb-4">
                         <div>
                             <p class="font-semibold text-gray-900 dark:text-white">
@@ -80,7 +80,7 @@
 
             <!-- Reply Form -->
             @can('reply', $ticket)
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Add Reply</h3>
                 <form action="{{ route('tickets.reply', $ticket) }}" method="POST" enctype="multipart/form-data" class="space-y-4">
                     @csrf
@@ -110,7 +110,7 @@
         <div class="space-y-6">
             <!-- Status Card -->
             @can('update', $ticket)
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Status</h3>
                 <form action="{{ route('tickets.updateStatus', $ticket) }}" method="POST" class="space-y-3">
                     @csrf
@@ -124,7 +124,7 @@
                 </form>
             </div>
             @else
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Status</h3>
                 <span class="px-3 py-1 rounded-full text-sm font-semibold
                     @if($ticket->status === 'open') bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200
@@ -138,7 +138,7 @@
             @endcan
 
             <!-- Priority Card -->
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Priority</h3>
                 <span class="px-3 py-1 rounded-full text-sm font-semibold
                     @if($ticket->priority === 'urgent') bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200
@@ -152,7 +152,7 @@
 
             <!-- Assign Card -->
             @can('update', $ticket)
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Assigned To</h3>
                 <form action="{{ route('tickets.assign', $ticket) }}" method="POST" class="space-y-3">
                     @csrf
@@ -166,7 +166,7 @@
                 </form>
             </div>
             @else
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Assigned To</h3>
                 <p class="text-gray-700 dark:text-gray-300">
                     {{ $ticket->assignee?->name ?? 'Unassigned' }}
@@ -175,7 +175,7 @@
             @endcan
 
             <!-- Customer Info Card -->
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <div class="ui-card p-6">
                 <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Customer</h3>
                 <div class="space-y-2 text-sm">
                     <p><strong>Name:</strong> <x-admin.customer-link :user="$ticket->user" /></p>

@@ -48,11 +48,11 @@
 
     @if ($usesDirectAdminDirectory ?? false)
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4">
+            <div class="ui-card p-4">
                 <p class="text-xs uppercase tracking-wide text-slate-500">Total users</p>
                 <p class="text-2xl font-bold text-slate-900 dark:text-white mt-1">{{ $directoryStats['total'] ?? 0 }}</p>
             </div>
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4">
+            <div class="ui-card p-4">
                 <p class="text-xs uppercase tracking-wide text-slate-500">On DirectAdmin</p>
                 <p class="text-2xl font-bold text-slate-900 dark:text-white mt-1">{{ $directoryStats['directadmin_total'] ?? 0 }}</p>
             </div>
@@ -68,7 +68,7 @@
     @endif
 
     <!-- Filters -->
-    <form method="GET" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+    <form method="GET" class="ui-card p-6">
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
                 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Search</label>
@@ -132,7 +132,7 @@
     @endif
 
     <!-- Customers list -->
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden w-fit max-w-full">
+    <div class="ui-card overflow-hidden w-fit max-w-full">
         <div class="overflow-x-auto">
             <table class="w-auto text-sm">
                 <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800">

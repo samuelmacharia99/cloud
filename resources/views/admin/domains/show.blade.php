@@ -51,7 +51,7 @@
 
     <!-- Status Cards -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Status</p>
             <p class="text-2xl font-bold text-slate-900 dark:text-white mt-2">{{ ucfirst($domain->status) }}</p>
             <span class="inline-block mt-3 px-3 py-1 {{ $domain->status === 'active' ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300' : ($domain->status === 'expired' ? 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300' : 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300') }} rounded-full text-xs font-medium">
@@ -59,13 +59,13 @@
             </span>
         </div>
 
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Registered</p>
             <p class="text-2xl font-bold text-slate-900 dark:text-white mt-2">{{ $domain->registered_at ? $domain->registered_at->format('M d, Y') : '—' }}</p>
             <p class="text-xs text-slate-600 dark:text-slate-400 mt-2">{{ $domain->registered_at ? $domain->registered_at->diffForHumans() : 'Unknown' }}</p>
         </div>
 
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Expires</p>
             @if ($domain->expires_at)
                 <p class="text-2xl font-bold {{ $domain->isExpired() ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400' }} mt-2">
@@ -82,7 +82,7 @@
     </div>
 
     <!-- Domain Details -->
-    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 space-y-6">
+    <div class="ui-card p-6 space-y-6">
         <div>
             <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-4">Domain Information</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -133,7 +133,7 @@
 
     <!-- DNS Zones -->
     @if ($domain->dnsZones->count() > 0)
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div class="ui-card p-6">
             <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-4">DNS Records ({{ $domain->dnsZones->count() }})</h2>
             <div class="overflow-x-auto">
                 <table class="w-full text-sm">

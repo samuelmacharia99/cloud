@@ -26,7 +26,7 @@
     </div>
 
     <!-- Table Section -->
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+    <div class="ui-card overflow-hidden">
         @if($catalogItems->count() > 0)
             <div class="overflow-x-auto">
                 <table class="w-full">
