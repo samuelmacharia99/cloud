@@ -104,7 +104,7 @@
     </div>
     @endif
 
-    @if (($packageUsageWarnings ?? collect())->isNotEmpty() || $suspendedServices->count() > 0 || $provisioningServices->count() > 0 || $expiringDomains->count() > 0)
+    @if (($packageUsageWarnings ?? collect())->isNotEmpty() || $suspendedServices->count() > 0 || $provisioningServices->count() > 0 || ($pendingSetupServices ?? collect())->count() > 0 || $expiringDomains->count() > 0)
     <div class="space-y-3">
         @foreach ($packageUsageWarnings ?? [] as $warning)
             <x-hosting-upgrade-banner :warning="$warning" />
@@ -116,8 +116,29 @@
             </div>
         @endif
         @if ($provisioningServices->count() > 0)
-            <div class="ui-card p-4 border-blue-200 dark:border-blue-800 bg-blue-50/80 dark:bg-blue-950/30">
-                <p class="text-sm text-blue-900 dark:text-blue-200"><strong>{{ $provisioningServices->count() }}</strong> service(s) provisioning — we'll notify you when ready.</p>
+            <div class="ui-card p-4 border-blue-200 dark:border-blue-800 bg-blue-50/80 dark:bg-blue-950/30 flex flex-wrap items-center justify-between gap-3">
+                <div class="min-w-0">
+                    <p class="text-sm text-blue-900 dark:text-blue-200">
+                        <strong>{{ $provisioningServices->count() }}</strong> service(s) provisioning — we'll notify you when ready.
+                    </p>
+                    <p class="text-xs text-blue-800/80 dark:text-blue-300/80 mt-1 truncate">
+                        {{ $provisioningServices->map(fn ($s) => $s->name ?: ($s->product?->name ?? 'Service'))->join(', ') }}
+                    </p>
+                </div>
+                <a href="{{ route('customer.services.show', $provisioningServices->first()) }}" class="btn-sm btn-primary shrink-0">View service</a>
+            </div>
+        @endif
+        @if (($pendingSetupServices ?? collect())->count() > 0)
+            <div class="ui-card p-4 border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/40 flex flex-wrap items-center justify-between gap-3">
+                <div class="min-w-0">
+                    <p class="text-sm text-slate-800 dark:text-slate-200">
+                        <strong>{{ $pendingSetupServices->count() }}</strong> service(s) awaiting setup.
+                    </p>
+                    <p class="text-xs text-slate-600 dark:text-slate-400 mt-1 truncate">
+                        {{ $pendingSetupServices->map(fn ($s) => $s->name ?: ($s->product?->name ?? 'Service'))->join(', ') }}
+                    </p>
+                </div>
+                <a href="{{ route('customer.services.show', $pendingSetupServices->first()) }}" class="btn-sm btn-secondary shrink-0">View service</a>
             </div>
         @endif
         @if ($expiringDomains->count() > 0)

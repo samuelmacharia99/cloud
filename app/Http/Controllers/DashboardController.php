@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\ServiceStatus;
 use App\Models\User;
 use App\Services\AdminDashboardMetricsService;
 use App\Services\CreditService;
@@ -55,10 +56,30 @@ class DashboardController extends Controller
                 return $warning;
             });
 
+        $inFlightServices = $user->services()
+            ->whereIn('status', [
+                ServiceStatus::Pending->value,
+                ServiceStatus::Provisioning->value,
+            ])
+            ->with(['product', 'invoice'])
+            ->get();
+
+        // Only true "provisioning" belongs in the deploy-in-progress banner.
+        // Pending + unpaid activation is payment, not provisioning (already covered by invoices).
+        $provisioningServices = $inFlightServices
+            ->filter(fn ($service) => $service->status === ServiceStatus::Provisioning)
+            ->values();
+
+        $pendingSetupServices = $inFlightServices
+            ->filter(fn ($service) => $service->status === ServiceStatus::Pending
+                && $service->unpaidActivationInvoice() === null)
+            ->values();
+
         return view('dashboard.customer', [
             'activeServices' => $user->services()->where('status', 'active')->with('product')->get(),
             'suspendedServices' => $user->services()->where('status', 'suspended')->with('product')->get(),
-            'provisioningServices' => $user->services()->whereIn('status', ['pending', 'provisioning'])->with('product')->get(),
+            'provisioningServices' => $provisioningServices,
+            'pendingSetupServices' => $pendingSetupServices,
             'upcomingDueInvoices' => $user->invoices()
                 ->customerFacing()
                 ->whereIn('status', ['unpaid', 'overdue'])
