@@ -15,13 +15,15 @@ use App\Services\ResellerCustomerCatalogService;
 use App\Services\ResellerNameserverService;
 use App\Services\ServerProductConfigService;
 use App\Services\TaxService;
+use App\Support\SessionCart;
 use Exception;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class CartController extends Controller
 {
-    const CART_SESSION_KEY = 'cart';
+    /** @deprecated Use SessionCart::portalKey() — kept for tests and older references */
+    const CART_SESSION_KEY = SessionCart::LEGACY_PORTAL_KEY;
 
     /**
      * Display the shopping cart
@@ -31,18 +33,22 @@ class CartController extends Controller
         $user = auth()->user();
         app(ResellerCustomerCatalogService::class)->sanitizeSessionCart($user);
 
-        $cart = session(self::CART_SESSION_KEY, []);
+        $cart = SessionCart::portal();
         $catalogService = app(ResellerCustomerCatalogService::class);
         $cartItems = [];
         $subtotal = 0;
         $hasSharedHosting = false;
         $hasDomainItems = false;
+        $pruned = false;
 
         foreach ($cart as $key => $item) {
             $item['key'] = $key;
 
             if ($item['type'] === 'product') {
                 if ($catalogService->isResellerCustomer($user)) {
+                    unset($cart[$key]);
+                    $pruned = true;
+
                     continue;
                 }
 
@@ -55,7 +61,10 @@ class CartController extends Controller
                     $item['amount'] = $pricing['unit_price'] + $pricing['setup_fee'];
                     $hasSharedHosting = $hasSharedHosting || $product->type === 'shared_hosting';
                 } else {
-                    continue; // Skip if product not found
+                    unset($cart[$key]);
+                    $pruned = true;
+
+                    continue;
                 }
             } elseif ($item['type'] === 'reseller_product') {
                 $resellerProduct = ResellerProduct::with('adminProduct')->find($item['reseller_product_id'] ?? null);
@@ -72,6 +81,9 @@ class CartController extends Controller
                     $item['product_id'] = $resellerProduct->product_id;
                     $hasSharedHosting = $hasSharedHosting || ($resellerProduct->adminProduct?->type === 'shared_hosting');
                 } else {
+                    unset($cart[$key]);
+                    $pruned = true;
+
                     continue;
                 }
             } elseif ($item['type'] === 'domain') {
@@ -80,6 +92,9 @@ class CartController extends Controller
                 if ($extension) {
                     $price = $catalogService->domainRegistrationPrice($user, $extension, (int) $item['years']);
                     if ($price === null) {
+                        unset($cart[$key]);
+                        $pruned = true;
+
                         continue;
                     }
 
@@ -88,12 +103,20 @@ class CartController extends Controller
                     $item['name'] = "{$item['domain']}{$item['extension']}";
                     $item['description'] = "Domain registration for {$item['years']} year(s)";
                 } else {
-                    continue; // Skip if extension not found
+                    unset($cart[$key]);
+                    $pruned = true;
+
+                    continue;
                 }
             }
 
             $subtotal += $item['amount'];
             $cartItems[] = $item;
+        }
+
+        if ($pruned) {
+            SessionCart::putPortal($cart);
+            session()->now('warning', 'Some cart items were removed because they are no longer available.');
         }
 
         $taxBreakdown = TaxService::calculateForUser($subtotal, auth()->user());
@@ -129,7 +152,7 @@ class CartController extends Controller
      */
     public function attachHosting(Request $request)
     {
-        $cart = session(self::CART_SESSION_KEY, []);
+        $cart = SessionCart::portal();
         $domainItems = collect($cart)
             ->filter(fn ($item) => is_array($item) && ($item['type'] ?? null) === 'domain');
 
@@ -323,15 +346,13 @@ class CartController extends Controller
         }
 
         // Generate unique key
-        $key = uniqid();
+        $key = uniqid('c_', true);
         $item['added_at'] = now()->toIso8601String();
         $item = app(SharedHostingCheckoutService::class)
             ->applyAttachDomainToHostingItem($item);
 
-        // Add to session cart
-        $cart = session(self::CART_SESSION_KEY, []);
-        $cart[$key] = $item;
-        session([self::CART_SESSION_KEY => $cart]);
+        SessionCart::append(SessionCart::portalKey(), $item, $key);
+        $cart = SessionCart::portal();
 
         $response = [
             'success' => true,
@@ -356,9 +377,9 @@ class CartController extends Controller
      */
     public function remove(string $key)
     {
-        $cart = session(self::CART_SESSION_KEY, []);
+        $cart = SessionCart::portal();
         unset($cart[$key]);
-        session([self::CART_SESSION_KEY => $cart]);
+        SessionCart::putPortal($cart);
 
         return back()->with('success', 'Item removed from cart');
     }
@@ -368,7 +389,7 @@ class CartController extends Controller
      */
     public function clear()
     {
-        session([self::CART_SESSION_KEY => []]);
+        SessionCart::clearPortal();
         app(SharedHostingCheckoutService::class)->clearAttachDomainSession();
 
         return back()->with('success', 'Cart cleared');
@@ -469,7 +490,7 @@ class CartController extends Controller
      */
     public function updateNameservers(string $key, Request $request): JsonResponse
     {
-        $cart = session(self::CART_SESSION_KEY, []);
+        $cart = SessionCart::portal();
 
         if (! isset($cart[$key]) || $cart[$key]['type'] !== 'domain') {
             return response()->json(['success' => false, 'message' => 'Domain not found in cart'], 404);
@@ -500,14 +521,14 @@ class CartController extends Controller
         // Platform/custom nameservers replace managed Cloudflare DNS for this cart line.
         $cart[$key]['cloudflare_dns'] = false;
 
-        session([self::CART_SESSION_KEY => $cart]);
+        SessionCart::putPortal($cart);
 
         return response()->json(['success' => true, 'message' => 'Nameservers updated']);
     }
 
     public function updateCloudflareDns(string $key, Request $request): JsonResponse
     {
-        $cart = session(self::CART_SESSION_KEY, []);
+        $cart = SessionCart::portal();
 
         if (! isset($cart[$key]) || $cart[$key]['type'] !== 'domain') {
             return response()->json(['success' => false, 'message' => 'Domain not found in cart'], 404);
@@ -530,7 +551,7 @@ class CartController extends Controller
                 ->cartDefaultPayloadForCustomer(auth()->user());
         }
 
-        session([self::CART_SESSION_KEY => $cart]);
+        SessionCart::putPortal($cart);
 
         return response()->json([
             'success' => true,

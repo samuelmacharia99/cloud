@@ -141,8 +141,8 @@ class ServerController extends Controller
         }
 
         $location = $configService->location($product, $locationKey);
-        $cart = session('cart', []);
-        $cartKey = uniqid();
+        $cart = \App\Support\SessionCart::portal();
+        $cartKey = uniqid('c_', true);
 
         $serverMeta = [
             'billing_cycle' => $validated['billing_cycle'],
@@ -168,7 +168,7 @@ class ServerController extends Controller
             ], $serverMeta);
         }
 
-        session(['cart' => $cart]);
+        \App\Support\SessionCart::putPortal($cart);
 
         return redirect()->route('customer.checkout.show')->with('success', 'Server added to cart!');
     }

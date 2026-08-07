@@ -3,8 +3,8 @@
 namespace App\Http\Controllers\Api\V1\ResellerPublic;
 
 use App\Http\Controllers\Controller;
-use App\Http\Controllers\Customer\CheckoutController;
 use App\Services\PublicWebsiteApiContext;
+use App\Support\SessionCart;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -44,19 +44,22 @@ class CartController extends Controller
             ], 422);
         }
 
-        $session = [CheckoutController::CART_SESSION_KEY => $cart];
-
+        // Normalize to keyed lines and write the context-appropriate bag only.
+        $normalized = SessionCart::normalize($cart);
         if ($this->api->isReseller()) {
-            $session['registration_reseller_id'] = $this->api->reseller()->id;
+            SessionCart::putStorefront($normalized);
+            session(['registration_reseller_id' => $this->api->reseller()->id]);
         } else {
+            // Platform public API must not wipe an authenticated portal cart — merge instead.
+            $merged = SessionCart::mergeIncoming(SessionCart::portal(), array_values($normalized));
+            SessionCart::putPortal($merged);
             session()->forget('registration_reseller_id');
+            $normalized = $merged;
         }
-
-        session($session);
 
         return response()->json([
             'success' => true,
-            'item_count' => count($cart),
+            'item_count' => count($normalized),
             'checkout_url' => $this->api->checkoutUrl(),
         ]);
     }

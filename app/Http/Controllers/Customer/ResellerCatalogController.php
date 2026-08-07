@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Customer;
 
 use App\Http\Controllers\Controller;
 use App\Models\ResellerProduct;
+use App\Support\SessionCart;
 use Illuminate\Http\Request;
 
 class ResellerCatalogController extends Controller
@@ -46,8 +47,8 @@ class ResellerCatalogController extends Controller
 
         $provisionProduct = $resellerProduct->provisionProduct();
 
-        $cart = session(CartController::CART_SESSION_KEY, []);
-        $key = uniqid('rp_');
+        $cart = SessionCart::portal();
+        $key = uniqid('rp_', true);
         $cart[$key] = [
             'type' => 'reseller_product',
             'reseller_product_id' => $resellerProduct->id,
@@ -56,7 +57,7 @@ class ResellerCatalogController extends Controller
             'billing_cycle' => $validated['billing_cycle'],
             'added_at' => now()->toIso8601String(),
         ];
-        session([CartController::CART_SESSION_KEY => $cart]);
+        SessionCart::putPortal($cart);
 
         return redirect()->route('customer.cart.index')
             ->with('success', 'Item added to cart.');

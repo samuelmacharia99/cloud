@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Reseller;
 
 use App\Http\Controllers\Controller;
-use App\Http\Controllers\Customer\CheckoutController;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Models\DomainExtension;
 use App\Models\Product;
@@ -16,6 +15,7 @@ use App\Services\ResellerStorefrontPromoService;
 use App\Services\TaxService;
 use App\Services\TwoFactorService;
 use App\Services\UserCurrencyService;
+use App\Support\SessionCart;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -200,7 +200,7 @@ class StorefrontController extends Controller
      */
     private function appendCartItems(User $reseller, array $newItems): array
     {
-        $cart = session(CheckoutController::CART_SESSION_KEY, []);
+        $cart = SessionCart::storefront();
         if (! is_array($cart)) {
             $cart = [];
         }
@@ -209,10 +209,8 @@ class StorefrontController extends Controller
             $cart[uniqid('sf_', true)] = $item;
         }
 
-        session([
-            CheckoutController::CART_SESSION_KEY => $cart,
-            'registration_reseller_id' => $reseller->id,
-        ]);
+        SessionCart::putStorefront($cart);
+        session(['registration_reseller_id' => $reseller->id]);
 
         return $cart;
     }
@@ -222,10 +220,10 @@ class StorefrontController extends Controller
         $reseller = $this->currentReseller();
         abort_unless($this->landing->isEnabled($reseller), 404);
 
-        $cart = session(CheckoutController::CART_SESSION_KEY, []);
+        $cart = SessionCart::storefront();
         if (is_array($cart) && array_key_exists($key, $cart)) {
             unset($cart[$key]);
-            session([CheckoutController::CART_SESSION_KEY => $cart]);
+            SessionCart::putStorefront($cart);
         }
 
         $redirectToCheckout = $request->input('redirect_to') === 'checkout';
@@ -252,7 +250,7 @@ class StorefrontController extends Controller
         $reseller = $this->currentReseller();
         abort_unless($this->landing->isEnabled($reseller), 404);
 
-        session([CheckoutController::CART_SESSION_KEY => []]);
+        SessionCart::clearStorefront();
         $this->promo->forget();
 
         return redirect()
@@ -270,7 +268,7 @@ class StorefrontController extends Controller
             'billing_cycle' => 'nullable|string|in:monthly,quarterly,semi-annual,annual',
         ]);
 
-        $cart = session(CheckoutController::CART_SESSION_KEY, []);
+        $cart = SessionCart::storefront();
         if (! is_array($cart) || ! isset($cart[$key]) || ! is_array($cart[$key])) {
             return redirect()
                 ->route('reseller.public.store.cart.show')
@@ -302,7 +300,7 @@ class StorefrontController extends Controller
             return back()->with('error', 'That cart line cannot be updated.');
         }
 
-        session([CheckoutController::CART_SESSION_KEY => $cart]);
+        SessionCart::putStorefront($cart);
 
         return redirect()
             ->route('reseller.public.store.cart.show')
@@ -413,7 +411,7 @@ class StorefrontController extends Controller
     private function formatCartForDisplay(?User $user): array
     {
         $reseller = $this->currentReseller();
-        $sessionCart = session(CheckoutController::CART_SESSION_KEY, []);
+        $sessionCart = SessionCart::storefront();
         $cartItems = [];
         $subtotal = 0.0;
 

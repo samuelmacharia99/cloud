@@ -40,7 +40,7 @@ class ServiceBrowserController extends Controller
             ->orderBy('name')
             ->get();
         $databases = DatabaseTemplate::active()->get();
-        $cartCount = count(session('cart', []));
+        $cartCount = count(\App\Support\SessionCart::portal());
 
         return view('customer.select-techstack', [
             'languages' => $languages,
@@ -251,7 +251,7 @@ class ServiceBrowserController extends Controller
             'routing' => $routing,
             'products' => $products,
             'isResellerCustomer' => $this->catalogService->isResellerCustomer($user),
-            'cartCount' => count(session('cart', [])),
+            'cartCount' => count(\App\Support\SessionCart::portal()),
             'currency' => $currency,
             'currencyCode' => $currency->code,
             'attachDomain' => app(SharedHostingCheckoutService::class)->attachDomainFromSession(),
@@ -403,7 +403,7 @@ class ServiceBrowserController extends Controller
             ->toArray();
 
         // Get cart item count from session
-        $cartCount = count(session('cart', []));
+        $cartCount = count(\App\Support\SessionCart::portal());
 
         return view('customer.deploy-service', [
             'products' => $products,
@@ -428,7 +428,7 @@ class ServiceBrowserController extends Controller
 
         return view('customer.email-hosting', [
             'products' => $products,
-            'cartCount' => count(session('cart', [])),
+            'cartCount' => count(\App\Support\SessionCart::portal()),
         ]);
     }
 

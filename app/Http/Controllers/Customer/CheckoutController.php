@@ -44,13 +44,15 @@ use App\Services\ServerProductConfigService;
 use App\Services\TaxService;
 use App\Services\TechStackRoutingService;
 use App\Services\UserCurrencyService;
+use App\Support\SessionCart;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 
 class CheckoutController extends Controller
 {
-    const CART_SESSION_KEY = 'cart';
+    /** @deprecated Use SessionCart — kept for tests referencing the legacy key name */
+    const CART_SESSION_KEY = SessionCart::LEGACY_PORTAL_KEY;
 
     /**
      * Show checkout page
@@ -76,7 +78,7 @@ class CheckoutController extends Controller
         }
 
         // Get cart from session and localStorage (domains)
-        $cart = session(self::CART_SESSION_KEY, []);
+        $cart = SessionCart::active();
 
         if (empty($cart)) {
             return redirect()->route('customer.cart.index')->with('error', 'Your cart is empty');
@@ -260,7 +262,7 @@ class CheckoutController extends Controller
             'source_repo_branch.*' => 'nullable|string|max:120|regex:/^[A-Za-z0-9._\\/-]+$/',
         ]);
 
-        $cart = session(self::CART_SESSION_KEY, []);
+        $cart = SessionCart::active();
 
         if (empty($cart)) {
             return back()->with('error', 'Your cart is empty');
@@ -664,7 +666,7 @@ class CheckoutController extends Controller
             });
 
             // Clear cart
-            session([self::CART_SESSION_KEY => []]);
+            SessionCart::clearActive();
             app(ResellerStorefrontPromoService::class)->forget();
 
             $invoice = $order->invoice ?? Invoice::find($order->invoice_id);
@@ -837,8 +839,8 @@ class CheckoutController extends Controller
 
         $allowedTypes = ['domain', 'hosting', 'vps', 'dedicated', 'container', 'product'];
 
-        // Convert domain items to proper format
-        $processedCart = [];
+        // Convert domain items to proper format — merge into existing cart (do not wipe portal items).
+        $incoming = [];
         foreach ($cartItems as $item) {
             if (! is_array($item)) {
                 continue;
@@ -882,23 +884,30 @@ class CheckoutController extends Controller
                     $extension = $item['extension'] ?? '';
                 }
 
-                $processedCart[] = [
+                $incoming[] = [
                     'type' => 'domain',
                     'domain' => $domain,
                     'extension' => $extension,
                     'full_domain' => $fullDomain ?? ($domain.$extension),
                     'years' => $item['years'] ?? 1,
                     'price' => $item['price'] ?? 0,
+                    'added_at' => now()->toIso8601String(),
                 ];
             } else {
-                // Other item types
-                $processedCart[] = $item;
+                $item['added_at'] = $item['added_at'] ?? now()->toIso8601String();
+                $incoming[] = $item;
             }
         }
 
-        session([self::CART_SESSION_KEY => $processedCart]);
+        $merged = SessionCart::mergeIncoming(SessionCart::active(), $incoming);
 
-        return response()->json(['success' => true, 'count' => count($processedCart)]);
+        if (count($merged) > 20) {
+            return response()->json(['error' => 'Cart cannot contain more than 20 items'], 422);
+        }
+
+        SessionCart::putActive($merged);
+
+        return response()->json(['success' => true, 'count' => count($merged)]);
     }
 
     /**
@@ -920,7 +929,7 @@ class CheckoutController extends Controller
         $subtotal = 0;
 
         // Process cart items from session
-        $sessionCart = session(self::CART_SESSION_KEY, []);
+        $sessionCart = SessionCart::active();
         foreach ($sessionCart as $key => $item) {
             $item['key'] = $key;
 
@@ -1025,7 +1034,7 @@ class CheckoutController extends Controller
     public function processPublic(Request $request)
     {
         try {
-            $cart = session(self::CART_SESSION_KEY, []);
+            $cart = SessionCart::active();
 
             if (empty($cart)) {
                 return back()->with('error', 'Your cart is empty');
@@ -1500,7 +1509,7 @@ class CheckoutController extends Controller
             });
 
             // Clear cart
-            session([self::CART_SESSION_KEY => []]);
+            SessionCart::clearActive();
             app(ResellerStorefrontPromoService::class)->forget();
 
             $invoice = $order->invoice ?? Invoice::find($order->invoice_id);
@@ -1786,7 +1795,7 @@ class CheckoutController extends Controller
         $pending = $subscriptions->pendingSubscriptionInvoice($user, $package);
 
         if ($pending) {
-            session()->forget(self::CART_SESSION_KEY);
+            SessionCart::clearPortal();
 
             return redirect()
                 ->route('reseller.payment.select-method', $pending)
@@ -1794,7 +1803,7 @@ class CheckoutController extends Controller
         }
 
         $invoice = $subscriptions->createSubscriptionInvoice($user, $package);
-        session()->forget(self::CART_SESSION_KEY);
+        SessionCart::clearPortal();
 
         if ($invoice->isPaid()) {
             return redirect()

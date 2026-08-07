@@ -224,7 +224,7 @@ class ResellerPublicApiTest extends TestCase
         $response->assertOk()
             ->assertJsonPath('item_count', 1);
 
-        $cart = session(CheckoutController::CART_SESSION_KEY, []);
+        $cart = session(\App\Support\SessionCart::STOREFRONT_KEY, []);
         $item = array_values($cart)[0];
         $this->assertSame('domain_transfer', $item['type']);
         $this->assertSame(1599.2, (float) $item['price']);
@@ -258,7 +258,7 @@ class ResellerPublicApiTest extends TestCase
             ->assertJsonPath('item_count', 1)
             ->assertJsonPath('checkout_url', 'https://'.self::HOST.'/checkout');
 
-        $this->assertCount(1, session(CheckoutController::CART_SESSION_KEY, []));
+        $this->assertCount(1, session(\App\Support\SessionCart::STOREFRONT_KEY, []));
         $this->assertSame($reseller->id, session('registration_reseller_id'));
     }
 
@@ -282,8 +282,8 @@ class ResellerPublicApiTest extends TestCase
         $this->enableResellerRetail($reseller, $com, 1999);
 
         session([
-            CheckoutController::CART_SESSION_KEY => [
-                [
+            \App\Support\SessionCart::STOREFRONT_KEY => [
+                'sf1' => [
                     'type' => 'domain',
                     'domain' => 'buy',
                     'extension' => '.com',

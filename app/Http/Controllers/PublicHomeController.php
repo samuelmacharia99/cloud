@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Controllers\Customer\CheckoutController;
 use App\Services\ResellerLandingService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -28,7 +27,7 @@ class PublicHomeController extends Controller
 
         $payload = $this->landing->storefrontPayload($reseller);
         $template = $payload['config']['template'];
-        $cart = session(CheckoutController::CART_SESSION_KEY, []);
+        $cart = \App\Support\SessionCart::storefront();
 
         return view($this->landing->viewName($template), [
             'reseller' => $reseller,

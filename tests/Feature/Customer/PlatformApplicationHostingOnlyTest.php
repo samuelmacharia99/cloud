@@ -146,7 +146,7 @@ class PlatformApplicationHostingOnlyTest extends TestCase
             ->assertRedirect()
             ->assertSessionHas('error');
 
-        $this->assertEmpty(session('cart', []));
+        $this->assertEmpty(\App\Support\SessionCart::portal());
     }
 
     public function test_browse_excludes_shared_hosting(): void

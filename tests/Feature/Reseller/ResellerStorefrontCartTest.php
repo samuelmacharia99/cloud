@@ -112,7 +112,7 @@ class ResellerStorefrontCartTest extends TestCase
             ->get('https://'.self::HOST.'/starter-web/cart')
             ->assertRedirect('https://'.self::HOST.'/cart');
 
-        $this->assertCount(1, session(CheckoutController::CART_SESSION_KEY));
+        $this->assertCount(1, session(\App\Support\SessionCart::STOREFRONT_KEY));
 
         $this->withServerVariables(['HTTP_HOST' => self::HOST])
             ->get('https://'.self::HOST.'/cart')
@@ -124,7 +124,7 @@ class ResellerStorefrontCartTest extends TestCase
             ->get('https://'.self::HOST.'/starter-web/cart?billing_cycle=annual')
             ->assertRedirect('https://'.self::HOST.'/cart');
 
-        $this->assertCount(2, session(CheckoutController::CART_SESSION_KEY));
+        $this->assertCount(2, session(\App\Support\SessionCart::STOREFRONT_KEY));
     }
 
     public function test_add_to_cart_appends_items_and_opens_cart_page(): void
@@ -148,7 +148,7 @@ class ResellerStorefrontCartTest extends TestCase
             ->assertJsonPath('item_count', 1)
             ->assertJsonStructure(['cart_url']);
 
-        $this->assertCount(1, session(CheckoutController::CART_SESSION_KEY));
+        $this->assertCount(1, session(\App\Support\SessionCart::STOREFRONT_KEY));
 
         $response2 = $this->withServerVariables(['HTTP_HOST' => self::HOST])
             ->postJson('https://'.self::HOST.'/store/cart', [
@@ -161,7 +161,7 @@ class ResellerStorefrontCartTest extends TestCase
             ]);
 
         $response2->assertOk()->assertJsonPath('item_count', 2);
-        $this->assertCount(2, session(CheckoutController::CART_SESSION_KEY));
+        $this->assertCount(2, session(\App\Support\SessionCart::STOREFRONT_KEY));
 
         $this->withServerVariables(['HTTP_HOST' => self::HOST])
             ->get('https://'.self::HOST.'/cart')
@@ -249,13 +249,13 @@ class ResellerStorefrontCartTest extends TestCase
             ])
             ->assertOk();
 
-        $key = array_key_first(session(CheckoutController::CART_SESSION_KEY));
+        $key = array_key_first(session(\App\Support\SessionCart::STOREFRONT_KEY));
 
         $this->withServerVariables(['HTTP_HOST' => self::HOST])
             ->patch('https://'.self::HOST.'/cart/'.$key, ['billing_cycle' => 'annual'])
             ->assertRedirect(route('reseller.public.store.cart.show'));
 
-        $this->assertSame('annual', session(CheckoutController::CART_SESSION_KEY)[$key]['billing_cycle']);
+        $this->assertSame('annual', session(\App\Support\SessionCart::STOREFRONT_KEY)[$key]['billing_cycle']);
 
         $this->withServerVariables(['HTTP_HOST' => self::HOST])
             ->post('https://'.self::HOST.'/cart/promo', ['promo_code' => 'SAVE10'])

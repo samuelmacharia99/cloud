@@ -262,7 +262,7 @@ class ResellerCustomerCatalogAccessTest extends TestCase
             ])
             ->assertRedirect(route('customer.cart.index'));
 
-        $cart = session(CartController::CART_SESSION_KEY, []);
+        $cart = \App\Support\SessionCart::portal();
         $this->assertCount(1, $cart);
         $this->assertSame('reseller_product', array_values($cart)[0]['type']);
         $this->assertSame($listing->id, array_values($cart)[0]['reseller_product_id']);
@@ -295,7 +295,7 @@ class ResellerCustomerCatalogAccessTest extends TestCase
             ])
             ->assertRedirect(route('customer.cart.index'));
 
-        $cart = session(CartController::CART_SESSION_KEY, []);
+        $cart = \App\Support\SessionCart::portal();
         $this->assertCount(1, $cart);
         $this->assertSame($listing->id, array_values($cart)[0]['reseller_product_id']);
         $this->assertNotNull(array_values($cart)[0]['product_id']);
@@ -315,7 +315,7 @@ class ResellerCustomerCatalogAccessTest extends TestCase
             ])
             ->assertRedirect(route('customer.catalog.index'));
 
-        $this->assertEmpty(session(CartController::CART_SESSION_KEY, []));
+        $this->assertEmpty(\App\Support\SessionCart::portal());
     }
 
     public function test_reseller_customer_domain_cart_uses_reseller_domain_pricing(): void

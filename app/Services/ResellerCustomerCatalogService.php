@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Http\Controllers\Customer\CartController;
 use App\Models\ContainerTemplate;
 use App\Models\DatabaseTemplate;
 use App\Models\DomainExtension;
@@ -10,6 +9,7 @@ use App\Models\Product;
 use App\Models\ResellerDomainPricing;
 use App\Models\ResellerProduct;
 use App\Models\User;
+use App\Support\SessionCart;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
@@ -86,7 +86,7 @@ class ResellerCustomerCatalogService
             return;
         }
 
-        $cart = session(CartController::CART_SESSION_KEY, []);
+        $cart = SessionCart::portal();
         $changed = false;
 
         foreach ($cart as $key => $item) {
@@ -112,7 +112,7 @@ class ResellerCustomerCatalogService
         }
 
         if ($changed) {
-            session([CartController::CART_SESSION_KEY => $cart]);
+            SessionCart::putPortal($cart);
         }
     }
 

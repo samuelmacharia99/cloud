@@ -177,7 +177,7 @@ class CustomerAddDnsDomainTest extends TestCase
             ->assertOk()
             ->assertJson(['success' => true]);
 
-        $item = session('cart.domain_example_com');
+        $item = \App\Support\SessionCart::portal()['domain_example_com'];
         $this->assertTrue($item['cloudflare_dns']);
         $this->assertSame('albert.ns.cloudflare.com', $item['nameservers']['ns1']);
     }
@@ -214,7 +214,7 @@ class CustomerAddDnsDomainTest extends TestCase
             ->assertOk()
             ->assertJson(['success' => true]);
 
-        $item = session('cart.domain_example_com');
+        $item = \App\Support\SessionCart::portal()['domain_example_com'];
         $this->assertFalse($item['cloudflare_dns']);
         $this->assertTrue($item['nameservers']['use_default']);
         $this->assertSame('riv1.talksasa.com', $item['nameservers']['ns1']);
@@ -250,7 +250,7 @@ class CustomerAddDnsDomainTest extends TestCase
             ->assertOk()
             ->assertJson(['success' => true]);
 
-        $item = session('cart.domain_example_com');
+        $item = \App\Support\SessionCart::portal()['domain_example_com'];
         $this->assertFalse($item['cloudflare_dns']);
         $this->assertSame('riv1.talksasa.com', $item['nameservers']['ns1']);
         $this->assertSame('riv2.talksasa.com', $item['nameservers']['ns2']);

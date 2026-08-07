@@ -58,7 +58,7 @@ class EmailHostingOrderPageTest extends TestCase
             ])
             ->assertRedirect();
 
-        $cart = session('cart', []);
+        $cart = \App\Support\SessionCart::portal();
         $this->assertNotEmpty($cart);
         $item = collect($cart)->first();
         $this->assertSame('product', $item['type']);
