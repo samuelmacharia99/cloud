@@ -11,8 +11,10 @@ use App\Models\ResellerDomainOrder;
 use App\Models\ResellerWallet;
 use App\Models\User;
 use App\Services\DomainPushService;
+use App\Services\Registrar\RegistrarFulfillmentService;
 use App\Services\ResellerDomainOrderService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Mockery;
 use Tests\TestCase;
 
 class DomainPushServiceTest extends TestCase
@@ -87,7 +89,12 @@ class DomainPushServiceTest extends TestCase
 
     public function test_platform_customer_paid_domain_auto_pushes_for_admin_fulfillment(): void
     {
+        $admin = User::factory()->admin()->create();
         $customer = User::factory()->create(['reseller_id' => null]);
+
+        $this->instance(RegistrarFulfillmentService::class, Mockery::mock(RegistrarFulfillmentService::class, function ($mock) {
+            $mock->shouldReceive('attemptAutoFulfillment')->andReturnNull();
+        }));
 
         $domain = Domain::create([
             'user_id' => $customer->id,
@@ -132,6 +139,12 @@ class DomainPushServiceTest extends TestCase
         $order->refresh();
         $this->assertSame('pushed', $order->status);
         $this->assertNotNull($order->admin_invoice_id);
+
+        $pushInvoice = Invoice::query()->findOrFail($order->admin_invoice_id);
+        $this->assertTrue($pushInvoice->isFulfillmentLedger());
+        $this->assertSame($admin->id, $pushInvoice->user_id);
+        $this->assertSame(0, Invoice::query()->where('user_id', $customer->id)->where('invoice_number', 'like', 'PUSH-%')->count());
+        $this->assertSame(1, Invoice::query()->where('user_id', $customer->id)->customerFacing()->count());
     }
 
     public function test_platform_order_failure_does_not_crash_when_reseller_is_null(): void

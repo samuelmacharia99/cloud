@@ -20,6 +20,10 @@ class InvoicePolicy
 
     public function view(User $user, Invoice $invoice): Response
     {
+        if ($invoice->isFulfillmentLedger()) {
+            return Response::deny('This invoice is an internal fulfillment record.');
+        }
+
         return $user->id === $invoice->user_id
             ? Response::allow()
             : Response::deny('You can only view your own invoices.');

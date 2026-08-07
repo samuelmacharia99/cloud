@@ -202,6 +202,7 @@ class User extends Authenticatable implements MustVerifyEmail
     public function getOutstandingBalance(): float
     {
         return $this->invoices()
+            ->customerFacing()
             ->where('status', 'unpaid')
             ->sum('total');
     }

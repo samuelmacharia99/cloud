@@ -295,7 +295,11 @@ class DomainPushService
                 return;
             }
 
-            $adminOrder = $this->createAdminOrderForDomain($locked, $locked->customer, paidViaWallet: false);
+            $adminOrder = $this->createAdminOrderForDomain(
+                $locked,
+                $this->resolvePlatformFulfillmentOwner(),
+                paidViaWallet: false,
+            );
 
             $locked->update([
                 'status' => 'pushed',
@@ -321,6 +325,24 @@ class DomainPushService
     public function pushOrder(ResellerDomainOrder $order): void
     {
         $this->pushOrderUsingWallet($order);
+    }
+
+    /**
+     * Platform fulfillment ledger (PUSH invoice/order) belongs to an admin, not the customer.
+     * Reusing the reseller push path previously attributed it to the paying customer.
+     */
+    protected function resolvePlatformFulfillmentOwner(): User
+    {
+        $admin = User::query()
+            ->where('is_admin', true)
+            ->orderBy('id')
+            ->first();
+
+        if (! $admin) {
+            throw new \RuntimeException('Platform domain fulfillment requires at least one admin user.');
+        }
+
+        return $admin;
     }
 
     protected function createAdminOrderForDomain(

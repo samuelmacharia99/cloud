@@ -48,7 +48,7 @@ class ResellerCatalogController extends Controller
         $provisionProduct = $resellerProduct->provisionProduct();
 
         $cart = SessionCart::portal();
-        $key = uniqid('rp_', true);
+        $key = SessionCart::newLineKey('rp');
         $cart[$key] = [
             'type' => 'reseller_product',
             'reseller_product_id' => $resellerProduct->id,

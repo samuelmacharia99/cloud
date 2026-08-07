@@ -207,6 +207,22 @@ class Invoice extends Model
     }
 
     /**
+     * Customer portal billing — hide internal registrar/fulfillment ledger invoices (PUSH-*).
+     */
+    public function scopeCustomerFacing($query)
+    {
+        return $query->where(function ($inner) {
+            $inner->whereNull('invoice_number')
+                ->orWhere('invoice_number', 'not like', 'PUSH-%');
+        });
+    }
+
+    public function isFulfillmentLedger(): bool
+    {
+        return str_starts_with((string) $this->invoice_number, 'PUSH-');
+    }
+
+    /**
      * Platform (admin) billing — direct customers + reseller subscription invoices.
      * Excludes reseller-managed customer retail (matches Payment::platformRevenue intent).
      */
@@ -219,7 +235,7 @@ class Invoice extends Model
                         ->where('is_reseller', false)
                         ->where('is_admin', false);
                 });
-        });
+        })->customerFacing();
     }
 
     /**

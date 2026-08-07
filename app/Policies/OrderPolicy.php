@@ -19,6 +19,10 @@ class OrderPolicy
 
     public function view(User $user, Order $order): bool
     {
+        if ($order->isFulfillmentLedger()) {
+            return false;
+        }
+
         return $user->id === $order->user_id;
     }
 

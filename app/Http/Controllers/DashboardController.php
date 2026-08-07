@@ -60,6 +60,7 @@ class DashboardController extends Controller
             'suspendedServices' => $user->services()->where('status', 'suspended')->with('product')->get(),
             'provisioningServices' => $user->services()->whereIn('status', ['pending', 'provisioning'])->with('product')->get(),
             'upcomingDueInvoices' => $user->invoices()
+                ->customerFacing()
                 ->whereIn('status', ['unpaid', 'overdue'])
                 ->orderBy('due_date')
                 ->take(5)

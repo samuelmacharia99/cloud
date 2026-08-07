@@ -56,6 +56,22 @@ class Order extends Model
             : $this->domainRenewalOrder()->exists();
     }
 
+    /**
+     * Customer portal — hide internal registrar push orders (ORD-PUSH-*).
+     */
+    public function scopeCustomerFacing($query)
+    {
+        return $query->where(function ($inner) {
+            $inner->whereNull('order_number')
+                ->orWhere('order_number', 'not like', 'ORD-PUSH-%');
+        });
+    }
+
+    public function isFulfillmentLedger(): bool
+    {
+        return str_starts_with((string) $this->order_number, 'ORD-PUSH-');
+    }
+
     public function isPaid(): bool
     {
         return $this->status === 'paid';

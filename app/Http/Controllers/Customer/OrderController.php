@@ -13,6 +13,7 @@ class OrderController extends Controller
         $this->authorize('viewAny', Order::class);
 
         $query = Order::where('user_id', auth()->id())
+            ->customerFacing()
             ->withCount('items')
             ->latest();
 

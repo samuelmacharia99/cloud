@@ -384,7 +384,7 @@ class DomainController extends Controller
                 $cartItem['price'] = $wholesaleAmount;
             }
 
-            $key = uniqid('renew_', true);
+            $key = \App\Support\SessionCart::newLineKey('renew');
             $cart[$key] = $cartItem;
 
             session()->put(CartController::CART_KEY, $cart);

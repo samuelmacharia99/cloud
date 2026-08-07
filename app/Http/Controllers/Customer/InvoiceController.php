@@ -14,7 +14,9 @@ class InvoiceController extends Controller
     {
         $this->authorize('viewAny', Invoice::class);
 
-        $query = Invoice::where('user_id', auth()->id())->latest();
+        $query = Invoice::where('user_id', auth()->id())
+            ->customerFacing()
+            ->latest();
 
         if ($request->filled('status') && $request->status !== 'all') {
             $query->where('status', $request->status);
@@ -67,7 +69,7 @@ class InvoiceController extends Controller
      */
     public function preview(Invoice $invoice)
     {
-        abort_if($invoice->user_id !== auth()->id(), 403);
+        abort_if($invoice->user_id !== auth()->id() || $invoice->isFulfillmentLedger(), 403);
 
         return InvoicePdfService::stream($invoice);
     }

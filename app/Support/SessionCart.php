@@ -7,12 +7,25 @@ namespace App\Support;
  *
  * Portal (/my/cart) and storefront must not share a bag — clearing or syncing
  * one previously wiped the other because both used session key "cart".
+ *
+ * Cart line keys must never contain "." — Laravel request input/validation
+ * treats dots as nested array paths (e.g. email_domain_mode.{cartKey}).
  */
 class SessionCart
 {
     public const LEGACY_PORTAL_KEY = 'cart';
 
     public const STOREFRONT_KEY = 'storefront_cart';
+
+    /**
+     * Flat cart line id safe for HTML form names and Laravel validation.
+     */
+    public static function newLineKey(string $prefix = 'c'): string
+    {
+        $prefix = preg_replace('/[^a-zA-Z0-9_]/', '', $prefix) ?: 'c';
+
+        return $prefix.'_'.bin2hex(random_bytes(8));
+    }
 
     /**
      * Session key for the authenticated customer portal cart (per user).
@@ -51,14 +64,22 @@ class SessionCart
         if ($cart === null && $key !== self::LEGACY_PORTAL_KEY && str_starts_with($key, 'cart_u_')) {
             $legacy = session(self::LEGACY_PORTAL_KEY);
             if (is_array($legacy) && $legacy !== []) {
-                session([$key => $legacy]);
+                $normalized = self::normalize($legacy);
+                session([$key => $normalized]);
                 session()->forget(self::LEGACY_PORTAL_KEY);
 
-                return self::normalize($legacy);
+                return $normalized;
             }
         }
 
-        return self::normalize(is_array($cart) ? $cart : []);
+        $raw = is_array($cart) ? $cart : [];
+        $normalized = self::normalize($raw);
+
+        if (self::keysContainDots($raw)) {
+            session([$key => $normalized]);
+        }
+
+        return $normalized;
     }
 
     /**
@@ -150,7 +171,7 @@ class SessionCart
     public static function append(string $key, array $item, ?string $lineKey = null): string
     {
         $cart = self::get($key);
-        $lineKey ??= uniqid('c_', true);
+        $lineKey = self::safeLineKey($lineKey);
         $cart[$lineKey] = $item;
         self::put($key, $cart);
 
@@ -188,14 +209,14 @@ class SessionCart
                 }
             }
 
-            $cart[uniqid('c_', true)] = $item;
+            $cart[self::newLineKey()] = $item;
         }
 
         return $cart;
     }
 
     /**
-     * Ensure cart lines use string keys (uniqid style), not a bare numeric list.
+     * Ensure cart lines use flat string keys (no "."), not a bare numeric list.
      *
      * @param  array<string|int, mixed>  $cart
      * @return array<string, array<string, mixed>>
@@ -203,17 +224,67 @@ class SessionCart
     public static function normalize(array $cart): array
     {
         $normalized = [];
+        $keyMap = [];
 
         foreach ($cart as $key => $item) {
             if (! is_array($item)) {
                 continue;
             }
 
-            $lineKey = is_string($key) && $key !== '' ? $key : uniqid('c_', true);
+            $originalKey = is_string($key) && $key !== '' ? $key : self::newLineKey();
+            $lineKey = self::safeLineKey($originalKey);
+
+            while (isset($normalized[$lineKey])) {
+                $lineKey = self::newLineKey();
+            }
+
+            if ($originalKey !== $lineKey) {
+                $keyMap[$originalKey] = $lineKey;
+            }
+
             $normalized[$lineKey] = $item;
         }
 
+        if ($keyMap !== []) {
+            foreach ($normalized as &$item) {
+                $linked = $item['linked_domain_cart_key'] ?? null;
+                if (is_string($linked) && isset($keyMap[$linked])) {
+                    $item['linked_domain_cart_key'] = $keyMap[$linked];
+                }
+            }
+            unset($item);
+        }
+
         return $normalized;
+    }
+
+    public static function safeLineKey(?string $key = null): string
+    {
+        if ($key === null || $key === '') {
+            return self::newLineKey();
+        }
+
+        if (! str_contains($key, '.')) {
+            return $key;
+        }
+
+        $safe = str_replace('.', '', $key);
+
+        return $safe !== '' ? $safe : self::newLineKey();
+    }
+
+    /**
+     * @param  array<string|int, mixed>  $cart
+     */
+    private static function keysContainDots(array $cart): bool
+    {
+        foreach (array_keys($cart) as $key) {
+            if (is_string($key) && str_contains($key, '.')) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

@@ -142,7 +142,7 @@ class ServerController extends Controller
 
         $location = $configService->location($product, $locationKey);
         $cart = \App\Support\SessionCart::portal();
-        $cartKey = uniqid('c_', true);
+        $cartKey = \App\Support\SessionCart::newLineKey('c');
 
         $serverMeta = [
             'billing_cycle' => $validated['billing_cycle'],

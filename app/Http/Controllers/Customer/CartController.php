@@ -346,7 +346,7 @@ class CartController extends Controller
         }
 
         // Generate unique key
-        $key = uniqid('c_', true);
+        $key = SessionCart::newLineKey('c');
         $item['added_at'] = now()->toIso8601String();
         $item = app(SharedHostingCheckoutService::class)
             ->applyAttachDomainToHostingItem($item);

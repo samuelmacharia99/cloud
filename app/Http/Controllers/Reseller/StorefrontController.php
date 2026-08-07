@@ -206,7 +206,7 @@ class StorefrontController extends Controller
         }
 
         foreach ($newItems as $item) {
-            $cart[uniqid('sf_', true)] = $item;
+            $cart[SessionCart::newLineKey('sf')] = $item;
         }
 
         SessionCart::putStorefront($cart);

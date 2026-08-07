@@ -68,6 +68,73 @@ class SessionCartIsolationTest extends TestCase
         $this->assertSame(['domain', 'product'], $types);
     }
 
+    public function test_cart_line_keys_with_dots_are_rewritten_for_laravel_validation(): void
+    {
+        $user = User::factory()->customer()->create();
+        $this->actingAs($user);
+
+        SessionCart::putPortal([
+            'c_6a75d317bb5508.10513225' => [
+                'type' => 'product',
+                'product_id' => 1,
+                'billing_cycle' => 'monthly',
+                'linked_domain_cart_key' => 'c_abc.def',
+            ],
+            'c_abc.def' => [
+                'type' => 'domain',
+                'domain' => 'mail',
+                'extension' => '.com',
+                'years' => 1,
+            ],
+        ]);
+
+        $cart = SessionCart::portal();
+        $this->assertCount(2, $cart);
+
+        foreach (array_keys($cart) as $key) {
+            $this->assertIsString($key);
+            $this->assertStringNotContainsString('.', $key);
+        }
+
+        $hosting = collect($cart)->first(fn ($item) => ($item['type'] ?? null) === 'product');
+        $this->assertNotNull($hosting);
+        $this->assertArrayHasKey($hosting['linked_domain_cart_key'], $cart);
+        $this->assertStringNotContainsString('.', $hosting['linked_domain_cart_key']);
+
+        $this->assertStringNotContainsString('.', SessionCart::newLineKey('c'));
+    }
+
+    public function test_email_domain_mode_validates_when_cart_key_previously_had_a_dot(): void
+    {
+        $customer = User::factory()->customer()->create();
+        $plan = \App\Models\Product::factory()->emailHosting()->create(['is_active' => true]);
+
+        $this->actingAs($customer);
+        SessionCart::putPortal([
+            'c_oldkey.withdot' => [
+                'type' => 'product',
+                'product_id' => $plan->id,
+                'billing_cycle' => 'monthly',
+            ],
+        ]);
+
+        $cart = SessionCart::portal();
+        $key = array_key_first($cart);
+        $this->assertIsString($key);
+        $this->assertStringNotContainsString('.', $key);
+
+        $request = \Illuminate\Http\Request::create('/checkout', 'POST', [
+            'email_domain_mode' => [$key => 'existing'],
+            'email_domain_fqdn' => [$key => 'mail.example.com'],
+        ]);
+        $request->setUserResolver(fn () => $customer);
+
+        app(\App\Services\Checkout\EmailHostingCheckoutService::class)
+            ->validateCheckoutRequest($request, $cart);
+
+        $this->assertTrue(true);
+    }
+
     public function test_storefront_clear_does_not_wipe_portal_cart(): void
     {
         $user = User::factory()->customer()->create();

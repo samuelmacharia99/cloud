@@ -143,7 +143,7 @@ class CartController extends Controller
         }
 
         $cart = session()->get(self::CART_KEY, []);
-        $key = uniqid();
+        $key = \App\Support\SessionCart::newLineKey('d');
 
         $cart[$key] = [
             'type' => 'domain',
@@ -207,7 +207,7 @@ class CartController extends Controller
         }
 
         $cart = session()->get(self::CART_KEY, []);
-        $key = uniqid('cust_', true);
+        $key = \App\Support\SessionCart::newLineKey('cust');
 
         $cart[$key] = [
             'type' => 'domain',
@@ -271,7 +271,7 @@ class CartController extends Controller
         }
 
         $cart = session()->get(self::CART_KEY, []);
-        $key = uniqid('xfer_', true);
+        $key = \App\Support\SessionCart::newLineKey('xfer');
 
         $cart[$key] = [
             'type' => 'domain_transfer',
@@ -325,7 +325,7 @@ class CartController extends Controller
         }
 
         $cart = session()->get(self::CART_KEY, []);
-        $key = uniqid('xfer_', true);
+        $key = \App\Support\SessionCart::newLineKey('xfer');
 
         $cart[$key] = [
             'type' => 'domain_transfer',
