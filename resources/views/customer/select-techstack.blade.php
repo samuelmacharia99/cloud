@@ -34,7 +34,7 @@
             'laravel' => '255, 45, 32',
             'php' => '119, 123, 180',
             'wordpress' => '33, 117, 155',
-            'static-site' => '14, 165, 233',
+            'static-site' => '227, 79, 38',
             'ruby' => '204, 52, 45',
             'ghost' => '21, 23, 26',
             'strapi' => '73, 69, 255',
@@ -92,11 +92,11 @@
         }
 
         .techstack-soft-logo {
-            filter: drop-shadow(0 14px 22px rgba(15, 23, 42, 0.16));
+            filter: drop-shadow(0 8px 14px rgba(15, 23, 42, 0.1));
         }
 
         .dark .techstack-soft-logo {
-            filter: drop-shadow(0 12px 20px rgba(0, 0, 0, 0.45));
+            filter: drop-shadow(0 8px 14px rgba(0, 0, 0, 0.35));
         }
 
         .techstack-soft-card {
