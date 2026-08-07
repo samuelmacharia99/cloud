@@ -66,7 +66,7 @@
         </div>
     @endif
 
-    <div class="techstack-soft-canvas relative overflow-hidden rounded-3xl p-4 sm:p-6 max-w-4xl">
+    <div class="techstack-soft-canvas relative overflow-hidden rounded-3xl p-4 sm:p-6 w-full">
         <div class="relative mb-4 flex items-center justify-between gap-3">
             <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-500 dark:text-ink-400">
                 Choose a stack
@@ -76,7 +76,7 @@
             </p>
         </div>
 
-        <div class="techstack-soft-grid grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-3.5">
+        <div class="techstack-soft-grid grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-3.5">
             @foreach($languages as $index => $language)
                 @php
                     $slug = strtolower((string) $language->slug);
@@ -86,7 +86,7 @@
                 <button
                     type="button"
                     @click="selectLanguageAndShowModal({{ $language->id }})"
-                    class="techstack-soft-card group relative aspect-[5/6] sm:aspect-square flex flex-col items-center justify-center gap-2.5 p-3.5 sm:p-4 rounded-2xl text-center focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent"
+                    class="techstack-soft-card group relative aspect-square flex flex-col items-center justify-center gap-2 sm:gap-2.5 p-3 sm:p-3.5 rounded-2xl text-center focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent"
                     style="--stack-glow: {{ $glow }}; --enter-delay: {{ min($index * 40, 280) }}ms;"
                     :class="selectedLanguage.id === {{ $language->id }} ? 'is-selected' : ''"
                     :aria-pressed="selectedLanguage.id === {{ $language->id }} ? 'true' : 'false'"
