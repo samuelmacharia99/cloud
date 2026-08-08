@@ -311,7 +311,7 @@
                         <div class="p-4 rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-950/30">
                             <p class="text-sm text-purple-900 dark:text-purple-200">
                                 Configure SMTP to send email to <strong>your customers</strong> — invoices, welcome messages, login codes, tickets, and service notifications.
-                                Reseller-owned customers never use the platform mail server; you must enable SMTP here for those emails to send.
+                                Your customers never use the platform mail server; you must enable SMTP here for those emails to send.
                             </p>
                         </div>
 

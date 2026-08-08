@@ -19,6 +19,7 @@
             <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Email Templates</h2>
             <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
                 Messages you send to your customers. Edit subject and body, or disable a template to stop that email.
+                <code class="text-xs font-mono">{site_name}</code> uses your company name from the Branding tab.
                 Customized templates replace the default branded HTML with your text.
             </p>
         </div>

@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Mail\GenericNotificationMail;
+use App\Mail\TemplatedNotificationMail;
 use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Mail\Mailable;
@@ -61,11 +63,13 @@ class ResellerMailService
             [$mailable] = $applied;
         }
 
+        $mailable = $this->scrubCustomerMailable($mailable);
+
         $branding = $this->brandingResolver->forCustomer($customer);
         $reseller = $this->brandingResolver->resellerForCustomer($customer);
 
         if ($customer->reseller_id !== null && ($reseller === null || ! $this->resellerSmtpEnabled($reseller))) {
-            throw new \RuntimeException('Reseller SMTP must be enabled for reseller-owned customer email delivery.');
+            throw new \RuntimeException('SMTP must be enabled under Settings → Email before customer emails can send.');
         }
 
         View::share('emailBranding', $branding);
@@ -79,17 +83,18 @@ class ResellerMailService
 
     /**
      * Send with reseller branding; use reseller SMTP when configured, otherwise platform SMTP
-     * with the reseller company name as the from-name (no platform branding in the message).
+     * with the company name as the from-name (no platform branding in the message).
      */
     public function sendBrandedWithPlatformFallback(User $customer, Mailable $mailable): void
     {
+        $mailable = $this->scrubCustomerMailable($mailable);
         $branding = $this->brandingResolver->forCustomer($customer);
         $reseller = $this->brandingResolver->resellerForCustomer($customer);
 
         View::share('emailBranding', $branding);
 
         if ($reseller && $this->resellerSmtpEnabled($reseller)) {
-            $this->sendToCustomer($customer, $mailable);
+            Mail::mailer($this->configureMailer($reseller))->to($customer->email)->sendNow($mailable);
 
             return;
         }
@@ -126,7 +131,7 @@ class ResellerMailService
     public function sendTest(User $reseller, string $testEmail): void
     {
         if (! $this->resellerSmtpEnabled($reseller)) {
-            throw new \RuntimeException('Reseller SMTP is not enabled or fully configured.');
+            throw new \RuntimeException('SMTP is not enabled or fully configured.');
         }
 
         $branding = $this->brandingResolver->forReseller($reseller);
@@ -143,6 +148,22 @@ class ResellerMailService
                     );
             }
         );
+    }
+
+    private function scrubCustomerMailable(Mailable $mailable): Mailable
+    {
+        if ($mailable instanceof TemplatedNotificationMail) {
+            $mailable->mailSubject = $this->emailTemplates->scrubCustomerFacingCopy($mailable->mailSubject);
+            $mailable->bodyText = $this->emailTemplates->scrubCustomerFacingCopy($mailable->bodyText);
+        }
+
+        if ($mailable instanceof GenericNotificationMail) {
+            $mailable->mailSubject = $this->emailTemplates->scrubCustomerFacingCopy($mailable->mailSubject);
+            $mailable->heading = $this->emailTemplates->scrubCustomerFacingCopy($mailable->heading);
+            $mailable->body = $this->emailTemplates->scrubCustomerFacingCopy($mailable->body);
+        }
+
+        return $mailable;
     }
 
     private function configureMailer(?User $reseller): string

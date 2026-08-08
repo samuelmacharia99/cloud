@@ -18,6 +18,7 @@ class ResellerEmailTemplatesSettingsTest extends TestCase
     private function createResellerWithSmtp(): User
     {
         return User::factory()->reseller()->create([
+            'name' => 'Reseller Person',
             'settings' => [
                 'smtp' => [
                     'host' => 'smtp.example.test',
@@ -30,7 +31,7 @@ class ResellerEmailTemplatesSettingsTest extends TestCase
                     'enabled' => true,
                 ],
                 'branding' => [
-                    'company_name' => 'Example Hosting',
+                    'company_name' => 'Example Hosting Co',
                 ],
             ],
         ]);
@@ -106,6 +107,71 @@ class ResellerEmailTemplatesSettingsTest extends TestCase
             return $mail->mailSubject === 'Pay up INV-TEST-1'
                 && str_contains($mail->bodyText, 'Hey Ada Customer')
                 && str_contains($mail->bodyText, '2,500.00');
+        });
+    }
+
+    public function test_site_name_uses_branding_company_name_not_reseller_user_name(): void
+    {
+        Mail::fake();
+
+        $reseller = $this->createResellerWithSmtp();
+        app(ResellerEmailTemplateService::class)->update($reseller, 'invoice_generated', [
+            'subject' => 'Invoice from {site_name}',
+            'body' => 'Thanks for choosing {site_name}.',
+            'enabled' => true,
+        ]);
+
+        $customer = User::factory()->customer()->create([
+            'reseller_id' => $reseller->id,
+            'name' => 'Ada Customer',
+        ]);
+
+        $invoice = Invoice::factory()->create([
+            'user_id' => $customer->id,
+            'invoice_number' => 'INV-BRAND-1',
+            'total' => 1000,
+            'status' => 'unpaid',
+        ]);
+
+        app(NotificationService::class)->notifyInvoiceGenerated($invoice->fresh(['user']));
+
+        Mail::assertSent(TemplatedNotificationMail::class, function (TemplatedNotificationMail $mail) {
+            return $mail->mailSubject === 'Invoice from Example Hosting Co'
+                && str_contains($mail->bodyText, 'Thanks for choosing Example Hosting Co.')
+                && ! str_contains($mail->bodyText, 'Reseller Person')
+                && ! str_contains($mail->mailSubject, 'Talksasa');
+        });
+    }
+
+    public function test_customer_email_templates_scrub_reseller_wording(): void
+    {
+        Mail::fake();
+
+        $reseller = $this->createResellerWithSmtp();
+        app(ResellerEmailTemplateService::class)->update($reseller, 'invoice_generated', [
+            'subject' => 'Update from your reseller account',
+            'body' => 'Sign in to the reseller portal for invoice {invoice_number}.',
+            'enabled' => true,
+        ]);
+
+        $customer = User::factory()->customer()->create([
+            'reseller_id' => $reseller->id,
+            'name' => 'Ada Customer',
+        ]);
+
+        $invoice = Invoice::factory()->create([
+            'user_id' => $customer->id,
+            'invoice_number' => 'INV-WL-1',
+            'total' => 500,
+            'status' => 'unpaid',
+        ]);
+
+        app(NotificationService::class)->notifyInvoiceGenerated($invoice->fresh(['user']));
+
+        Mail::assertSent(TemplatedNotificationMail::class, function (TemplatedNotificationMail $mail) {
+            return $mail->mailSubject === 'Update from your account'
+                && str_contains($mail->bodyText, 'Sign in to the client portal for invoice INV-WL-1.')
+                && ! preg_match('/reseller/i', $mail->mailSubject.$mail->bodyText);
         });
     }
 

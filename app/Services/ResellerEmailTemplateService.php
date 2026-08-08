@@ -44,7 +44,7 @@ class ResellerEmailTemplateService
                 'name' => 'Account Assigned / Transferred',
                 'subject' => 'Your {site_name} account has been updated',
                 'body' => "Hi {customer_name},\n\nYour account is now managed by {site_name}.\n\nSign in: {login_url}\n\n— {site_name}",
-                'description' => 'Sent when a customer is transferred or assigned to your reseller account.',
+                'description' => 'Sent when a customer is transferred or assigned to your account.',
                 'available_variables' => ['customer_name', 'login_url', 'site_name', 'support_email'],
             ],
             [
@@ -345,15 +345,48 @@ class ResellerEmailTemplateService
             return null;
         }
 
-        $merged = array_merge($this->brandingVariables($reseller, $data['customer'] ?? null), $data);
+        $brandingVars = $this->brandingVariables($reseller, $data['customer'] ?? null);
+        $merged = array_merge($brandingVars, $data);
         unset($merged['customer']);
 
+        // Branding company name always wins over any caller-supplied site_name.
+        $merged['site_name'] = $brandingVars['site_name'];
+        $merged['support_email'] = $merged['support_email'] ?? $brandingVars['support_email'];
+        $merged['portal_url'] = $merged['portal_url'] ?? $brandingVars['portal_url'];
+        $merged['login_url'] = $merged['login_url'] ?? $brandingVars['login_url'];
+
         return [
-            'subject' => $this->replacePlaceholders($resolved['subject'], $merged),
-            'body' => $this->replacePlaceholders($resolved['body'], $merged),
+            'subject' => $this->scrubCustomerFacingCopy($this->replacePlaceholders($resolved['subject'], $merged)),
+            'body' => $this->scrubCustomerFacingCopy($this->replacePlaceholders($resolved['body'], $merged)),
             'enabled' => $resolved['enabled'],
             'is_overridden' => $resolved['is_overridden'],
         ];
+    }
+
+    /**
+     * Remove internal "reseller" wording from customer-facing email copy (white-label).
+     */
+    public function scrubCustomerFacingCopy(string $text): string
+    {
+        $replacements = [
+            '/\byour reseller account\b/iu' => 'your account',
+            '/\breseller account\b/iu' => 'account',
+            '/\breseller portal\b/iu' => 'client portal',
+            '/\breseller dashboard\b/iu' => 'dashboard',
+            '/\breseller settings\b/iu' => 'settings',
+            '/\bresellers\b/iu' => 'providers',
+            '/\breseller-owned\b/iu' => 'your',
+            '/\breseller\b/iu' => '',
+        ];
+
+        foreach ($replacements as $pattern => $replacement) {
+            $text = preg_replace($pattern, $replacement, $text) ?? $text;
+        }
+
+        $text = preg_replace('/[ \t]{2,}/', ' ', $text) ?? $text;
+        $text = preg_replace('/ *([,;:.])/u', '$1', $text) ?? $text;
+
+        return trim($text);
     }
 
     /**
@@ -470,15 +503,24 @@ class ResellerEmailTemplateService
      */
     protected function brandingVariables(User $reseller, mixed $customer = null): array
     {
-        $branding = $customer instanceof User
-            ? $this->brandingResolver->forCustomer($customer)
-            : $this->brandingResolver->forReseller($reseller);
+        // Always resolve from the owning reseller — never fall through to platform defaults.
+        $branding = $this->brandingResolver->forReseller($reseller);
+        $companyName = $reseller->settings['branding']['company_name'] ?? null;
+        if (! filled($companyName)) {
+            $companyName = $branding['company_name'] ?? $reseller->company ?? $reseller->name ?? 'Your Provider';
+        }
+
+        $portalUrl = (string) ($branding['portal_url'] ?? url('/'));
 
         return [
-            'site_name' => (string) ($branding['company_name'] ?? $reseller->name ?? 'Your Provider'),
-            'support_email' => (string) ($branding['support_email'] ?? $reseller->email ?? ''),
-            'portal_url' => (string) ($branding['portal_url'] ?? url('/')),
-            'login_url' => (string) ($branding['portal_url'] ?? route('login')),
+            'site_name' => (string) $companyName,
+            'support_email' => (string) (
+                filled($reseller->settings['branding']['support_email'] ?? null)
+                    ? $reseller->settings['branding']['support_email']
+                    : ($branding['support_email'] ?? $reseller->email ?? '')
+            ),
+            'portal_url' => $portalUrl,
+            'login_url' => $portalUrl !== '' ? $portalUrl : (string) route('login'),
         ];
     }
 

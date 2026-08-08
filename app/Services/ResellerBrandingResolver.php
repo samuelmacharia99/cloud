@@ -41,7 +41,9 @@ class ResellerBrandingResolver
         $stored = $reseller->settings['branding'] ?? [];
 
         $branding = array_merge($this->defaults(), [
-            'company_name' => $stored['company_name'] ?? $reseller->company ?? $reseller->name,
+            'company_name' => filled($stored['company_name'] ?? null)
+                ? $stored['company_name']
+                : ($reseller->company ?? $reseller->name),
             'tagline' => $stored['tagline'] ?? '',
             'custom_domain' => $stored['custom_domain'] ?? null,
             'logo_url' => branding_asset_url_or_fallback($stored['logo_url'] ?? null, 'logo'),
