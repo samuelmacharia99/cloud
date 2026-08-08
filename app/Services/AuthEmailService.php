@@ -23,17 +23,40 @@ class AuthEmailService
 
         $mailable = new PasswordResetMail($user, $resetUrl);
 
-        return $this->dispatchCustomerAuthMail($user, $mailable, 'password reset');
+        return $this->dispatchCustomerAuthMail(
+            $user,
+            $mailable,
+            'password reset',
+            'password_reset',
+            [
+                'customer_name' => $user->name,
+                'reset_url' => $resetUrl,
+            ],
+        );
     }
 
-    private function dispatchCustomerAuthMail(User $user, $mailable, string $context): bool
-    {
+    /**
+     * @param  array<string, mixed>  $templateData
+     */
+    private function dispatchCustomerAuthMail(
+        User $user,
+        $mailable,
+        string $context,
+        ?string $templateEventKey = null,
+        array $templateData = [],
+    ): bool {
         if ($user->reseller_id !== null) {
             $reseller = $this->brandingResolver->resellerForCustomer($user);
 
             if ($reseller && $this->mailService->resellerSmtpEnabled($reseller)) {
                 try {
-                    $this->mailService->sendToCustomer($user, $mailable);
+                    $this->mailService->sendToCustomer(
+                        $user,
+                        $mailable,
+                        null,
+                        $templateEventKey,
+                        $templateData,
+                    );
 
                     return true;
                 } catch (\Throwable $e) {

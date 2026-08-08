@@ -30,7 +30,14 @@ class ResellerCustomerWelcomeService
 
         $this->mail->sendToCustomer(
             $customer,
-            new AccountWelcomeMail($customer, $plainPassword, 'customer')
+            new AccountWelcomeMail($customer, $plainPassword, 'customer'),
+            null,
+            'account_welcome',
+            [
+                'customer_name' => $customer->name,
+                'customer_email' => $customer->email,
+                'password' => $plainPassword,
+            ],
         );
     }
 }

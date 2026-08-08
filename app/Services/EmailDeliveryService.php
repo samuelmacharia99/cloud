@@ -22,6 +22,7 @@ class EmailDeliveryService
         private NotificationPreferenceService $preferences,
         private EmailRateLimiter $rateLimiter,
         private ResellerBrandingResolver $brandingResolver,
+        private ResellerEmailTemplateService $resellerEmailTemplates,
     ) {}
 
     public function mailConfiguredFor(?User $customer = null): bool
@@ -46,6 +47,8 @@ class EmailDeliveryService
         string $subject,
         NotificationEvent $event,
         ?string $logBody = null,
+        array $templateData = [],
+        ?string $templateEventKey = null,
     ): bool {
         if (! $this->mailConfiguredFor($customer)) {
             return false;
@@ -60,6 +63,21 @@ class EmailDeliveryService
 
             return false;
         }
+
+        $applied = $this->resellerEmailTemplates->applyToCustomerMail(
+            $customer,
+            $templateEventKey ?? $event->value,
+            $templateData,
+            $mailable,
+            $subject,
+            $logBody,
+        );
+
+        if ($applied === false) {
+            return false;
+        }
+
+        [$mailable, $subject, $logBody] = $applied;
 
         try {
             $this->dispatchMail($customer->email, $mailable, $customer);

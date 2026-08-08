@@ -16,6 +16,7 @@ use App\Services\ResellerAnalyticsService;
 use App\Services\ResellerBrandingResolver;
 use App\Services\ResellerBrandingService;
 use App\Services\ResellerDirectAdminService;
+use App\Services\ResellerEmailTemplateService;
 use App\Services\ResellerLandingService;
 use App\Services\ResellerMailService;
 use App\Services\ResellerNameserverService;
@@ -43,6 +44,7 @@ class SettingController extends Controller
         private ResellerNameserverService $nameserverService,
         private ResellerPublicApiService $publicApi,
         private ResellerLandingService $landingService,
+        private ResellerEmailTemplateService $emailTemplates,
     ) {}
 
     public function index(Request $request): View
@@ -60,6 +62,7 @@ class SettingController extends Controller
             'mpesaSettings' => $this->settingsService->getMpesaSettings($user),
             'smsSettings' => $this->settingsService->getSmsSettings($user),
             'smtpSettings' => $this->settingsService->getSmtpSettingsForDisplay($user),
+            'emailTemplatesList' => $this->emailTemplates->listForReseller($user),
             'brandingSettings' => $this->settingsService->getBrandingSettings($user),
             'landingTemplates' => $this->landingService->templates(),
             'nameserverSettings' => $this->nameserverService->getSettings($user),

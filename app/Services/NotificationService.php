@@ -69,10 +69,10 @@ class NotificationService
         return $this->brandingResolver->forCustomer($customer)['company_name'];
     }
 
-    private function sendCustomerEmail(User $customer, $mailable, string $subject, NotificationEvent $event, ?string $logBody = null): void
+    private function sendCustomerEmail(User $customer, $mailable, string $subject, NotificationEvent $event, ?string $logBody = null, array $templateData = [], ?string $templateEventKey = null): void
     {
         try {
-            $this->emailDelivery->sendCustomerMailable($customer, $mailable, $subject, $event, $logBody);
+            $this->emailDelivery->sendCustomerMailable($customer, $mailable, $subject, $event, $logBody, $templateData, $templateEventKey);
             $this->pushInApp($customer, $event, $subject, $logBody);
         } catch (\Exception $e) {
             Log::error('Failed to send customer email', ['event' => $event->value, 'error' => $e->getMessage()]);
@@ -371,7 +371,12 @@ class NotificationService
         }
 
         $subject = 'Invoice '.$invoice->invoice_number.' Generated';
-        $this->sendCustomerEmail($invoice->user, new InvoiceGeneratedMail($invoice), $subject, $event);
+        $this->sendCustomerEmail($invoice->user, new InvoiceGeneratedMail($invoice), $subject, $event, null, [
+            'customer_name' => $invoice->user->name,
+            'invoice_number' => $invoice->invoice_number,
+            'amount' => 'Ksh '.number_format($invoice->total, 2),
+            'due_date' => $invoice->due_date?->format('M d, Y') ?? 'TBD',
+        ]);
 
         if ($invoice->user->phone) {
             try {
@@ -397,7 +402,13 @@ class NotificationService
         }
 
         $subject = 'Payment Reminder: Invoice '.$invoice->invoice_number;
-        $this->sendCustomerEmail($invoice->user, new InvoiceReminderMail($invoice, $daysBefore), $subject, $event);
+        $this->sendCustomerEmail($invoice->user, new InvoiceReminderMail($invoice, $daysBefore), $subject, $event, null, [
+            'customer_name' => $invoice->user->name,
+            'invoice_number' => $invoice->invoice_number,
+            'amount' => 'Ksh '.number_format($invoice->total, 2),
+            'days_before' => (string) $daysBefore,
+            'due_date' => $invoice->due_date?->format('M d, Y') ?? 'TBD',
+        ]);
 
         if ($invoice->user->phone) {
             try {
@@ -424,7 +435,11 @@ class NotificationService
         }
 
         $subject = 'URGENT: Invoice '.$invoice->invoice_number.' is Overdue';
-        $this->sendCustomerEmail($invoice->user, new InvoiceOverdueMail($invoice), $subject, $event);
+        $this->sendCustomerEmail($invoice->user, new InvoiceOverdueMail($invoice), $subject, $event, null, [
+            'customer_name' => $invoice->user->name,
+            'invoice_number' => $invoice->invoice_number,
+            'amount' => 'Ksh '.number_format($invoice->total, 2),
+        ]);
 
         if ($invoice->user->phone) {
             try {
@@ -469,7 +484,11 @@ class NotificationService
         }
 
         $subject = 'Payment Received for Invoice '.$invoice->invoice_number;
-        $this->sendCustomerEmail($invoice->user, new PaymentReceivedMail($payment), $subject, $event);
+        $this->sendCustomerEmail($invoice->user, new PaymentReceivedMail($payment), $subject, $event, null, [
+            'customer_name' => $invoice->user->name,
+            'amount' => 'Ksh '.number_format($payment->amount, 2),
+            'invoice_number' => $invoice->invoice_number,
+        ]);
 
         if ($invoice->user->phone) {
             try {
@@ -522,7 +541,10 @@ class NotificationService
         }
 
         $subject = 'Your Service "'.$service->name.'" is Now Active';
-        $this->sendCustomerEmail($service->user, new ServiceActivatedMail($service), $subject, $event);
+        $this->sendCustomerEmail($service->user, new ServiceActivatedMail($service), $subject, $event, null, [
+            'customer_name' => $service->user->name,
+            'service_name' => $service->name,
+        ]);
 
         if ($service->user->phone) {
             try {
@@ -548,7 +570,10 @@ class NotificationService
         }
 
         $subject = 'Service Suspension Notice: '.$service->name;
-        $this->sendCustomerEmail($service->user, new ServiceSuspendedMail($service), $subject, $event);
+        $this->sendCustomerEmail($service->user, new ServiceSuspendedMail($service), $subject, $event, null, [
+            'customer_name' => $service->user->name,
+            'service_name' => $service->name,
+        ]);
 
         if ($service->user->phone) {
             try {
@@ -574,7 +599,10 @@ class NotificationService
         }
 
         $subject = 'Service Restored: '.$service->name;
-        $this->sendCustomerEmail($service->user, new ServiceUnsuspendedMail($service), $subject, $event);
+        $this->sendCustomerEmail($service->user, new ServiceUnsuspendedMail($service), $subject, $event, null, [
+            'customer_name' => $service->user->name,
+            'service_name' => $service->name,
+        ]);
 
         if ($this->smsService->isConfigured() && $service->user->phone) {
             try {
@@ -600,7 +628,10 @@ class NotificationService
         }
 
         $subject = 'Service Termination Notice: '.$service->name;
-        $this->sendCustomerEmail($service->user, new ServiceTerminatedMail($service), $subject, $event);
+        $this->sendCustomerEmail($service->user, new ServiceTerminatedMail($service), $subject, $event, null, [
+            'customer_name' => $service->user->name,
+            'service_name' => $service->name,
+        ]);
 
         if ($this->smsService->isConfigured() && $service->user->phone) {
             try {
@@ -624,7 +655,12 @@ class NotificationService
         }
 
         $subject = 'Domain Expiry Notice: '.$domain->name;
-        $this->sendCustomerEmail($domain->user, new DomainExpiryMail($domain, $daysUntilExpiry), $subject, $event);
+        $this->sendCustomerEmail($domain->user, new DomainExpiryMail($domain, $daysUntilExpiry), $subject, $event, null, [
+            'customer_name' => $domain->user->name,
+            'domain_name' => $domain->name,
+            'days_until_expiry' => (string) $daysUntilExpiry,
+            'expiry_date' => $domain->expires_at?->format('M d, Y') ?? 'TBD',
+        ]);
 
         if ($this->smsService->isConfigured() && $domain->user->phone) {
             try {
@@ -650,7 +686,12 @@ class NotificationService
         }
 
         $subject = 'Domain Renewal Invoice '.$invoice->invoice_number.' for '.$domain->name;
-        $this->sendCustomerEmail($invoice->user, new InvoiceGeneratedMail($invoice), $subject, $event);
+        $this->sendCustomerEmail($invoice->user, new InvoiceGeneratedMail($invoice), $subject, $event, null, [
+            'customer_name' => $invoice->user->name,
+            'invoice_number' => $invoice->invoice_number,
+            'amount' => 'Ksh '.number_format($invoice->total, 2),
+            'due_date' => $invoice->due_date?->format('M d, Y') ?? 'TBD',
+        ]);
 
         if ($this->smsService->isConfigured() && $invoice->user->phone) {
             try {
@@ -679,7 +720,11 @@ class NotificationService
 
         if ($this->emailDelivery->mailConfiguredFor($order->user) && $this->preferences->isEmailEnabledForUser($order->user, $customerEvent)) {
             $subject = 'Order Confirmation - '.$order->order_number;
-            $this->sendCustomerEmail($order->user, new OrderConfirmationMail($order), $subject, $customerEvent);
+            $this->sendCustomerEmail($order->user, new OrderConfirmationMail($order), $subject, $customerEvent, null, [
+                'customer_name' => $order->user->name,
+                'order_number' => $order->order_number ?? (string) $order->id,
+                'amount' => 'Ksh '.number_format($invoice->total ?? $order->total ?? 0, 2),
+            ]);
         }
 
         if ($notifyAdmin && $this->preferences->isGloballyEnabled($adminEvent)) {
@@ -765,7 +810,10 @@ class NotificationService
         }
 
         $subject = 'Container Backup Completed: '.$service->name;
-        $this->sendCustomerEmail($service->user, new ContainerBackupCompletedMail($service, $backup), $subject, $event);
+        $this->sendCustomerEmail($service->user, new ContainerBackupCompletedMail($service, $backup), $subject, $event, null, [
+            'customer_name' => $service->user->name,
+            'service_name' => $service->name,
+        ]);
     }
 
     public function notifyContainerBackupFailed(Service $service, string $error): void
@@ -801,7 +849,11 @@ class NotificationService
         }
 
         $subject = 'Container Failure Alert: '.$service->name;
-        $this->sendCustomerEmail($service->user, new ContainerFailedMail($service, $reason), $subject, $event);
+        $this->sendCustomerEmail($service->user, new ContainerFailedMail($service, $reason), $subject, $event, null, [
+            'customer_name' => $service->user->name,
+            'service_name' => $service->name,
+            'reason' => $reason,
+        ]);
 
         if ($this->smsService->isConfigured() && $service->user->phone) {
             try {
@@ -833,7 +885,11 @@ class NotificationService
         }
 
         $subject = 'Container Auto-Restarted: '.$service->name;
-        $this->sendCustomerEmail($service->user, new ContainerAutoRestartedMail($service, $attemptCount), $subject, $event);
+        $this->sendCustomerEmail($service->user, new ContainerAutoRestartedMail($service, $attemptCount), $subject, $event, null, [
+            'customer_name' => $service->user->name,
+            'service_name' => $service->name,
+            'attempt_count' => (string) $attemptCount,
+        ]);
 
         if ($this->smsService->isConfigured() && $service->user->phone) {
             try {
@@ -882,6 +938,11 @@ class NotificationService
                 $subject,
                 $event,
                 $reason,
+                [
+                    'customer_name' => $service->user->name,
+                    'service_name' => $service->name,
+                    'reason' => $reason,
+                ],
             );
 
             if ($service->user->phone) {
@@ -933,7 +994,12 @@ class NotificationService
         }
 
         $subject = 'Payment failed — Invoice '.$invoice->invoice_number;
-        $this->sendCustomerEmail($invoice->user, new PaymentFailedMail($payment, $reason), $subject, $event, $reason);
+        $this->sendCustomerEmail($invoice->user, new PaymentFailedMail($payment, $reason), $subject, $event, $reason, [
+            'customer_name' => $invoice->user->name,
+            'invoice_number' => $invoice->invoice_number,
+            'amount' => 'Ksh '.number_format($invoice->total, 2),
+            'reason' => $reason,
+        ]);
 
         if ($invoice->user->phone) {
             $message = $this->renderTemplate('payment_failed', [
@@ -959,7 +1025,14 @@ class NotificationService
         }
 
         $subject = 'Hosting control panel login — '.$service->name;
-        $this->sendCustomerEmail($service->user, new SharedHostingCredentialsMail($service), $subject, $event);
+        $credentials = $service->getHostingCredentials() ?? [];
+        $this->sendCustomerEmail($service->user, new SharedHostingCredentialsMail($service), $subject, $event, null, [
+            'customer_name' => $service->user->name,
+            'service_name' => $service->name,
+            'panel_url' => (string) ($credentials['url'] ?? $credentials['panel_url'] ?? ''),
+            'username' => (string) ($credentials['username'] ?? ''),
+            'password' => (string) ($credentials['password'] ?? ''),
+        ], 'shared_hosting_credentials');
     }
 
     public function notifyResellerSubscriptionInvoice(Invoice $invoice): void
@@ -1123,6 +1196,12 @@ class NotificationService
             new DomainTransferInitiatedMail($domain),
             $subject,
             $event,
+            null,
+            [
+                'customer_name' => $domain->user->name,
+                'domain_name' => $fqdn,
+            ],
+            'domain_transfer',
         );
     }
 
@@ -1144,6 +1223,11 @@ class NotificationService
             $subject,
             NotificationEvent::DomainTransfer,
             $body,
+            [
+                'customer_name' => $domain->user->name,
+                'domain_name' => $fqdn,
+            ],
+            'domain_transfer_completed',
         );
 
         if ($domain->user->phone) {
@@ -1172,6 +1256,12 @@ class NotificationService
             $subject,
             NotificationEvent::DomainTransfer,
             $body,
+            [
+                'customer_name' => $domain->user->name,
+                'domain_name' => $fqdn,
+                'reason' => $reason,
+            ],
+            'domain_transfer_failed',
         );
 
         if ($domain->user->phone) {
@@ -1189,7 +1279,9 @@ class NotificationService
         if ($this->emailDelivery->mailConfiguredFor($user) && $this->preferences->isGloballyEnabled($event)) {
             $siteName = $this->siteNameFor($user);
             $subject = 'Password changed — '.$siteName;
-            $this->sendCustomerEmail($user, new PasswordChangedMail($user), $subject, $event);
+            $this->sendCustomerEmail($user, new PasswordChangedMail($user), $subject, $event, null, [
+                'customer_name' => $user->name,
+            ]);
         }
 
         if ($this->authCodeSms->canSend($user)) {
@@ -1223,6 +1315,12 @@ class NotificationService
             $subject,
             $event,
             $rejectionReason,
+            [
+                'customer_name' => $invoice->user->name,
+                'invoice_number' => $invoice->invoice_number,
+                'amount' => 'Ksh '.number_format($payment->amount, 2),
+                'rejection_reason' => $rejectionReason,
+            ],
         );
 
         if ($invoice->user->phone) {
@@ -1250,7 +1348,15 @@ class NotificationService
         }
 
         $subject = 'Your '.$service->product?->name.' is ready — login details inside';
-        $this->sendCustomerEmail($service->user, new ServerCredentialsMail($service), $subject, $event);
+        $decoded = json_decode($service->credentials ?? '', true);
+        $decoded = is_array($decoded) ? $decoded : [];
+        $this->sendCustomerEmail($service->user, new ServerCredentialsMail($service), $subject, $event, null, [
+            'customer_name' => $service->user->name,
+            'service_name' => $service->name,
+            'server_ip' => (string) ($decoded['ip'] ?? $decoded['server_ip'] ?? $service->server_ip ?? ''),
+            'username' => (string) ($decoded['username'] ?? 'root'),
+            'password' => (string) ($decoded['password'] ?? ''),
+        ], 'server_credentials');
     }
 
     public function notifyResellerSslProvisionFailed(User $reseller, string $domain, string $reason): void
@@ -1326,6 +1432,12 @@ class NotificationService
                 new HostingPackageUsageWarningMail($service, $metricsAtRisk, $recommendedUpgrade),
                 $subject,
                 $event,
+                null,
+                [
+                    'customer_name' => $service->user->name,
+                    'service_name' => $service->name,
+                    'metrics' => $metricNames.' ('.$peakPercent.'%)',
+                ],
             );
         }
 
@@ -1369,6 +1481,13 @@ class NotificationService
                 new HostingUpgradeCompletedMail($service, $previousProduct, $newProduct),
                 $subject,
                 $event,
+                null,
+                [
+                    'customer_name' => $service->user->name,
+                    'service_name' => $service->name,
+                    'previous_plan' => $previousProduct->name,
+                    'new_plan' => $newProduct->name,
+                ],
             );
         }
 

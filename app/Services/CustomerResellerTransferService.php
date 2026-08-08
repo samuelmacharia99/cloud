@@ -431,6 +431,24 @@ class CustomerResellerTransferService
         $mailable = new CustomerAccountTransferredMail($customer, $portalUrl);
         $subject = 'Your '.$branding['company_name'].' account has been updated';
 
+        $applied = app(ResellerEmailTemplateService::class)->applyToCustomerMail(
+            $customer,
+            'customer_account_transferred',
+            [
+                'customer_name' => $customer->name,
+                'login_url' => $portalUrl,
+            ],
+            $mailable,
+            $subject,
+            'Account transfer notification',
+        );
+
+        if ($applied === false) {
+            return false;
+        }
+
+        [$mailable, $subject, $logBody] = $applied;
+
         try {
             $this->resellerMail->sendBrandedWithPlatformFallback($customer, $mailable);
             $this->emailDelivery->logEmail(
@@ -438,7 +456,7 @@ class CustomerResellerTransferService
                 $subject,
                 'sent',
                 null,
-                'Account transfer notification',
+                $logBody ?? 'Account transfer notification',
                 NotificationEvent::CustomerAccountTransferred,
                 $customer->id,
             );
@@ -455,7 +473,7 @@ class CustomerResellerTransferService
                 $subject,
                 'failed',
                 $e->getMessage(),
-                'Account transfer notification',
+                $logBody ?? 'Account transfer notification',
                 NotificationEvent::CustomerAccountTransferred,
                 $customer->id,
             );

@@ -324,7 +324,17 @@ class TwoFactorService
 
             if ($reseller && $this->mailService->resellerSmtpEnabled($reseller)) {
                 try {
-                    $this->mailService->sendToCustomer($user, $mailable);
+                    $this->mailService->sendToCustomer(
+                        $user,
+                        $mailable,
+                        null,
+                        'two_factor_code',
+                        [
+                            'customer_name' => $user->name,
+                            'code' => $code,
+                            'expiry_minutes' => (string) self::CODE_EXPIRY_MINUTES,
+                        ],
+                    );
 
                     return true;
                 } catch (\Throwable $e) {

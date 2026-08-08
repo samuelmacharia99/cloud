@@ -13,6 +13,7 @@ class ResellerMailService
 {
     public function __construct(
         private ResellerBrandingResolver $brandingResolver,
+        private ResellerEmailTemplateService $emailTemplates,
     ) {}
 
     public function isConfigured(?User $reseller = null): bool
@@ -33,8 +34,33 @@ class ResellerMailService
             && ! empty($smtp['from_address']);
     }
 
-    public function sendToCustomer(User $customer, Mailable $mailable, ?string $subject = null): void
-    {
+    /**
+     * @param  array<string, mixed>  $templateData
+     */
+    public function sendToCustomer(
+        User $customer,
+        Mailable $mailable,
+        ?string $subject = null,
+        ?string $templateEventKey = null,
+        array $templateData = [],
+    ): void {
+        if ($templateEventKey !== null) {
+            $applied = $this->emailTemplates->applyToCustomerMail(
+                $customer,
+                $templateEventKey,
+                $templateData,
+                $mailable,
+                $subject ?? ($mailable->envelope()->subject ?? 'Notification'),
+                null,
+            );
+
+            if ($applied === false) {
+                return;
+            }
+
+            [$mailable] = $applied;
+        }
+
         $branding = $this->brandingResolver->forCustomer($customer);
         $reseller = $this->brandingResolver->resellerForCustomer($customer);
 

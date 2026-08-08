@@ -500,6 +500,8 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('reseller/settings/sms/test', [App\Http\Controllers\Reseller\SettingController::class, 'testSms'])->name('reseller.settings.sms.test');
         Route::post('reseller/settings/smtp', [App\Http\Controllers\Reseller\SettingController::class, 'updateSmtp'])->name('reseller.settings.smtp.update');
         Route::post('reseller/settings/smtp/test', [App\Http\Controllers\Reseller\SettingController::class, 'testSmtp'])->name('reseller.settings.smtp.test');
+        Route::put('reseller/settings/email-templates/{eventKey}', [App\Http\Controllers\Reseller\EmailTemplateController::class, 'update'])->name('reseller.settings.email-templates.update');
+        Route::post('reseller/settings/email-templates/{eventKey}/reset', [App\Http\Controllers\Reseller\EmailTemplateController::class, 'reset'])->name('reseller.settings.email-templates.reset');
         Route::post('reseller/settings/branding', [App\Http\Controllers\Reseller\SettingController::class, 'updateBranding'])->name('reseller.settings.branding.update');
         Route::post('reseller/settings/nameservers', [App\Http\Controllers\Reseller\SettingController::class, 'updateNameservers'])->name('reseller.settings.nameservers.update');
         Route::post('reseller/settings/branding/upload', [App\Http\Controllers\Reseller\SettingController::class, 'uploadBrandingFile'])->name('reseller.settings.branding.upload');

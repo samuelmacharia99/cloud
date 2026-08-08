@@ -128,6 +128,11 @@ class TicketNotificationService
                 $subject,
                 NotificationEvent::TicketCreated,
                 $ticket->description,
+                [
+                    'customer_name' => $ticket->user->name,
+                    'ticket_id' => (string) $ticket->id,
+                    'ticket_title' => $ticket->title,
+                ],
             );
         } catch (\Throwable $e) {
             Log::error('Failed to send ticket created email to customer', [
@@ -234,6 +239,11 @@ class TicketNotificationService
                 $subject,
                 NotificationEvent::TicketReplied,
                 $reply->message,
+                [
+                    'customer_name' => $ticket->user->name,
+                    'ticket_id' => (string) $ticket->id,
+                    'ticket_title' => $ticket->title,
+                ],
             );
         } catch (\Throwable $e) {
             Log::error('Failed to send ticket reply email to customer', [

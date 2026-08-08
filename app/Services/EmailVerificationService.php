@@ -106,7 +106,16 @@ class EmailVerificationService
 
             if ($reseller && $this->mailService->resellerSmtpEnabled($reseller)) {
                 try {
-                    $this->mailService->sendToCustomer($user, $mailable);
+                    $this->mailService->sendToCustomer(
+                        $user,
+                        $mailable,
+                        null,
+                        'email_verification',
+                        [
+                            'customer_name' => $user->name,
+                            'code' => $code,
+                        ],
+                    );
 
                     return true;
                 } catch (\Throwable $e) {

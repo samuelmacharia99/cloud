@@ -448,6 +448,8 @@
                         </div>
                     </div>
                 </div>
+
+                @include('reseller.settings.partials.email-templates-card')
             </div>
 
             <!-- Branding Tab Content -->
@@ -1137,6 +1139,140 @@ function sslChecker() {
                 });
         }
     }
+}
+
+function resellerEmailTemplates(items) {
+    const drafts = {};
+    items.forEach(item => {
+        drafts[item.id] = {
+            subject: item.subject,
+            body: item.body,
+            enabled: item.enabled,
+            is_overridden: item.is_overridden,
+        };
+    });
+
+    return {
+        items,
+        drafts,
+        expanded: {},
+        emailSaving: {},
+        emailStatus: {},
+
+        toggle(id) {
+            this.expanded[id] = !this.expanded[id];
+        },
+
+        isExpanded(id) {
+            return !!this.expanded[id];
+        },
+
+        expandAll() {
+            this.items.forEach(item => { this.expanded[item.id] = true; });
+        },
+
+        collapseAll() {
+            this.expanded = {};
+        },
+
+        insertVariable(id, token) {
+            const draft = this.drafts[id];
+            if (!draft) return;
+            draft.body = (draft.body || '') + token;
+        },
+
+        csrfToken() {
+            return document.querySelector('meta[name="csrf-token"]')?.content
+                || document.querySelector('input[name="_token"]')?.value;
+        },
+
+        save(id) {
+            const draft = this.drafts[id];
+            this.saveEmailTemplate(id, draft.subject, draft.body, draft.enabled);
+        },
+
+        async saveEmailTemplate(templateId, subject, body, enabled) {
+            this.emailSaving[templateId] = true;
+
+            try {
+                const response = await fetch(`{{ url('/reseller/settings/email-templates') }}/${encodeURIComponent(templateId)}`, {
+                    method: 'PUT',
+                    body: JSON.stringify({ subject, body, enabled }),
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': this.csrfToken(),
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+
+                const data = await response.json();
+                this.emailStatus[templateId] = response.ok && data.success
+                    ? { type: 'success', msg: data.message }
+                    : { type: 'error', msg: data.message || 'Error saving' };
+
+                if (response.ok && data.success) {
+                    const item = this.items.find(i => i.id === templateId);
+                    if (item) {
+                        item.subject = subject;
+                        item.is_overridden = true;
+                    }
+                    if (this.drafts[templateId]) {
+                        this.drafts[templateId].is_overridden = true;
+                    }
+                    setTimeout(() => { this.emailStatus[templateId] = null; }, 3000);
+                }
+            } catch (error) {
+                this.emailStatus[templateId] = { type: 'error', msg: error.message };
+            } finally {
+                this.emailSaving[templateId] = false;
+            }
+        },
+
+        async resetTemplate(templateId, url) {
+            if (!await window.appConfirm('Reset this email template to default?', 'Reset template', 'Reset')) {
+                return;
+            }
+
+            this.emailSaving[templateId] = true;
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-Token': this.csrfToken(),
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+
+                const data = await response.json();
+                if (response.ok && data.success && data.template) {
+                    const item = this.items.find(i => i.id === templateId);
+                    if (item) {
+                        item.subject = data.template.subject;
+                        item.body = data.template.body;
+                        item.enabled = data.template.enabled;
+                        item.is_overridden = false;
+                    }
+                    this.drafts[templateId] = {
+                        subject: data.template.subject,
+                        body: data.template.body,
+                        enabled: data.template.enabled,
+                        is_overridden: false,
+                    };
+                    this.emailStatus[templateId] = { type: 'success', msg: data.message };
+                    setTimeout(() => { this.emailStatus[templateId] = null; }, 3000);
+                } else {
+                    this.emailStatus[templateId] = { type: 'error', msg: data.message || 'Error resetting' };
+                }
+            } catch (error) {
+                this.emailStatus[templateId] = { type: 'error', msg: error.message };
+            } finally {
+                this.emailSaving[templateId] = false;
+            }
+        },
+    };
 }
 </script>
 @endsection
