@@ -6,9 +6,11 @@ use App\Listeners\BlockDestructiveProductionCommands;
 use App\Models\Setting;
 use App\Services\AdminAttentionService;
 use App\Services\Billing\InvoiceCurrencyService;
+use App\Services\Customer\CustomerNextStepsService;
 use App\Services\DomainPushService;
 use App\Services\EmailDeliveryService;
 use App\Services\EmailRateLimiter;
+use App\Services\InAppNotificationService;
 use App\Services\NotificationPreferenceService;
 use App\Services\NotificationService;
 use App\Services\ResellerAnalyticsService;
@@ -82,6 +84,11 @@ class AppServiceProvider extends ServiceProvider
 
         if ($forceHttps || $productionHttps) {
             URL::forceScheme('https');
+
+            // Ensure session cookies are marked Secure on HTTPS (avoids mobile browsers dropping them).
+            if (config('session.secure') === null) {
+                config(['session.secure' => true]);
+            }
         }
     }
 
@@ -97,10 +104,10 @@ class AppServiceProvider extends ServiceProvider
                 return;
             }
 
-            $inApp = app(\App\Services\InAppNotificationService::class);
+            $inApp = app(InAppNotificationService::class);
             $view->with('customerUnreadNotifications', $inApp->unreadCount($user));
             $view->with('customerRecentNotifications', $inApp->recentFor($user, 8));
-            $view->with('customerNextSteps', app(\App\Services\Customer\CustomerNextStepsService::class)->forUser($user));
+            $view->with('customerNextSteps', app(CustomerNextStepsService::class)->forUser($user));
         });
     }
 

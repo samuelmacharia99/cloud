@@ -22,12 +22,10 @@ use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Http\Exceptions\PostTooLargeException;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Middleware\ThrottleRequests;
-use Illuminate\Session\Middleware\AuthenticateSession;
-use Illuminate\Session\Middleware\StartSession;
-use Illuminate\View\Middleware\ShareErrorsFromSession;
 use Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful;
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -46,22 +44,23 @@ return Application::configure(basePath: dirname(__DIR__))
             $middleware->trustProxies(at: $at);
         }
 
-        $webAppend = [
-            StartSession::class,
+        // Use app CSRF middleware (webhook exceptions) instead of stacking a second CSRF check.
+        $middleware->web(replace: [
+            ValidateCsrfToken::class => VerifyCsrfToken::class,
+        ]);
+
+        // Only append middleware that is not already in the default web stack.
+        // Duplicating StartSession/ShareErrors/CSRF causes intermittent 419 Page Expired
+        // (especially on mobile Safari bfcache / cookie session limits).
+        $middleware->web(append: [
             ResolveResellerTenant::class,
-            ShareErrorsFromSession::class,
-            VerifyCsrfToken::class,
             SecurityHeaders::class,
             LogActivity::class,
-        ];
+        ]);
 
-        // Temporarily off by default — AuthenticateSession can log users out
-        // unexpectedly during development. Re-enable via SESSION_AUTHENTICATE_SESSION=true.
         if (filter_var(env('SESSION_AUTHENTICATE_SESSION', false), FILTER_VALIDATE_BOOLEAN)) {
-            array_splice($webAppend, 4, 0, [AuthenticateSession::class]);
+            $middleware->authenticateSessions();
         }
-
-        $middleware->web(append: $webAppend);
 
         $middleware->api(prepend: [
             EnsureFrontendRequestsAreStateful::class,
@@ -98,6 +97,27 @@ return Application::configure(basePath: dirname(__DIR__))
                 'error' => "File exceeds the server upload limit ({$maxMb} MB). "
                     .'Increase nginx client_max_body_size and PHP post_max_size — see deploy/nginx/upload-limits.conf.',
             ], 413);
+        });
+
+        $exceptions->respond(function ($response, $e, Request $request) {
+            if ($response->getStatusCode() !== 419) {
+                return $response;
+            }
+
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => 'Your session expired. Refresh the page and try again.',
+                ], 419);
+            }
+
+            $fallback = url()->previous() && url()->previous() !== $request->fullUrl()
+                ? url()->previous()
+                : url('/');
+
+            return redirect()
+                ->to($fallback)
+                ->withInput($request->except(['_token', 'password', 'password_confirmation']))
+                ->with('error', 'Your session expired. Please try again.');
         });
     })
     ->withSchedule(function (Schedule $schedule) {
