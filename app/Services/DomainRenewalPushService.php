@@ -25,9 +25,17 @@ class DomainRenewalPushService
         DomainRenewalOrder::query()
             ->where(function ($query) use ($invoice) {
                 $query->where('customer_invoice_id', $invoice->id)
-                    ->orWhere(function ($legacy) use ($invoice) {
-                        $legacy->where('invoice_id', $invoice->id)
+                    ->orWhere(function ($legacyManaged) use ($invoice) {
+                        // Older reseller-managed renewals linked the retail invoice via invoice_id.
+                        $legacyManaged->where('invoice_id', $invoice->id)
                             ->whereNotNull('customer_id');
+                    })
+                    ->orWhere(function ($direct) use ($invoice) {
+                        // Platform / direct customer (and reseller self-renewal) invoices:
+                        // createInvoice historically set invoice_id only.
+                        $direct->where('invoice_id', $invoice->id)
+                            ->whereNull('customer_id')
+                            ->whereNull('reseller_invoice_id');
                     });
             })
             ->whereNotIn('status', ['pushed', 'completed', 'expired'])
@@ -40,7 +48,8 @@ class DomainRenewalPushService
                     ->orWhere(function ($legacy) use ($invoice) {
                         $legacy->where('invoice_id', $invoice->id)
                             ->whereNull('customer_id')
-                            ->whereNull('customer_invoice_id');
+                            ->whereNull('customer_invoice_id')
+                            ->whereNotNull('reseller_id');
                     });
             })
             ->whereNotIn('status', ['pushed', 'completed', 'expired'])
@@ -195,5 +204,47 @@ class DomainRenewalPushService
             });
 
         return $pushed;
+    }
+
+    /**
+     * Re-run paid-invoice handling for renewals stuck before admin push
+     * (e.g. historical rows with invoice_id only and status still "invoiced").
+     */
+    public function pushStuckPaidRenewals(): int
+    {
+        $orders = DomainRenewalOrder::query()
+            ->whereIn('status', ['pending', 'invoiced', 'paid', 'queued'])
+            ->where(function ($query) {
+                $query->whereNotNull('invoice_id')
+                    ->orWhereNotNull('customer_invoice_id')
+                    ->orWhereNotNull('reseller_invoice_id');
+            })
+            ->orderBy('id')
+            ->get();
+
+        $advanced = 0;
+
+        foreach ($orders as $order) {
+            $before = $order->status;
+            $invoiceIds = array_values(array_unique(array_filter([
+                $order->customer_invoice_id,
+                $order->invoice_id,
+                $order->reseller_invoice_id,
+            ])));
+
+            foreach ($invoiceIds as $invoiceId) {
+                $invoice = Invoice::query()->find($invoiceId);
+                if ($invoice && $invoice->isPaid()) {
+                    $this->handlePaidInvoice($invoice);
+                }
+            }
+
+            $order->refresh();
+            if ($order->status !== $before && in_array($order->status, ['pushed', 'queued', 'completed'], true)) {
+                $advanced++;
+            }
+        }
+
+        return $advanced;
     }
 }

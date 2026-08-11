@@ -11,6 +11,7 @@ use App\Models\Payment;
 use App\Models\ResellerDomainPricing;
 use App\Models\ResellerPackage;
 use App\Models\User;
+use App\Services\DomainRenewalPushService;
 use App\Services\DomainRenewalService;
 use App\Services\Registrar\RegistrarFulfillmentService;
 use App\Services\ResellerInvoicePaymentService;
@@ -244,7 +245,7 @@ class DomainRenewalCartTest extends TestCase
         ]);
 
         app(ResellerInvoicePaymentService::class)->completeInvoiceIfFullyPaid($invoice, $payment);
-        $renewalService->pushRenewalToAdmin($renewalOrder->fresh());
+        app(DomainRenewalPushService::class)->handlePaidInvoice($invoice->fresh());
 
         $renewalOrder->refresh();
         $this->assertSame('pushed', $renewalOrder->status);

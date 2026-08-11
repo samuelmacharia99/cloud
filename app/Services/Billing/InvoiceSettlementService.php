@@ -185,8 +185,12 @@ class InvoiceSettlementService
         }
 
         if (DomainRenewalOrder::query()
-            ->where('invoice_id', $invoice->id)
-            ->where('status', 'invoiced')
+            ->where(function ($query) use ($invoice) {
+                $query->where('invoice_id', $invoice->id)
+                    ->orWhere('customer_invoice_id', $invoice->id)
+                    ->orWhere('reseller_invoice_id', $invoice->id);
+            })
+            ->whereIn('status', ['pending', 'invoiced', 'queued', 'paid'])
             ->exists()) {
             return true;
         }

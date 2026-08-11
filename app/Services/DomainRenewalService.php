@@ -208,6 +208,7 @@ class DomainRenewalService
 
             $renewalOrder->update([
                 'invoice_id' => $invoice->id,
+                'customer_invoice_id' => $invoice->id,
                 'status' => 'invoiced',
                 'invoiced_at' => now(),
             ]);
@@ -253,6 +254,7 @@ class DomainRenewalService
             $domain = $locked->domain;
             $customer = $locked->customer ?? $locked->user;
             $customerInvoicePaid = $locked->hasPaidCustomerInvoice();
+            $paidSource = $locked->paidCustomerInvoice() ?? $locked->invoice;
             $adminAmount = $locked->isResellerManaged() || $locked->isSelfRenewal()
                 ? $locked->effectiveWholesaleAmount()
                 : (float) $locked->amount;
@@ -301,7 +303,7 @@ class DomainRenewalService
                 'admin_invoice_id' => $adminInvoice->id,
                 'status' => 'pushed',
                 'pushed_at' => now(),
-                'paid_at' => $customerInvoicePaid ? ($locked->invoice?->paid_date ?? now()) : null,
+                'paid_at' => $customerInvoicePaid ? ($paidSource?->paid_date ?? now()) : null,
             ]);
 
             $shouldNotify = true;

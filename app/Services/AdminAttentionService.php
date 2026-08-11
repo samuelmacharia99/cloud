@@ -84,7 +84,7 @@ class AdminAttentionService
         $domainOrdersPending = ResellerDomainOrder::query()
             ->whereIn('status', ['queued', 'pushed', 'failed']);
 
-        $renewalsPending = DomainRenewalOrder::query()->whereIn('status', ['paid', 'pushed', 'failed']);
+        $renewalsPending = DomainRenewalOrder::query()->whereIn('status', ['queued', 'paid', 'pushed', 'failed']);
 
         $ticketsOpen = Ticket::query()->visibleToAdmin()->where('status', '!=', 'closed');
 
@@ -230,7 +230,7 @@ class AdminAttentionService
 
         DomainRenewalOrder::query()
             ->with('domain:id,name')
-            ->whereIn('status', ['paid', 'pushed', 'failed'])
+            ->whereIn('status', ['queued', 'paid', 'pushed', 'failed'])
             ->latest()
             ->limit(3)
             ->get()

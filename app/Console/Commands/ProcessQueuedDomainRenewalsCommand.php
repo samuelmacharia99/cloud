@@ -15,6 +15,8 @@ class ProcessQueuedDomainRenewalsCommand extends BaseCronCommand
     {
         $pushService = app(DomainRenewalPushService::class);
 
+        $healed = $pushService->pushStuckPaidRenewals();
+
         $resellers = User::query()
             ->where('is_reseller', true)
             ->whereHas('resellerDomainRenewalOrders', function ($query) {
@@ -34,6 +36,6 @@ class ProcessQueuedDomainRenewalsCommand extends BaseCronCommand
             }
         }
 
-        return "{$totalPushed} domain renewal(s) pushed from {$resellersProcessed} reseller(s)";
+        return "Healed {$healed} stuck paid renewal(s); {$totalPushed} queued renewal(s) pushed from {$resellersProcessed} reseller(s)";
     }
 }
