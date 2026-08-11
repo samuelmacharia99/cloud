@@ -61,12 +61,27 @@
                 <p class="text-lg font-semibold mt-1">{{ number_format($limits['msgs_per_day'] ?? $health['msgs_per_day'] ?? 0) }}</p>
             </div>
             <div class="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
-                <p class="text-xs uppercase tracking-wide text-slate-500">DNS</p>
+                <p class="text-xs uppercase tracking-wide text-slate-500">DNS / auth</p>
                 <p class="text-sm font-medium mt-1 {{ ($health['dns_ok'] ?? null) === true ? 'text-emerald-700 dark:text-emerald-300' : (($health['dns_ok'] ?? null) === false ? 'text-amber-700 dark:text-amber-300' : 'text-slate-700 dark:text-slate-300') }}">
                     {{ $health['dns_note'] }}
                 </p>
             </div>
         </div>
+        @if (!empty($health['auth_checks']))
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                @foreach (['mx' => 'MX', 'spf' => 'SPF', 'dkim' => 'DKIM', 'dmarc' => 'DMARC'] as $key => $label)
+                    @php
+                        $okKey = $key.'_ok';
+                        $ok = $health[$okKey] ?? null;
+                        $tone = $ok === true ? 'border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-100' : ($ok === false ? 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100' : 'border-slate-200 bg-white text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300');
+                    @endphp
+                    <div class="rounded-xl border p-3 {{ $tone }}">
+                        <p class="text-xs font-semibold uppercase tracking-wide opacity-80">{{ $label }}</p>
+                        <p class="text-xs mt-1 leading-snug">{{ $health['auth_checks'][$key] ?? '—' }}</p>
+                    </div>
+                @endforeach
+            </div>
+        @endif
     @endif
 
     <div class="border-b border-slate-200 dark:border-slate-800 flex gap-6 overflow-x-auto">
@@ -435,13 +450,16 @@
             <div class="flex items-center justify-between gap-3 flex-wrap mb-4">
                 <div>
                     <h2 class="font-semibold text-lg">DNS checklist</h2>
-                    <p class="text-sm text-slate-500 mt-1">Point MX at Mailcow. If this domain uses Talksasa Cloudflare DNS, you can apply records automatically.</p>
+                    <p class="text-sm text-slate-500 mt-1">Publish MX, SPF, DKIM, and DMARC. If this domain uses Talksasa Cloudflare DNS, apply records automatically.</p>
                 </div>
                 <form method="POST" action="{{ route('customer.services.email.dns.apply', $service) }}">
                     @csrf
                     <button class="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-sm">Apply via Cloudflare</button>
                 </form>
             </div>
+            @if (!empty($health['ptr_note']))
+                <p class="text-xs text-slate-500 mb-4">{{ $health['ptr_note'] }}</p>
+            @endif
             <div class="overflow-x-auto">
                 <table class="min-w-full text-sm">
                     <thead>

@@ -6,6 +6,7 @@ use App\Enums\ServiceStatus;
 use App\Models\Service;
 use App\Models\User;
 use App\Services\Provisioning\MailcowProvisioningService;
+use App\Services\Provisioning\MailDnsService;
 
 /**
  * Actionable next steps for the customer dashboard and notification bell.
@@ -153,7 +154,20 @@ class CustomerNextStepsService
     /**
      * Lightweight health snapshot for email inbox cards.
      *
-     * @return array{domain: ?string, mailbox_count: int, mailbox_limit: int, msgs_per_day: int, dns_ok: ?bool, dns_note: string}
+     * @return array{
+     *   domain: ?string,
+     *   mailbox_count: int,
+     *   mailbox_limit: int,
+     *   msgs_per_day: int,
+     *   dns_ok: ?bool,
+     *   dns_note: string,
+     *   mx_ok: ?bool,
+     *   spf_ok: ?bool,
+     *   dkim_ok: ?bool,
+     *   dmarc_ok: ?bool,
+     *   auth_checks: array{mx: string, spf: string, dkim: string, dmarc: string},
+     *   ptr_note: string
+     * }
      */
     public function emailHealth(Service $service): array
     {
@@ -163,6 +177,14 @@ class CustomerNextStepsService
         $mailboxCount = 0;
         $dnsOk = null;
         $dnsNote = 'DNS not checked';
+        $mxOk = $spfOk = $dkimOk = $dmarcOk = null;
+        $authChecks = [
+            'mx' => 'Not checked',
+            'spf' => 'Not checked',
+            'dkim' => 'Not checked',
+            'dmarc' => 'Not checked',
+        ];
+        $ptrNote = 'PTR (reverse DNS) for the mail server IP must be set by the host operator.';
 
         try {
             $domain = $this->mailcow->domainForService($service);
@@ -172,19 +194,15 @@ class CustomerNextStepsService
                 $mailboxCount = count($listed['data'] ?? []);
             }
 
-            $mxHost = $client->mailHostname();
-            $records = @dns_get_record($domain, DNS_MX) ?: [];
-            $targets = collect($records)->pluck('target')->map(fn ($t) => strtolower(rtrim((string) $t, '.')));
-            if ($targets->isEmpty()) {
-                $dnsOk = false;
-                $dnsNote = 'No MX records found';
-            } elseif ($targets->contains(strtolower($mxHost))) {
-                $dnsOk = true;
-                $dnsNote = 'MX points to '.$mxHost;
-            } else {
-                $dnsOk = false;
-                $dnsNote = 'MX does not point to '.$mxHost;
-            }
+            $delivery = app(MailDnsService::class)->deliverabilityHealth($service);
+            $dnsOk = $delivery['dns_ok'] ?? null;
+            $dnsNote = (string) ($delivery['dns_note'] ?? $dnsNote);
+            $mxOk = $delivery['mx_ok'] ?? null;
+            $spfOk = $delivery['spf_ok'] ?? null;
+            $dkimOk = $delivery['dkim_ok'] ?? null;
+            $dmarcOk = $delivery['dmarc_ok'] ?? null;
+            $authChecks = $delivery['checks'] ?? $authChecks;
+            $ptrNote = (string) ($delivery['ptr_note'] ?? $ptrNote);
         } catch (\Throwable $e) {
             $dnsNote = 'Could not verify DNS';
         }
@@ -196,6 +214,12 @@ class CustomerNextStepsService
             'msgs_per_day' => (int) ($meta['msgs_per_day'] ?? $limits['msgs_per_day']),
             'dns_ok' => $dnsOk,
             'dns_note' => $dnsNote,
+            'mx_ok' => $mxOk,
+            'spf_ok' => $spfOk,
+            'dkim_ok' => $dkimOk,
+            'dmarc_ok' => $dmarcOk,
+            'auth_checks' => $authChecks,
+            'ptr_note' => $ptrNote,
         ];
     }
 }

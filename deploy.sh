@@ -145,6 +145,11 @@ fi
 npm run build || error "Frontend build failed"
 log "Frontend assets built ✓"
 
+# Sync hardened mail DNS for Cloudflare-managed Mailcow domains
+log "Syncing Cloudflare mail DNS (MX/SPF/DKIM/DMARC)..."
+php artisan mailcow:sync-cloudflare-dns || warning "mailcow:sync-cloudflare-dns reported failures"
+log "Mail DNS sync step complete ✓"
+
 # Set permissions and finish
 log "Setting permissions..."
 

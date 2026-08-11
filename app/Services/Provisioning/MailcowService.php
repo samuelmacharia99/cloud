@@ -60,6 +60,19 @@ class MailcowService
     }
 
     /**
+     * Public IPv4 of the mail node when known (for SPF ip4: mechanisms).
+     */
+    public function mailIpAddress(): ?string
+    {
+        $ip = trim((string) ($this->node->ip_address ?? ''));
+        if ($ip === '' || filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+            return null;
+        }
+
+        return $ip;
+    }
+
+    /**
      * @return array{success: bool, message: string, version?: string}
      */
     public function testConnection(): array
@@ -231,37 +244,130 @@ class MailcowService
      */
     public function getDkim(string $domain): array
     {
-        $response = $this->request('GET', '/api/v1/get/dkim/'.$domain);
+        $response = $this->request('GET', '/api/v1/get/dkim/'.rawurlencode(strtolower($domain)));
         if (! $response['success']) {
             return $response;
         }
 
         $data = $response['data'] ?? [];
         $txt = '';
-        $selector = 'dkim';
+        $selector = (string) config('mailcow.dkim_selector', 'dkim');
 
         if (is_string($data)) {
             $txt = $data;
         } elseif (is_array($data)) {
             $txt = (string) ($data['dkim_txt'] ?? $data['pubkey'] ?? $data['txt'] ?? '');
-            $selector = (string) ($data['dkim_selector'] ?? $data['selector'] ?? 'dkim');
+            $selector = (string) ($data['dkim_selector'] ?? $data['selector'] ?? $selector);
             if ($txt === '' && isset($data['dkim_txt'])) {
                 $txt = (string) $data['dkim_txt'];
             }
             // Some versions return { domain: { dkim_txt: ... } }
             if ($txt === '' && isset($data[$domain]) && is_array($data[$domain])) {
-                $txt = (string) ($data[$domain]['dkim_txt'] ?? '');
+                $txt = (string) ($data[$domain]['dkim_txt'] ?? $data[$domain]['pubkey'] ?? '');
                 $selector = (string) ($data[$domain]['dkim_selector'] ?? $selector);
             }
         }
+
+        $txt = $this->normalizeDkimTxt($txt);
 
         return [
             'success' => true,
             'message' => 'OK',
             'dkim_txt' => $txt,
-            'selector' => $selector,
+            'selector' => $selector !== '' ? $selector : 'dkim',
             'data' => $data,
         ];
+    }
+
+    /**
+     * Generate a DKIM keypair in Mailcow for the domain.
+     *
+     * @return array{success: bool, message: string, data?: mixed}
+     */
+    public function addDkim(string $domain, ?string $selector = null, ?int $keySize = null): array
+    {
+        $selector = $selector ?: (string) config('mailcow.dkim_selector', 'dkim');
+        $keySize = $keySize ?: (int) config('mailcow.dkim_key_size', 2048);
+
+        // Mailcow requires the plural "domains" key (singular "domain" silently no-ops).
+        return $this->request('POST', '/api/v1/add/dkim', [
+            'domains' => strtolower($domain),
+            'dkim_selector' => $selector,
+            'key_size' => (string) $keySize,
+        ]);
+    }
+
+    /**
+     * Ensure Mailcow has a publishable DKIM TXT for the domain (create if missing).
+     *
+     * @return array{success: bool, message: string, dkim_txt: string, selector: string, created: bool}
+     */
+    public function ensureDkim(string $domain, ?string $selector = null, ?int $keySize = null): array
+    {
+        $selector = $selector ?: (string) config('mailcow.dkim_selector', 'dkim');
+        $keySize = $keySize ?: (int) config('mailcow.dkim_key_size', 2048);
+        $domain = strtolower($domain);
+
+        $existing = $this->getDkim($domain);
+        if (($existing['success'] ?? false) && filled($existing['dkim_txt'] ?? null)) {
+            return [
+                'success' => true,
+                'message' => 'DKIM already present',
+                'dkim_txt' => (string) $existing['dkim_txt'],
+                'selector' => (string) ($existing['selector'] ?? $selector),
+                'created' => false,
+            ];
+        }
+
+        $add = $this->addDkim($domain, $selector, $keySize);
+        $after = $this->getDkim($domain);
+
+        if (($after['success'] ?? false) && filled($after['dkim_txt'] ?? null)) {
+            return [
+                'success' => true,
+                'message' => ($add['success'] ?? false) ? 'DKIM created' : 'DKIM available',
+                'dkim_txt' => (string) $after['dkim_txt'],
+                'selector' => (string) ($after['selector'] ?? $selector),
+                'created' => true,
+            ];
+        }
+
+        return [
+            'success' => false,
+            'message' => (string) ($add['message'] ?? $after['message'] ?? 'Failed to ensure DKIM in Mailcow'),
+            'dkim_txt' => '',
+            'selector' => $selector,
+            'created' => false,
+        ];
+    }
+
+    /**
+     * Normalize Mailcow DKIM payloads into a single TXT value suitable for DNS.
+     */
+    public function normalizeDkimTxt(string $txt): string
+    {
+        $txt = trim($txt);
+        if ($txt === '') {
+            return '';
+        }
+
+        // Cloudflare-style quoted chunks: "v=DKIM1;..." "p=..."
+        if (str_contains($txt, '" "')) {
+            $txt = str_replace('" "', '', $txt);
+        }
+        $txt = trim($txt, "\" \t\n\r");
+
+        $lower = strtolower($txt);
+        if (str_contains($lower, 'v=dkim1')) {
+            return $txt;
+        }
+
+        if (str_starts_with($lower, 'p=')) {
+            return 'v=DKIM1;k=rsa;t=s;s=email;'.$txt;
+        }
+
+        // Bare base64 public key from older API shapes.
+        return 'v=DKIM1;k=rsa;t=s;s=email;p='.$txt;
     }
 
     /**

@@ -73,6 +73,9 @@ log "Restarting queue workers"
 sudo systemctl restart talksasa-queue 2>/dev/null || true
 sudo systemctl restart talksasa-scheduler 2>/dev/null || true
 
+log "Syncing mail DNS (MX/SPF/DKIM/DMARC) for Cloudflare-managed Mailcow domains"
+php artisan mailcow:sync-cloudflare-dns || log "WARN: mailcow:sync-cloudflare-dns reported failures (check output above)"
+
 log "Deployment complete"
 log "Code backup: ${CODE_BACKUP}"
 log "Settings backups: storage/backups/deploy/"

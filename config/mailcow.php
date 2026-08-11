@@ -34,11 +34,25 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | DMARC starter record
+    | DKIM generation defaults
     |--------------------------------------------------------------------------
     */
 
-    'dmarc_policy' => env('MAILCOW_DMARC_POLICY', 'v=DMARC1; p=none'),
+    'dkim_selector' => env('MAILCOW_DKIM_SELECTOR', 'dkim'),
+    'dkim_key_size' => (int) env('MAILCOW_DKIM_KEY_SIZE', 2048),
+
+    /*
+    |--------------------------------------------------------------------------
+    | DMARC policy published for Mailcow domains
+    |--------------------------------------------------------------------------
+    |
+    | Quarantine aligns better with Gmail/Yahoo bulk-sender expectations once
+    | SPF + DKIM are published. Override via MAILCOW_DMARC_POLICY if needed
+    | (e.g. p=none while monitoring). Optional {domain} is replaced at apply time.
+    |
+    */
+
+    'dmarc_policy' => env('MAILCOW_DMARC_POLICY', 'v=DMARC1; p=quarantine; adkim=r; aspf=r'),
 
     /*
     |--------------------------------------------------------------------------
