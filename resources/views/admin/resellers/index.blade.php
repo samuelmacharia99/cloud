@@ -43,10 +43,10 @@
                     <tr>
                         <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Reseller</th>
                         <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Company</th>
-                        <th class="px-6 py-4 text-center text-sm font-semibold text-slate-900 dark:text-white">Services</th>
+                        <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Package</th>
                         <th class="px-6 py-4 text-center text-sm font-semibold text-slate-900 dark:text-white">Domains</th>
                         <th class="px-6 py-4 text-center text-sm font-semibold text-slate-900 dark:text-white">Customers</th>
-                        <th class="px-6 py-4 text-right text-sm font-semibold text-slate-900 dark:text-white">Revenue</th>
+                        <th class="px-6 py-4 text-center text-sm font-semibold text-slate-900 dark:text-white">Status</th>
                         <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Created</th>
                         <th class="px-6 py-4 text-center text-sm font-semibold text-slate-900 dark:text-white">Actions</th>
                     </tr>
@@ -72,11 +72,9 @@
                                 {{ $reseller->company_name ?? '—' }}
                             </td>
 
-                            <!-- Services Count -->
-                            <td class="px-6 py-4 text-center">
-                                <span class="inline-block px-3 py-1 bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 rounded-full text-sm font-medium">
-                                    {{ $reseller->managed_services_count ?? 0 }}
-                                </span>
+                            <!-- Package -->
+                            <td class="px-6 py-4 text-sm text-slate-900 dark:text-white">
+                                {{ $reseller->resellerPackage?->name ?? '—' }}
                             </td>
 
                             <!-- Domains Count -->
@@ -93,11 +91,17 @@
                                 </span>
                             </td>
 
-                            <!-- Revenue -->
-                            <td class="px-6 py-4 text-right">
-                                <span class="text-sm font-medium text-slate-900 dark:text-white">
-                                    <x-currency-formatter :amount="$reseller->total_revenue ?? 0" currency="KES" />
-                                </span>
+                            <!-- Status -->
+                            <td class="px-6 py-4 text-center">
+                                @if ($reseller->isResellerSuspended())
+                                    <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300" @if($reseller->reseller_suspension_reason) title="{{ $reseller->reseller_suspension_reason }}" @endif>
+                                        Suspended
+                                    </span>
+                                @else
+                                    <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
+                                        Active
+                                    </span>
+                                @endif
                             </td>
 
                             <!-- Created Date -->

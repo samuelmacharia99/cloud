@@ -33,9 +33,7 @@ class ResellerController extends Controller
     public function index(Request $request)
     {
         $resellers = User::where('is_reseller', true)
-            ->withCount(['services as managed_services_count' => function ($query) {
-                $query->whereColumn('reseller_id', 'users.id');
-            }])
+            ->with('resellerPackage:id,name')
             ->withCount(['managedDomains as managed_domains_count'])
             ->latest()
             ->paginate(15)
