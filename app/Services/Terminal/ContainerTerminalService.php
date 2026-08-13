@@ -7,6 +7,7 @@ use App\Models\ContainerTerminalLog;
 use App\Models\ContainerTerminalSession;
 use App\Models\Service;
 use App\Models\User;
+use App\Services\Provisioning\ContainerStackCommandService;
 use App\Services\SSH\SSHService;
 use Exception;
 use Illuminate\Http\Request;
@@ -52,6 +53,9 @@ class ContainerTerminalService
             }
         }
 
+        $service->loadMissing('product.containerTemplate');
+        $appRoot = $this->resolveAppRootFromTemplate($service->product?->containerTemplate);
+
         $token = bin2hex(random_bytes(32));
         $now = now();
         $idleMinutes = max(5, (int) config('terminal.session.idle_minutes', 240));
@@ -62,7 +66,7 @@ class ContainerTerminalService
             'user_id' => $user->id,
             'deployment_id' => $deployment->id,
             'container_name' => $deployment->container_name,
-            'cwd' => '/app',
+            'cwd' => $appRoot,
             'status' => 'active',
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
@@ -82,14 +86,35 @@ class ContainerTerminalService
         $session->loadMissing('service.product.containerTemplate', 'deployment');
         $templateSlug = $session->service?->product?->containerTemplate?->slug;
         $shellUser = ContainerDockerExecUserResolver::execUser($templateSlug) ?? 'app';
+        $appRoot = $this->resolveAppRoot($session);
 
         return [
             'shell_user' => $shellUser,
             'container_name' => $session->deployment?->container_name ?: $session->container_name,
-            'cwd' => $session->cwd ?: '/app',
+            'cwd' => $this->constrainCwdToAppRoot((string) ($session->cwd ?: $appRoot), $appRoot),
+            'app_root' => $appRoot,
             'websocket_enabled' => (bool) config('terminal.websocket.enabled', true),
             'max_command_length' => (new TerminalSecurityGuard)->maxCommandLength(),
         ];
+    }
+
+    /**
+     * Application mount / working directory for a stack (e.g. /app, /var/www/html).
+     */
+    public function resolveAppRootFromTemplate(?object $template): string
+    {
+        if ($template === null) {
+            return '/app';
+        }
+
+        return app(ContainerStackCommandService::class)->resolveWorkDir($template);
+    }
+
+    public function resolveAppRoot(ContainerTerminalSession $session): string
+    {
+        $session->loadMissing('service.product.containerTemplate');
+
+        return $this->resolveAppRootFromTemplate($session->service?->product?->containerTemplate);
     }
 
     public function extendSession(ContainerTerminalSession $session, ?int $minutes = null): ContainerTerminalSession
@@ -195,7 +220,8 @@ class ContainerTerminalService
                 // Parse output: extract exit code and new cwd
                 $lines = explode("\n", trim($output));
                 $exitCode = 0;
-                $newCwd = $session->cwd;
+                $appRoot = $this->resolveAppRoot($session);
+                $newCwd = $session->cwd ?: $appRoot;
                 $outputLines = [];
 
                 foreach ($lines as $line) {
@@ -216,7 +242,7 @@ class ContainerTerminalService
                     }
                 }
 
-                $newCwd = $this->constrainCwdToAppRoot($newCwd);
+                $newCwd = $this->constrainCwdToAppRoot($newCwd, $appRoot);
 
                 $cleanOutput = implode("\n", $outputLines);
 
@@ -343,16 +369,14 @@ class ContainerTerminalService
         // shell whose pwd we capture afterwards for CWD tracking.
         $encodedCmd = base64_encode($command);
 
-        $targetCwd = trim((string) $session->cwd);
-        if ($targetCwd === '' || $targetCwd === '/') {
-            $targetCwd = '/app';
-        }
+        $appRoot = $this->resolveAppRoot($session);
+        $targetCwd = $this->constrainCwdToAppRoot(trim((string) $session->cwd), $appRoot);
 
         $script = 'export PATH="/usr/local/bin:/usr/bin:/bin"; '
             .'export HOME="${HOME:-/tmp}"; '
             .'export NPM_CONFIG_CACHE="${NPM_CONFIG_CACHE:-/tmp/.npm}"; '
             .'export npm_config_cache="${npm_config_cache:-/tmp/.npm}"; '
-            .'cd '.escapeshellarg($targetCwd).' 2>/dev/null || cd /app 2>/dev/null; '
+            .'cd '.escapeshellarg($targetCwd).' 2>/dev/null || cd '.escapeshellarg($appRoot).' 2>/dev/null; '
             .'eval "$(printf %s '.escapeshellarg($encodedCmd).' | base64 -d)"; '
             .'printf "\n__EXIT:%d\n" "$?"; pwd';
 
@@ -360,10 +384,9 @@ class ContainerTerminalService
         $templateSlug = $session->service?->product?->containerTemplate?->slug;
         $userFlag = ContainerDockerExecUserResolver::execUserFlag($templateSlug);
 
-        // Always set -w so exec does not inherit PID 1's cwd. After a failed Git
-        // sync the /app mount can be invalid and inherited cwd triggers:
-        // "current working directory is outside of container mount namespace root".
-        return 'docker exec '.$userFlag.'-w /app '
+        // Always set -w to the stack app root so exec does not inherit PID 1's cwd
+        // and does not fail on stacks that do not use /app (e.g. WordPress → /var/www/html).
+        return 'docker exec '.$userFlag.'-w '.escapeshellarg($appRoot).' '
             .'-e HOME=/tmp -e NPM_CONFIG_CACHE=/tmp/.npm -e npm_config_cache=/tmp/.npm '
             .escapeshellarg($containerName)
             .' sh -c '.escapeshellarg($script);
@@ -431,18 +454,20 @@ class ContainerTerminalService
         return $command;
     }
 
-    private function constrainCwdToAppRoot(string $cwd): string
+    private function constrainCwdToAppRoot(string $cwd, string $appRoot): string
     {
-        $normalized = trim($cwd);
-        if ($normalized === '') {
-            return '/app';
+        $normalized = rtrim(trim($cwd), '/') ?: '';
+        $root = rtrim($appRoot, '/') ?: '/app';
+
+        if ($normalized === '' || $normalized === '/') {
+            return $root;
         }
 
-        if ($normalized === '/app' || str_starts_with($normalized, '/app/')) {
+        if ($normalized === $root || str_starts_with($normalized, $root.'/')) {
             return $normalized;
         }
 
-        return '/app';
+        return $root;
     }
 
     private function commandTimeoutSeconds(string $command): int

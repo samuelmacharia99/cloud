@@ -2,6 +2,8 @@
     $terminalTemplateSlug = $service->product?->containerTemplate?->slug ?? '';
     $terminalContainerName = $deployment->container_name ?? 'container';
     $maxTerminalTabs = max(1, (int) config('terminal.session.max_per_user_service', 3));
+    $terminalDefaultCwd = app(\App\Services\Terminal\ContainerTerminalService::class)
+        ->resolveAppRootFromTemplate($service->product?->containerTemplate);
 @endphp
 <div
     x-data="containerTerminal()"
@@ -148,6 +150,7 @@ function containerTerminal() {
     const CONTAINER_NAME = @json($terminalContainerName);
     const TEMPLATE_SLUG = @json($terminalTemplateSlug);
     const MAX_TABS = {{ (int) $maxTerminalTabs }};
+    const DEFAULT_CWD = @json($terminalDefaultCwd);
     const THEMES = {
         slate: { background: '#0f172a', foreground: '#e2e8f0', cursor: '#94a3b8', selectionBackground: '#334155' },
         classic: { background: '#001100', foreground: '#33ff66', cursor: '#33ff66', selectionBackground: '#003300' },
@@ -160,7 +163,7 @@ function containerTerminal() {
         connected: false,
         connectionState: 'idle',
         mode: null,
-        cwd: '/app',
+        cwd: DEFAULT_CWD,
         shellUser: 'app',
         containerName: CONTAINER_NAME,
         commandCount: 0,
@@ -221,7 +224,7 @@ function containerTerminal() {
                 this.connected = false;
                 this.connectionState = 'idle';
                 this.mode = null;
-                this.cwd = '/app';
+                this.cwd = DEFAULT_CWD;
                 this.commandCount = 0;
                 this.commandBusy = false;
                 this.sessionExpires = null;
@@ -231,7 +234,7 @@ function containerTerminal() {
             this.connected = !!tab.connected;
             this.connectionState = tab.connectionState || 'disconnected';
             this.mode = tab.mode;
-            this.cwd = tab.cwd || '/app';
+            this.cwd = tab.cwd || DEFAULT_CWD;
             this.shellUser = tab.shellUser || 'app';
             this.containerName = tab.containerName || CONTAINER_NAME;
             this.commandCount = tab.commandCount || 0;
@@ -568,7 +571,7 @@ function containerTerminal() {
                     websocketUrl: data.websocket_url,
                     websocketPath: data.websocket_path || '/container-terminal',
                     mode: null,
-                    cwd: data.cwd || '/app',
+                    cwd: data.cwd || DEFAULT_CWD,
                     shellUser: data.shell_user || 'app',
                     containerName: data.container_name || CONTAINER_NAME,
                     commandCount: 0,
@@ -1061,7 +1064,7 @@ function containerTerminal() {
                 throw new Error((data && data.error) || `Failed to refresh terminal session (HTTP ${response.status})`);
             }
             tab.sessionToken = data.session_token;
-            tab.cwd = data.cwd || tab.cwd || '/app';
+            tab.cwd = data.cwd || tab.cwd || DEFAULT_CWD;
             tab.shellUser = data.shell_user || tab.shellUser;
             tab.containerName = data.container_name || tab.containerName;
             tab.mode = 'http';

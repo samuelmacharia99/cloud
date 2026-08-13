@@ -3,6 +3,8 @@
     $diskLabel = rtrim(rtrim(number_format($containerLimits['disk_gb'], 1, '.', ''), '0'), '.');
     $backupAgeDays = $latestBackup?->created_at?->diffInDays(now());
     $backupStale = $latestBackup === null || ($backupAgeDays !== null && $backupAgeDays > 7);
+    $terminalAppRoot = app(\App\Services\Terminal\ContainerTerminalService::class)
+        ->resolveAppRootFromTemplate($service->product?->containerTemplate ?? null);
 @endphp
 
 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
@@ -68,7 +70,7 @@
     >
         <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Terminal</p>
         <p class="mt-1 text-lg font-semibold text-slate-900 dark:text-white">Shell access</p>
-        <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">Run commands inside <code class="font-mono text-xs">/app</code></p>
+        <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">Run commands inside <code class="font-mono text-xs">{{ $terminalAppRoot }}</code></p>
         <span class="mt-2 inline-block text-xs font-medium text-blue-600 dark:text-blue-400 group-hover:underline">Open →</span>
     </button>
 

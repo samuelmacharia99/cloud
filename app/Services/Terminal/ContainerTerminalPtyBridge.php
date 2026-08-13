@@ -38,6 +38,12 @@ class ContainerTerminalPtyBridge
         $this->session->loadMissing('service.product.containerTemplate');
         $templateSlug = $this->session->service?->product?->containerTemplate?->slug;
         $execUser = ContainerDockerExecUserResolver::execUser($templateSlug);
+        $workDir = app(ContainerTerminalService::class)->resolveAppRoot($this->session);
+
+        // Heal sessions created before WordPress used /var/www/html as app root.
+        if (($this->session->cwd ?: '') !== $workDir && ! str_starts_with((string) $this->session->cwd, rtrim($workDir, '/').'/')) {
+            $this->session->update(['cwd' => $workDir]);
+        }
 
         $session = $this->session;
         $ws = $this->connection;
@@ -51,6 +57,7 @@ class ContainerTerminalPtyBridge
                 $session->extendExpiry();
             },
             $execUser,
+            $workDir,
         );
 
         $this->session->update([

@@ -3,13 +3,22 @@
 namespace Tests\Unit\Terminal;
 
 use App\Exceptions\SSH\SSHCommandException;
+use App\Models\ContainerDeployment;
+use App\Models\ContainerTemplate;
+use App\Models\ContainerTerminalSession;
+use App\Models\Product;
+use App\Models\Service;
+use App\Models\User;
 use App\Services\Terminal\ContainerTerminalService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\Test;
 use ReflectionMethod;
 use Tests\TestCase;
 
 class ContainerTerminalServiceTest extends TestCase
 {
+    use RefreshDatabase;
+
     #[Test]
     public function it_allows_long_timeouts_for_artisan_migration_commands(): void
     {
@@ -82,5 +91,68 @@ class ContainerTerminalServiceTest extends TestCase
             'ls -la',
             ContainerTerminalService::applyArtisanProductionFlags('ls -la')
         );
+    }
+
+    #[Test]
+    public function it_uses_wordpress_html_root_for_docker_exec_workdir(): void
+    {
+        $user = User::factory()->customer()->create();
+        $template = ContainerTemplate::create([
+            'name' => 'WordPress',
+            'slug' => 'wordpress',
+            'docker_image' => 'wordpress:latest',
+            'is_active' => true,
+            'volume_paths' => [
+                'wp_data' => '/var/www/html',
+                'wp_content' => '/var/www/html/wp-content',
+            ],
+        ]);
+        $product = Product::factory()->containerHosting()->create([
+            'container_template_id' => $template->id,
+        ]);
+        $service = Service::factory()->create([
+            'user_id' => $user->id,
+            'product_id' => $product->id,
+            'provisioning_driver_key' => 'container',
+        ]);
+        $deployment = ContainerDeployment::create([
+            'service_id' => $service->id,
+            'container_name' => 'user-246-service-22-wordpress',
+            'status' => 'running',
+        ]);
+        $session = ContainerTerminalSession::create([
+            'token' => bin2hex(random_bytes(16)),
+            'service_id' => $service->id,
+            'user_id' => $user->id,
+            'deployment_id' => $deployment->id,
+            'container_name' => $deployment->container_name,
+            'cwd' => '/app', // legacy stuck value
+            'status' => 'active',
+            'ip_address' => '127.0.0.1',
+            'expires_at' => now()->addHour(),
+            'hard_expires_at' => now()->addDay(),
+        ]);
+
+        $terminal = new ContainerTerminalService;
+        $this->assertSame('/var/www/html', $terminal->resolveAppRoot($session));
+
+        $method = new ReflectionMethod(ContainerTerminalService::class, 'buildDockerExecCommand');
+        $method->setAccessible(true);
+        $cmd = $method->invoke($terminal, $session, 'ls -la');
+
+        $this->assertStringContainsString("-w '/var/www/html'", $cmd);
+        $this->assertStringNotContainsString('-w /app ', $cmd);
+        $this->assertStringContainsString('/var/www/html', $cmd);
+        $this->assertStringNotContainsString("cd '/app'", $cmd);
+    }
+
+    #[Test]
+    public function it_keeps_app_root_for_nodejs_stacks(): void
+    {
+        $terminal = new ContainerTerminalService;
+        $this->assertSame('/app', $terminal->resolveAppRootFromTemplate((object) [
+            'slug' => 'nodejs',
+            'volume_paths' => ['app_data' => '/app'],
+        ]));
     }
 }
