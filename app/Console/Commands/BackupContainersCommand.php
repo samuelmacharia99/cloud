@@ -2,39 +2,73 @@
 
 namespace App\Console\Commands;
 
+use App\Models\ContainerBackup;
 use App\Models\ContainerDeployment;
 use App\Services\NotificationService;
 use App\Services\Provisioning\ContainerBackupService;
+use Illuminate\Support\Carbon;
 
 class BackupContainersCommand extends BaseCronCommand
 {
     protected $signature = 'cron:backup-containers
-        {--force : Force backup of all active containers regardless of last backup time}';
+        {--force : Force backup of all active containers regardless of last backup time}
+        {--max-runtime= : Wall-clock seconds before stopping new backups (default from config)}';
 
     protected $description = 'Create scheduled backups for active container services that haven\'t been backed up in 24 hours';
 
     protected function handleCron(): string
     {
-        $backupService = new ContainerBackupService;
+        $backupService = app(ContainerBackupService::class);
         $notificationService = app(NotificationService::class);
         $force = $this->option('force');
+        $maxRuntime = $this->resolveMaxRuntimeSeconds();
+        $deadline = $this->startTime->copy()->addSeconds($maxRuntime);
 
-        $deployments = ContainerDeployment::with('service', 'node')
+        $deployments = ContainerDeployment::with(['service', 'node'])
             ->where('status', 'running')
-            ->get();
+            ->get()
+            ->filter(fn (ContainerDeployment $deployment) => $deployment->service && $deployment->node)
+            ->sortBy(function (ContainerDeployment $deployment) {
+                $last = $deployment->service->containerBackups()
+                    ->whereIn('status', ['completed', 'restoring'])
+                    ->orderByDesc('completed_at')
+                    ->value('completed_at');
+
+                return $last ? Carbon::parse($last)->timestamp : 0;
+            })
+            ->values();
 
         if ($deployments->isEmpty()) {
             return 'No active container deployments found.';
         }
 
-        $this->info("Found {$deployments->count()} active container deployments.");
+        $this->info("Found {$deployments->count()} active container deployments (budget {$maxRuntime}s).");
 
         $backedUp = 0;
         $skipped = 0;
         $failed = 0;
+        $deferred = 0;
 
         foreach ($deployments as $deployment) {
+            if (now()->greaterThanOrEqualTo($deadline)) {
+                $remaining = $deployments->count() - ($backedUp + $skipped + $failed + $deferred);
+                $deferred += max(0, $remaining);
+                $this->warn("Runtime budget exhausted; deferring {$remaining} remaining container(s) to the next run.");
+
+                break;
+            }
+
             $service = $deployment->service;
+
+            if (ContainerBackup::query()
+                ->where('service_id', $service->id)
+                ->whereIn('status', ['pending', 'running'])
+                ->exists()) {
+                $this->line("  <fg=yellow>Skipped</> {$service->id}: backup already in progress");
+                $skipped++;
+
+                continue;
+            }
 
             if (! $force) {
                 $lastBackup = $service->containerBackups()
@@ -55,7 +89,7 @@ class BackupContainersCommand extends BaseCronCommand
 
                 $backup = $backupService->createBackup($service, 'scheduled');
 
-                $this->line("  <fg=green>✓ Completed</> {$backup->backup_name} ({$this->formatBytes($backup->size_bytes)})");
+                $this->line("  <fg=green>✓ Completed</> {$backup->backup_name} ({$this->formatBytes((int) $backup->size_bytes)})");
 
                 $notificationService->notifyContainerBackupCompleted($service, $backup);
 
@@ -69,7 +103,17 @@ class BackupContainersCommand extends BaseCronCommand
             }
         }
 
-        return "Backup complete: {$backedUp} succeeded, {$skipped} skipped, {$failed} failed.";
+        return "Backup complete: {$backedUp} succeeded, {$skipped} skipped, {$failed} failed, {$deferred} deferred.";
+    }
+
+    private function resolveMaxRuntimeSeconds(): int
+    {
+        $option = $this->option('max-runtime');
+        if ($option !== null && $option !== '') {
+            return max(1, (int) $option);
+        }
+
+        return max(60, (int) config('cron.backup_containers.max_runtime_seconds', 12600));
     }
 
     private function formatBytes(int $bytes): string

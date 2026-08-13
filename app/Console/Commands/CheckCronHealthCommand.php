@@ -55,6 +55,11 @@ class CheckCronHealthCommand extends BaseCronCommand
                     'status' => 'failed',
                     'exception' => "Job exceeded maximum execution time ({$maxExecutionTime}s) and was marked as failed by health checker",
                     'finished_at' => now(),
+                    'duration_ms' => (int) ($log->started_at->diffInMilliseconds(now())),
+                ]);
+
+                $log->cronJob?->update([
+                    'last_status' => 'failed',
                 ]);
             }
         }

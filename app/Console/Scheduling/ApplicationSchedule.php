@@ -64,10 +64,12 @@ class ApplicationSchedule
                 $job->refreshNextRunAt();
             }
 
+            $overlapMinutes = $this->overlapExpiresMinutes($job->command);
+
             $event = $schedule->command($job->command)
                 ->cron($job->schedule)
                 ->name($job->name)
-                ->withoutOverlapping(10);
+                ->withoutOverlapping($overlapMinutes);
 
             if (config('scheduler.use_on_one_server')) {
                 $event->onOneServer();
@@ -122,6 +124,20 @@ class ApplicationSchedule
         }
 
         return ! in_array($job->command, config('scheduler.skip_in_local', []), true);
+    }
+
+    /**
+     * Minutes before Laravel releases the withoutOverlapping mutex.
+     */
+    public function overlapExpiresMinutes(string $commandLine): int
+    {
+        $command = trim(explode(' ', $commandLine)[0] ?? '');
+        $configured = (int) config('cron.overlap_expires_minutes.'.$command, 0);
+        if ($configured > 0) {
+            return $configured;
+        }
+
+        return max(1, (int) config('cron.overlap_expires_minutes.default', 60));
     }
 
     private function logCronFailure(CronJob $job): void

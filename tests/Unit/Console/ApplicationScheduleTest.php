@@ -70,6 +70,14 @@ class ApplicationScheduleTest extends TestCase
         );
     }
 
+    public function test_backup_containers_uses_long_overlap_mutex(): void
+    {
+        $schedule = app(ApplicationSchedule::class);
+
+        $this->assertSame(300, $schedule->overlapExpiresMinutes('cron:backup-containers'));
+        $this->assertSame(60, $schedule->overlapExpiresMinutes('cron:mark-invoices-overdue'));
+    }
+
     public function test_schedule_log_rotator_truncates_oversized_file(): void
     {
         Config::set('scheduler.cron_log_max_bytes', 100);
