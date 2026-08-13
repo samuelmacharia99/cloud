@@ -145,21 +145,18 @@ class Payment extends Model
     }
 
     /**
-     * Payments that count as platform (admin) revenue — excludes reseller-managed customer retail.
+     * Payments that count as platform (admin) revenue.
+     *
+     * Includes: direct customer invoice payments, reseller payments to the platform
+     * (package subscriptions, domain wholesale, etc.), and wallet top-ups.
+     * Excludes: reseller-managed customer retail and PUSH-* fulfillment ledgers.
      */
     public function scopePlatformRevenue(Builder $query): Builder
     {
         return $query->where(function (Builder $outer) {
             $outer->where('payment_purpose', 'wallet_topup')
                 ->orWhereHas('invoice', function (Builder $invoice) {
-                    $invoice->where(function (Builder $inner) {
-                        $inner->where('type', 'reseller_subscription')
-                            ->orWhereHas('user', function (Builder $user) {
-                                $user->whereNull('reseller_id')
-                                    ->where('is_reseller', false)
-                                    ->where('is_admin', false);
-                            });
-                    });
+                    $invoice->platformBilling();
                 });
         });
     }

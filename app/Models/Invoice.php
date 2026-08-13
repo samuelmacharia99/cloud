@@ -223,18 +223,22 @@ class Invoice extends Model
     }
 
     /**
-     * Platform (admin) billing — direct customers + reseller subscription invoices.
-     * Excludes reseller-managed customer retail (matches Payment::platformRevenue intent).
+     * Platform (admin) billing — money owed to / collected by the platform.
+     *
+     * Includes direct customers and reseller invoices (subscriptions, domain
+     * wholesale, etc.). Excludes reseller-managed customer retail and PUSH-*
+     * fulfillment ledger invoices.
      */
     public function scopePlatformBilling($query)
     {
         return $query->where(function ($outer) {
-            $outer->where('type', 'reseller_subscription')
-                ->orWhereHas('user', function ($user) {
-                    $user->whereNull('reseller_id')
+            $outer->whereHas('user', function ($user) {
+                $user->where(function ($direct) {
+                    $direct->whereNull('reseller_id')
                         ->where('is_reseller', false)
                         ->where('is_admin', false);
-                });
+                })->orWhere('is_reseller', true);
+            });
         })->customerFacing();
     }
 

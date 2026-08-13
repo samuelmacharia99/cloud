@@ -143,6 +143,7 @@ class AdminDashboardMetricsServiceTest extends TestCase
         $customer = $this->platformCustomer();
         $invoice = Invoice::factory()->create([
             'user_id' => $customer->id,
+            'status' => InvoiceStatus::Paid,
             'currency' => 'KES',
             'total_base_kes' => 100,
         ]);
@@ -170,6 +171,33 @@ class AdminDashboardMetricsServiceTest extends TestCase
         $metrics = app(AdminDashboardMetricsService::class)->metrics();
 
         $this->assertEqualsWithDelta(250.0, $metrics['collectedToday'], 0.01);
+    }
+
+    public function test_collected_today_includes_reseller_domain_payments(): void
+    {
+        $reseller = User::factory()->reseller()->create(['preferred_currency' => 'KES']);
+        $invoice = Invoice::factory()->create([
+            'user_id' => $reseller->id,
+            'status' => InvoiceStatus::Paid,
+            'currency' => 'KES',
+            'total' => 1800,
+            'total_base_kes' => 1800,
+            'notes' => 'Domain renewal order',
+        ]);
+
+        Payment::factory()->create([
+            'user_id' => $reseller->id,
+            'invoice_id' => $invoice->id,
+            'amount' => 1800,
+            'currency' => 'KES',
+            'status' => PaymentStatus::Completed,
+            'paid_at' => now(),
+        ]);
+
+        $metrics = app(AdminDashboardMetricsService::class)->metrics();
+
+        $this->assertEqualsWithDelta(1800.0, $metrics['collectedToday'], 0.01);
+        $this->assertEqualsWithDelta(1800.0, $metrics['totalRevenue'], 0.01);
     }
 
     public function test_top_products_count_only_active_services(): void

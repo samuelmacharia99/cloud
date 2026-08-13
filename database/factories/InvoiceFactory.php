@@ -17,7 +17,9 @@ class InvoiceFactory extends Factory
         $count = Invoice::count() + 1;
         $invoiceNumber = 'INV-' . now()->format('Ymd') . '-' . str_pad($count, 5, '0', STR_PAD_LEFT);
 
-        $status = fake()->randomElement(['draft', 'unpaid', 'paid', 'overdue', 'cancelled']);
+        // Exclude 'draft': SQLite keeps the original invoices.status CHECK without draft
+        // (MySQL migration adds draft; factory must stay portable across test drivers).
+        $status = fake()->randomElement(['unpaid', 'paid', 'overdue', 'cancelled']);
         $paidDate = $status === 'paid' ? fake()->dateTimeBetween('-30 days', 'now') : null;
 
         return [
