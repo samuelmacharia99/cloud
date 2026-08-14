@@ -94,7 +94,7 @@ class BackupContainersCommand extends BaseCronCommand
                 $notificationService->notifyContainerBackupCompleted($service, $backup);
 
                 $backedUp++;
-            } catch (\Exception $e) {
+            } catch (\Throwable $e) {
                 $this->line("  <fg=red>✗ Failed</> {$service->id}: {$e->getMessage()}");
 
                 $notificationService->notifyContainerBackupFailed($service, $e->getMessage());
@@ -103,7 +103,12 @@ class BackupContainersCommand extends BaseCronCommand
             }
         }
 
-        return "Backup complete: {$backedUp} succeeded, {$skipped} skipped, {$failed} failed, {$deferred} deferred.";
+        $message = "Backup complete: {$backedUp} succeeded, {$skipped} skipped, {$failed} failed, {$deferred} deferred.";
+        if ($failed > 0) {
+            throw new \RuntimeException($message);
+        }
+
+        return $message;
     }
 
     private function resolveMaxRuntimeSeconds(): int

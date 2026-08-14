@@ -82,7 +82,7 @@ class DomainPushServiceTest extends TestCase
         app(DomainPushService::class)->handlePaidDomainInvoice($invoice->fresh(['items', 'user']));
 
         $order->refresh();
-        $this->assertSame('pushed', $order->status);
+        $this->assertSame('pushed', $order->status, (string) $order->failure_reason);
         $this->assertNotNull($order->admin_invoice_id);
         $this->assertSame(9500.0, (float) ResellerWallet::where('reseller_id', $reseller->id)->value('balance'));
     }

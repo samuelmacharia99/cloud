@@ -81,9 +81,8 @@ Route::post('/currency', [CurrencyPreferenceController::class, 'update'])->name(
 Route::get('/', [PublicHomeController::class, 'index'])->name('home');
 
 Route::middleware(['auth'])->group(function () {
-    // Exit impersonation (GET allowed so bookmarks / address-bar opens don't 405)
-    Route::match(['get', 'post'], 'admin/exit-impersonation', [CustomerController::class, 'exitImpersonation'])->name('admin.exit-impersonation');
-    Route::match(['get', 'post'], '/exit-impersonation', function () {
+    Route::post('admin/exit-impersonation', [CustomerController::class, 'exitImpersonation'])->name('admin.exit-impersonation');
+    Route::post('/exit-impersonation', function () {
         // Check if impersonating from reseller or admin
         if (session('impersonating_reseller')) {
             $resellerId = session('impersonating_reseller');

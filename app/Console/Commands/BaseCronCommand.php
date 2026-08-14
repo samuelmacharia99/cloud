@@ -29,7 +29,13 @@ abstract class BaseCronCommand extends Command
         $commandName = trim(explode(' ', $this->signature)[0]);
 
         if (Schema::hasTable('cron_jobs')) {
-            $this->cronJob = CronJob::where('command', $commandName)->first();
+            $this->cronJob = CronJob::query()
+                ->where(function ($query) use ($commandName) {
+                    $query->where('command', $commandName)
+                        ->orWhere('command', 'like', $commandName.' %');
+                })
+                ->orderByRaw('CASE WHEN command = ? THEN 0 ELSE 1 END', [$commandName])
+                ->first();
         }
 
         if ($this->cronJob) {

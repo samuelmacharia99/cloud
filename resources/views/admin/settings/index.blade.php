@@ -310,7 +310,7 @@
 
                             <div>
                                 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Consumer Key</label>
-                                <input type="text" name="mpesa_consumer_key" value="{{ $settings['mpesa_consumer_key'] ?? '' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                <input type="password" name="mpesa_consumer_key" value="" placeholder="{{ ($configuredSensitiveSettings['mpesa_consumer_key'] ?? false) ? '•••••••• (leave blank to keep)' : '' }}" autocomplete="new-password" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
                             </div>
 
                             <div>
@@ -325,7 +325,7 @@
 
                             <div>
                                 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Callback URL Token</label>
-                                <input type="password" name="mpesa_callback_token" value="{{ $settings['mpesa_callback_token'] ?? '' }}" placeholder="Leave blank to keep existing" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                <input type="password" name="mpesa_callback_token" value="" placeholder="Leave blank to keep existing" autocomplete="new-password" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
                                 <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Required in production. Appended to the M-Pesa callback URL as <code>?token=...</code>.</p>
                             </div>
 
@@ -337,7 +337,6 @@
                                 </div>
 
                                 @php
-                                    $mpesaCallbackToken = $settings['mpesa_callback_token'] ?? '';
                                     $configuredCallbackBase = rtrim($settings['site_url'] ?? config('app.url'), '/');
                                     $runtimeCallbackBase = rtrim(request()->getSchemeAndHttpHost(), '/');
                                     $configuredHost = parse_url($configuredCallbackBase, PHP_URL_HOST);
@@ -347,7 +346,7 @@
                                     if (($settings['mpesa_environment'] ?? 'sandbox') === 'production' && str_starts_with($callbackBase, 'http://')) {
                                         $callbackBase = 'https://'.substr($callbackBase, 7);
                                     }
-                                    $mpesaCallbackUrl = $callbackBase.'/webhooks/c2b'.($mpesaCallbackToken !== '' ? '?token='.urlencode($mpesaCallbackToken) : '');
+                                    $mpesaCallbackUrl = $callbackBase.'/webhooks/c2b';
                                     $callbackHost = parse_url($callbackBase, PHP_URL_HOST);
                                     $currentHost = request()->getHost();
                                 @endphp
@@ -480,8 +479,8 @@
                                         <table class="text-xs text-slate-600 dark:text-slate-400 w-full">
                                             <tr><td class="font-medium">Paybill #:</td><td>{{ $settings['mpesa_shortcode'] ?? 'Not configured' }}</td></tr>
                                             <tr><td class="font-medium">Environment:</td><td>{{ ucfirst($settings['mpesa_environment'] ?? 'sandbox') }}</td></tr>
-                                            <tr><td class="font-medium">Consumer Key:</td><td>{{ !empty($settings['mpesa_consumer_key']) ? '✓ Configured' : '✗ Missing' }}</td></tr>
-                                            <tr><td class="font-medium">Consumer Secret:</td><td>{{ !empty($settings['mpesa_consumer_secret']) ? '✓ Configured' : '✗ Missing' }}</td></tr>
+                                            <tr><td class="font-medium">Consumer Key:</td><td>{{ ($configuredSensitiveSettings['mpesa_consumer_key'] ?? false) ? '✓ Configured' : '✗ Missing' }}</td></tr>
+                                            <tr><td class="font-medium">Consumer Secret:</td><td>{{ ($configuredSensitiveSettings['mpesa_consumer_secret'] ?? false) ? '✓ Configured' : '✗ Missing' }}</td></tr>
                                         </table>
                                     </div>
                                 </div>
@@ -1420,7 +1419,7 @@
                                 </div>
                                 <div>
                                     <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Password</label>
-                                    <input type="password" name="settings[hetzner_storage_password]" value="" placeholder="{{ ! empty($settings['hetzner_storage_password']) ? '•••••••• (leave blank to keep)' : '' }}" autocomplete="new-password" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                    <input type="password" name="settings[hetzner_storage_password]" value="" placeholder="{{ ($configuredSensitiveSettings['hetzner_storage_password'] ?? false) ? '•••••••• (leave blank to keep)' : '' }}" autocomplete="new-password" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
                                 </div>
                             </div>
                             <div>
@@ -1616,12 +1615,12 @@
 
                             <div>
                                 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">SMTP Password</label>
-                                @if($settings['smtp_password'] ?? false)
+                                @if($configuredSensitiveSettings['smtp_password'] ?? false)
                                     <p class="text-sm text-green-600 dark:text-green-400 mb-2">✓ Configured</p>
                                 @endif
                                 <input type="password" name="settings[smtp_password]" placeholder="Leave blank to keep existing" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
                                 <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                                    @if($settings['smtp_password'] ?? false)
+                                    @if($configuredSensitiveSettings['smtp_password'] ?? false)
                                         A password is configured. Leave blank to keep it.
                                     @else
                                         Enter your SMTP password
@@ -2152,12 +2151,12 @@
 
                             <div>
                                 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">API Token</label>
-                                @if($settings['sms_api_token'] ?? false)
+                                @if($configuredSensitiveSettings['sms_api_token'] ?? false)
                                     <p class="text-sm text-green-600 dark:text-green-400 mb-2">✓ Configured</p>
                                 @endif
                                 <input type="password" name="settings[sms_api_token]" placeholder="Bearer token from Talksasa" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
                                 <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                                    @if($settings['sms_api_token'] ?? false)
+                                    @if($configuredSensitiveSettings['sms_api_token'] ?? false)
                                         A token is configured. Leave blank to keep it.
                                     @else
                                         Enter your SMS API token
@@ -2225,12 +2224,12 @@
 
                             <div>
                                 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Secret Key</label>
-                                @if($settings['recaptcha_secret_key'] ?? false)
+                                @if($configuredSensitiveSettings['recaptcha_secret_key'] ?? false)
                                     <p class="text-sm text-green-600 dark:text-green-400 mb-2">✓ Configured</p>
                                 @endif
                                 <input type="text" name="settings[recaptcha_secret_key]" placeholder="6Le-XXXX..." autocomplete="off" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono text-sm" />
                                 <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                                    @if($settings['recaptcha_secret_key'] ?? false)
+                                    @if($configuredSensitiveSettings['recaptcha_secret_key'] ?? false)
                                         A secret key is configured. Paste a new one to update, or leave blank to keep it.
                                     @else
                                         Private key from Google reCAPTCHA console. Keep this secure!

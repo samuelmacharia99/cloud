@@ -315,7 +315,7 @@ class MailDnsService
         }
 
         return [
-            'success' => $applied !== [],
+            'success' => $applied !== [] && $skipped === [],
             'message' => $applied !== []
                 ? 'Applied '.count($applied).' DNS record(s) via Cloudflare.'
                     .($skipped !== [] ? ' Some records skipped: '.implode('; ', $skipped) : '')
@@ -428,7 +428,7 @@ class MailDnsService
 
             try {
                 $result = $this->applyRecommendedRecords($service);
-                if ($result['success'] || ($result['applied'] ?? []) !== []) {
+                if ($result['success']) {
                     $applied++;
                     $results[] = [
                         'service_id' => $service->id,
@@ -441,7 +441,7 @@ class MailDnsService
                     $results[] = [
                         'service_id' => $service->id,
                         'domain' => $domainName,
-                        'status' => 'failed',
+                        'status' => ($result['applied'] ?? []) !== [] ? 'partial' : 'failed',
                         'message' => $result['message'].($result['skipped'] !== [] ? ' ['.implode('; ', $result['skipped']).']' : ''),
                     ];
                 }

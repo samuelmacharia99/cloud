@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\InvoiceStatus;
+use App\Enums\PaymentStatus;
 use App\Services\Billing\InvoiceCurrencyService;
 use App\Services\Customer\CustomerContainerPlanChangeService;
 use App\Services\ResellerPackageSubscriptionService;
@@ -127,7 +128,8 @@ class Invoice extends Model
 
     public function isOverdue(): bool
     {
-        return in_array($this->status, ['unpaid', 'overdue']) && $this->due_date?->isPast();
+        return in_array($this->status, [InvoiceStatus::Unpaid, InvoiceStatus::Overdue], true)
+            && (bool) $this->due_date?->isPast();
     }
 
     public function getAmountPaid(): float
@@ -135,9 +137,11 @@ class Invoice extends Model
         $currencyService = app(InvoiceCurrencyService::class);
         $paid = 0.0;
 
-        $this->payments()
-            ->where('status', 'completed')
-            ->get()
+        $payments = $this->relationLoaded('payments')
+            ? $this->payments->filter(fn (Payment $payment) => $payment->status === PaymentStatus::Completed)
+            : $this->payments()->where('status', PaymentStatus::Completed->value)->get();
+
+        $payments
             ->each(function (Payment $payment) use ($currencyService, &$paid) {
                 $paid += $currencyService->paymentAmountInInvoiceCurrency(
                     $this,
@@ -169,7 +173,9 @@ class Invoice extends Model
      */
     public function getAppliedCredits(): float
     {
-        $kesApplied = (float) ($this->credits()->sum('amount_applied') ?? 0);
+        $kesApplied = $this->relationLoaded('credits')
+            ? (float) $this->credits->sum(fn (Credit $credit) => (float) $credit->pivot->amount_applied)
+            : (float) ($this->credits()->sum('amount_applied') ?? 0);
 
         if ($kesApplied <= 0 || $this->displayCurrency() === config('currency.base', 'KES')) {
             return $kesApplied;
@@ -198,7 +204,7 @@ class Invoice extends Model
 
     public function amountDue(): float
     {
-        return max(0, round((float) $this->total - (float) ($this->wallet_amount_applied ?? 0), 2));
+        return $this->getAmountRemaining();
     }
 
     public function scopeResellerSubscription($query)

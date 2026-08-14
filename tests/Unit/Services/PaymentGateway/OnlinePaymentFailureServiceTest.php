@@ -54,7 +54,7 @@ class OnlinePaymentFailureServiceTest extends TestCase
         $payment->refresh();
         $this->assertTrue($payment->isFailed());
 
-        Mail::assertQueued(PaymentFailedMail::class, function ($mail) use ($customer) {
+        Mail::assertSent(PaymentFailedMail::class, function ($mail) use ($customer) {
             return $mail->hasTo($customer->email);
         });
     }

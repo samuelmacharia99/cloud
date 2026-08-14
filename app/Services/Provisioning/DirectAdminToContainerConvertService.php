@@ -6,6 +6,7 @@ use App\Models\Product;
 use App\Models\Service;
 use App\Services\Billing\ServiceRenewalPricingService;
 use App\Services\Hosting\DirectAdminCustomerPanelApi;
+use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -142,7 +143,7 @@ class DirectAdminToContainerConvertService
             ->orderByDesc('is_active')
             ->orderBy('order')
             ->orderBy('monthly_price')
-            ->orderBy('price')
+            ->orderBy('yearly_price')
             ->orderBy('name')
             ->get();
 
@@ -175,6 +176,7 @@ class DirectAdminToContainerConvertService
 
     /**
      * @deprecated Use availableProductsForStack('wordpress')
+     *
      * @return array{products: Collection<int, Product>, fallback: bool}
      */
     public function availableWordPressProducts(): array
@@ -596,7 +598,7 @@ class DirectAdminToContainerConvertService
         }
 
         try {
-            return \Carbon\Carbon::parse($marker)->lt(now()->subMinutes(15));
+            return Carbon::parse($marker)->lt(now()->subMinutes(15));
         } catch (\Throwable) {
             return true;
         }

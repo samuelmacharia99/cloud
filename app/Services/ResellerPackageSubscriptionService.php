@@ -6,8 +6,8 @@ use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\ResellerPackage;
 use App\Models\User;
+use App\Services\Billing\InvoiceNumberService;
 use Carbon\Carbon;
-use Illuminate\Support\Str;
 
 class ResellerPackageSubscriptionService
 {
@@ -171,17 +171,19 @@ class ResellerPackageSubscriptionService
             $notes = $label.' '.self::PACKAGE_META_PREFIX.$package->id.']';
         }
 
-        $invoice = Invoice::create([
-            'user_id' => $user->id,
-            'type' => 'reseller_subscription',
-            'invoice_number' => 'INV-'.strtoupper(Str::random(10)),
-            'status' => 'unpaid',
-            'due_date' => $dueDate,
-            'subtotal' => 0,
-            'tax' => 0,
-            'total' => 0,
-            'notes' => $notes,
-        ]);
+        $invoice = app(InvoiceNumberService::class)->createWithUniqueNumber(
+            fn (string $number) => Invoice::create([
+                'user_id' => $user->id,
+                'type' => 'reseller_subscription',
+                'invoice_number' => $number,
+                'status' => 'unpaid',
+                'due_date' => $dueDate,
+                'subtotal' => 0,
+                'tax' => 0,
+                'total' => 0,
+                'notes' => $notes,
+            ]),
+        );
 
         $this->appendPackageLineItem($invoice, $label, $lineAmount);
 

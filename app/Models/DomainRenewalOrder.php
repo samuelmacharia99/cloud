@@ -127,7 +127,8 @@ class DomainRenewalOrder extends Model
 
     public function paidCustomerInvoice(): ?Invoice
     {
-        $invoiceId = $this->customer_invoice_id ?? ($this->isResellerManaged() ? null : $this->invoice_id);
+        // Legacy managed-renewal rows stored the customer invoice only in invoice_id.
+        $invoiceId = $this->customer_invoice_id ?? $this->invoice_id;
 
         if (! $invoiceId) {
             return null;

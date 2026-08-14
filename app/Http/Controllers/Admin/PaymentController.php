@@ -12,8 +12,10 @@ use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\User;
 use App\Services\AdminActivityService;
+use App\Services\AdminAttentionService;
 use App\Services\Billing\InvoiceSettlementService;
 use App\Services\NotificationService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 
 class PaymentController extends Controller
@@ -23,6 +25,13 @@ class PaymentController extends Controller
      */
     public function index(Request $request)
     {
+        $request->validate([
+            'from_date' => ['nullable', 'date'],
+            'to_date' => ['nullable', 'date', 'after_or_equal:from_date'],
+            'min_amount' => ['nullable', 'numeric', 'min:0'],
+            'max_amount' => ['nullable', 'numeric', 'gte:min_amount'],
+        ]);
+
         $query = Payment::with(['user', 'invoice'])
             ->latest('created_at');
 
@@ -46,7 +55,7 @@ class PaymentController extends Controller
         }
 
         if ($request->boolean('needs_approval')) {
-            $query->whereIn('payment_method', \App\Services\AdminAttentionService::PAYMENTS_NEEDING_REVIEW);
+            $query->whereIn('payment_method', AdminAttentionService::PAYMENTS_NEEDING_REVIEW);
         }
 
         // Filter by status
@@ -57,10 +66,10 @@ class PaymentController extends Controller
         // Filter by effective paid date (paid_at, else created_at)
         if ($request->filled('from_date') || $request->filled('to_date')) {
             $from = $request->filled('from_date')
-                ? \Carbon\Carbon::parse($request->from_date)->startOfDay()
+                ? Carbon::parse($request->from_date)->startOfDay()
                 : null;
             $to = $request->filled('to_date')
-                ? \Carbon\Carbon::parse($request->to_date)->endOfDay()
+                ? Carbon::parse($request->to_date)->endOfDay()
                 : null;
 
             $query->where(function ($outer) use ($from, $to) {
@@ -286,11 +295,7 @@ class PaymentController extends Controller
         }
 
         $invoice = $payment->invoice->fresh();
-        $amountPaid = $invoice->payments()
-            ->where('status', PaymentStatus::Completed->value)
-            ->sum('amount');
-
-        if ($amountPaid >= $invoice->total) {
+        if ($invoice->isFullyPaid()) {
             $this->updateInvoiceStatus($invoice);
         } else {
             $invoice->update(['status' => InvoiceStatus::Unpaid->value]);
@@ -304,7 +309,7 @@ class PaymentController extends Controller
     public function approveManual(Payment $payment)
     {
         // Guard: only allow approval of pending manual payments
-        if ($payment->payment_method !== 'manual' || $payment->status !== 'pending') {
+        if ($payment->payment_method !== PaymentMethod::Manual || $payment->status !== PaymentStatus::Pending) {
             \Log::warning('Manual payment approval rejected - invalid state', [
                 'payment_id' => $payment->id,
                 'payment_method' => $payment->payment_method,
@@ -403,7 +408,7 @@ class PaymentController extends Controller
     public function rejectManual(Request $request, Payment $payment)
     {
         // Guard: only allow rejection of pending manual payments
-        if ($payment->payment_method !== 'manual' || $payment->status !== 'pending') {
+        if ($payment->payment_method !== PaymentMethod::Manual || $payment->status !== PaymentStatus::Pending) {
             \Log::warning('Manual payment rejection rejected - invalid state', [
                 'payment_id' => $payment->id,
                 'payment_method' => $payment->payment_method,

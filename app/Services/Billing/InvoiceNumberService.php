@@ -37,14 +37,17 @@ class InvoiceNumberService
      * @param  callable(string): T  $create
      * @return T
      */
-    public function createWithUniqueNumber(callable $create, bool $yearly = true): mixed
-    {
+    public function createWithUniqueNumber(
+        callable $create,
+        bool $yearly = true,
+        ?string $prefix = null,
+    ): mixed {
         for ($attempt = 0; $attempt < 5; $attempt++) {
             try {
-                return DB::transaction(function () use ($create, $yearly) {
+                return DB::transaction(function () use ($create, $yearly, $prefix) {
                     $number = $yearly
-                        ? $this->buildYearlyNumber()
-                        : $this->buildDailyNumber();
+                        ? $this->buildYearlyNumber($prefix)
+                        : $this->buildDailyNumber($prefix);
 
                     return $create($number);
                 });
@@ -62,35 +65,61 @@ class InvoiceNumberService
     {
         $prefix = $prefix ?? Setting::getValue('invoice_prefix', 'INV');
         $year = $year ?? (int) now()->format('Y');
-        $sequence = $this->maxSequence("{$prefix}-{$year}-") + 1;
+        $numberPrefix = "{$prefix}-{$year}-";
+        $sequence = $this->allocateSequence($numberPrefix);
 
-        return "{$prefix}-{$year}-".str_pad((string) $sequence, 5, '0', STR_PAD_LEFT);
+        return $numberPrefix.str_pad((string) $sequence, 5, '0', STR_PAD_LEFT);
     }
 
     private function buildDailyNumber(?string $prefix = null, ?\DateTimeInterface $date = null): string
     {
         $prefix = $prefix ?? Setting::getValue('invoice_prefix', 'INV');
         $datePart = ($date ?? now())->format('Ymd');
-        $sequence = $this->maxSequence("{$prefix}-{$datePart}-") + 1;
+        $numberPrefix = "{$prefix}-{$datePart}-";
+        $sequence = $this->allocateSequence($numberPrefix);
 
-        return "{$prefix}-{$datePart}-".str_pad((string) $sequence, 5, '0', STR_PAD_LEFT);
+        return $numberPrefix.str_pad((string) $sequence, 5, '0', STR_PAD_LEFT);
     }
 
-    private function maxSequence(string $prefix): int
+    private function allocateSequence(string $series): int
+    {
+        $initial = $this->maxExistingSequence($series) + 1;
+
+        DB::table('invoice_number_sequences')->insertOrIgnore([
+            'series' => $series,
+            'next_value' => $initial,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $row = DB::table('invoice_number_sequences')
+            ->where('series', $series)
+            ->lockForUpdate()
+            ->first();
+
+        if (! $row) {
+            throw new \RuntimeException('Unable to lock the invoice number sequence.');
+        }
+
+        $sequence = max((int) $row->next_value, $this->maxExistingSequence($series) + 1);
+        DB::table('invoice_number_sequences')
+            ->where('series', $series)
+            ->update([
+                'next_value' => $sequence + 1,
+                'updated_at' => now(),
+            ]);
+
+        return $sequence;
+    }
+
+    private function maxExistingSequence(string $prefix): int
     {
         return Invoice::query()
             ->where('invoice_number', 'like', $prefix.'%')
-            ->lockForUpdate()
             ->pluck('invoice_number')
-            ->map(function (string $number) use ($prefix) {
-                if (! str_starts_with($number, $prefix)) {
-                    return 0;
-                }
-
-                $suffix = substr($number, strlen($prefix));
-
-                return ctype_digit($suffix) ? (int) $suffix : 0;
-            })
+            ->map(fn (string $number) => ctype_digit($suffix = substr($number, strlen($prefix)))
+                ? (int) $suffix
+                : 0)
             ->max() ?? 0;
     }
 

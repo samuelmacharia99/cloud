@@ -25,7 +25,8 @@ class StorePaymentRequest extends FormRequest
             'invoice_id' => [
                 'nullable',
                 'integer',
-                'exists:invoices,id',
+                Rule::exists('invoices', 'id')
+                    ->where(fn ($query) => $query->where('user_id', $this->integer('user_id'))),
             ],
             'amount' => [
                 'required',
@@ -74,6 +75,7 @@ class StorePaymentRequest extends FormRequest
         return [
             'user_id.required' => 'Payment must be assigned to a user.',
             'user_id.exists' => 'Selected user does not exist.',
+            'invoice_id.exists' => 'Selected invoice does not belong to the selected user.',
             'amount.required' => 'Payment amount is required.',
             'amount.min' => 'Payment amount must be greater than zero.',
             'currency.size' => 'Currency code must be exactly 3 characters (e.g., KES).',

@@ -22,10 +22,9 @@ class ApplicationSchedule
         }
 
         $this->touchHeartbeat();
+        $schedule->timezone(Setting::getValue('cron_timezone', 'UTC'));
         $this->registerDatabaseJobs($schedule);
         $this->registerHeartbeat($schedule);
-
-        $schedule->timezone(Setting::getValue('cron_timezone', 'UTC'));
     }
 
     private function touchHeartbeat(): void

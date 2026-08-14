@@ -125,8 +125,7 @@ class ContainerAutoDeployService
         }
 
         $token = $request->header('X-Talksasa-Token')
-            ?? $request->header('X-Gitlab-Token')
-            ?? $request->query('token');
+            ?? $request->header('X-Gitlab-Token');
 
         if (! $this->secretMatches($service, is_string($token) ? $token : null)) {
             if (! $this->verifyGithubSignature($service, $request)) {

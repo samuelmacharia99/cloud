@@ -169,4 +169,51 @@ class MailDnsServiceTest extends TestCase
         $this->assertSame('dry-run', $summary['results'][0]['status']);
         Http::assertNothingSent();
     }
+
+    #[Test]
+    public function sync_propagates_partial_record_failures(): void
+    {
+        Setting::setValue('cloudflare_enabled', 'true');
+        Setting::setValue('cloudflare_api_token', 'cf-test-token-abcdefghijklmnopqrstuvwxyz');
+        Setting::setValue('cloudflare_account_id', 'account-123');
+
+        Http::fake([
+            'mail.example.com/api/v1/get/dkim/*' => Http::response([
+                'dkim_txt' => 'v=DKIM1;k=rsa;p=PUBKEY',
+                'dkim_selector' => 'dkim',
+            ], 200),
+            'api.cloudflare.com/client/v4/zones/*/dns_records*' => Http::sequence()
+                ->push(['success' => true, 'result' => []], 200)
+                ->push(['success' => true, 'result' => ['id' => 'mx']], 200)
+                ->push(['success' => false, 'errors' => [['message' => 'SPF rejected']]], 400)
+                ->push(['success' => true, 'result' => ['id' => 'dmarc']], 200)
+                ->push(['success' => true, 'result' => ['id' => 'dkim']], 200),
+        ]);
+
+        $user = User::factory()->customer()->create();
+        $node = Node::factory()->mailcow()->create(['hostname' => 'mail.example.com']);
+        $product = Product::factory()->emailHosting()->create();
+        Domain::create([
+            'user_id' => $user->id,
+            'name' => 'partial',
+            'extension' => '.com',
+            'status' => 'active',
+            'cloudflare_dns_enabled' => true,
+            'cloudflare_zone_id' => 'zone-partial',
+        ]);
+        Service::factory()->create([
+            'user_id' => $user->id,
+            'product_id' => $product->id,
+            'node_id' => $node->id,
+            'status' => 'active',
+            'provisioning_driver_key' => 'mailcow',
+            'service_meta' => ['mailcow_domain' => 'partial.com'],
+        ]);
+
+        $summary = app(MailDnsService::class)->syncAllCloudflareMailDomains();
+
+        $this->assertSame(0, $summary['applied']);
+        $this->assertSame(1, $summary['failed']);
+        $this->assertSame('partial', $summary['results'][0]['status']);
+    }
 }

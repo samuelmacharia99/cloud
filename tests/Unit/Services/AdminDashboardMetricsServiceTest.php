@@ -3,7 +3,6 @@
 namespace Tests\Unit\Services;
 
 use App\Enums\InvoiceStatus;
-use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
 use App\Enums\ServiceStatus;
 use App\Models\Currency;
@@ -100,6 +99,34 @@ class AdminDashboardMetricsServiceTest extends TestCase
 
         $this->assertEqualsWithDelta(2000.0, $metrics['totalRevenue'], 0.5);
         $this->assertEqualsWithDelta(2000.0, $metrics['collectedToday'], 0.5);
+    }
+
+    public function test_platform_revenue_uses_payment_time_exchange_rate_snapshot(): void
+    {
+        $customer = $this->platformCustomer(['preferred_currency' => 'USD']);
+        $invoice = Invoice::factory()->create([
+            'user_id' => $customer->id,
+            'status' => InvoiceStatus::Paid,
+            'currency' => 'USD',
+            'exchange_rate' => 0.0077,
+            'total' => 7.7,
+            'total_base_kes' => 1000,
+        ]);
+
+        Payment::factory()->create([
+            'user_id' => $customer->id,
+            'invoice_id' => $invoice->id,
+            'amount' => 7.7,
+            'currency' => 'USD',
+            'status' => PaymentStatus::Completed,
+            'paid_at' => now(),
+        ]);
+
+        Currency::query()->where('code', 'USD')->update(['exchange_rate' => 0.01]);
+
+        $metrics = app(AdminDashboardMetricsService::class)->metrics();
+
+        $this->assertEqualsWithDelta(1000.0, $metrics['totalRevenue'], 0.01);
     }
 
     public function test_unpaid_ar_uses_remaining_and_excludes_reseller_retail(): void

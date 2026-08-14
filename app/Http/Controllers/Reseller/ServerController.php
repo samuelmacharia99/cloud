@@ -9,6 +9,7 @@ use App\Models\InvoiceItem;
 use App\Models\Product;
 use App\Models\Service;
 use App\Models\Setting;
+use App\Services\Billing\InvoiceNumberService;
 use App\Services\ServerProductConfigService;
 use App\Services\TaxService;
 use Illuminate\Http\Request;
@@ -101,12 +102,9 @@ class ServerController extends Controller
         $tax = $taxBreakdown['tax'];
         $total = $taxBreakdown['total'];
         $dueDays = (int) Setting::getValue('invoice_due_days', 14);
-        $prefix = Setting::getValue('invoice_prefix', 'INV');
 
-        $invoice = DB::transaction(function () use ($reseller, $product, $validated, $price, $tax, $total, $dueDays, $prefix, $taxBreakdown) {
-            $year = now()->format('Y');
-            $sequence = Invoice::whereYear('created_at', $year)->lockForUpdate()->count() + 1;
-            $number = $prefix.'-'.$year.'-'.str_pad($sequence, 5, '0', STR_PAD_LEFT);
+        $invoice = DB::transaction(function () use ($reseller, $product, $validated, $price, $tax, $total, $dueDays, $taxBreakdown) {
+            $number = app(InvoiceNumberService::class)->nextYearly();
 
             $invoice = Invoice::create([
                 'user_id' => $reseller->id,

@@ -94,7 +94,10 @@
                                 'annual' => 12,
                                 default => 1,
                             };
-                            $cyclePrices[$cycleOption] = round(((float) ($option['display_price'] ?? $product->price)) * $factor, 2);
+                            $cyclePrices[$cycleOption] = round(
+                                ((float) ($option['display_price'] ?? $product->priceForBillingCycle('monthly'))) * $factor,
+                                2
+                            );
                         } else {
                             $cyclePrices[$cycleOption] = $upgrades->displayPriceForPlanOption(auth()->user(), $option, $cycleOption);
                         }

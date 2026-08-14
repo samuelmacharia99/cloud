@@ -663,11 +663,6 @@ class ContainerDeploymentService
         try {
             $deployment = $service->containerDeployment;
 
-            if ($deployment) {
-                $this->unbindAllDomainsForService($service);
-                $this->purgeBackupsForService($service);
-            }
-
             if ($deployment && $deployment->node) {
                 $node = $deployment->node;
 
@@ -680,10 +675,30 @@ class ContainerDeploymentService
                     $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
 
                     // Stop and remove containers
-                    @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml down -v", self::DEPLOY_TIMEOUT);
+                    $ssh->exec(
+                        'cd '.escapeshellarg($containerPath).' && docker compose -f docker-compose.yml down -v',
+                        self::DEPLOY_TIMEOUT
+                    );
 
                     // Remove directory
-                    @$ssh->deleteDir($containerPath);
+                    $ssh->deleteDir($containerPath);
+
+                    // Do not destroy the only recovery artifacts or mark termination complete
+                    // until both the Docker workload and its host directory are confirmed absent.
+                    $remaining = trim($ssh->exec(
+                        'if docker ps -aq --filter '
+                        .escapeshellarg('label=com.docker.compose.project='.$deployment->container_name)
+                        .' | grep -q .'
+                        .' || test -e '.escapeshellarg($containerPath)
+                        .'; then echo present; else echo absent; fi',
+                        30
+                    ));
+                    if ($remaining !== 'absent') {
+                        throw new \RuntimeException('Container teardown could not be verified; backups were preserved.');
+                    }
+
+                    $this->unbindAllDomainsForService($service);
+                    $this->purgeBackupsForService($service);
 
                     $deployment->update([
                         'status' => 'terminated',
@@ -697,6 +712,8 @@ class ContainerDeploymentService
                 } finally {
                     $ssh->disconnect();
                 }
+            } elseif ($deployment && $deployment->status !== 'terminated') {
+                throw new \RuntimeException('Container node is missing; teardown cannot be verified.');
             }
 
             $service->update([
@@ -706,7 +723,7 @@ class ContainerDeploymentService
 
             // Notify user of termination
             app(NotificationService::class)->notifyServiceTerminated($service->fresh());
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             \Log::error("Failed to terminate container for service {$service->id}: ".$e->getMessage());
 
             throw $e;
@@ -3837,14 +3854,7 @@ class ContainerDeploymentService
 
     private function purgeBackupsForService(Service $service): void
     {
-        try {
-            app(ContainerBackupService::class)->purgeAllForService($service);
-        } catch (\Throwable $e) {
-            \Log::warning('Failed to purge container backups during termination', [
-                'service_id' => $service->id,
-                'error' => $e->getMessage(),
-            ]);
-        }
+        app(ContainerBackupService::class)->purgeAllForService($service);
     }
 
     private function unbindAllDomainsForService(Service $service): void

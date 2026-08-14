@@ -551,8 +551,12 @@ class DirectAdminToContainerMigrationService
             $this->normalizeWordPressAppPermissions($targetSsh, $hostAppPath, $containerPath, $appService);
 
             $progress('Restarting WordPress container');
-            @$targetSsh->exec("cd {$containerPath} && docker compose restart {$appService}", 120);
-            @$targetSsh->exec('rm -rf '.escapeshellarg($remoteWork));
+            $targetSsh->exec(
+                'cd '.escapeshellarg($containerPath).' && docker compose restart '.escapeshellarg($appService),
+                120
+            );
+            $this->deployments->waitForContainerRunning($targetSsh, $deployment->container_name, 120);
+            $targetSsh->exec('rm -rf '.escapeshellarg($remoteWork));
         } finally {
             $targetSsh->disconnect();
         }
@@ -801,8 +805,12 @@ class DirectAdminToContainerMigrationService
             }
 
             $progress('Restarting application container');
-            @$targetSsh->exec("cd {$containerPath} && docker compose restart {$appService}", 120);
-            @$targetSsh->exec('rm -rf '.escapeshellarg($remoteWork));
+            $targetSsh->exec(
+                'cd '.escapeshellarg($containerPath).' && docker compose restart '.escapeshellarg($appService),
+                120
+            );
+            $this->deployments->waitForContainerRunning($targetSsh, $deployment->container_name, 120);
+            $targetSsh->exec('rm -rf '.escapeshellarg($remoteWork));
         } finally {
             $targetSsh->disconnect();
         }

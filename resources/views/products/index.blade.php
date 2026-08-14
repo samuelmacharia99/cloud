@@ -30,7 +30,7 @@
 
                     <div>
                         <div class="flex items-baseline gap-1">
-                            <span class="text-3xl font-bold text-slate-900">KSH {{ number_format($product->price, 2) }}</span>
+                            <span class="text-3xl font-bold text-slate-900">KSH {{ number_format($product->priceForBillingCycle($product->billing_cycle ?? 'monthly'), 2) }}</span>
                             <span class="text-sm text-slate-600">/{{ ucfirst($product->billing_cycle) }}</span>
                         </div>
                         @if ($product->setup_fee > 0)

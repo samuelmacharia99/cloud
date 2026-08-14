@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Credit;
+use App\Models\Currency;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\User;
@@ -136,47 +137,50 @@ class CreditService
      */
     public static function autoApplyCredits(Invoice $invoice): float
     {
-        $invoice->load('user');
-        $appliedAmount = 0;
-        $remainingBalance = $invoice->getAmountRemaining();
+        return \DB::transaction(function () use ($invoice) {
+            $invoice = Invoice::query()->lockForUpdate()->findOrFail($invoice->id);
+            $invoice->load('user');
+            $appliedAmount = 0;
+            $remainingBalance = $invoice->getAmountRemaining();
 
-        if ($remainingBalance <= 0) {
-            return 0;
-        }
-
-        // Get all available credits for this user
-        $credits = Credit::forUser($invoice->user)
-            ->active()
-            ->orderBy('expires_at', 'asc') // Apply expiring credits first
-            ->get();
-
-        foreach ($credits as $credit) {
             if ($remainingBalance <= 0) {
-                break;
+                return 0;
             }
 
-            $availableBalanceKes = $credit->getAvailableBalance();
-            if ($availableBalanceKes <= 0) {
-                continue;
+            $credits = Credit::forUser($invoice->user)
+                ->active()
+                ->orderBy('expires_at', 'asc')
+                ->lockForUpdate()
+                ->get();
+
+            foreach ($credits as $credit) {
+                if ($remainingBalance <= 0) {
+                    break;
+                }
+
+                $availableBalanceKes = $credit->getAvailableBalance();
+                if ($availableBalanceKes <= 0) {
+                    continue;
+                }
+
+                $remainingKes = $invoice->displayCurrency() === config('currency.base', 'KES')
+                    ? $remainingBalance
+                    : round($remainingBalance / max((float) $invoice->exchange_rate, 0.00000001), 2);
+
+                $applyAmountKes = min($availableBalanceKes, $remainingKes);
+
+                if ($credit->applyToInvoice($invoice, $applyAmountKes)) {
+                    $appliedInvoiceAmount = $invoice->displayCurrency() === config('currency.base', 'KES')
+                        ? $applyAmountKes
+                        : round($applyAmountKes * (float) $invoice->exchange_rate, 2);
+
+                    $appliedAmount += $appliedInvoiceAmount;
+                    $remainingBalance -= $appliedInvoiceAmount;
+                }
             }
 
-            $remainingKes = $invoice->displayCurrency() === config('currency.base', 'KES')
-                ? $remainingBalance
-                : round($remainingBalance / max((float) $invoice->exchange_rate, 0.00000001), 2);
-
-            $applyAmountKes = min($availableBalanceKes, $remainingKes);
-
-            if ($credit->applyToInvoice($invoice, $applyAmountKes)) {
-                $appliedInvoiceAmount = $invoice->displayCurrency() === config('currency.base', 'KES')
-                    ? $applyAmountKes
-                    : round($applyAmountKes * (float) $invoice->exchange_rate, 2);
-
-                $appliedAmount += $appliedInvoiceAmount;
-                $remainingBalance -= $appliedInvoiceAmount;
-            }
-        }
-
-        return $appliedAmount;
+            return $appliedAmount;
+        });
     }
 
     /**
@@ -184,8 +188,16 @@ class CreditService
      */
     public static function applyCredit(Credit $credit, Invoice $invoice, float $amount): bool
     {
+        if ($credit->user_id !== $invoice->user_id || $amount <= 0) {
+            return false;
+        }
+
+        $amountKes = $invoice->displayCurrency() === config('currency.base', 'KES')
+            ? $amount
+            : round($amount / max((float) $invoice->exchange_rate, 0.00000001), 2);
+
         // Validate amount
-        if ($amount > $credit->getAvailableBalance()) {
+        if ($amountKes > $credit->getAvailableBalance()) {
             return false;
         }
 
@@ -193,7 +205,7 @@ class CreditService
             return false;
         }
 
-        return $credit->applyToInvoice($invoice, $amount);
+        return $credit->applyToInvoice($invoice, $amountKes);
     }
 
     /**
@@ -209,12 +221,35 @@ class CreditService
      */
     public static function refundPayment(Payment $payment, ?float $amount = null): Credit
     {
-        $refundAmount = $amount ?? $payment->amount;
+        if (! $payment->isCompleted()) {
+            throw new \InvalidArgumentException('Only completed payments can be refunded.');
+        }
+
+        $paymentAmount = (float) $payment->amount;
+        $requestedAmount = $amount ?? $paymentAmount;
+        if ($requestedAmount <= 0 || $requestedAmount > $paymentAmount) {
+            throw new \InvalidArgumentException('Refund amount must be positive and cannot exceed the payment amount.');
+        }
+
+        $paymentBaseKes = (float) ($payment->amount_base_kes ?? 0);
+        if ($paymentBaseKes <= 0) {
+            $currency = $payment->currency ?? config('currency.base', 'KES');
+            $rate = $currency === config('currency.base', 'KES')
+                ? 1.0
+                : (float) (Currency::query()->where('code', $currency)->value('exchange_rate') ?? 0);
+            if ($rate <= 0) {
+                throw new \InvalidArgumentException('The payment exchange rate is unavailable.');
+            }
+            $paymentBaseKes = round($paymentAmount / $rate, 2);
+        }
+
+        $refundAmountKes = round($paymentBaseKes * ($requestedAmount / $paymentAmount), 2);
 
         return self::createRefundCredit(
             $payment->user,
-            $refundAmount,
-            "Refund for payment #{$payment->id} on invoice {$payment->invoice->invoice_number}"
+            $refundAmountKes,
+            'Refund for payment #'.$payment->id
+                .($payment->invoice ? ' on invoice '.$payment->invoice->invoice_number : '')
         );
     }
 

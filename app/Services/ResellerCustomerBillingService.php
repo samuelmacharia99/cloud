@@ -161,9 +161,14 @@ class ResellerCustomerBillingService
 
         $this->scope->managedInvoicesQuery($reseller)
             ->whereIn('status', [InvoiceStatus::Unpaid, InvoiceStatus::Overdue])
-            ->withSum(['payments as completed_payments_sum' => fn ($query) => $query->where('status', 'completed')], 'amount')
-            ->withSum('credits as credits_sum', 'amount_applied')
             ->select(['id', 'total', 'wallet_amount_applied'])
+            ->withSum(['payments as completed_payments_sum' => fn ($query) => $query->where('status', 'completed')], 'amount')
+            ->selectSub(
+                DB::table('credit_applications')
+                    ->selectRaw('COALESCE(SUM(amount_applied), 0)')
+                    ->whereColumn('invoice_id', 'invoices.id'),
+                'credits_sum'
+            )
             ->chunkById(200, function ($invoices) use (&$total) {
                 foreach ($invoices as $invoice) {
                     $remaining = max(0, round(
@@ -205,18 +210,18 @@ class ResellerCustomerBillingService
             ]);
             $invoice = $existing;
         } else {
-            $invoiceNumber = app(InvoiceNumberService::class)->nextYearly();
-
-            $invoice = Invoice::create([
-                'user_id' => $customer->id,
-                'invoice_number' => $invoiceNumber,
-                'status' => $data['status'],
-                'subtotal' => $subtotal,
-                'tax' => $taxAmount,
-                'total' => $total,
-                'due_date' => $data['due_date'] ?? now()->addDays(7),
-                'notes' => $data['notes'] ?? null,
-            ]);
+            $invoice = app(InvoiceNumberService::class)->createWithUniqueNumber(
+                fn (string $number) => Invoice::create([
+                    'user_id' => $customer->id,
+                    'invoice_number' => $number,
+                    'status' => $data['status'],
+                    'subtotal' => $subtotal,
+                    'tax' => $taxAmount,
+                    'total' => $total,
+                    'due_date' => $data['due_date'] ?? now()->addDays(7),
+                    'notes' => $data['notes'] ?? null,
+                ]),
+            );
         }
 
         foreach ($data['items'] as $item) {

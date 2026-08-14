@@ -52,7 +52,7 @@ class ProvisioningService
             }
 
             // Send service activated notification (only if not already sent by the driver)
-            if ($service->status === 'active' && ! in_array($driver, ['container'], true)) {
+            if ($service->status === ServiceStatus::Active && ! in_array($driver, ['container'], true)) {
                 app(NotificationService::class)->notifyServiceActivated($service->fresh());
             }
         } catch (\Exception $e) {
@@ -223,7 +223,7 @@ class ProvisioningService
             }
 
             // Update status if not already updated by driver
-            if ($service->status !== 'terminated') {
+            if ($service->status !== ServiceStatus::Terminated) {
                 $service->update(['status' => 'terminated', 'terminate_date' => now()]);
             }
 
@@ -305,7 +305,7 @@ class ProvisioningService
         $packageName = $this->directAdminSetup->resolvePackageName($service);
         $meta = $service->service_meta ?? [];
 
-        if ($service->status === 'active' && ($service->external_reference || ($meta['provisioned_at'] ?? null))) {
+        if ($service->status === ServiceStatus::Active && ($service->external_reference || ($meta['provisioned_at'] ?? null))) {
             \Log::info("DirectAdmin service {$service->id} already provisioned — skipping create", [
                 'username' => $service->external_reference ?? $username,
             ]);

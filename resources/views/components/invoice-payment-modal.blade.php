@@ -20,14 +20,24 @@
     applyWallet: false,
     walletBalance: {{ (float) $walletBalance }},
     amountDue: {{ (float) $amountDue }},
+    allowWalletApply: {{ $allowWalletApply ? 'true' : 'false' }},
     get walletToApply() {
-        if (!{{ $allowWalletApply ? 'true' : 'false' }} || !this.applyWallet) {
+        if (!this.allowWalletApply || !this.applyWallet) {
             return 0;
         }
         return Math.min(this.walletBalance, this.amountDue);
     },
     get payableAmount() {
         return Math.max(0, this.amountDue - this.walletToApply);
+    },
+    get hasGateways() {
+        return Object.keys(this.gateways).length > 0;
+    },
+    get canPayWithWalletOnly() {
+        return this.allowWalletApply && this.walletBalance > 0 && this.amountDue > 0;
+    },
+    get canSubmitPayment() {
+        return this.hasGateways || this.canPayWithWalletOnly;
     },
     async openPaymentModal() {
         this.showPaymentModal = true;
@@ -58,6 +68,9 @@
 
             if (Object.keys(this.gateways).length > 0) {
                 this.selectedGateway = Object.keys(this.gateways)[0];
+            } else if (this.canPayWithWalletOnly) {
+                this.applyWallet = true;
+                this.selectedGateway = 'wallet';
             }
         } catch (error) {
             alert(error.message || 'Unable to load payment methods.');
@@ -74,13 +87,18 @@
             return;
         }
 
+        if (this.payableAmount <= 0 && this.applyWallet && this.allowWalletApply) {
+            this.selectedGateway = 'wallet';
+        }
+
         if (!this.selectedGateway && this.payableAmount > 0) {
             alert('Please select a payment method.');
             return;
         }
 
-        if (this.payableAmount <= 0 && this.applyWallet && {{ $allowWalletApply ? 'true' : 'false' }}) {
-            this.selectedGateway = 'wallet';
+        if (this.payableAmount <= 0 && (!this.applyWallet || !this.allowWalletApply)) {
+            alert('Please apply your wallet balance or select another payment method.');
+            return;
         }
 
         this.submitting = true;
@@ -109,7 +127,7 @@
             form.appendChild(phoneInput);
         }
 
-        if ({{ $allowWalletApply ? 'true' : 'false' }} && this.applyWallet) {
+        if (this.allowWalletApply && this.applyWallet) {
             const walletInput = document.createElement('input');
             walletInput.type = 'hidden';
             walletInput.name = 'apply_wallet';
@@ -163,9 +181,9 @@
                     </div>
                 </template>
 
-                <template x-if="!loadingGateways && Object.keys(gateways).length > 0">
+                <template x-if="!loadingGateways && canSubmitPayment">
                     <form @submit.prevent="submitPayment()">
-                        <div class="space-y-3" x-show="payableAmount > 0">
+                        <div class="space-y-3" x-show="payableAmount > 0 && hasGateways">
                             <template x-for="(entry, index) in Object.entries(gateways)" :key="index">
                                 <label class="flex items-start p-4 border-2 rounded-lg cursor-pointer transition" :class="selectedGateway === entry[0] ? 'border-purple-500 bg-purple-50 dark:bg-purple-950' : 'border-slate-200 dark:border-slate-700 hover:border-purple-300'">
                                     <input type="radio" :value="entry[0]" x-model="selectedGateway" class="w-5 h-5 mt-1 rounded-full border-slate-300 text-purple-600 focus:ring-0 focus:border-purple-500 transition">
@@ -177,8 +195,12 @@
                             </template>
                         </div>
 
-                        <div x-show="payableAmount <= 0 && applyWallet && {{ $allowWalletApply ? 'true' : 'false' }}" class="p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-lg text-sm text-emerald-800 dark:text-emerald-200">
+                        <div x-show="payableAmount <= 0 && applyWallet && allowWalletApply" class="p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-lg text-sm text-emerald-800 dark:text-emerald-200">
                             Your wallet will cover the full amount due. Click continue to complete payment.
+                        </div>
+
+                        <div x-show="payableAmount > 0 && !hasGateways && allowWalletApply" class="p-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg text-sm text-amber-900 dark:text-amber-100">
+                            Online payment methods are unavailable. Apply your wallet balance to pay what you can, or contact support for the remainder.
                         </div>
 
                         <template x-if="selectedGateway === 'mpesa' && payableAmount > 0">
@@ -193,7 +215,7 @@
                             <button type="button" @click="closePaymentModal()" class="flex-1 px-4 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-white font-medium rounded-lg transition">
                                 Cancel
                             </button>
-                            <button type="submit" :disabled="submitting" class="flex-1 px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-400 text-white font-medium rounded-lg transition">
+                            <button type="submit" :disabled="submitting || (payableAmount > 0 && !hasGateways)" class="flex-1 px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-400 text-white font-medium rounded-lg transition">
                                 <span x-show="!submitting">Continue to Payment</span>
                                 <span x-show="submitting">Processing...</span>
                             </button>
@@ -201,7 +223,7 @@
                     </form>
                 </template>
 
-                <template x-if="!loadingGateways && Object.keys(gateways).length === 0">
+                <template x-if="!loadingGateways && !canSubmitPayment">
                     <div class="text-center py-8">
                         <p class="text-slate-600 dark:text-slate-400">No payment methods available. Please contact support.</p>
                     </div>

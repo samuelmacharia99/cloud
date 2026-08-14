@@ -16,7 +16,7 @@ class InvoicePdfService
     {
         $invoice->load('user', 'payments', 'credits')->loadItemsForDisplay();
 
-        $amountRemaining = max(0, $invoice->total - $invoice->getAmountPaid() - $invoice->getAppliedCredits());
+        $amountRemaining = $invoice->getAmountRemaining();
         $amountPaid = $invoice->getAmountPaid();
 
         $branding = app(ResellerBrandingResolver::class)->forInvoice($invoice);

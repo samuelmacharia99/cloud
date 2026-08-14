@@ -2,13 +2,17 @@
 
 namespace App\Services\Provisioning;
 
+use App\Jobs\CreateContainerBackupJob;
 use App\Models\ContainerBackup;
 use App\Models\Node;
 use App\Models\Service;
 use App\Services\SSH\SSHService;
 use Exception;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class ContainerBackupService
 {
@@ -57,31 +61,22 @@ class ContainerBackupService
             throw new Exception('Container deployment not found for service');
         }
 
-        $inFlight = ContainerBackup::query()
-            ->where('service_id', $service->id)
-            ->whereIn('status', ['pending', 'running'])
-            ->exists();
+        try {
+            $backup = Cache::lock($this->backupLockName($service), 30)->block(5, function () use ($service, $deployment, $type) {
+                if (ContainerBackup::query()
+                    ->where('service_id', $service->id)
+                    ->whereIn('status', ['pending', 'running'])
+                    ->exists()) {
+                    throw new Exception('A backup is already queued or running for this service. Refresh the Backups tab shortly.');
+                }
 
-        if ($inFlight) {
-            throw new Exception('A backup is already queued or running for this service. Refresh the Backups tab shortly.');
+                return $this->createBackupRecord($service, $deployment, $deployment->node, $type);
+            });
+        } catch (LockTimeoutException) {
+            throw new Exception('A backup is already being started for this service. Refresh the Backups tab shortly.');
         }
 
-        $backupName = 'backup-'.$service->id.'-'.now()->format('YmdHis');
-        $localBackupPath = self::BACKUP_BASE_PATH.'/'.$backupName.'.tar.gz';
-
-        $backup = ContainerBackup::create([
-            'container_deployment_id' => $deployment->id,
-            'service_id' => $service->id,
-            'node_id' => $deployment->node->id,
-            'backup_name' => $backupName,
-            'backup_path' => $localBackupPath,
-            'storage_driver' => 'node',
-            'status' => 'pending',
-            'type' => $type,
-            'started_at' => now(),
-        ]);
-
-        \App\Jobs\CreateContainerBackupJob::dispatch($backup->id)->afterResponse();
+        CreateContainerBackupJob::dispatch($backup->id)->afterResponse();
 
         return $backup;
     }
@@ -102,7 +97,12 @@ class ContainerBackupService
             throw new Exception('Backup service is missing.');
         }
 
-        return $this->performBackup($service, $backup);
+        try {
+            return Cache::lock($this->backupLockName($service), self::BACKUP_TIMEOUT + 300)
+                ->block(5, fn () => $this->performBackup($service, $backup));
+        } catch (LockTimeoutException) {
+            throw new Exception('Another backup operation is already running for this service.');
+        }
     }
 
     /**
@@ -121,23 +121,23 @@ class ContainerBackupService
             throw new Exception('Container deployment not found for service');
         }
 
-        $node = $deployment->node;
-        $backupName = 'backup-'.$service->id.'-'.now()->format('YmdHis');
-        $localBackupPath = self::BACKUP_BASE_PATH.'/'.$backupName.'.tar.gz';
+        try {
+            return Cache::lock($this->backupLockName($service), self::BACKUP_TIMEOUT + 300)
+                ->block(5, function () use ($service, $deployment, $type) {
+                    if (ContainerBackup::query()
+                        ->where('service_id', $service->id)
+                        ->whereIn('status', ['pending', 'running'])
+                        ->exists()) {
+                        throw new Exception('A backup is already queued or running for this service.');
+                    }
 
-        $backup = ContainerBackup::create([
-            'container_deployment_id' => $deployment->id,
-            'service_id' => $service->id,
-            'node_id' => $node->id,
-            'backup_name' => $backupName,
-            'backup_path' => $localBackupPath,
-            'storage_driver' => 'node',
-            'status' => 'pending',
-            'type' => $type,
-            'started_at' => now(),
-        ]);
+                    $backup = $this->createBackupRecord($service, $deployment, $deployment->node, $type);
 
-        return $this->performBackup($service, $backup);
+                    return $this->performBackup($service, $backup);
+                });
+        } catch (LockTimeoutException) {
+            throw new Exception('Another backup operation is already running for this service.');
+        }
     }
 
     /**
@@ -153,6 +153,7 @@ class ContainerBackupService
         $node = $deployment->node;
         $localBackupPath = (string) $backup->backup_path;
         $containerName = (string) $deployment->container_name;
+        $ssh = null;
 
         try {
             $ssh = $this->sshFor($node);
@@ -223,7 +224,7 @@ class ContainerBackupService
                 $ssh->disconnect();
                 $this->hetzner->disconnect();
             }
-        } catch (Exception $e) {
+        } catch (\Throwable $e) {
             $backup->update([
                 'status' => 'failed',
                 'error_message' => $e->getMessage(),
@@ -236,9 +237,35 @@ class ContainerBackupService
             ]);
 
             throw $e;
+        } finally {
+            $ssh?->disconnect();
+            $this->hetzner->disconnect();
         }
 
         return $backup->fresh();
+    }
+
+    private function backupLockName(Service $service): string
+    {
+        return 'container-backup:service:'.$service->id;
+    }
+
+    private function createBackupRecord(Service $service, $deployment, Node $node, string $type): ContainerBackup
+    {
+        $backupName = 'backup-'.$service->id.'-'.now()->format('YmdHisv').'-'.Str::lower(Str::random(8));
+        $localBackupPath = self::BACKUP_BASE_PATH.'/'.$backupName.'.tar.gz';
+
+        return ContainerBackup::create([
+            'container_deployment_id' => $deployment->id,
+            'service_id' => $service->id,
+            'node_id' => $node->id,
+            'backup_name' => $backupName,
+            'backup_path' => $localBackupPath,
+            'storage_driver' => 'node',
+            'status' => 'pending',
+            'type' => $type,
+            'started_at' => now(),
+        ]);
     }
 
     /**
@@ -403,27 +430,59 @@ class ContainerBackupService
 
         $localArchive = self::BACKUP_BASE_PATH.'/'.basename((string) $backup->backup_path);
         $cleanupLocal = false;
+        $ssh = null;
+        $swapped = false;
+        $restoreId = 'restore-'.$backup->id.'-'.Str::lower(Str::random(8));
+        $stagingRoot = self::BACKUP_BASE_PATH.'/'.$restoreId;
+        $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+        $rollbackPath = $containerPath.'.rollback-'.$restoreId;
+        $deploymentService = new ContainerDeploymentService;
+        $restoreFinalized = false;
+
+        register_shutdown_function(function () use (
+            &$restoreFinalized,
+            &$swapped,
+            &$ssh,
+            $backup,
+            $service,
+            $deployment,
+            $deploymentService,
+            $containerPath,
+            $rollbackPath
+        ): void {
+            if ($restoreFinalized || ! $swapped || ! $ssh) {
+                return;
+            }
+
+            $fatal = error_get_last();
+            if (! is_array($fatal) || ! in_array($fatal['type'] ?? null, [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR], true)) {
+                return;
+            }
+
+            $this->rollbackRestoreSwap(
+                $ssh,
+                $deploymentService,
+                $service,
+                $deployment,
+                $containerPath,
+                $rollbackPath,
+                $backup->id
+            );
+
+            try {
+                $backup->update([
+                    'status' => 'failed',
+                    'error_message' => 'Restore interrupted by fatal shutdown: '.($fatal['message'] ?? 'unknown error'),
+                ]);
+            } catch (\Throwable) {
+                // The database may be unavailable during process shutdown.
+            }
+        });
 
         try {
             $ssh = $this->sshFor($node);
-            $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
 
-            // Update backup status
             $backup->update(['status' => 'restoring']);
-
-            // Ensure docker-compose.yml exists before using it
-            $deploymentService = new ContainerDeploymentService;
-            $deploymentService->ensureComposeFileExists($ssh, $deployment);
-
-            // Stop and remove current container
-            $ssh->reconnect();
-            $this->softExec($ssh, "cd {$containerPath} && docker compose -f docker-compose.yml down", 120);
-
-            // Remove current directory
-            @$ssh->deleteDir($containerPath);
-
-            // Create fresh directory
-            $ssh->mkdirp($containerPath);
 
             if (($backup->storage_driver ?? 'node') === 'hetzner') {
                 $this->stageHetznerBackupOnNode($ssh, $backup, $localArchive);
@@ -434,24 +493,45 @@ class ContainerBackupService
                 ? $localArchive
                 : $backup->backup_path;
 
-            // Extract backup tarball
+            // Validate both gzip/tar integrity and member paths before touching the live workload.
             $ssh->exec(
-                'tar -xzf '.escapeshellarg($archiveOnNode).' -C '.self::CONTAINER_BASE_PATH,
+                $this->buildArchiveValidationCommand((string) $archiveOnNode, (string) $deployment->container_name),
                 self::BACKUP_TIMEOUT
             );
 
-            if ($cleanupLocal) {
-                $this->softExec($ssh, 'rm -f '.escapeshellarg($localArchive), 30);
-            }
+            // Extract into an isolated staging root. The live directory remains untouched until
+            // the complete archive has been validated and extracted.
+            $ssh->exec(
+                'rm -rf '.escapeshellarg($stagingRoot)
+                .' && mkdir -p '.escapeshellarg($stagingRoot)
+                .' && tar -xzf '.escapeshellarg((string) $archiveOnNode)
+                .' -C '.escapeshellarg($stagingRoot)
+                .' && test -d '.escapeshellarg($stagingRoot.'/'.$deployment->container_name),
+                self::BACKUP_TIMEOUT
+            );
 
-            // Restart container on a fresh SSH session after long extract
+            $deploymentService->ensureComposeFileExists($ssh, $deployment);
+            $ssh->reconnect();
+            $ssh->exec(
+                'cd '.escapeshellarg($containerPath).' && docker compose -f docker-compose.yml down',
+                120
+            );
+
+            $ssh->exec(
+                'rm -rf '.escapeshellarg($rollbackPath)
+                .' && mv '.escapeshellarg($containerPath).' '.escapeshellarg($rollbackPath)
+                .' && (mv '.escapeshellarg($stagingRoot.'/'.$deployment->container_name).' '.escapeshellarg($containerPath)
+                .' || { mv '.escapeshellarg($rollbackPath).' '.escapeshellarg($containerPath).'; exit 1; })',
+                120
+            );
+            $swapped = true;
+
             $ssh->reconnect();
             $deploymentService->startComposeStack($ssh, $service, $deployment);
+            $deploymentService->waitForContainerRunning($ssh, $deployment->container_name, 120);
+            $ssh->exec('rm -rf '.escapeshellarg($rollbackPath), 120);
+            $swapped = false;
 
-            // Wait a bit for health check
-            sleep(5);
-
-            // Update backup status
             $backup->update(['status' => 'completed']);
 
             Log::info('Container restored from backup', [
@@ -461,17 +541,81 @@ class ContainerBackupService
                 'storage_driver' => $backup->storage_driver,
             ]);
 
-            $ssh->disconnect();
-            $this->hetzner->disconnect();
-        } catch (Exception $e) {
-            $backup->update(['status' => 'failed']);
+        } catch (\Throwable $e) {
+            if ($ssh && $swapped) {
+                $this->rollbackRestoreSwap(
+                    $ssh,
+                    $deploymentService,
+                    $service,
+                    $deployment,
+                    $containerPath,
+                    $rollbackPath,
+                    $backup->id
+                );
+            }
+
+            $backup->update(['status' => 'failed', 'error_message' => $e->getMessage()]);
 
             Log::error("Container restore failed for backup {$backup->id}", [
                 'error' => $e->getMessage(),
             ]);
 
             throw $e;
+        } finally {
+            if ($ssh) {
+                $this->softExec($ssh, 'rm -rf '.escapeshellarg($stagingRoot), 30);
+                if ($cleanupLocal) {
+                    $this->softExec($ssh, 'rm -f '.escapeshellarg($localArchive), 30);
+                }
+                $ssh->disconnect();
+            }
+            $this->hetzner->disconnect();
+            $restoreFinalized = true;
         }
+    }
+
+    private function rollbackRestoreSwap(
+        SSHService $ssh,
+        ContainerDeploymentService $deploymentService,
+        Service $service,
+        $deployment,
+        string $containerPath,
+        string $rollbackPath,
+        int $backupId
+    ): void {
+        try {
+            $ssh->reconnect();
+            $this->softExec(
+                $ssh,
+                'cd '.escapeshellarg($containerPath).' && docker compose -f docker-compose.yml down',
+                120
+            );
+            $ssh->exec(
+                'rm -rf '.escapeshellarg($containerPath)
+                .' && mv '.escapeshellarg($rollbackPath).' '.escapeshellarg($containerPath),
+                120
+            );
+            $ssh->reconnect();
+            $deploymentService->startComposeStack($ssh, $service, $deployment);
+            $deploymentService->waitForContainerRunning($ssh, $deployment->container_name, 120);
+        } catch (\Throwable $rollbackError) {
+            Log::critical('Container restore rollback failed', [
+                'backup_id' => $backupId,
+                'error' => $rollbackError->getMessage(),
+            ]);
+        }
+    }
+
+    public function buildArchiveValidationCommand(string $archivePath, string $containerName): string
+    {
+        $archive = escapeshellarg($archivePath);
+        $expected = escapeshellarg($containerName);
+
+        return 'listing=$(mktemp) && trap \'rm -f "$listing"\' EXIT'
+            .' && tar -tzf '.$archive.' > "$listing"'
+            .' && test -s "$listing"'
+            .' && ! awk \'BEGIN { bad=0 } /^\// || /(^|\/)\.\.(\/|$)/ { bad=1 } END { exit bad ? 0 : 1 }\' "$listing"'
+            .' && awk -v root='.$expected.' \'BEGIN { found=0 } { sub(/^\.\//, "", $0); split($0, p, "/"); if (p[1] == root) found=1 } END { exit found ? 0 : 1 }\' "$listing"';
     }
 
     /**
@@ -628,13 +772,15 @@ class ContainerBackupService
         if (($backup->storage_driver ?? 'node') === 'hetzner') {
             try {
                 $this->hetzner->delete((string) $backup->backup_path);
-                $this->hetzner->disconnect();
             } catch (Exception $e) {
-                Log::warning('Failed to delete backup file from Hetzner Storage Box', [
+                Log::error('Failed to delete backup file from Hetzner Storage Box', [
                     'backup_id' => $backup->id,
                     'backup_path' => $backup->backup_path,
                     'error' => $e->getMessage(),
                 ]);
+                throw $e;
+            } finally {
+                $this->hetzner->disconnect();
             }
 
             return;
@@ -643,19 +789,22 @@ class ContainerBackupService
         $node = $backup->node;
 
         if (! $node) {
-            return;
+            throw new Exception('Backup node is missing; backup record was retained.');
         }
 
+        $ssh = null;
         try {
             $ssh = $this->sshFor($node);
-            @$ssh->exec('rm -f '.escapeshellarg($backup->backup_path));
-            $ssh->disconnect();
+            $ssh->exec('rm -f '.escapeshellarg($backup->backup_path));
         } catch (Exception $e) {
-            Log::warning("Failed to delete backup file from node {$node->id}", [
+            Log::error("Failed to delete backup file from node {$node->id}", [
                 'backup_id' => $backup->id,
                 'backup_path' => $backup->backup_path,
                 'error' => $e->getMessage(),
             ]);
+            throw $e;
+        } finally {
+            $ssh?->disconnect();
         }
     }
 

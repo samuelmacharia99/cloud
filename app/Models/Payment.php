@@ -15,17 +15,39 @@ class Payment extends Model
     use HasFactory;
 
     protected $fillable = [
-        'user_id', 'invoice_id', 'amount', 'currency',
+        'user_id', 'invoice_id', 'amount', 'currency', 'amount_base_kes',
         'payment_method', 'payment_purpose', 'transaction_reference', 'status', 'paid_at', 'notes',
     ];
 
     protected $casts = [
         'amount' => 'decimal:2',
+        'amount_base_kes' => 'decimal:2',
         'currency' => 'string',
         'payment_method' => PaymentMethod::class,
         'status' => PaymentStatus::class,
         'paid_at' => 'datetime',
     ];
+
+    protected static function booted(): void
+    {
+        static::creating(function (self $payment): void {
+            if ($payment->amount_base_kes !== null) {
+                return;
+            }
+
+            $currency = strtoupper((string) ($payment->currency ?: config('currency.base', 'KES')));
+            if ($currency === config('currency.base', 'KES')) {
+                $payment->amount_base_kes = round((float) $payment->amount, 2);
+
+                return;
+            }
+
+            $rate = (float) (Currency::query()->where('code', $currency)->value('exchange_rate') ?? 0);
+            if ($rate > 0) {
+                $payment->amount_base_kes = round((float) $payment->amount / $rate, 2);
+            }
+        });
+    }
 
     // Relationships
     public function user()
@@ -182,14 +204,14 @@ class Payment extends Model
     {
         $base = addslashes(config('currency.base', 'KES'));
 
-        return "COALESCE(SUM(CASE
+        return "COALESCE(SUM(COALESCE(payments.amount_base_kes, CASE
             WHEN {$currencyColumn} IS NULL OR {$currencyColumn} = '{$base}' THEN {$amountColumn}
             ELSE {$amountColumn} / NULLIF((
                 SELECT exchange_rate FROM currencies
                 WHERE currencies.code = {$currencyColumn}
                 LIMIT 1
             ), 0)
-        END), 0)";
+        END)), 0)";
     }
 
     /**

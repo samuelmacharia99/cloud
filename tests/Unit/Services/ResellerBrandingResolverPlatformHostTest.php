@@ -5,8 +5,10 @@ namespace Tests\Unit\Services;
 use App\Models\Setting;
 use App\Services\ResellerBrandingResolver;
 use Mockery;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Tests\TestCase;
 
+#[RunTestsInSeparateProcesses]
 class ResellerBrandingResolverPlatformHostTest extends TestCase
 {
     protected function tearDown(): void

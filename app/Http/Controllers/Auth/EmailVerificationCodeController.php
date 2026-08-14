@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\EmailVerificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\View\View;
 
 class EmailVerificationCodeController extends Controller
@@ -19,8 +20,12 @@ class EmailVerificationCodeController extends Controller
     public function show(Request $request): View
     {
         $email = $request->query('email') ?? session('email');
-        $user = $email ? User::where('email', $email)->first() : null;
         $phoneHint = null;
+        $sessionEmail = session('email');
+        $user = is_string($email) && is_string($sessionEmail)
+            && hash_equals(strtolower($sessionEmail), strtolower($email))
+            ? User::whereRaw('LOWER(email) = ?', [strtolower($email)])->first()
+            : null;
 
         if ($user?->phone) {
             $normalized = PhoneHelper::normalize($user->phone);
@@ -45,26 +50,30 @@ class EmailVerificationCodeController extends Controller
             'code' => ['required', 'string', 'size:6'],
         ]);
 
-        // Find user by email
-        $user = User::where('email', $validated['email'])->first();
-
-        if (! $user) {
-            return back()->withErrors(['email' => 'User not found.']);
+        $email = strtolower(trim($validated['email']));
+        if ($this->tooManyAttempts('verify', $email, $request->ip())) {
+            return back()->withErrors(['code' => 'The verification details are invalid or expired.']);
         }
 
-        // Find valid verification code
-        $verificationCode = EmailVerificationCode::where('user_id', $user->id)
-            ->where('code', $validated['code'])
-            ->first();
+        $this->recordAttempt('verify', $email, $request->ip());
+        $user = User::whereRaw('LOWER(email) = ?', [$email])->first();
 
-        if (! $verificationCode) {
-            return back()->withErrors(['code' => 'Invalid verification code.']);
+        $verificationCode = $user
+            ? EmailVerificationCode::where('user_id', $user->id)->latest('id')->first()
+            : null;
+
+        if (! $verificationCode || $verificationCode->isExpired() || ! $verificationCode->matches($validated['code'])) {
+            if ($verificationCode?->isExpired()) {
+                $verificationCode->delete();
+            }
+
+            return back()->withErrors(['code' => 'The verification details are invalid or expired.']);
         }
 
-        if ($verificationCode->isExpired()) {
+        if ($user->hasVerifiedEmail()) {
             $verificationCode->delete();
 
-            return back()->withErrors(['code' => 'Verification code has expired. Please request a new one.']);
+            return back()->withErrors(['code' => 'The verification details are invalid or expired.']);
         }
 
         $user->update([
@@ -72,9 +81,11 @@ class EmailVerificationCodeController extends Controller
             'status' => 'active',
         ]);
         $verificationCode->delete();
+        $this->clearAttempts('verify', $email, $request->ip());
 
         // Log the user in
         Auth::login($user);
+        $request->session()->regenerate();
 
         return redirect()->route('dashboard')->with('success', 'Email verified! Welcome to '.config('app.name'));
     }
@@ -88,22 +99,45 @@ class EmailVerificationCodeController extends Controller
             'email' => ['required', 'email'],
         ]);
 
-        $user = User::where('email', $validated['email'])->first();
+        $email = strtolower(trim($validated['email']));
+        if (! $this->tooManyAttempts('resend', $email, $request->ip())) {
+            $this->recordAttempt('resend', $email, $request->ip());
+            $user = User::whereRaw('LOWER(email) = ?', [$email])->first();
 
-        if (! $user) {
-            return back()->withErrors(['email' => 'User not found.']);
+            if ($user && ! $user->hasVerifiedEmail()) {
+                try {
+                    app(EmailVerificationService::class)->sendVerificationCode($user);
+                } catch (\Throwable) {
+                    // Keep the public response uniform to prevent account enumeration.
+                }
+            }
         }
 
-        if ($user->email_verified_at) {
-            return back()->withErrors(['email' => 'Email is already verified.']);
-        }
+        return back()->with('success', 'If an unverified account matches that email, a verification code will be sent.');
+    }
 
-        try {
-            $delivery = app(EmailVerificationService::class)->sendVerificationCode($user);
-        } catch (\Throwable $e) {
-            return back()->withErrors(['email' => $e->getMessage()]);
-        }
+    private function tooManyAttempts(string $action, string $email, string $ip): bool
+    {
+        $limit = (int) config('security.rate_limit.email_verification', 5);
 
-        return back()->with('success', 'New verification code sent to '.EmailVerificationService::deliverySummary($delivery).'.');
+        return RateLimiter::tooManyAttempts($this->rateKey($action, 'email', $email), $limit)
+            || RateLimiter::tooManyAttempts($this->rateKey($action, 'ip', $ip), $limit);
+    }
+
+    private function recordAttempt(string $action, string $email, string $ip): void
+    {
+        RateLimiter::hit($this->rateKey($action, 'email', $email), 3600);
+        RateLimiter::hit($this->rateKey($action, 'ip', $ip), 3600);
+    }
+
+    private function clearAttempts(string $action, string $email, string $ip): void
+    {
+        RateLimiter::clear($this->rateKey($action, 'email', $email));
+        RateLimiter::clear($this->rateKey($action, 'ip', $ip));
+    }
+
+    private function rateKey(string $action, string $dimension, string $value): string
+    {
+        return 'email-verification:'.$action.':'.$dimension.':'.hash('sha256', strtolower($value));
     }
 }

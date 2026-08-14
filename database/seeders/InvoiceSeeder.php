@@ -4,9 +4,9 @@ namespace Database\Seeders;
 
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
-use App\Models\User;
-use App\Models\Service;
 use App\Models\Product;
+use App\Models\Service;
+use App\Models\User;
 use Illuminate\Database\Seeder;
 
 class InvoiceSeeder extends Seeder
@@ -25,7 +25,7 @@ class InvoiceSeeder extends Seeder
 
             for ($i = 0; $i < $invoiceCount; $i++) {
                 $count = Invoice::count() + 1;
-                $invoiceNumber = 'INV-' . now()->format('Ymd') . '-' . str_pad($count, 5, '0', STR_PAD_LEFT);
+                $invoiceNumber = 'INV-'.now()->format('Ymd').'-'.str_pad($count, 5, '0', STR_PAD_LEFT);
 
                 // 60% chance of paid status
                 $status = ($customerId + $i) % 10 <= 5 ? 'paid' : $statuses[($customerId + $i) % count($statuses)];
@@ -59,7 +59,7 @@ class InvoiceSeeder extends Seeder
                     $service = $services->isNotEmpty() ? $services->get($j % $services->count()) : null;
                     $product = $service ? $service->product : Product::first();
                     $quantity = 1;
-                    $unitPrice = $product->monthly_price ?? $product->yearly_price ?? $product->price ?? 10.00;
+                    $unitPrice = $product->priceForBillingCycle((string) ($product->billing_cycle ?? 'monthly'));
                     $amount = $unitPrice * $quantity;
 
                     InvoiceItem::create([

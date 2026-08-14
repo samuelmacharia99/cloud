@@ -8,13 +8,14 @@ use App\Enums\PaymentStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Invoice;
 use App\Models\Payment;
-use App\Models\Setting;
 use App\Models\User;
+use App\Services\Billing\InvoiceNumberService;
 use App\Services\Billing\InvoiceSettlementService;
 use App\Services\InvoicePdfService;
 use App\Services\InvoiceTransferService;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class InvoiceController extends Controller
@@ -68,16 +69,18 @@ class InvoiceController extends Controller
             'notes' => 'nullable|string',
         ]);
 
-        // Auto-generate invoice number
-        $prefix = Setting::getValue('invoice_prefix', 'INV');
-        $year = now()->format('Y');
-        $count = Invoice::whereYear('created_at', $year)->count() + 1;
-        $validated['invoice_number'] = "{$prefix}-{$year}-".str_pad($count, 5, '0', STR_PAD_LEFT);
+        if ($validated['status'] === InvoiceStatus::Paid->value) {
+            return back()
+                ->withInput()
+                ->withErrors(['status' => 'Create the invoice as open, then record its payment so settlement runs correctly.']);
+        }
+
+        $validated['invoice_number'] = app(InvoiceNumberService::class)->nextYearly();
         $validated['tax'] ??= 0;
 
         $invoice = Invoice::create($validated);
 
-        if ($invoice->status !== 'draft') {
+        if ($invoice->status !== InvoiceStatus::Draft) {
             $this->notificationService->notifyInvoiceGenerated($invoice);
         }
 
@@ -118,6 +121,12 @@ class InvoiceController extends Controller
             'notes' => 'nullable|string',
         ]);
 
+        if ($validated['status'] === InvoiceStatus::Paid->value && ! $invoice->isPaid()) {
+            return back()
+                ->withInput()
+                ->withErrors(['status' => 'Use “Mark as paid” or record a payment so settlement and provisioning run correctly.']);
+        }
+
         $validated['tax'] ??= 0;
         $invoice->update($validated);
 
@@ -140,11 +149,12 @@ class InvoiceController extends Controller
      */
     public function destroy(Invoice $invoice)
     {
+        if ($invoice->payments()->exists()) {
+            return back()->with('error', 'Invoices with payment history cannot be deleted. Cancel the invoice or reverse its payments instead.');
+        }
+
         // Delete associated invoice items first
         $invoice->items()->delete();
-
-        // Delete associated payments
-        $invoice->payments()->delete();
 
         // Delete the invoice
         $invoice->delete();
@@ -158,35 +168,49 @@ class InvoiceController extends Controller
      */
     public function markAsPaid(Request $request, Invoice $invoice)
     {
+        $validated = $request->validate([
+            'paid_date' => 'nullable|date',
+        ]);
+
         try {
-            \DB::transaction(function () use ($request, $invoice) {
-                // Create a payment record for the full invoice amount
-                Payment::create([
-                    'user_id' => $invoice->user_id,
-                    'invoice_id' => $invoice->id,
-                    'amount' => $invoice->total,
-                    'currency' => 'KES',
-                    'payment_method' => 'manual',
-                    'transaction_reference' => 'Manual payment - Admin marked as paid',
-                    'status' => 'completed',
-                    'paid_at' => $request->input('paid_date', now()),
+            $payment = \DB::transaction(function () use ($validated, $invoice) {
+                $lockedInvoice = Invoice::query()->lockForUpdate()->findOrFail($invoice->id);
+
+                if ($lockedInvoice->isPaid() || $lockedInvoice->status === InvoiceStatus::Cancelled) {
+                    throw new \RuntimeException('Only open invoices can be marked as paid.');
+                }
+
+                $amountRemaining = $lockedInvoice->getAmountRemaining();
+                if ($amountRemaining <= 0) {
+                    app(InvoiceSettlementService::class)->settleFromCredits($lockedInvoice);
+
+                    return null;
+                }
+
+                $payment = Payment::create([
+                    'user_id' => $lockedInvoice->user_id,
+                    'invoice_id' => $lockedInvoice->id,
+                    'amount' => $amountRemaining,
+                    'currency' => $lockedInvoice->displayCurrency(),
+                    'payment_method' => PaymentMethod::Manual,
+                    'transaction_reference' => 'ADMIN-MARK-PAID-'.$lockedInvoice->id.'-'.Str::uuid(),
+                    'status' => PaymentStatus::Completed,
+                    'paid_at' => $validated['paid_date'] ?? now(),
                     'notes' => 'Marked as paid by admin',
                 ]);
 
                 \Log::info('Invoice marked as paid by admin', [
-                    'invoice_id' => $invoice->id,
-                    'invoice_number' => $invoice->invoice_number,
-                    'amount' => $invoice->total,
+                    'invoice_id' => $lockedInvoice->id,
+                    'invoice_number' => $lockedInvoice->invoice_number,
+                    'amount' => $amountRemaining,
+                    'currency' => $lockedInvoice->displayCurrency(),
                     'admin_id' => auth()->id(),
                 ]);
+
+                return $payment;
             });
 
             $invoice->refresh();
-
-            $payment = Payment::where('invoice_id', $invoice->id)
-                ->where('transaction_reference', 'Manual payment - Admin marked as paid')
-                ->latest('id')
-                ->first();
 
             if ($payment) {
                 app(InvoiceSettlementService::class)->settleFromPayment($payment);
@@ -236,7 +260,7 @@ class InvoiceController extends Controller
                 'user_id' => $invoice->user_id,
                 'invoice_id' => $invoice->id,
                 'amount' => $validated['amount'],
-                'currency' => 'KES',
+                'currency' => $invoice->displayCurrency(),
                 'payment_method' => $validated['payment_method'],
                 'transaction_reference' => $validated['transaction_reference'] ?? null,
                 'status' => PaymentStatus::Completed->value,
@@ -266,7 +290,7 @@ class InvoiceController extends Controller
             }
 
             return redirect()->route('admin.invoices.show', $invoice)
-                ->with('success', 'Payment of KES '.number_format((float) $validated['amount'], 2).' recorded successfully.');
+                ->with('success', 'Payment of '.$invoice->displayCurrency().' '.number_format((float) $validated['amount'], 2).' recorded successfully.');
 
         } catch (\Exception $e) {
             \Log::error('Failed to record payment', [

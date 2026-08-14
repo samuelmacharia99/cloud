@@ -36,14 +36,17 @@ class PaymentController extends Controller
         }
 
         $gateways = $this->gatewayFactory->getAvailableGateways();
+        // Reseller invoice payment does not yet support bank transfer forms.
+        unset($gateways['bank_transfer']);
         $wallet = $this->walletService->getOrCreate(auth()->user());
         $amountDue = $this->invoicePaymentService->amountDue($invoice);
 
         if (request()->wantsJson()) {
             return response()->json([
                 'gateways' => $gateways,
-                'wallet_balance' => $wallet->balance,
+                'wallet_balance' => (float) $wallet->balance,
                 'amount_due' => $amountDue,
+                'can_pay_with_wallet' => (float) $wallet->balance > 0,
             ]);
         }
 
@@ -78,6 +81,7 @@ class PaymentController extends Controller
 
             if ($method === 'wallet') {
                 return redirect()->back()
+                    ->withInput()
                     ->with('error', 'Wallet balance is not enough to cover this invoice. Apply wallet and choose another payment method for the remainder.');
             }
 

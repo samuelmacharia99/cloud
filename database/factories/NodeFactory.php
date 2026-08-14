@@ -26,6 +26,9 @@ class NodeFactory extends Factory
             'ram_used_gb' => 0,
             'storage_used_gb' => 0,
             'ssh_port' => '22',
+            'ssh_username' => 'root',
+            'ssh_password' => 'test-node-password',
+            'da_port' => '2222',
             'verify_ssl' => true,
             'region' => 'test',
             'container_count' => 0,
@@ -51,6 +54,22 @@ class NodeFactory extends Factory
             'storage_gb' => 0,
             'api_url' => 'https://mail.example.com',
             'api_token' => 'test-mailcow-api-key',
+            'verify_ssl' => true,
+            'is_active' => true,
+        ]);
+    }
+
+    public function directAdmin(): static
+    {
+        return $this->state(fn () => [
+            'type' => 'directadmin',
+            'status' => 'online',
+            'da_admin_username' => 'admin',
+            'da_login_key' => 'test-login-key',
+            'da_port' => '2222',
+            'ssh_password' => 'ssh-secret',
+            'api_url' => null,
+            'api_token' => null,
             'verify_ssl' => true,
             'is_active' => true,
         ]);

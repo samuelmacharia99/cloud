@@ -133,10 +133,12 @@ class ServiceUpgradeController extends Controller
         $billingCycles = CustomerHostingUpgradeService::BILLING_CYCLES;
         $billingCycle = $service->billing_cycle ?? 'monthly';
 
-        $planEstimates = $planOptions->mapWithKeys(function (array $option) use ($service, $customer, $billingCycles) {
+        $planEstimates = $planOptions->mapWithKeys(function (array $option) use ($service, $customer, $billingCycles, $billingCycle) {
             $key = $option['product']->id.':0';
             $cycles = [];
-            $currentPrice = (float) ($service->custom_price ?? $service->product->price ?? 0);
+            $currentPrice = (float) ($service->custom_price
+                ?? $service->product?->priceForBillingCycle($billingCycle)
+                ?? 0);
             foreach ($billingCycles as $cycle) {
                 $factor = match ($cycle) {
                     'quarterly' => 3,

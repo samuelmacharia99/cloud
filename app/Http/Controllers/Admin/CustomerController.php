@@ -13,11 +13,11 @@ use App\Models\Node;
 use App\Models\Product;
 use App\Models\ResellerProduct;
 use App\Models\Service;
-use App\Models\Setting;
 use App\Models\User;
 use App\Rules\ValidCountryCode;
 use App\Services\AdminAccountWelcomeService;
 use App\Services\AdminActivityService;
+use App\Services\Billing\InvoiceNumberService;
 use App\Services\CreditService;
 use App\Services\CustomerResellerTransferService;
 use App\Services\InvoiceGenerationScheduleService;
@@ -238,7 +238,7 @@ class CustomerController extends Controller
             $customer,
             (float) $validated['amount'],
             $validated['notes'] ?? 'Manual credit',
-            $validated['expires_at'] ? Carbon::parse($validated['expires_at']) : null,
+            isset($validated['expires_at']) ? Carbon::parse($validated['expires_at']) : null,
         );
 
         $credit->update(['source' => $validated['source']]);
@@ -419,7 +419,9 @@ class CustomerController extends Controller
 
         // Log out the current admin and log in as the customer
         auth()->logout();
+        session()->regenerate();
         auth()->loginUsingId($customer->id);
+        session()->regenerate();
 
         return redirect()->route('dashboard')
             ->with('success', "You are now viewing the dashboard as {$customer->name}.");
@@ -460,7 +462,9 @@ class CustomerController extends Controller
 
         // Log out and log back in as admin
         auth()->logout();
+        session()->regenerate();
         auth()->loginUsingId($adminId);
+        session()->regenerate();
 
         return redirect()->route('admin.customers.index')
             ->with('success', 'Exited customer view.');
@@ -1215,11 +1219,7 @@ class CustomerController extends Controller
                 $subtotal = $taxBreakdown['subtotal'];
                 $total = $taxBreakdown['total'];
 
-                // Generate invoice number
-                $prefix = Setting::getValue('invoice_prefix', 'INV');
-                $year = now()->format('Y');
-                $count = Invoice::whereYear('created_at', $year)->count() + 1;
-                $invoiceNumber = "{$prefix}-{$year}-".str_pad($count, 5, '0', STR_PAD_LEFT);
+                $invoiceNumber = app(InvoiceNumberService::class)->nextYearly();
 
                 // Create invoice
                 $invoice = Invoice::create([
@@ -1260,10 +1260,6 @@ class CustomerController extends Controller
      */
     private function generateInvoiceNumber(): string
     {
-        $prefix = Setting::getValue('invoice_prefix', 'INV');
-        $date = now()->format('Ymd');
-        $count = Invoice::whereDate('created_at', now())->count() + 1;
-
-        return "{$prefix}-{$date}-".str_pad($count, 5, '0', STR_PAD_LEFT);
+        return app(InvoiceNumberService::class)->nextDaily();
     }
 }

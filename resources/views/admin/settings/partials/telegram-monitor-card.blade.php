@@ -24,7 +24,7 @@
             <div class="grid md:grid-cols-2 gap-4">
                 <div>
                     <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Bot token</label>
-                    @if($settings['telegram_bot_token'] ?? false)
+                    @if($configuredSensitiveSettings['telegram_bot_token'] ?? false)
                         <p class="text-sm text-green-600 dark:text-green-400 mb-2">✓ Token configured</p>
                     @endif
                     <input type="password" name="settings[telegram_bot_token]" placeholder="123456789:ABC..." autocomplete="off" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono text-sm" />

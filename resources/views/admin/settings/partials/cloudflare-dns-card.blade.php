@@ -35,7 +35,7 @@
                         type="password"
                         name="settings[cloudflare_api_token]"
                         value=""
-                        placeholder="{{ ! empty($settings['cloudflare_api_token']) ? '•••••••• (leave blank to keep)' : 'Paste new API token' }}"
+                        placeholder="{{ ($configuredSensitiveSettings['cloudflare_api_token'] ?? false) ? '•••••••• (leave blank to keep)' : 'Paste new API token' }}"
                         autocomplete="new-password"
                         class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono text-sm"
                     />

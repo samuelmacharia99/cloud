@@ -57,6 +57,10 @@ class ProvisionPendingContainersCommand extends BaseCronCommand
 
         \Log::info($message);
 
+        if ($failed !== []) {
+            throw new \RuntimeException($message);
+        }
+
         return $message;
     }
 }

@@ -75,6 +75,6 @@ class ServiceInfrastructureProbeService
             return true;
         }
 
-        return in_array($deployment->status, ['terminated', 'failed'], true);
+        return $deployment->status === 'terminated';
     }
 }

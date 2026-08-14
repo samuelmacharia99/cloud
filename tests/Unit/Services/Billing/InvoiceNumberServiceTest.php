@@ -14,7 +14,7 @@ class InvoiceNumberServiceTest extends TestCase
 
     public function test_next_yearly_uses_highest_existing_sequence_not_row_count(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->create(['preferred_currency' => 'KES']);
         $year = now()->format('Y');
 
         Invoice::factory()->create([
@@ -43,7 +43,7 @@ class InvoiceNumberServiceTest extends TestCase
 
     public function test_next_daily_uses_date_prefix_sequence(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->create(['preferred_currency' => 'KES']);
         $datePart = now()->format('Ymd');
 
         Invoice::factory()->create([

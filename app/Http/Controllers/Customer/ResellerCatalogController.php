@@ -22,7 +22,7 @@ class ResellerCatalogController extends Controller
             ->where('reseller_id', $user->reseller_id)
             ->where('is_active', true)
             ->with('adminProduct')
-            ->orderByRaw('COALESCE(monthly_price, price, 0) ASC')
+            ->orderByRaw('COALESCE(monthly_price, yearly_price / 12, 0) ASC')
             ->orderBy('name')
             ->get();
 

@@ -39,13 +39,13 @@ class MpesaCallbackTokenTest extends TestCase
         $this->assertFalse($this->invokeIsValid(Request::create('/webhooks/c2b', 'POST')));
     }
 
-    public function test_allows_empty_token_outside_production(): void
+    public function test_rejects_empty_token_outside_production(): void
     {
         $this->app->detectEnvironment(fn () => 'local');
         Setting::setValue('mpesa_environment', 'sandbox');
         Setting::setValue('mpesa_callback_token', '');
 
-        $this->assertTrue($this->invokeIsValid(Request::create('/webhooks/c2b', 'POST')));
+        $this->assertFalse($this->invokeIsValid(Request::create('/webhooks/c2b', 'POST')));
     }
 
     public function test_validates_query_token_when_configured(): void

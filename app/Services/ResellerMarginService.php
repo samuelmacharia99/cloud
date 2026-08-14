@@ -11,6 +11,7 @@ use App\Models\ResellerDomainOrder;
 use App\Models\ResellerMarginEntry;
 use App\Models\ResellerProduct;
 use App\Models\User;
+use App\Services\Billing\InvoiceCurrencyService;
 use Illuminate\Support\Collection;
 
 class ResellerMarginService
@@ -145,7 +146,14 @@ class ResellerMarginService
             return 1.0;
         }
 
-        return min(1.0, (float) $payment->amount / (float) $invoice->total);
+        $invoiceAmount = app(InvoiceCurrencyService::class)
+            ->paymentAmountInInvoiceCurrency(
+                $invoice,
+                (float) $payment->amount,
+                $payment->currency ?? config('currency.base', 'KES')
+            );
+
+        return min(1.0, $invoiceAmount / (float) $invoice->total);
     }
 
     private function recordLineItemMargin(

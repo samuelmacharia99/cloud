@@ -11,6 +11,12 @@ class Node extends Model
 {
     use HasFactory;
 
+    protected $hidden = [
+        'ssh_password',
+        'da_login_key',
+        'api_token',
+    ];
+
     protected $fillable = [
         'name',
         'hostname',
@@ -57,6 +63,7 @@ class Node extends Model
         'is_active' => 'boolean',
         'ssh_password' => 'encrypted',
         'da_login_key' => 'encrypted',
+        'api_token' => 'encrypted',
         'last_heartbeat_at' => 'datetime',
         'last_health_check_at' => 'datetime',
         'created_at' => 'datetime',

@@ -49,7 +49,7 @@ class NotificationServiceCommsTest extends TestCase
 
         app(NotificationService::class)->notifyPaymentFailed($payment, 'User cancelled M-Pesa prompt');
 
-        Mail::assertQueued(PaymentFailedMail::class, function ($mail) use ($customer) {
+        Mail::assertSent(PaymentFailedMail::class, function ($mail) use ($customer) {
             return $mail->hasTo($customer->email);
         });
     }
@@ -66,7 +66,7 @@ class NotificationServiceCommsTest extends TestCase
 
         app(NotificationService::class)->notifyServiceProvisionFailed($service, 'DirectAdmin API timeout');
 
-        Mail::assertQueued(ServiceProvisionFailedMail::class, function ($mail) use ($customer) {
+        Mail::assertSent(ServiceProvisionFailedMail::class, function ($mail) use ($customer) {
             return $mail->hasTo($customer->email);
         });
     }

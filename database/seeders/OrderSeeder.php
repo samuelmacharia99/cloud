@@ -4,8 +4,8 @@ namespace Database\Seeders;
 
 use App\Models\Order;
 use App\Models\OrderItem;
-use App\Models\User;
 use App\Models\Product;
+use App\Models\User;
 use Illuminate\Database\Seeder;
 
 class OrderSeeder extends Seeder
@@ -25,7 +25,7 @@ class OrderSeeder extends Seeder
 
             for ($i = 0; $i < $orderCount; $i++) {
                 $count = Order::count() + 1;
-                $orderNumber = 'ORD-' . now()->format('Ymd') . '-' . str_pad($count, 5, '0', STR_PAD_LEFT);
+                $orderNumber = 'ORD-'.now()->format('Ymd').'-'.str_pad($count, 5, '0', STR_PAD_LEFT);
 
                 // 70% chance of paid status
                 $status = ($customerId + $i) % 10 <= 6 ? 'paid' : $statuses[($customerId + $i) % count($statuses)];
@@ -50,7 +50,7 @@ class OrderSeeder extends Seeder
                 for ($j = 0; $j < $itemCount; $j++) {
                     $product = $products->get(($customerId + $i + $j) % $products->count());
                     $quantity = (($j % 2) + 1);
-                    $unitPrice = $product->monthly_price ?? $product->yearly_price ?? $product->price ?? 10.00;
+                    $unitPrice = $product->priceForBillingCycle((string) ($product->billing_cycle ?? 'monthly'));
                     $amount = $unitPrice * $quantity;
 
                     OrderItem::create([

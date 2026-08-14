@@ -17,7 +17,6 @@ class Product extends Model
         'description',
         'category',
         'type',
-        'price',
         'monthly_price',
         'yearly_price',
         'wholesale_monthly_price',
@@ -53,7 +52,6 @@ class Product extends Model
         'featured' => 'boolean',
         'bundle_email_include_in_invoice' => 'boolean',
         'bundle_email_billing_delay_months' => 'integer',
-        'price' => 'decimal:2',
         'monthly_price' => 'decimal:2',
         'yearly_price' => 'decimal:2',
         'wholesale_monthly_price' => 'decimal:2',
@@ -213,6 +211,18 @@ class Product extends Model
     public static function isServerType(string $type): bool
     {
         return in_array($type, ['vps', 'dedicated_server']);
+    }
+
+    public function priceForBillingCycle(string $billingCycle): float
+    {
+        $monthly = (float) ($this->monthly_price ?? 0);
+
+        return match ($billingCycle) {
+            'quarterly' => $monthly * 3,
+            'semi-annual' => $monthly * 6,
+            'annual' => (float) ($this->yearly_price ?: ($monthly * 12)),
+            default => $monthly,
+        };
     }
 
     /**

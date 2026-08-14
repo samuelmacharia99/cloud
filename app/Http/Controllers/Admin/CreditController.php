@@ -81,7 +81,7 @@ class CreditController extends Controller
             User::find($validated['user_id']),
             (float) $validated['amount'],
             $validated['notes'] ?? '',
-            $validated['expires_at'] ? Carbon::parse($validated['expires_at']) : null
+            isset($validated['expires_at']) ? Carbon::parse($validated['expires_at']) : null
         );
 
         $credit->update(['source' => $validated['source']]);

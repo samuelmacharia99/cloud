@@ -2,10 +2,9 @@
 
 namespace Database\Seeders;
 
-use App\Models\Product;
 use App\Models\ContainerTemplate;
+use App\Models\Product;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Str;
 
 class ProductSeeder extends Seeder
 {
@@ -21,7 +20,6 @@ class ProductSeeder extends Seeder
                 'description' => 'Perfect for beginners and small websites. Includes 10GB storage, unlimited bandwidth, and 25 email accounts.',
                 'category' => 'Hosting',
                 'type' => 'shared_hosting',
-                'price' => 2.99,
                 'monthly_price' => 2.99,
                 'yearly_price' => 29.99,
                 'billing_cycle' => 'monthly',
@@ -39,7 +37,6 @@ class ProductSeeder extends Seeder
                 'description' => 'Ideal for growing websites. Includes 50GB storage, unlimited bandwidth, and 100 email accounts.',
                 'category' => 'Hosting',
                 'type' => 'shared_hosting',
-                'price' => 7.99,
                 'monthly_price' => 7.99,
                 'yearly_price' => 79.99,
                 'billing_cycle' => 'monthly',
@@ -57,7 +54,6 @@ class ProductSeeder extends Seeder
                 'description' => 'Powerful virtual private server. 2GB RAM, 2 vCPU, 50GB SSD storage, and 2TB bandwidth.',
                 'category' => 'Cloud',
                 'type' => 'container_hosting',
-                'price' => 19.99,
                 'monthly_price' => 19.99,
                 'yearly_price' => 199.99,
                 'billing_cycle' => 'monthly',
@@ -76,7 +72,6 @@ class ProductSeeder extends Seeder
                 'description' => 'Register your .com domain. Includes free WHOIS privacy, DNS management, and auto-renewal.',
                 'category' => 'Domains',
                 'type' => 'domain',
-                'price' => 12.00,
                 'yearly_price' => 12.00,
                 'billing_cycle' => 'annual',
                 'features' => ['WHOIS Privacy', 'DNS Management', 'Email Forwarding', 'Auto-renewal'],
@@ -93,7 +88,6 @@ class ProductSeeder extends Seeder
                 'description' => 'Secure your website with an SSL certificate. Includes installation and renewal reminders.',
                 'category' => 'Security',
                 'type' => 'ssl',
-                'price' => 9.99,
                 'yearly_price' => 9.99,
                 'billing_cycle' => 'annual',
                 'features' => ['256-bit Encryption', 'Installation Support', 'Renewal Reminders', 'Browser Compatibility'],
@@ -110,7 +104,6 @@ class ProductSeeder extends Seeder
                 'description' => 'Professional email hosting for your business. Includes 50GB mailbox, calendar, and contacts.',
                 'category' => 'Email',
                 'type' => 'email_hosting',
-                'price' => 4.99,
                 'monthly_price' => 4.99,
                 'yearly_price' => 49.99,
                 'billing_cycle' => 'monthly',

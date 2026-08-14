@@ -8,22 +8,30 @@ use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Payment;
 use App\Models\User;
+use App\Services\Billing\InvoiceNumberService;
 use Illuminate\Support\Facades\DB;
 
 class CustomerCreditTopupService
 {
+    public function __construct(
+        private InvoiceNumberService $invoiceNumbers,
+    ) {}
+
     public function createTopupInvoice(User $customer, float $amount): Invoice
     {
-        $invoice = Invoice::create([
-            'user_id' => $customer->id,
-            'invoice_number' => 'CREDIT-'.strtoupper(uniqid()),
-            'status' => 'unpaid',
-            'due_date' => now()->addDays(7),
-            'subtotal' => $amount,
-            'tax' => 0,
-            'total' => $amount,
-            'notes' => "Account credit purchase: {$amount} KES",
-        ]);
+        $invoice = $this->invoiceNumbers->createWithUniqueNumber(
+            fn (string $number) => Invoice::create([
+                'user_id' => $customer->id,
+                'invoice_number' => $number,
+                'status' => 'unpaid',
+                'due_date' => now()->addDays(7),
+                'subtotal' => $amount,
+                'tax' => 0,
+                'total' => $amount,
+                'notes' => "Account credit purchase: {$amount} KES",
+            ]),
+            prefix: 'CREDIT',
+        );
 
         InvoiceItem::create([
             'invoice_id' => $invoice->id,

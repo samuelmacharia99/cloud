@@ -256,6 +256,10 @@ class ContainerCronService
             return false;
         }
 
+        if (preg_match('/[\x00-\x1F\x7F]/', $command)) {
+            return false;
+        }
+
         if (preg_match('/[;&|`$<>\\\\]/', $command)) {
             return false;
         }

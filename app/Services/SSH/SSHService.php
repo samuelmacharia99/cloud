@@ -119,6 +119,7 @@ class SSHService
 
                 $this->ssh->setTimeout($timeout);
                 $output = $this->ssh->exec($command);
+                $exitStatus = $this->ssh->getExitStatus();
 
                 // Long-running commands can leave the SSH2 bitmap mid-channel; clear it for the next call.
                 if (method_exists($this->ssh, 'reset')) {
@@ -132,10 +133,15 @@ class SSHService
                     );
                 }
 
-                $exitStatus = $this->ssh->getExitStatus();
+                if (! is_int($exitStatus)) {
+                    throw new SSHCommandException(
+                        $command,
+                        (string) $output,
+                        'SSH server did not provide a command exit status'
+                    );
+                }
 
-                // false/null means the server never sent exit-status; do not treat that as a non-zero exit.
-                if (is_int($exitStatus) && $exitStatus !== 0) {
+                if ($exitStatus !== 0) {
                     throw new SSHCommandException(
                         $command,
                         (string) $output,

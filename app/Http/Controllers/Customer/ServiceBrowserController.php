@@ -12,6 +12,7 @@ use App\Services\Customer\CustomerNextStepsService;
 use App\Services\ResellerCustomerCatalogService;
 use App\Services\TechStackRoutingService;
 use App\Services\UserCurrencyService;
+use App\Support\SessionCart;
 use App\Support\SharedHostingSales;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -40,7 +41,7 @@ class ServiceBrowserController extends Controller
             ->orderBy('name')
             ->get();
         $databases = DatabaseTemplate::active()->get();
-        $cartCount = count(\App\Support\SessionCart::portal());
+        $cartCount = count(SessionCart::portal());
 
         return view('customer.select-techstack', [
             'languages' => $languages,
@@ -251,7 +252,7 @@ class ServiceBrowserController extends Controller
             'routing' => $routing,
             'products' => $products,
             'isResellerCustomer' => $this->catalogService->isResellerCustomer($user),
-            'cartCount' => count(\App\Support\SessionCart::portal()),
+            'cartCount' => count(SessionCart::portal()),
             'currency' => $currency,
             'currencyCode' => $currency->code,
             'attachDomain' => app(SharedHostingCheckoutService::class)->attachDomainFromSession(),
@@ -283,7 +284,7 @@ class ServiceBrowserController extends Controller
             ->where('is_active', true)
             ->where('type', 'container_hosting')
             ->forTechstackLanguage((int) $language->id)
-            ->orderByRaw('COALESCE(monthly_price, price, 0) ASC')
+            ->orderByRaw('COALESCE(monthly_price, yearly_price / 12, 0) ASC')
             ->orderBy('name')
             ->get();
 
@@ -347,7 +348,7 @@ class ServiceBrowserController extends Controller
             $query = $this->catalogService->scopePlatformProducts($query, $user);
             $products = $this->catalogService->mapProductsForTechstackDisplay(
                 $user,
-                $query->orderByRaw('COALESCE(monthly_price, price, 0) ASC')->orderBy('name')->get(),
+                $query->orderByRaw('COALESCE(monthly_price, yearly_price / 12, 0) ASC')->orderBy('name')->get(),
                 $request->integer('database_id') ?: null,
             );
         }
@@ -385,7 +386,7 @@ class ServiceBrowserController extends Controller
         }
 
         $products = $query->orderBy('category')
-            ->orderByRaw('COALESCE(monthly_price, price, 0) ASC')
+            ->orderByRaw('COALESCE(monthly_price, yearly_price / 12, 0) ASC')
             ->orderBy('name')
             ->get();
 
@@ -403,7 +404,7 @@ class ServiceBrowserController extends Controller
             ->toArray();
 
         // Get cart item count from session
-        $cartCount = count(\App\Support\SessionCart::portal());
+        $cartCount = count(SessionCart::portal());
 
         return view('customer.deploy-service', [
             'products' => $products,
@@ -422,13 +423,13 @@ class ServiceBrowserController extends Controller
         $products = Product::query()
             ->where('is_active', true)
             ->where('type', 'email_hosting')
-            ->orderByRaw('COALESCE(monthly_price, price, 0) ASC')
+            ->orderByRaw('COALESCE(monthly_price, yearly_price / 12, 0) ASC')
             ->orderBy('name')
             ->get();
 
         return view('customer.email-hosting', [
             'products' => $products,
-            'cartCount' => count(\App\Support\SessionCart::portal()),
+            'cartCount' => count(SessionCart::portal()),
         ]);
     }
 

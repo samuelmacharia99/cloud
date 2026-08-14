@@ -133,7 +133,14 @@ class ServiceBillingDateRepairService
             ?? $anchorInvoice->due_date
             ?? now();
 
-        return $service->calculateNextDueDateAfterRenewal(Carbon::parse($reference)->startOfDay());
+        $base = Carbon::parse($reference)->startOfDay();
+
+        return match ($service->billing_cycle) {
+            'quarterly' => $base->addMonthsNoOverflow(3),
+            'semi-annual' => $base->addMonthsNoOverflow(6),
+            'annual', 'yearly' => $base->addYearNoOverflow(),
+            default => $base->addMonthNoOverflow(),
+        };
     }
 
     /**

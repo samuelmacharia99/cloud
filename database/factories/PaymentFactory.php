@@ -2,12 +2,21 @@
 
 namespace Database\Factories;
 
-use App\Models\User;
 use App\Models\Invoice;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 class PaymentFactory extends Factory
 {
+    public function configure(): static
+    {
+        return $this->afterMaking(function ($payment): void {
+            if (($payment->status?->value ?? $payment->status) === 'completed' && $payment->paid_at === null) {
+                $payment->paid_at = now();
+            }
+        });
+    }
+
     public function definition(): array
     {
         $status = fake()->randomElement(['pending', 'completed', 'failed', 'reversed']);

@@ -70,4 +70,41 @@ class ContainerBackupQueueTest extends TestCase
 
         (new ContainerBackupService)->queueBackup($service, 'manual');
     }
+
+    public function test_queued_backups_use_unique_archive_paths(): void
+    {
+        Bus::fake();
+
+        $node = Node::factory()->containerHost()->create();
+        $service = Service::factory()->create([
+            'product_id' => Product::factory()->containerHosting()->create()->id,
+            'node_id' => $node->id,
+        ]);
+        ContainerDeployment::factory()->create([
+            'service_id' => $service->id,
+            'node_id' => $node->id,
+            'status' => 'running',
+        ]);
+        $service->load('containerDeployment.node');
+
+        $backupService = new ContainerBackupService;
+        $first = $backupService->queueBackup($service);
+        $first->update(['status' => 'completed']);
+        $second = $backupService->queueBackup($service);
+
+        $this->assertNotSame($first->backup_name, $second->backup_name);
+        $this->assertNotSame($first->backup_path, $second->backup_path);
+    }
+
+    public function test_restore_validation_checks_integrity_paths_and_expected_root(): void
+    {
+        $command = (new ContainerBackupService)->buildArchiveValidationCommand(
+            '/opt/talksasa/backups/example.tar.gz',
+            'customer-container'
+        );
+
+        $this->assertStringContainsString('tar -tzf', $command);
+        $this->assertStringContainsString('\\.\\.', $command);
+        $this->assertStringContainsString('customer-container', $command);
+    }
 }

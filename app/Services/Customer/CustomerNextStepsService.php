@@ -2,6 +2,7 @@
 
 namespace App\Services\Customer;
 
+use App\Enums\InvoiceStatus;
 use App\Enums\ServiceStatus;
 use App\Models\Service;
 use App\Models\User;
@@ -31,13 +32,14 @@ class CustomerNextStepsService
             ->get();
 
         foreach ($unpaid as $invoice) {
+            $isOverdue = $invoice->status === InvoiceStatus::Overdue;
             $steps[] = [
                 'id' => 'invoice-'.$invoice->id,
-                'priority' => $invoice->status === 'overdue' ? 100 : 90,
-                'title' => $invoice->status === 'overdue' ? 'Overdue invoice' : 'Pay invoice',
+                'priority' => $isOverdue ? 100 : 90,
+                'title' => $isOverdue ? 'Overdue invoice' : 'Pay invoice',
                 'body' => $invoice->invoice_number.' · due '.optional($invoice->due_date)->format('M j, Y'),
                 'url' => route('customer.invoices.show', $invoice),
-                'tone' => $invoice->status === 'overdue' ? 'danger' : 'warning',
+                'tone' => $isOverdue ? 'danger' : 'warning',
             ];
         }
 

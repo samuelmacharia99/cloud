@@ -17,6 +17,7 @@ use App\Models\Service;
 use App\Models\Setting;
 use App\Models\User;
 use App\Rules\ValidCountryCode;
+use App\Services\Billing\InvoiceNumberService;
 use App\Services\Billing\InvoiceSettlementService;
 use App\Services\Checkout\ContainerEmailBundleService;
 use App\Services\Checkout\EmailHostingCheckoutService;
@@ -814,11 +815,7 @@ class CheckoutController extends Controller
      */
     private function generateInvoiceNumber(): string
     {
-        $prefix = Setting::getValue('invoice_prefix', 'INV');
-        $date = now()->format('Ymd');
-        $count = Invoice::whereDate('created_at', now())->count() + 1;
-
-        return "{$prefix}-{$date}-".str_pad($count, 5, '0', STR_PAD_LEFT);
+        return app(InvoiceNumberService::class)->nextDaily();
     }
 
     /**

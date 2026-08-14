@@ -26,6 +26,7 @@ class UserFactory extends Factory
             'is_admin' => false,
             'is_reseller' => false,
             'status' => 'active',
+            'preferred_currency' => 'KES',
         ];
     }
 

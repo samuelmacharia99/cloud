@@ -11,6 +11,7 @@ use App\Models\ResellerProduct;
 use App\Models\Service;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\Billing\InvoiceNumberService;
 use App\Services\Hosting\ServicePackageLimitEnforcementService;
 use App\Services\Hosting\ServicePackageUsageService;
 use App\Services\NotificationService;
@@ -329,7 +330,6 @@ class CustomerHostingUpgradeService
         $tax = $taxBreakdown['tax'];
         $total = $taxBreakdown['total'];
         $dueDate = now()->addDays((int) Setting::getValue('invoice_due_days', 14))->toDateString();
-        $prefix = Setting::getValue('invoice_prefix', 'INV');
         $changeLabel = match ($option['change_type']) {
             'downgrade' => 'Hosting plan change (downgrade)',
             'lateral' => 'Hosting plan change',
@@ -337,10 +337,8 @@ class CustomerHostingUpgradeService
         };
         $cycleLabel = ucfirst($billingCycle);
 
-        $invoice = DB::transaction(function () use ($service, $customer, $targetProduct, $option, $prefix, $price, $tax, $total, $dueDate, $taxBreakdown, $changeLabel, $billingCycle, $cycleLabel, $pricing) {
-            $year = now()->format('Y');
-            $sequence = Invoice::whereYear('created_at', $year)->lockForUpdate()->count() + 1;
-            $number = $prefix.'-'.$year.'-'.str_pad((string) $sequence, 5, '0', STR_PAD_LEFT);
+        $invoice = DB::transaction(function () use ($service, $customer, $targetProduct, $option, $price, $tax, $total, $dueDate, $taxBreakdown, $changeLabel, $billingCycle, $cycleLabel, $pricing) {
+            $number = app(InvoiceNumberService::class)->nextYearly();
 
             $invoice = Invoice::create([
                 'user_id' => $customer->id,
@@ -1133,13 +1131,7 @@ class CustomerHostingUpgradeService
 
     private function cyclePrice(Product $product, string $cycle): float
     {
-        return match ($cycle) {
-            'monthly' => (float) $product->monthly_price,
-            'quarterly' => (float) ($product->monthly_price * 3),
-            'semi-annual' => (float) ($product->monthly_price * 6),
-            'annual' => (float) ($product->yearly_price ?: ($product->monthly_price * 12)),
-            default => (float) $product->price,
-        };
+        return $product->priceForBillingCycle($cycle);
     }
 
     private function effectiveCyclePrice(User $customer, Product $product, string $cycle): float

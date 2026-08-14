@@ -163,7 +163,7 @@
             <div class="ui-card p-6">
                 <div class="flex items-center justify-between mb-4">
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Payments</h2>
-                    @if(!in_array($invoice->status, ['paid', 'cancelled']))
+                    @if(!in_array($invoice->status, [\App\Enums\InvoiceStatus::Paid, \App\Enums\InvoiceStatus::Cancelled], true))
                     <button @click="paymentModal = true" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition">
                         + Record Payment
                     </button>

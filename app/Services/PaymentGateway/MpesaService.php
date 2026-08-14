@@ -377,7 +377,7 @@ class MpesaService implements PaymentGatewayInterface
 
             if ($resultCode == 0) {
                 // Idempotency guard: if already completed, return success without re-processing
-                if ($payment->status === PaymentStatus::Completed->value || $payment->status === 'completed') {
+                if ($payment->isCompleted()) {
                     Log::info('M-Pesa callback: payment already completed (idempotency guard)', [
                         'payment_id' => $payment->id,
                         'checkout_request_id' => $checkoutRequestId,
@@ -401,7 +401,7 @@ class MpesaService implements PaymentGatewayInterface
                     }
 
                     // Double-check after acquiring lock
-                    if ($lockedPayment->status === PaymentStatus::Completed->value || $lockedPayment->status === 'completed') {
+                    if ($lockedPayment->isCompleted()) {
                         Log::info('M-Pesa callback: already completed after lock (race condition prevented)', [
                             'payment_id' => $lockedPayment->id,
                         ]);

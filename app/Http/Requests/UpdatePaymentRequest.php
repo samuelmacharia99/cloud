@@ -51,13 +51,22 @@ class UpdatePaymentRequest extends FormRequest
             $currentStatus = $payment->status;
             $newStatus = PaymentStatus::tryFrom($value);
 
-            if (!$newStatus) {
+            if (! $newStatus) {
                 return;
             }
 
             // Completed payments can only be transitioned to Reversed
             if ($currentStatus === PaymentStatus::Completed && $newStatus !== PaymentStatus::Reversed) {
-                $fail('Completed payments can only be reversed, not changed to ' . $newStatus->label());
+                $fail('Completed payments can only be reversed, not changed to '.$newStatus->label());
+            }
+
+            if ($newStatus === PaymentStatus::Reversed
+                && in_array($payment->payment_purpose, ['wallet_topup', 'credit_topup'], true)) {
+                $fail('Wallet and credit top-up payments require a ledger-aware refund and cannot be reversed here.');
+            }
+
+            if ($newStatus === PaymentStatus::Reversed && $payment->credit()->exists()) {
+                $fail('This payment has issued account credit. Remove or refund that credit before reversing the payment.');
             }
 
             // Failed payments cannot be changed
@@ -72,7 +81,7 @@ class UpdatePaymentRequest extends FormRequest
 
             // Pending can transition to Completed or Failed
             if ($currentStatus === PaymentStatus::Pending) {
-                if (!in_array($newStatus, [PaymentStatus::Completed, PaymentStatus::Failed])) {
+                if (! in_array($newStatus, [PaymentStatus::Completed, PaymentStatus::Failed])) {
                     $fail('Pending payments can only be marked as completed or failed.');
                 }
             }

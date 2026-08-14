@@ -18,10 +18,10 @@ use App\Services\Dns\CloudflareDnsService;
 use App\Services\PaymentGateway\MpesaService;
 use App\Services\PaymentGateway\PayPalConnectService;
 use App\Services\PaymentGateway\StripeService;
+use App\Services\Provisioning\HetznerStorageBoxClient;
 use App\Services\SmsService;
 use App\Services\Telegram\TelegramBotService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Mail;
 
 class SettingController extends Controller
@@ -128,6 +128,13 @@ class SettingController extends Controller
         // Load ALL settings for all groups (so all tabs work with the same form)
         $allKeys = collect($this->groups)->flatten()->toArray();
         $settings = Setting::whereIn('key', $allKeys)->pluck('value', 'key');
+        $configuredSensitiveSettings = collect(Setting::SENSITIVE_KEYS)
+            ->mapWithKeys(fn (string $key) => [$key => filled($settings->get($key))]);
+        foreach (Setting::SENSITIVE_KEYS as $sensitiveKey) {
+            if ($settings->has($sensitiveKey)) {
+                $settings->put($sensitiveKey, '');
+            }
+        }
 
         $keys = $this->groups[$group] ?? $this->groups['general'];
         $groups = $this->groups;
@@ -180,7 +187,7 @@ class SettingController extends Controller
             'group', 'settings', 'keys', 'groups', 'currencies', 'smsTemplatesList', 'emailTemplatesList', 'directAdminNodes', 'containerHostNodes', 'activeTab',
             'cronCommand', 'cronCommandOptions', 'cronValidation', 'cronStats',
             'gatewayStatus', 'paypalConnectAvailable', 'paypalConnection',
-            'registrars', 'domainExtensions', 'registrarDrivers'
+            'registrars', 'domainExtensions', 'registrarDrivers', 'configuredSensitiveSettings'
         ));
     }
 
@@ -261,10 +268,6 @@ class SettingController extends Controller
             if (in_array($key, ['cloudflare_branded_ns3', 'cloudflare_branded_ns4'], true)
                 && in_array(strtolower($trimmedValue), ['0', '-', 'ns.example.com'], true)) {
                 $trimmedValue = '';
-            }
-
-            if ($key === 'hetzner_storage_password' && $trimmedValue !== '') {
-                $trimmedValue = Crypt::encryptString($trimmedValue);
             }
 
             Setting::setValue($key, $trimmedValue);
@@ -730,7 +733,7 @@ class SettingController extends Controller
     {
         $this->authorize('batchUpdate', Setting::class);
 
-        return response()->json(app(\App\Services\Provisioning\HetznerStorageBoxClient::class)->testConnection());
+        return response()->json(app(HetznerStorageBoxClient::class)->testConnection());
     }
 
     public function testPayPal(Request $request)

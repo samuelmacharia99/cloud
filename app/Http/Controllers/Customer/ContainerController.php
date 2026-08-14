@@ -1870,7 +1870,7 @@ class ContainerController extends Controller
 
             $hostname = strtolower($request->domain);
             $nodeIp = $deployment->node->ip_address;
-            $nginxService = new NginxProxyService;
+            $nginxService = app(NginxProxyService::class);
 
             $platformDomain = app(DomainCloudflareDnsService::class)
                 ->resolvePlatformDomainForHostname($service->user_id, $hostname);
@@ -1934,7 +1934,7 @@ class ContainerController extends Controller
 
         try {
             $deployment = $service->containerDeployment;
-            $nginxService = new NginxProxyService;
+            $nginxService = app(NginxProxyService::class);
 
             $nginxService->removeProxyConfig($domain);
             $nginxService->cleanupSslCertificate($domain);
@@ -1984,7 +1984,7 @@ class ContainerController extends Controller
         try {
             $domainName = $domain->domain;
 
-            $nginxService = new NginxProxyService;
+            $nginxService = app(NginxProxyService::class);
             $nginxService->unbind($domain);
 
             return $this->domainsTabRedirect($service)->with('success', "Domain {$domainName} removed successfully");
@@ -2011,7 +2011,7 @@ class ContainerController extends Controller
                 return $this->domainsTabRedirect($service)->withErrors(['error' => 'Domain must be active to enable SSL']);
             }
 
-            $nginxService = new NginxProxyService;
+            $nginxService = app(NginxProxyService::class);
             $nginxService->enableSsl($domain);
 
             return $this->domainsTabRedirect($service)->with('success', "SSL enabled for {$domain->domain}");
@@ -2077,7 +2077,7 @@ class ContainerController extends Controller
 
     public function createBackup(Service $service)
     {
-        $this->authorize('view', $service);
+        $this->authorize('manageContainer', $service);
 
         try {
             $backupService = new ContainerBackupService;
@@ -2187,7 +2187,8 @@ class ContainerController extends Controller
 
     public function restoreBackup(Service $service, ContainerBackup $backup)
     {
-        $this->authorize('view', $service);
+        $this->authorize('manageContainer', $service);
+        abort_if((int) $backup->service_id !== (int) $service->id, 404);
 
         try {
             $backupService = new ContainerBackupService;
@@ -2203,7 +2204,8 @@ class ContainerController extends Controller
 
     public function deleteBackup(Service $service, ContainerBackup $backup)
     {
-        $this->authorize('view', $service);
+        $this->authorize('manageContainer', $service);
+        abort_if((int) $backup->service_id !== (int) $service->id, 404);
 
         try {
             $backupService = new ContainerBackupService;

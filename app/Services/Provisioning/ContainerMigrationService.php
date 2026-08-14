@@ -97,13 +97,35 @@ class ContainerMigrationService
         } catch (Exception $e) {
             $service->update([
                 'node_id' => $oldNodeId,
-                'status' => $oldServiceStatus,
+                'status' => 'provisioning',
             ]);
 
             $oldDeployment->update([
                 'node_id' => $oldNodeId,
-                'status' => $oldDeploymentStatus,
+                'status' => 'deploying',
             ]);
+
+            try {
+                if ($oldDeploymentStatus === 'running') {
+                    $this->restartSourceAfterFailedMigration($service->fresh(), $oldDeployment->fresh(), $sourceNode);
+                }
+
+                $service->update(['status' => $oldServiceStatus]);
+                $oldDeployment->update(['status' => $oldDeploymentStatus]);
+            } catch (\Throwable $rollbackError) {
+                $service->update(['status' => 'failed']);
+                $oldDeployment->update(['status' => 'failed']);
+                Log::critical("Container migration rollback failed for service {$service->id}", [
+                    'migration_error' => $e->getMessage(),
+                    'rollback_error' => $rollbackError->getMessage(),
+                ]);
+
+                throw new Exception(
+                    'Migration failed and the source workload could not be restarted: '.$rollbackError->getMessage(),
+                    0,
+                    $e
+                );
+            }
 
             @$this->cleanupRemoteArchive($sourceNode, $remoteArchive);
             @$this->cleanupRemoteArchive($targetNode, $remoteArchive);
@@ -169,11 +191,41 @@ class ContainerMigrationService
         try {
             $containerPath = self::CONTAINER_BASE_PATH.'/'.$containerName;
             $ssh->exec('mkdir -p '.self::MIGRATE_BASE_PATH);
-            @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml stop", 120);
+            $ssh->exec('cd '.escapeshellarg($containerPath).' && docker compose -f docker-compose.yml stop', 120);
             $ssh->exec(
                 'tar -czf '.escapeshellarg($remoteArchive).' -C '.self::CONTAINER_BASE_PATH.' '.escapeshellarg($containerName),
                 self::TRANSFER_TIMEOUT
             );
+        } catch (\Throwable $e) {
+            try {
+                $ssh->exec(
+                    'cd '.escapeshellarg(self::CONTAINER_BASE_PATH.'/'.$containerName)
+                    .' && docker compose -f docker-compose.yml start',
+                    120
+                );
+            } catch (\Throwable $restartError) {
+                throw new Exception(
+                    'Could not create migration archive and failed to restart source: '.$restartError->getMessage(),
+                    0,
+                    $e
+                );
+            }
+
+            throw $e instanceof Exception
+                ? $e
+                : new Exception('Failed to create migration archive: '.$e->getMessage(), 0, $e);
+        } finally {
+            $ssh->disconnect();
+        }
+    }
+
+    private function restartSourceAfterFailedMigration(Service $service, $deployment, Node $sourceNode): void
+    {
+        $ssh = SSHService::forNode($sourceNode);
+        try {
+            $this->deploymentService->ensureComposeFileExists($ssh, $deployment);
+            $this->deploymentService->startComposeStack($ssh, $service, $deployment);
+            $this->deploymentService->waitForContainerRunning($ssh, $deployment->container_name, 120);
         } finally {
             $ssh->disconnect();
         }

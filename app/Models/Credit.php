@@ -99,18 +99,35 @@ class Credit extends Model
      */
     public function applyToInvoice(Invoice $invoice, float $amount): bool
     {
+        if ($this->user_id !== $invoice->user_id || $amount <= 0) {
+            return false;
+        }
+
         if ($amount > $this->getAvailableBalance()) {
             return false;
         }
 
-        // Create credit application record
-        \DB::table('credit_applications')->insert([
-            'credit_id' => $this->id,
-            'invoice_id' => $invoice->id,
-            'amount_applied' => $amount,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+        $existing = \DB::table('credit_applications')
+            ->where('credit_id', $this->id)
+            ->where('invoice_id', $invoice->id)
+            ->first();
+
+        if ($existing) {
+            \DB::table('credit_applications')
+                ->where('id', $existing->id)
+                ->update([
+                    'amount_applied' => round((float) $existing->amount_applied + $amount, 2),
+                    'updated_at' => now(),
+                ]);
+        } else {
+            \DB::table('credit_applications')->insert([
+                'credit_id' => $this->id,
+                'invoice_id' => $invoice->id,
+                'amount_applied' => $amount,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
 
         // Update credit status if fully applied
         $available = $this->getAvailableBalance();

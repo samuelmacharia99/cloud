@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Mail\VerificationCodeMail;
 use App\Models\EmailVerificationCode;
 use App\Models\User;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\View;
@@ -39,7 +40,7 @@ class EmailVerificationService
 
         EmailVerificationCode::create([
             'user_id' => $user->id,
-            'code' => $code,
+            'code' => Hash::make($code),
             'expires_at' => now()->addMinutes($expiryMinutes),
         ]);
 

@@ -35,11 +35,17 @@
             <textarea name="description" rows="4" class="w-full px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Product description..."></textarea>
         </div>
 
-        <div class="grid grid-cols-2 gap-6">
+        <div class="grid grid-cols-3 gap-6">
             <div>
-                <label class="block text-sm font-medium text-slate-900 mb-2">Price ($)</label>
-                <input type="number" name="price" step="0.01" min="0" required class="w-full px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="0.00">
-                @error('price') <p class="text-red-600 text-sm mt-1">{{ $message }}</p> @enderror
+                <label class="block text-sm font-medium text-slate-900 mb-2">Monthly Price ($)</label>
+                <input type="number" name="monthly_price" step="0.01" min="0" value="{{ old('monthly_price') }}" class="w-full px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="0.00">
+                @error('monthly_price') <p class="text-red-600 text-sm mt-1">{{ $message }}</p> @enderror
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-slate-900 mb-2">Yearly Price ($)</label>
+                <input type="number" name="yearly_price" step="0.01" min="0" value="{{ old('yearly_price') }}" class="w-full px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="0.00">
+                @error('yearly_price') <p class="text-red-600 text-sm mt-1">{{ $message }}</p> @enderror
             </div>
 
             <div>

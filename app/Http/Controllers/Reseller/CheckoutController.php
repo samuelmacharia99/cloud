@@ -13,6 +13,7 @@ use App\Models\InvoiceItem;
 use App\Models\ResellerDomainOrder;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\Billing\InvoiceNumberService;
 use App\Services\DomainPushService;
 use App\Services\DomainRenewalPushService;
 use App\Services\DomainRenewalService;
@@ -380,11 +381,7 @@ class CheckoutController extends Controller
 
     private function generateInvoiceNumber(): string
     {
-        $prefix = Setting::getValue('invoice_prefix', 'INV');
-        $date = now()->format('Ymd');
-        $count = Invoice::whereDate('created_at', now())->count() + 1;
-
-        return "{$prefix}-{$date}-".str_pad($count, 5, '0', STR_PAD_LEFT);
+        return app(InvoiceNumberService::class)->nextDaily();
     }
 
     private function processDomainRenewals(Invoice $invoice): void

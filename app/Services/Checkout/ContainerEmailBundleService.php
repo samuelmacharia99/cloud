@@ -224,10 +224,10 @@ class ContainerEmailBundleService
     public function priceForCycle(Product $emailProduct, string $billingCycle): float
     {
         if ($billingCycle === 'annual') {
-            return (float) ($emailProduct->yearly_price ?? $emailProduct->monthly_price ?? $emailProduct->price ?? 0);
+            return $emailProduct->priceForBillingCycle('annual');
         }
 
-        return (float) ($emailProduct->monthly_price ?? $emailProduct->price ?? 0);
+        return $emailProduct->priceForBillingCycle('monthly');
     }
 
     public function billingCycleMonths(string $cycle): int

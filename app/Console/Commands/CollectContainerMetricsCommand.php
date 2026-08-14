@@ -86,6 +86,10 @@ class CollectContainerMetricsCommand extends BaseCronCommand
             $message .= '. Errors: '.implode('; ', $nodeErrors);
         }
 
+        if ($failed > 0 || $nodeErrors !== []) {
+            throw new \RuntimeException($message);
+        }
+
         return $message;
     }
 

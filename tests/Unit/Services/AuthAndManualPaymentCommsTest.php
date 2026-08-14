@@ -2,9 +2,9 @@
 
 namespace Tests\Unit\Services;
 
-use App\Enums\NotificationEvent;
 use App\Mail\ManualPaymentRejectedMail;
 use App\Mail\PasswordChangedMail;
+use App\Mail\PasswordResetMail;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\Setting;
@@ -39,7 +39,7 @@ class AuthAndManualPaymentCommsTest extends TestCase
         $sent = app(AuthEmailService::class)->sendPasswordReset($customer, 'test-token');
 
         $this->assertTrue($sent);
-        Mail::assertQueued(\App\Mail\PasswordResetMail::class, function ($mail) use ($customer) {
+        Mail::assertQueued(PasswordResetMail::class, function ($mail) use ($customer) {
             return $mail->hasTo($customer->email);
         });
     }
@@ -59,7 +59,7 @@ class AuthAndManualPaymentCommsTest extends TestCase
 
         app(NotificationService::class)->notifyManualPaymentRejected($payment, 'Proof image unreadable');
 
-        Mail::assertQueued(ManualPaymentRejectedMail::class, function ($mail) use ($customer) {
+        Mail::assertSent(ManualPaymentRejectedMail::class, function ($mail) use ($customer) {
             return $mail->hasTo($customer->email);
         });
     }
@@ -72,7 +72,7 @@ class AuthAndManualPaymentCommsTest extends TestCase
 
         app(NotificationService::class)->notifyPasswordChanged($customer);
 
-        Mail::assertQueued(PasswordChangedMail::class, function ($mail) use ($customer) {
+        Mail::assertSent(PasswordChangedMail::class, function ($mail) use ($customer) {
             return $mail->hasTo($customer->email);
         });
     }

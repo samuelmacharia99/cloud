@@ -11,10 +11,10 @@ use App\Models\InvoiceItem;
 use App\Models\Product;
 use App\Models\ResellerPackage;
 use App\Models\Service;
-use App\Models\Setting;
 use App\Models\User;
 use App\Services\AdminAccountWelcomeService;
 use App\Services\AdminActivityService;
+use App\Services\Billing\InvoiceNumberService;
 use App\Services\InvoiceGenerationScheduleService;
 use App\Services\ResellerDirectAdminService;
 use App\Services\ResellerEnforcementService;
@@ -550,7 +550,9 @@ class ResellerController extends Controller
 
         // Log out the current admin and log in as the reseller
         auth()->logout();
+        session()->regenerate();
         auth()->loginUsingId($user->id);
+        session()->regenerate();
 
         return redirect()->route('dashboard')
             ->with('success', "You are now viewing the dashboard as {$user->name}.");
@@ -737,10 +739,7 @@ class ResellerController extends Controller
 
         $taxBreakdown = TaxService::calculateResellerWholesale($price);
 
-        $prefix = Setting::getValue('invoice_prefix', 'INV');
-        $date = now()->format('Ymd');
-        $count = Invoice::whereDate('created_at', now())->count() + 1;
-        $number = $prefix.'-'.$date.'-'.str_pad($count, 5, '0', STR_PAD_LEFT);
+        $number = app(InvoiceNumberService::class)->nextDaily();
 
         $schedule = app(InvoiceGenerationScheduleService::class);
         $dueDate = $schedule->serviceInvoiceDueDate($service);

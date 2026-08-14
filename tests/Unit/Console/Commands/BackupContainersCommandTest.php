@@ -115,4 +115,31 @@ class BackupContainersCommandTest extends TestCase
             ->assertSuccessful()
             ->expectsOutputToContain('backup already in progress');
     }
+
+    public function test_returns_nonzero_when_any_backup_fails(): void
+    {
+        $node = Node::factory()->containerHost()->create();
+        $service = Service::factory()->create([
+            'product_id' => Product::factory()->containerHosting()->create()->id,
+            'node_id' => $node->id,
+        ]);
+        ContainerDeployment::factory()->create([
+            'service_id' => $service->id,
+            'node_id' => $node->id,
+            'status' => 'running',
+        ]);
+
+        $backupService = Mockery::mock(ContainerBackupService::class);
+        $backupService->shouldReceive('createBackup')
+            ->once()
+            ->andThrow(new \RuntimeException('archive failed'));
+        $this->app->instance(ContainerBackupService::class, $backupService);
+        $this->mock(NotificationService::class, function ($mock) {
+            $mock->shouldReceive('notifyContainerBackupFailed')->once();
+        });
+
+        $this->artisan('cron:backup-containers', ['--force' => true])
+            ->assertFailed()
+            ->expectsOutputToContain('1 failed');
+    }
 }

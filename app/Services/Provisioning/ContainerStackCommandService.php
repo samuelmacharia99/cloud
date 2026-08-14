@@ -46,6 +46,10 @@ class ContainerStackCommandService
             return false;
         }
 
+        if (preg_match('/[\x00-\x1F\x7F]/', $cmd)) {
+            return false;
+        }
+
         if (preg_match('/[;&|`$<>\\\\]/', $cmd)) {
             return false;
         }

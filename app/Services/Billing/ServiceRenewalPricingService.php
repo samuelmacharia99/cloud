@@ -71,12 +71,6 @@ class ServiceRenewalPricingService
     {
         $product = $service->product;
 
-        return match ($service->billing_cycle) {
-            'monthly' => (float) $product->monthly_price,
-            'quarterly' => (float) ($product->monthly_price * 3),
-            'semi-annual' => (float) ($product->monthly_price * 6),
-            'annual' => (float) $product->yearly_price ?: ($product->monthly_price * 12),
-            default => (float) $product->price,
-        };
+        return $product->priceForBillingCycle((string) $service->billing_cycle);
     }
 }

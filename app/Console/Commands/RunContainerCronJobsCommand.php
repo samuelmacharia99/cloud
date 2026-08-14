@@ -26,6 +26,10 @@ class RunContainerCronJobsCommand extends BaseCronCommand
             $message .= sprintf(' Deferred %d job(s) to the next minute (batch time budget).', $summary['deferred']);
         }
 
+        if ($summary['failed'] > 0) {
+            throw new \RuntimeException($message);
+        }
+
         return $message;
     }
 }

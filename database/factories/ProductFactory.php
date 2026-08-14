@@ -20,7 +20,6 @@ class ProductFactory extends Factory
             'description' => fake()->sentences(2, true),
             'category' => 'Hosting',
             'type' => 'shared_hosting',
-            'price' => fake()->randomFloat(2, 5, 100),
             'monthly_price' => 9.99,
             'yearly_price' => 99.99,
             'billing_cycle' => 'monthly',

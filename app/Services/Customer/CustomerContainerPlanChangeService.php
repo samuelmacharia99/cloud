@@ -8,12 +8,12 @@ use App\Models\InvoiceItem;
 use App\Models\Product;
 use App\Models\Service;
 use App\Models\User;
+use App\Services\Billing\InvoiceNumberService;
 use App\Services\Provisioning\ContainerDeploymentService;
 use App\Services\SSH\SSHService;
 use App\Services\TaxService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 
 /**
  * Self-serve container plan resize (same template family, higher/lower resource limits).
@@ -22,6 +22,7 @@ class CustomerContainerPlanChangeService
 {
     public function __construct(
         private ContainerDeploymentService $deployments,
+        private InvoiceNumberService $invoiceNumbers,
     ) {}
 
     public function emptyReason(Service $service, User $customer): ?string
@@ -72,7 +73,8 @@ class CustomerContainerPlanChangeService
             ->where('is_active', true)
             ->forTechstackLanguage($templateId)
             ->where('id', '!=', $current->id)
-            ->orderBy('price')
+            ->orderBy('monthly_price')
+            ->orderBy('yearly_price')
             ->get()
             ->map(function (Product $product) use ($currentScore, $service, $limitTemplate) {
                 $limits = $product->getIncludedContainerLimits(
@@ -86,7 +88,7 @@ class CustomerContainerPlanChangeService
                     'product' => $product,
                     'name' => $product->name,
                     'change_type' => $changeType,
-                    'display_price' => (float) $product->price,
+                    'display_price' => $product->priceForBillingCycle((string) ($service->billing_cycle ?? 'monthly')),
                     'cpu' => $limits['cpu'],
                     'memory_mb' => $limits['memory_mb'],
                     'disk_gb' => $limits['disk_gb'],
@@ -124,25 +126,27 @@ class CustomerContainerPlanChangeService
         $tax = TaxService::calculateForUser($prorated, $customer);
 
         return DB::transaction(function () use ($service, $customer, $target, $billingCycle, $prorated, $tax, $match, $targetPrice) {
-            $invoice = Invoice::create([
-                'user_id' => $customer->id,
-                'invoice_number' => 'INV-'.strtoupper(Str::random(10)),
-                'status' => $prorated <= 0 ? 'paid' : 'unpaid',
-                'paid_date' => $prorated <= 0 ? now() : null,
-                'due_date' => now()->addDays(3),
-                'subtotal' => $tax['subtotal'],
-                'tax' => $tax['tax'],
-                'total' => $tax['total'],
-                'notes' => sprintf(
-                    'Container plan %s: %s → %s (%s) [container_plan_change:1] [service:%d] [product:%d]',
-                    $match['change_type'],
-                    $service->product->name,
-                    $target->name,
-                    $billingCycle,
-                    $service->id,
-                    $target->id
-                ),
-            ]);
+            $invoice = $this->invoiceNumbers->createWithUniqueNumber(
+                fn (string $number) => Invoice::create([
+                    'user_id' => $customer->id,
+                    'invoice_number' => $number,
+                    'status' => $prorated <= 0 ? 'paid' : 'unpaid',
+                    'paid_date' => $prorated <= 0 ? now() : null,
+                    'due_date' => now()->addDays(3),
+                    'subtotal' => $tax['subtotal'],
+                    'tax' => $tax['tax'],
+                    'total' => $tax['total'],
+                    'notes' => sprintf(
+                        'Container plan %s: %s → %s (%s) [container_plan_change:1] [service:%d] [product:%d]',
+                        $match['change_type'],
+                        $service->product->name,
+                        $target->name,
+                        $billingCycle,
+                        $service->id,
+                        $target->id
+                    ),
+                ]),
+            );
 
             InvoiceItem::create([
                 'invoice_id' => $invoice->id,
@@ -230,13 +234,7 @@ class CustomerContainerPlanChangeService
             return (float) $customPrice;
         }
 
-        return match ($cycle) {
-            'monthly' => (float) ($product->monthly_price ?: $product->price),
-            'quarterly' => (float) (($product->monthly_price ?: $product->price) * 3),
-            'semi-annual' => (float) (($product->monthly_price ?: $product->price) * 6),
-            'annual' => (float) ($product->yearly_price ?: (($product->monthly_price ?: $product->price) * 12)),
-            default => (float) ($product->price ?: $product->monthly_price),
-        };
+        return $product->priceForBillingCycle($cycle);
     }
 
     /**

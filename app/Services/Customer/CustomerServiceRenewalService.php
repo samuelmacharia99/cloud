@@ -10,6 +10,7 @@ use App\Models\ResellerProduct;
 use App\Models\Service;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\Billing\InvoiceNumberService;
 use App\Services\NotificationService;
 use App\Services\ResellerCustomerCatalogService;
 use App\Services\TaxService;
@@ -521,7 +522,6 @@ class CustomerServiceRenewalService
         $price = $this->renewalPrice($service, $customer, $option);
         $taxBreakdown = TaxService::calculateForUser($price, $customer);
         $dueDate = now()->addDays((int) Setting::getValue('invoice_due_days', 14))->toDateString();
-        $prefix = Setting::getValue('invoice_prefix', 'INV');
         $cycleLabel = ucfirst($service->billing_cycle ?? 'monthly');
 
         $invoice = DB::transaction(function () use (
@@ -529,15 +529,12 @@ class CustomerServiceRenewalService
             $customer,
             $option,
             $isCurrentPlan,
-            $prefix,
             $price,
             $taxBreakdown,
             $dueDate,
             $cycleLabel,
         ) {
-            $year = now()->format('Y');
-            $sequence = Invoice::whereYear('created_at', $year)->lockForUpdate()->count() + 1;
-            $number = $prefix.'-'.$year.'-'.str_pad((string) $sequence, 5, '0', STR_PAD_LEFT);
+            $number = app(InvoiceNumberService::class)->nextYearly();
 
             $notes = $isCurrentPlan
                 ? "Manual renewal — {$option['name']} ({$cycleLabel})"
@@ -665,12 +662,6 @@ class CustomerServiceRenewalService
 
     private function priceForProductCycle(Service $service, Product $product, string $cycle): float
     {
-        return match ($cycle) {
-            'monthly' => (float) $product->monthly_price,
-            'quarterly' => (float) ($product->monthly_price * 3),
-            'semi-annual' => (float) ($product->monthly_price * 6),
-            'annual' => (float) ($product->yearly_price ?: ($product->monthly_price * 12)),
-            default => (float) $product->price,
-        };
+        return $product->priceForBillingCycle($cycle);
     }
 }

@@ -265,7 +265,7 @@ class InvoiceGenerationScheduleService
     }
 
     /**
-     * Exclude services that already have an unpaid/draft renewal invoice (via invoice_id or line items).
+     * Exclude services that already have an open renewal invoice (via invoice_id or line items).
      */
     public function applyWithoutOpenRenewalInvoiceConstraint(Builder $query): Builder
     {
@@ -275,14 +275,14 @@ class InvoiceGenerationScheduleService
         $serviceIdsWithOpenItems = InvoiceItem::query()
             ->whereNotNull('service_id')
             ->whereHas('invoice', function (Builder $q) use ($since) {
-                $q->whereIn('status', ['draft', 'unpaid'])
+                $q->whereIn('status', ['draft', 'unpaid', 'overdue'])
                     ->where('created_at', '>=', $since);
             })
             ->pluck('service_id');
 
         return $query
             ->whereDoesntHave('invoice', function (Builder $q) use ($since) {
-                $q->whereIn('status', ['draft', 'unpaid'])
+                $q->whereIn('status', ['draft', 'unpaid', 'overdue'])
                     ->where('created_at', '>=', $since);
             })
             ->when(

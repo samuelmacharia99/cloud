@@ -394,11 +394,11 @@ class Service extends Model
         }
 
         return match ($this->billing_cycle) {
-            'monthly' => $base->copy()->addMonth(),
-            'quarterly' => $base->copy()->addMonths(3),
-            'semi-annual' => $base->copy()->addMonths(6),
-            'annual', 'yearly' => $base->copy()->addYear(),
-            default => $base->copy()->addMonth(),
+            'monthly' => $base->copy()->addMonthNoOverflow(),
+            'quarterly' => $base->copy()->addMonthsNoOverflow(3),
+            'semi-annual' => $base->copy()->addMonthsNoOverflow(6),
+            'annual', 'yearly' => $base->copy()->addYearNoOverflow(),
+            default => $base->copy()->addMonthNoOverflow(),
         };
     }
 

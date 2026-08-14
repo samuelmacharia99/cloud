@@ -23,21 +23,24 @@ class CustomerContainerPlanChangeServiceTest extends TestCase
         $current = Product::factory()->create([
             'type' => 'container_hosting',
             'is_active' => true,
-            'price' => 1000,
+            'monthly_price' => 1000,
+            'yearly_price' => 10000,
             'container_template_id' => $template->id,
             'resource_limits' => ['cpu' => 1, 'memory' => 512, 'disk' => 5],
         ]);
         $upgrade = Product::factory()->create([
             'type' => 'container_hosting',
             'is_active' => true,
-            'price' => 2000,
+            'monthly_price' => 2000,
+            'yearly_price' => 20000,
             'container_template_id' => $template->id,
             'resource_limits' => ['cpu' => 2, 'memory' => 2048, 'disk' => 20],
         ]);
         Product::factory()->create([
             'type' => 'container_hosting',
             'is_active' => true,
-            'price' => 2500,
+            'monthly_price' => 2500,
+            'yearly_price' => 25000,
             'container_template_id' => $otherTemplate->id,
             'resource_limits' => ['cpu' => 4, 'memory' => 4096, 'disk' => 40],
         ]);
@@ -52,5 +55,6 @@ class CustomerContainerPlanChangeServiceTest extends TestCase
         $this->assertCount(1, $options);
         $this->assertSame($upgrade->id, $options->first()['product']->id);
         $this->assertSame('upgrade', $options->first()['change_type']);
+        $this->assertSame(2000.0, $options->first()['display_price']);
     }
 }
