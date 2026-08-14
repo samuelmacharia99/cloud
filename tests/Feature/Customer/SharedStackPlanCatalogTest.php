@@ -10,8 +10,8 @@ use App\Models\Product;
 use App\Models\Service;
 use App\Models\User;
 use App\Services\Provisioning\ContainerDeploymentService;
+use App\Services\Provisioning\ContainerGitRepositoryService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use ReflectionMethod;
 use Tests\TestCase;
 
 class SharedStackPlanCatalogTest extends TestCase
@@ -203,13 +203,13 @@ class SharedStackPlanCatalogTest extends TestCase
         $this->assertSame($nodejs->id, (int) ($service->service_meta['container_template_id'] ?? 0));
         $this->assertSame('nodejs', $service->service_meta['language_slug'] ?? null);
 
-        $method = new ReflectionMethod(ContainerDeploymentService::class, 'resolveContainerTemplate');
-        $method->setAccessible(true);
-        $resolved = $method->invoke(app(ContainerDeploymentService::class), $service->fresh(['product']));
+        $resolved = app(ContainerDeploymentService::class)->resolveContainerTemplate($service->fresh(['product']));
 
         $this->assertNotNull($resolved);
         $this->assertSame('nodejs', $resolved->slug);
         $this->assertSame($nodejs->id, $resolved->id);
+        $this->assertTrue(app(ContainerGitRepositoryService::class)->supportsService($service->fresh(['product'])));
+        $this->assertNull($service->product?->containerTemplate);
     }
 
     public function test_shared_plan_laravel_next_still_expands_project(): void

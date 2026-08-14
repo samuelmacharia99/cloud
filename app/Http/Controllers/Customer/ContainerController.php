@@ -83,15 +83,17 @@ class ContainerController extends Controller
 
         $databaseContext = $this->buildDatabaseContext($service, $deployment);
         $databaseConsoleEnabled = $this->isDatabaseConsoleEnabled();
-        $isLaravelTemplate = ($service->product?->containerTemplate?->slug ?? '') === 'laravel';
+        $resolvedTemplate = app(ContainerDeploymentService::class)->resolveContainerTemplate($service);
+        $templateSlug = $resolvedTemplate?->slug;
+        $isLaravelTemplate = $templateSlug === 'laravel';
         $supportsPhpExtensions = app(ContainerPhpExtensionsService::class)
-            ->supportsTemplate($service->product?->containerTemplate?->slug);
+            ->supportsTemplate($templateSlug);
         $phpExtensionsPanel = $supportsPhpExtensions
             ? app(ContainerPhpExtensionsService::class)->buildPanelState($service, $deployment)
             : null;
         $gitRepositoryService = app(ContainerGitRepositoryService::class);
         $gitCredentialsService = app(ContainerGitCredentialsService::class);
-        $supportsGitRepository = $gitRepositoryService->supportsTemplate($service->product?->containerTemplate?->slug);
+        $supportsGitRepository = $gitRepositoryService->supportsService($service);
         $gitRepository = $supportsGitRepository ? array_merge(
             $gitRepositoryService->repositorySettings($service),
             [
@@ -100,7 +102,7 @@ class ContainerController extends Controller
             ]
         ) : null;
         $containerLimits = $service->product->getIncludedContainerLimits(
-            $service->product->containerTemplate,
+            $resolvedTemplate ?? $service->product->containerTemplate,
             $deployment
         );
         $dbImportMaxMb = (int) config('security.container_db_import.max_size_mb', 50);
@@ -116,7 +118,7 @@ class ContainerController extends Controller
         $stagingPanel = app(ContainerStagingService::class)->panelState($service);
         $scheduledBackupDue = null;
         $redeployStackOptions = null;
-        $template = $service->product?->containerTemplate;
+        $template = $resolvedTemplate ?? $service->product?->containerTemplate;
         if ($template) {
             $currentFramework = is_string($service->service_meta['framework'] ?? null)
                 ? $service->service_meta['framework']
@@ -157,6 +159,7 @@ class ContainerController extends Controller
             'databaseContext',
             'databaseConsoleEnabled',
             'isLaravelTemplate',
+            'templateSlug',
             'supportsPhpExtensions',
             'phpExtensionsPanel',
             'supportsGitRepository',
@@ -450,7 +453,9 @@ class ContainerController extends Controller
     ): RedirectResponse {
         abort_if($service->user_id !== auth()->id(), 403);
 
-        if (! $phpExtensionsService->supportsTemplate($service->product?->containerTemplate?->slug)) {
+        $templateSlug = app(ContainerDeploymentService::class)
+            ->resolveContainerTemplate($service)?->slug;
+        if (! $phpExtensionsService->supportsTemplate($templateSlug)) {
             return back()->withErrors(['error' => 'PHP extensions are not supported for this container type.']);
         }
 
@@ -491,7 +496,7 @@ class ContainerController extends Controller
     ): RedirectResponse {
         abort_if($service->user_id !== auth()->id(), 403);
 
-        if (! $gitRepositoryService->supportsTemplate($service->product?->containerTemplate?->slug)) {
+        if (! $gitRepositoryService->supportsService($service)) {
             return back()->withErrors(['error' => 'Git repository connections are not supported for this container type.']);
         }
 
@@ -525,7 +530,7 @@ class ContainerController extends Controller
     ): RedirectResponse|JsonResponse {
         abort_if($service->user_id !== auth()->id(), 403);
 
-        if (! $gitRepositoryService->supportsTemplate($service->product?->containerTemplate?->slug)) {
+        if (! $gitRepositoryService->supportsService($service)) {
             if ($request->expectsJson()) {
                 return response()->json(['error' => 'Git repository pulls are not supported for this container type.'], 400);
             }
@@ -588,7 +593,7 @@ class ContainerController extends Controller
         abort_if($service->user_id !== auth()->id(), 403);
         $this->authorize('manageContainer', $service);
 
-        if (! $gitRepositoryService->supportsTemplate($service->product?->containerTemplate?->slug)) {
+        if (! $gitRepositoryService->supportsService($service)) {
             if (request()->expectsJson()) {
                 return response()->json(['error' => 'Git repository pulls are not supported for this container type.'], 400);
             }
@@ -628,7 +633,7 @@ class ContainerController extends Controller
         abort_if($service->user_id !== auth()->id(), 403);
         $this->authorize('manageContainer', $service);
 
-        if (! $gitRepositoryService->supportsTemplate($service->product?->containerTemplate?->slug)) {
+        if (! $gitRepositoryService->supportsService($service)) {
             if ($request->expectsJson()) {
                 return response()->json(['error' => 'Git repository pulls are not supported for this container type.'], 400);
             }
@@ -688,7 +693,7 @@ class ContainerController extends Controller
     {
         abort_if($service->user_id !== auth()->id(), 403);
 
-        if (! $gitRepositoryService->supportsTemplate($service->product?->containerTemplate?->slug)) {
+        if (! $gitRepositoryService->supportsService($service)) {
             return response()->json(['error' => 'Git repository pulls are not supported for this container type.'], 400);
         }
 

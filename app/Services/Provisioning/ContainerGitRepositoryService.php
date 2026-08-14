@@ -97,7 +97,7 @@ class ContainerGitRepositoryService
     ): ContainerGitPull {
         $service->loadMissing('product.containerTemplate', 'containerDeployment.node');
 
-        if (! $this->supportsTemplate($service->product?->containerTemplate?->slug)) {
+        if (! $this->supportsService($service)) {
             throw new \InvalidArgumentException('Git repository pulls are not supported for this container type.');
         }
 
@@ -120,7 +120,7 @@ class ContainerGitRepositoryService
                 'service_id' => $service->id,
                 'container_deployment_id' => $deployment->id,
                 'user_id' => $user->id,
-                'template_slug' => (string) ($service->product?->containerTemplate?->slug ?? ''),
+                'template_slug' => (string) ($this->templateSlugFor($service) ?? ''),
                 'status' => ContainerGitPull::STATUS_PENDING,
                 'options' => [
                     'replace_existing' => $replaceExisting,
@@ -427,7 +427,7 @@ class ContainerGitRepositoryService
         if ($settings['url'] === '') {
             $service->loadMissing('product.containerTemplate');
             // Official wordpress image copies core into an empty volume; placeholders block that.
-            if (($service->product?->containerTemplate?->slug ?? '') !== 'wordpress') {
+            if (($this->templateSlugFor($service) ?? '') !== 'wordpress') {
                 $this->appDirectory->ensurePlaceholderState($ssh, $hostAppPath);
             }
 
@@ -485,6 +485,22 @@ class ContainerGitRepositoryService
     public function supportsTemplate(?string $slug): bool
     {
         return in_array($slug, ['laravel', 'php', 'nodejs', 'python', 'ruby'], true);
+    }
+
+    /**
+     * Whether this service's effective stack (product or shared-plan meta) supports Git.
+     */
+    public function supportsService(Service $service): bool
+    {
+        return $this->supportsTemplate($this->templateSlugFor($service));
+    }
+
+    public function templateSlugFor(Service $service): ?string
+    {
+        $service->loadMissing('product.containerTemplate');
+
+        return $this->deploymentService->resolveContainerTemplate($service)?->slug
+            ?? $service->product?->containerTemplate?->slug;
     }
 
     public function gitInvocation(string $hostAppPath): string
@@ -762,7 +778,7 @@ class ContainerGitRepositoryService
 
     private function isLaravelService(Service $service): bool
     {
-        return ($service->product?->containerTemplate?->slug ?? '') === 'laravel';
+        return ($this->templateSlugFor($service) ?? '') === 'laravel';
     }
 
     private function pathResolver(): LaravelProjectPathResolver

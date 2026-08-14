@@ -48,7 +48,7 @@ class ContainerAutoDeployService
     {
         $service->loadMissing('product.containerTemplate', 'containerDeployment');
 
-        if (! $this->gitRepository->supportsTemplate($service->product?->containerTemplate?->slug)) {
+        if (! $this->gitRepository->supportsService($service)) {
             throw new \InvalidArgumentException('Git auto-deploy is not supported for this template.');
         }
 
@@ -133,7 +133,7 @@ class ContainerAutoDeployService
             }
         }
 
-        if (! $this->gitRepository->supportsTemplate($service->product?->containerTemplate?->slug)) {
+        if (! $this->gitRepository->supportsService($service)) {
             throw new \InvalidArgumentException('Git auto-deploy is not supported for this template.');
         }
 

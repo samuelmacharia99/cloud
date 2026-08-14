@@ -5,7 +5,7 @@
     $gitSyncedAt = $gitRepository['synced_at'] ?? null;
     $hasRepoToken = (bool) ($gitRepository['has_repo_token'] ?? false);
     $hasComposerAuth = (bool) ($gitRepository['has_composer_auth'] ?? false);
-    $isNodeTemplate = ($service->product?->containerTemplate?->slug ?? '') === 'nodejs';
+    $isNodeTemplate = ($templateSlug ?? $service->product?->containerTemplate?->slug ?? '') === 'nodejs';
 @endphp
 
 <style>

@@ -34,7 +34,7 @@ class ContainerAutoDeployServiceTest extends TestCase
         ]);
 
         $git = Mockery::mock(ContainerGitRepositoryService::class);
-        $git->shouldReceive('supportsTemplate')->andReturn(true);
+        $git->shouldReceive('supportsService')->andReturn(true);
         $git->shouldReceive('repositorySettings')->andReturn([
             'url' => '',
             'branch' => 'main',
@@ -61,7 +61,7 @@ class ContainerAutoDeployServiceTest extends TestCase
         ]);
 
         $git = Mockery::mock(ContainerGitRepositoryService::class);
-        $git->shouldReceive('supportsTemplate')->andReturn(true);
+        $git->shouldReceive('supportsService')->andReturn(true);
         $git->shouldReceive('repositorySettings')->andReturn([
             'url' => 'https://github.com/acme/app.git',
             'branch' => 'main',

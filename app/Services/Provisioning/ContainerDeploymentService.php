@@ -3981,7 +3981,11 @@ class ContainerDeploymentService
         return $payload;
     }
 
-    private function resolveContainerTemplate(Service $service): ?ContainerTemplate
+    /**
+     * Effective stack template for a service: provision/meta override, then product FK.
+     * Shared Application Hosting plans store the stack on service_meta, not the product.
+     */
+    public function resolveContainerTemplate(Service $service): ?ContainerTemplate
     {
         $meta = is_array($service->service_meta) ? $service->service_meta : [];
         $slug = $meta['provision_template_slug'] ?? null;
