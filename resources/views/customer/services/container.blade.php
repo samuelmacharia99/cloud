@@ -342,12 +342,19 @@
                                 </form>
                             @endif
 
-                            @if ($deployment->isRunning())
-                                <a href="{{ $deployment->getAccessUrl() }}" target="_blank" rel="noopener" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition">
+                            @php($accessUrl = $deployment->getAccessUrl())
+                            @if ($deployment->isRunning() && $accessUrl)
+                                <a
+                                    href="{{ $accessUrl }}"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition"
+                                    onclick="window.open(this.href, '_blank'); return false;"
+                                >
                                     Visit service
                                 </a>
                             @else
-                                <span class="px-5 py-2 bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 rounded-lg font-medium cursor-not-allowed" title="Start the app to visit it">
+                                <span class="px-5 py-2 bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 rounded-lg font-medium cursor-not-allowed" title="{{ $deployment->isRunning() ? 'No public URL is available yet' : 'Start the app to visit it' }}">
                                     Visit service
                                 </span>
                             @endif
@@ -830,7 +837,16 @@
                             @csrf
                             <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium">Restart</button>
                         </form>
-                        <a href="{{ $deployment->getAccessUrl() }}" target="_blank" rel="noopener" class="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium">Visit</a>
+                        @php($mobileAccessUrl = $deployment->getAccessUrl())
+                        @if ($mobileAccessUrl)
+                            <a
+                                href="{{ $mobileAccessUrl }}"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium"
+                                onclick="window.open(this.href, '_blank'); return false;"
+                            >Visit</a>
+                        @endif
                     @elseif (in_array($deployment->status, ['stopped', 'failed']))
                         <form method="POST" action="{{ route('customer.services.container.start', $service) }}">
                             @csrf

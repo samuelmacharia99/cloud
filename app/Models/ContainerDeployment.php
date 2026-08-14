@@ -116,12 +116,28 @@ class ContainerDeployment extends Model
     // Access URL Helper
     public function getAccessUrl(): ?string
     {
-        if ($this->domain) {
-            return "https://{$this->domain}";
+        $this->loadMissing(['domains', 'node']);
+
+        $activeDomain = $this->relationLoaded('domains')
+            ? $this->domains->firstWhere('status', 'active')
+            : $this->domains()->where('status', 'active')->first();
+
+        if ($activeDomain && filled($activeDomain->domain)) {
+            $host = ltrim((string) $activeDomain->domain, '/');
+
+            return 'https://'.$host;
         }
 
-        if ($this->node && $this->assigned_port) {
-            return "http://{$this->node->ip_address}:{$this->assigned_port}";
+        if (filled($this->domain)) {
+            return 'https://'.ltrim((string) $this->domain, '/');
+        }
+
+        $node = $this->node;
+        if ($node && $this->assigned_port) {
+            $host = filled($node->hostname) ? $node->hostname : $node->ip_address;
+            if (filled($host)) {
+                return "http://{$host}:{$this->assigned_port}";
+            }
         }
 
         return null;
