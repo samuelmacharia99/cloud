@@ -70,20 +70,37 @@ class CheckCronHealthCommand extends BaseCronCommand
             ->get()
             ->groupBy('cron_job_id');
 
-        foreach ($recentFails as $logs) {
-            if ($logs->count() >= 3) {
-                $job = $logs->first()->cronJob;
-                Log::critical("Cron job has failed 3+ times in last hour: {$job->name}", [
-                    'command' => $job->command,
-                    'failure_count' => $logs->count(),
-                ]);
-
-                $issues[] = [
-                    'type' => 'consecutive_failures',
-                    'job' => $job,
-                    'count' => $logs->count(),
-                ];
+        foreach ($recentFails as $cronJobId => $logs) {
+            if ($logs->count() < 3) {
+                continue;
             }
+
+            $job = $logs->first()->cronJob;
+            if (! $job) {
+                continue;
+            }
+
+            // If the job already recovered, do not keep CRITICAL-alerting on the
+            // trailing hour of historical failures (common after a deploy/hotfix).
+            $latestLog = CronJobLog::query()
+                ->where('cron_job_id', $cronJobId)
+                ->latest('started_at')
+                ->first();
+
+            if ($latestLog && $latestLog->status !== 'failed' && $job->last_status !== 'failed') {
+                continue;
+            }
+
+            Log::critical("Cron job has failed 3+ times in last hour: {$job->name}", [
+                'command' => $job->command,
+                'failure_count' => $logs->count(),
+            ]);
+
+            $issues[] = [
+                'type' => 'consecutive_failures',
+                'job' => $job,
+                'count' => $logs->count(),
+            ];
         }
 
         if (! empty($issues)) {

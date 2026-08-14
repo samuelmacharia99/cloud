@@ -62,6 +62,66 @@ class CheckCronHealthCommandTest extends TestCase
         $this->assertSame('failed', $job->fresh()->last_status);
     }
 
+    public function test_recovered_job_does_not_alert_on_historical_hour_failures(): void
+    {
+        Mail::fake();
+
+        $job = CronJob::create([
+            'name' => 'Example Recovered Job',
+            'command' => 'cron:example-recovered-job',
+            'schedule' => '* * * * *',
+            'enabled' => true,
+            'last_status' => 'success',
+        ]);
+
+        foreach ([50, 40, 30] as $minutesAgo) {
+            CronJobLog::create([
+                'cron_job_id' => $job->id,
+                'status' => 'failed',
+                'started_at' => now()->subMinutes($minutesAgo),
+                'finished_at' => now()->subMinutes($minutesAgo - 1),
+            ]);
+        }
+
+        CronJobLog::create([
+            'cron_job_id' => $job->id,
+            'status' => 'success',
+            'started_at' => now()->subMinutes(5),
+            'finished_at' => now()->subMinutes(4),
+            'output' => 'ok',
+        ]);
+
+        $this->artisan('cron:check-health')
+            ->assertSuccessful()
+            ->expectsOutputToContain('no issues detected');
+    }
+
+    public function test_still_failing_job_alerts_when_three_failures_in_last_hour(): void
+    {
+        Mail::fake();
+
+        $job = CronJob::create([
+            'name' => 'Example Failing Job',
+            'command' => 'cron:example-failing-job',
+            'schedule' => '* * * * *',
+            'enabled' => true,
+            'last_status' => 'failed',
+        ]);
+
+        foreach ([50, 40, 5] as $minutesAgo) {
+            CronJobLog::create([
+                'cron_job_id' => $job->id,
+                'status' => 'failed',
+                'started_at' => now()->subMinutes($minutesAgo),
+                'finished_at' => now()->subMinutes($minutesAgo - 1),
+            ]);
+        }
+
+        $this->artisan('cron:check-health')
+            ->assertSuccessful()
+            ->expectsOutputToContain('1 issue(s)');
+    }
+
     public function test_unknown_command_uses_default_threshold(): void
     {
         $command = new CheckCronHealthCommand;
