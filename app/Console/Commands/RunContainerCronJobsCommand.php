@@ -26,7 +26,10 @@ class RunContainerCronJobsCommand extends BaseCronCommand
             $message .= sprintf(' Deferred %d job(s) to the next minute (batch time budget).', $summary['deferred']);
         }
 
-        if ($summary['failed'] > 0) {
+        // Individual customer job failures are recorded on each ContainerCronJob.
+        // Only escalate the platform cron when the whole batch failed; otherwise a
+        // single bad customer command would CRITICAL-alert every minute.
+        if ($summary['failed'] > 0 && $summary['succeeded'] === 0 && $summary['processed'] > 0) {
             throw new \RuntimeException($message);
         }
 

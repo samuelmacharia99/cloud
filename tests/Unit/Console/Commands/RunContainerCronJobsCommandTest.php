@@ -1,0 +1,46 @@
+<?php
+
+namespace Tests\Unit\Console\Commands;
+
+use App\Services\Provisioning\ContainerCronService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+class RunContainerCronJobsCommandTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_partial_customer_job_failures_do_not_fail_the_platform_cron(): void
+    {
+        $this->mock(ContainerCronService::class, function ($mock) {
+            $mock->shouldReceive('runDueJobs')->once()->andReturn([
+                'processed' => 3,
+                'succeeded' => 2,
+                'failed' => 1,
+                'skipped' => 0,
+                'deferred' => 0,
+            ]);
+        });
+
+        $this->artisan('cron:run-container-jobs')
+            ->assertSuccessful()
+            ->expectsOutputToContain('2 succeeded, 1 failed');
+    }
+
+    public function test_total_batch_failure_marks_platform_cron_failed(): void
+    {
+        $this->mock(ContainerCronService::class, function ($mock) {
+            $mock->shouldReceive('runDueJobs')->once()->andReturn([
+                'processed' => 2,
+                'succeeded' => 0,
+                'failed' => 2,
+                'skipped' => 0,
+                'deferred' => 0,
+            ]);
+        });
+
+        $this->artisan('cron:run-container-jobs')
+            ->assertFailed()
+            ->expectsOutputToContain('0 succeeded, 2 failed');
+    }
+}
