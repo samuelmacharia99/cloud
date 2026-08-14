@@ -342,7 +342,9 @@
                                 </form>
                             @endif
 
-                            @php($accessUrl = $deployment->getAccessUrl())
+                            @php
+                                $accessUrl = $deployment->getAccessUrl();
+                            @endphp
                             @if ($deployment->isRunning() && $accessUrl)
                                 <a
                                     href="{{ $accessUrl }}"
@@ -837,7 +839,9 @@
                             @csrf
                             <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium">Restart</button>
                         </form>
-                        @php($mobileAccessUrl = $deployment->getAccessUrl())
+                        @php
+                            $mobileAccessUrl = $deployment->getAccessUrl();
+                        @endphp
                         @if ($mobileAccessUrl)
                             <a
                                 href="{{ $mobileAccessUrl }}"
