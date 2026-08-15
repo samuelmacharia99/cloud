@@ -74,7 +74,9 @@ class ContainerDoctorService
             return ['success' => false, 'message' => 'Application is not deployed.'];
         }
 
-        if (! $deployment->isRunning()) {
+        // Recreating is the repair for a stack that is down, so it must not require a
+        // running deployment the way in-container fixes do.
+        if (! $deployment->isRunning() && $action !== 'recreate_application') {
             return ['success' => false, 'message' => 'Application must be running before applying a fix.'];
         }
 
@@ -88,6 +90,7 @@ class ContainerDoctorService
             'fix_storage_permissions' => $this->treatFixStoragePermissions($service),
             'fix_wordpress_permissions' => $this->treatFixWordPressPermissions($service),
             'restart_application' => $this->treatRestartApplication($service),
+            'recreate_application' => $this->treatRecreateApplication($service),
             'run_migrations' => $this->treatRunMigrations($service),
             'migrate_fresh' => $this->treatMigrateFresh($service),
             'use_file_cache' => $this->treatUseFileCache($service),
@@ -274,6 +277,9 @@ class ContainerDoctorService
             'sidecar_frontend' => null,
             'sidecar_edge' => null,
             'api_http_status' => null,
+            'upstream_reachable' => null,
+            'upstream_local_status' => null,
+            'containers_stopped' => null,
         ];
         $findings = [];
 
@@ -570,7 +576,31 @@ class ContainerDoctorService
                     ...$appErrors,
                 ]));
 
-                if ($hasEmptyDb) {
+                $upstream = $this->probeUpstream($ssh, $deployment);
+                $checks['upstream_reachable'] = $upstream['reachable'];
+                $checks['upstream_local_status'] = $upstream['local_status'];
+                $checks['containers_stopped'] = $upstream['stopped'];
+
+                if (! $upstream['reachable'] && $upstream['assigned_port'] !== null) {
+                    $findings[] = [
+                        'id' => 'live_upstream_unreachable',
+                        'severity' => 'critical',
+                        'title' => 'Live check: proxy cannot reach the app (HTTP '.$httpStatus.')',
+                        'summary' => 'The web proxy returned HTTP '.$httpStatus.' because nothing answered on the app port '
+                            .'(127.0.0.1:'.$upstream['assigned_port'].') on the node. This is not an application exception — '
+                            .'the container is stopped, crash-looping on boot, or no longer publishing that port, '
+                            .'so restarting alone will not help until the boot failure is fixed.',
+                        'evidence' => $this->upstreamEvidence($upstream, $httpStatus, (string) ($deployment->getAccessUrl() ?? '')),
+                        'treat_action' => 'recreate_application',
+                        'treat_label' => 'Recreate containers',
+                        'manual_steps' => [
+                            'Recreate containers re-runs docker compose up -d, which restart cannot do for missing containers or changed ports.',
+                            'Read the boot error in Logs — a crash-looping container repeats the same startup error.',
+                            'If the app crashes on boot, fix the start command or missing environment variables, then recreate.',
+                        ],
+                        'source' => 'live',
+                    ];
+                } elseif ($hasEmptyDb) {
                     // Empty-schema finding already exposes migrate:fresh — avoid a second
                     // card that wrongly suggests Repair DB credentials.
                 } elseif ($hasCredentialDbIssue) {
@@ -619,9 +649,9 @@ class ContainerDoctorService
                         ? 'DB connects and has tables, but Laravel is using database cache without a cache_locks table — that commonly 500s GET /.'
                         : ($looksLikeMissingTable
                             ? 'DB connects, but the app error looks like missing tables/migrations.'
-                            : 'DB and schema look healthy (tables: '.((string) ($checks['table_count'] ?? '?')).'), '
-                                .'but the public URL still returns HTTP '.$httpStatus
-                                .'. This is an application exception — clearing caches alone will not clear this card until the URL returns 2xx/3xx.');
+                            : 'The container is up and answering on its port, but the app itself returns HTTP '.$httpStatus
+                                .' (tables: '.((string) ($checks['table_count'] ?? '?')).'). '
+                                .'This is an application exception — clearing caches alone will not clear this card until the URL returns 2xx/3xx.');
 
                     $findings[] = [
                         'id' => 'live_http_5xx',
@@ -700,6 +730,7 @@ class ContainerDoctorService
                     'live_empty_database',
                     'live_missing_pdo',
                     'live_http_5xx',
+                    'live_upstream_unreachable',
                 ], true)
             );
 
@@ -987,6 +1018,182 @@ PHP;
         }
 
         return null;
+    }
+
+    /**
+     * A 502/503/504 from the edge proxy means the upstream port never answered, which is a
+     * different failure from an application exception. Probe the published host port and the
+     * compose containers so the finding names the real cause.
+     *
+     * @return array{
+     *     assigned_port: ?int,
+     *     local_status: ?int,
+     *     reachable: bool,
+     *     containers: list<array{name: string, state: string, status: string, ports: string}>,
+     *     stopped: list<string>,
+     *     publishes_port: ?bool,
+     *     crash_logs: list<string>
+     * }
+     */
+    private function probeUpstream(SSHService $ssh, $deployment): array
+    {
+        $port = (int) ($deployment->assigned_port ?? 0);
+        $probe = [
+            'assigned_port' => $port > 0 ? $port : null,
+            'local_status' => null,
+            'reachable' => false,
+            'containers' => [],
+            'stopped' => [],
+            'publishes_port' => null,
+            'crash_logs' => [],
+        ];
+
+        if ($port > 0) {
+            try {
+                $code = trim($ssh->exec(
+                    'curl -s -o /dev/null -w "%{http_code}" --max-time 8 '
+                    .escapeshellarg('http://127.0.0.1:'.$port.'/').' || true',
+                    15
+                ));
+                if (preg_match('/^\d{3}$/', $code) === 1) {
+                    $probe['local_status'] = (int) $code;
+                    // curl reports 000 when the TCP connection itself fails.
+                    $probe['reachable'] = (int) $code >= 100;
+                }
+            } catch (\Throwable) {
+                // Leave as unreachable; container state below explains why.
+            }
+        }
+
+        $stoppedNames = [];
+
+        try {
+            $rows = trim($ssh->exec(
+                'docker ps -a --filter '
+                .escapeshellarg('label=com.docker.compose.project='.$deployment->container_name)
+                .' --format '.escapeshellarg('{{.Names}}|{{.State}}|{{.Status}}|{{.Ports}}'),
+                20
+            ));
+
+            foreach (preg_split("/\r\n|\n|\r/", $rows) ?: [] as $row) {
+                $parts = explode('|', trim($row));
+                if (($parts[0] ?? '') === '') {
+                    continue;
+                }
+
+                $container = [
+                    'name' => $parts[0],
+                    'state' => strtolower(trim($parts[1] ?? '')),
+                    'status' => trim($parts[2] ?? ''),
+                    'ports' => trim($parts[3] ?? ''),
+                ];
+                $probe['containers'][] = $container;
+
+                if ($container['state'] !== 'running') {
+                    $stoppedNames[] = $container['name'];
+                    $probe['stopped'][] = $container['name']
+                        .' ('.($container['status'] !== '' ? $container['status'] : $container['state']).')';
+                }
+            }
+        } catch (\Throwable) {
+            // Container inventory is best effort.
+        }
+
+        if ($port > 0 && $probe['containers'] !== []) {
+            $probe['publishes_port'] = collect($probe['containers'])->contains(
+                fn (array $container) => str_contains($container['ports'], ':'.$port.'->')
+            );
+        }
+
+        if (! $probe['reachable']) {
+            $targets = $stoppedNames !== [] ? $stoppedNames : [$deployment->container_name];
+
+            foreach (array_slice($targets, 0, 2) as $name) {
+                try {
+                    $logs = trim($ssh->exec(
+                        'docker logs --tail 25 '.escapeshellarg($name).' 2>&1 || true',
+                        20
+                    ));
+
+                    foreach (preg_split("/\r\n|\n|\r/", $logs) ?: [] as $line) {
+                        $line = trim($line);
+                        if ($line !== '') {
+                            $probe['crash_logs'][] = mb_substr($name.': '.$line, 0, 280);
+                        }
+                    }
+                } catch (\Throwable) {
+                    continue;
+                }
+            }
+
+            $probe['crash_logs'] = array_slice(array_reverse($probe['crash_logs']), 0, 12);
+            $probe['crash_logs'] = array_reverse($probe['crash_logs']);
+        }
+
+        return $probe;
+    }
+
+    /**
+     * @param  array<string, mixed>  $probe
+     * @return list<string>
+     */
+    private function upstreamEvidence(array $probe, int $httpStatus, string $accessUrl): array
+    {
+        $localStatus = $probe['local_status'] === null || $probe['local_status'] === 0
+            ? 'no response (connection refused)'
+            : 'HTTP '.$probe['local_status'];
+
+        return array_values(array_filter([
+            'public URL: HTTP '.$httpStatus.($accessUrl !== '' ? ' — '.$accessUrl : ''),
+            'app port 127.0.0.1:'.$probe['assigned_port'].' → '.$localStatus,
+            $probe['stopped'] !== []
+                ? 'not running: '.implode(', ', array_slice($probe['stopped'], 0, 4))
+                : null,
+            $probe['publishes_port'] === false
+                ? 'no container publishes host port '.$probe['assigned_port']
+                : null,
+            ...$probe['crash_logs'],
+        ]));
+    }
+
+    /**
+     * Applications need a few seconds to bind their port after a restart or recreate.
+     *
+     * @return array<string, mixed>
+     */
+    private function waitForUpstream(SSHService $ssh, $deployment, int $attempts = 5): array
+    {
+        $probe = $this->probeUpstream($ssh, $deployment);
+
+        for ($attempt = 1; $attempt < $attempts && ! $probe['reachable']; $attempt++) {
+            sleep(3);
+            $probe = $this->probeUpstream($ssh, $deployment);
+        }
+
+        return $probe;
+    }
+
+    /**
+     * @param  array<string, mixed>  $probe
+     */
+    private function upstreamFailureMessage(array $probe): string
+    {
+        $reasons = array_values(array_filter([
+            $probe['stopped'] !== []
+                ? 'not running: '.implode(', ', array_slice($probe['stopped'], 0, 3))
+                : null,
+            $probe['publishes_port'] === false
+                ? 'no container publishes host port '.$probe['assigned_port']
+                : null,
+            $probe['crash_logs'] !== []
+                ? 'last log — '.mb_substr((string) $probe['crash_logs'][count($probe['crash_logs']) - 1], 0, 200)
+                : null,
+        ]));
+
+        return 'The app is still not answering on 127.0.0.1:'.$probe['assigned_port'].'. '
+            .($reasons === []
+                ? 'The container starts but never binds its port — check the start command and Logs.'
+                : implode(' | ', $reasons));
     }
 
     /**
@@ -2046,12 +2253,83 @@ PHP;
      */
     private function treatRestartApplication(Service $service): array
     {
+        $deployment = $service->containerDeployment;
+
+        if (! $deployment?->node) {
+            return ['success' => false, 'message' => 'Application is not deployed.'];
+        }
+
         try {
             app(ContainerDeploymentService::class)->restart($service);
-
-            return ['success' => true, 'message' => 'Application restart requested.'];
         } catch (\Throwable $e) {
             return ['success' => false, 'message' => 'Restart failed: '.$e->getMessage()];
+        }
+
+        if ((int) ($deployment->assigned_port ?? 0) <= 0) {
+            return ['success' => true, 'message' => 'Application restart requested.'];
+        }
+
+        $ssh = SSHService::forNode($deployment->node);
+
+        try {
+            $probe = $this->waitForUpstream($ssh, $deployment);
+
+            if ($probe['reachable']) {
+                return ['success' => true, 'message' => 'Application restarted and is answering on its port again.'];
+            }
+
+            // `docker compose restart` cannot create a missing container or apply a changed
+            // port mapping, so report the real state instead of a misleading success.
+            return [
+                'success' => false,
+                'message' => $this->upstreamFailureMessage($probe).' Try Recreate containers.',
+            ];
+        } catch (\Throwable $e) {
+            return [
+                'success' => true,
+                'message' => 'Application restart requested, but verification failed: '.$e->getMessage(),
+            ];
+        } finally {
+            $ssh->disconnect();
+        }
+    }
+
+    /**
+     * @return array{success: bool, message: string}
+     */
+    private function treatRecreateApplication(Service $service): array
+    {
+        $deployment = $service->containerDeployment;
+
+        if (! $deployment?->node) {
+            return ['success' => false, 'message' => 'Application is not deployed.'];
+        }
+
+        $ssh = SSHService::forNode($deployment->node);
+
+        try {
+            // up -d recreates missing containers and applies the current port mapping,
+            // which a plain restart cannot do. Volumes and the database are preserved.
+            app(ContainerDeploymentService::class)->startComposeStack($ssh, $service, $deployment);
+
+            if ((int) ($deployment->assigned_port ?? 0) <= 0) {
+                return ['success' => true, 'message' => 'Containers recreated.'];
+            }
+
+            $probe = $this->waitForUpstream($ssh, $deployment);
+
+            if ($probe['reachable']) {
+                return [
+                    'success' => true,
+                    'message' => 'Containers recreated and the app is answering on its port again.',
+                ];
+            }
+
+            return ['success' => false, 'message' => $this->upstreamFailureMessage($probe)];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'message' => 'Recreate failed: '.$e->getMessage()];
+        } finally {
+            $ssh->disconnect();
         }
     }
 }

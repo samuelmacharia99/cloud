@@ -2,6 +2,8 @@
 
 namespace Tests\Unit\Provisioning;
 
+use App\Models\ContainerDeployment;
+use App\Models\Service;
 use App\Services\Provisioning\ContainerDoctorService;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -83,7 +85,7 @@ LOG;
     #[Test]
     public function it_returns_generic_http_500_when_no_signature_matches(): void
     {
-        $logs = "[Fri Aug 01 10:00:02] [500]: GET / index.php";
+        $logs = '[Fri Aug 01 10:00:02] [500]: GET / index.php';
 
         $findings = app(ContainerDoctorService::class)->analyzeLogs($logs, 'laravel');
 
@@ -103,10 +105,10 @@ LOG;
     #[Test]
     public function it_downgrades_missing_database_finding_when_env_already_fixed(): void
     {
-        $service = new \App\Models\Service;
+        $service = new Service;
         $service->id = 163;
         $service->user_id = 193;
-        $service->setRelation('containerDeployment', new \App\Models\ContainerDeployment([
+        $service->setRelation('containerDeployment', new ContainerDeployment([
             'env_values' => [
                 'DB_DATABASE' => 's163_db',
                 'DB_USERNAME' => 'u193_s163',
@@ -192,6 +194,80 @@ LOG;
         $ids = array_column($merged, 'id');
         $this->assertNotContains('postgres_password_auth_failed', $ids);
         $this->assertContains('live_http_5xx', $ids);
+    }
+
+    #[Test]
+    public function it_suppresses_stale_log_findings_when_the_upstream_is_unreachable(): void
+    {
+        $merged = app(ContainerDoctorService::class)->mergeLogAndLiveFindings(
+            [[
+                'id' => 'postgres_password_auth_failed',
+                'severity' => 'critical',
+                'title' => 'Old auth failure',
+            ]],
+            [
+                'findings' => [[
+                    'id' => 'live_upstream_unreachable',
+                    'severity' => 'critical',
+                    'title' => 'Proxy cannot reach the app',
+                ]],
+                'checks' => ['http_status' => 502, 'upstream_reachable' => false],
+            ]
+        );
+
+        $ids = array_column($merged, 'id');
+        $this->assertNotContains('postgres_password_auth_failed', $ids);
+        $this->assertContains('live_upstream_unreachable', $ids);
+    }
+
+    #[Test]
+    public function unreachable_upstream_failure_message_names_the_real_cause(): void
+    {
+        $message = $this->callPrivate('upstreamFailureMessage', [[
+            'assigned_port' => 31123,
+            'local_status' => 0,
+            'reachable' => false,
+            'containers' => [],
+            'stopped' => ['app_s163 (Exited (1) 4 seconds ago)'],
+            'publishes_port' => false,
+            'crash_logs' => ['app_s163: Error: Cannot find module /app/server.js'],
+        ]]);
+
+        $this->assertStringContainsString('127.0.0.1:31123', $message);
+        $this->assertStringContainsString('Exited (1)', $message);
+        $this->assertStringContainsString('no container publishes host port 31123', $message);
+        $this->assertStringContainsString('Cannot find module', $message);
+    }
+
+    #[Test]
+    public function unreachable_upstream_evidence_separates_public_and_local_probes(): void
+    {
+        $evidence = $this->callPrivate('upstreamEvidence', [
+            [
+                'assigned_port' => 31123,
+                'local_status' => null,
+                'reachable' => false,
+                'containers' => [],
+                'stopped' => [],
+                'publishes_port' => true,
+                'crash_logs' => [],
+            ],
+            502,
+            'https://gateway.example.test',
+        ]);
+
+        $this->assertStringContainsString('public URL: HTTP 502', $evidence[0]);
+        $this->assertStringContainsString('gateway.example.test', $evidence[0]);
+        $this->assertStringContainsString('127.0.0.1:31123', $evidence[1]);
+        $this->assertStringContainsString('connection refused', $evidence[1]);
+    }
+
+    private function callPrivate(string $method, array $arguments): mixed
+    {
+        $service = app(ContainerDoctorService::class);
+        $reflection = new \ReflectionMethod($service, $method);
+
+        return $reflection->invokeArgs($service, $arguments);
     }
 
     #[Test]
