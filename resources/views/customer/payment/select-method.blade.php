@@ -206,7 +206,7 @@
                     <div class="border-t border-slate-200 dark:border-slate-700 pt-4 space-y-2">
                         @foreach ($invoice->items as $item)
                             <div class="flex justify-between gap-3 text-sm">
-                                <span class="text-slate-600 dark:text-slate-400">{{ $item->description }}</span>
+                                <span class="text-slate-600 dark:text-slate-400">{{ $item->displayDescription() }}</span>
                                 <span class="font-medium text-slate-900 dark:text-white shrink-0">{{ $invoice->formatMoney($item->amount) }}</span>
                             </div>
                         @endforeach

@@ -17,7 +17,7 @@
     </tr>
     <tr>
         <td><strong>Type:</strong></td>
-        <td>{{ $service->product->name ?? 'N/A' }}</td>
+        <td>{{ $service->customerPlanName() }}</td>
     </tr>
     <tr>
         <td><strong>Suspended:</strong></td>
@@ -31,7 +31,7 @@
 
 @if($service->invoice)
     <p>
-        <a href="{{ route('customer.invoices.show', $service->invoice) }}" class="cta-button">View Outstanding Invoice</a>
+        <a href="{{ customer_portal_route($service->user, 'customer.invoices.show', $service->invoice, $emailBranding['portal_url'] ?? null) }}" class="cta-button">View Outstanding Invoice</a>
     </p>
 @endif
 

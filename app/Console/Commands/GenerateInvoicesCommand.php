@@ -4,7 +4,6 @@ namespace App\Console\Commands;
 
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
-use App\Models\Service;
 use App\Models\Setting;
 use App\Services\Billing\InvoiceNumberService;
 use App\Services\Billing\ServiceRenewalPricingService;
@@ -66,7 +65,7 @@ class GenerateInvoicesCommand extends BaseCronCommand
                         'invoice_id' => $invoice->id,
                         'service_id' => $service->id,
                         'product_id' => $service->product_id,
-                        'description' => $service->product->name.' — '.ucfirst($service->billing_cycle),
+                        'description' => $service->customerPlanName().' — '.ucfirst($service->billing_cycle),
                         'quantity' => 1,
                         'unit_price' => $price,
                         'amount' => $price,

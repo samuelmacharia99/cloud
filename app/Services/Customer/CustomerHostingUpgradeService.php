@@ -348,7 +348,7 @@ class CustomerHostingUpgradeService
                 'subtotal' => $taxBreakdown['subtotal'],
                 'tax' => $tax,
                 'total' => $total,
-                'notes' => "{$changeLabel}: {$service->product->name} → {$option['name']} ({$cycleLabel})",
+                'notes' => "{$changeLabel}: {$service->customerPlanName()} → {$option['name']} ({$cycleLabel})",
             ]);
 
             $customOptions = [
@@ -520,7 +520,8 @@ class CustomerHostingUpgradeService
 
         $service->update([
             'product_id' => $targetProduct->id,
-            'name' => $targetProduct->name,
+            'reseller_product_id' => $listing?->id,
+            'name' => $listing?->name ?? $targetProduct->name,
             'provisioning_driver_key' => 'directadmin',
             'service_meta' => $meta,
             'billing_cycle' => $lockedCycle,
@@ -1014,7 +1015,7 @@ class CustomerHostingUpgradeService
         $changeType = $option['change_type'] ?? 'upgrade';
 
         $summary = [
-            'current_plan_name' => $service->product?->name ?? 'Current plan',
+            'current_plan_name' => $service->customerPlanName(),
             'target_plan_name' => $option['name'],
             'current_cycle' => $currentCycle,
             'target_cycle' => $targetCycle,

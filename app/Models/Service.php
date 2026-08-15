@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\InvoiceStatus;
 use App\Enums\ServiceStatus;
+use App\Services\ResellerProvisionProductResolver;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -156,6 +157,7 @@ class Service extends Model
         'user_id',
         'project_id',
         'product_id',
+        'reseller_product_id',
         'order_item_id',
         'reseller_id',
         'invoice_id',
@@ -208,6 +210,61 @@ class Service extends Model
     public function product()
     {
         return $this->belongsTo(Product::class);
+    }
+
+    public function resellerProduct()
+    {
+        return $this->belongsTo(ResellerProduct::class);
+    }
+
+    public function customerPlanName(): string
+    {
+        $this->loadMissing(['product', 'resellerProduct', 'user']);
+        $ownerId = (int) ($this->reseller_id ?: $this->user?->reseller_id);
+        $listing = $this->resellerProduct;
+
+        if ($listing
+            && $ownerId > 0
+            && (int) $listing->reseller_id === $ownerId
+            && filled($listing->name)) {
+            return trim((string) $listing->name);
+        }
+
+        if ($this->product?->slug === ResellerProvisionProductResolver::SHELL_PRODUCT_SLUG) {
+            return 'Shared Hosting';
+        }
+
+        return filled($this->product?->name)
+            ? trim((string) $this->product->name)
+            : 'Service';
+    }
+
+    public function customerServiceName(): string
+    {
+        $name = trim((string) $this->name);
+
+        if ($name !== ''
+            && ! str_contains(strtolower($name), 'reseller directadmin hosting')
+            && ! str_contains(strtolower($name), '(system)')) {
+            return $name;
+        }
+
+        $meta = is_array($this->service_meta) ? $this->service_meta : [];
+        $domain = trim((string) ($meta['domain'] ?? $meta['primary_domain'] ?? ''));
+
+        return $domain !== '' ? $domain : $this->customerPlanName();
+    }
+
+    public function customerPlanTypeLabel(): string
+    {
+        return match ($this->product?->type) {
+            'shared_hosting' => 'Hosting',
+            'container_hosting' => 'Application Hosting',
+            'email_hosting' => 'Email Hosting',
+            'vps' => 'VPS',
+            'dedicated_server' => 'Dedicated Server',
+            default => ucfirst(str_replace('_', ' ', (string) ($this->product?->type ?? 'Service'))),
+        };
     }
 
     public function invoice()
@@ -554,6 +611,27 @@ class Service extends Model
 
     protected static function booted(): void
     {
+        static::saving(function (Service $service): void {
+            $meta = is_array($service->service_meta) ? $service->service_meta : [];
+            $listingId = (int) ($meta['reseller_product_id'] ?? 0);
+
+            if ($listingId <= 0) {
+                if (array_key_exists('reseller_product_id', $meta) && empty($meta['reseller_product_id'])) {
+                    $service->reseller_product_id = null;
+                }
+
+                return;
+            }
+
+            $listingExists = ResellerProduct::query()->whereKey($listingId)->exists();
+            $service->reseller_product_id = $listingExists ? $listingId : null;
+
+            if (! $listingExists) {
+                unset($meta['reseller_product_id']);
+                $service->service_meta = $meta;
+            }
+        });
+
         static::creating(function (Service $service) {
             if ($service->reseller_id || ! $service->user_id) {
                 return;

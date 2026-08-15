@@ -8,7 +8,7 @@
         <div>
             <a href="{{ route('reseller.services.index') }}" class="text-sm text-purple-600">← Services</a>
             <h1 class="text-3xl font-bold text-slate-900 dark:text-white mt-2">{{ $service->name }}</h1>
-            <p class="text-slate-600 dark:text-slate-400">{{ $service->product?->name }} · <x-status-badge :status="$service->status" type="service" /></p>
+            <p class="text-slate-600 dark:text-slate-400">{{ $service->customerPlanName() }} · <x-status-badge :status="$service->status" type="service" /></p>
         </div>
         <div class="flex flex-wrap gap-2">
             @if ($canSuspend ?? false)

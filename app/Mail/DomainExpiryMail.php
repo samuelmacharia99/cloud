@@ -18,13 +18,12 @@ class DomainExpiryMail extends Mailable implements ShouldQueue
     public function __construct(
         private Domain $domain,
         private int $daysUntilExpiry,
-    ) {
-    }
+    ) {}
 
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: 'Domain Expiry Notice: ' . $this->domain->name,
+            subject: 'Domain Expiry Notice: '.$this->domain->name,
         );
     }
 
@@ -36,7 +35,7 @@ class DomainExpiryMail extends Mailable implements ShouldQueue
                 'domain' => $this->domain,
                 'daysUntilExpiry' => $this->daysUntilExpiry,
                 'renewUrl' => Route::has('customer.domains.index')
-                    ? route('customer.domains.index')
+                    ? customer_portal_route($this->domain->user, 'customer.domains.index')
                     : url('/my/domains'),
             ],
         );

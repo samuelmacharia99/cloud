@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\ResellerProvisionProductResolver;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -35,5 +36,38 @@ class OrderItem extends Model
     public function product(): BelongsTo
     {
         return $this->belongsTo(Product::class);
+    }
+
+    public function service()
+    {
+        return $this->hasOne(Service::class, 'order_item_id');
+    }
+
+    public function displayTitle(): string
+    {
+        $this->loadMissing(['service', 'product', 'order.user']);
+
+        if ($this->service) {
+            return $this->service->customerPlanName();
+        }
+
+        $listingId = (int) (($this->custom_options ?? [])['reseller_product_id'] ?? 0);
+        $resellerId = (int) $this->order?->user?->reseller_id;
+        if ($listingId > 0 && $resellerId > 0) {
+            $name = ResellerProduct::query()
+                ->whereKey($listingId)
+                ->where('reseller_id', $resellerId)
+                ->value('name');
+
+            if (filled($name)) {
+                return trim((string) $name);
+            }
+        }
+
+        if ($this->product?->slug === ResellerProvisionProductResolver::SHELL_PRODUCT_SLUG) {
+            return 'Shared Hosting';
+        }
+
+        return $this->product?->name ?? 'Unknown Product';
     }
 }

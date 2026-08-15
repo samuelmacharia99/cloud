@@ -12,7 +12,7 @@
 
 <p>{{ email_support_team_label() }} will review your request and respond as soon as possible. You can continue the conversation from your account.</p>
 
-<p><a href="{{ route('customer.tickets.show', $ticket) }}" style="display: inline-block; padding: 10px 20px; background-color: #2563eb; color: white; text-decoration: none; border-radius: 4px;">View ticket</a></p>
+<p><a href="{{ customer_portal_route($ticket->user, 'customer.tickets.show', $ticket, $emailBranding['portal_url'] ?? null) }}" style="display: inline-block; padding: 10px 20px; background-color: #2563eb; color: white; text-decoration: none; border-radius: 4px;">View ticket</a></p>
 
 <p>Thank you for your patience.</p>
 @endsection

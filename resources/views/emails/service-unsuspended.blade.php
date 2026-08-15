@@ -17,7 +17,7 @@
     </tr>
     <tr>
         <td><strong>Type:</strong></td>
-        <td>{{ $service->product->name ?? 'N/A' }}</td>
+        <td>{{ $service->customerPlanName() }}</td>
     </tr>
     <tr>
         <td><strong>Restored:</strong></td>

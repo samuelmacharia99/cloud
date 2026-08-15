@@ -1,4 +1,4 @@
-<h2 style="margin:0 0 12px 0;">Your {{ $service->product->name }} is Ready</h2>
+<h2 style="margin:0 0 12px 0;">Your {{ $service->customerPlanName() }} is Ready</h2>
 
 <p>Hello {{ $service->user->name }},</p>
 

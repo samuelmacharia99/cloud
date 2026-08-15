@@ -17,7 +17,7 @@
     </tr>
     <tr>
         <td><strong>Type:</strong></td>
-        <td>{{ $service->product->name ?? 'N/A' }}</td>
+        <td>{{ $service->customerPlanName() }}</td>
     </tr>
     <tr>
         <td><strong>Terminated:</strong></td>
@@ -32,7 +32,7 @@
 <p>Your service was terminated due to non-payment of invoices. If you wish to restore your service, please contact our support team to discuss payment options.</p>
 
 <p>
-    <a href="{{ route('customer.invoices.index') }}" class="cta-button">View Your Invoices</a>
+    <a href="{{ customer_portal_route($service->user, 'customer.invoices.index', [], $emailBranding['portal_url'] ?? null) }}" class="cta-button">View Your Invoices</a>
 </p>
 
 <p>If you have any questions or believe this is an error, please reach out to us immediately.</p>

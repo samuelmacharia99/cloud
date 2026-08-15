@@ -26,7 +26,7 @@ class ServiceController extends Controller
         $projectService->ensureForUser($user);
 
         $services = $user->services()
-            ->with(['product.containerTemplate', 'invoice', 'project', 'containerDeployment'])
+            ->with(['product.containerTemplate', 'resellerProduct', 'invoice', 'project', 'containerDeployment'])
             ->whereNotIn('status', ['cancelled', 'terminated'])
             ->whereHas('product', function ($q) {
                 $q->where('type', '!=', 'domain');

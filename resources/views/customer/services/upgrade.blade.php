@@ -10,7 +10,7 @@
             {{ !empty($isContainerPlanChange) ? 'Change application hosting plan' : 'Change hosting plan' }}
         </h1>
         <p class="text-slate-600 dark:text-slate-400 mt-1">
-            Current plan: <strong>{{ $service->product->name }}</strong>
+            Current plan: <strong>{{ $service->customerPlanName() }}</strong>
             · billed <span class="capitalize">{{ $billingCycle }}</span>
             @if (!empty($isContainerPlanChange) && $service->product?->containerTemplate)
                 · stack <span class="font-mono text-sm">{{ $service->product->containerTemplate->slug }}</span>

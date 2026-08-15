@@ -1347,7 +1347,7 @@ class NotificationService
             return;
         }
 
-        $subject = 'Your '.$service->product?->name.' is ready — login details inside';
+        $subject = 'Your '.$service->customerPlanName().' is ready — login details inside';
         $decoded = json_decode($service->credentials ?? '', true);
         $decoded = is_array($decoded) ? $decoded : [];
         $this->sendCustomerEmail($service->user, new ServerCredentialsMail($service), $subject, $event, null, [

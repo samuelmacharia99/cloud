@@ -84,6 +84,10 @@ class InvoiceItem extends Model
             return 'Domain';
         }
 
+        if ($this->service_id && $this->service) {
+            return $this->service->customerPlanName();
+        }
+
         return match ($this->product_type) {
             'reseller_package' => $this->resellerPackageNameFromDescription() ?? 'Reseller Package',
             'reseller_disk_usage' => 'Disk Usage',
@@ -94,6 +98,21 @@ class InvoiceItem extends Model
                 ?? $this->inferTitleFromDescription()
                 ?? 'Unknown Product',
         };
+    }
+
+    public function displayDescription(): string
+    {
+        $description = (string) ($this->description ?? '');
+
+        if ($this->service_id && $this->service && filled($this->service->product?->name)) {
+            $description = str_ireplace(
+                (string) $this->service->product->name,
+                $this->service->customerPlanName(),
+                $description,
+            );
+        }
+
+        return str_ireplace(['Reseller DirectAdmin Hosting (system)', 'Reseller DirectAdmin Hosting'], 'Shared Hosting', $description);
     }
 
     private function inferTitleFromDescription(): ?string

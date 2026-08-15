@@ -36,7 +36,7 @@
                         <tr class="hover:bg-slate-50 dark:hover:bg-slate-800">
                             <td class="px-6 py-4">
                                 <p class="font-medium text-slate-900 dark:text-white">{{ $service->name }}</p>
-                                <p class="text-xs text-slate-500">{{ $service->product?->name }}</p>
+                                <p class="text-xs text-slate-500">{{ $service->customerPlanName() }}</p>
                             </td>
                             <td class="px-6 py-4 text-sm">{{ $service->user?->name }}</td>
                             <td class="px-6 py-4"><x-status-badge :status="$service->status" type="service" /></td>

@@ -67,7 +67,7 @@
                         @foreach ($invoice->items as $item)
                             <div class="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800 rounded-lg gap-4">
                                 <div class="min-w-0">
-                                    <p class="font-medium text-slate-900 dark:text-white">{{ $item->description }}</p>
+                                    <p class="font-medium text-slate-900 dark:text-white">{{ $item->displayDescription() }}</p>
                                     <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
                                         Qty: {{ $item->quantity }} × {{ $currencyCode }} {{ number_format($item->unit_price, 2) }}
                                     </p>

@@ -16,10 +16,10 @@ class AuthEmailService
 
     public function sendPasswordReset(User $user, string $token): bool
     {
-        $resetUrl = url(route('password.reset', [
+        $resetUrl = $this->brandingResolver->customerUrl($user, 'password.reset', [
             'token' => $token,
             'email' => $user->getEmailForPasswordReset(),
-        ], false));
+        ]);
 
         $mailable = new PasswordResetMail($user, $resetUrl);
 
@@ -69,9 +69,12 @@ class AuthEmailService
                 }
             }
 
-            Log::warning("{$context} email skipped — reseller SMTP not configured, trying platform SMTP", [
+            Log::warning("{$context} email skipped — reseller SMTP not configured", [
                 'user_id' => $user->id,
+                'reseller_id' => $user->reseller_id,
             ]);
+
+            return false;
         }
 
         if (! $this->mailService->isConfigured()) {
@@ -81,7 +84,9 @@ class AuthEmailService
         }
 
         try {
-            Mail::to($user->email)->send($mailable);
+            $branding = $this->brandingResolver->forCustomer($user);
+            $mailable->with(['emailBranding' => $branding]);
+            Mail::to($user->email)->sendNow($mailable);
 
             return true;
         } catch (\Throwable $e) {

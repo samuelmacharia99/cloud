@@ -11,10 +11,10 @@ use App\Models\Setting;
 use App\Services\Billing\InvoiceNumberService;
 use App\Services\Billing\ServiceRenewalPricingService;
 use App\Services\ContainerOverageBillingService;
-use App\Services\ProjectBandwidthBillingService;
 use App\Services\DomainRenewalService;
 use App\Services\InvoiceGenerationScheduleService;
 use App\Services\NotificationService;
+use App\Services\ProjectBandwidthBillingService;
 use App\Services\TaxService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
@@ -119,7 +119,7 @@ class GenerateInvoicesByDateCommand extends Command
                         'invoice_id' => $invoice->id,
                         'service_id' => $service->id,
                         'product_id' => $service->product_id,
-                        'description' => $service->product->name.' — '.ucfirst($service->billing_cycle),
+                        'description' => $service->customerPlanName().' — '.ucfirst($service->billing_cycle),
                         'quantity' => 1,
                         'unit_price' => $price,
                         'amount' => $price,

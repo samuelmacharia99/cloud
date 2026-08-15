@@ -39,7 +39,7 @@
                     @if($health['domain'] ?? $mailDomain)
                         <p class="font-mono text-sm text-slate-700 dark:text-slate-300 mb-2">{{ $health['domain'] ?? $mailDomain }}</p>
                     @endif
-                    <p class="text-sm text-slate-500 dark:text-slate-400 mb-3">{{ $service->product?->name }}</p>
+                    <p class="text-sm text-slate-500 dark:text-slate-400 mb-3">{{ $service->customerPlanName() }}</p>
 
                     @if($health)
                         <dl class="grid grid-cols-2 gap-2 text-xs mb-3">

@@ -19,7 +19,7 @@
 </ol>
 
 <p>
-    <a href="{{ route('password.request') }}" class="cta-button">Reset Password Now</a>
+    <a href="{{ customer_portal_route($user, 'password.request', [], $emailBranding['portal_url'] ?? null) }}" class="cta-button">Reset Password Now</a>
 </p>
 
 <h2>Security Tips</h2>

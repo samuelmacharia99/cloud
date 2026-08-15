@@ -36,7 +36,7 @@
 </div>
 
 <p>
-    <a href="{{ route('customer.invoices.show', $invoice) }}" class="cta-button">Submit Payment Now</a>
+    <a href="{{ customer_portal_route($invoice->user, 'customer.invoices.show', $invoice, $emailBranding['portal_url'] ?? null) }}" class="cta-button">Submit Payment Now</a>
 </p>
 
 <p>If payment has already been made, please disregard this notice and contact our support team with proof of payment.</p>

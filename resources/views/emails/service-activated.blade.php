@@ -17,7 +17,7 @@
     </tr>
     <tr>
         <td><strong>Type:</strong></td>
-        <td>{{ $service->product->name ?? 'N/A' }}</td>
+        <td>{{ $service->customerPlanName() }}</td>
     </tr>
     <tr>
         <td><strong>Activated:</strong></td>
@@ -67,7 +67,7 @@
 @endif
 
 <p>
-    <a href="{{ route('customer.services.show', $service) }}" class="cta-button">View Service</a>
+    <a href="{{ customer_portal_route($service->user, 'customer.services.show', $service, $emailBranding['portal_url'] ?? null) }}" class="cta-button">View Service</a>
 </p>
 
 <p>If you need any assistance with your service, please don't hesitate to contact our support team.</p>

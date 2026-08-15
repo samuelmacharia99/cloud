@@ -34,7 +34,7 @@
 @endif
 
 <p>
-    <a href="{{ route('customer.services.show', $service) }}" class="cta-button">View Service</a>
+    <a href="{{ customer_portal_route($service->user, 'customer.services.show', $service, $emailBranding['portal_url'] ?? null) }}" class="cta-button">View Service</a>
 </p>
 
 <p>Please change your password after your first login and keep these credentials secure.</p>

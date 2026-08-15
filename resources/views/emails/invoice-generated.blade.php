@@ -78,7 +78,7 @@
                         @endif
                     </strong>
                     @if($item->description)
-                        <div style="font-size: 12px; color: #6b7280;">{{ $item->description }}</div>
+                        <div style="font-size: 12px; color: #6b7280;">{{ $item->displayDescription() }}</div>
                     @endif
                     @if($attachedDomain = $item->attachedDomainLabel())
                         <div style="font-size: 12px; color: #6b7280; margin-top: 4px;">
@@ -138,7 +138,7 @@
 </table>
 
 <p style="text-align: center; margin: 30px 0;">
-    <a href="{{ route('customer.invoices.show', $invoice) }}" class="cta-button">Pay Invoice Now</a>
+    <a href="{{ customer_portal_route($invoice->user, 'customer.invoices.show', $invoice, $emailBranding['portal_url'] ?? null) }}" class="cta-button">Pay Invoice Now</a>
 </p>
 
 <h2>Need Help?</h2>

@@ -13,7 +13,6 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Facades\View;
 
 class EmailDeliveryService
 {
@@ -113,7 +112,7 @@ class EmailDeliveryService
         }
 
         try {
-            View::share('emailBranding', $this->brandingResolver->defaults());
+            $mailable->with(['emailBranding' => $this->brandingResolver->defaults()]);
             Mail::to($email)->sendNow($mailable);
             $content = $this->captureMailableContent($mailable, $user, $logBody, forcePlatformBranding: true);
             $this->logEmail($email, $subject, 'sent', null, $content['body'], $event, $user?->id, null, $content['html_body']);
@@ -222,7 +221,7 @@ class EmailDeliveryService
         $actorId = $sentById ?? auth()->id();
 
         try {
-            View::share('emailBranding', $this->brandingResolver->defaults());
+            $mailable->with(['emailBranding' => $this->brandingResolver->defaults()]);
 
             // Always send now inside the paced job — spacing is handled by the job chain.
             Mail::to($email)->sendNow($mailable);
@@ -272,6 +271,7 @@ class EmailDeliveryService
             if ($user && $user->reseller_id !== null) {
                 $this->resellerMail->sendToCustomer($user, $mailable, $email->subject);
             } else {
+                $mailable->with(['emailBranding' => $this->brandingResolver->defaults()]);
                 Mail::to($email->recipient)->sendNow($mailable);
             }
 
@@ -361,13 +361,10 @@ class EmailDeliveryService
      */
     protected function captureMailableContent(Mailable $mailable, ?User $user, ?string $logBody, bool $forcePlatformBranding = false): array
     {
-        if ($forcePlatformBranding) {
-            View::share('emailBranding', $this->brandingResolver->defaults());
-        } elseif ($user) {
-            View::share('emailBranding', $this->brandingResolver->forCustomer($user));
-        } else {
-            View::share('emailBranding', $this->brandingResolver->defaults());
-        }
+        $branding = $forcePlatformBranding || ! $user
+            ? $this->brandingResolver->defaults()
+            : $this->brandingResolver->forCustomer($user);
+        $mailable->with(['emailBranding' => $branding]);
 
         $htmlBody = null;
 

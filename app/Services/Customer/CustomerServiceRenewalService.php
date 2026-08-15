@@ -539,8 +539,8 @@ class CustomerServiceRenewalService
             $notes = $isCurrentPlan
                 ? "Manual renewal — {$option['name']} ({$cycleLabel})"
                 : match ($option['change_type'] ?? 'upgrade') {
-                    'downgrade' => "Renewal with plan change (downgrade) — {$service->product->name} → {$option['name']} ({$cycleLabel})",
-                    default => "Renewal with plan change — {$service->product->name} → {$option['name']} ({$cycleLabel})",
+                    'downgrade' => "Renewal with plan change (downgrade) — {$service->customerPlanName()} → {$option['name']} ({$cycleLabel})",
+                    default => "Renewal with plan change — {$service->customerPlanName()} → {$option['name']} ({$cycleLabel})",
                 };
 
             $invoice = Invoice::create([

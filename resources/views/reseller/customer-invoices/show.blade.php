@@ -60,7 +60,7 @@
         <div class="divide-y divide-slate-200 dark:divide-slate-800">
             @foreach ($invoice->items as $item)
                 <div class="py-3 flex justify-between text-sm">
-                    <span>{{ $item->description }} × {{ $item->quantity }}</span>
+                    <span>{{ $item->displayDescription() }} × {{ $item->quantity }}</span>
                     <span>KSH {{ number_format($item->amount, 2) }}</span>
                 </div>
             @endforeach

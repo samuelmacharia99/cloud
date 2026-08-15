@@ -298,7 +298,7 @@
                                 @else
                                     <strong>{{ $item->displayTitle() }}</strong><br>
                                 @endif
-                                <small>{{ $item->description }}</small>
+                                <small>{{ $item->displayDescription() }}</small>
                                 @if($attachedDomain = $item->attachedDomainLabel())
                                     <br><small><strong>Domain:</strong> {{ $attachedDomain }}</small>
                                 @endif

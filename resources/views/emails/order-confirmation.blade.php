@@ -39,7 +39,7 @@
         @foreach($items as $item)
             <tr>
                 <td>
-                    <strong>{{ $item->product->name }}</strong>
+                    <strong>{{ $item->displayTitle() }}</strong>
                     @if($item->description)
                         <div style="font-size: 12px; color: #6b7280; margin-top: 4px;">
                             {{ $item->description }}
@@ -81,7 +81,7 @@
 </ul>
 
 <p style="text-align: center; margin: 30px 0;">
-    <a href="{{ route('customer.orders.show', $order) }}" class="cta-button">View Order Details</a>
+    <a href="{{ customer_portal_route($order->user, 'customer.orders.show', $order, $emailBranding['portal_url'] ?? null) }}" class="cta-button">View Order Details</a>
 </p>
 
 <div class="alert alert-info">

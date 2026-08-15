@@ -36,7 +36,7 @@
 </table>
 
 <p>
-    <a href="{{ route('customer.invoices.show', $invoice) }}" class="cta-button">Pay Now</a>
+    <a href="{{ customer_portal_route($invoice->user, 'customer.invoices.show', $invoice, $emailBranding['portal_url'] ?? null) }}" class="cta-button">Pay Now</a>
 </p>
 
 <p>Paying on time helps us provide you with the best service. Thank you!</p>

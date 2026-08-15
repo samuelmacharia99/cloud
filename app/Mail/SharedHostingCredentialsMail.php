@@ -19,7 +19,7 @@ class SharedHostingCredentialsMail extends Mailable implements ShouldQueue
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: 'Your '.$this->service->product->name.' Control Panel Login Details',
+            subject: 'Your '.$this->service->customerPlanName().' Control Panel Login Details',
         );
     }
 

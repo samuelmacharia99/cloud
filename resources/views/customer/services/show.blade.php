@@ -1,6 +1,6 @@
 @extends('layouts.customer')
 
-@section('title', 'Service: ' . $service->product->name)
+@section('title', 'Service: ' . $service->customerPlanName())
 
 @section('content')
 <div class="space-y-6">
@@ -28,7 +28,7 @@
     <div class="ui-card p-8" x-data="{ tab: 'overview' }">
         <div class="flex items-start justify-between mb-6">
             <div>
-                <h1 class="text-3xl font-bold text-slate-900 dark:text-white">{{ $service->product->name }}</h1>
+                <h1 class="text-3xl font-bold text-slate-900 dark:text-white">{{ $service->customerPlanName() }}</h1>
                 <p class="text-slate-600 dark:text-slate-400 mt-2">Service #{{ $service->id }} • {{ ucfirst(str_replace('_', ' ', $service->product->type)) }}</p>
 
                 <!-- Status badge -->

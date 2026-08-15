@@ -2,11 +2,12 @@
 
 namespace Tests\Feature\Auth;
 
+use App\Mail\PasswordResetMail;
+use App\Models\Setting;
 use App\Models\User;
-use App\Notifications\ResetPasswordNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
 
 class PasswordResetTest extends TestCase
@@ -14,6 +15,17 @@ class PasswordResetTest extends TestCase
     use RefreshDatabase;
 
     private const NEW_PASSWORD = 'Password1!';
+
+    private function seedPlatformSmtp(): void
+    {
+        Setting::setValue('smtp_host', 'smtp.example.com');
+        Setting::setValue('smtp_port', '587');
+        Setting::setValue('smtp_user', 'mailer@example.com');
+        Setting::setValue('smtp_password', 'secret');
+        Setting::setValue('smtp_encryption', 'tls');
+        Setting::setValue('mail_from_address', 'noreply@example.com');
+        Setting::setValue('mail_from_name', 'Talksasa');
+    }
 
     public function test_reset_password_link_screen_can_be_rendered(): void
     {
@@ -24,26 +36,35 @@ class PasswordResetTest extends TestCase
 
     public function test_reset_password_link_can_be_requested(): void
     {
-        Notification::fake();
+        Mail::fake();
+        $this->seedPlatformSmtp();
 
         $user = User::factory()->create();
 
-        $this->post('/forgot-password', ['email' => $user->email]);
+        $this->post('/forgot-password', ['email' => $user->email])
+            ->assertSessionHas('status');
 
-        Notification::assertSentTo($user, ResetPasswordNotification::class);
+        Mail::assertSent(PasswordResetMail::class, fn (PasswordResetMail $mail) => $mail->hasTo($user->email));
     }
 
     public function test_reset_password_screen_can_be_rendered(): void
     {
-        Notification::fake();
+        Mail::fake();
+        $this->seedPlatformSmtp();
 
         $user = User::factory()->create();
 
         $this->post('/forgot-password', ['email' => $user->email]);
 
-        Notification::assertSentTo($user, ResetPasswordNotification::class, function ($notification) {
-            $response = $this->get('/reset-password/'.$notification->token);
+        Mail::assertSent(PasswordResetMail::class, function (PasswordResetMail $mail) {
+            $token = null;
+            if (preg_match('#/reset-password/([^?]+)#', $mail->resetUrl, $matches)) {
+                $token = $matches[1];
+            }
 
+            $this->assertNotNull($token);
+
+            $response = $this->get('/reset-password/'.$token);
             $response->assertStatus(200);
 
             return true;
@@ -52,15 +73,23 @@ class PasswordResetTest extends TestCase
 
     public function test_password_can_be_reset_with_valid_token(): void
     {
-        Notification::fake();
+        Mail::fake();
+        $this->seedPlatformSmtp();
 
         $user = User::factory()->create();
 
         $this->post('/forgot-password', ['email' => $user->email]);
 
-        Notification::assertSentTo($user, ResetPasswordNotification::class, function ($notification) use ($user) {
+        Mail::assertSent(PasswordResetMail::class, function (PasswordResetMail $mail) use ($user) {
+            $token = null;
+            if (preg_match('#/reset-password/([^?]+)#', $mail->resetUrl, $matches)) {
+                $token = $matches[1];
+            }
+
+            $this->assertNotNull($token);
+
             $response = $this->post('/reset-password', [
-                'token' => $notification->token,
+                'token' => $token,
                 'email' => $user->email,
                 'password' => self::NEW_PASSWORD,
                 'password_confirmation' => self::NEW_PASSWORD,

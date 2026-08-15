@@ -27,7 +27,7 @@
         </span>
     </div>
 
-    <h3 class="text-lg font-bold text-slate-900 dark:text-white mb-3">{{ $service->product->name }}</h3>
+    <h3 class="text-lg font-bold text-slate-900 dark:text-white mb-3">{{ $service->customerPlanName() }}</h3>
 
     <div class="flex flex-wrap gap-2 mb-4 min-h-[1.5rem]">
         @foreach (array_slice($specLines, 0, 3) as $line)

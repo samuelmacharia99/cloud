@@ -39,7 +39,7 @@ class HostingPackageUsageWarningMail extends Mailable implements ShouldQueue
                 'service' => $this->service,
                 'metricsAtRisk' => $this->metricsAtRisk,
                 'recommendedUpgrade' => $this->recommendedUpgrade,
-                'upgradeUrl' => route('customer.services.upgrade', $this->service),
+                'upgradeUrl' => customer_portal_route($this->service->user, 'customer.services.upgrade', $this->service),
             ],
         );
     }

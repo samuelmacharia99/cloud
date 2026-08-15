@@ -67,7 +67,7 @@
                         @foreach ($order->items as $item)
                             <tr>
                                 <td class="py-3 px-3">
-                                    <p class="font-medium text-slate-900 dark:text-white">{{ $item->product->name ?? 'Unknown Product' }}</p>
+                                    <p class="font-medium text-slate-900 dark:text-white">{{ $item->displayTitle() }}</p>
                                     <p class="text-xs text-slate-600 dark:text-slate-400">{{ $item->description }}</p>
                                 </td>
                                 <td class="py-3 px-3 text-right text-slate-900 dark:text-white">{{ $item->quantity }}</td>

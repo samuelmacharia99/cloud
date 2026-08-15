@@ -35,7 +35,7 @@ class ManualPaymentRejectedMail extends Mailable implements ShouldQueue
             with: [
                 'payment' => $this->payment,
                 'rejectionReason' => $this->rejectionReason,
-                'invoiceUrl' => route('customer.invoices.show', $this->payment->invoice),
+                'invoiceUrl' => customer_portal_route($this->payment->invoice->user, 'customer.invoices.show', $this->payment->invoice),
             ],
         );
     }

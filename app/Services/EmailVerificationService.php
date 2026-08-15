@@ -8,7 +8,6 @@ use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Facades\View;
 
 class EmailVerificationService
 {
@@ -124,13 +123,17 @@ class EmailVerificationService
                         'user_id' => $user->id,
                         'error' => $e->getMessage(),
                     ]);
+
+                    return false;
                 }
             } else {
-                Log::warning('Reseller SMTP unavailable for verification email — trying platform SMTP', [
+                Log::warning('Reseller SMTP unavailable for verification email', [
                     'user_id' => $user->id,
                     'reseller_id' => $user->reseller_id,
                 ]);
             }
+
+            return false;
         }
 
         if (! $this->mailService->isConfigured()) {
@@ -140,7 +143,9 @@ class EmailVerificationService
         }
 
         try {
-            View::share('emailBranding', app(ResellerBrandingResolver::class)->forCustomer($user));
+            $mailable->with([
+                'emailBranding' => app(ResellerBrandingResolver::class)->forCustomer($user),
+            ]);
             Mail::to($user->email)->sendNow($mailable);
 
             return true;

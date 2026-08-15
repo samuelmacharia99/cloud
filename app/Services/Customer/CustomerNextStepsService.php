@@ -49,7 +49,7 @@ class CustomerNextStepsService
                 'id' => 'suspended-'.$service->id,
                 'priority' => 95,
                 'title' => 'Service suspended',
-                'body' => ($service->product?->name ?? $service->name).' needs attention',
+                'body' => $service->customerPlanName().' needs attention',
                 'url' => route('customer.services.show', $service),
                 'tone' => 'danger',
             ];

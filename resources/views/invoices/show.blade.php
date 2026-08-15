@@ -61,7 +61,7 @@
                 <tbody class="divide-y divide-slate-200">
                     @foreach ($invoice->items as $item)
                         <tr>
-                            <td class="py-3 text-slate-900">{{ $item->description }}</td>
+                            <td class="py-3 text-slate-900">{{ $item->displayDescription() }}</td>
                             <td class="text-right py-3 text-slate-600">{{ $item->quantity }}</td>
                             <td class="text-right py-3 text-slate-600">KSH {{ number_format($item->unit_price, 2) }}</td>
                             <td class="text-right py-3 font-medium text-slate-900">KSH {{ number_format($item->amount, 2) }}</td>

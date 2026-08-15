@@ -73,11 +73,7 @@ class ResellerBrandingResolver
         }
 
         if ($customer->reseller_id) {
-            $reseller = $customer->relationLoaded('reseller')
-                ? $customer->reseller
-                : User::find($customer->reseller_id);
-
-            return $this->forReseller($reseller);
+            return $this->forReseller($this->resellerForCustomer($customer));
         }
 
         return $this->defaults();
@@ -104,9 +100,21 @@ class ResellerBrandingResolver
             return null;
         }
 
-        return $customer->relationLoaded('reseller')
+        $reseller = $customer->relationLoaded('reseller')
             ? $customer->reseller
             : User::find($customer->reseller_id);
+
+        return $reseller?->is_reseller ? $reseller : null;
+    }
+
+    public function customerUrl(User $customer, string $routeName, mixed $parameters = []): string
+    {
+        $path = route($routeName, $parameters, false);
+        $portalUrl = trim((string) ($this->forCustomer($customer)['portal_url'] ?? ''));
+
+        return $portalUrl !== ''
+            ? rtrim($portalUrl, '/').'/'.ltrim($path, '/')
+            : url($path);
     }
 
     public function resolveFromHost(?string $host): ?User

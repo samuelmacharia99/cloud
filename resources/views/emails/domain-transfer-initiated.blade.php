@@ -74,7 +74,7 @@
 <p>If you need any help with your domain transfer, our support team is available 24/7.</p>
 
 <p style="text-align: center; margin: 30px 0;">
-    <a href="{{ route('customer.domains.index') }}" class="cta-button">View My Domains</a>
+    <a href="{{ customer_portal_route($domain->user, 'customer.domains.index', [], $emailBranding['portal_url'] ?? null) }}" class="cta-button">View My Domains</a>
 </p>
 
 @include('emails.partials.signature', ['supportLine' => 'Domain Management Team'])

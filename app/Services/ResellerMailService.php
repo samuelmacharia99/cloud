@@ -9,7 +9,6 @@ use App\Models\User;
 use Illuminate\Mail\Mailable;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Facades\View;
 
 class ResellerMailService
 {
@@ -65,52 +64,26 @@ class ResellerMailService
 
         $mailable = $this->scrubCustomerMailable($mailable);
 
-        $branding = $this->brandingResolver->forCustomer($customer);
-        $reseller = $this->brandingResolver->resellerForCustomer($customer);
+        $reseller = $customer->reseller_id
+            ? $this->brandingResolver->resellerForCustomer($customer)
+            : null;
+        $branding = $reseller
+            ? $this->brandingResolver->forCustomer($customer)
+            : $this->brandingResolver->forReseller(null);
 
         if ($customer->reseller_id !== null && ($reseller === null || ! $this->resellerSmtpEnabled($reseller))) {
             throw new \RuntimeException('SMTP must be enabled under Settings → Email before customer emails can send.');
         }
 
-        View::share('emailBranding', $branding);
-
-        $mailer = $this->configureMailer($reseller);
-
-        // sendNow() is required: ShouldQueue mailables would otherwise be queued and
-        // lose the View::shared emailBranding context in the worker.
-        Mail::mailer($mailer)->to($customer->email)->sendNow($mailable);
+        $this->sendMailable($customer, $mailable, $branding, $reseller);
     }
 
     /**
-     * Send with reseller branding; use reseller SMTP when configured, otherwise platform SMTP
-     * with the company name as the from-name (no platform branding in the message).
+     * Compatibility alias: managed-customer mail never falls back to platform SMTP.
      */
     public function sendBrandedWithPlatformFallback(User $customer, Mailable $mailable): void
     {
-        $mailable = $this->scrubCustomerMailable($mailable);
-        $branding = $this->brandingResolver->forCustomer($customer);
-        $reseller = $this->brandingResolver->resellerForCustomer($customer);
-
-        View::share('emailBranding', $branding);
-
-        if ($reseller && $this->resellerSmtpEnabled($reseller)) {
-            Mail::mailer($this->configureMailer($reseller))->to($customer->email)->sendNow($mailable);
-
-            return;
-        }
-
-        $previousFrom = config('mail.from');
-
-        Config::set('mail.from', [
-            'address' => Setting::getValue('mail_from_address', config('mail.from.address')),
-            'name' => $branding['company_name'] ?? config('mail.from.name'),
-        ]);
-
-        try {
-            Mail::to($customer->email)->sendNow($mailable);
-        } finally {
-            Config::set('mail.from', $previousFrom);
-        }
+        $this->sendToCustomer($customer, $mailable);
     }
 
     public function sendRaw(User $recipient, string $subject, string $body, ?User $reseller = null): void
@@ -118,14 +91,18 @@ class ResellerMailService
         $branding = $this->brandingResolver->forReseller($reseller);
         $mailer = $this->configureMailer($reseller);
 
-        Mail::mailer($mailer)->raw($body, function ($message) use ($recipient, $subject, $branding) {
-            $message->to($recipient->email ?? $recipient)
-                ->subject($subject)
-                ->from(
-                    $this->fromAddress($branding, $reseller),
-                    $this->fromName($branding, $reseller)
-                );
-        });
+        try {
+            Mail::mailer($mailer)->raw($body, function ($message) use ($recipient, $subject, $branding, $reseller) {
+                $message->to($recipient->email ?? $recipient)
+                    ->subject($subject)
+                    ->from(
+                        $this->fromAddress($branding, $reseller),
+                        $this->fromName($branding, $reseller)
+                    );
+            });
+        } finally {
+            $this->releaseMailer($mailer, $reseller);
+        }
     }
 
     public function sendTest(User $reseller, string $testEmail): void
@@ -137,17 +114,21 @@ class ResellerMailService
         $branding = $this->brandingResolver->forReseller($reseller);
         $mailer = $this->configureMailer($reseller);
 
-        Mail::mailer($mailer)->raw(
-            "This is a test email from {$branding['company_name']}.\n\nYour SMTP configuration is working correctly.",
-            function ($message) use ($testEmail, $branding, $reseller) {
-                $message->to($testEmail)
-                    ->subject($branding['company_name'].' — SMTP test')
-                    ->from(
-                        $this->fromAddress($branding, $reseller),
-                        $this->fromName($branding, $reseller)
-                    );
-            }
-        );
+        try {
+            Mail::mailer($mailer)->raw(
+                "This is a test email from {$branding['company_name']}.\n\nYour SMTP configuration is working correctly.",
+                function ($message) use ($testEmail, $branding, $reseller) {
+                    $message->to($testEmail)
+                        ->subject($branding['company_name'].' — SMTP test')
+                        ->from(
+                            $this->fromAddress($branding, $reseller),
+                            $this->fromName($branding, $reseller)
+                        );
+                }
+            );
+        } finally {
+            $this->releaseMailer($mailer, $reseller);
+        }
     }
 
     private function scrubCustomerMailable(Mailable $mailable): Mailable
@@ -166,13 +147,31 @@ class ResellerMailService
         return $mailable;
     }
 
+    private function sendMailable(User $customer, Mailable $mailable, array $branding, ?User $reseller): void
+    {
+        $mailer = $this->configureMailer($reseller);
+        $mailable->with(['emailBranding' => $branding]);
+        $mailable->from(
+            $this->fromAddress($branding, $reseller),
+            $this->fromName($branding, $reseller),
+        );
+
+        try {
+            // Rendering context and sender are attached to this message; neither is
+            // process-global state in queue workers or Octane.
+            Mail::mailer($mailer)->to($customer->email)->sendNow($mailable);
+        } finally {
+            $this->releaseMailer($mailer, $reseller);
+        }
+    }
+
     private function configureMailer(?User $reseller): string
     {
         if ($reseller && $this->resellerSmtpEnabled($reseller)) {
             $smtp = $reseller->settings['smtp'];
-            $branding = $this->brandingResolver->forReseller($reseller);
+            $mailer = 'reseller_smtp_'.$reseller->getKey();
 
-            Config::set('mail.mailers.reseller_smtp', [
+            Config::set("mail.mailers.{$mailer}", [
                 'transport' => 'smtp',
                 'host' => $smtp['host'],
                 'port' => (int) ($smtp['port'] ?? 587),
@@ -182,15 +181,22 @@ class ResellerMailService
                 'timeout' => null,
             ]);
 
-            Config::set('mail.from', [
-                'address' => $this->fromAddress($branding, $reseller),
-                'name' => $this->fromName($branding, $reseller),
-            ]);
+            Mail::purge($mailer);
 
-            return 'reseller_smtp';
+            return $mailer;
         }
 
         return config('mail.default', 'smtp');
+    }
+
+    private function releaseMailer(string $mailer, ?User $reseller): void
+    {
+        if (! $reseller) {
+            return;
+        }
+
+        Mail::purge($mailer);
+        Config::set("mail.mailers.{$mailer}", null);
     }
 
     private function fromAddress(array $branding, ?User $reseller): string

@@ -8,7 +8,6 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\RateLimiter;
-use Illuminate\Support\Facades\View;
 use Illuminate\Validation\ValidationException;
 
 class TwoFactorService
@@ -303,9 +302,8 @@ class TwoFactorService
 
         if ($user->reseller_id !== null) {
             $reseller = app(ResellerBrandingResolver::class)->resellerForCustomer($user);
-            if ($reseller && $this->mailService->resellerSmtpEnabled($reseller)) {
-                return true;
-            }
+
+            return $reseller && $this->mailService->resellerSmtpEnabled($reseller);
         }
 
         return $this->mailService->isConfigured();
@@ -342,13 +340,17 @@ class TwoFactorService
                         'user_id' => $user->id,
                         'error' => $e->getMessage(),
                     ]);
+
+                    return false;
                 }
             } else {
-                Log::warning('Reseller SMTP unavailable for 2FA email — trying platform SMTP', [
+                Log::warning('Reseller SMTP unavailable for 2FA email', [
                     'user_id' => $user->id,
                     'reseller_id' => $user->reseller_id,
                 ]);
             }
+
+            return false;
         }
 
         if (! $this->mailService->isConfigured()) {
@@ -358,7 +360,9 @@ class TwoFactorService
         }
 
         try {
-            View::share('emailBranding', app(ResellerBrandingResolver::class)->forCustomer($user));
+            $mailable->with([
+                'emailBranding' => app(ResellerBrandingResolver::class)->forCustomer($user),
+            ]);
             Mail::to($user->email)->sendNow($mailable);
 
             return true;

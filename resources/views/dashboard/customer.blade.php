@@ -211,7 +211,7 @@
                         @foreach ($activeServices->take(5) as $service)
                             <a href="{{ route('customer.services.show', $service) }}" class="flex items-center justify-between gap-4 px-5 py-4 sm:px-6 hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
                                 <div class="min-w-0">
-                                    <p class="font-semibold text-slate-900 dark:text-white truncate">{{ $service->product?->name ?? 'Service' }}</p>
+                                    <p class="font-semibold text-slate-900 dark:text-white truncate">{{ $service->customerPlanName() }}</p>
                                     <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Renews {{ $service->next_due_date?->format('M d, Y') ?? 'N/A' }}</p>
                                 </div>
                                 <x-status-badge :status="$service->status" type="service" />

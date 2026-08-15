@@ -25,7 +25,11 @@
     </tr>
 </table>
 
-<p>The updated expiry is now reflected in your reseller portal and on your customer accounts where this domain is assigned.</p>
+@if($endCustomerName)
+    <p>The updated expiry is now reflected in your portal and on the customer account where this domain is assigned.</p>
+@else
+    <p>The updated expiry is now reflected in your portal.</p>
+@endif
 
 <p>If you have any questions, reply to {{ $emailBranding['support_email'] ?? email_support_email() }}.</p>
 @endsection

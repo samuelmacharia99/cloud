@@ -420,7 +420,7 @@ class CustomerResellerTransferService
 
     private function sendCustomerTransferEmail(User $customer): bool
     {
-        if (! $this->emailDelivery->mailConfiguredFor()) {
+        if (! $this->emailDelivery->mailConfiguredFor($customer)) {
             Log::warning('Customer transfer email skipped: mail not configured', ['customer_id' => $customer->id]);
 
             return false;
@@ -450,7 +450,7 @@ class CustomerResellerTransferService
         [$mailable, $subject, $logBody] = $applied;
 
         try {
-            $this->resellerMail->sendBrandedWithPlatformFallback($customer, $mailable);
+            $this->resellerMail->sendToCustomer($customer, $mailable);
             $this->emailDelivery->logEmail(
                 $customer->email,
                 $subject,

@@ -71,7 +71,7 @@
 @if($remaining > 0)
     <div class="alert alert-warning">
         <strong>Outstanding Balance:</strong> You still have Ksh {{ number_format($remaining, 2) }} remaining on this invoice.
-        <a href="{{ route('customer.invoices.show', $payment->invoice) }}" style="color: #f59e0b; text-decoration: none; font-weight: bold;">Pay now →</a>
+        <a href="{{ customer_portal_route($payment->invoice->user, 'customer.invoices.show', $payment->invoice, $emailBranding['portal_url'] ?? null) }}" style="color: #f59e0b; text-decoration: none; font-weight: bold;">Pay now →</a>
     </div>
 @else
     <div class="alert alert-success">
@@ -82,7 +82,7 @@
         <h2>Your Services</h2>
         <p>Your services have been activated and are now ready to use. You can access them anytime from your dashboard.</p>
         <p style="text-align: center; margin: 20px 0;">
-            <a href="{{ route('customer.services.index') }}" class="cta-button">View Your Services</a>
+            <a href="{{ customer_portal_route($payment->invoice->user, 'customer.services.index', [], $emailBranding['portal_url'] ?? null) }}" class="cta-button">View Your Services</a>
         </p>
     @endif
 @endif
@@ -98,7 +98,7 @@
 @else
     <p>To complete payment for this invoice, please visit:</p>
     <p style="text-align: center; margin: 20px 0;">
-        <a href="{{ route('customer.invoices.show', $payment->invoice) }}" class="cta-button">View Invoice & Pay</a>
+        <a href="{{ customer_portal_route($payment->invoice->user, 'customer.invoices.show', $payment->invoice, $emailBranding['portal_url'] ?? null) }}" class="cta-button">View Invoice & Pay</a>
     </p>
 @endif
 

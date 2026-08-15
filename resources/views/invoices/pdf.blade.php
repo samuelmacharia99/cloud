@@ -559,11 +559,11 @@
                             <td class="description">
                                 <div class="item-desc">{{ $item->displayTitle() }}</div>
                                 @if($item->description && ($item->product || in_array($item->product_type, ['reseller_disk_usage', 'reseller_disk_overage', 'reseller_package'], true)))
-                                    <div class="item-detail">{{ $item->description }}</div>
+                                    <div class="item-detail">{{ $item->displayDescription() }}</div>
                                 @endif
                                 @if($item->service)
                                     <div class="item-detail">
-                                        Service Type: {{ $item->service->product->name ?? 'Service' }}
+                                        Service Type: {{ $item->service?->customerPlanName() ?? 'Service' }}
                                     </div>
                                 @endif
                             </td>

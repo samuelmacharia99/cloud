@@ -30,7 +30,7 @@
         showRename: false,
         showMove: false,
         showNewProject: false,
-        renameName: @js($service->name),
+        renameName: @js($service->customerServiceName()),
         newProjectName: '',
     }"
 >
@@ -49,11 +49,11 @@
         >
             <div class="flex items-start justify-between gap-3">
                 <div class="min-w-0">
-                    <h3 class="font-semibold text-slate-900 dark:text-white truncate group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors">{{ $service->name }}</h3>
+                    <h3 class="font-semibold text-slate-900 dark:text-white truncate group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors">{{ $service->customerServiceName() }}</h3>
                     <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                        {{ $service->product->name }}
+                        {{ $service->customerPlanName() }}
                         <span class="text-slate-400 dark:text-slate-500">·</span>
-                        <span class="capitalize">{{ str_replace('_', ' ', $service->product->type) }}</span>
+                        <span>{{ $service->customerPlanTypeLabel() }}</span>
                     </p>
                     @if(count($nestedContainers) >= 2)
                         <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400 truncate" x-show="!expanded">

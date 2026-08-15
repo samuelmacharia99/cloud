@@ -36,7 +36,7 @@ class HostingUpgradeCompletedMail extends Mailable implements ShouldQueue
                 'service' => $this->service,
                 'previousProduct' => $this->previousProduct,
                 'newProduct' => $this->newProduct,
-                'serviceUrl' => route('customer.services.show', $this->service),
+                'serviceUrl' => customer_portal_route($this->service->user, 'customer.services.show', $this->service),
             ],
         );
     }

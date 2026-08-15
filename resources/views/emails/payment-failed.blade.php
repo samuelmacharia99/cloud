@@ -10,7 +10,7 @@
 <p>You can try again from your dashboard or choose a different payment method.</p>
 
 <p>
-    <a href="{{ url('/my/invoices/'.$invoice->id.'/pay') }}"
+    <a href="{{ customer_portal_route($invoice->user, 'customer.invoices.show', $invoice, $emailBranding['portal_url'] ?? null) }}"
        style="display:inline-block;padding:10px 16px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;">
         Retry payment
     </a>

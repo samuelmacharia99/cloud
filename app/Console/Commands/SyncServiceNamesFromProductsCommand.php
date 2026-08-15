@@ -16,11 +16,11 @@ class SyncServiceNamesFromProductsCommand extends BaseCronCommand
         $updated = 0;
 
         Service::query()
-            ->with('product:id,name')
+            ->with(['product:id,name,slug', 'resellerProduct:id,reseller_id,name', 'user:id,reseller_id'])
             ->whereNotNull('product_id')
             ->chunkById(200, function ($services) use ($dryRun, &$updated) {
                 foreach ($services as $service) {
-                    $productName = $service->product?->name;
+                    $productName = $service->customerPlanName();
 
                     if (! $productName || $service->name === $productName) {
                         continue;

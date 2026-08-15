@@ -20,7 +20,7 @@
 </ol>
 
 <p>
-    <a href="{{ url('/customer/services/' . $service->id) }}"
+    <a href="{{ customer_portal_route($service->user, 'customer.services.container.show', $service, $emailBranding['portal_url'] ?? null) }}"
        style="display:inline-block;padding:10px 16px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;">
         View Service
     </a>

@@ -8,7 +8,7 @@
             {{ $item->displayTitle() }}
         @endif
     </p>
-    <p class="{{ $metaClass }}">{{ $item->description }}</p>
+    <p class="{{ $metaClass }}">{{ $item->displayDescription() }}</p>
     @if($attachedDomain = $item->attachedDomainLabel())
         <p class="{{ $metaClass }} mt-1">
             <span class="font-medium text-slate-600 dark:text-slate-300">Domain:</span>

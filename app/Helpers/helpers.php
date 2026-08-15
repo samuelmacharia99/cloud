@@ -4,6 +4,7 @@ use App\Helpers\CronHelper;
 use App\Helpers\CurrencyHelper;
 use App\Models\Setting;
 use App\Models\TicketReply;
+use App\Models\User;
 use App\Services\ResellerBrandingResolver;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\View;
@@ -253,4 +254,21 @@ function formatBytes(int $bytes, int $precision = 2): string
     $bytes /= (1 << (10 * $pow));
 
     return round($bytes, $precision).' '.$units[$pow];
+}
+
+/**
+ * Generate a portal-aware URL without changing Laravel's global URL root.
+ */
+function customer_portal_route(
+    User $customer,
+    string $routeName,
+    mixed $parameters = [],
+    ?string $portalUrl = null,
+): string {
+    if (filled($portalUrl)) {
+        return rtrim($portalUrl, '/').'/'.ltrim(route($routeName, $parameters, false), '/');
+    }
+
+    return app(ResellerBrandingResolver::class)
+        ->customerUrl($customer, $routeName, $parameters);
 }

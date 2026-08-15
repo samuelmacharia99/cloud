@@ -150,7 +150,7 @@
                                     <div class="flex items-center justify-between">
                                         <div class="flex-1 min-w-0">
                                             <p class="font-medium text-slate-900 dark:text-white">{{ $service->name }}</p>
-                                            <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">{{ $service->product?->name ?? 'Product' }} • {{ ucfirst($service->billing_cycle) }}</p>
+                                            <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">{{ $service->customerPlanName() }} • {{ ucfirst($service->billing_cycle) }}</p>
                                         </div>
                                         <div class="flex items-center gap-3 ml-4">
                                             <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ $service->status->value === 'active' ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300' : ($service->status->value === 'suspended' ? 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400') }}">

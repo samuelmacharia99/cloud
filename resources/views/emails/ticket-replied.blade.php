@@ -19,7 +19,7 @@
 
 <p>You can view the full ticket conversation and reply by logging into your account and visiting the Support Tickets section.</p>
 
-<p><a href="{{ route('customer.tickets.show', $ticket) }}" style="display: inline-block; padding: 10px 20px; background-color: #2563eb; color: white; text-decoration: none; border-radius: 4px; margin-top: 10px;">View Full Ticket</a></p>
+<p><a href="{{ customer_portal_route($ticket->user, 'customer.tickets.show', $ticket, $emailBranding['portal_url'] ?? null) }}" style="display: inline-block; padding: 10px 20px; background-color: #2563eb; color: white; text-decoration: none; border-radius: 4px; margin-top: 10px;">View Full Ticket</a></p>
 
 @include('emails.partials.signature', ['supportLine' => email_support_team_label()])
 @endsection
