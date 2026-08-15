@@ -23,10 +23,7 @@ class Service extends Model
 
         $slug = $meta['provision_template_slug'] ?? null;
         if (is_string($slug) && $slug !== '') {
-            $template = ContainerTemplate::query()
-                ->where('slug', $slug)
-                ->where('is_active', true)
-                ->first();
+            $template = $this->findContainerTemplateBySlug($slug);
             if ($template) {
                 return $template;
             }
@@ -36,7 +33,7 @@ class Service extends Model
         if ($templateId > 0) {
             $template = ContainerTemplate::query()
                 ->whereKey($templateId)
-                ->where('is_active', true)
+                ->orderByRaw('is_active DESC')
                 ->first();
             if ($template) {
                 return $template;
@@ -45,16 +42,62 @@ class Service extends Model
 
         $languageSlug = $meta['language_slug'] ?? null;
         if (is_string($languageSlug) && $languageSlug !== '') {
-            $template = ContainerTemplate::query()
-                ->where('slug', $languageSlug)
-                ->where('is_active', true)
-                ->first();
+            $template = $this->findContainerTemplateBySlug($languageSlug);
             if ($template) {
                 return $template;
             }
         }
 
         return $this->product?->containerTemplate;
+    }
+
+    /**
+     * Whether this service runs the WordPress application stack.
+     *
+     * Reads every place the stack can be recorded, because shared plans keep
+     * the choice in service_meta while stack-specific products keep it on the
+     * product template.
+     */
+    public function isWordPressContainer(): bool
+    {
+        if (! $this->isContainerHosting()) {
+            return false;
+        }
+
+        if ($this->slugIsWordPress($this->effectiveContainerTemplate()?->slug)) {
+            return true;
+        }
+
+        if ($this->slugIsWordPress($this->product?->containerTemplate?->slug)) {
+            return true;
+        }
+
+        $meta = is_array($this->service_meta) ? $this->service_meta : [];
+
+        foreach (['provision_template_slug', 'language_slug', 'backend', 'framework', 'stack'] as $key) {
+            if ($this->slugIsWordPress($meta[$key] ?? null)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function slugIsWordPress(mixed $slug): bool
+    {
+        return is_string($slug) && strtolower(trim($slug)) === 'wordpress';
+    }
+
+    /**
+     * Prefer the active template row, but never let a deactivated catalog entry
+     * silently change the stack of an already provisioned service.
+     */
+    private function findContainerTemplateBySlug(string $slug): ?ContainerTemplate
+    {
+        return ContainerTemplate::query()
+            ->where('slug', $slug)
+            ->orderByRaw('is_active DESC')
+            ->first();
     }
 
     protected $fillable = [

@@ -109,8 +109,7 @@ class WordPressAdminLoginService
     {
         $service->loadMissing('product.containerTemplate');
 
-        return $service->product?->type === 'container_hosting'
-            && ($service->effectiveContainerTemplate()?->slug ?? '') === 'wordpress';
+        return $service->isWordPressContainer();
     }
 
     public function resolvePublicBaseUrl(Service $service): ?string

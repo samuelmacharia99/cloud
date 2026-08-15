@@ -4,8 +4,7 @@
     $manageUrl = $payInvoice
         ? route('customer.payment.select-method', $payInvoice)
         : route('customer.services.show', $service);
-    $isWordpress = $service->product?->type === 'container_hosting'
-        && ($service->effectiveContainerTemplate()?->slug ?? '') === 'wordpress';
+    $isWordpress = $service->isWordPressContainer();
     $nestedContainers = $nestedContainers ?? [];
     $allProjects = $allProjects ?? collect();
 @endphp

@@ -329,7 +329,7 @@
                                 </span>
                             @endif
 
-                            @if ($templateSlug === 'wordpress')
+                            @if ($service->isWordPressContainer())
                                 <a href="{{ route('customer.services.wordpress-admin', $service) }}" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition">
                                     WP Admin
                                 </a>

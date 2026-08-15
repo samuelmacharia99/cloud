@@ -95,6 +95,49 @@ class SharedPlanWordPressDetectionTest extends TestCase
     }
 
     #[Test]
+    public function deactivated_wordpress_template_still_resolves_for_existing_services(): void
+    {
+        $service = $this->makeSharedWordPressService();
+        ContainerTemplate::query()->where('slug', 'wordpress')->update(['is_active' => false]);
+
+        $service = $service->fresh(['product.containerTemplate']);
+
+        $this->assertSame('wordpress', $service->effectiveContainerTemplate()?->slug);
+        $this->assertTrue($service->isWordPressContainer());
+    }
+
+    #[Test]
+    public function wordpress_is_detected_from_service_meta_without_a_template_row(): void
+    {
+        $product = Product::factory()->containerHosting()->create([
+            'container_template_id' => null,
+        ]);
+        $service = Service::factory()->create([
+            'product_id' => $product->id,
+            'service_meta' => ['backend' => 'wordpress'],
+        ]);
+
+        $this->assertNull($service->fresh()->effectiveContainerTemplate());
+        $this->assertTrue($service->fresh(['product.containerTemplate'])->isWordPressContainer());
+    }
+
+    #[Test]
+    public function non_wordpress_container_is_not_flagged_as_wordpress(): void
+    {
+        $laravel = ContainerTemplate::query()->where('slug', 'laravel')->first()
+            ?? ContainerTemplate::factory()->create(['slug' => 'laravel']);
+        $product = Product::factory()->containerHosting()->create([
+            'container_template_id' => $laravel->id,
+        ]);
+        $service = Service::factory()->create([
+            'product_id' => $product->id,
+            'service_meta' => ['language_slug' => 'laravel'],
+        ]);
+
+        $this->assertFalse($service->fresh(['product.containerTemplate'])->isWordPressContainer());
+    }
+
+    #[Test]
     public function wordpress_git_sync_for_deploy_is_blocked_even_with_forged_repo_url(): void
     {
         $service = $this->makeSharedWordPressService();
