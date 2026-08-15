@@ -181,6 +181,65 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
     }
 
     #[Test]
+    public function it_rewrites_vite_middleware_start_to_production_preview(): void
+    {
+        $packageJson = json_encode([
+            'name' => 'react-example',
+            'scripts' => [
+                'build' => 'vite build',
+                'start' => "NODE_OPTIONS='--no-warnings' tsx server.ts",
+            ],
+            'devDependencies' => [
+                'vite' => '^6.0.0',
+                'tsx' => '^4.0.0',
+            ],
+        ], JSON_THROW_ON_ERROR);
+
+        $runtime = $this->service->detectNodeFromContents(
+            null,
+            $packageJson,
+            false,
+            false,
+            false,
+            3000
+        );
+
+        $this->assertSame('vite', $runtime->source);
+        $this->assertSame('Vite production preview', $runtime->label);
+        $this->assertStringContainsString(
+            'npx vite preview --host 0.0.0.0 --port ${PORT:-3000}',
+            $runtime->command[2]
+        );
+        $this->assertStringContainsString('install vite --no-save', $runtime->command[2]);
+        $this->assertTrue($this->service->productionStartRequiresVite($packageJson));
+    }
+
+    #[Test]
+    public function it_normalizes_existing_vite_preview_start_commands(): void
+    {
+        $packageJson = json_encode([
+            'scripts' => [
+                'build' => 'vite build',
+                'start' => 'vite preview --port 5173',
+            ],
+            'devDependencies' => [
+                'vite' => '^5.0.0',
+            ],
+        ], JSON_THROW_ON_ERROR);
+
+        $command = $this->service->platformNodeListenCommand(
+            'vite preview --port 5173',
+            3000,
+            $packageJson
+        );
+
+        $this->assertSame(
+            'npx vite preview --host 0.0.0.0 --port ${PORT:-3000}',
+            $command
+        );
+    }
+
+    #[Test]
     public function it_builds_next_js_on_container_start_when_artifact_is_missing(): void
     {
         $packageJson = json_encode([

@@ -14,7 +14,7 @@
             <h4 class="font-semibold text-slate-900 dark:text-white">Express / plain Node</h4>
             <ul class="text-sm text-slate-600 dark:text-slate-300 space-y-2">
                 <li>Include a <code class="font-mono text-xs">start</code> script in <code class="font-mono text-xs">package.json</code>, e.g. <code class="font-mono text-xs">"start": "node server.js"</code>.</li>
-                <li>Listen on <code class="font-mono text-xs">process.env.PORT</code> (Talksasa sets <code class="font-mono text-xs">PORT</code> automatically).</li>
+                <li>Listen on <code class="font-mono text-xs">process.env.PORT</code> (Talksasa sets <code class="font-mono text-xs">PORT</code> automatically) and bind <code class="font-mono text-xs">0.0.0.0</code>.</li>
                 <li>After each Git pull, Talksasa performs a clean dependency install (removes stale <code class="font-mono text-xs">node_modules</code> first).</li>
                 <li>Plain apps use <code class="font-mono text-xs">npm ci --omit=dev</code> when a lockfile is present, and fall back to <code class="font-mono text-xs">npm install</code> if the lockfile is out of sync with <code class="font-mono text-xs">package.json</code>.</li>
             </ul>
@@ -35,6 +35,16 @@
     </div>
 
     <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-6 space-y-3">
+        <h4 class="font-semibold text-slate-900 dark:text-white">Vite / React example templates</h4>
+        <ul class="text-sm text-slate-600 dark:text-slate-300 space-y-2">
+            <li>Many Vite starters use <code class="font-mono text-xs">"start": "tsx server.ts"</code> with a Vite middleware server. That fails after production installs strip <code class="font-mono text-xs">vite</code>.</li>
+            <li>Talksasa detects that pattern, runs <code class="font-mono text-xs">vite build</code>, then starts <code class="font-mono text-xs">vite preview --host 0.0.0.0 --port $PORT</code> and keeps Vite available at runtime.</li>
+            <li>Prefer shipping <code class="font-mono text-xs">"build": "vite build"</code> and a production <code class="font-mono text-xs">start</code> that serves <code class="font-mono text-xs">dist/</code>. Custom API routes still need a real production Node entrypoint (not Vite middleware).</li>
+            <li>If an older deploy is crash-looping on <code class="font-mono text-xs">Cannot find package 'vite'</code>, use Container Doctor → <strong>Switch to Vite production</strong>.</li>
+        </ul>
+    </div>
+
+    <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-6 space-y-3">
         <h4 class="font-semibold text-slate-900 dark:text-white">Environment variables</h4>
         <p class="text-sm text-slate-600 dark:text-slate-300">
             Manage runtime secrets under the <strong>Environment</strong> tab (recommended). Framework secrets (database URLs, API keys) can also live in <code class="font-mono text-xs">.env</code> — never commit secrets to Git.
@@ -46,6 +56,7 @@
         <h4 class="font-semibold text-amber-900 dark:text-amber-100">Troubleshooting</h4>
         <ul class="text-sm text-amber-900/90 dark:text-amber-100/90 space-y-2">
             <li><strong>App restart loop</strong> — Load <strong>Logs</strong>. If you see <em>"Could not find a production build in the '.next' directory"</em>, pull code again (build runs automatically) or run <code class="font-mono text-xs">npm run build</code> in Terminal.</li>
+            <li><strong>Cannot find package 'vite'</strong> — The start script is still a Vite middleware/dev server. Use Container Doctor → Switch to Vite production, or change <code class="font-mono text-xs">start</code> to serve <code class="font-mono text-xs">dist/</code>.</li>
             <li><strong>Port already in use</strong> — Bind to <code class="font-mono text-xs">process.env.PORT</code>, not a hard-coded port.</li>
             <li><strong>Build fails on pull</strong> — Check build logs in Terminal. Often missing env vars required at build time (e.g. Next.js <code class="font-mono text-xs">NEXT_PUBLIC_*</code>).</li>
         </ul>

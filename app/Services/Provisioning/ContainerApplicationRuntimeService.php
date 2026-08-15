@@ -55,15 +55,9 @@ class ContainerApplicationRuntimeService
         int $defaultPort
     ): ApplicationRuntime {
         if ($procfileCommand !== null) {
-            $platformCommand = $this->platformNodeListenCommand($procfileCommand, $defaultPort);
+            $platformCommand = $this->platformNodeListenCommand($procfileCommand, $defaultPort, $packageJson);
             if ($platformCommand !== null) {
-                return $this->shellRuntime(
-                    $platformCommand,
-                    $defaultPort,
-                    'next',
-                    'Next.js server',
-                    $this->nodeBootstrap($packageJson)
-                );
+                return $this->platformNodeRuntime($platformCommand, $defaultPort, $packageJson);
             }
 
             return $this->shellRuntime(
@@ -80,15 +74,9 @@ class ContainerApplicationRuntimeService
             if (is_array($data)) {
                 if (! empty($data['scripts']['start'])) {
                     $start = trim((string) $data['scripts']['start']);
-                    $platformCommand = $this->platformNodeListenCommand($start, $defaultPort);
+                    $platformCommand = $this->platformNodeListenCommand($start, $defaultPort, $packageJson);
                     if ($platformCommand !== null) {
-                        return $this->shellRuntime(
-                            $platformCommand,
-                            $defaultPort,
-                            'next',
-                            'Next.js server',
-                            $this->nodeBootstrap($packageJson)
-                        );
+                        return $this->platformNodeRuntime($platformCommand, $defaultPort, $packageJson);
                     }
 
                     return $this->shellRuntime(
@@ -318,16 +306,139 @@ class ContainerApplicationRuntimeService
     }
 
     /**
-     * Rewrite Next.js start commands that hardcode a listen port/hostname.
-     * Customer apps often use `next start -p 3001`, which 502s behind our PORT mapping.
+     * Rewrite framework start commands that hardcode a listen port/hostname or use a
+     * development middleware server that cannot survive production installs.
+     *
+     * Customer apps often ship:
+     * - `next start -p 3001` → 502 behind our PORT mapping
+     * - `tsx server.ts` that `import 'vite'` → crash after `npm install --omit=dev`
      */
-    public function platformNodeListenCommand(string $command, int $defaultPort): ?string
+    public function platformNodeListenCommand(string $command, int $defaultPort, ?string $packageJson = null): ?string
     {
-        if (! preg_match('/\bnext\s+start\b/i', $command)) {
+        if (preg_match('/\bnext\s+start\b/i', $command)) {
+            return 'npx next start -H 0.0.0.0 -p ${PORT:-'.$defaultPort.'}';
+        }
+
+        if ($this->commandLooksLikeVitePreview($command)
+            || $this->shouldRewriteStartToVitePreview($command, $packageJson)) {
+            return 'npx vite preview --host 0.0.0.0 --port ${PORT:-'.$defaultPort.'}';
+        }
+
+        return null;
+    }
+
+    public function packageJsonHasVite(?string $packageJson): bool
+    {
+        if ($packageJson === null || trim($packageJson) === '') {
+            return false;
+        }
+
+        $data = json_decode($packageJson, true);
+        if (! is_array($data)) {
+            return false;
+        }
+
+        $dependencies = array_merge(
+            is_array($data['dependencies'] ?? null) ? $data['dependencies'] : [],
+            is_array($data['devDependencies'] ?? null) ? $data['devDependencies'] : []
+        );
+
+        return isset($dependencies['vite']);
+    }
+
+    /**
+     * True when the start script is a Vite middleware / tsx-dev entry that imports Vite at runtime.
+     * Those apps must be rewritten to `vite preview` after a production build.
+     */
+    public function commandLooksLikeViteDevServer(string $command): bool
+    {
+        $normalized = strtolower(trim($command));
+        if ($normalized === '') {
+            return false;
+        }
+
+        if ($this->commandLooksLikeVitePreview($normalized)) {
+            return false;
+        }
+
+        if (preg_match('/\bvite\b/', $normalized) && ! preg_match('/\bvite\s+build\b/', $normalized)) {
+            return true;
+        }
+
+        // Common Vite template starts: tsx/ts-node hosting vite.middlewares
+        if (preg_match('/\b(tsx|ts-node|ts-node-esm)\b.*\bserver(\.[jt]sx?)?\b/', $normalized)) {
+            return true;
+        }
+
+        if (preg_match('/\b(tsx|ts-node)\b.*\b(index|main|app)(\.[jt]sx?)?\b/', $normalized)
+            && preg_match('/\bvite\b/', $normalized)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    public function commandLooksLikeVitePreview(string $command): bool
+    {
+        return (bool) preg_match('/\bvite\s+preview\b/i', $command);
+    }
+
+    public function shouldRewriteStartToVitePreview(string $command, ?string $packageJson): bool
+    {
+        if (! $this->packageJsonHasVite($packageJson)) {
+            return false;
+        }
+
+        if (! $this->packageJsonHasBuildScript($packageJson)) {
+            return false;
+        }
+
+        return $this->commandLooksLikeViteDevServer($command);
+    }
+
+    public function productionStartRequiresVite(?string $packageJson): bool
+    {
+        if (! $this->packageJsonHasVite($packageJson)) {
+            return false;
+        }
+
+        $start = $this->packageJsonStartScript($packageJson);
+        if ($start === null) {
+            return false;
+        }
+
+        $platform = $this->platformNodeListenCommand($start, 3000, $packageJson);
+
+        return is_string($platform) && str_contains($platform, 'vite preview');
+    }
+
+    public function packageJsonStartScript(?string $packageJson): ?string
+    {
+        if ($packageJson === null || trim($packageJson) === '') {
             return null;
         }
 
-        return 'npx next start -H 0.0.0.0 -p ${PORT:-'.$defaultPort.'}';
+        $data = json_decode($packageJson, true);
+        if (! is_array($data)) {
+            return null;
+        }
+
+        $start = trim((string) ($data['scripts']['start'] ?? ''));
+
+        return $start !== '' ? $start : null;
+    }
+
+    private function platformNodeRuntime(string $platformCommand, int $defaultPort, ?string $packageJson): ApplicationRuntime
+    {
+        $isNext = str_contains($platformCommand, 'next start');
+
+        return $this->shellRuntime(
+            $platformCommand,
+            $defaultPort,
+            $isNext ? 'next' : 'vite',
+            $isNext ? 'Next.js server' : 'Vite production preview',
+            $this->nodeBootstrap($packageJson)
+        );
     }
 
     private function resolvePythonWsgiModule(string $wsgiContents): ?string
@@ -997,21 +1108,29 @@ class ContainerApplicationRuntimeService
 
     public function nodeBootstrap(?string $packageJson = null): string
     {
-        $binFix = 'find node_modules/.bin node_modules/next/dist/bin -type f -exec chmod u+x {} + 2>/dev/null || true';
+        $binFix = 'find node_modules/.bin node_modules/next/dist/bin node_modules/vite/bin -type f -exec chmod u+x {} + 2>/dev/null || true';
         $installForBuild = $this->npmInstallShellCommand();
         $buildCommand = $this->npmBuildShellCommand(null, false, $packageJson);
         $pruneCommand = $this->npmPruneShellCommand();
         $prepareStep = $this->nodeBuildPrepareEnabled()
             ? '[ -f .talksasa/prepare-build.cjs ] && node .talksasa/prepare-build.cjs && '
             : '';
+        // vite preview is the production start for Vite SPA/middleware templates, but prune
+        // --omit=dev removes vite. Reinstall it so every customer gets a bootable runtime.
+        $ensureVite = $this->productionStartRequiresVite($packageJson)
+            ? ' && '.$this->nodeCleanNpmCommand(
+                'install vite --no-save --legacy-peer-deps --no-audit --no-fund',
+                'production'
+            ).' && '.$binFix
+            : '';
 
         if (! $this->packageJsonRequiresProductionBuild($packageJson)) {
-            return '[ -f package.json ] && '.$this->npmOmitDevInstallCommand($packageJson).' && '.$binFix;
+            return '[ -f package.json ] && '.$this->npmOmitDevInstallCommand($packageJson).' && '.$binFix.$ensureVite;
         }
 
         $artifactMissingCheck = $this->packageJsonBuildArtifactMissingCheck($packageJson);
 
-        return '[ -f package.json ] && { if '.$artifactMissingCheck.'; then rm -rf node_modules && '.$installForBuild.' && '.$binFix.' && '.$prepareStep.$buildCommand.' && '.$pruneCommand.' && '.$binFix.'; else '.$this->npmOmitDevInstallCommand($packageJson).' && '.$binFix.'; fi; }';
+        return '[ -f package.json ] && { if '.$artifactMissingCheck.'; then rm -rf node_modules && '.$installForBuild.' && '.$binFix.' && '.$prepareStep.$buildCommand.' && '.$pruneCommand.$ensureVite.'; else '.$this->npmOmitDevInstallCommand($packageJson).' && '.$binFix.$ensureVite.'; fi; }';
     }
 
     private function rubyBootstrap(): string

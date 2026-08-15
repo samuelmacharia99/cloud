@@ -74,9 +74,9 @@ class ContainerDoctorService
             return ['success' => false, 'message' => 'Application is not deployed.'];
         }
 
-        // Recreating is the repair for a stack that is down, so it must not require a
-        // running deployment the way in-container fixes do.
-        if (! $deployment->isRunning() && $action !== 'recreate_application') {
+        // Recreating / Vite production rewrite can revive a crash-looping stack.
+        if (! $deployment->isRunning()
+            && ! in_array($action, ['recreate_application', 'fix_vite_production_runtime'], true)) {
             return ['success' => false, 'message' => 'Application must be running before applying a fix.'];
         }
 
@@ -91,6 +91,7 @@ class ContainerDoctorService
             'fix_wordpress_permissions' => $this->treatFixWordPressPermissions($service),
             'restart_application' => $this->treatRestartApplication($service),
             'recreate_application' => $this->treatRecreateApplication($service),
+            'fix_vite_production_runtime' => $this->treatFixViteProductionRuntime($service),
             'run_migrations' => $this->treatRunMigrations($service),
             'migrate_fresh' => $this->treatMigrateFresh($service),
             'use_file_cache' => $this->treatUseFileCache($service),
@@ -1311,6 +1312,25 @@ PHP;
                 ],
             ],
             [
+                'id' => 'vite_missing_in_production',
+                'severity' => 'critical',
+                'stacks' => ['nodejs', '*'],
+                'patterns' => [
+                    '/Cannot find package [\'"]vite[\'"]/i',
+                    '/ERR_MODULE_NOT_FOUND[^\n]*vite/i',
+                    '/vite:\s+not found/i',
+                    '/Cannot find module [\'"]vite[\'"]/i',
+                ],
+                'title' => 'Vite missing from production start',
+                'summary' => 'This app starts with a Vite middleware/dev entry (often `tsx server.ts`) after a production install that strips `vite`. Talksasa rewrites that to a production `vite preview` start and keeps Vite available at runtime.',
+                'treat_action' => 'fix_vite_production_runtime',
+                'treat_label' => 'Switch to Vite production',
+                'manual_steps' => [
+                    'Click Switch to Vite production — rebuilds, rewrites the start command to vite preview, and recreates the container.',
+                    'Custom API routes that only exist in the Vite middleware server still need a production Node entrypoint in the repo.',
+                ],
+            ],
+            [
                 'id' => 'missing_cache_locks_table',
                 'severity' => 'critical',
                 'stacks' => ['laravel', 'php'],
@@ -2251,6 +2271,59 @@ PHP;
     /**
      * @return array{success: bool, message: string}
      */
+    /**
+     * Rewrite Vite middleware/dev starts to production preview and recreate the stack.
+     *
+     * @return array{success: bool, message: string}
+     */
+    private function treatFixViteProductionRuntime(Service $service): array
+    {
+        $deployment = $service->containerDeployment;
+        if (! $deployment?->node) {
+            return ['success' => false, 'message' => 'Application is not deployed.'];
+        }
+
+        $ssh = SSHService::forNode($deployment->node);
+        $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+        $hostAppPath = $containerPath.'/app';
+
+        try {
+            // Drop the SPA build so container bootstrap reinstalls with build tools,
+            // runs vite build, then keeps vite for `vite preview`.
+            @$ssh->exec(
+                'rm -rf '.escapeshellarg($hostAppPath.'/dist').' '
+                .escapeshellarg($hostAppPath.'/.vite'),
+                30
+            );
+
+            $message = app(ContainerDeploymentService::class)
+                ->refreshApplicationRuntimeCompose($service, $deployment, $ssh);
+
+            $deployment->refresh();
+            if ((int) ($deployment->assigned_port ?? 0) > 0) {
+                $probe = $this->waitForUpstream($ssh, $deployment, 8);
+                if (! $probe['reachable']) {
+                    return [
+                        'success' => false,
+                        'message' => ($message !== '' ? $message.' ' : '')
+                            .$this->upstreamFailureMessage($probe),
+                    ];
+                }
+            }
+
+            return [
+                'success' => true,
+                'message' => $message !== ''
+                    ? $message
+                    : 'Switched to Vite production preview and recreated the container.',
+            ];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'message' => 'Vite production fix failed: '.$e->getMessage()];
+        } finally {
+            $ssh->disconnect();
+        }
+    }
+
     private function treatRestartApplication(Service $service): array
     {
         $deployment = $service->containerDeployment;

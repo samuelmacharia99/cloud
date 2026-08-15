@@ -11,6 +11,23 @@ use Tests\TestCase;
 class ContainerDoctorServiceTest extends TestCase
 {
     #[Test]
+    public function it_detects_vite_missing_from_production_start(): void
+    {
+        $logs = <<<'LOG'
+> react-example@0.0.0 start
+> NODE_OPTIONS='--no-warnings' tsx server.ts
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'vite' imported from /app/server.ts
+LOG;
+
+        $findings = app(ContainerDoctorService::class)->analyzeLogs($logs, 'nodejs');
+        $finding = collect($findings)->firstWhere('id', 'vite_missing_in_production');
+
+        $this->assertNotNull($finding);
+        $this->assertSame('fix_vite_production_runtime', $finding['treat_action']);
+        $this->assertSame('critical', $finding['severity']);
+    }
+
+    #[Test]
     public function it_detects_postgres_password_authentication_failures(): void
     {
         $logs = <<<'LOG'
