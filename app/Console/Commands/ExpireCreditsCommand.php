@@ -3,34 +3,30 @@
 namespace App\Console\Commands;
 
 use App\Services\CreditService;
-use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
-class ExpireCreditsCommand extends Command
+class ExpireCreditsCommand extends BaseCronCommand
 {
     protected $signature = 'credits:expire';
+
     protected $description = 'Mark expired credits as expired';
 
-    public function handle(): int
+    protected function handleCron(): string
     {
         try {
             $expiredCount = CreditService::expireOldCredits();
 
-            $this->info("Expired {$expiredCount} credits.");
-
-            Log::info("Cron: Credits expiration", [
+            Log::info('Cron: Credits expiration', [
                 'expired_count' => $expiredCount,
             ]);
 
-            return Command::SUCCESS;
+            return "Expired {$expiredCount} credits.";
         } catch (\Exception $e) {
-            $this->error("Error expiring credits: {$e->getMessage()}");
-
-            Log::error("Credits expiration failed", [
+            Log::error('Credits expiration failed', [
                 'error' => $e->getMessage(),
             ]);
 
-            return Command::FAILURE;
+            throw $e;
         }
     }
 }

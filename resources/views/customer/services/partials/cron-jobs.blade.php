@@ -1,4 +1,10 @@
 @if ($deployment)
+@php
+    $customerCronJobCount = collect($containerCronJobs ?? [])
+        ->reject(fn ($job) => $job->is_system)
+        ->count();
+    $cronTimezone = \App\Models\Setting::getValue('cron_timezone', config('app.timezone', 'UTC'));
+@endphp
 <div id="cron" class="space-y-8">
     <div>
         <h3 class="text-xl font-bold text-slate-900 dark:text-white">Cron Jobs</h3>
@@ -6,6 +12,7 @@
             Schedule commands to run inside your app automatically. Jobs are managed here and executed by the platform
             (you cannot use <code class="font-mono text-xs">crontab -e</code> in the terminal).
             Use standard five-field schedules, e.g. <code class="font-mono text-xs">*/5 * * * *</code> or <code class="font-mono text-xs">0 2 * * *</code>.
+            All schedules use <strong>{{ $cronTimezone }}</strong>.
         </p>
     </div>
 
@@ -24,7 +31,7 @@
     <div class="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
         <div class="px-5 py-3 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex items-center justify-between gap-3">
             <h4 class="text-sm font-semibold text-slate-900 dark:text-white">Scheduled jobs</h4>
-            <span class="text-xs text-slate-500 dark:text-slate-400">{{ count($containerCronJobs ?? []) }} / {{ config('containers.cron.max_jobs_per_service', 20) }}</span>
+            <span class="text-xs text-slate-500 dark:text-slate-400">{{ $customerCronJobCount }} / {{ config('containers.cron.max_jobs_per_service', 20) }} customer jobs</span>
         </div>
 
         @if (! empty($containerCronJobs))
@@ -47,6 +54,9 @@
                                     @if (! $job->enabled)
                                         <span class="inline-flex mt-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">Disabled</span>
                                     @endif
+                                    @if ($job->is_system)
+                                        <span class="inline-flex mt-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300">Platform managed</span>
+                                    @endif
                                 </td>
                                 <td class="px-4 py-3 align-top font-mono text-xs text-slate-700 dark:text-slate-300">{{ $job->schedule }}</td>
                                 <td class="px-4 py-3 align-top font-mono text-xs text-slate-700 dark:text-slate-300 break-all">{{ $job->command }}</td>
@@ -65,11 +75,12 @@
                                     @else
                                         <span>Not run yet</span>
                                         @if ($job->next_run_at)
-                                            <div class="mt-1">Next: {{ $job->next_run_at->format('M d, H:i') }}</div>
+                                            <div class="mt-1">Next: {{ $job->next_run_at->timezone($cronTimezone)->format('M d, H:i T') }}</div>
                                         @endif
                                     @endif
                                 </td>
                                 <td class="px-4 py-3 align-top text-right whitespace-nowrap">
+                                    @unless ($job->is_system)
                                     <details class="inline-block text-left">
                                         <summary class="cursor-pointer text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline">Edit</summary>
                                         <form method="POST" action="{{ route('customer.services.container.cron-jobs.update', [$service, $job]) }}" class="mt-3 p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 space-y-3 min-w-[18rem]">
@@ -99,6 +110,9 @@
                                         @method('DELETE')
                                         <button type="submit" class="text-xs font-medium text-red-600 dark:text-red-400 hover:underline">Delete</button>
                                     </form>
+                                    @else
+                                        <span class="text-xs text-slate-500 dark:text-slate-400">Managed automatically</span>
+                                    @endunless
                                 </td>
                             </tr>
                         @endforeach
@@ -110,7 +124,7 @@
         @endif
     </div>
 
-    @if (count($containerCronJobs ?? []) < config('containers.cron.max_jobs_per_service', 20))
+    @if ($customerCronJobCount < config('containers.cron.max_jobs_per_service', 20))
         <form method="POST" action="{{ route('customer.services.container.cron-jobs.store', $service) }}" class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-5 space-y-4">
             @csrf
             <h4 class="text-sm font-semibold text-slate-900 dark:text-white">Add cron job</h4>

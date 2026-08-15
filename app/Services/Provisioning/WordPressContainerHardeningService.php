@@ -130,7 +130,7 @@ SNIP;
     {
         $service->loadMissing('product.containerTemplate', 'containerDeployment');
 
-        if (($service->effectiveContainerTemplate()?->slug ?? '') !== 'wordpress') {
+        if (! $service->isWordPressContainer()) {
             return null;
         }
 
@@ -157,6 +157,12 @@ SNIP;
             if (! $existing->enabled) {
                 $updates['enabled'] = true;
             }
+            if (! $existing->is_system) {
+                $updates['is_system'] = true;
+            }
+            if ($existing->paused_by_system) {
+                $updates['paused_by_system'] = false;
+            }
             if ($updates !== []) {
                 $cron = app(ContainerCronService::class);
                 $updates['next_run_at'] = $cron->calculateNextRun(
@@ -169,7 +175,7 @@ SNIP;
         }
 
         try {
-            return app(ContainerCronService::class)->create($service, [
+            return app(ContainerCronService::class)->createSystem($service, [
                 'name' => self::WP_CRON_JOB_NAME,
                 'schedule' => self::WP_CRON_SCHEDULE,
                 'command' => self::WP_CRON_COMMAND,

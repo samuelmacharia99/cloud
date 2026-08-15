@@ -3,9 +3,13 @@
 namespace App\Services\Provisioning;
 
 use App\Enums\ServiceStatus;
+use App\Jobs\RunContainerCronJob;
 use App\Models\ContainerCronJob;
+use App\Models\ContainerCronJobRun;
 use App\Models\Service;
+use App\Models\Setting;
 use App\Services\SSH\SSHService;
+use App\Services\Terminal\ContainerDockerExecUserResolver;
 use Cron\CronExpression;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
@@ -40,6 +44,29 @@ class ContainerCronService
             'schedule' => $validated['schedule'],
             'command' => $validated['command'],
             'enabled' => $validated['enabled'] ?? true,
+            'is_system' => false,
+            'paused_by_system' => false,
+            'next_run_at' => $this->calculateNextRun($validated['schedule']),
+        ]);
+    }
+
+    public function createSystem(Service $service, array $data): ContainerCronJob
+    {
+        $this->assertContainerService($service);
+        if (! $service->containerDeployment) {
+            throw new \InvalidArgumentException('Deploy the container before adding system cron jobs.');
+        }
+
+        $validated = $this->validatePayload($data);
+
+        return ContainerCronJob::create([
+            'service_id' => $service->id,
+            'name' => $validated['name'],
+            'schedule' => $validated['schedule'],
+            'command' => $validated['command'],
+            'enabled' => $validated['enabled'] ?? true,
+            'is_system' => true,
+            'paused_by_system' => false,
             'next_run_at' => $this->calculateNextRun($validated['schedule']),
         ]);
     }
@@ -79,8 +106,41 @@ class ContainerCronService
         return $job->fresh();
     }
 
+    public function pauseForService(Service $service): int
+    {
+        return $service->containerCronJobs()
+            ->where('enabled', true)
+            ->update([
+                'enabled' => false,
+                'paused_by_system' => true,
+                'next_run_at' => null,
+            ]);
+    }
+
+    public function resumeForService(Service $service): int
+    {
+        $jobs = $service->containerCronJobs()
+            ->where('paused_by_system', true)
+            ->get();
+
+        foreach ($jobs as $job) {
+            $job->update([
+                'enabled' => true,
+                'paused_by_system' => false,
+                'next_run_at' => $this->calculateNextRun($job->schedule),
+            ]);
+        }
+
+        return $jobs->count();
+    }
+
+    public function deleteForService(Service $service): int
+    {
+        return $service->containerCronJobs()->delete();
+    }
+
     /**
-     * @return array{processed: int, succeeded: int, failed: int, skipped: int, deferred: int}
+     * @return array{processed: int, dispatched: int, failed: int, skipped: int, deferred: int}
      */
     public function runDueJobs(?int $limit = null, ?int $maxBatchSeconds = null): array
     {
@@ -92,6 +152,19 @@ class ContainerCronService
 
         $jobs = ContainerCronJob::query()
             ->where('enabled', true)
+            ->whereDoesntHave('runs', fn ($query) => $query
+                ->whereIn('status', ['queued', 'running']))
+            ->whereHas('service', function ($query) {
+                $query->where('status', ServiceStatus::Active->value)
+                    ->where(function ($serviceQuery) {
+                        $serviceQuery->whereHas('product', fn ($productQuery) => $productQuery
+                            ->where('type', 'container_hosting'))
+                            ->orWhere('provisioning_driver_key', 'container');
+                    })
+                    ->whereHas('containerDeployment', fn ($deploymentQuery) => $deploymentQuery
+                        ->where('status', 'running')
+                        ->whereNotNull('node_id'));
+            })
             ->where(function ($query) use ($now) {
                 $query->whereNull('next_run_at')
                     ->orWhere('next_run_at', '<=', $now);
@@ -103,13 +176,15 @@ class ContainerCronService
 
         $summary = [
             'processed' => 0,
-            'succeeded' => 0,
+            'dispatched' => 0,
             'failed' => 0,
             'skipped' => 0,
             'deferred' => 0,
         ];
 
         foreach ($jobs as $job) {
+            $run = null;
+
             // Budget 0 = defer everything (also used in tests). Production default is 90s.
             if ($maxBatchSeconds === 0 || (microtime(true) - $startedAt) >= $maxBatchSeconds) {
                 $summary['deferred']++;
@@ -128,17 +203,34 @@ class ContainerCronService
 
                 // Claim the slot before SSH so a hung docker exec cannot be
                 // re-selected by the next minute's scheduler tick.
+                $scheduledFor = $job->next_run_at?->copy();
                 if (! $this->claimDueJob($job)) {
                     $summary['skipped']++;
 
                     continue;
                 }
 
-                $this->execute($job, alreadyClaimed: true);
-                $summary['succeeded']++;
+                $run = $job->runs()->create([
+                    'attempt_uuid' => (string) Str::uuid(),
+                    'scheduled_for' => $scheduledFor,
+                    'status' => 'queued',
+                    'started_at' => now(),
+                ]);
+
+                RunContainerCronJob::dispatch($job->id, $run->id);
+                $summary['dispatched']++;
             } catch (\Throwable $e) {
                 $summary['failed']++;
                 $this->markFailed($job, $e->getMessage(), advanceSchedule: false);
+                $run?->update([
+                    'status' => 'failed',
+                    'exception' => Str::limit(
+                        $e->getMessage(),
+                        (int) config('containers.cron.output_max_chars', 2000)
+                    ),
+                    'duration_ms' => null,
+                    'finished_at' => now(),
+                ]);
                 \Log::warning('Container cron job failed', [
                     'job_id' => $job->id,
                     'service_id' => $job->service_id,
@@ -150,13 +242,16 @@ class ContainerCronService
         return $summary;
     }
 
-    public function execute(ContainerCronJob $job, bool $alreadyClaimed = false): void
-    {
+    public function execute(
+        ContainerCronJob $job,
+        bool $alreadyClaimed = false,
+        ?ContainerCronJobRun $run = null,
+    ): void {
         $job->loadMissing('service.containerDeployment.node', 'service.product.containerTemplate');
         $service = $job->service;
         $deployment = $service?->containerDeployment;
 
-        if (! $service || $service->product?->type !== 'container_hosting') {
+        if (! $service || ! $service->isContainerHosting()) {
             throw new \RuntimeException('Invalid container service.');
         }
 
@@ -186,6 +281,13 @@ class ContainerCronService
 
         $template = $service->effectiveContainerTemplate() ?? $service->product?->containerTemplate;
         $workDir = $template ? $this->stackCommands->resolveWorkDir($template) : '/app';
+        if (($template?->slug ?? null) === 'laravel') {
+            $workDir = app(LaravelProjectPathResolver::class)
+                ->projectRootFromServiceMeta($service, $workDir);
+        }
+
+        $composeService = $this->stackCommands->resolveAppComposeService($deployment);
+        $execUser = ContainerDockerExecUserResolver::execUser($template?->slug);
         $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
         $timeout = max(10, min(120, (int) config('containers.cron.command_timeout_seconds', 60)));
 
@@ -197,10 +299,12 @@ class ContainerCronService
             $output = $this->stackCommands->execInContainer(
                 $ssh,
                 $containerPath,
-                $deployment->container_name,
+                $composeService,
                 $job->command,
                 $workDir,
                 $timeout,
+                $execUser,
+                retry: false,
             );
 
             $job->update([
@@ -208,6 +312,15 @@ class ContainerCronService
                 'last_status' => 'success',
                 'last_output' => Str::limit($output, (int) config('containers.cron.output_max_chars', 2000)),
                 // next_run_at already advanced by claimDueJob
+            ]);
+
+            $run?->update([
+                'status' => 'success',
+                'output' => Str::limit($output, (int) config('containers.cron.output_max_chars', 2000)),
+                'duration_ms' => $run->started_at
+                    ? (int) $run->started_at->diffInMilliseconds(now())
+                    : null,
+                'finished_at' => now(),
             ]);
         } finally {
             $ssh->disconnect();
@@ -284,8 +397,11 @@ class ContainerCronService
 
     public function calculateNextRun(string $schedule, ?Carbon $from = null): Carbon
     {
+        $timezone = (string) Setting::getValue('cron_timezone', config('app.timezone', 'UTC'));
+        $from = ($from ?? now())->copy()->setTimezone($timezone);
+
         return Carbon::instance(
-            CronExpression::factory(trim($schedule))->getNextRunDate($from ?? now())
+            CronExpression::factory(trim($schedule))->getNextRunDate($from, 0, false, $timezone)
         );
     }
 
@@ -326,14 +442,22 @@ class ContainerCronService
     {
         $this->assertContainerService($service);
 
+        if ($service->status !== ServiceStatus::Active) {
+            throw new \InvalidArgumentException('Activate the service before adding cron jobs.');
+        }
+
         if (! $service->containerDeployment) {
             throw new \InvalidArgumentException('Deploy the container before adding cron jobs.');
+        }
+
+        if ($service->containerDeployment->status !== 'running') {
+            throw new \InvalidArgumentException('Start the container before adding cron jobs.');
         }
     }
 
     private function assertContainerService(Service $service): void
     {
-        if ($service->product?->type !== 'container_hosting') {
+        if (! $service->isContainerHosting()) {
             throw new \InvalidArgumentException('Cron jobs are only available for container services.');
         }
     }
@@ -341,7 +465,7 @@ class ContainerCronService
     private function assertJobLimit(Service $service): void
     {
         $max = (int) config('containers.cron.max_jobs_per_service', 20);
-        $count = $service->containerCronJobs()->count();
+        $count = $service->containerCronJobs()->where('is_system', false)->count();
 
         if ($count >= $max) {
             throw new \InvalidArgumentException("Maximum of {$max} cron jobs per service reached.");
@@ -374,5 +498,25 @@ class ContainerCronService
         }
 
         $job->update($payload);
+    }
+
+    public function recordRunFailure(
+        ContainerCronJob $job,
+        ContainerCronJobRun $run,
+        \Throwable $error,
+    ): void {
+        $this->markFailed($job, $error->getMessage(), advanceSchedule: false);
+
+        $run->update([
+            'status' => 'failed',
+            'exception' => Str::limit(
+                $error->getMessage(),
+                (int) config('containers.cron.output_max_chars', 2000)
+            ),
+            'duration_ms' => $run->started_at
+                ? (int) $run->started_at->diffInMilliseconds(now())
+                : null,
+            'finished_at' => now(),
+        ]);
     }
 }

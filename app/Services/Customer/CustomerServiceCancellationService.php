@@ -6,6 +6,7 @@ use App\Enums\ServiceStatus;
 use App\Models\Service;
 use App\Models\Ticket;
 use App\Models\User;
+use App\Services\Provisioning\ContainerCronService;
 use App\Services\Provisioning\ProvisioningService;
 use App\Services\TicketRoutingService;
 use Illuminate\Support\Facades\Log;
@@ -45,6 +46,9 @@ class CustomerServiceCancellationService
             ]);
 
             $service->update(['status' => ServiceStatus::Cancelled]);
+            if ($service->isContainerHosting()) {
+                app(ContainerCronService::class)->pauseForService($service);
+            }
             $warning = 'Your cancellation was recorded but automated shutdown failed — support will complete it shortly.';
         }
 

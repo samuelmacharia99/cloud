@@ -9,7 +9,6 @@ use App\Models\Node;
 use App\Models\Product;
 use App\Models\Service;
 use App\Models\User;
-use App\Services\NotificationService;
 use App\Services\Provisioning\ContainerBackupService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -53,8 +52,9 @@ class BackupContainersCommandTest extends TestCase
         }
 
         $backupService = Mockery::mock(ContainerBackupService::class);
-        $backupService->shouldReceive('createBackup')
+        $backupService->shouldReceive('queueBackup')
             ->once()
+            ->with(Mockery::type(Service::class), 'scheduled', false)
             ->andReturnUsing(function (Service $service) {
                 Carbon::setTestNow(now()->addSeconds(5));
 
@@ -62,18 +62,12 @@ class BackupContainersCommandTest extends TestCase
                     'service_id' => $service->id,
                     'container_deployment_id' => $service->containerDeployment->id,
                     'node_id' => $service->node_id,
-                    'status' => 'completed',
-                    'size_bytes' => 1024,
-                    'completed_at' => now(),
+                    'status' => 'pending',
                     'type' => 'scheduled',
                 ]);
             });
 
         $this->app->instance(ContainerBackupService::class, $backupService);
-        $this->mock(NotificationService::class, function ($mock) {
-            $mock->shouldReceive('notifyContainerBackupCompleted')->once();
-            $mock->shouldReceive('notifyContainerBackupFailed')->never();
-        });
 
         $this->artisan('cron:backup-containers', ['--force' => true, '--max-runtime' => 3])
             ->assertSuccessful()
@@ -108,7 +102,7 @@ class BackupContainersCommandTest extends TestCase
         ]);
 
         $backupService = Mockery::mock(ContainerBackupService::class);
-        $backupService->shouldReceive('createBackup')->never();
+        $backupService->shouldReceive('queueBackup')->never();
         $this->app->instance(ContainerBackupService::class, $backupService);
 
         $this->artisan('cron:backup-containers', ['--force' => true])
@@ -130,13 +124,10 @@ class BackupContainersCommandTest extends TestCase
         ]);
 
         $backupService = Mockery::mock(ContainerBackupService::class);
-        $backupService->shouldReceive('createBackup')
+        $backupService->shouldReceive('queueBackup')
             ->once()
             ->andThrow(new \RuntimeException('archive failed'));
         $this->app->instance(ContainerBackupService::class, $backupService);
-        $this->mock(NotificationService::class, function ($mock) {
-            $mock->shouldReceive('notifyContainerBackupFailed')->once();
-        });
 
         $this->artisan('cron:backup-containers', ['--force' => true])
             ->assertFailed()

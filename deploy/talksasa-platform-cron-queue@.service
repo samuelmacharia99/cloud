@@ -1,0 +1,20 @@
+[Unit]
+Description=Talksasa Cloud platform cron worker %i
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/talksasa-cloud
+ExecStart=/usr/bin/php artisan queue:work --queue=platform-cron --sleep=2 --tries=1 --timeout=3660 --max-time=7200
+ExecReload=/usr/bin/php artisan queue:restart
+Restart=always
+RestartSec=5
+TimeoutStopSec=3720
+KillMode=control-group
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

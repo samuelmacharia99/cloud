@@ -39,6 +39,13 @@ class ContainerStackCommandService
         };
     }
 
+    public function resolveAppComposeService(ContainerDeployment $deployment): string
+    {
+        return $this->deploymentService()->usesLaravelNextSidecarStack($deployment)
+            ? LaravelNextGatewayProxy::BACKEND_SERVICE
+            : $deployment->container_name;
+    }
+
     public function isSafeCommand(string $command): bool
     {
         $cmd = trim($command);
@@ -1173,23 +1180,29 @@ class ContainerStackCommandService
     public function execInContainer(
         SSHService $ssh,
         string $containerPath,
-        string $containerName,
+        string $composeService,
         string $command,
         string $workDir = '/app',
-        int $timeout = 600
+        int $timeout = 600,
+        ?string $execUser = null,
+        bool $retry = true,
     ): string {
         if (! $this->isSafeCommand($command)) {
             throw new \InvalidArgumentException('Unsafe container command rejected.');
         }
 
         $pathArg = escapeshellarg($containerPath);
-        $serviceArg = escapeshellarg($containerName);
+        $serviceArg = escapeshellarg($composeService);
         $workDirArg = escapeshellarg($workDir);
         $commandArg = escapeshellarg($command);
+        $userFlag = $execUser !== null && $execUser !== ''
+            ? ' -u '.escapeshellarg($execUser)
+            : '';
 
-        return trim($ssh->exec(
-            "cd {$pathArg} && docker compose exec -T -w {$workDirArg} {$serviceArg} sh -lc {$commandArg}",
-            $timeout
-        ));
+        $hostCommand = "cd {$pathArg} && docker compose exec{$userFlag} -T -w {$workDirArg} {$serviceArg} sh -lc {$commandArg}";
+
+        return trim($retry
+            ? $ssh->exec($hostCommand, $timeout)
+            : $ssh->exec($hostCommand, $timeout, false));
     }
 }

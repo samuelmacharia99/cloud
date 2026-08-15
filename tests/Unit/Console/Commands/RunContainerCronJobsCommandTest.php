@@ -15,7 +15,7 @@ class RunContainerCronJobsCommandTest extends TestCase
         $this->mock(ContainerCronService::class, function ($mock) {
             $mock->shouldReceive('runDueJobs')->once()->andReturn([
                 'processed' => 3,
-                'succeeded' => 2,
+                'dispatched' => 2,
                 'failed' => 1,
                 'skipped' => 0,
                 'deferred' => 0,
@@ -24,7 +24,7 @@ class RunContainerCronJobsCommandTest extends TestCase
 
         $this->artisan('cron:run-container-jobs')
             ->assertSuccessful()
-            ->expectsOutputToContain('2 succeeded, 1 failed');
+            ->expectsOutputToContain('2 dispatched, 1 dispatch failures');
     }
 
     public function test_total_batch_failure_marks_platform_cron_failed(): void
@@ -32,7 +32,7 @@ class RunContainerCronJobsCommandTest extends TestCase
         $this->mock(ContainerCronService::class, function ($mock) {
             $mock->shouldReceive('runDueJobs')->once()->andReturn([
                 'processed' => 2,
-                'succeeded' => 0,
+                'dispatched' => 0,
                 'failed' => 2,
                 'skipped' => 0,
                 'deferred' => 0,
@@ -41,6 +41,6 @@ class RunContainerCronJobsCommandTest extends TestCase
 
         $this->artisan('cron:run-container-jobs')
             ->assertFailed()
-            ->expectsOutputToContain('0 succeeded, 2 failed');
+            ->expectsOutputToContain('0 dispatched, 2 dispatch failures');
     }
 }

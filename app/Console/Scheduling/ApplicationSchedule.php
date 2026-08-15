@@ -2,15 +2,13 @@
 
 namespace App\Console\Scheduling;
 
-use App\Mail\CronFailureMail;
+use App\Jobs\RunPlatformCronJob;
+use App\Jobs\SendCronFailureAlerts;
 use App\Models\CronJob;
 use App\Models\Setting;
-use App\Models\User;
-use App\Services\Telegram\TelegramMonitorBridge;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
 
 class ApplicationSchedule
@@ -21,7 +19,6 @@ class ApplicationSchedule
             return;
         }
 
-        $this->touchHeartbeat();
         $schedule->timezone(Setting::getValue('cron_timezone', 'UTC'));
         $this->registerDatabaseJobs($schedule);
         $this->registerHeartbeat($schedule);
@@ -65,9 +62,11 @@ class ApplicationSchedule
 
             $overlapMinutes = $this->overlapExpiresMinutes($job->command);
 
-            $event = $schedule->command($job->command)
+            $event = $schedule->call(function () use ($job): void {
+                RunPlatformCronJob::dispatch($job->id);
+            })
                 ->cron($job->schedule)
-                ->name($job->name)
+                ->name("{$job->name} [{$job->command}]")
                 ->withoutOverlapping($overlapMinutes);
 
             if (config('scheduler.use_on_one_server')) {
@@ -143,23 +142,11 @@ class ApplicationSchedule
     {
         try {
             $job->update(['last_status' => 'failed']);
-
-            $admins = User::where('is_admin', true)->get();
-            foreach ($admins as $admin) {
-                Mail::to($admin->email)->send(
-                    new CronFailureMail($job)
-                );
-            }
+            SendCronFailureAlerts::dispatch($job->id);
 
             Log::critical("Cron job '{$job->name}' failed", [
                 'command' => $job->command,
                 'schedule' => $job->schedule,
-            ]);
-
-            app(TelegramMonitorBridge::class)->systemAlert('Cron job failed', [
-                'Job' => $job->name,
-                'Command' => $job->command,
-                'Schedule' => $job->schedule,
             ]);
         } catch (\Exception $e) {
             Log::error('Failed to log cron failure', [

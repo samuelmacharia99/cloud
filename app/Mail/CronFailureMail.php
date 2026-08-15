@@ -4,7 +4,6 @@ namespace App\Mail;
 
 use App\Models\CronJob;
 use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
@@ -14,14 +13,12 @@ class CronFailureMail extends Mailable
 {
     use Queueable, SerializesModels;
 
-    public function __construct(private CronJob $cronJob)
-    {
-    }
+    public function __construct(private CronJob $cronJob) {}
 
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: 'ALERT: Cron Job Failed — ' . $this->cronJob->name,
+            subject: 'ALERT: Cron Job Failed — '.$this->cronJob->name,
         );
     }
 

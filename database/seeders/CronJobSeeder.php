@@ -335,10 +335,16 @@ class CronJobSeeder extends Seeder
         ];
 
         foreach ($jobs as $job) {
-            $model = CronJob::updateOrCreate(
-                ['command' => $job['command']],
-                $job
-            );
+            $model = CronJob::firstOrNew(['command' => $job['command']]);
+            $attributes = $job;
+
+            // Deploys run this seeder to add new platform jobs. Preserve an
+            // administrator's explicit enable/disable choice for existing rows.
+            if ($model->exists) {
+                unset($attributes['enabled']);
+            }
+
+            $model->fill($attributes)->save();
 
             $model->refreshNextRunAt();
         }

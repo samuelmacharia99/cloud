@@ -57,6 +57,7 @@ class WordPressContainerHardeningServiceTest extends TestCase
         $this->assertSame(WordPressContainerHardeningService::WP_CRON_COMMAND, $job->command);
         $this->assertSame(WordPressContainerHardeningService::WP_CRON_SCHEDULE, $job->schedule);
         $this->assertTrue($job->enabled);
+        $this->assertTrue($job->is_system);
 
         $again = app(WordPressContainerHardeningService::class)->ensureSystemCronJob($service->fresh([
             'product.containerTemplate',

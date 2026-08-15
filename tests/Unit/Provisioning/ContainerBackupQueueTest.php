@@ -38,7 +38,11 @@ class ContainerBackupQueueTest extends TestCase
 
         $this->assertSame('pending', $backup->status);
         $this->assertSame($service->id, $backup->service_id);
-        Bus::assertDispatched(CreateContainerBackupJob::class, fn (CreateContainerBackupJob $job) => $job->backupId === $backup->id);
+        Bus::assertDispatched(
+            CreateContainerBackupJob::class,
+            fn (CreateContainerBackupJob $job) => $job->backupId === $backup->id
+                && $job->queue === 'backups'
+        );
     }
 
     public function test_queue_backup_blocks_when_another_backup_is_in_flight(): void

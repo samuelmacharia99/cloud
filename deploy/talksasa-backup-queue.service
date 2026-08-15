@@ -1,0 +1,20 @@
+[Unit]
+Description=Talksasa Cloud long-running backup queue worker
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/talksasa-cloud
+ExecStart=/usr/bin/php artisan queue:work --queue=backups --sleep=3 --tries=1 --timeout=7200 --max-time=21600
+ExecReload=/usr/bin/php artisan queue:restart
+Restart=always
+RestartSec=5
+TimeoutStopSec=7260
+KillMode=control-group
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

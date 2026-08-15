@@ -3,11 +3,15 @@
 namespace Tests\Unit\Console\Commands;
 
 use App\Console\Commands\CheckCronHealthCommand;
+use App\Models\ContainerCronJob;
+use App\Models\ContainerCronJobRun;
 use App\Models\CronJob;
 use App\Models\CronJobLog;
+use App\Models\Service;
 use App\Models\Setting;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class CheckCronHealthCommandTest extends TestCase
@@ -22,12 +26,22 @@ class CheckCronHealthCommandTest extends TestCase
         $this->assertSame(600, $command->maxRuntimeSeconds($job, 120));
     }
 
-    public function test_backup_containers_uses_extended_hang_threshold(): void
+    public function test_hang_threshold_ignores_command_options(): void
+    {
+        config()->set('cron.hang_thresholds.cron:sync-service-live-status', 900);
+
+        $command = new CheckCronHealthCommand;
+        $job = new CronJob(['command' => 'cron:sync-service-live-status --heal']);
+
+        $this->assertSame(900, $command->maxRuntimeSeconds($job, 120));
+    }
+
+    public function test_backup_dispatch_uses_bounded_hang_threshold(): void
     {
         $command = new CheckCronHealthCommand;
         $job = new CronJob(['command' => 'cron:backup-containers']);
 
-        $this->assertSame(14400, $command->maxRuntimeSeconds($job, 120));
+        $this->assertSame(600, $command->maxRuntimeSeconds($job, 120));
     }
 
     public function test_hung_backup_job_marks_cron_job_failed_after_double_threshold(): void
@@ -157,5 +171,30 @@ class CheckCronHealthCommandTest extends TestCase
             'cron_job_id' => $job->id,
             'status' => 'running',
         ]);
+    }
+
+    public function test_stale_queued_customer_cron_is_failed_and_unblocked(): void
+    {
+        Mail::fake();
+        $service = Service::factory()->create();
+        $job = ContainerCronJob::create([
+            'service_id' => $service->id,
+            'name' => 'Queued too long',
+            'schedule' => '* * * * *',
+            'command' => 'php artisan inspire',
+            'enabled' => true,
+        ]);
+        $run = ContainerCronJobRun::create([
+            'container_cron_job_id' => $job->id,
+            'attempt_uuid' => (string) Str::uuid(),
+            'status' => 'queued',
+            'started_at' => now()->subMinutes(10),
+        ]);
+
+        $this->artisan('cron:check-health')->assertSuccessful();
+
+        $this->assertSame('failed', $run->fresh()->status);
+        $this->assertSame('failed', $job->fresh()->last_status);
+        $this->assertNotNull($run->fresh()->finished_at);
     }
 }

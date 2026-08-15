@@ -22,7 +22,9 @@ class CreateContainerBackupJob implements ShouldQueue
 
     public function __construct(
         public int $backupId,
-    ) {}
+    ) {
+        $this->onQueue('backups');
+    }
 
     public function handle(ContainerBackupService $backups, NotificationService $notifications): void
     {

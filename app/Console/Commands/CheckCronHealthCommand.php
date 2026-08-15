@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Mail\CronHealthAlertMail;
+use App\Models\ContainerCronJobRun;
 use App\Models\CronJob;
 use App\Models\CronJobLog;
 use App\Models\Setting;
@@ -62,6 +63,54 @@ class CheckCronHealthCommand extends BaseCronCommand
                     'last_status' => 'failed',
                 ]);
             }
+        }
+
+        $customerRuns = ContainerCronJobRun::query()
+            ->whereIn('status', ['queued', 'running'])
+            ->with('cronJob')
+            ->get();
+
+        foreach ($customerRuns as $run) {
+            $maxExecutionTime = $run->status === 'queued'
+                ? 300
+                : max(60, (int) config('containers.cron.command_timeout_seconds', 60) + 120);
+            $duration = $run->started_at->diffInSeconds(now());
+
+            if ($duration < $maxExecutionTime) {
+                continue;
+            }
+
+            $job = $run->cronJob;
+            $message = "Customer container cron {$run->status} for {$duration}s (limit {$maxExecutionTime}s).";
+            $run->update([
+                'status' => 'failed',
+                'exception' => $message,
+                'duration_ms' => (int) $run->started_at->diffInMilliseconds(now()),
+                'finished_at' => now(),
+            ]);
+            $job?->update([
+                'last_status' => 'failed',
+                'last_output' => $message,
+                'last_run_at' => now(),
+            ]);
+
+            if (! $job) {
+                continue;
+            }
+
+            $issues[] = [
+                'type' => 'hung',
+                'job' => $job,
+                'duration' => $duration,
+                'max_allowed' => $maxExecutionTime,
+            ];
+
+            Log::warning('Stale customer container cron run recovered', [
+                'container_cron_job_id' => $job?->id,
+                'run_id' => $run->id,
+                'prior_status' => $run->getOriginal('status'),
+                'duration_seconds' => $duration,
+            ]);
         }
 
         $recentFails = CronJobLog::whereIn('status', ['failed'])
@@ -157,7 +206,8 @@ class CheckCronHealthCommand extends BaseCronCommand
         $command = $job?->command;
 
         if ($command) {
-            $override = (int) config('cron.hang_thresholds.'.$command, 0);
+            $commandName = trim(explode(' ', $command)[0] ?? '');
+            $override = (int) config('cron.hang_thresholds.'.$commandName, 0);
             if ($override > 0) {
                 return max($default, $override);
             }

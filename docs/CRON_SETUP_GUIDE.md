@@ -1,5 +1,9 @@
 # Cron Setup Guide - Talksasa Cloud
 
+> **Development fallback only.** Production uses the systemd scheduler and three
+> supervised queue workers documented in [CRON_DEPLOYMENT.md](CRON_DEPLOYMENT.md).
+> Do not install this crontab entry alongside `talksasa-scheduler.timer`.
+
 ## 🎯 Overview
 
 Your system now has an **environment-aware dynamic cron command generator** that intelligently adapts to different hosting environments and automatically validates the setup. The cron command displayed in the admin settings automatically adjusts based on:

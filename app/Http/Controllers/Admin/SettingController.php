@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Admin;
 use App\Enums\RegistrarDriver;
 use App\Helpers\CronHelper;
 use App\Http\Controllers\Controller;
+use App\Models\ContainerCronJob;
+use App\Models\CronJob;
 use App\Models\Currency;
 use App\Models\DomainExtension;
 use App\Models\Email;
@@ -18,6 +20,7 @@ use App\Services\Dns\CloudflareDnsService;
 use App\Services\PaymentGateway\MpesaService;
 use App\Services\PaymentGateway\PayPalConnectService;
 use App\Services\PaymentGateway\StripeService;
+use App\Services\Provisioning\ContainerCronService;
 use App\Services\Provisioning\HetznerStorageBoxClient;
 use App\Services\SmsService;
 use App\Services\Telegram\TelegramBotService;
@@ -218,9 +221,11 @@ class SettingController extends Controller
         $request->validate([
             'settings' => 'required|array',
             'settings.*' => 'string|max:5000',
+            'settings.cron_timezone' => 'sometimes|timezone',
         ]);
 
         $settings = $request->input('settings', []);
+        $previousCronTimezone = Setting::getValue('cron_timezone', config('app.timezone', 'UTC'));
 
         // Don't save empty values for sensitive settings (like API tokens)
         // This prevents password fields from clearing saved credentials when left blank
@@ -271,6 +276,18 @@ class SettingController extends Controller
             }
 
             Setting::setValue($key, $trimmedValue);
+        }
+
+        if (array_key_exists('cron_timezone', $settings)
+            && $previousCronTimezone !== trim((string) $settings['cron_timezone'])) {
+            foreach (CronJob::query()->where('enabled', true)->cursor() as $job) {
+                $job->refreshNextRunAt();
+            }
+
+            $containerCron = app(ContainerCronService::class);
+            foreach (ContainerCronJob::query()->where('enabled', true)->cursor() as $job) {
+                $job->update(['next_run_at' => $containerCron->calculateNextRun($job->schedule)]);
+            }
         }
 
         // Return JSON for AJAX requests, redirect for traditional form submissions

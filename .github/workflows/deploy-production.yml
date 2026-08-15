@@ -53,10 +53,15 @@ jobs:
             cd /var/www/talksasa-cloud
 
             # Check app health
-            curl -f http://localhost:8000/health || exit 1
+            curl -fsS http://localhost:8000/up
 
-            # Check cron status
-            php artisan cron:status | head -20
+            # Check scheduler + queue runtime, not just database status rows
+            sudo systemctl is-active --quiet talksasa-scheduler.timer
+            sudo systemctl is-active --quiet talksasa-queue.service
+            sudo systemctl is-active --quiet talksasa-platform-cron-queue@1.service
+            sudo systemctl is-active --quiet talksasa-container-cron-queue@1.service
+            sudo systemctl is-active --quiet talksasa-backup-queue.service
+            php artisan cron:verify-runtime
 
             echo "✅ Deployment verified"
 
@@ -102,7 +107,10 @@ jobs:
             mv $LATEST_BACKUP talksasa-cloud
 
             cd talksasa-cloud
-            sudo systemctl restart talksasa-queue || true
-            sudo systemctl restart talksasa-scheduler || true
+            sudo systemctl restart talksasa-queue.service
+            sudo systemctl restart 'talksasa-platform-cron-queue@*.service'
+            sudo systemctl restart 'talksasa-container-cron-queue@*.service'
+            sudo systemctl restart talksasa-backup-queue.service
+            sudo systemctl restart talksasa-scheduler.timer
 
             echo "✅ Rollback complete"

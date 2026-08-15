@@ -89,4 +89,37 @@ class ContainerCronJobTest extends TestCase
 
         $this->assertDatabaseMissing('container_cron_jobs', ['id' => $job->id]);
     }
+
+    public function test_customer_cannot_modify_or_delete_platform_managed_job(): void
+    {
+        $customer = User::factory()->create();
+        $service = $this->containerServiceFor($customer);
+        $job = ContainerCronJob::create([
+            'service_id' => $service->id,
+            'name' => 'WordPress system cron',
+            'schedule' => '*/5 * * * *',
+            'command' => 'php /var/www/html/wp-cron.php',
+            'enabled' => true,
+            'is_system' => true,
+        ]);
+
+        $this->actingAs($customer)
+            ->put(route('customer.services.container.cron-jobs.update', [$service, $job]), [
+                'name' => 'Changed',
+                'schedule' => '* * * * *',
+                'command' => 'php artisan inspire',
+                'enabled' => true,
+            ])
+            ->assertForbidden();
+
+        $this->actingAs($customer)
+            ->delete(route('customer.services.container.cron-jobs.delete', [$service, $job]))
+            ->assertForbidden();
+
+        $this->assertDatabaseHas('container_cron_jobs', [
+            'id' => $job->id,
+            'is_system' => true,
+            'command' => 'php /var/www/html/wp-cron.php',
+        ]);
+    }
 }

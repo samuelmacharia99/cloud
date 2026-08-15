@@ -577,6 +577,7 @@ class ContainerDeploymentService
                 ]);
 
                 $service->update(['status' => 'suspended']);
+                app(ContainerCronService::class)->pauseForService($service);
 
                 // Notify user of suspension
                 app(NotificationService::class)->notifyServiceSuspended($service->fresh());
@@ -643,6 +644,7 @@ class ContainerDeploymentService
                 ]);
 
                 $service->update(['status' => 'active']);
+                app(ContainerCronService::class)->resumeForService($service);
 
                 \Log::info("Container resumed for service {$service->id}");
             } finally {
@@ -720,6 +722,7 @@ class ContainerDeploymentService
                 'status' => 'terminated',
                 'terminate_date' => now(),
             ]);
+            app(ContainerCronService::class)->deleteForService($service);
 
             // Notify user of termination
             app(NotificationService::class)->notifyServiceTerminated($service->fresh());

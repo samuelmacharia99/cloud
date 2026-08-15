@@ -4,7 +4,6 @@ namespace App\Console\Commands;
 
 use App\Models\ContainerBackup;
 use App\Models\ContainerDeployment;
-use App\Services\NotificationService;
 use App\Services\Provisioning\ContainerBackupService;
 use Illuminate\Support\Carbon;
 
@@ -19,7 +18,6 @@ class BackupContainersCommand extends BaseCronCommand
     protected function handleCron(): string
     {
         $backupService = app(ContainerBackupService::class);
-        $notificationService = app(NotificationService::class);
         $force = $this->option('force');
         $maxRuntime = $this->resolveMaxRuntimeSeconds();
         $deadline = $this->startTime->copy()->addSeconds($maxRuntime);
@@ -85,25 +83,21 @@ class BackupContainersCommand extends BaseCronCommand
             }
 
             try {
-                $this->line("  <fg=blue>Backing up</> service {$service->id}...");
+                $this->line("  <fg=blue>Queueing backup</> service {$service->id}...");
 
-                $backup = $backupService->createBackup($service, 'scheduled');
+                $backup = $backupService->queueBackup($service, 'scheduled', afterResponse: false);
 
-                $this->line("  <fg=green>✓ Completed</> {$backup->backup_name} ({$this->formatBytes((int) $backup->size_bytes)})");
-
-                $notificationService->notifyContainerBackupCompleted($service, $backup);
+                $this->line("  <fg=green>✓ Queued</> {$backup->backup_name}");
 
                 $backedUp++;
             } catch (\Throwable $e) {
                 $this->line("  <fg=red>✗ Failed</> {$service->id}: {$e->getMessage()}");
 
-                $notificationService->notifyContainerBackupFailed($service, $e->getMessage());
-
                 $failed++;
             }
         }
 
-        $message = "Backup complete: {$backedUp} succeeded, {$skipped} skipped, {$failed} failed, {$deferred} deferred.";
+        $message = "Backup dispatch complete: {$backedUp} queued, {$skipped} skipped, {$failed} failed, {$deferred} deferred.";
         if ($failed > 0) {
             throw new \RuntimeException($message);
         }
@@ -119,16 +113,5 @@ class BackupContainersCommand extends BaseCronCommand
         }
 
         return max(60, (int) config('cron.backup_containers.max_runtime_seconds', 12600));
-    }
-
-    private function formatBytes(int $bytes): string
-    {
-        $units = ['B', 'KB', 'MB', 'GB'];
-        $bytes = max($bytes, 0);
-        $pow = floor(($bytes ? log($bytes) : 0) / log(1024));
-        $pow = min($pow, count($units) - 1);
-        $bytes /= (1 << (10 * $pow));
-
-        return round($bytes, 2).' '.$units[$pow];
     }
 }

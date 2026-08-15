@@ -8,16 +8,16 @@ class RunContainerCronJobsCommand extends BaseCronCommand
 {
     protected $signature = 'cron:run-container-jobs';
 
-    protected $description = 'Execute due customer container cron jobs via docker exec';
+    protected $description = 'Dispatch due customer container cron jobs to supervised workers';
 
     protected function handleCron(): string
     {
         $summary = app(ContainerCronService::class)->runDueJobs();
 
         $message = sprintf(
-            'Processed %d container cron job(s): %d succeeded, %d failed, %d skipped.',
+            'Processed %d container cron job(s): %d dispatched, %d dispatch failures, %d skipped.',
             $summary['processed'],
-            $summary['succeeded'],
+            $summary['dispatched'],
             $summary['failed'],
             $summary['skipped'],
         );
@@ -26,10 +26,7 @@ class RunContainerCronJobsCommand extends BaseCronCommand
             $message .= sprintf(' Deferred %d job(s) to the next minute (batch time budget).', $summary['deferred']);
         }
 
-        // Individual customer job failures are recorded on each ContainerCronJob.
-        // Only escalate the platform cron when the whole batch failed; otherwise a
-        // single bad customer command would CRITICAL-alert every minute.
-        if ($summary['failed'] > 0 && $summary['succeeded'] === 0 && $summary['processed'] > 0) {
+        if ($summary['failed'] > 0 && $summary['dispatched'] === 0 && $summary['processed'] > 0) {
             throw new \RuntimeException($message);
         }
 

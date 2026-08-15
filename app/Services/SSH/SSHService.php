@@ -103,10 +103,13 @@ class SSHService
     /**
      * Execute a remote command and return output.
      * Retries with a fresh SSH session when phpseclib hits stale channel races.
+     *
+     * Disable retries for non-idempotent commands: after an SSH timeout the
+     * remote process may still be running, so replaying can duplicate work.
      */
-    public function exec(string $command, int $timeout = 60): string
+    public function exec(string $command, int $timeout = 60, bool $retry = true): string
     {
-        $attempts = 3;
+        $attempts = $retry ? 3 : 1;
         $lastError = null;
 
         for ($attempt = 1; $attempt <= $attempts; $attempt++) {

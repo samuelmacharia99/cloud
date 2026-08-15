@@ -13,8 +13,8 @@ return [
             'connection' => env('DB_QUEUE_CONNECTION'),
             'table' => env('DB_QUEUE_TABLE', 'jobs'),
             'queue' => env('DB_QUEUE', 'default'),
-            // Must exceed the longest Git pull job timeout (3600 seconds).
-            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 3900),
+            // Must exceed the longest worker timeout (backup queue: 7200s).
+            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 7800),
             'after_commit' => false,
         ],
 
@@ -22,7 +22,7 @@ return [
             'driver' => 'beanstalkd',
             'host' => env('BEANSTALKD_QUEUE_HOST', 'localhost'),
             'queue' => env('BEANSTALKD_QUEUE', 'default'),
-            'retry_after' => (int) env('BEANSTALKD_QUEUE_RETRY_AFTER', 3900),
+            'retry_after' => (int) env('BEANSTALKD_QUEUE_RETRY_AFTER', 7800),
             'block_for' => 0,
             'after_commit' => false,
         ],
@@ -42,7 +42,7 @@ return [
             'driver' => 'redis',
             'connection' => env('REDIS_QUEUE_CONNECTION', 'default'),
             'queue' => env('REDIS_QUEUE', 'default'),
-            'retry_after' => (int) env('REDIS_QUEUE_RETRY_AFTER', 3900),
+            'retry_after' => (int) env('REDIS_QUEUE_RETRY_AFTER', 7800),
             'block_for' => null,
             'after_commit' => false,
         ],

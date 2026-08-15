@@ -53,8 +53,11 @@ class ContainerBackupService
     /**
      * Queue a manual backup so tar/Hetzner offload are not bound by PHP-FPM's 30s limit.
      */
-    public function queueBackup(Service $service, string $type = 'manual'): ContainerBackup
-    {
+    public function queueBackup(
+        Service $service,
+        string $type = 'manual',
+        bool $afterResponse = true,
+    ): ContainerBackup {
         $deployment = $service->containerDeployment;
 
         if (! $deployment || ! $deployment->node) {
@@ -76,7 +79,10 @@ class ContainerBackupService
             throw new Exception('A backup is already being started for this service. Refresh the Backups tab shortly.');
         }
 
-        CreateContainerBackupJob::dispatch($backup->id)->afterResponse();
+        $dispatch = CreateContainerBackupJob::dispatch($backup->id);
+        if ($afterResponse) {
+            $dispatch->afterResponse();
+        }
 
         return $backup;
     }

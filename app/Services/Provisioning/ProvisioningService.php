@@ -226,6 +226,9 @@ class ProvisioningService
             if ($service->status !== ServiceStatus::Terminated) {
                 $service->update(['status' => 'terminated', 'terminate_date' => now()]);
             }
+            if ($driver === 'container') {
+                app(ContainerCronService::class)->deleteForService($service);
+            }
 
             // Send service terminated notification
             app(NotificationService::class)->notifyServiceTerminated($service->fresh());

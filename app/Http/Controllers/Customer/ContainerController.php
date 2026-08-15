@@ -2260,6 +2260,7 @@ class ContainerController extends Controller
     {
         abort_if($service->user_id !== auth()->id(), 403);
         abort_if((int) $cronJob->service_id !== (int) $service->id, 404);
+        abort_if($cronJob->is_system, 403, 'Platform-managed cron jobs cannot be changed.');
         $this->authorize('manageContainer', $service);
 
         $request->validate([
@@ -2290,6 +2291,7 @@ class ContainerController extends Controller
     {
         abort_if($service->user_id !== auth()->id(), 403);
         abort_if((int) $cronJob->service_id !== (int) $service->id, 404);
+        abort_if($cronJob->is_system, 403, 'Platform-managed cron jobs cannot be deleted.');
         $this->authorize('manageContainer', $service);
 
         try {

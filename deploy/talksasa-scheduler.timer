@@ -1,8 +1,8 @@
 [Unit]
 Description=Run Talksasa Cloud scheduler every minute
-Requires=talksasa-scheduler.service
 
 [Timer]
+Unit=talksasa-scheduler.service
 OnCalendar=*:*:00
 AccuracySec=1s
 Persistent=true

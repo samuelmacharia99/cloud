@@ -8,8 +8,10 @@ User=www-data
 Group=www-data
 WorkingDirectory=/var/www/talksasa-cloud
 ExecStart=/usr/bin/php artisan schedule:run
-StandardOutput=append:/var/www/talksasa-cloud/storage/logs/cron.log
-StandardError=append:/var/www/talksasa-cloud/storage/logs/cron.log
+TimeoutStartSec=5min
+KillMode=control-group
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target

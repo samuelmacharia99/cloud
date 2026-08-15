@@ -60,6 +60,37 @@ class ContainerStackCommandServiceTest extends TestCase
     }
 
     #[Test]
+    public function cron_style_exec_can_run_as_restricted_user_without_ssh_replay(): void
+    {
+        $service = new ContainerStackCommandService;
+        $ssh = $this->createMock(SSHService::class);
+        $ssh->expects($this->once())
+            ->method('exec')
+            ->with(
+                $this->callback(fn (string $command): bool => str_contains(
+                    $command,
+                    "docker compose exec -u 'www-data' -T -w '/app/backend' 'backend'"
+                )),
+                60,
+                false,
+            )
+            ->willReturn('ok');
+
+        $output = $service->execInContainer(
+            $ssh,
+            '/var/lib/talksasa/containers/app',
+            'backend',
+            'php artisan schedule:run',
+            '/app/backend',
+            60,
+            'www-data',
+            retry: false,
+        );
+
+        $this->assertSame('ok', $output);
+    }
+
+    #[Test]
     public function it_allows_npm_build_commands(): void
     {
         $service = new ContainerStackCommandService;

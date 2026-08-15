@@ -9,6 +9,8 @@
 set -euo pipefail
 
 APP_PATH="${APP_PATH:-/var/www/talksasa-cloud}"
+PLATFORM_CRON_WORKERS="${PLATFORM_CRON_WORKERS:-2}"
+CONTAINER_CRON_WORKERS="${CONTAINER_CRON_WORKERS:-4}"
 cd "$APP_PATH"
 
 log() { echo "[deploy] $(date '+%Y-%m-%d %H:%M:%S') $*"; }
@@ -69,9 +71,33 @@ if command -v npm >/dev/null 2>&1 && [[ -f package.json ]]; then
   npm run build
 fi
 
-log "Restarting queue workers"
-sudo systemctl restart talksasa-queue 2>/dev/null || true
-sudo systemctl restart talksasa-scheduler 2>/dev/null || true
+log "Installing/updating scheduler and queue worker units"
+sudo env APP_PATH="${APP_PATH}" SERVICE_USER="${DEPLOY_SERVICE_USER:-www-data}" PHP_BIN="$(command -v php)" \
+  bash scripts/install-scheduler.sh
+sudo env APP_PATH="${APP_PATH}" SERVICE_USER="${DEPLOY_SERVICE_USER:-www-data}" PHP_BIN="$(command -v php)" \
+  PLATFORM_CRON_WORKERS="${PLATFORM_CRON_WORKERS}" CONTAINER_CRON_WORKERS="${CONTAINER_CRON_WORKERS}" \
+  bash scripts/install-queue-workers.sh
+
+log "Restarting queue workers on the new release"
+php artisan queue:restart
+sudo systemctl restart talksasa-queue.service
+sudo systemctl restart talksasa-backup-queue.service
+sudo systemctl is-active --quiet talksasa-queue.service
+sudo systemctl is-active --quiet talksasa-backup-queue.service
+for ((worker = 1; worker <= PLATFORM_CRON_WORKERS; worker++)); do
+  sudo systemctl restart "talksasa-platform-cron-queue@${worker}.service"
+  sudo systemctl is-active --quiet "talksasa-platform-cron-queue@${worker}.service"
+done
+for ((worker = 1; worker <= CONTAINER_CRON_WORKERS; worker++)); do
+  sudo systemctl restart "talksasa-container-cron-queue@${worker}.service"
+  sudo systemctl is-active --quiet "talksasa-container-cron-queue@${worker}.service"
+done
+
+log "Running one scheduler tick and verifying runtime health"
+sudo systemctl start talksasa-scheduler.service
+sudo systemctl is-enabled --quiet talksasa-scheduler.timer
+sudo systemctl is-active --quiet talksasa-scheduler.timer
+php artisan cron:verify-runtime
 
 log "Syncing mail DNS (MX/SPF/DKIM/DMARC) for Cloudflare-managed Mailcow domains"
 php artisan mailcow:sync-cloudflare-dns || log "WARN: mailcow:sync-cloudflare-dns reported failures (check output above)"
