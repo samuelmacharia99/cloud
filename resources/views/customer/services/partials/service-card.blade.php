@@ -124,9 +124,10 @@
                 <button disabled class="btn-secondary flex-1 btn-sm opacity-50 cursor-not-allowed min-w-[5rem]">Renew</button>
             @endif
             <button type="button" @click="showRename = true" class="btn-secondary flex-1 btn-sm min-w-[5rem]">Rename</button>
-            <button type="button" @click="showMove = true" class="btn-secondary flex-1 btn-sm min-w-[5rem]">Move</button>
             @if($isWordpress)
                 <a href="{{ route('customer.services.wordpress-admin', $service) }}" class="btn-primary flex-1 btn-sm text-center min-w-[5rem]" draggable="false">WP Admin</a>
+            @else
+                <button type="button" @click="showMove = true" class="btn-secondary flex-1 btn-sm min-w-[5rem]">Move</button>
             @endif
         </div>
     </div>
@@ -147,6 +148,7 @@
         </div>
     </div>
 
+    @unless($isWordpress)
     <div x-show="showMove" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" @keydown.escape.window="showMove = false; showNewProject = false">
         <div class="w-full max-w-md rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-xl p-6" @click.outside="showMove = false; showNewProject = false">
             <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-1">Move to project</h3>
@@ -182,4 +184,5 @@
             </form>
         </div>
     </div>
+    @endunless
 </article>

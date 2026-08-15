@@ -23,7 +23,8 @@ class CustomerWordPressAdminLoginTest extends TestCase
             ->get(route('customer.services.index'))
             ->assertOk()
             ->assertSee('WP Admin')
-            ->assertSee(route('customer.services.wordpress-admin', $service), false);
+            ->assertSee(route('customer.services.wordpress-admin', $service), false)
+            ->assertDontSee('Move to project');
     }
 
     public function test_non_wordpress_service_hides_wp_admin_button(): void
