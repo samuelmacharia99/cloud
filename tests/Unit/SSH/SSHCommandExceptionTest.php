@@ -1,0 +1,26 @@
+<?php
+
+namespace Tests\Unit\SSH;
+
+use App\Exceptions\SSH\SSHCommandException;
+use PHPUnit\Framework\Attributes\Test;
+use PHPUnit\Framework\TestCase;
+
+class SSHCommandExceptionTest extends TestCase
+{
+    #[Test]
+    public function it_redacts_repository_credentials_and_tokens_everywhere(): void
+    {
+        $token = 'ghp_superSecretToken123';
+        $exception = new SSHCommandException(
+            "git clone https://x-access-token:{$token}@github.com/acme/app.git",
+            "fatal: https://x-access-token:{$token}@github.com/acme/app.git failed",
+            'request token='.$token
+        );
+
+        $this->assertStringNotContainsString($token, $exception->getMessage());
+        $this->assertStringNotContainsString($token, $exception->command);
+        $this->assertStringNotContainsString($token, $exception->output);
+        $this->assertStringContainsString('[credentials]@github.com', $exception->getMessage());
+    }
+}

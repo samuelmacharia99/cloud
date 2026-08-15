@@ -141,7 +141,7 @@ class ContainerStackCommandService
         SSHService $ssh,
         bool $forceRebuild = false
     ): array {
-        $slug = $service->product?->containerTemplate?->slug ?? '';
+        $slug = $service->effectiveContainerTemplate()?->slug ?? '';
         $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
         $containerName = $deployment->container_name;
         $hostAppPath = app(ContainerAppDirectoryService::class)->hostAppPath($deployment);
@@ -206,7 +206,11 @@ class ContainerStackCommandService
             app(LaravelAppInitializationService::class)->ensureNodeRuntime($ssh, $deployment);
         } catch (\Throwable $e) {
             if ($execTarget === $deployment->container_name) {
-                return ['Frontend skipped: Node.js is not available ('.$e->getMessage().').'];
+                throw new \RuntimeException(
+                    'Frontend build cannot run because Node.js is unavailable: '.$e->getMessage(),
+                    0,
+                    $e
+                );
             }
             // Frontend sidecar is a Node image — continue without Laravel Node bootstrap.
         }
@@ -236,7 +240,11 @@ class ContainerStackCommandService
                 $init->dockerExecPublic($ssh, $execTarget, $chown, 60, asRoot: true);
                 $messages[] = 'Frontend dependencies installed in '.$containerDir.' (root fallback).';
             } catch (\Throwable $rootError) {
-                return ['Frontend npm install failed: '.mb_substr($rootError->getMessage(), 0, 300)];
+                throw new \RuntimeException(
+                    'Frontend npm install failed: '.mb_substr($rootError->getMessage(), 0, 300),
+                    0,
+                    $rootError
+                );
             }
         }
 
@@ -291,7 +299,11 @@ class ContainerStackCommandService
                     $init->dockerExecPublic($ssh, $execTarget, $buildScript, max(600, $timeout), asRoot: true);
                     $messages[] = 'Frontend build completed in '.$containerDir.' (root fallback).';
                 } catch (\Throwable $rootError) {
-                    $messages[] = 'Frontend build failed: '.mb_substr($rootError->getMessage(), 0, 300);
+                    throw new \RuntimeException(
+                        'Frontend build failed: '.mb_substr($rootError->getMessage(), 0, 300),
+                        0,
+                        $rootError
+                    );
                 }
             }
         }
@@ -1021,7 +1033,7 @@ class ContainerStackCommandService
     private function resolveNodeDockerImage(ContainerDeployment $deployment): string
     {
         $deployment->loadMissing('service.product.containerTemplate');
-        $template = $deployment->service?->product?->containerTemplate;
+        $template = $deployment->service?->effectiveContainerTemplate();
 
         if ($template === null) {
             throw new \RuntimeException('Container template is missing for this deployment.');

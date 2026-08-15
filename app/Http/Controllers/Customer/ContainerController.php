@@ -83,7 +83,7 @@ class ContainerController extends Controller
 
         $databaseContext = $this->buildDatabaseContext($service, $deployment);
         $databaseConsoleEnabled = $this->isDatabaseConsoleEnabled();
-        $resolvedTemplate = app(ContainerDeploymentService::class)->resolveContainerTemplate($service);
+        $resolvedTemplate = $service->effectiveContainerTemplate();
         $templateSlug = $resolvedTemplate?->slug;
         $isLaravelTemplate = $templateSlug === 'laravel';
         $supportsPhpExtensions = app(ContainerPhpExtensionsService::class)
@@ -453,8 +453,7 @@ class ContainerController extends Controller
     ): RedirectResponse {
         abort_if($service->user_id !== auth()->id(), 403);
 
-        $templateSlug = app(ContainerDeploymentService::class)
-            ->resolveContainerTemplate($service)?->slug;
+        $templateSlug = $service->effectiveContainerTemplate()?->slug;
         if (! $phpExtensionsService->supportsTemplate($templateSlug)) {
             return back()->withErrors(['error' => 'PHP extensions are not supported for this container type.']);
         }
@@ -514,7 +513,7 @@ class ContainerController extends Controller
             return redirect()
                 ->route('customer.services.container.show', ['service' => $service, 'tab' => 'github'])
                 ->with('success', 'Git repository saved. Use Pull latest to sync code into /app.');
-        } catch (\InvalidArgumentException $e) {
+        } catch (\DomainException|\InvalidArgumentException $e) {
             return back()->withErrors(['error' => $e->getMessage()]);
         } catch (\Exception $e) {
             \Log::error("Failed to connect Git repository for service {$service->id}: ".$e->getMessage());
@@ -557,7 +556,7 @@ class ContainerController extends Controller
                 $request->boolean('force_rebuild', false),
             );
 
-            PullContainerGitRepositoryJob::dispatch($pull->id)->afterResponse();
+            $this->dispatchGitPullJob($pull->id);
 
             if ($request->expectsJson()) {
                 return response()->json([
@@ -660,7 +659,7 @@ class ContainerController extends Controller
                 $request->boolean('force_rebuild', false),
             );
 
-            PullContainerGitRepositoryJob::dispatch($pull->id)->afterResponse();
+            $this->dispatchGitPullJob($pull->id);
 
             if ($request->expectsJson()) {
                 return response()->json([
@@ -760,6 +759,14 @@ class ContainerController extends Controller
         } catch (\InvalidArgumentException $e) {
             return $this->redirectToContainerTab($service, 'github')
                 ->withErrors(['error' => $e->getMessage()]);
+        }
+    }
+
+    private function dispatchGitPullJob(int $pullId): void
+    {
+        $dispatch = PullContainerGitRepositoryJob::dispatch($pullId);
+        if (config('queue.default') === 'sync') {
+            $dispatch->afterResponse();
         }
     }
 

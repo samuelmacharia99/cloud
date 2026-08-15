@@ -3,6 +3,7 @@
 namespace Tests\Feature\Customer;
 
 use App\Http\Controllers\Customer\CheckoutController;
+use App\Models\ContainerDeployment;
 use App\Models\ContainerTemplate;
 use App\Models\CustomerProject;
 use App\Models\InvoiceItem;
@@ -11,12 +12,22 @@ use App\Models\Service;
 use App\Models\User;
 use App\Services\Provisioning\ContainerDeploymentService;
 use App\Services\Provisioning\ContainerGitRepositoryService;
+use App\Services\Provisioning\ContainerStackCommandService;
+use App\Services\SSH\SSHService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Mockery;
+use ReflectionMethod;
 use Tests\TestCase;
 
 class SharedStackPlanCatalogTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function tearDown(): void
+    {
+        Mockery::close();
+        parent::tearDown();
+    }
 
     /**
      * @return array{0: ContainerTemplate, 1: ContainerTemplate, 2: Product}
@@ -255,5 +266,38 @@ class SharedStackPlanCatalogTest extends TestCase
 
         $items = InvoiceItem::where('service_id', $backend->id)->get();
         $this->assertCount(1, $items);
+    }
+
+    public function test_shared_node_plan_runs_node_post_pull_dispatch(): void
+    {
+        $customer = User::factory()->customer()->create();
+        [, $nodejs, $plan] = $this->seedStacksAndSharedPlan();
+        $service = Service::factory()->create([
+            'user_id' => $customer->id,
+            'product_id' => $plan->id,
+            'provisioning_driver_key' => 'container',
+            'service_meta' => [
+                'container_template_id' => $nodejs->id,
+                'language_slug' => 'nodejs',
+            ],
+        ]);
+        $deployment = ContainerDeployment::factory()->create([
+            'service_id' => $service->id,
+            'container_name' => 'user-'.$customer->id.'-service-'.$service->id.'-nodejs',
+        ]);
+        $ssh = Mockery::mock(SSHService::class);
+        $ssh->shouldReceive('exec')->andReturn('no');
+        $stackCommands = app(ContainerStackCommandService::class);
+
+        $resolveImage = new ReflectionMethod($stackCommands, 'resolveNodeDockerImage');
+        $this->assertSame('node:20', $resolveImage->invoke($stackCommands, $deployment));
+
+        $messages = $stackCommands->runPostPullSteps(
+            $service->fresh(['product.containerTemplate']),
+            $deployment,
+            $ssh,
+        );
+
+        $this->assertSame(['No package.json found; skipped npm install.'], $messages);
     }
 }

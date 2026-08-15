@@ -7,18 +7,22 @@ use App\Services\Provisioning\ContainerGitRepositoryService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Queue\SerializesModels;
+use Throwable;
 
 class PullContainerGitRepositoryJob implements ShouldQueue
 {
     use InteractsWithQueue, Queueable, SerializesModels;
 
-    public int $timeout = 900;
+    public int $timeout = 3600;
+
+    public bool $failOnTimeout = true;
 
     /**
      * Retry transient SSH/network failures. Permanent build/install errors should not loop.
      */
-    public int $tries = 3;
+    public int $tries = 100;
 
     public function __construct(public int $gitPullId) {}
 
@@ -30,6 +34,24 @@ class PullContainerGitRepositoryJob implements ShouldQueue
         return [20, 60];
     }
 
+    /**
+     * Keep old and restarted jobs for one service from mutating /app together.
+     *
+     * @return list<WithoutOverlapping>
+     */
+    public function middleware(): array
+    {
+        $serviceId = ContainerGitPull::query()
+            ->whereKey($this->gitPullId)
+            ->value('service_id');
+
+        return [
+            (new WithoutOverlapping('container-git-service-'.($serviceId ?: $this->gitPullId)))
+                ->releaseAfter(60)
+                ->expireAfter($this->timeout + 300),
+        ];
+    }
+
     public function handle(ContainerGitRepositoryService $service): void
     {
         $pull = ContainerGitPull::find($this->gitPullId);
@@ -39,8 +61,8 @@ class PullContainerGitRepositoryJob implements ShouldQueue
         }
 
         // Allow a fresh attempt after a transient failure marked the pull as failed.
-        if ($pull->status === ContainerGitPull::STATUS_FAILED && $this->attempts() > 1) {
-            if (! $this->shouldRetryFailedPull($pull)) {
+        if ($pull->status === ContainerGitPull::STATUS_FAILED) {
+            if (! $this->shouldRetryFailedPull($pull) || $this->transientRetryCount($pull) >= 3) {
                 return;
             }
 
@@ -49,7 +71,8 @@ class PullContainerGitRepositoryJob implements ShouldQueue
                 'error_message' => null,
                 'completed_at' => null,
             ]);
-            $pull->appendLog('Retrying Git pull after a transient failure (attempt '.$this->attempts().').');
+            $pull->resetStepsForRetry();
+            $pull->appendLog('Retrying Git pull after a transient failure.');
         }
 
         if (! $pull->isActive() && $pull->status !== ContainerGitPull::STATUS_PENDING) {
@@ -60,16 +83,53 @@ class PullContainerGitRepositoryJob implements ShouldQueue
 
         $pull->refresh();
         if ($pull->status === ContainerGitPull::STATUS_FAILED
-            && $this->attempts() < $this->tries
             && $this->isTransientFailureMessage((string) $pull->error_message)
+            && $this->incrementTransientRetryCount($pull) < 3
         ) {
             throw new \RuntimeException((string) $pull->error_message);
         }
     }
 
+    public function failed(?Throwable $exception): void
+    {
+        $pull = ContainerGitPull::find($this->gitPullId);
+        if (! $pull || $pull->status === ContainerGitPull::STATUS_CANCELLED) {
+            return;
+        }
+
+        try {
+            app(ContainerGitRepositoryService::class)->recoverInterruptedPull($pull);
+        } catch (Throwable $recoveryError) {
+            $pull->appendLog('Application recovery after worker failure failed: '.$recoveryError->getMessage());
+        }
+
+        $pull->update([
+            'status' => ContainerGitPull::STATUS_FAILED,
+            'error_message' => $exception?->getMessage() ?: 'Git pull worker timed out or stopped unexpectedly.',
+            'completed_at' => now(),
+        ]);
+        $pull->appendLog('Git pull job failed: '.($pull->error_message ?? 'Worker stopped unexpectedly.'));
+    }
+
     private function shouldRetryFailedPull(ContainerGitPull $pull): bool
     {
         return $this->isTransientFailureMessage((string) $pull->error_message);
+    }
+
+    private function transientRetryCount(ContainerGitPull $pull): int
+    {
+        $options = is_array($pull->options) ? $pull->options : [];
+
+        return (int) ($options['transient_retry_count'] ?? 0);
+    }
+
+    private function incrementTransientRetryCount(ContainerGitPull $pull): int
+    {
+        $options = is_array($pull->options) ? $pull->options : [];
+        $options['transient_retry_count'] = $this->transientRetryCount($pull) + 1;
+        $pull->update(['options' => $options]);
+
+        return (int) $options['transient_retry_count'];
     }
 
     public function isTransientFailureMessage(string $message): bool

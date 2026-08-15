@@ -94,6 +94,25 @@ class ContainerGitCredentialsService
     }
 
     /**
+     * Build a short-lived GIT_ASKPASS helper. The caller must upload it over
+     * SFTP and remove it after Git exits so credentials never enter argv,
+     * process listings, command exceptions, or the repository remote URL.
+     */
+    public function gitAskPassScript(Service $service): ?string
+    {
+        $token = $this->decryptRepositoryToken($service);
+        if ($token === null || $token === '') {
+            return null;
+        }
+
+        return "#!/bin/sh\n"
+            ."case \"\$1\" in\n"
+            ."  *Username*) printf '%s\\n' ".escapeshellarg('x-access-token')." ;;\n"
+            ."  *) printf '%s\\n' ".escapeshellarg($token)." ;;\n"
+            ."esac\n";
+    }
+
+    /**
      * @return array{0: string, 1: ?string}
      */
     public function stripUrlCredentials(string $url): array

@@ -132,6 +132,17 @@ return [
         'prepare_before_build' => (bool) env('NODE_BUILD_PREPARE_BEFORE_BUILD', true),
     ],
 
+    'git_pull' => [
+        'pending_timeout_minutes' => (int) env('CONTAINER_GIT_PENDING_TIMEOUT_MINUTES', 30),
+        'running_timeout_minutes' => (int) env('CONTAINER_GIT_RUNNING_TIMEOUT_MINUTES', 75),
+        // Empty permits any public HTTPS host. Set a comma-separated allowlist
+        // (for example github.com,gitlab.com) for stricter production policy.
+        'allowed_hosts' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) env('CONTAINER_GIT_ALLOWED_HOSTS', ''))
+        ))),
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Customer-managed container cron jobs

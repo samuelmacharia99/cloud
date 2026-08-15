@@ -8,6 +8,7 @@ use App\Models\Service;
 use App\Models\User;
 use App\Services\SSH\SSHService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class ContainerGitRepositoryService
 {
@@ -22,6 +23,7 @@ class ContainerGitRepositoryService
         'post_pull' => 'Run stack post-pull steps',
         'permissions' => 'Apply file permissions',
         'runtime' => 'Refresh application runtime',
+        'health' => 'Verify application health',
     ];
 
     public function __construct(
@@ -76,15 +78,22 @@ class ContainerGitRepositoryService
         bool $removeRepoToken = false,
         bool $removeComposerAuth = false,
     ): void {
-        app(ContainerGitCredentialsService::class)->applyConnection(
-            $service,
-            $repoUrl,
-            $branch,
-            $repoToken,
-            $composerGithubToken,
-            $removeRepoToken,
-            $removeComposerAuth,
-        );
+        DB::transaction(function () use ($service, $repoUrl, $branch, $repoToken, $composerGithubToken, $removeRepoToken, $removeComposerAuth): void {
+            Service::query()->whereKey($service->id)->lockForUpdate()->firstOrFail();
+            if ($this->hasActivePull($service)) {
+                throw new \DomainException('Wait for the active Git pull to finish before changing repository settings.');
+            }
+
+            app(ContainerGitCredentialsService::class)->applyConnection(
+                $service,
+                $repoUrl,
+                $branch,
+                $repoToken,
+                $composerGithubToken,
+                $removeRepoToken,
+                $removeComposerAuth,
+            );
+        });
     }
 
     public function requestPull(
@@ -111,11 +120,18 @@ class ContainerGitRepositoryService
             throw new \InvalidArgumentException('Start the container before pulling code from Git.');
         }
 
-        if ($this->hasActivePull($service)) {
-            throw new \DomainException('A Git pull is already in progress.');
-        }
-
         return DB::transaction(function () use ($service, $user, $deployment, $replaceExisting, $runComposer, $runMigrations, $forceRebuild) {
+            // Serialize creation on the service row so simultaneous manual/webhook
+            // requests cannot both pass an unlocked "active pull" check.
+            Service::query()->whereKey($service->id)->lockForUpdate()->firstOrFail();
+            $this->expireStalePulls($service);
+
+            if ($this->hasActivePull($service, reconcileStale: false)) {
+                throw new \DomainException('A Git pull is already in progress.');
+            }
+
+            $settings = $this->repositorySettings($service);
+
             return ContainerGitPull::create([
                 'service_id' => $service->id,
                 'container_deployment_id' => $deployment->id,
@@ -127,6 +143,8 @@ class ContainerGitRepositoryService
                     'run_composer' => $runComposer,
                     'run_migrations' => $runMigrations,
                     'force_rebuild' => $forceRebuild,
+                    'repository_url' => $settings['url'],
+                    'repository_branch' => $settings['branch'],
                 ],
                 'steps' => $this->buildInitialSteps($service, $runComposer, $runMigrations),
             ]);
@@ -137,10 +155,18 @@ class ContainerGitRepositoryService
     {
         $pull->loadMissing('service.product.containerTemplate', 'service.containerDeployment.node');
         $service = $pull->service;
-        $deployment = $pull->deployment ?? $service->containerDeployment;
+        $deployment = $service->containerDeployment;
 
         if (! $deployment || ! $deployment->node) {
             $this->failPull($pull, 'Container deployment is not available.');
+
+            return;
+        }
+
+        if ($pull->container_deployment_id !== null
+            && (int) $pull->container_deployment_id !== (int) $deployment->id
+        ) {
+            $this->failPull($pull, 'The application was redeployed after this pull was queued. Start a new Git pull.');
 
             return;
         }
@@ -161,8 +187,15 @@ class ContainerGitRepositoryService
         $ssh = SSHService::forNode($deployment->node);
         $timeout = (int) config('containers.laravel_init.command_timeout_seconds', 600);
 
+        $hostAppPath = null;
+        $previousAppPath = null;
+
         try {
-            $settings = $this->repositorySettings($service);
+            $options = is_array($pull->options) ? $pull->options : [];
+            $settings = [
+                'url' => (string) ($options['repository_url'] ?? $this->repositorySettings($service)['url']),
+                'branch' => (string) ($options['repository_branch'] ?? $this->repositorySettings($service)['branch']),
+            ];
             $hostAppPath = $this->appDirectory->hostAppPath($deployment);
 
             $this->runPullStep($pull, 'validate', function () use ($settings, $deployment, $hostAppPath, $ssh, $replaceExisting) {
@@ -197,17 +230,7 @@ class ContainerGitRepositoryService
             $hasGit = $this->hasGitCheckout($ssh, $hostAppPath);
             $freshClone = ! $hasGit || $replaceExisting;
 
-            $this->runPullStep($pull, 'sync', function () use ($ssh, $service, $hostAppPath, $settings, $freshClone, $pull, $deployment) {
-                if ($freshClone) {
-                    $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
-                    app(ContainerStackCommandService::class)->stopApplicationContainerForMaintenance(
-                        $ssh,
-                        $containerPath,
-                        $deployment->container_name
-                    );
-                    $pull->appendLog('Application container stopped before replacing /app contents.');
-                }
-
+            $this->runPullStep($pull, 'sync', function () use ($ssh, $service, $hostAppPath, $settings, $freshClone, $pull, $deployment, &$previousAppPath) {
                 $pull->appendLog(sprintf(
                     '%s branch %s from %s',
                     $freshClone ? 'Cloning' : 'Pulling',
@@ -215,7 +238,17 @@ class ContainerGitRepositoryService
                     $this->maskRepositoryUrl($settings['url'])
                 ));
 
-                $output = $this->syncToHost($ssh, $service, $hostAppPath, $settings['url'], $settings['branch'], $freshClone);
+                $sync = $this->syncToHost(
+                    $ssh,
+                    $service,
+                    $hostAppPath,
+                    $settings['url'],
+                    $settings['branch'],
+                    $deployment,
+                    $pull->id,
+                );
+                $output = $sync['output'];
+                $previousAppPath = $sync['previous_path'];
                 if ($output !== '') {
                     $pull->appendLog($output);
                 }
@@ -320,6 +353,7 @@ class ContainerGitRepositoryService
                 $this->skipPullStep($pull, 'environment', 'No Laravel project detected in /app.');
                 $this->skipPullStep($pull, 'composer', 'No Laravel project detected in /app.');
                 $this->skipPullStep($pull, 'migrations', 'No Laravel project detected in /app.');
+                $this->skipPullStep($pull, 'frontend', 'No Laravel project detected in /app.');
             } else {
                 $this->runPullStep($pull, 'post_pull', function () use ($service, $deployment, $ssh, $pull, $forceRebuild) {
                     $messages = $this->stackCommands->runPostPullSteps($service, $deployment, $ssh, $forceRebuild);
@@ -354,6 +388,17 @@ class ContainerGitRepositoryService
                 });
             }
 
+            $this->runPullStep($pull, 'health', function () use ($service, $deployment, $ssh) {
+                $this->deploymentService->waitForContainerRunning($ssh, $deployment->container_name);
+                if ($this->isLaravelService($service)) {
+                    $this->deploymentService->waitForLaravelHttpHealth($ssh, $deployment);
+
+                    return 'Container and Laravel HTTP health checks passed.';
+                }
+
+                return 'Application container is running.';
+            });
+
             $meta = is_array($service->service_meta) ? $service->service_meta : [];
             $meta['source_repo_synced_at'] = now()->toIso8601String();
             $service->update(['service_meta' => $meta]);
@@ -364,7 +409,25 @@ class ContainerGitRepositoryService
                 'completed_at' => now(),
             ]);
             $pull->appendLog('Git pull completed successfully.');
+
+            if ($previousAppPath !== null) {
+                $this->deleteRemotePathQuietly($ssh, $previousAppPath);
+            }
+            $this->clearReplacementState($pull);
         } catch (\Throwable $e) {
+            $pull->refresh();
+            $replacementState = is_array($pull->options)
+                ? ($pull->options['replacement_state'] ?? null)
+                : null;
+            if (is_array($replacementState)) {
+                try {
+                    $this->recoverInterruptedPull($pull);
+                    $pull->appendLog('Application recovery completed after pull failure.');
+                } catch (\Throwable $recoveryError) {
+                    $pull->appendLog('Automatic application recovery failed: '.$recoveryError->getMessage());
+                }
+            }
+
             $this->failPull($pull, $e->getMessage());
         } finally {
             $ssh->disconnect();
@@ -409,14 +472,57 @@ class ContainerGitRepositoryService
             ->first();
     }
 
-    public function hasActivePull(Service $service): bool
+    public function hasActivePull(Service $service, bool $reconcileStale = true): bool
     {
+        if ($reconcileStale) {
+            $this->expireStalePulls($service);
+        }
+
         return ContainerGitPull::where('service_id', $service->id)
             ->whereIn('status', [
                 ContainerGitPull::STATUS_PENDING,
                 ContainerGitPull::STATUS_RUNNING,
             ])
             ->exists();
+    }
+
+    public function expireStalePulls(Service $service): void
+    {
+        $pendingCutoff = now()->subMinutes((int) config('containers.git_pull.pending_timeout_minutes', 30));
+        $runningCutoff = now()->subMinutes((int) config('containers.git_pull.running_timeout_minutes', 75));
+
+        $stalePulls = ContainerGitPull::query()
+            ->where('service_id', $service->id)
+            ->where(function ($query) use ($pendingCutoff, $runningCutoff) {
+                $query->where(function ($pending) use ($pendingCutoff) {
+                    $pending->where('status', ContainerGitPull::STATUS_PENDING)
+                        ->where('created_at', '<', $pendingCutoff);
+                })->orWhere(function ($running) use ($runningCutoff) {
+                    $running->where('status', ContainerGitPull::STATUS_RUNNING)
+                        ->where('started_at', '<', $runningCutoff);
+                });
+            })
+            ->get();
+
+        foreach ($stalePulls as $pull) {
+            $replacementState = is_array($pull->options)
+                ? ($pull->options['replacement_state'] ?? null)
+                : null;
+            if (is_array($replacementState)) {
+                try {
+                    $this->recoverInterruptedPull($pull);
+                    $pull->appendLog('Recovered application state from an interrupted stale pull.');
+                } catch (\Throwable $e) {
+                    $pull->appendLog('Stale pull recovery failed: '.$e->getMessage());
+                }
+            }
+
+            $pull->update([
+                'status' => ContainerGitPull::STATUS_FAILED,
+                'error_message' => 'Git pull stopped updating and was marked failed. Restart it to try again.',
+                'completed_at' => now(),
+            ]);
+        }
     }
 
     public function syncForDeploy(SSHService $ssh, Service $service, string $hostAppPath): void
@@ -434,9 +540,18 @@ class ContainerGitRepositoryService
             return;
         }
 
-        $hasGit = $this->hasGitCheckout($ssh, $hostAppPath);
         $this->appDirectory->reclaimHostPathOwnershipForGit($ssh, $hostAppPath);
-        $this->syncToHost($ssh, $service, $hostAppPath, $settings['url'], $settings['branch'], ! $hasGit);
+        $sync = $this->syncToHost(
+            $ssh,
+            $service,
+            $hostAppPath,
+            $settings['url'],
+            $settings['branch'],
+            $service->containerDeployment,
+        );
+        if ($sync['previous_path'] !== null) {
+            $this->deleteRemotePathQuietly($ssh, $sync['previous_path']);
+        }
 
         $meta = is_array($service->service_meta) ? $service->service_meta : [];
         $meta['source_repo_synced_at'] = now()->toIso8601String();
@@ -465,6 +580,35 @@ class ContainerGitRepositoryService
             throw new \InvalidArgumentException('Repository host is not allowed.');
         }
 
+        if (isset($parts['port']) && (int) $parts['port'] !== 443) {
+            throw new \InvalidArgumentException('Repository URL must use the standard HTTPS port.');
+        }
+
+        if (isset($parts['fragment'])) {
+            throw new \InvalidArgumentException('Repository URL must not contain a fragment.');
+        }
+
+        parse_str((string) ($parts['query'] ?? ''), $query);
+        foreach (['token', 'access_token', 'private_token', 'auth'] as $sensitiveKey) {
+            if (array_key_exists($sensitiveKey, $query)) {
+                throw new \InvalidArgumentException('Put repository credentials in the token field, not in the URL.');
+            }
+        }
+
+        $configuredHosts = app()->bound('config')
+            ? (array) config('containers.git_pull.allowed_hosts', [])
+            : [];
+        $allowedHosts = array_filter(array_map('strtolower', $configuredHosts));
+        if ($allowedHosts !== [] && ! in_array($host, $allowedHosts, true)) {
+            throw new \InvalidArgumentException('Repository host is not in the allowed Git host list.');
+        }
+
+        if (filter_var($host, FILTER_VALIDATE_IP)
+            && ! filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)
+        ) {
+            throw new \InvalidArgumentException('Private and reserved repository addresses are not allowed.');
+        }
+
         return $url;
     }
 
@@ -477,6 +621,17 @@ class ContainerGitRepositoryService
 
         if (! preg_match('/^[A-Za-z0-9._\\/-]+$/', $branch)) {
             throw new \InvalidArgumentException('Branch name contains invalid characters.');
+        }
+
+        if (str_starts_with($branch, '-')
+            || str_starts_with($branch, '.')
+            || str_ends_with($branch, '.')
+            || str_ends_with($branch, '/')
+            || str_ends_with($branch, '.lock')
+            || str_contains($branch, '..')
+            || str_contains($branch, '//')
+        ) {
+            throw new \InvalidArgumentException('Branch name is not a valid Git branch.');
         }
 
         return $branch;
@@ -497,10 +652,7 @@ class ContainerGitRepositoryService
 
     public function templateSlugFor(Service $service): ?string
     {
-        $service->loadMissing('product.containerTemplate');
-
-        return $this->deploymentService->resolveContainerTemplate($service)?->slug
-            ?? $service->product?->containerTemplate?->slug;
+        return $service->effectiveContainerTemplate()?->slug;
     }
 
     public function gitInvocation(string $hostAppPath): string
@@ -524,6 +676,7 @@ class ContainerGitRepositoryService
             $steps[] = $this->makeStep('composer');
             $steps[] = $this->makeStep('environment');
             $steps[] = $this->makeStep('migrations');
+            $steps[] = $this->makeStep('frontend');
         } else {
             $steps[] = $this->makeStep('post_pull');
         }
@@ -533,6 +686,8 @@ class ContainerGitRepositoryService
         if (! $this->isLaravelService($service)) {
             $steps[] = $this->makeStep('runtime');
         }
+
+        $steps[] = $this->makeStep('health');
 
         return $steps;
     }
@@ -702,49 +857,264 @@ class ContainerGitRepositoryService
         return app(ContainerGitCredentialsService::class)->maskRepositoryUrl($url);
     }
 
+    /**
+     * @return array{output: string, previous_path: ?string, activated: bool}
+     */
     private function syncToHost(
         SSHService $ssh,
         Service $service,
         string $hostAppPath,
         string $repoUrl,
         string $branch,
-        bool $freshClone
-    ): string {
+        ?ContainerDeployment $deployment = null,
+        ?int $pullId = null,
+    ): array {
         $credentials = app(ContainerGitCredentialsService::class);
-        $authenticatedUrl = $credentials->authenticatedCloneUrl($service, $repoUrl);
         [$cleanUrl] = $credentials->stripUrlCredentials($repoUrl);
         $pathArg = escapeshellarg($hostAppPath);
-        $repoArg = escapeshellarg($authenticatedUrl);
-        $cleanRepoArg = escapeshellarg($cleanUrl);
+        $repoArg = escapeshellarg($cleanUrl);
         $branchArg = escapeshellarg($branch);
-        $git = $this->gitInvocation($hostAppPath);
+        $askPassPath = null;
+        $authEnv = 'GIT_TERMINAL_PROMPT=0';
 
-        if ($freshClone) {
-            // Clear contents but keep the directory itself so a live container's
-            // /app bind mount is not destroyed (rm -rf on the mount target breaks docker exec).
-            $script = 'set -e; '
-                ."mkdir -p {$pathArg}; "
-                ."find {$pathArg} -mindepth 1 -maxdepth 1 -exec rm -rf {} +; "
-                ."{$git} clone --depth=1 --branch {$branchArg} {$repoArg} {$pathArg} 2>&1; "
-                // Never leave tokens in the stored origin URL on disk.
-                ."cd {$pathArg}; {$git} remote set-url origin {$cleanRepoArg}";
-        } else {
-            $backupEnv = $this->backupEnvFilesScript($pathArg);
-            $restoreEnv = $this->restoreEnvFilesScript($pathArg);
-            // Existing checkouts keep an unauthenticated origin URL; inject credentials
-            // for the fetch, then strip them again so tokens are not persisted.
-            $script = 'set -e; '
-                ."cd {$pathArg}; "
-                .$backupEnv
-                ."{$git} remote set-url origin {$repoArg}; "
-                ."{$git} fetch --depth=1 origin {$branchArg} 2>&1; "
-                ."{$git} checkout -f {$branchArg} 2>&1; "
-                ."{$git} reset --hard FETCH_HEAD 2>&1; "
-                ."{$git} remote set-url origin {$cleanRepoArg}; "
-                .$restoreEnv;
+        if ($askPass = $credentials->gitAskPassScript($service)) {
+            $askPassPath = '/tmp/talksasa-git-askpass-'.Str::uuid().'.sh';
+            $ssh->upload($askPass, $askPassPath);
+            $ssh->exec('chmod 0700 '.escapeshellarg($askPassPath), 10);
+            $authEnv .= ' GIT_ASKPASS='.escapeshellarg($askPassPath);
         }
 
-        return trim($ssh->exec('sh -lc '.escapeshellarg($script), 180));
+        try {
+            $suffix = $pullId !== null ? (string) $pullId : Str::lower(Str::random(12));
+            $stagePath = $hostAppPath.'.talksasa-stage-'.$suffix;
+            $previousPath = $hostAppPath.'.talksasa-previous-'.$suffix;
+            $stageArg = escapeshellarg($stagePath);
+
+            $this->deleteRemotePath($ssh, $stagePath);
+            $this->deleteRemotePath($ssh, $previousPath);
+
+            // Every pull is prepared outside the live bind mount. This removes
+            // stale untracked files and makes rollback possible for normal pulls too.
+            $output = trim($ssh->exec(
+                'sh -lc '.escapeshellarg(
+                    'set -e; '
+                    ."{$authEnv} git clone --depth=1 --branch {$branchArg} {$repoArg} {$stageArg} 2>&1; "
+                    ."cd {$stageArg}; git remote set-url origin {$repoArg}"
+                ),
+                180
+            ));
+
+            $hadPreviousContent = trim($ssh->exec(
+                "find {$pathArg} -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null",
+                10
+            )) !== '';
+            if ($pullId !== null) {
+                $this->recordReplacementState($pullId, [
+                    'host_app_path' => $hostAppPath,
+                    'stage_path' => $stagePath,
+                    'previous_path' => $previousPath,
+                    'had_previous_content' => $hadPreviousContent,
+                    'activated' => false,
+                ]);
+            }
+
+            if ($deployment !== null && $deployment->status === 'running') {
+                $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+                $this->stackCommands->stopApplicationContainerForMaintenance(
+                    $ssh,
+                    $containerPath,
+                    $deployment->container_name
+                );
+            }
+
+            try {
+                $this->activateStagedClone($ssh, $hostAppPath, $stagePath, $previousPath);
+            } catch (\Throwable $e) {
+                if ($deployment !== null) {
+                    try {
+                        $this->refreshApplicationRuntime($ssh, $service, $deployment);
+                    } catch (\Throwable) {
+                    }
+                }
+
+                throw $e;
+            }
+            if ($pullId !== null) {
+                $this->recordReplacementState($pullId, [
+                    'host_app_path' => $hostAppPath,
+                    'stage_path' => $stagePath,
+                    'previous_path' => $previousPath,
+                    'had_previous_content' => $hadPreviousContent,
+                    'activated' => true,
+                ]);
+            }
+            if (! $hadPreviousContent) {
+                $this->deleteRemotePathQuietly($ssh, $previousPath);
+            }
+
+            return [
+                'output' => $output,
+                'previous_path' => $hadPreviousContent ? $previousPath : null,
+                'activated' => true,
+            ];
+        } finally {
+            if ($askPassPath !== null) {
+                try {
+                    $ssh->exec('rm -f -- '.escapeshellarg($askPassPath), 10);
+                } catch (\Throwable) {
+                    // The helper is also removed by node tmp cleanup; never mask the Git result.
+                }
+            }
+        }
+    }
+
+    private function activateStagedClone(
+        SSHService $ssh,
+        string $hostAppPath,
+        string $stagePath,
+        string $previousPath,
+    ): void {
+        $app = escapeshellarg($hostAppPath);
+        $stage = escapeshellarg($stagePath);
+        $previous = escapeshellarg($previousPath);
+        $script = 'set -e; '
+            ."mkdir -p {$app} {$previous}; "
+            .$this->backupEnvFilesScript($app)
+            ."cp -a --reflink=auto {$app}/. {$previous}/; "
+            ."touch {$previous}/.talksasa-backup-ready; "
+            ."find {$app} -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +; "
+            ."find {$stage} -mindepth 1 -maxdepth 1 -exec mv -t {$app} -- {} +; "
+            ."rmdir {$stage}; "
+            .$this->restoreEnvFilesFromPreviousScript($app, $previous)
+            .$this->restorePersistentDataScript($app, $previous);
+
+        try {
+            $ssh->exec('sh -lc '.escapeshellarg($script), 180);
+        } catch (\Throwable $e) {
+            // If activation itself was interrupted, put the previous tree back now.
+            try {
+                $this->restorePreviousFiles($ssh, $hostAppPath, $previousPath);
+            } catch (\Throwable) {
+            }
+
+            throw $e;
+        }
+    }
+
+    private function restorePreviousApplication(
+        SSHService $ssh,
+        Service $service,
+        ContainerDeployment $deployment,
+        string $hostAppPath,
+        string $previousPath,
+    ): void {
+        $this->restorePreviousFiles($ssh, $hostAppPath, $previousPath);
+
+        $this->refreshApplicationRuntime($ssh, $service, $deployment);
+    }
+
+    private function refreshApplicationRuntime(
+        SSHService $ssh,
+        Service $service,
+        ContainerDeployment $deployment,
+    ): void {
+        if ($this->isLaravelService($service)) {
+            $this->deploymentService->refreshLaravelServeCompose($service, $deployment, $ssh);
+
+            return;
+        }
+
+        $this->deploymentService->refreshApplicationRuntimeCompose($service, $deployment, $ssh);
+    }
+
+    private function restorePreviousFiles(SSHService $ssh, string $hostAppPath, string $previousPath): void
+    {
+        $app = escapeshellarg($hostAppPath);
+        $previous = escapeshellarg($previousPath);
+        $script = 'set -e; '
+            ."[ -f {$previous}/.talksasa-backup-ready ] || exit 0; "
+            ."rm -f {$previous}/.talksasa-backup-ready; "
+            ."mkdir -p {$app}; "
+            ."find {$app} -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +; "
+            ."find {$previous} -mindepth 1 -maxdepth 1 -exec mv -t {$app} -- {} +; "
+            ."rmdir {$previous}";
+
+        $ssh->exec('sh -lc '.escapeshellarg($script), 180);
+    }
+
+    private function deleteRemotePath(SSHService $ssh, string $path): void
+    {
+        $ssh->exec('rm -rf -- '.escapeshellarg($path), 180);
+    }
+
+    private function deleteRemotePathQuietly(SSHService $ssh, string $path): void
+    {
+        try {
+            $this->deleteRemotePath($ssh, $path);
+        } catch (\Throwable) {
+            // Cleanup is retried on the next staged pull; never fail a healthy release for it.
+        }
+    }
+
+    /**
+     * Persist enough non-secret state for the queue failed() hook to recover
+     * after a hard timeout or worker termination.
+     *
+     * @param  array<string, mixed>  $state
+     */
+    private function recordReplacementState(int $pullId, array $state): void
+    {
+        $pull = ContainerGitPull::find($pullId);
+        if (! $pull) {
+            return;
+        }
+
+        $options = is_array($pull->options) ? $pull->options : [];
+        $options['replacement_state'] = $state;
+        $pull->update(['options' => $options]);
+    }
+
+    public function clearReplacementState(ContainerGitPull $pull): void
+    {
+        $pull->refresh();
+        $options = is_array($pull->options) ? $pull->options : [];
+        unset($options['replacement_state']);
+        $pull->update(['options' => $options]);
+    }
+
+    public function recoverInterruptedPull(ContainerGitPull $pull): void
+    {
+        $pull->refresh();
+        $pull->loadMissing('service.product.containerTemplate', 'service.containerDeployment.node');
+        $service = $pull->service;
+        $deployment = $service?->containerDeployment;
+        $state = is_array($pull->options) ? ($pull->options['replacement_state'] ?? null) : null;
+
+        if (! $service || ! $deployment?->node || ! is_array($state)) {
+            return;
+        }
+
+        $hostAppPath = $state['host_app_path'] ?? null;
+        $previousPath = $state['previous_path'] ?? null;
+        if (! is_string($hostAppPath) || ! is_string($previousPath)) {
+            return;
+        }
+
+        $ssh = SSHService::forNode($deployment->node);
+        try {
+            if (! empty($state['had_previous_content'])) {
+                $this->restorePreviousApplication($ssh, $service, $deployment, $hostAppPath, $previousPath);
+            } else {
+                $this->refreshApplicationRuntime($ssh, $service, $deployment);
+            }
+
+            if (is_string($state['stage_path'] ?? null)) {
+                $this->deleteRemotePathQuietly($ssh, $state['stage_path']);
+            }
+            $this->clearReplacementState($pull);
+        } finally {
+            $ssh->disconnect();
+        }
     }
 
     private function backupEnvFilesScript(string $pathArg): string
@@ -752,9 +1122,21 @@ class ContainerGitRepositoryService
         return 'find '.$pathArg.' -maxdepth 4 -name .env -type f 2>/dev/null | while IFS= read -r f; do cp "$f" "$f.talksasa-backup"; done; ';
     }
 
-    private function restoreEnvFilesScript(string $pathArg): string
+    private function restoreEnvFilesFromPreviousScript(string $pathArg, string $previousArg): string
     {
-        return 'find '.$pathArg.' -maxdepth 4 -name .env.talksasa-backup -type f 2>/dev/null | while IFS= read -r f; do mv "$f" "${f%.talksasa-backup}"; done; ';
+        return 'find '.$previousArg.' -maxdepth 4 -name .env.talksasa-backup -type f 2>/dev/null '
+            .'| while IFS= read -r f; do rel="${f#'.$previousArg.'/}"; target='.$pathArg.'/"${rel%.talksasa-backup}"; '
+            .'mkdir -p "$(dirname "$target")"; cp "$f" "$target"; done; ';
+    }
+
+    private function restorePersistentDataScript(string $pathArg, string $previousArg): string
+    {
+        // Preserve conventional customer-upload/runtime directories while
+        // intentionally rebuilding vendor, node_modules and compiled assets.
+        return 'for rel in storage uploads public/uploads media data; do '
+            .'source='.$previousArg.'/"$rel"; target='.$pathArg.'/"$rel"; '
+            .'if [ -e "$source" ]; then rm -rf -- "$target"; mkdir -p "$(dirname "$target")"; '
+            .'cp -a --reflink=auto "$source" "$target"; fi; done; ';
     }
 
     private function hasGitCheckout(SSHService $ssh, string $hostAppPath): bool

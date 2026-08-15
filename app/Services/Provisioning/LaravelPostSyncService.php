@@ -21,7 +21,8 @@ class LaravelPostSyncService
         SSHService $ssh,
         LaravelPostSyncOptions $options
     ): string {
-        if (($service->product?->containerTemplate?->slug ?? '') !== 'laravel') {
+        $template = $this->deploymentService->resolveContainerTemplate($service);
+        if (($template?->slug ?? '') !== 'laravel') {
             return '';
         }
 
@@ -58,12 +59,8 @@ class LaravelPostSyncService
                 $this->waitForApplicationDatabase($service, $deployment, $ssh);
             }
 
-            try {
-                $this->initialization->runApplicationMigrations($service, $ssh, $deployment);
-                $messages[] = 'Database migrations applied.';
-            } catch (\Throwable $e) {
-                $messages[] = 'Migrations could not run automatically: '.$e->getMessage();
-            }
+            $this->initialization->runApplicationMigrations($service, $ssh, $deployment);
+            $messages[] = 'Database migrations applied.';
         } elseif (! $options->runMigrations) {
             $credentialMessage = $this->syncDatabaseCredentialsOnly($service, $deployment, $ssh);
             if ($credentialMessage !== null) {

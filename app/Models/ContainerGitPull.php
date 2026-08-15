@@ -113,6 +113,22 @@ class ContainerGitPull extends Model
         $this->save();
     }
 
+    public function resetStepsForRetry(): void
+    {
+        $steps = is_array($this->steps) ? $this->steps : [];
+        foreach ($steps as &$step) {
+            $step['status'] = 'pending';
+            unset($step['message'], $step['output'], $step['started_at'], $step['completed_at']);
+        }
+        unset($step);
+
+        $this->steps = $steps;
+        $this->started_at = null;
+        $this->completed_at = null;
+        $this->commit = null;
+        $this->save();
+    }
+
     private function truncateOutput(string $output): string
     {
         $output = trim($output);

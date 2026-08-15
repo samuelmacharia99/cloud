@@ -5,11 +5,14 @@ namespace App\Services\Provisioning;
 use App\Jobs\PullContainerGitRepositoryJob;
 use App\Models\Service;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
 class ContainerAutoDeployService
 {
+    public const SECRET_ENCRYPTED_META_KEY = 'auto_deploy_secret_encrypted';
+
     public function __construct(
         private ContainerGitRepositoryService $gitRepository,
     ) {}
@@ -18,6 +21,7 @@ class ContainerAutoDeployService
      * @return array{
      *     enabled: bool,
      *     has_secret: bool,
+     *     github_signature_ready: bool,
      *     webhook_url: string,
      *     branch: string,
      *     run_composer: bool,
@@ -33,6 +37,7 @@ class ContainerAutoDeployService
         return [
             'enabled' => (bool) ($meta['auto_deploy_enabled'] ?? false),
             'has_secret' => filled($meta['auto_deploy_secret_hash'] ?? null),
+            'github_signature_ready' => filled($meta[self::SECRET_ENCRYPTED_META_KEY] ?? null),
             'webhook_url' => route('webhooks.containers.git-deploy', $service),
             'branch' => (string) ($settings['branch'] ?? 'main'),
             'run_composer' => (bool) ($meta['auto_deploy_run_composer'] ?? true),
@@ -60,9 +65,13 @@ class ContainerAutoDeployService
         $meta = is_array($service->service_meta) ? $service->service_meta : [];
         $plainSecret = null;
 
-        if ($rotateSecret || empty($meta['auto_deploy_secret_hash'])) {
+        if ($rotateSecret
+            || empty($meta['auto_deploy_secret_hash'])
+            || empty($meta[self::SECRET_ENCRYPTED_META_KEY])
+        ) {
             $plainSecret = Str::random(40);
             $meta['auto_deploy_secret_hash'] = Hash::make($plainSecret);
+            $meta[self::SECRET_ENCRYPTED_META_KEY] = Crypt::encryptString($plainSecret);
         }
 
         $meta['auto_deploy_enabled'] = true;
@@ -133,6 +142,22 @@ class ContainerAutoDeployService
             }
         }
 
+        $githubEvent = $request->header('X-GitHub-Event');
+        if (is_string($githubEvent) && $githubEvent !== 'push') {
+            return [
+                'queued' => false,
+                'message' => 'Ignored: GitHub event was not a branch push.',
+            ];
+        }
+
+        $gitlabEvent = $request->header('X-Gitlab-Event');
+        if (is_string($gitlabEvent) && $gitlabEvent !== 'Push Hook') {
+            return [
+                'queued' => false,
+                'message' => 'Ignored: GitLab event was not a branch push.',
+            ];
+        }
+
         if (! $this->gitRepository->supportsService($service)) {
             throw new \InvalidArgumentException('Git auto-deploy is not supported for this template.');
         }
@@ -180,7 +205,10 @@ class ContainerAutoDeployService
         $options['trigger'] = 'webhook';
         $pull->update(['options' => $options]);
 
-        PullContainerGitRepositoryJob::dispatch($pull->id);
+        $dispatch = PullContainerGitRepositoryJob::dispatch($pull->id);
+        if (config('queue.default') === 'sync') {
+            $dispatch->afterResponse();
+        }
 
         return [
             'queued' => true,
@@ -192,14 +220,20 @@ class ContainerAutoDeployService
     private function verifyGithubSignature(Service $service, Request $request): bool
     {
         $signature = $request->header('X-Hub-Signature-256');
-        $hash = $service->service_meta['auto_deploy_secret_hash'] ?? null;
-        if (! is_string($signature) || ! str_starts_with($signature, 'sha256=') || ! is_string($hash)) {
+        $encrypted = $service->service_meta[self::SECRET_ENCRYPTED_META_KEY] ?? null;
+        if (! is_string($signature) || ! str_starts_with($signature, 'sha256=') || ! is_string($encrypted)) {
             return false;
         }
 
-        // GitHub HMAC requires the plain secret; we only store a hash.
-        // Customers should use X-Talksasa-Token / query token with our generated secret.
-        return false;
+        try {
+            $secret = Crypt::decryptString($encrypted);
+        } catch (\Throwable) {
+            return false;
+        }
+
+        $expected = 'sha256='.hash_hmac('sha256', $request->getContent(), $secret);
+
+        return hash_equals($expected, $signature);
     }
 
     private function eventMatchesBranch(Request $request, string $expectedBranch): bool
@@ -208,8 +242,7 @@ class ContainerAutoDeployService
         $ref = $payload['ref'] ?? null;
 
         if (! is_string($ref) || $ref === '') {
-            // Generic ping / non-push: allow deploy (manual curl)
-            return true;
+            return false;
         }
 
         $expected = 'refs/heads/'.ltrim($expectedBranch, '/');

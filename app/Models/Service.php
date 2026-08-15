@@ -12,6 +12,51 @@ class Service extends Model
 {
     use HasFactory;
 
+    /**
+     * Resolve the actual application stack for both stack-specific products
+     * and shared plans that persist the selected stack in service_meta.
+     */
+    public function effectiveContainerTemplate(): ?ContainerTemplate
+    {
+        $this->loadMissing('product.containerTemplate');
+        $meta = is_array($this->service_meta) ? $this->service_meta : [];
+
+        $slug = $meta['provision_template_slug'] ?? null;
+        if (is_string($slug) && $slug !== '') {
+            $template = ContainerTemplate::query()
+                ->where('slug', $slug)
+                ->where('is_active', true)
+                ->first();
+            if ($template) {
+                return $template;
+            }
+        }
+
+        $templateId = (int) ($meta['container_template_id'] ?? 0);
+        if ($templateId > 0) {
+            $template = ContainerTemplate::query()
+                ->whereKey($templateId)
+                ->where('is_active', true)
+                ->first();
+            if ($template) {
+                return $template;
+            }
+        }
+
+        $languageSlug = $meta['language_slug'] ?? null;
+        if (is_string($languageSlug) && $languageSlug !== '') {
+            $template = ContainerTemplate::query()
+                ->where('slug', $languageSlug)
+                ->where('is_active', true)
+                ->first();
+            if ($template) {
+                return $template;
+            }
+        }
+
+        return $this->product?->containerTemplate;
+    }
+
     protected $fillable = [
         'user_id',
         'project_id',

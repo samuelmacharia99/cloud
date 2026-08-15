@@ -32,6 +32,40 @@ class ContainerGitRepositoryServiceTest extends TestCase
     }
 
     #[Test]
+    public function it_rejects_private_addresses_and_tokens_in_repository_urls(): void
+    {
+        $service = new ContainerGitRepositoryService(new ContainerAppDirectoryService);
+
+        foreach ([
+            'https://127.0.0.1/repo.git',
+            'https://10.10.0.4/repo.git',
+            'https://github.com/acme/app.git?token=secret',
+        ] as $url) {
+            try {
+                $service->normalizeRepositoryUrl($url);
+                $this->fail("Expected {$url} to be rejected.");
+            } catch (\InvalidArgumentException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+    }
+
+    #[Test]
+    public function it_rejects_git_invalid_branch_names(): void
+    {
+        $service = new ContainerGitRepositoryService(new ContainerAppDirectoryService);
+
+        foreach (['-main', '.hidden', 'feature..broken', 'release.lock', 'feature//api'] as $branch) {
+            try {
+                $service->normalizeBranch($branch);
+                $this->fail("Expected {$branch} to be rejected.");
+            } catch (\InvalidArgumentException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+    }
+
+    #[Test]
     public function it_supports_application_container_templates(): void
     {
         $service = new ContainerGitRepositoryService(new ContainerAppDirectoryService);

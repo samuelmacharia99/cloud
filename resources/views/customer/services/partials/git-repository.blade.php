@@ -207,14 +207,22 @@
                 <div>
                     <h4 class="text-sm font-semibold text-slate-900 dark:text-white">Auto-deploy from Git</h4>
                     <p class="text-xs text-slate-600 dark:text-slate-400 mt-1 max-w-2xl">
-                        Add this webhook to GitHub/GitLab so pushes to <span class="font-mono">{{ $autoDeploy['branch'] }}</span> pull automatically.
-                        Send the secret as header <code class="font-mono text-[11px]">X-Talksasa-Token</code> (or GitLab token header / <code class="font-mono text-[11px]">?token=</code>).
+                        Add this webhook to GitHub or GitLab so pushes to <span class="font-mono">{{ $autoDeploy['branch'] }}</span> pull automatically.
+                        For GitHub, use the generated value as the webhook secret. For GitLab, use it as the secret token. Custom integrations may send <code class="font-mono text-[11px]">X-Talksasa-Token</code>.
                     </p>
                 </div>
                 <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider {{ !empty($autoDeploy['enabled']) ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400' }}">
                     {{ !empty($autoDeploy['enabled']) ? 'Enabled' : 'Off' }}
                 </span>
             </div>
+
+            @if (!empty($autoDeploy['enabled']) && empty($autoDeploy['github_signature_ready']))
+                <div class="rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 p-3">
+                    <p class="text-xs text-amber-900 dark:text-amber-200">
+                        Rotate the webhook secret once to enable standard GitHub signature verification for this existing connection.
+                    </p>
+                </div>
+            @endif
 
             @if (session('auto_deploy_secret'))
                 <div class="rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 p-3 space-y-2">

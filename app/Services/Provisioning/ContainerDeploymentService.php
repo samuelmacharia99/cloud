@@ -3177,7 +3177,7 @@ class ContainerDeploymentService
     public function refreshApplicationRuntimeCompose(Service $service, ContainerDeployment $deployment, SSHService $ssh): string
     {
         $service->loadMissing('product.containerTemplate');
-        $template = $service->product?->containerTemplate;
+        $template = $this->resolveContainerTemplate($service);
 
         if (! $template || ! $this->applicationRuntime->supportsTemplate($template->slug)) {
             return '';
@@ -3330,7 +3330,7 @@ class ContainerDeploymentService
     public function refreshLaravelServeCompose(Service $service, ContainerDeployment $deployment, SSHService $ssh): string
     {
         $service->loadMissing('product.containerTemplate');
-        $template = $service->product?->containerTemplate;
+        $template = $this->resolveContainerTemplate($service);
 
         if (($template->slug ?? null) !== 'laravel') {
             return '';
@@ -3987,45 +3987,7 @@ class ContainerDeploymentService
      */
     public function resolveContainerTemplate(Service $service): ?ContainerTemplate
     {
-        $meta = is_array($service->service_meta) ? $service->service_meta : [];
-        $slug = $meta['provision_template_slug'] ?? null;
-
-        if (is_string($slug) && $slug !== '') {
-            $override = ContainerTemplate::query()
-                ->where('slug', $slug)
-                ->where('is_active', true)
-                ->first();
-
-            if ($override) {
-                return $override;
-            }
-        }
-
-        $metaTemplateId = (int) ($meta['container_template_id'] ?? 0);
-        if ($metaTemplateId > 0) {
-            $fromMeta = ContainerTemplate::query()
-                ->where('id', $metaTemplateId)
-                ->where('is_active', true)
-                ->first();
-
-            if ($fromMeta) {
-                return $fromMeta;
-            }
-        }
-
-        $languageSlug = $meta['language_slug'] ?? null;
-        if (is_string($languageSlug) && $languageSlug !== '') {
-            $fromSlug = ContainerTemplate::query()
-                ->where('slug', $languageSlug)
-                ->where('is_active', true)
-                ->first();
-
-            if ($fromSlug) {
-                return $fromSlug;
-            }
-        }
-
-        return $service->product?->containerTemplate;
+        return $service->effectiveContainerTemplate();
     }
 
     /**

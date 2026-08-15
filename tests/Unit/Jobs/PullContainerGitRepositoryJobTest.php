@@ -16,7 +16,11 @@ class PullContainerGitRepositoryJobTest extends TestCase
         $this->assertTrue($job->isTransientFailureMessage('SSH connection timed out to node'));
         $this->assertTrue($job->isTransientFailureMessage('Unable to connect to remote host'));
         $this->assertTrue($job->isTransientFailureMessage('Connection reset by peer'));
-        $this->assertSame(3, $job->tries);
+        // Overlap releases consume queue attempts; transient execution retries
+        // are independently capped at three in the pull options.
+        $this->assertSame(100, $job->tries);
+        $this->assertSame(3600, $job->timeout);
+        $this->assertTrue($job->failOnTimeout);
         $this->assertSame([20, 60], $job->backoff());
     }
 
