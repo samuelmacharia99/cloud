@@ -56,7 +56,8 @@ class Service extends Model
      *
      * Reads every place the stack can be recorded, because shared plans keep
      * the choice in service_meta while stack-specific products keep it on the
-     * product template.
+     * product template. When metadata is incomplete, fall back to fingerprints
+     * left on the live deployment (compose image / WORDPRESS_* env).
      */
     public function isWordPressContainer(): bool
     {
@@ -80,12 +81,63 @@ class Service extends Model
             }
         }
 
-        return false;
+        foreach (['application_stack', 'language_name'] as $key) {
+            if ($this->textMentionsWordPress($meta[$key] ?? null)) {
+                return true;
+            }
+        }
+
+        return $this->deploymentLooksLikeWordPress();
     }
 
     private function slugIsWordPress(mixed $slug): bool
     {
         return is_string($slug) && strtolower(trim($slug)) === 'wordpress';
+    }
+
+    private function textMentionsWordPress(mixed $value): bool
+    {
+        if (! is_string($value) || $value === '') {
+            return false;
+        }
+
+        return str_contains(strtolower($value), 'wordpress');
+    }
+
+    private function deploymentLooksLikeWordPress(): bool
+    {
+        $this->loadMissing('containerDeployment');
+        $deployment = $this->containerDeployment;
+        if (! $deployment) {
+            return false;
+        }
+
+        $env = is_array($deployment->env_values) ? $deployment->env_values : [];
+        foreach (array_keys($env) as $key) {
+            if (is_string($key) && str_starts_with(strtoupper($key), 'WORDPRESS_')) {
+                return true;
+            }
+        }
+
+        $compose = strtolower((string) ($deployment->docker_compose_content ?? ''));
+        if ($compose !== '' && (
+            str_contains($compose, 'image: wordpress')
+            || str_contains($compose, 'image:wordpress')
+            || str_contains($compose, '/wordpress:')
+            || str_contains($compose, 'wordpress:latest')
+            || str_contains($compose, 'wordpress:php')
+        )) {
+            return true;
+        }
+
+        $credentials = is_array($this->credentials) ? $this->credentials : [];
+        foreach (array_keys($credentials) as $key) {
+            if (is_string($key) && str_contains(strtolower($key), 'wordpress')) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

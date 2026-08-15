@@ -107,6 +107,44 @@ class SharedPlanWordPressDetectionTest extends TestCase
     }
 
     #[Test]
+    public function wordpress_is_detected_from_application_stack_label(): void
+    {
+        $product = Product::factory()->containerHosting()->create([
+            'container_template_id' => null,
+        ]);
+        $service = Service::factory()->create([
+            'product_id' => $product->id,
+            'service_meta' => ['application_stack' => 'WordPress'],
+        ]);
+
+        $this->assertTrue($service->fresh(['product.containerTemplate'])->isWordPressContainer());
+    }
+
+    #[Test]
+    public function wordpress_is_detected_from_deployment_compose_and_env(): void
+    {
+        $product = Product::factory()->containerHosting()->create([
+            'container_template_id' => null,
+        ]);
+        $service = Service::factory()->create([
+            'product_id' => $product->id,
+            'service_meta' => [],
+        ]);
+        ContainerDeployment::factory()->create([
+            'service_id' => $service->id,
+            'status' => 'running',
+            'docker_compose_content' => "services:\n  app:\n    image: wordpress:php8.2-apache\n",
+            'env_values' => [
+                'WORDPRESS_DB_NAME' => 'wordpress',
+                'WORDPRESS_DB_USER' => 'wordpress',
+            ],
+        ]);
+
+        $this->assertNull($service->fresh()->effectiveContainerTemplate());
+        $this->assertTrue($service->fresh(['product.containerTemplate', 'containerDeployment'])->isWordPressContainer());
+    }
+
+    #[Test]
     public function wordpress_is_detected_from_service_meta_without_a_template_row(): void
     {
         $product = Product::factory()->containerHosting()->create([
