@@ -26,6 +26,8 @@ class ContainerDeploymentService
 {
     public const CONTAINER_BASE_PATH = '/opt/talksasa/containers';
 
+    public const VITE_ALLOWED_HOSTS_ENV = '__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS';
+
     private RuntimeImageProvisioner $runtimeImages;
 
     private ContainerAppDirectoryService $appDirectory;
@@ -1093,6 +1095,13 @@ class ContainerDeploymentService
             );
             $compose['services'][$containerName]['working_dir'] = '/app';
             $compose['services'][$containerName]['command'] = $runtime->command;
+
+            if ($runtime->source === 'vite') {
+                $allowedHosts = $this->viteAllowedHosts($deployment, $envVars);
+                if ($allowedHosts !== '' && ! isset($envVars[self::VITE_ALLOWED_HOSTS_ENV])) {
+                    $compose['services'][$containerName]['environment'][self::VITE_ALLOWED_HOSTS_ENV] = $allowedHosts;
+                }
+            }
         }
 
         // Add volumes
@@ -1350,6 +1359,100 @@ class ContainerDeploymentService
     /**
      * @param  array<string, string>  $envVars
      */
+    /**
+     * Vite reads its host allowlist once at boot, so a newly bound domain needs the
+     * compose env rewritten and the container recreated before it stops being blocked.
+     */
+    public function syncViteAllowedHosts(Service $service, ContainerDeployment $deployment, ?SSHService $ssh = null): bool
+    {
+        if (! str_contains((string) $deployment->docker_compose_content, 'vite preview')) {
+            return false;
+        }
+
+        $deployment->load('domains');
+        $expected = $this->viteAllowedHosts(
+            $deployment,
+            is_array($deployment->env_values) ? $deployment->env_values : []
+        );
+
+        if ($expected === '' || $expected === $this->composeViteAllowedHosts($deployment)) {
+            return false;
+        }
+
+        $ownsConnection = $ssh === null;
+        $ssh ??= SSHService::forNode($deployment->node);
+
+        try {
+            $this->refreshApplicationRuntimeCompose($service, $deployment, $ssh);
+
+            return true;
+        } finally {
+            if ($ownsConnection) {
+                $ssh->disconnect();
+            }
+        }
+    }
+
+    private function composeViteAllowedHosts(ContainerDeployment $deployment): string
+    {
+        $matched = preg_match(
+            '/'.preg_quote(self::VITE_ALLOWED_HOSTS_ENV, '/').':\s*(.+)/',
+            (string) $deployment->docker_compose_content,
+            $matches
+        );
+
+        return $matched === 1 ? trim($matches[1], " \t\r\n'\"") : '';
+    }
+
+    /**
+     * Vite 4.5.6+/5.4.12+/6.0.9+ answer with "Blocked request. This host is not allowed"
+     * for any Host header that is not localhost or an IP, which is exactly what our
+     * nginx proxy forwards. Vite reads this env var on top of the config allowlist.
+     *
+     * @param  array<string, string>  $envVars
+     */
+    public function viteAllowedHosts(?ContainerDeployment $deployment, array $envVars = []): string
+    {
+        $hosts = [];
+
+        foreach (['APP_URL', 'FRONTEND_URL', 'NEXT_PUBLIC_APP_URL', 'VITE_APP_URL'] as $key) {
+            $host = parse_url(trim((string) ($envVars[$key] ?? '')), PHP_URL_HOST);
+            if (is_string($host) && $host !== '') {
+                $hosts[] = $host;
+            }
+        }
+
+        if ($deployment) {
+            $deployment->loadMissing('node', 'domains');
+
+            foreach ($deployment->domains as $domain) {
+                $name = trim((string) $domain->domain);
+                if ($name !== '') {
+                    $hosts[] = $name;
+                }
+            }
+
+            $nodeHost = trim((string) ($deployment->node->hostname ?? ''));
+            if ($nodeHost !== '') {
+                $hosts[] = $nodeHost;
+            }
+        }
+
+        $allowed = [];
+        foreach ($hosts as $host) {
+            $host = strtolower(ltrim($host, '.'));
+            if (! preg_match('/^[a-z0-9.-]+$/', $host) || filter_var($host, FILTER_VALIDATE_IP)) {
+                continue;
+            }
+
+            $allowed[$host] = true;
+            // Leading dot allows the domain plus every subdomain under it.
+            $allowed['.'.$host] = true;
+        }
+
+        return implode(',', array_keys($allowed));
+    }
+
     private function resolvePublicAppUrl(?ContainerDeployment $deployment, array $envVars): ?string
     {
         foreach (['FRONTEND_URL', 'APP_URL', 'NEXT_PUBLIC_APP_URL'] as $key) {

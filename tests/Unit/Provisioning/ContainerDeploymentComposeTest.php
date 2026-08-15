@@ -3,7 +3,9 @@
 namespace Tests\Unit\Provisioning;
 
 use App\Models\ContainerDeployment;
+use App\Models\ContainerDomain;
 use App\Models\ContainerTemplate;
+use App\Models\Node;
 use App\Models\Product;
 use App\Models\Service;
 use App\Services\Provisioning\ApplicationRuntime;
@@ -233,6 +235,60 @@ class ContainerDeploymentComposeTest extends TestCase
 
         $this->assertStringContainsString('working_dir: /app', $yaml);
         $this->assertStringContainsString('npm start', $yaml);
+    }
+
+    #[Test]
+    public function render_compose_allows_bound_domains_on_the_vite_preview_server(): void
+    {
+        $template = new ContainerTemplate([
+            'slug' => 'nodejs',
+            'docker_image' => 'node:20-bookworm-slim',
+            'default_port' => 3000,
+            'required_cpu_cores' => 0.5,
+            'required_ram_mb' => 512,
+            'volume_paths' => ['app_data' => '/app'],
+        ]);
+
+        $runtimeImages = $this->createMock(RuntimeImageProvisioner::class);
+        $runtimeImages->method('usesRuntimeImage')->willReturn(false);
+
+        $runtime = new ApplicationRuntime(
+            ['sh', '-lc', 'cd /app && exec npx vite preview --host 0.0.0.0 --port ${PORT:-3000} --strictPort'],
+            'vite',
+            'Vite production preview'
+        );
+
+        $deployment = new ContainerDeployment(['container_name' => 'user-462-service-193-nodejs']);
+        $deployment->setRelation('domains', collect([
+            new ContainerDomain(['domain' => 'gateway.errandly.site', 'status' => 'active']),
+        ]));
+        $deployment->setRelation('node', new Node(['hostname' => 'lani.talksasa.com']));
+
+        $deployer = new ContainerDeploymentService(
+            runtimeImages: $runtimeImages,
+            templateEnvironment: new ContainerTemplateEnvironmentService
+        );
+
+        $method = new ReflectionMethod(ContainerDeploymentService::class, 'renderCompose');
+        $method->setAccessible(true);
+
+        $yaml = $method->invoke(
+            $deployer,
+            $template,
+            'user-462-service-193-nodejs',
+            30022,
+            ['NODE_ENV' => 'production'],
+            null,
+            $deployment,
+            null,
+            '/opt/talksasa/containers/user-462-service-193-nodejs/app',
+            $runtime
+        );
+
+        $this->assertStringContainsString(ContainerDeploymentService::VITE_ALLOWED_HOSTS_ENV, $yaml);
+        $this->assertStringContainsString('gateway.errandly.site', $yaml);
+        $this->assertStringContainsString('.gateway.errandly.site', $yaml);
+        $this->assertStringContainsString('lani.talksasa.com', $yaml);
     }
 
     #[Test]

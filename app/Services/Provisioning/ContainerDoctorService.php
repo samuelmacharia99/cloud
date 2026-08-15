@@ -577,12 +577,30 @@ class ContainerDoctorService
                     ...$appErrors,
                 ]));
 
-                $upstream = $this->probeUpstream($ssh, $deployment);
+                $upstream = $this->withBootstrapState($ssh, $deployment, $this->probeUpstream($ssh, $deployment));
                 $checks['upstream_reachable'] = $upstream['reachable'];
                 $checks['upstream_local_status'] = $upstream['local_status'];
                 $checks['containers_stopped'] = $upstream['stopped'];
+                $checks['bootstrap_in_progress'] = is_string($upstream['bootstrapping']);
 
-                if (! $upstream['reachable'] && $upstream['assigned_port'] !== null) {
+                if (! $upstream['reachable'] && $upstream['assigned_port'] !== null && is_string($upstream['bootstrapping'])) {
+                    $findings[] = [
+                        'id' => 'live_bootstrap_in_progress',
+                        'severity' => 'warning',
+                        'title' => 'Live check: the app is still installing and building',
+                        'summary' => 'The proxy returned HTTP '.$httpStatus.' because the container is still running its '
+                            .'dependency install and production build, so nothing is listening on '
+                            .'127.0.0.1:'.$upstream['assigned_port'].' yet. First builds routinely take several minutes. '
+                            .'No repair is needed — the app starts answering as soon as the build finishes.',
+                        'evidence' => $this->upstreamEvidence($upstream, $httpStatus, (string) ($deployment->getAccessUrl() ?? '')),
+                        'manual_steps' => [
+                            'Watch the Logs tab until the build output stops and the start command runs.',
+                            'Re-run Doctor after the build completes if the site still fails.',
+                            'Out-of-memory kills during the build show as "Killed" in Logs — upgrade the plan if that happens.',
+                        ],
+                        'source' => 'live',
+                    ];
+                } elseif (! $upstream['reachable'] && $upstream['assigned_port'] !== null) {
                     $findings[] = [
                         'id' => 'live_upstream_unreachable',
                         'severity' => 'critical',
@@ -732,6 +750,7 @@ class ContainerDoctorService
                     'live_missing_pdo',
                     'live_http_5xx',
                     'live_upstream_unreachable',
+                    'live_bootstrap_in_progress',
                 ], true)
             );
 
@@ -1047,6 +1066,7 @@ PHP;
             'stopped' => [],
             'publishes_port' => null,
             'crash_logs' => [],
+            'bootstrapping' => null,
         ];
 
         if ($port > 0) {
@@ -1135,6 +1155,75 @@ PHP;
     }
 
     /**
+     * Log lines proving the container is mid-bootstrap (dependency install or production
+     * build). A first Vite/Next build easily runs for minutes, so an unreachable port
+     * during that window is progress, not a failure.
+     */
+    private const BOOTSTRAP_LOG_PATTERNS = [
+        '/npm (warn|notice|info)/i',
+        '/idealTree|reify|audited \d+ packages|added \d+ packages|changed \d+ packages/i',
+        '/(vite|next|nuxt|astro|tsc|webpack) build|building for production|creating an optimized production build/i',
+        '/transforming\b|rendering chunks|computing gzip size/i',
+        '/(collecting|downloading|installing) [a-z0-9._-]+/i',
+        '/(bundle|gem) install|fetching gem/i',
+    ];
+
+    /**
+     * @return string|null the log line that proves work is in progress
+     */
+    private function detectBootstrapActivity(SSHService $ssh, $deployment): ?string
+    {
+        try {
+            $logs = trim($ssh->exec(
+                'docker logs --since 120s --tail 20 '
+                .escapeshellarg((string) $deployment->container_name).' 2>&1 || true',
+                20
+            ));
+        } catch (\Throwable) {
+            return null;
+        }
+
+        foreach (array_reverse(preg_split("/\r\n|\n|\r/", $logs) ?: []) as $line) {
+            $line = trim($line);
+            if ($line === '') {
+                continue;
+            }
+
+            foreach (self::BOOTSTRAP_LOG_PATTERNS as $pattern) {
+                if (preg_match($pattern, $line) === 1) {
+                    return mb_substr($line, 0, 200);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $probe
+     * @return array<string, mixed>
+     */
+    private function withBootstrapState(SSHService $ssh, $deployment, array $probe): array
+    {
+        if (! $probe['reachable']) {
+            $probe['bootstrapping'] = $this->detectBootstrapActivity($ssh, $deployment);
+        }
+
+        return $probe;
+    }
+
+    /**
+     * @param  array<string, mixed>  $probe
+     */
+    private function bootstrapProgressMessage(array $probe): string
+    {
+        return 'The container is still installing dependencies and building the app on '
+            .'127.0.0.1:'.$probe['assigned_port'].' — this can take several minutes on the first '
+            .'production build. Watch the Logs tab; the app answers as soon as the build finishes.'
+            .(is_string($probe['bootstrapping']) ? ' Last log — '.$probe['bootstrapping'] : '');
+    }
+
+    /**
      * @param  array<string, mixed>  $probe
      * @return list<string>
      */
@@ -1171,7 +1260,7 @@ PHP;
             $probe = $this->probeUpstream($ssh, $deployment);
         }
 
-        return $probe;
+        return $this->withBootstrapState($ssh, $deployment, $probe);
     }
 
     /**
@@ -1179,6 +1268,10 @@ PHP;
      */
     private function upstreamFailureMessage(array $probe): string
     {
+        if (is_string($probe['bootstrapping'] ?? null)) {
+            return $this->bootstrapProgressMessage($probe);
+        }
+
         $reasons = array_values(array_filter([
             $probe['stopped'] !== []
                 ? 'not running: '.implode(', ', array_slice($probe['stopped'], 0, 3))
@@ -1328,6 +1421,24 @@ PHP;
                 'manual_steps' => [
                     'Click Switch to Vite production — rebuilds, rewrites the start command to vite preview, and recreates the container.',
                     'Custom API routes that only exist in the Vite middleware server still need a production Node entrypoint in the repo.',
+                ],
+            ],
+            [
+                'id' => 'vite_host_not_allowed',
+                'severity' => 'critical',
+                'stacks' => ['nodejs', '*'],
+                'patterns' => [
+                    '/Blocked request\.\s*This host[^\n]*is not allowed/i',
+                    '/add [^\n]* to (preview|server)\.allowedHosts/i',
+                ],
+                'title' => 'Vite is blocking your domain',
+                'summary' => 'Vite only answers for hostnames on its allowlist, and our proxy forwards your real domain. Talksasa passes every bound domain to the preview server, so re-applying the runtime clears this.',
+                'treat_action' => 'fix_vite_production_runtime',
+                'treat_label' => 'Allow bound domains',
+                'manual_steps' => [
+                    'Click Allow bound domains — the container restarts with your domains on the Vite allowlist.',
+                    'If you added the domain seconds ago, bind it in the Domains tab first, then re-run this fix.',
+                    'Repo-level alternative: set preview.allowedHosts in vite.config.',
                 ],
             ],
             [
@@ -2301,10 +2412,12 @@ PHP;
 
             $deployment->refresh();
             if ((int) ($deployment->assigned_port ?? 0) > 0) {
-                $probe = $this->waitForUpstream($ssh, $deployment, 8);
+                $probe = $this->waitForUpstream($ssh, $deployment, 12);
                 if (! $probe['reachable']) {
                     return [
-                        'success' => false,
+                        // A running install/build is the expected state here: the fix drops the
+                        // stale build so the container rebuilds before `vite preview` starts.
+                        'success' => is_string($probe['bootstrapping']),
                         'message' => ($message !== '' ? $message.' ' : '')
                             .$this->upstreamFailureMessage($probe),
                     ];
@@ -2351,6 +2464,10 @@ PHP;
                 return ['success' => true, 'message' => 'Application restarted and is answering on its port again.'];
             }
 
+            if (is_string($probe['bootstrapping'])) {
+                return ['success' => true, 'message' => $this->bootstrapProgressMessage($probe)];
+            }
+
             // `docker compose restart` cannot create a missing container or apply a changed
             // port mapping, so report the real state instead of a misleading success.
             return [
@@ -2389,7 +2506,7 @@ PHP;
                 return ['success' => true, 'message' => 'Containers recreated.'];
             }
 
-            $probe = $this->waitForUpstream($ssh, $deployment);
+            $probe = $this->waitForUpstream($ssh, $deployment, 12);
 
             if ($probe['reachable']) {
                 return [
@@ -2398,7 +2515,10 @@ PHP;
                 ];
             }
 
-            return ['success' => false, 'message' => $this->upstreamFailureMessage($probe)];
+            return [
+                'success' => is_string($probe['bootstrapping']),
+                'message' => $this->upstreamFailureMessage($probe),
+            ];
         } catch (\Throwable $e) {
             return ['success' => false, 'message' => 'Recreate failed: '.$e->getMessage()];
         } finally {

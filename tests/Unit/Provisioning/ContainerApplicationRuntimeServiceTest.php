@@ -174,8 +174,10 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
             'npm install --omit=dev --legacy-peer-deps --ignore-scripts',
             $this->service->npmOmitDevInstallCommand($packageJson)
         );
+        // Vite preview needs its dev tree, so the boot install keeps dev deps but still
+        // skips the postinstall build.
         $this->assertStringContainsString(
-            'npm install --omit=dev --legacy-peer-deps --ignore-scripts',
+            '--include=dev --legacy-peer-deps --no-audit --no-fund --ignore-scripts',
             $this->service->nodeBootstrap($packageJson)
         );
     }
@@ -210,8 +212,10 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
             'npx vite preview --host 0.0.0.0 --port ${PORT:-3000}',
             $runtime->command[2]
         );
-        $this->assertStringContainsString('install vite --no-save', $runtime->command[2]);
         $this->assertTrue($this->service->productionStartRequiresVite($packageJson));
+        // vite.config imports vite and its plugins at boot, so the dev tree must survive.
+        $this->assertStringNotContainsString('prune --omit=dev', $runtime->command[2]);
+        $this->assertStringNotContainsString('npm install --omit=dev', $runtime->command[2]);
     }
 
     #[Test]
@@ -234,7 +238,7 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
         );
 
         $this->assertSame(
-            'npx vite preview --host 0.0.0.0 --port ${PORT:-3000}',
+            'npx vite preview --host 0.0.0.0 --port ${PORT:-3000} --strictPort',
             $command
         );
     }

@@ -76,7 +76,7 @@
                 <span x-show="liveChecks.table_count !== null && liveChecks.table_count !== undefined" x-text="'Tables: ' + liveChecks.table_count"></span>
                 <span x-show="liveChecks.env_source" x-text="'Env: ' + liveChecks.env_source"></span>
                 <span x-show="liveChecks.upstream_reachable !== null && liveChecks.upstream_reachable !== undefined"
-                      x-text="liveChecks.upstream_reachable ? 'App port: answering' : 'App port: not answering'"></span>
+                      x-text="liveChecks.upstream_reachable ? 'App port: answering' : (liveChecks.bootstrap_in_progress ? 'App port: build in progress' : 'App port: not answering')"></span>
             </div>
         </template>
 

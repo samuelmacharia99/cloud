@@ -321,7 +321,9 @@ class ContainerApplicationRuntimeService
 
         if ($this->commandLooksLikeVitePreview($command)
             || $this->shouldRewriteStartToVitePreview($command, $packageJson)) {
-            return 'npx vite preview --host 0.0.0.0 --port ${PORT:-'.$defaultPort.'}';
+            // --strictPort: without it Vite silently binds the next free port when the
+            // configured one is taken, which shows up as an unexplained 502.
+            return 'npx vite preview --host 0.0.0.0 --port ${PORT:-'.$defaultPort.'} --strictPort';
         }
 
         return null;
@@ -756,6 +758,21 @@ class ContainerApplicationRuntimeService
         return $this->nodeCleanNpmCommand($this->npmInstallForProductionBuildCommand($force), 'development');
     }
 
+    /**
+     * Install that keeps devDependencies, for runtimes (Vite preview) whose config file
+     * imports build-time packages at boot.
+     */
+    public function npmDevInstallShellCommand(?string $packageJson = null): string
+    {
+        $args = $this->npmInstallForProductionBuildCommand();
+        if ($this->packageJsonPostinstallRequiresBuildTools($packageJson)) {
+            // Otherwise a `postinstall: vite build` re-builds on every container start.
+            $args .= ' --ignore-scripts';
+        }
+
+        return $this->nodeCleanNpmCommand($args, 'development');
+    }
+
     public function npmCiShellCommand(bool $force = false): string
     {
         $forceFlag = $force ? ' --force' : '';
@@ -1115,22 +1132,24 @@ class ContainerApplicationRuntimeService
         $prepareStep = $this->nodeBuildPrepareEnabled()
             ? '[ -f .talksasa/prepare-build.cjs ] && node .talksasa/prepare-build.cjs && '
             : '';
-        // vite preview is the production start for Vite SPA/middleware templates, but prune
-        // --omit=dev removes vite. Reinstall it so every customer gets a bootable runtime.
-        $ensureVite = $this->productionStartRequiresVite($packageJson)
-            ? ' && '.$this->nodeCleanNpmCommand(
-                'install vite --no-save --legacy-peer-deps --no-audit --no-fund',
-                'production'
-            ).' && '.$binFix
-            : '';
+        // `vite preview` boots through vite.config, which imports vite itself plus plugins
+        // like @vitejs/plugin-react — all devDependencies. Pruning them is what crash-loops
+        // these apps, so Vite runtimes keep their dev tree instead of reinstalling pieces.
+        $keepDevDependencies = $this->productionStartRequiresVite($packageJson);
+        $steadyStateInstall = $keepDevDependencies
+            ? $this->npmDevInstallShellCommand($packageJson)
+            : $this->npmOmitDevInstallCommand($packageJson);
 
         if (! $this->packageJsonRequiresProductionBuild($packageJson)) {
-            return '[ -f package.json ] && '.$this->npmOmitDevInstallCommand($packageJson).' && '.$binFix.$ensureVite;
+            return '[ -f package.json ] && '.$steadyStateInstall.' && '.$binFix;
         }
 
         $artifactMissingCheck = $this->packageJsonBuildArtifactMissingCheck($packageJson);
+        $pruneStep = $keepDevDependencies ? '' : $pruneCommand;
+        $buildBranch = $installForBuild.' && '.$binFix.' && '.$prepareStep.$buildCommand
+            .($pruneStep !== '' ? ' && '.$pruneStep : '');
 
-        return '[ -f package.json ] && { if '.$artifactMissingCheck.'; then rm -rf node_modules && '.$installForBuild.' && '.$binFix.' && '.$prepareStep.$buildCommand.' && '.$pruneCommand.$ensureVite.'; else '.$this->npmOmitDevInstallCommand($packageJson).' && '.$binFix.$ensureVite.'; fi; }';
+        return '[ -f package.json ] && { if '.$artifactMissingCheck.'; then rm -rf node_modules && '.$buildBranch.'; else '.$steadyStateInstall.' && '.$binFix.'; fi; }';
     }
 
     private function rubyBootstrap(): string

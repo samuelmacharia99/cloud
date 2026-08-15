@@ -279,6 +279,39 @@ LOG;
         $this->assertStringContainsString('connection refused', $evidence[1]);
     }
 
+    #[Test]
+    public function a_running_install_or_build_is_reported_as_progress_not_failure(): void
+    {
+        $message = $this->callPrivate('upstreamFailureMessage', [[
+            'assigned_port' => 30022,
+            'local_status' => 0,
+            'reachable' => false,
+            'containers' => [],
+            'stopped' => [],
+            'publishes_port' => true,
+            'crash_logs' => [],
+            'bootstrapping' => 'npm warn idealTree Removing dependencies.vite in favor of devDependencies.vite',
+        ]]);
+
+        $this->assertStringContainsString('still installing dependencies and building', $message);
+        $this->assertStringContainsString('idealTree', $message);
+        $this->assertStringNotContainsString('not answering', $message);
+    }
+
+    #[Test]
+    public function it_detects_vite_blocking_the_bound_domain(): void
+    {
+        $findings = app(ContainerDoctorService::class)->analyzeLogs(
+            'Blocked request. This host ("gateway.example.test") is not allowed.',
+            'nodejs'
+        );
+
+        $finding = collect($findings)->firstWhere('id', 'vite_host_not_allowed');
+
+        $this->assertNotNull($finding);
+        $this->assertSame('fix_vite_production_runtime', $finding['treat_action']);
+    }
+
     private function callPrivate(string $method, array $arguments): mixed
     {
         $service = app(ContainerDoctorService::class);

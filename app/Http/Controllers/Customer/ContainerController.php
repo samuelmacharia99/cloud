@@ -1903,6 +1903,12 @@ class ContainerController extends Controller
 
             $nginxService->bind($domain);
 
+            try {
+                app(ContainerDeploymentService::class)->syncViteAllowedHosts($service, $deployment);
+            } catch (\Throwable $e) {
+                \Log::warning("Failed to allow {$hostname} on the Vite preview server: ".$e->getMessage());
+            }
+
             $message = "Domain {$domain->domain} bound successfully";
             if ($platformDomain) {
                 $message .= '. DNS A record updated via managed DNS.';
@@ -1966,6 +1972,12 @@ class ContainerController extends Controller
 
             $domain->refresh();
             $nginxService->bind($domain);
+
+            try {
+                app(ContainerDeploymentService::class)->syncViteAllowedHosts($service, $deployment);
+            } catch (\Throwable $e) {
+                \Log::warning("Failed to allow {$domain->domain} on the Vite preview server: ".$e->getMessage());
+            }
 
             $message = "Domain updated to {$domain->domain}";
             $message .= $this->appendAutoSslMessage(
