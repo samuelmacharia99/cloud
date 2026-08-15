@@ -54,7 +54,7 @@ class ContainerTerminalService
         }
 
         $service->loadMissing('product.containerTemplate');
-        $appRoot = $this->resolveAppRootFromTemplate($service->product?->containerTemplate);
+        $appRoot = $this->resolveAppRootFromTemplate($service->effectiveContainerTemplate());
 
         $token = bin2hex(random_bytes(32));
         $now = now();
@@ -84,7 +84,8 @@ class ContainerTerminalService
     public function sessionMeta(ContainerTerminalSession $session): array
     {
         $session->loadMissing('service.product.containerTemplate', 'deployment');
-        $templateSlug = $session->service?->product?->containerTemplate?->slug;
+        $templateSlug = $session->service?->effectiveContainerTemplate()?->slug
+            ?? $session->service?->product?->containerTemplate?->slug;
         $shellUser = ContainerDockerExecUserResolver::execUser($templateSlug) ?? 'app';
         $appRoot = $this->resolveAppRoot($session);
 
@@ -114,7 +115,10 @@ class ContainerTerminalService
     {
         $session->loadMissing('service.product.containerTemplate');
 
-        return $this->resolveAppRootFromTemplate($session->service?->product?->containerTemplate);
+        return $this->resolveAppRootFromTemplate(
+            $session->service?->effectiveContainerTemplate()
+            ?? $session->service?->product?->containerTemplate
+        );
     }
 
     public function extendSession(ContainerTerminalSession $session, ?int $minutes = null): ContainerTerminalSession
@@ -381,7 +385,8 @@ class ContainerTerminalService
             .'printf "\n__EXIT:%d\n" "$?"; pwd';
 
         $session->loadMissing('service.product.containerTemplate');
-        $templateSlug = $session->service?->product?->containerTemplate?->slug;
+        $templateSlug = $session->service?->effectiveContainerTemplate()?->slug
+            ?? $session->service?->product?->containerTemplate?->slug;
         $userFlag = ContainerDockerExecUserResolver::execUserFlag($templateSlug);
 
         // Always set -w to the stack app root so exec does not inherit PID 1's cwd

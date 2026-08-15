@@ -5,7 +5,7 @@
         ? route('customer.payment.select-method', $payInvoice)
         : route('customer.services.show', $service);
     $isWordpress = $service->product?->type === 'container_hosting'
-        && ($service->product?->containerTemplate?->slug ?? '') === 'wordpress';
+        && ($service->effectiveContainerTemplate()?->slug ?? '') === 'wordpress';
     $nestedContainers = $nestedContainers ?? [];
     $allProjects = $allProjects ?? collect();
 @endphp

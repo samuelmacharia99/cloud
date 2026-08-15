@@ -21,12 +21,14 @@ class ContainerBackup extends Model
         'status',
         'type',
         'error_message',
+        'metadata',
         'started_at',
         'completed_at',
     ];
 
     protected $casts = [
         'size_bytes' => 'integer',
+        'metadata' => 'array',
         'started_at' => 'datetime',
         'completed_at' => 'datetime',
     ];

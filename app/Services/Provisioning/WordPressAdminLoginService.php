@@ -81,12 +81,15 @@ class WordPressAdminLoginService
             ], JSON_THROW_ON_ERROR);
 
             $tokenPath = $hostAppPath.'/'.self::TOKEN_RELATIVE;
-            $ssh->mkdirp($hostAppPath.'/wp-content/mu-plugins');
+            $muPluginsDir = $hostAppPath.'/wp-content/mu-plugins';
+            $ssh->mkdirp($muPluginsDir);
             $ssh->upload($payload, $tokenPath);
             $ssh->exec(
-                'chown 33:33 '.escapeshellarg($tokenPath)
+                'chown -R 33:33 '.escapeshellarg($hostAppPath.'/wp-content')
+                .' && chmod -R ug+rwX '.escapeshellarg($hostAppPath.'/wp-content')
+                .' && chown 33:33 '.escapeshellarg($tokenPath)
                 .' && chmod 640 '.escapeshellarg($tokenPath),
-                15
+                30
             );
 
             // Drop any stale cached SSO user id so future fixes always re-resolve.
@@ -107,7 +110,7 @@ class WordPressAdminLoginService
         $service->loadMissing('product.containerTemplate');
 
         return $service->product?->type === 'container_hosting'
-            && ($service->product?->containerTemplate?->slug ?? '') === 'wordpress';
+            && ($service->effectiveContainerTemplate()?->slug ?? '') === 'wordpress';
     }
 
     public function resolvePublicBaseUrl(Service $service): ?string
@@ -227,8 +230,11 @@ PHP;
         $ssh->mkdirp($hostAppPath.'/wp-content/mu-plugins');
         $ssh->upload($this->muPluginContents(), $remotePath);
         $ssh->exec(
-            'chown 33:33 '.$remoteArg.' && chmod 644 '.$remoteArg,
-            15
+            'chown -R 33:33 '.escapeshellarg($hostAppPath.'/wp-content')
+            .' && chmod -R ug+rwX '.escapeshellarg($hostAppPath.'/wp-content')
+            .' && chown 33:33 '.$remoteArg
+            .' && chmod 644 '.$remoteArg,
+            30
         );
     }
 

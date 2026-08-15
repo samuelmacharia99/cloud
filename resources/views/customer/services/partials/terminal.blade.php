@@ -1,9 +1,10 @@
 @php
-    $terminalTemplateSlug = $service->product?->containerTemplate?->slug ?? '';
+    $terminalTemplate = $service->effectiveContainerTemplate() ?? $service->product?->containerTemplate;
+    $terminalTemplateSlug = $terminalTemplate?->slug ?? '';
     $terminalContainerName = $deployment->container_name ?? 'container';
     $maxTerminalTabs = max(1, (int) config('terminal.session.max_per_user_service', 3));
     $terminalDefaultCwd = app(\App\Services\Terminal\ContainerTerminalService::class)
-        ->resolveAppRootFromTemplate($service->product?->containerTemplate);
+        ->resolveAppRootFromTemplate($terminalTemplate);
 @endphp
 <div
     x-data="containerTerminal()"

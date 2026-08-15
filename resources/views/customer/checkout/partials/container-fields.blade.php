@@ -1,18 +1,28 @@
 <div class="space-y-4">
-    <p class="text-sm text-slate-600 dark:text-slate-400">
-        Optional now — you can connect Git after checkout from the app console (Git tab), then manage secrets under <strong>Environment</strong>.
-    </p>
-    <div>
-        <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Source Repository URL</label>
-        <input type="url" name="source_repo_url[{{ $product['key'] }}]" value="{{ old("source_repo_url.{$product['key']}") }}"
-            placeholder="https://github.com/your-org/your-app.git"
-            class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white">
-    </div>
-    <div>
-        <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Source Branch</label>
-        <input type="text" name="source_repo_branch[{{ $product['key'] }}]" value="{{ old("source_repo_branch.{$product['key']}", 'main') }}"
-            class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white">
-    </div>
+    @php
+        $supportsGit = app(\App\Services\Provisioning\ContainerGitRepositoryService::class)
+            ->supportsTemplate($template->slug ?? null);
+    @endphp
+    @if ($supportsGit)
+        <p class="text-sm text-slate-600 dark:text-slate-400">
+            Optional now — you can connect Git after checkout from the app console (Git tab), then manage secrets under <strong>Environment</strong>.
+        </p>
+        <div>
+            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Source Repository URL</label>
+            <input type="url" name="source_repo_url[{{ $product['key'] }}]" value="{{ old("source_repo_url.{$product['key']}") }}"
+                placeholder="https://github.com/your-org/your-app.git"
+                class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white">
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Source Branch</label>
+            <input type="text" name="source_repo_branch[{{ $product['key'] }}]" value="{{ old("source_repo_branch.{$product['key']}", 'main') }}"
+                class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white">
+        </div>
+    @else
+        <p class="text-sm text-slate-600 dark:text-slate-400">
+            This stack is provisioned by the platform. Connect domains and manage content from the app console after checkout.
+        </p>
+    @endif
     @if ($template->versions && count($template->versions) > 0)
         <div>
             <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Select Version</label>

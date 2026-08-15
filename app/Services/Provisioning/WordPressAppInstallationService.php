@@ -28,7 +28,7 @@ class WordPressAppInstallationService
     ): array {
         $service->loadMissing(['product.containerTemplate', 'user', 'containerDeployment.node', 'containerDeployment.domains']);
 
-        if (($service->product?->containerTemplate?->slug ?? '') !== 'wordpress') {
+        if (($service->effectiveContainerTemplate()?->slug ?? '') !== 'wordpress') {
             return ['success' => true, 'skipped' => true, 'message' => 'Not a WordPress template.'];
         }
 

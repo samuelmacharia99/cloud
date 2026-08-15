@@ -22,7 +22,7 @@ class ContainerDoctorService
     {
         $service->loadMissing('product.containerTemplate', 'containerDeployment.node');
         $deployment = $service->containerDeployment;
-        $stack = strtolower((string) ($service->product?->containerTemplate?->slug ?? 'unknown'));
+        $stack = strtolower((string) ($service->effectiveContainerTemplate()?->slug ?? 'unknown'));
 
         if (! $deployment || ! $deployment->node) {
             return [
@@ -86,6 +86,7 @@ class ContainerDoctorService
             'fix_npm_cache_permissions' => $this->treatFixNpmCachePermissions($service),
             'clear_laravel_caches' => $this->treatClearLaravelCaches($service),
             'fix_storage_permissions' => $this->treatFixStoragePermissions($service),
+            'fix_wordpress_permissions' => $this->treatFixWordPressPermissions($service),
             'restart_application' => $this->treatRestartApplication($service),
             'run_migrations' => $this->treatRunMigrations($service),
             'migrate_fresh' => $this->treatMigrateFresh($service),
@@ -282,10 +283,63 @@ class ContainerDoctorService
 
         $deploymentService = app(ContainerDeploymentService::class);
         $databaseTemplate = $deploymentService->resolveDatabaseTemplateForService($service);
-        $stack = strtolower((string) ($service->product?->containerTemplate?->slug ?? ''));
+        $stack = strtolower((string) (
+            $service->effectiveContainerTemplate()?->slug
+            ?? $service->product?->containerTemplate?->slug
+            ?? ''
+        ));
         $ssh = SSHService::forNode($deployment->node);
 
         try {
+            if ($stack === 'wordpress') {
+                try {
+                    $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+                    $writeProbe = trim($ssh->exec(
+                        'cd '.escapeshellarg($containerPath)
+                        .' && docker compose exec -u www-data -T '.escapeshellarg($deployment->container_name)
+                        .' sh -lc '.escapeshellarg(
+                            'touch /var/www/html/wp-content/uploads/.talksasa-write-test'
+                            .' && rm -f /var/www/html/wp-content/uploads/.talksasa-write-test'
+                            .' && touch /var/www/html/wp-content/plugins/.talksasa-write-test'
+                            .' && rm -f /var/www/html/wp-content/plugins/.talksasa-write-test'
+                            .' && echo ok'
+                        ),
+                        30
+                    ));
+                    $checks['wordpress_writable'] = $writeProbe === 'ok';
+                    if ($writeProbe !== 'ok') {
+                        $findings[] = [
+                            'id' => 'live_wordpress_not_writable',
+                            'severity' => 'critical',
+                            'title' => 'WordPress cannot write uploads or plugins',
+                            'summary' => 'www-data cannot write under wp-content. Media uploads and plugin installs will fail until ownership is fixed.',
+                            'evidence' => [mb_substr($writeProbe !== '' ? $writeProbe : 'write probe failed', 0, 300)],
+                            'treat_action' => 'fix_wordpress_permissions',
+                            'treat_label' => 'Fix WordPress permissions',
+                            'manual_steps' => [
+                                'Click Fix WordPress permissions, then retry the media upload or plugin install.',
+                            ],
+                            'source' => 'live',
+                        ];
+                    }
+                } catch (\Throwable $e) {
+                    $checks['wordpress_writable'] = false;
+                    $findings[] = [
+                        'id' => 'live_wordpress_not_writable',
+                        'severity' => 'critical',
+                        'title' => 'WordPress cannot write uploads or plugins',
+                        'summary' => 'www-data cannot write under wp-content. Media uploads and plugin installs will fail until ownership is fixed.',
+                        'evidence' => [mb_substr($e->getMessage(), 0, 300)],
+                        'treat_action' => 'fix_wordpress_permissions',
+                        'treat_label' => 'Fix WordPress permissions',
+                        'manual_steps' => [
+                            'Click Fix WordPress permissions, then retry the media upload or plugin install.',
+                        ],
+                        'source' => 'live',
+                    ];
+                }
+            }
+
             if ($deploymentService->usesLaravelNextSidecarStack($deployment)) {
                 $frontendName = LaravelNextGatewayProxy::frontendContainerName($deployment->container_name);
                 $edgeName = LaravelNextGatewayProxy::edgeContainerName($deployment->container_name);
@@ -1139,6 +1193,26 @@ PHP;
                 ],
             ],
             [
+                'id' => 'wordpress_upload_permission_denied',
+                'severity' => 'warning',
+                'stacks' => ['wordpress'],
+                'patterns' => [
+                    '/Unable to create directory.*wp-content\/uploads/i',
+                    '/Failed to write file to disk/i',
+                    '/Could not create directory.*wp-content\/plugins/i',
+                    '/Destination folder already exists\./i',
+                    '/permission denied.*wp-content/i',
+                    '/is_writable\(\).*wp-content/i',
+                ],
+                'title' => 'WordPress cannot write media or plugins',
+                'summary' => 'Apache (www-data) cannot write under wp-content. Media uploads and plugin installs fail until ownership is fixed.',
+                'treat_action' => 'fix_wordpress_permissions',
+                'treat_label' => 'Fix WordPress permissions',
+                'manual_steps' => [
+                    'Click Fix WordPress permissions, then retry the upload or plugin install.',
+                ],
+            ],
+            [
                 'id' => 'app_key_missing',
                 'severity' => 'critical',
                 'stacks' => ['laravel'],
@@ -1329,7 +1403,7 @@ PHP;
                 default => throw new \RuntimeException('Unsupported database type: '.$databaseTemplate->type),
             };
 
-            $stack = strtolower((string) ($service->product?->containerTemplate?->slug ?? ''));
+            $stack = strtolower((string) ($service->effectiveContainerTemplate()?->slug ?? ''));
             if (in_array($stack, ['laravel', 'php'], true)) {
                 try {
                     app(LaravelAppInitializationService::class)
@@ -1917,11 +1991,51 @@ PHP;
         $ssh = SSHService::forNode($deployment->node);
 
         try {
+            $slug = $service->effectiveContainerTemplate()?->slug
+                ?? $service->product?->containerTemplate?->slug;
+
+            if ($slug === 'wordpress') {
+                return $this->treatFixWordPressPermissions($service);
+            }
+
             app(ContainerAppDirectoryService::class)->normalizePermissions($ssh, $deployment);
 
             return ['success' => true, 'message' => 'Storage permissions refreshed.'];
         } catch (\Throwable $e) {
             return ['success' => false, 'message' => 'Failed to fix permissions: '.$e->getMessage()];
+        } finally {
+            $ssh->disconnect();
+        }
+    }
+
+    /**
+     * @return array{success: bool, message: string}
+     */
+    private function treatFixWordPressPermissions(Service $service): array
+    {
+        $deployment = $service->containerDeployment;
+        if (! $deployment?->node) {
+            return ['success' => false, 'message' => 'Application is not deployed.'];
+        }
+
+        $ssh = SSHService::forNode($deployment->node);
+        $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+        $hostAppPath = $containerPath.'/app';
+
+        try {
+            app(WordPressContainerHardeningService::class)->ensureWritableFilesystem(
+                $ssh,
+                $hostAppPath,
+                $containerPath,
+                $deployment->container_name,
+            );
+
+            return [
+                'success' => true,
+                'message' => 'WordPress files are writable again. Retry media uploads or plugin installs.',
+            ];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'message' => 'Failed to fix WordPress permissions: '.$e->getMessage()];
         } finally {
             $ssh->disconnect();
         }

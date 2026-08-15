@@ -164,9 +164,14 @@ class ContainerBackupService
             $deploymentService = new ContainerDeploymentService;
             $deploymentService->ensureComposeFileExists($ssh, $deployment);
 
-            // Live archive (no stop/start). Large WP sites spent hours downtimed just so
-            // we could relay the tarball through the app server twice.
+            $dumpMetadata = [];
             try {
+                if ($this->shouldIncludeMysqlDump($service)) {
+                    $dumpMetadata = $this->dumpMysqlIntoContainerTree($ssh, $service, $deployment);
+                }
+
+                // Live archive (no stop/start). Large WP sites spent hours downtimed just so
+                // we could relay the tarball through the app server twice.
                 $finalPath = $localBackupPath;
                 $storageDriver = 'node';
                 $size = 0;
@@ -210,6 +215,10 @@ class ContainerBackupService
                     'size_bytes' => $size,
                     'completed_at' => now(),
                     'error_message' => $storageDriver === 'hetzner' ? null : ($backup->error_message ?? null),
+                    'metadata' => array_filter(array_merge(
+                        is_array($backup->metadata) ? $backup->metadata : [],
+                        $dumpMetadata,
+                    )),
                 ]);
 
                 Log::info('Container backup created successfully', [
@@ -218,9 +227,11 @@ class ContainerBackupService
                     'backup_name' => $backup->backup_name,
                     'storage_driver' => $storageDriver,
                     'size_bytes' => $size,
+                    'includes_database' => (bool) ($dumpMetadata['includes_database'] ?? false),
                     'live' => true,
                 ]);
             } finally {
+                $this->cleanupBackupDumpDir($ssh, $containerName);
                 $ssh->disconnect();
                 $this->hetzner->disconnect();
             }
@@ -529,8 +540,29 @@ class ContainerBackupService
             $ssh->reconnect();
             $deploymentService->startComposeStack($ssh, $service, $deployment);
             $deploymentService->waitForContainerRunning($ssh, $deployment->container_name, 120);
+
+            $safetyDumpPath = null;
+            try {
+                $safetyDumpPath = $this->restoreMysqlDumpIfPresent(
+                    $ssh,
+                    $service,
+                    $deployment,
+                    $containerPath,
+                    $restoreId,
+                );
+            } catch (\Throwable $dbError) {
+                if ($safetyDumpPath) {
+                    $this->softExec($ssh, 'rm -f '.escapeshellarg($safetyDumpPath), 30);
+                }
+
+                throw $dbError;
+            }
+
             $ssh->exec('rm -rf '.escapeshellarg($rollbackPath), 120);
             $swapped = false;
+            if ($safetyDumpPath) {
+                $this->softExec($ssh, 'rm -f '.escapeshellarg($safetyDumpPath), 30);
+            }
 
             $backup->update(['status' => 'completed']);
 
@@ -539,6 +571,7 @@ class ContainerBackupService
                 'service_id' => $backup->service_id,
                 'deployment_id' => $deployment->id,
                 'storage_driver' => $backup->storage_driver,
+                'includes_database' => (bool) (($backup->metadata['includes_database'] ?? false)),
             ]);
 
         } catch (\Throwable $e) {
@@ -828,5 +861,243 @@ class ContainerBackupService
             ->where('status', '!=', 'deleted')
             ->orderByDesc('created_at')
             ->get();
+    }
+
+    public function shouldIncludeMysqlDump(Service $service): bool
+    {
+        $slug = $service->effectiveContainerTemplate()?->slug
+            ?? $service->product?->containerTemplate?->slug;
+
+        return $slug === 'wordpress';
+    }
+
+    public function backupDumpRelativePath(): string
+    {
+        return '.talksasa-backup/database.sql';
+    }
+
+    /**
+     * @return array{includes_database: bool, database_engine: string, dump_member: string, database_name: string}
+     */
+    public function dumpMysqlIntoContainerTree(SSHService $ssh, Service $service, $deployment): array
+    {
+        $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+        $dumpRelative = $this->backupDumpRelativePath();
+        $dumpPath = $containerPath.'/'.$dumpRelative;
+        $dumpDir = dirname($dumpPath);
+
+        $migration = app(DirectAdminToContainerMigrationService::class);
+        $creds = $migration->resolveWordpressImportCredentials($service, $ssh, $containerPath);
+        $live = $migration->readLiveMysqlSidecarEnv($ssh, $containerPath, $creds['service']);
+
+        $dbService = (string) $creds['service'];
+        $database = (string) ($live['MYSQL_DATABASE'] ?? $creds['database'] ?: 'wordpress');
+        $rootPassword = (string) ($live['MYSQL_ROOT_PASSWORD'] ?? $creds['root_password'] ?? '');
+        $appPassword = (string) ($live['MYSQL_PASSWORD'] ?? $creds['password'] ?? '');
+        $appUser = (string) ($live['MYSQL_USER'] ?? $creds['user'] ?? 'wordpress');
+
+        $user = $rootPassword !== '' ? 'root' : $appUser;
+        $password = $rootPassword !== '' ? $rootPassword : $appPassword;
+
+        if ($password === '') {
+            throw new Exception('WordPress database credentials are missing; cannot include MySQL dump in backup.');
+        }
+
+        $migration->waitForComposeMysql($ssh, $containerPath, $dbService, $password, 180, $user);
+
+        $ssh->exec(
+            'mkdir -p '.escapeshellarg($dumpDir)
+            .' && rm -f '.escapeshellarg($dumpPath),
+            30
+        );
+
+        $ssh->exec(
+            $this->buildComposeMysqlDumpCommand(
+                $containerPath,
+                $dbService,
+                $user,
+                $password,
+                $database,
+                $dumpPath,
+            ),
+            self::BACKUP_TIMEOUT
+        );
+
+        $size = (int) trim($ssh->exec(
+            'if [ -s '.escapeshellarg($dumpPath).' ]; then wc -c < '.escapeshellarg($dumpPath).'; else echo 0; fi',
+            15
+        ));
+
+        if ($size < 32) {
+            throw new Exception('WordPress MySQL dump was empty or missing; backup aborted.');
+        }
+
+        return [
+            'includes_database' => true,
+            'database_engine' => 'mysql',
+            'dump_member' => $deployment->container_name.'/'.$dumpRelative,
+            'database_name' => $database,
+        ];
+    }
+
+    public function buildComposeMysqlDumpCommand(
+        string $containerPath,
+        string $dbService,
+        string $user,
+        string $password,
+        string $database,
+        string $dumpPath,
+    ): string {
+        return 'cd '.escapeshellarg($containerPath)
+            .' && docker compose exec -T -e MYSQL_PWD='.escapeshellarg($password)
+            .' '.escapeshellarg($dbService)
+            .' mysqldump -u'.escapeshellarg($user)
+            .' --single-transaction --quick --no-tablespaces --routines --triggers'
+            .' '.escapeshellarg($database)
+            .' > '.escapeshellarg($dumpPath);
+    }
+
+    private function cleanupBackupDumpDir(SSHService $ssh, string $containerName): void
+    {
+        $dumpDir = self::CONTAINER_BASE_PATH.'/'.$containerName.'/.talksasa-backup';
+        $this->softExec($ssh, 'rm -rf '.escapeshellarg($dumpDir), 30);
+    }
+
+    /**
+     * Import a backup SQL dump if present. Creates a safety dump first so a failed
+     * import can restore the prior database before file rollback.
+     *
+     * @return string|null Absolute path to the temporary safety dump (caller deletes on success)
+     */
+    public function restoreMysqlDumpIfPresent(
+        SSHService $ssh,
+        Service $service,
+        $deployment,
+        string $containerPath,
+        string $restoreId,
+    ): ?string {
+        $dumpPath = $containerPath.'/'.$this->backupDumpRelativePath();
+        $exists = trim($ssh->exec(
+            '[ -s '.escapeshellarg($dumpPath).' ] && echo yes || echo no',
+            15
+        ));
+
+        if ($exists !== 'yes') {
+            return null;
+        }
+
+        if (! $this->shouldIncludeMysqlDump($service)) {
+            // Legacy/non-WP archive accidentally containing the member — ignore safely.
+            $this->cleanupBackupDumpDir($ssh, (string) $deployment->container_name);
+
+            return null;
+        }
+
+        $migration = app(DirectAdminToContainerMigrationService::class);
+        $creds = $migration->resolveWordpressImportCredentials($service, $ssh, $containerPath);
+        $live = $migration->readLiveMysqlSidecarEnv($ssh, $containerPath, $creds['service']);
+
+        $dbService = (string) $creds['service'];
+        $database = (string) ($live['MYSQL_DATABASE'] ?? $creds['database'] ?: 'wordpress');
+        $rootPassword = (string) ($live['MYSQL_ROOT_PASSWORD'] ?? $creds['root_password'] ?? '');
+        $appPassword = (string) ($live['MYSQL_PASSWORD'] ?? $creds['password'] ?? '');
+        $appUser = (string) ($live['MYSQL_USER'] ?? $creds['user'] ?? 'wordpress');
+
+        $user = $rootPassword !== '' ? 'root' : $appUser;
+        $password = $rootPassword !== '' ? $rootPassword : $appPassword;
+
+        if ($password === '') {
+            throw new Exception('WordPress database credentials are missing; cannot restore MySQL dump.');
+        }
+
+        $migration->waitForComposeMysql($ssh, $containerPath, $dbService, $password, 180, $user);
+
+        $safetyDumpPath = self::BACKUP_BASE_PATH.'/safety-'.$restoreId.'.sql';
+        $ssh->exec(
+            $this->buildComposeMysqlDumpCommand(
+                $containerPath,
+                $dbService,
+                $user,
+                $password,
+                $database,
+                $safetyDumpPath,
+            ),
+            self::BACKUP_TIMEOUT
+        );
+
+        try {
+            $this->recreateMysqlDatabase($ssh, $migration, $containerPath, $dbService, $user, $password, $database, $appUser);
+            $ssh->exec(
+                $migration->buildMysqlDumpImportCommand(
+                    $containerPath,
+                    $dbService,
+                    $dumpPath,
+                    $user,
+                    $password,
+                    $database,
+                ),
+                self::BACKUP_TIMEOUT
+            );
+            $this->cleanupBackupDumpDir($ssh, (string) $deployment->container_name);
+        } catch (\Throwable $e) {
+            try {
+                $this->recreateMysqlDatabase($ssh, $migration, $containerPath, $dbService, $user, $password, $database, $appUser);
+                $ssh->exec(
+                    $migration->buildMysqlDumpImportCommand(
+                        $containerPath,
+                        $dbService,
+                        $safetyDumpPath,
+                        $user,
+                        $password,
+                        $database,
+                    ),
+                    self::BACKUP_TIMEOUT
+                );
+            } catch (\Throwable $safetyError) {
+                Log::critical('Failed to restore WordPress safety database dump after import failure', [
+                    'service_id' => $service->id,
+                    'error' => $safetyError->getMessage(),
+                ]);
+            }
+
+            $this->softExec($ssh, 'rm -f '.escapeshellarg($safetyDumpPath), 30);
+
+            throw new Exception(
+                'WordPress database restore failed: '.$e->getMessage(),
+                previous: $e
+            );
+        }
+
+        return $safetyDumpPath;
+    }
+
+    private function recreateMysqlDatabase(
+        SSHService $ssh,
+        DirectAdminToContainerMigrationService $migration,
+        string $containerPath,
+        string $dbService,
+        string $user,
+        string $password,
+        string $database,
+        string $appUser,
+    ): void {
+        $safeDb = preg_replace('/[^a-zA-Z0-9_]/', '', $database) ?: 'wordpress';
+        $safeAppUser = preg_replace('/[^a-zA-Z0-9_]/', '', $appUser) ?: 'wordpress';
+
+        $sql = "DROP DATABASE IF EXISTS `{$safeDb}`; CREATE DATABASE `{$safeDb}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;";
+        if ($user === 'root' && $safeAppUser !== '') {
+            $sql .= " GRANT ALL PRIVILEGES ON `{$safeDb}`.* TO '{$safeAppUser}'@'%'; FLUSH PRIVILEGES;";
+        }
+
+        $migration->execMysqlInCompose(
+            $ssh,
+            $containerPath,
+            $dbService,
+            $user,
+            $password,
+            $sql,
+            null,
+            120
+        );
     }
 }

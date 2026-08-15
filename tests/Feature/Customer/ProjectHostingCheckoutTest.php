@@ -193,4 +193,71 @@ class ProjectHostingCheckoutTest extends TestCase
             ->assertOk()
             ->assertSee('billed as a single plan', false);
     }
+
+    public function test_wordpress_checkout_ignores_forged_source_repo_values(): void
+    {
+        $customer = User::factory()->customer()->create();
+        $wordpress = ContainerTemplate::factory()->create(['slug' => 'wordpress']);
+        $product = Product::factory()->containerHosting()->create([
+            'container_template_id' => $wordpress->id,
+            'monthly_price' => 1500,
+            'is_active' => true,
+        ]);
+
+        session([
+            CheckoutController::CART_SESSION_KEY => [
+                'item-1' => [
+                    'type' => 'product',
+                    'product_id' => $product->id,
+                    'billing_cycle' => 'monthly',
+                    'name' => $product->name,
+                    'unit_price' => 1500,
+                    'amount' => 1500,
+                ],
+            ],
+        ]);
+
+        $this->actingAs($customer)
+            ->post(route('customer.checkout.process'), [
+                'agree_terms' => '1',
+                'source_repo_url' => ['item-1' => 'https://github.com/acme/forged-wp.git'],
+                'source_repo_branch' => ['item-1' => 'main'],
+            ])
+            ->assertRedirect();
+
+        $service = Service::where('user_id', $customer->id)->where('product_id', $product->id)->first();
+        $this->assertNotNull($service);
+        $this->assertArrayNotHasKey('source_repo_url', $service->service_meta ?? []);
+        $this->assertArrayNotHasKey('source_repo_branch', $service->service_meta ?? []);
+    }
+
+    public function test_wordpress_checkout_hides_git_fields(): void
+    {
+        $customer = User::factory()->customer()->create();
+        $wordpress = ContainerTemplate::factory()->create(['slug' => 'wordpress']);
+        $product = Product::factory()->containerHosting()->create([
+            'container_template_id' => $wordpress->id,
+            'monthly_price' => 1500,
+            'is_active' => true,
+        ]);
+
+        session([
+            CheckoutController::CART_SESSION_KEY => [
+                'item-1' => [
+                    'type' => 'product',
+                    'product_id' => $product->id,
+                    'billing_cycle' => 'monthly',
+                    'name' => $product->name,
+                    'unit_price' => 1500,
+                    'amount' => 1500,
+                ],
+            ],
+        ]);
+
+        $this->actingAs($customer)
+            ->get(route('customer.checkout.show'))
+            ->assertOk()
+            ->assertDontSee('Source Repository URL', false)
+            ->assertDontSee('name="source_repo_url[item-1]"', false);
+    }
 }

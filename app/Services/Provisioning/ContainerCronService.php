@@ -184,7 +184,7 @@ class ContainerCronService
             throw new \RuntimeException('Cron job was already claimed by another runner.');
         }
 
-        $template = $service->product->containerTemplate;
+        $template = $service->effectiveContainerTemplate() ?? $service->product?->containerTemplate;
         $workDir = $template ? $this->stackCommands->resolveWorkDir($template) : '/app';
         $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
         $timeout = max(10, min(120, (int) config('containers.cron.command_timeout_seconds', 60)));

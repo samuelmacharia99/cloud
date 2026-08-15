@@ -2709,7 +2709,7 @@ class ContainerDeploymentService
         @$ssh->exec('docker rm -f db_credential_repair 2>/dev/null', 10);
 
         $service->loadMissing('product.containerTemplate');
-        $template = $service->product?->containerTemplate;
+        $template = $this->resolveContainerTemplate($service) ?? $service->product?->containerTemplate;
         $usesRuntimeImage = $template && $this->runtimeImages->usesRuntimeImage($template);
 
         if ($usesRuntimeImage) {
@@ -2739,7 +2739,7 @@ class ContainerDeploymentService
         $this->syncDatabaseCredentialsAfterStart($ssh, $service, $deployment, $containerPath);
 
         $service->loadMissing('product.containerTemplate');
-        if (($service->product?->containerTemplate?->slug ?? '') === 'wordpress') {
+        if (($this->resolveContainerTemplate($service)?->slug ?? '') === 'wordpress') {
             $this->wordpressHardening->hardenDeployedStack(
                 $ssh,
                 $service->fresh(['product.containerTemplate', 'containerDeployment']),
@@ -3451,7 +3451,7 @@ class ContainerDeploymentService
 
         if ($databaseTemplate) {
             $credentials['database'] = $this->extractDatabaseCredentials($databaseTemplate, $envVars);
-        } elseif (($service->product?->containerTemplate?->slug ?? '') === 'wordpress') {
+        } elseif (($service->effectiveContainerTemplate()?->slug ?? '') === 'wordpress') {
             $credentials['database'] = [
                 'host' => $envVars['WORDPRESS_DB_HOST'] ?? 'mysql:3306',
                 'name' => $envVars['WORDPRESS_DB_NAME'] ?? 'wordpress',
@@ -3720,7 +3720,7 @@ class ContainerDeploymentService
         ContainerDeployment $deployment
     ): void {
         $service->loadMissing('product.containerTemplate');
-        $template = $service->product?->containerTemplate;
+        $template = $this->resolveContainerTemplate($service);
 
         if (! $template || ($template->slug ?? '') !== 'wordpress') {
             return;

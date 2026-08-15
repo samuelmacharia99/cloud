@@ -130,7 +130,7 @@ SNIP;
     {
         $service->loadMissing('product.containerTemplate', 'containerDeployment');
 
-        if (($service->product?->containerTemplate?->slug ?? '') !== 'wordpress') {
+        if (($service->effectiveContainerTemplate()?->slug ?? '') !== 'wordpress') {
             return null;
         }
 
@@ -196,8 +196,85 @@ SNIP;
     ): void {
         $this->ensureUploadsIniFile($ssh, $containerName);
         $this->ensureWpConfigHardening($ssh, $containerPath, $containerName);
+        $hostAppPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$containerName.'/app';
+        $this->ensureWritableFilesystem($ssh, $hostAppPath, $containerPath, $containerName);
         $this->ensureSystemCronJob($service);
         $this->ensureNginxUploadLimits($service);
+    }
+
+    /**
+     * Official wordpress:* + bind mounts often leave core/files owned by root.
+     * Apache runs as www-data (uid 33) and cannot upload media or install plugins
+     * until /var/www/html (especially wp-content) is writable.
+     */
+    public function ensureWritableFilesystem(
+        SSHService $ssh,
+        string $hostAppPath,
+        string $containerPath,
+        string $appService
+    ): void {
+        try {
+            $ssh->exec($this->buildHostPermissionsCommand($hostAppPath), 300);
+        } catch (\Throwable $e) {
+            try {
+                $ssh->exec(
+                    'cd '.escapeshellarg($containerPath)
+                    .' && docker compose exec -u 0 -T '.escapeshellarg($appService)
+                    .' sh -lc '.escapeshellarg($this->inContainerPermissionsScript()),
+                    300
+                );
+            } catch (\Throwable $containerError) {
+                Log::warning('WordPress filesystem permission normalize failed', [
+                    'host_app_path' => $hostAppPath,
+                    'host_error' => $e->getMessage(),
+                    'container_error' => $containerError->getMessage(),
+                ]);
+
+                return;
+            }
+
+            Log::warning('Host WordPress permission normalize failed; applied via container', [
+                'host_app_path' => $hostAppPath,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Make bind-mounted WordPress files readable/writable by Apache (www-data / uid 33).
+     */
+    public function buildHostPermissionsCommand(string $hostAppPath): string
+    {
+        $path = escapeshellarg(rtrim($hostAppPath, '/'));
+
+        return 'if [ -d '.$path.' ]; then'
+            .'  mkdir -p '.$path.'/wp-content/uploads'
+            .' '.$path.'/wp-content/plugins'
+            .' '.$path.'/wp-content/themes'
+            .' '.$path.'/wp-content/upgrade'
+            .' '.$path.'/wp-content/mu-plugins'
+            .' '.$path.'/wp-content/uploads/sessions'
+            .'  && chown -R 33:33 '.$path
+            .'  && chmod -R u+rwX,g+rX,o+rX '.$path
+            .'  && if [ -f '.$path.'/wp-config.php ]; then chmod 640 '.$path.'/wp-config.php; fi'
+            .'  && if [ -d '.$path.'/wp-content ]; then chmod -R ug+rwX '.$path.'/wp-content; fi'
+            .'  ; fi';
+    }
+
+    public function inContainerPermissionsScript(): string
+    {
+        return 'mkdir -p /var/www/html/wp-content/uploads'
+            .' /var/www/html/wp-content/plugins'
+            .' /var/www/html/wp-content/themes'
+            .' /var/www/html/wp-content/upgrade'
+            .' /var/www/html/wp-content/mu-plugins'
+            .' /var/www/html/wp-content/uploads/sessions'
+            .' && chown -R www-data:www-data /var/www/html'
+            .' && find /var/www/html -type d -exec chmod 755 {} +'
+            .' && find /var/www/html -type f -exec chmod 644 {} +'
+            .' && chmod 640 /var/www/html/wp-config.php 2>/dev/null || true'
+            .' && find /var/www/html/wp-content -type d -exec chmod 775 {} + 2>/dev/null || true'
+            .' && find /var/www/html/wp-content -type f -exec chmod 664 {} + 2>/dev/null || true';
     }
 
     /**

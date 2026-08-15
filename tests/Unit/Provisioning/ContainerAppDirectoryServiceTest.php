@@ -46,6 +46,17 @@ class ContainerAppDirectoryServiceTest extends TestCase
     }
 
     #[Test]
+    public function it_normalizes_wordpress_files_under_var_www_html(): void
+    {
+        $service = new ContainerAppDirectoryService;
+        $script = $service->inContainerPermissionNormalizationScript('/var/www/html');
+
+        $this->assertStringContainsString('chown -R www-data:www-data /var/www/html', $script);
+        $this->assertStringContainsString('-path /var/www/html/node_modules', $script);
+        $this->assertStringNotContainsString('chown -R www-data:www-data /app;', $script);
+    }
+
+    #[Test]
     public function it_tolerates_missing_next_bin_directory_when_restoring_permissions(): void
     {
         $service = new ContainerAppDirectoryService;

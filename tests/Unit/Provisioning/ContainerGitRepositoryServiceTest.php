@@ -2,13 +2,27 @@
 
 namespace Tests\Unit\Provisioning;
 
+use App\Models\ContainerTemplate;
+use App\Models\Product;
+use App\Models\Service;
 use App\Services\Provisioning\ContainerAppDirectoryService;
 use App\Services\Provisioning\ContainerGitRepositoryService;
+use App\Services\SSH\SSHService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Mockery;
 use PHPUnit\Framework\Attributes\Test;
-use PHPUnit\Framework\TestCase;
+use Tests\TestCase;
 
 class ContainerGitRepositoryServiceTest extends TestCase
 {
+    use RefreshDatabase;
+
+    protected function tearDown(): void
+    {
+        Mockery::close();
+        parent::tearDown();
+    }
+
     #[Test]
     public function it_normalizes_repository_urls_and_branches(): void
     {
@@ -76,6 +90,31 @@ class ContainerGitRepositoryServiceTest extends TestCase
         $this->assertTrue($service->supportsTemplate('nodejs'));
         $this->assertFalse($service->supportsTemplate('wordpress'));
         $this->assertFalse($service->supportsTemplate(null));
+    }
+
+    #[Test]
+    public function sync_for_deploy_skips_clone_for_wordpress_even_with_repo_url(): void
+    {
+        $template = ContainerTemplate::factory()->create(['slug' => 'wordpress']);
+        $product = Product::factory()->containerHosting()->create([
+            'container_template_id' => $template->id,
+        ]);
+        $serviceModel = Service::factory()->create([
+            'product_id' => $product->id,
+            'service_meta' => [
+                'source_repo_url' => 'https://github.com/acme/wp.git',
+                'source_repo_branch' => 'main',
+            ],
+        ]);
+
+        $ssh = Mockery::mock(SSHService::class);
+        $ssh->shouldReceive('mkdirp')->once()->with('/tmp/wp-app');
+        $ssh->shouldNotReceive('exec');
+
+        $git = new ContainerGitRepositoryService(new ContainerAppDirectoryService);
+        $git->syncForDeploy($ssh, $serviceModel->fresh(['product.containerTemplate']), '/tmp/wp-app');
+
+        $this->assertFalse($git->supportsService($serviceModel->fresh(['product.containerTemplate'])));
     }
 
     #[Test]

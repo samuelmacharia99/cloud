@@ -30,6 +30,7 @@ use App\Services\DomainTransferService;
 use App\Services\EmailVerificationService;
 use App\Services\NotificationService;
 use App\Services\PaymentGateway\PaymentGatewayFactory;
+use App\Services\Provisioning\ContainerGitRepositoryService;
 use App\Services\RegistrationGuardService;
 use App\Services\ResellerBrandingResolver;
 use App\Services\ResellerCheckoutGuardService;
@@ -419,7 +420,14 @@ class CheckoutController extends Controller
 
                             // Optional app source to deploy into container filesystem.
                             $sourceRepoUrl = $request->input("source_repo_url.{$item['key']}");
-                            if (! empty($sourceRepoUrl)) {
+                            $stackSlug = $serviceMeta['language_slug']
+                                ?? $serviceMeta['provision_template_slug']
+                                ?? $product->containerTemplate?->slug;
+                            if (! empty($sourceRepoUrl)
+                                && app(ContainerGitRepositoryService::class)->supportsTemplate(
+                                    is_string($stackSlug) ? $stackSlug : null
+                                )
+                            ) {
                                 $serviceMeta['source_repo_url'] = $sourceRepoUrl;
                                 $serviceMeta['source_repo_branch'] = $request->input("source_repo_branch.{$item['key']}", 'main');
                             }
@@ -1265,7 +1273,14 @@ class CheckoutController extends Controller
                             $serviceMeta = $this->applyResellerContainerServiceMeta($serviceMeta, $product, $user, $item);
 
                             $sourceRepoUrl = $request->input("source_repo_url.{$item['key']}");
-                            if (! empty($sourceRepoUrl)) {
+                            $stackSlug = $serviceMeta['language_slug']
+                                ?? $serviceMeta['provision_template_slug']
+                                ?? $product->containerTemplate?->slug;
+                            if (! empty($sourceRepoUrl)
+                                && app(ContainerGitRepositoryService::class)->supportsTemplate(
+                                    is_string($stackSlug) ? $stackSlug : null
+                                )
+                            ) {
                                 $serviceMeta['source_repo_url'] = $sourceRepoUrl;
                                 $serviceMeta['source_repo_branch'] = $request->input("source_repo_branch.{$item['key']}", 'main');
                             }

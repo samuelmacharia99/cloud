@@ -36,7 +36,8 @@ class ContainerTerminalPtyBridge
         $this->ssh = SSHInteractiveSession::connect($deployment->node);
 
         $this->session->loadMissing('service.product.containerTemplate');
-        $templateSlug = $this->session->service?->product?->containerTemplate?->slug;
+        $templateSlug = $this->session->service?->effectiveContainerTemplate()?->slug
+            ?? $this->session->service?->product?->containerTemplate?->slug;
         $execUser = ContainerDockerExecUserResolver::execUser($templateSlug);
         $workDir = app(ContainerTerminalService::class)->resolveAppRoot($this->session);
 

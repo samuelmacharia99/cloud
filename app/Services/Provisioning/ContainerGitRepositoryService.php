@@ -530,7 +530,9 @@ class ContainerGitRepositoryService
         $settings = $this->repositorySettings($service);
         $ssh->mkdirp($hostAppPath);
 
-        if ($settings['url'] === '') {
+        // WordPress (and other non-Git stacks) must keep the bind mount empty/non-cloned
+        // so the official image can copy core. Ignore forged or stale source_repo_* meta.
+        if (! $this->supportsService($service) || $settings['url'] === '') {
             $service->loadMissing('product.containerTemplate');
             // Official wordpress image copies core into an empty volume; placeholders block that.
             if (($this->templateSlugFor($service) ?? '') !== 'wordpress') {

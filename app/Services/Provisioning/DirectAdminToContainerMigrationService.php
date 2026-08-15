@@ -291,7 +291,7 @@ class DirectAdminToContainerMigrationService
             throw new \InvalidArgumentException('Target must be an application hosting (container) service.');
         }
 
-        $slug = $target->product?->containerTemplate?->slug;
+        $slug = $target->effectiveContainerTemplate()?->slug;
         if ($slug !== 'wordpress') {
             throw new \InvalidArgumentException('WordPress migrator requires a WordPress container target.');
         }
@@ -1366,11 +1366,12 @@ PHP;
             ->where('user_id', $source->user_id)
             ->where('id', '!=', $source->id)
             ->whereHas('product', fn ($q) => $q->where('type', 'container_hosting'))
-            ->whereHas('product.containerTemplate', fn ($q) => $q->where('slug', 'wordpress'))
             ->whereHas('containerDeployment')
             ->with(['product.containerTemplate', 'containerDeployment'])
             ->orderByDesc('id')
-            ->get();
+            ->get()
+            ->filter(fn (Service $service) => ($service->effectiveContainerTemplate()?->slug ?? '') === 'wordpress')
+            ->values();
     }
 
     private function parseWpDatabaseName(SSHService $ssh, string $docroot): ?string
@@ -1616,23 +1617,10 @@ PHP;
             .' ; exit "$status"';
     }
 
-    /**
-     * Make bind-mounted WordPress files readable/writable by Apache (www-data / uid 33).
-     *
-     * DA archives often keep wp-config.php as mode 600 under a DA user UID; that causes
-     * HTTP 500 once Apache in the official WordPress image cannot read the config.
-     */
     public function buildWordPressPermissionsCommand(string $hostAppPath): string
     {
-        $path = escapeshellarg(rtrim($hostAppPath, '/'));
-
-        return 'if [ -d '.$path.' ]; then'
-            .'  chown -R 33:33 '.$path
-            // chmod -R is far faster than find -exec on multi-GB WordPress trees.
-            .'  && chmod -R u+rwX,g+rX,o+rX '.$path
-            .'  && if [ -f '.$path.'/wp-config.php ]; then chmod 640 '.$path.'/wp-config.php; fi'
-            .'  && if [ -d '.$path.'/wp-content ]; then chmod -R ug+rwX '.$path.'/wp-content; fi'
-            .'  ; fi';
+        return app(WordPressContainerHardeningService::class)
+            ->buildHostPermissionsCommand($hostAppPath);
     }
 
     /**
@@ -1696,27 +1684,8 @@ PHP;
         string $containerPath,
         string $appService
     ): void {
-        try {
-            $ssh->exec($this->buildWordPressPermissionsCommand($hostAppPath), 300);
-        } catch (\Throwable $e) {
-            // Fallback: chown inside the container (same bind mount) as root.
-            $ssh->exec(
-                "cd {$containerPath} && docker compose exec -u 0 -T {$appService} sh -c "
-                .escapeshellarg(
-                    'chown -R www-data:www-data /var/www/html'
-                    .' && find /var/www/html -type d -exec chmod 755 {} +'
-                    .' && find /var/www/html -type f -exec chmod 644 {} +'
-                    .' && chmod 640 /var/www/html/wp-config.php 2>/dev/null || true'
-                    .' && find /var/www/html/wp-content -type d -exec chmod 775 {} + 2>/dev/null || true'
-                    .' && find /var/www/html/wp-content -type f -exec chmod 664 {} + 2>/dev/null || true'
-                ),
-                300
-            );
-            Log::warning('Host WordPress permission normalize failed; applied via container', [
-                'error' => $e->getMessage(),
-                'host_app_path' => $hostAppPath,
-            ]);
-        }
+        app(WordPressContainerHardeningService::class)
+            ->ensureWritableFilesystem($ssh, $hostAppPath, $containerPath, $appService);
     }
 
     /**

@@ -212,16 +212,17 @@ class ContainerAppDirectoryService
         return 'find '.escapeshellarg($binDir).' '.escapeshellarg($nextBin).' -type f -exec chmod u+x {} + 2>/dev/null || true';
     }
 
-    public function inContainerPermissionNormalizationScript(): string
+    public function inContainerPermissionNormalizationScript(string $appRoot = '/app'): string
     {
-        $skipDependencyTrees = '\( -path /app/node_modules -o -path /app/vendor \) -prune -o';
+        $root = rtrim($appRoot, '/') ?: '/app';
+        $skipDependencyTrees = '\( -path '.$root.'/node_modules -o -path '.$root.'/vendor \) -prune -o';
 
-        return 'if id www-data >/dev/null 2>&1; then chown -R www-data:www-data /app;'
-            .' else chown -R 33:33 /app; fi;'
-            .'find /app '.$skipDependencyTrees.' -type d -exec chmod 775 {} + 2>/dev/null;'
-            .'find /app '.$skipDependencyTrees.' -type f -exec chmod 664 {} + 2>/dev/null;'
-            .'find /app -name artisan -type f -exec chmod 775 {} + 2>/dev/null || true; '
-            .$this->nodeModulesBinPermissionRestoreScript();
+        return 'if id www-data >/dev/null 2>&1; then chown -R www-data:www-data '.$root.';'
+            .' else chown -R 33:33 '.$root.'; fi;'
+            .'find '.$root.' '.$skipDependencyTrees.' -type d -exec chmod 775 {} + 2>/dev/null;'
+            .'find '.$root.' '.$skipDependencyTrees.' -type f -exec chmod 664 {} + 2>/dev/null;'
+            .'find '.$root.' -name artisan -type f -exec chmod 775 {} + 2>/dev/null || true; '
+            .$this->nodeModulesBinPermissionRestoreScript($root === '/app' ? '/app' : $root);
     }
 
     public function normalizeLaravelPermissions(SSHService $ssh, ContainerDeployment $deployment, string $projectRoot = '/app'): void
@@ -279,13 +280,15 @@ class ContainerAppDirectoryService
     {
         $containerName = escapeshellarg($deployment->container_name);
         $hostAppPath = escapeshellarg($this->hostAppPath($deployment));
-        $ownership = $this->inContainerPermissionNormalizationScript();
+        $appRoot = $this->inContainerAppRoot($deployment);
+        $ownership = $this->inContainerPermissionNormalizationScript($appRoot);
 
         try {
             $ssh->exec('docker exec -u 0 -w / '.$containerName.' sh -lc '.escapeshellarg($ownership), 60);
         } catch (\Throwable $e) {
-            \Log::warning('Failed to normalize /app ownership inside container', [
+            \Log::warning('Failed to normalize app ownership inside container', [
                 'container_name' => $deployment->container_name,
+                'app_root' => $appRoot,
                 'error' => $e->getMessage(),
             ]);
         }
@@ -298,11 +301,20 @@ class ContainerAppDirectoryService
                 60
             );
         } catch (\Throwable $e) {
-            \Log::warning('Failed to normalize host /app mount ownership', [
+            \Log::warning('Failed to normalize host app mount ownership', [
                 'host_app_path' => $this->hostAppPath($deployment),
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    private function inContainerAppRoot(ContainerDeployment $deployment): string
+    {
+        $deployment->loadMissing('service');
+        $slug = $deployment->service?->effectiveContainerTemplate()?->slug
+            ?? $deployment->service?->product?->containerTemplate?->slug;
+
+        return $slug === 'wordpress' ? '/var/www/html' : '/app';
     }
 
     private function placeholderHtml(): string

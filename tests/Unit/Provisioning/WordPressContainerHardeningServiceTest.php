@@ -68,6 +68,29 @@ class WordPressContainerHardeningServiceTest extends TestCase
     }
 
     #[Test]
+    public function host_permissions_command_makes_wp_content_writable_for_www_data(): void
+    {
+        $service = new WordPressContainerHardeningService;
+        $cmd = $service->buildHostPermissionsCommand('/opt/talksasa/containers/user-1-wordpress/app');
+
+        $this->assertStringContainsString('chown -R 33:33', $cmd);
+        $this->assertStringContainsString('wp-content/uploads', $cmd);
+        $this->assertStringContainsString('wp-content/plugins', $cmd);
+        $this->assertStringContainsString('chmod -R ug+rwX', $cmd);
+        $this->assertStringContainsString('wp-config.php', $cmd);
+    }
+
+    #[Test]
+    public function in_container_permissions_script_targets_var_www_html(): void
+    {
+        $script = (new WordPressContainerHardeningService)->inContainerPermissionsScript();
+
+        $this->assertStringContainsString('chown -R www-data:www-data /var/www/html', $script);
+        $this->assertStringContainsString('/var/www/html/wp-content/plugins', $script);
+        $this->assertStringContainsString('/var/www/html/wp-content/uploads', $script);
+    }
+
+    #[Test]
     public function wordpress_work_dir_is_var_www_html(): void
     {
         $stack = new ContainerStackCommandService;

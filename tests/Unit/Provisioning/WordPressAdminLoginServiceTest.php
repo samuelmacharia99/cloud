@@ -6,11 +6,34 @@ use App\Models\ContainerTemplate;
 use App\Models\Product;
 use App\Models\Service;
 use App\Services\Provisioning\WordPressAdminLoginService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class WordPressAdminLoginServiceTest extends TestCase
 {
+    use RefreshDatabase;
+
+    #[Test]
+    public function it_detects_shared_plan_wordpress_via_effective_template(): void
+    {
+        $wordpress = ContainerTemplate::factory()->create(['slug' => 'wordpress']);
+        $product = Product::factory()->containerHosting()->create([
+            'container_template_id' => null,
+        ]);
+        $service = Service::factory()->create([
+            'product_id' => $product->id,
+            'service_meta' => [
+                'container_template_id' => $wordpress->id,
+                'language_slug' => 'wordpress',
+            ],
+        ]);
+
+        $this->assertTrue(
+            (new WordPressAdminLoginService)->isWordPressContainer($service->fresh(['product.containerTemplate']))
+        );
+    }
+
     #[Test]
     public function it_detects_wordpress_container_services(): void
     {
