@@ -121,6 +121,35 @@ class ContainerGitPullRestartTest extends TestCase
         ]);
     }
 
+    public function test_failed_pull_status_includes_plain_english_error_and_technical_details(): void
+    {
+        $user = User::factory()->create();
+        $service = $this->makeNodeService($user);
+        $details = 'fatal: Authentication failed for https://github.com/acme/app.git';
+
+        ContainerGitPull::create([
+            'service_id' => $service->id,
+            'container_deployment_id' => $service->containerDeployment->id,
+            'user_id' => $user->id,
+            'template_slug' => 'nodejs',
+            'status' => ContainerGitPull::STATUS_FAILED,
+            'steps' => [
+                ['key' => 'sync', 'label' => 'Sync repository', 'status' => 'failed'],
+            ],
+            'error_message' => $details,
+            'completed_at' => now(),
+        ]);
+
+        $response = $this->actingAs($user)->getJson(
+            route('customer.services.container.git-repository.status', $service)
+        );
+
+        $response->assertOk()
+            ->assertJsonPath('pull.error.title', 'Couldn’t authenticate with the Git host.')
+            ->assertJsonPath('pull.error.details', $details)
+            ->assertJsonPath('pull.error_message', $details);
+    }
+
     public function test_restart_cancels_in_progress_pull_before_starting_again(): void
     {
         Queue::fake();

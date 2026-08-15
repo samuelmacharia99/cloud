@@ -1,0 +1,191 @@
+<?php
+
+namespace App\Services\Provisioning;
+
+use App\Models\ContainerGitPull;
+
+class ContainerGitPullErrorPresenter
+{
+    /**
+     * @return array{title: string, guidance: string, details: string}|null
+     */
+    public function present(ContainerGitPull $pull): ?array
+    {
+        if (! in_array($pull->status, [
+            ContainerGitPull::STATUS_FAILED,
+            ContainerGitPull::STATUS_CANCELLED,
+        ], true)) {
+            return null;
+        }
+
+        $details = trim((string) $pull->error_message);
+        if ($details === '') {
+            $details = 'No technical error details were recorded.';
+        }
+
+        if ($pull->status === ContainerGitPull::STATUS_CANCELLED) {
+            return $this->result(
+                'Git pull cancelled.',
+                'Restart the pull when you are ready to try again.',
+                $details,
+            );
+        }
+
+        $message = strtolower($details);
+        $step = $this->failedStepKey($pull);
+
+        if ($this->contains($message, [
+            'authentication failed',
+            'could not read username',
+            'could not read password',
+            'invalid username or password',
+            'access denied',
+            'http 401',
+            'http 403',
+            'returned error: 401',
+            'returned error: 403',
+        ]) || ($step === 'sync' && str_contains($message, 'permission denied'))) {
+            return $this->result(
+                'Couldn’t authenticate with the Git host.',
+                'Update the personal access token and make sure it can read this repository, then try again.',
+                $details,
+            );
+        }
+
+        if ($this->contains($message, [
+            'repository not found',
+            'does not appear to be a git repository',
+        ])) {
+            return $this->result(
+                'Couldn’t find the Git repository.',
+                'Check the repository URL and confirm that the connected account or token has access.',
+                $details,
+            );
+        }
+
+        if ($this->contains($message, [
+            'couldn\'t find remote ref',
+            'could not find remote ref',
+            'remote branch',
+            'pathspec',
+            'invalid branch',
+        ])) {
+            return $this->result(
+                'Couldn’t find the selected branch.',
+                'Check the branch name in the repository settings and try again.',
+                $details,
+            );
+        }
+
+        if ($this->contains($message, [
+            'could not resolve host',
+            'connection timed out',
+            'connection reset',
+            'unable to connect',
+            'failed to connect',
+            'network is unreachable',
+            'temporary failure in name resolution',
+        ])) {
+            return $this->result(
+                'Couldn’t reach the Git host.',
+                'Check the repository host and try again in a few minutes.',
+                $details,
+            );
+        }
+
+        if ($this->contains($message, ['no space left on device', 'disk quota exceeded'])) {
+            return $this->result(
+                'The server ran out of storage during the pull.',
+                'Free some storage or increase the service capacity, then restart the pull.',
+                $details,
+            );
+        }
+
+        if ($step === 'composer' || $this->contains($message, ['composer install', 'composer dependencies'])) {
+            return $this->result(
+                'PHP dependencies could not be installed.',
+                'Review the Composer error below, fix composer.json or its credentials, then restart the pull.',
+                $details,
+            );
+        }
+
+        if ($step === 'migrations' || $this->contains($message, ['migration failed', 'artisan migrate'])) {
+            return $this->result(
+                'Database migrations failed.',
+                'Review the migration error below, correct the application or database configuration, then restart the pull.',
+                $details,
+            );
+        }
+
+        if (in_array($step, ['frontend', 'post_pull'], true)
+            || $this->contains($message, ['npm run build', 'npm install', 'yarn build', 'pnpm'])) {
+            return $this->result(
+                'The application build failed.',
+                'Review the build output below, fix the dependency or build error, then restart the pull.',
+                $details,
+            );
+        }
+
+        if ($step === 'health' || $this->contains($message, ['health check', 'container is not running'])) {
+            return $this->result(
+                'The updated application did not become healthy.',
+                'Review the runtime output below and check the application’s startup configuration before trying again.',
+                $details,
+            );
+        }
+
+        $label = $this->failedStepLabel($pull);
+
+        return $this->result(
+            $label ? "{$label} did not complete." : 'The Git pull did not complete.',
+            'Review the technical details below, correct the reported problem, then restart the pull.',
+            $details,
+        );
+    }
+
+    /**
+     * @return array{title: string, guidance: string, details: string}
+     */
+    private function result(string $title, string $guidance, string $details): array
+    {
+        return compact('title', 'guidance', 'details');
+    }
+
+    /**
+     * @param  list<string>  $needles
+     */
+    private function contains(string $message, array $needles): bool
+    {
+        foreach ($needles as $needle) {
+            if (str_contains($message, $needle)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function failedStepKey(ContainerGitPull $pull): ?string
+    {
+        return $this->failedStep($pull)['key'] ?? null;
+    }
+
+    private function failedStepLabel(ContainerGitPull $pull): ?string
+    {
+        return $this->failedStep($pull)['label'] ?? null;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function failedStep(ContainerGitPull $pull): array
+    {
+        foreach (is_array($pull->steps) ? $pull->steps : [] as $step) {
+            if (($step['status'] ?? null) === 'failed') {
+                return $step;
+            }
+        }
+
+        return [];
+    }
+}

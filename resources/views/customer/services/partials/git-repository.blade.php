@@ -443,7 +443,12 @@
                                     </div>
                                     <div class="min-w-0 flex-1">
                                         <p class="font-medium text-sm text-slate-100" x-text="step.label"></p>
-                                        <p x-show="step.message" x-transition class="text-xs text-slate-400 mt-1 font-mono leading-relaxed" x-text="step.message"></p>
+                                        <p
+                                            x-show="step.message && (step.status !== 'failed' || technicalDetailsExpanded)"
+                                            x-transition
+                                            class="text-xs text-slate-400 mt-1 font-mono leading-relaxed"
+                                            x-text="step.message"
+                                        ></p>
                                     </div>
                                     <span class="text-[10px] font-mono uppercase tracking-wider shrink-0" :class="stepStatusTextClass(step.status)" x-text="step.status"></span>
                                 </li>
@@ -451,7 +456,42 @@
                         </ol>
                     </template>
 
-                    <div class="relative">
+                    <div
+                        x-show="presentedError"
+                        x-transition
+                        class="relative rounded-xl border border-red-500/35 bg-red-950/40 px-4 py-4"
+                    >
+                        <div class="flex items-start gap-3">
+                            <div class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-red-500/40 bg-red-500/10">
+                                <svg class="h-4 w-4 text-red-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.3 3.9 2.4 17.5A2 2 0 0 0 4.1 20h15.8a2 2 0 0 0 1.7-2.5L13.7 3.9a2 2 0 0 0-3.4 0Z"/>
+                                </svg>
+                            </div>
+                            <div class="min-w-0 flex-1">
+                                <p class="text-sm font-semibold text-red-200" x-text="presentedError?.title"></p>
+                                <p class="mt-1 text-sm leading-relaxed text-red-100/75" x-text="presentedError?.guidance"></p>
+                                <button
+                                    type="button"
+                                    class="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-red-200 hover:text-white transition"
+                                    @click="technicalDetailsExpanded = !technicalDetailsExpanded"
+                                    :aria-expanded="technicalDetailsExpanded"
+                                >
+                                    <span x-text="technicalDetailsExpanded ? 'Hide technical details' : 'Show technical details'"></span>
+                                    <svg class="h-3.5 w-3.5 transition-transform" :class="technicalDetailsExpanded ? 'rotate-180' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="m6 9 6 6 6-6"/>
+                                    </svg>
+                                </button>
+                                <pre
+                                    x-show="technicalDetailsExpanded"
+                                    x-transition
+                                    class="mt-3 max-h-48 overflow-auto whitespace-pre-wrap rounded-lg border border-red-500/20 bg-black/30 p-3 text-[11px] leading-relaxed text-red-100/80 font-mono"
+                                    x-text="presentedError?.details"
+                                ></pre>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="relative" x-show="!hasFailure || technicalDetailsExpanded" x-transition>
                         <div class="flex items-center justify-between mb-2">
                             <p class="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-400/70">Terminal output</p>
                             <span x-show="isActive" class="flex items-center gap-1.5 text-[10px] font-mono text-emerald-400/90">
@@ -473,13 +513,6 @@
                             ></pre>
                         </div>
                     </div>
-
-                    <p
-                        x-show="pull?.error_message"
-                        x-transition
-                        class="relative text-sm text-red-300 bg-red-950/40 border border-red-500/30 rounded-xl px-4 py-3 font-mono"
-                        x-text="pull?.error_message"
-                    ></p>
                 </div>
             </div>
         </div>
@@ -504,6 +537,7 @@ function gitPullPanel() {
         restarting: false,
         cancelling: false,
         errorMessage: '',
+        technicalDetailsExpanded: false,
         pollTimer: null,
         canPull: {{ $deployment->isRunning() ? 'true' : 'false' }},
 
@@ -514,6 +548,23 @@ function gitPullPanel() {
         get canRestart() {
             if (!this.canPull || !this.pull) return false;
             return this.isActive || ['failed', 'cancelled'].includes(this.pull.status);
+        },
+
+        get hasFailure() {
+            return this.pull && ['failed', 'cancelled'].includes(this.pull.status);
+        },
+
+        get presentedError() {
+            if (!this.hasFailure) return null;
+            if (this.pull.error) return this.pull.error;
+
+            return {
+                title: this.pull.status === 'cancelled' ? 'Git pull cancelled.' : 'The Git pull did not complete.',
+                guidance: this.pull.status === 'cancelled'
+                    ? 'Restart the pull when you are ready to try again.'
+                    : 'Review the technical details below, correct the reported problem, then restart the pull.',
+                details: this.pull.error_message || 'No technical error details were recorded.',
+            };
         },
 
         init() {
@@ -619,6 +670,7 @@ function gitPullPanel() {
 
             this.pulling = true;
             this.errorMessage = '';
+            this.technicalDetailsExpanded = false;
             this.logOutput = '[init] Queuing Git sync pipeline…';
 
             try {
@@ -704,6 +756,7 @@ function gitPullPanel() {
 
             this.restarting = true;
             this.errorMessage = '';
+            this.technicalDetailsExpanded = false;
             this.logOutput = '[init] Restarting Git sync pipeline…';
 
             try {

@@ -31,6 +31,7 @@ use App\Services\Provisioning\ContainerDoctorService;
 use App\Services\Provisioning\ContainerEnvironmentService;
 use App\Services\Provisioning\ContainerFileService;
 use App\Services\Provisioning\ContainerGitCredentialsService;
+use App\Services\Provisioning\ContainerGitPullErrorPresenter;
 use App\Services\Provisioning\ContainerGitRepositoryService;
 use App\Services\Provisioning\ContainerPhpExtensionsService;
 use App\Services\Provisioning\ContainerStagingService;
@@ -781,6 +782,7 @@ class ContainerController extends Controller
             'steps' => $pull->steps,
             'log' => $pull->log,
             'error_message' => $pull->error_message,
+            'error' => app(ContainerGitPullErrorPresenter::class)->present($pull),
             'commit' => $pull->commit,
             'started_at' => $pull->started_at?->toIso8601String(),
             'completed_at' => $pull->completed_at?->toIso8601String(),
