@@ -329,9 +329,15 @@
                                 </span>
                             @endif
 
-                            <a href="{{ route('customer.services.upgrade', $service) }}" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition">
-                                Change plan
-                            </a>
+                            @if ($templateSlug === 'wordpress')
+                                <a href="{{ route('customer.services.wordpress-admin', $service) }}" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition">
+                                    WP Admin
+                                </a>
+                            @else
+                                <a href="{{ route('customer.services.upgrade', $service) }}" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition">
+                                    Change plan
+                                </a>
+                            @endif
                         </div>
 
                         @include('customer.services.partials.staging')
