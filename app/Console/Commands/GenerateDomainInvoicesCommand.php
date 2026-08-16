@@ -2,7 +2,6 @@
 
 namespace App\Console\Commands;
 
-use App\Models\DomainRenewalOrder;
 use App\Models\Setting;
 use App\Services\DomainRenewalService;
 use App\Services\InvoiceGenerationScheduleService;
@@ -42,22 +41,22 @@ class GenerateDomainInvoicesCommand extends BaseCronCommand
                         return;
                     }
 
-                    $renewalOrder = DomainRenewalOrder::create([
-                        'domain_id' => $domain->id,
-                        'user_id' => $domain->user_id,
-                        'years' => $renewalYears,
-                        'amount' => $renewalPrice,
-                        'status' => 'pending',
-                        'expires_at' => now()->addDays($paymentDays),
-                    ]);
-
                     $renewalService = app(DomainRenewalService::class);
+                    $renewalOrder = $renewalService->initiateRenewal(
+                        $domain,
+                        $domain->user,
+                        $renewalYears,
+                        $paymentDays
+                    );
+                    $alreadyInvoiced = $renewalOrder->invoice_id || $renewalOrder->customer_invoice_id;
                     $invoice = $renewalService->createInvoice($renewalOrder);
 
-                    app(NotificationService::class)->notifyDomainRenewalInvoice($invoice, $domain);
+                    if (! $alreadyInvoiced) {
+                        app(NotificationService::class)->notifyDomainRenewalInvoice($invoice, $domain);
+                        $count++;
+                    }
 
                     Log::info("Domain renewal invoice generated: {$domain->name}{$domain->extension} (Invoice: {$invoice->invoice_number})");
-                    $count++;
                 });
             } catch (\Exception $e) {
                 Log::error("Failed to generate domain invoice for {$domain->name}{$domain->extension}: {$e->getMessage()}");

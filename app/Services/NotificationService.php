@@ -35,6 +35,7 @@ use App\Models\ContainerBackup;
 use App\Models\Domain;
 use App\Models\DomainRenewalOrder;
 use App\Models\Invoice;
+use App\Models\Node;
 use App\Models\Order;
 use App\Models\Payment;
 use App\Models\Product;
@@ -917,6 +918,85 @@ class NotificationService
 
         $this->emailDelivery->sendToAdmins(
             new GenericNotificationMail($subject, 'Container Node Offline Alert', $body),
+            $subject,
+            $event,
+            $body
+        );
+    }
+
+    /**
+     * @param  array{
+     *     pressure_percent: int,
+     *     live: array{cpu: int, ram: int, storage: int},
+     *     reserved: array{cpu: int, ram: int, storage: int},
+     *     drivers: list<string>,
+     *     deployment_count: int
+     * }  $evaluation
+     */
+    public function notifyAdminNodeScaleOutNeeded(Node $node, array $evaluation, int $thresholdPercent): void
+    {
+        $drivers = implode(', ', $evaluation['drivers'] ?: ['capacity']);
+        $subject = "Scale out: {$node->name} is at {$evaluation['pressure_percent']}% capacity";
+        $body = <<<EOT
+An application host has reached the elastic scale-out threshold. Provision another container host before placement headroom is exhausted.
+
+Node: {$node->name}
+Hostname: {$node->hostname}
+IP: {$node->ip_address}
+Pressure: {$evaluation['pressure_percent']}% (threshold {$thresholdPercent}%)
+Drivers: {$drivers}
+Deployments: {$evaluation['deployment_count']}
+
+Live — CPU {$evaluation['live']['cpu']}%, RAM {$evaluation['live']['ram']}%, Storage {$evaluation['live']['storage']}%
+Reserved — CPU {$evaluation['reserved']['cpu']}%, RAM {$evaluation['reserved']['ram']}%, Storage {$evaluation['reserved']['storage']}%
+
+Action: create/configure a new container_host node in Admin → Nodes, install Docker + Talksasa runtime, mark it active/online. New apps will place there automatically once capacity is available.
+EOT;
+
+        $this->telegram()->systemAlert($subject, [
+            'Node' => $node->hostname ?: $node->name,
+            'Pressure' => $evaluation['pressure_percent'].'%',
+            'Threshold' => $thresholdPercent.'%',
+            'Drivers' => $drivers,
+            'Deployments' => (string) $evaluation['deployment_count'],
+        ]);
+
+        $event = NotificationEvent::AdminNodeScaleOut;
+        if (! $this->preferences->isGloballyEnabled($event)) {
+            return;
+        }
+
+        $this->emailDelivery->sendToAdmins(
+            new GenericNotificationMail($subject, 'Application Host Scale-Out Needed', $body),
+            $subject,
+            $event,
+            $body
+        );
+    }
+
+    public function notifyAdminFleetScaleOutNeeded(int $pressuredNodes, int $thresholdPercent): void
+    {
+        $subject = "Urgent: all application hosts are at/above {$thresholdPercent}% capacity";
+        $body = <<<EOT
+Every active application host is at or above the elastic scale-out threshold ({$thresholdPercent}%).
+
+Pressured hosts: {$pressuredNodes}
+
+New deployments will start failing or packing onto overloaded nodes once reserved/live headroom is gone. Provision at least one additional container_host immediately.
+EOT;
+
+        $this->telegram()->systemAlert($subject, [
+            'Pressured hosts' => (string) $pressuredNodes,
+            'Threshold' => $thresholdPercent.'%',
+        ]);
+
+        $event = NotificationEvent::AdminNodeScaleOut;
+        if (! $this->preferences->isGloballyEnabled($event)) {
+            return;
+        }
+
+        $this->emailDelivery->sendToAdmins(
+            new GenericNotificationMail($subject, 'Fleet Application Host Scale-Out Needed', $body),
             $subject,
             $event,
             $body

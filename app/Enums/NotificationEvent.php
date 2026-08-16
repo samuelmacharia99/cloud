@@ -32,6 +32,7 @@ enum NotificationEvent: string
     case AdminNewOrder = 'admin_new_order';
     case AdminResellerDomainPush = 'admin_reseller_domain_push';
     case AdminNodeOffline = 'admin_node_offline';
+    case AdminNodeScaleOut = 'admin_node_scale_out';
     case CronFailure = 'cron_failure';
     case CronHealth = 'cron_health';
     case PasswordChanged = 'password_changed';
@@ -82,6 +83,7 @@ enum NotificationEvent: string
             self::AdminNewOrder => 'notify_admin_new_order',
             self::AdminResellerDomainPush => 'notify_admin_reseller_domain_push',
             self::AdminNodeOffline => 'notify_admin_node_offline',
+            self::AdminNodeScaleOut => 'notify_admin_node_scale_out',
             self::CronFailure => 'notify_cron_failure',
             self::CronHealth => 'notify_cron_health',
             self::PasswordChanged => 'notify_password_changed',
@@ -111,6 +113,7 @@ enum NotificationEvent: string
             self::AdminNewOrder,
             self::AdminResellerDomainPush,
             self::AdminNodeOffline,
+            self::AdminNodeScaleOut,
             self::CronFailure,
             self::CronHealth,
             self::ContainerBackupFailed,

@@ -137,6 +137,13 @@ class CronJobSeeder extends Seeder
                 'enabled' => false,
             ],
             [
+                'name' => 'Check Container Node Capacity',
+                'description' => 'Alerts admins to provision another application host when live or reserved capacity reaches ~70%.',
+                'command' => 'cron:check-container-node-capacity',
+                'schedule' => '*/15 * * * *',
+                'enabled' => true,
+            ],
+            [
                 'name' => 'Cleanup Monitoring Data',
                 'description' => 'Deletes node monitoring records and old cron logs older than retention period.',
                 'command' => 'cron:cleanup-monitoring',

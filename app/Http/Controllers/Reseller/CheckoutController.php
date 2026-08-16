@@ -144,6 +144,14 @@ class CheckoutController extends Controller
                     $hasRenewal = true;
 
                     $renewalOrder = $this->renewalService->initiateResellerRenewal($domain, $reseller, (int) $item['years']);
+                    $linkedInvoice = $renewalOrder->customerInvoice ?? $renewalOrder->invoice;
+                    if ($linkedInvoice && $linkedInvoice->status->value !== 'cancelled') {
+                        \DB::rollBack();
+                        session()->forget(CartController::CART_KEY);
+
+                        return redirect()->route('reseller.invoices.show', $linkedInvoice)
+                            ->with('info', 'This domain already has a renewal invoice. The existing invoice was reused.');
+                    }
 
                     $invoiceItems[] = [
                         'description' => 'Renew '.$domain->name.$domain->extension.' ('.$item['years'].' year'.($item['years'] > 1 ? 's' : '').')',

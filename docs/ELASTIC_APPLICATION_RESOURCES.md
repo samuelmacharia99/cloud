@@ -23,9 +23,15 @@ nodes are eligible, and the default protected headroom is:
 - Storage: 10%
 
 Configure these with `CONTAINER_NODE_*_HEADROOM_PERCENT`. A node that cannot
-preserve headroom receives no new deployments. Adding provider-level node
-autoscaling remains an infrastructure integration; the application will not
-pretend capacity exists when all physical hosts are full.
+preserve headroom receives no new deployments.
+
+At ~70% pressure (live or reserved), `cron:check-container-node-capacity` alerts
+admins over Telegram/email to provision another `container_host`. Talksasa does
+not create cloud VMs automatically; once the new node is active/online, placement
+uses it. Configure with `CONTAINER_NODE_SCALE_OUT_PERCENT` and
+`CONTAINER_NODE_SCALE_OUT_COOLDOWN_MINUTES`.
+
+Adding provider-level node autoscaling remains an infrastructure integration.
 
 ## Metering and billing
 

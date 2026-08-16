@@ -406,8 +406,20 @@ class DomainController extends Controller
         ]);
 
         try {
-            $renewalService = new DomainRenewalService;
-            $renewalOrder = $renewalService->initiateRenewal($domain, auth()->user(), $validated['years']);
+            $renewalService = app(DomainRenewalService::class);
+            $customer = $request->user();
+            $existingInvoice = $renewalService->openRenewalInvoiceFor($domain, $customer);
+
+            if ($existingInvoice) {
+                return response()->json([
+                    'success' => true,
+                    'reused_invoice' => true,
+                    'message' => 'This domain already has an open renewal invoice.',
+                    'redirect' => route('customer.checkout.show', ['invoice_id' => $existingInvoice->id]),
+                ]);
+            }
+
+            $renewalOrder = $renewalService->initiateRenewal($domain, $customer, $validated['years']);
 
             // Redirect to renewal checkout
             session(['renewal_checkout' => [
@@ -474,7 +486,7 @@ class DomainController extends Controller
         abort_if(! $renewalCheckout, 404, 'Renewal not found');
 
         try {
-            $renewalService = new DomainRenewalService;
+            $renewalService = app(DomainRenewalService::class);
             $renewalOrder = DomainRenewalOrder::findOrFail($renewalCheckout['renewal_order_id']);
 
             abort_if($renewalOrder->user_id !== auth()->id(), 403);

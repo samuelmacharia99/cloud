@@ -1973,6 +1973,13 @@
                                     <span class="text-slate-700 dark:text-slate-300">Admin: Application Node Offline</span>
                                 </label>
                             </div>
+                            <div>
+                                <input type="hidden" name="settings[notify_admin_node_scale_out]" value="0">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" name="settings[notify_admin_node_scale_out]" value="1" @checked(($settings['notify_admin_node_scale_out'] ?? '0') == '1') class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Admin: Application Host Scale-Out (~70%)</span>
+                                </label>
+                            </div>
                         </div>
                     </fieldset>
 

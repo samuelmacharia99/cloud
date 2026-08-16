@@ -17,6 +17,7 @@ use App\Services\ResellerDomainOrderService;
 use App\Services\ResellerDomainTransferService;
 use App\Services\ResellerScopeService;
 use App\Support\ResellerCartContext;
+use App\Support\SessionCart;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -322,6 +323,21 @@ class DomainController extends Controller
         try {
             $years = (int) $validated['years'];
             $reseller = auth()->user();
+            $billingCustomer = $this->resolveRenewalBillingCustomer($domain, $reseller);
+            $payer = $billingCustomer ?? $reseller;
+            $existingInvoice = $this->renewalService->openRenewalInvoiceFor($domain, $payer);
+
+            if ($existingInvoice) {
+                return response()->json([
+                    'success' => true,
+                    'reused_invoice' => true,
+                    'message' => 'This domain already has an open renewal invoice.',
+                    'redirect' => $billingCustomer
+                        ? route('reseller.customer-invoices.show', $existingInvoice)
+                        : route('reseller.invoices.show', $existingInvoice),
+                ]);
+            }
+
             $wholesaleAmount = $this->renewalService->wholesaleRenewalAmount($domain, $years);
             $cart = session()->get(CartController::CART_KEY, []);
 
@@ -343,8 +359,6 @@ class DomainController extends Controller
                 'wholesale_total' => $wholesaleAmount,
                 'added_at' => now()->toIso8601String(),
             ];
-
-            $billingCustomer = $this->resolveRenewalBillingCustomer($domain, $reseller);
 
             if (ResellerCartContext::isCustomerMode() && ! $billingCustomer) {
                 return response()->json([
@@ -384,7 +398,7 @@ class DomainController extends Controller
                 $cartItem['price'] = $wholesaleAmount;
             }
 
-            $key = \App\Support\SessionCart::newLineKey('renew');
+            $key = SessionCart::newLineKey('renew');
             $cart[$key] = $cartItem;
 
             session()->put(CartController::CART_KEY, $cart);

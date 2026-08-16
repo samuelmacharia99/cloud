@@ -34,6 +34,9 @@ return [
         'node_ram_headroom_percent' => (int) env('CONTAINER_NODE_RAM_HEADROOM_PERCENT', 20),
         'node_cpu_headroom_percent' => (int) env('CONTAINER_NODE_CPU_HEADROOM_PERCENT', 10),
         'node_storage_headroom_percent' => (int) env('CONTAINER_NODE_STORAGE_HEADROOM_PERCENT', 10),
+        // Alert operators early so a new host can be provisioned before placement headroom is gone.
+        'scale_out_threshold_percent' => (int) env('CONTAINER_NODE_SCALE_OUT_PERCENT', 70),
+        'scale_out_alert_cooldown_minutes' => (int) env('CONTAINER_NODE_SCALE_OUT_COOLDOWN_MINUTES', 360),
     ],
 
     'runtime_templates' => [

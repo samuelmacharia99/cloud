@@ -99,6 +99,7 @@ class SettingController extends Controller
             'notify_reseller_ssl_provision_failed',
             'notify_admin_new_order', 'notify_admin_reseller_domain_push', 'notify_admin_manual_payment',
             'notify_admin_node_offline',
+            'notify_admin_node_scale_out',
         ],
         'cron' => [
             'cron_timezone', 'cron_retention_days', 'max_execution_time',
