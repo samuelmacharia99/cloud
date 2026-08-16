@@ -48,7 +48,7 @@
                     class="inline-flex items-center px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg text-sm font-medium hover:bg-slate-200 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
                     @if (! $canSaveEnvironment) disabled @endif
                 >
-                    <span x-text="importing ? 'Reading…' : 'Choose .env file'"></span>
+                    <span x-text="importing ? 'Reading…' : 'Upload .env'"></span>
                 </button>
             </div>
         </div>

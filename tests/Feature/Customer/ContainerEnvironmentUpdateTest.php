@@ -84,7 +84,7 @@ class ContainerEnvironmentUpdateTest extends TestCase
             ]))
             ->assertOk()
             ->assertSee('Import a .env file')
-            ->assertSee('Choose .env file')
+            ->assertSee('Upload .env')
             ->assertSee('parsed in your browser and is not uploaded separately')
             ->assertSee('accept=".env,text/plain"', false)
             ->assertSee('parseDotEnv(content)', false);
