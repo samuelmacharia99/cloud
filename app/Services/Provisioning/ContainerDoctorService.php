@@ -89,6 +89,9 @@ class ContainerDoctorService
             'clear_laravel_caches' => $this->treatClearLaravelCaches($service),
             'fix_storage_permissions' => $this->treatFixStoragePermissions($service),
             'fix_wordpress_permissions' => $this->treatFixWordPressPermissions($service),
+            'fix_wordpress_media_processing' => $this->treatFixWordPressMediaProcessing($service),
+            'regenerate_wordpress_thumbnails' => $this->treatRegenerateWordPressThumbnails($service),
+            'fix_wordpress_site_url' => $this->treatFixWordPressSiteUrl($service),
             'restart_application' => $this->treatRestartApplication($service),
             'recreate_application' => $this->treatRecreateApplication($service),
             'fix_vite_production_runtime' => $this->treatFixViteProductionRuntime($service),
@@ -344,6 +347,17 @@ class ContainerDoctorService
                         ],
                         'source' => 'live',
                     ];
+                }
+
+                $media = $this->probeWordPressMedia($ssh, $deployment);
+                if ($media !== null) {
+                    $checks['wordpress_image_editor'] = $media['editor'];
+                    $checks['wordpress_missing_thumbnails'] = $media['missing_sizes'];
+
+                    $liveUrl = app(WordPressAdminLoginService::class)->resolvePublicBaseUrl($service);
+                    foreach ($this->wordPressMediaFindings($media, $liveUrl) as $finding) {
+                        $findings[] = $finding;
+                    }
                 }
             }
 
@@ -1155,6 +1169,166 @@ PHP;
     }
 
     /**
+     * WordPress renders the grey document icon for any attachment without generated image
+     * sizes, so "broken" media is usually a metadata/editor problem rather than a failed
+     * upload. Read the real state from inside the container.
+     */
+    private function wordPressMediaProbeScript(): string
+    {
+        return <<<'PHP'
+@ini_set('display_errors', '0');
+error_reporting(0);
+require '/var/www/html/wp-load.php';
+global $wpdb;
+$upload = wp_upload_dir();
+$basedir = rtrim((string) ($upload['basedir'] ?? ''), '/');
+$images = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'attachment' AND post_mime_type LIKE 'image/%'");
+$missing = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->posts} p LEFT JOIN {$wpdb->postmeta} m ON m.post_id = p.ID AND m.meta_key = '_wp_attachment_metadata' WHERE p.post_type = 'attachment' AND p.post_mime_type LIKE 'image/%' AND (m.meta_id IS NULL OR m.meta_value = '' OR m.meta_value NOT LIKE '%sizes%')");
+$file = (string) $wpdb->get_var("SELECT m.meta_value FROM {$wpdb->postmeta} m INNER JOIN {$wpdb->posts} p ON p.ID = m.post_id WHERE m.meta_key = '_wp_attached_file' AND p.post_mime_type LIKE 'image/%' ORDER BY m.post_id DESC LIMIT 1");
+echo 'TALKSASA_WPMEDIA='.wp_json_encode([
+    'gd' => extension_loaded('gd'),
+    'imagick' => extension_loaded('imagick'),
+    'editor' => (bool) wp_image_editor_supports(array('mime_type' => 'image/jpeg')),
+    'home' => (string) get_option('home'),
+    'siteurl' => (string) get_option('siteurl'),
+    'basedir' => $basedir,
+    'baseurl' => (string) ($upload['baseurl'] ?? ''),
+    'uploads_error' => (string) ($upload['error'] ?: ''),
+    'images' => $images,
+    'missing_sizes' => $missing,
+    'latest_file' => $file,
+    'latest_file_exists' => ($file !== '' && $basedir !== '') ? file_exists($basedir.'/'.$file) : null,
+]);
+PHP;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function probeWordPressMedia(SSHService $ssh, $deployment): ?array
+    {
+        $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+
+        try {
+            $output = $ssh->exec(
+                'cd '.escapeshellarg($containerPath)
+                .' && docker compose exec -u www-data -T '.escapeshellarg($deployment->container_name)
+                .' php -d display_errors=0 -r '.escapeshellarg($this->wordPressMediaProbeScript()),
+                60
+            );
+        } catch (\Throwable) {
+            return null;
+        }
+
+        if (preg_match('/TALKSASA_WPMEDIA=(\{.*\})/s', $output, $matches) !== 1) {
+            return null;
+        }
+
+        $media = json_decode($matches[1], true);
+
+        return is_array($media) ? $media : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $media
+     * @return list<array<string, mixed>>
+     */
+    private function wordPressMediaFindings(array $media, ?string $liveUrl): array
+    {
+        $findings = [];
+        $missing = (int) ($media['missing_sizes'] ?? 0);
+        $images = (int) ($media['images'] ?? 0);
+
+        if (($media['editor'] ?? true) === false) {
+            $findings[] = [
+                'id' => 'live_wordpress_image_editor_missing',
+                'severity' => 'critical',
+                'title' => 'WordPress cannot process images',
+                'summary' => 'PHP in this container has no working image library, so WordPress saves the original '
+                    .'upload but never generates thumbnails. The Media Library then shows a grey document icon '
+                    .'instead of the picture, and themes that request a sized image render nothing.',
+                'evidence' => array_values(array_filter([
+                    'GD: '.(($media['gd'] ?? false) ? 'loaded' : 'missing'),
+                    'Imagick: '.(($media['imagick'] ?? false) ? 'loaded' : 'missing'),
+                    $images > 0 ? $missing.' of '.$images.' images have no generated sizes' : null,
+                ])),
+                'treat_action' => 'fix_wordpress_media_processing',
+                'treat_label' => 'Repair image processing',
+                'manual_steps' => [
+                    'Click Repair image processing — installs GD, restarts PHP, and rebuilds missing thumbnails.',
+                    'Re-upload is not needed; the original files are still on disk.',
+                ],
+                'source' => 'live',
+            ];
+        } elseif ($missing > 0) {
+            $findings[] = [
+                'id' => 'live_wordpress_missing_thumbnails',
+                'severity' => 'warning',
+                'title' => $missing.' image'.($missing === 1 ? '' : 's').' have no generated sizes',
+                'summary' => 'These attachments exist but never got their thumbnail set, which is why the Media '
+                    .'Library shows a document icon and posts render an empty image. Regenerating rebuilds the '
+                    .'sizes from the original files already on disk.',
+                'evidence' => [$missing.' of '.$images.' image attachments are missing sizes'],
+                'treat_action' => 'regenerate_wordpress_thumbnails',
+                'treat_label' => 'Rebuild thumbnails',
+                'manual_steps' => [
+                    'Click Rebuild thumbnails, then reload the Media Library.',
+                    'In Terminal the same fix is: wp media regenerate --yes --only-missing',
+                ],
+                'source' => 'live',
+            ];
+        }
+
+        if (($media['latest_file_exists'] ?? null) === false) {
+            $findings[] = [
+                'id' => 'live_wordpress_media_files_missing',
+                'severity' => 'critical',
+                'title' => 'Uploaded media files are not on the application disk',
+                'summary' => 'The database lists attachments, but the newest file is missing from the uploads '
+                    .'directory. That happens when media was written into a container-only volume, or when a '
+                    .'database was restored without its wp-content files. Redeploy the stack so wp-content is '
+                    .'served from the application directory, then restore the files from a backup.',
+                'evidence' => array_values(array_filter([
+                    'expected file: '.rtrim((string) ($media['basedir'] ?? ''), '/').'/'.(string) ($media['latest_file'] ?? ''),
+                    (string) ($media['uploads_error'] ?? '') !== '' ? 'uploads error: '.$media['uploads_error'] : null,
+                ])),
+                'manual_steps' => [
+                    'Redeploy stack — wp-content is then bind-mounted from the application directory.',
+                    'Restore wp-content/uploads from the Backups tab if the files were lost.',
+                ],
+                'source' => 'live',
+            ];
+        }
+
+        $expected = $liveUrl;
+        $home = rtrim((string) ($media['home'] ?? ''), '/');
+        if ($expected !== null && $home !== '' && rtrim($expected, '/') !== $home) {
+            $findings[] = [
+                'id' => 'live_wordpress_site_url_mismatch',
+                'severity' => 'warning',
+                'title' => 'WordPress address does not match the live domain',
+                'summary' => 'WordPress still builds URLs from '.$home.' while the site is served from '
+                    .rtrim($expected, '/').'. Media and assets then load from the old address, so images appear '
+                    .'broken and admin uploads can be redirected before they finish.',
+                'evidence' => [
+                    'WordPress home: '.$home,
+                    'WordPress siteurl: '.rtrim((string) ($media['siteurl'] ?? ''), '/'),
+                    'live URL: '.rtrim($expected, '/'),
+                ],
+                'treat_action' => 'fix_wordpress_site_url',
+                'treat_label' => 'Fix site URLs',
+                'manual_steps' => [
+                    'Click Fix site URLs — updates home/siteurl and rewrites stored URLs (GUIDs untouched).',
+                    'Clear any caching plugin afterwards.',
+                ],
+                'source' => 'live',
+            ];
+        }
+
+        return $findings;
+    }
+
+    /**
      * Log lines proving the container is mid-bootstrap (dependency install or production
      * build). A first Vite/Next build easily runs for minutes, so an unreachable port
      * during that window is progress, not a failure.
@@ -1421,6 +1595,25 @@ PHP;
                 'manual_steps' => [
                     'Click Switch to Vite production — rebuilds, rewrites the start command to vite preview, and recreates the container.',
                     'Custom API routes that only exist in the Vite middleware server still need a production Node entrypoint in the repo.',
+                ],
+            ],
+            [
+                'id' => 'wordpress_image_post_processing_failed',
+                'severity' => 'warning',
+                'stacks' => ['wordpress'],
+                'patterns' => [
+                    '/post-processing of the image failed/i',
+                    '/The uploaded file could not be moved/i',
+                    '/Could not create thumbnail/i',
+                    '/image_resize_dimensions|wp_get_image_editor.*(failed|error)/i',
+                ],
+                'title' => 'WordPress could not build image sizes',
+                'summary' => 'The upload was stored but WordPress failed while creating thumbnails, usually because PHP has no working image library or ran out of memory. Media then shows a document icon instead of the picture.',
+                'treat_action' => 'fix_wordpress_media_processing',
+                'treat_label' => 'Repair image processing',
+                'manual_steps' => [
+                    'Click Repair image processing — installs GD, restarts PHP, and rebuilds missing thumbnails.',
+                    'Very large images can also exceed memory; try a smaller source file to confirm.',
                 ],
             ],
             [
@@ -2380,8 +2573,147 @@ PHP;
     }
 
     /**
+     * Install a PHP image library, reload PHP, then rebuild the thumbnails that were
+     * skipped while WordPress had no image editor.
+     *
      * @return array{success: bool, message: string}
      */
+    private function treatFixWordPressMediaProcessing(Service $service): array
+    {
+        $deployment = $service->containerDeployment;
+        if (! $deployment?->node) {
+            return ['success' => false, 'message' => 'Application is not deployed.'];
+        }
+
+        $ssh = SSHService::forNode($deployment->node);
+        $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+
+        try {
+            app(ContainerPhpExtensionsService::class)->ensureExtensionInstalled($ssh, $deployment, 'gd');
+
+            $ssh->exec(
+                'cd '.escapeshellarg($containerPath)
+                .' && docker compose restart '.escapeshellarg($deployment->container_name),
+                180
+            );
+
+            $rebuilt = $this->regenerateWordPressThumbnails($ssh, $deployment);
+
+            return [
+                'success' => true,
+                'message' => 'Image processing repaired. '.$rebuilt,
+            ];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'message' => 'Failed to repair image processing: '.$e->getMessage()];
+        } finally {
+            $ssh->disconnect();
+        }
+    }
+
+    /**
+     * @return array{success: bool, message: string}
+     */
+    private function treatRegenerateWordPressThumbnails(Service $service): array
+    {
+        $deployment = $service->containerDeployment;
+        if (! $deployment?->node) {
+            return ['success' => false, 'message' => 'Application is not deployed.'];
+        }
+
+        $ssh = SSHService::forNode($deployment->node);
+
+        try {
+            return ['success' => true, 'message' => $this->regenerateWordPressThumbnails($ssh, $deployment)];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'message' => 'Failed to rebuild thumbnails: '.$e->getMessage()];
+        } finally {
+            $ssh->disconnect();
+        }
+    }
+
+    private function regenerateWordPressThumbnails(SSHService $ssh, $deployment): string
+    {
+        $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+        app(WordPressAppInstallationService::class)->ensureWpCli($ssh, $containerPath, $deployment->container_name);
+
+        $output = $ssh->exec(
+            'cd '.escapeshellarg($containerPath)
+            .' && docker compose exec -u www-data -T '.escapeshellarg($deployment->container_name)
+            .' sh -lc '.escapeshellarg(
+                'wp media regenerate --yes --only-missing --skip-delete --path=/var/www/html 2>&1 | tail -n 3'
+            ),
+            600,
+            false
+        );
+
+        $summary = trim((string) preg_replace('/\s+/', ' ', $output));
+
+        return $summary !== ''
+            ? 'Thumbnails rebuilt: '.mb_substr($summary, 0, 200)
+            : 'Thumbnails rebuilt for images that were missing sizes.';
+    }
+
+    /**
+     * @return array{success: bool, message: string}
+     */
+    private function treatFixWordPressSiteUrl(Service $service): array
+    {
+        $deployment = $service->containerDeployment;
+        if (! $deployment?->node) {
+            return ['success' => false, 'message' => 'Application is not deployed.'];
+        }
+
+        $target = app(WordPressAdminLoginService::class)->resolvePublicBaseUrl($service);
+        if ($target === null) {
+            return ['success' => false, 'message' => 'No public URL is bound to this site yet.'];
+        }
+
+        $target = rtrim($target, '/');
+        $ssh = SSHService::forNode($deployment->node);
+        $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+
+        try {
+            $media = $this->probeWordPressMedia($ssh, $deployment);
+            $current = rtrim((string) ($media['home'] ?? ''), '/');
+
+            if ($current === $target) {
+                return ['success' => true, 'message' => 'WordPress already points at '.$target.'.'];
+            }
+
+            app(WordPressAppInstallationService::class)->ensureWpCli($ssh, $containerPath, $deployment->container_name);
+
+            $commands = [
+                'wp option update home '.escapeshellarg($target).' --path=/var/www/html',
+                'wp option update siteurl '.escapeshellarg($target).' --path=/var/www/html',
+            ];
+
+            if ($current !== '') {
+                // GUIDs must never be rewritten — feed readers treat them as permanent ids.
+                $commands[] = 'wp search-replace '.escapeshellarg($current).' '.escapeshellarg($target)
+                    .' --all-tables --precise --skip-columns=guid --report-changed-only --path=/var/www/html';
+            }
+
+            $commands[] = 'wp cache flush --path=/var/www/html || true';
+
+            $ssh->exec(
+                'cd '.escapeshellarg($containerPath)
+                .' && docker compose exec -u www-data -T '.escapeshellarg($deployment->container_name)
+                .' sh -lc '.escapeshellarg(implode(' && ', $commands)),
+                300,
+                false
+            );
+
+            return [
+                'success' => true,
+                'message' => 'WordPress now serves URLs from '.$target.'. Reload the site and clear any page cache.',
+            ];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'message' => 'Failed to fix site URLs: '.$e->getMessage()];
+        } finally {
+            $ssh->disconnect();
+        }
+    }
+
     /**
      * Rewrite Vite middleware/dev starts to production preview and recreate the stack.
      *

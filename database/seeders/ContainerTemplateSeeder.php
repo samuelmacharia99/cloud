@@ -79,8 +79,8 @@ class ContainerTemplateSeeder extends Seeder
                     ],
                 ],
                 'volume_paths' => [
-                    'wp_content' => '/var/www/html/wp-content',
                     'wp_data' => '/var/www/html',
+                    'wp_content' => '/var/www/html/wp-content',
                 ],
                 'compose_services' => [
                     'mysql' => [

@@ -77,6 +77,10 @@
                 <span x-show="liveChecks.env_source" x-text="'Env: ' + liveChecks.env_source"></span>
                 <span x-show="liveChecks.upstream_reachable !== null && liveChecks.upstream_reachable !== undefined"
                       x-text="liveChecks.upstream_reachable ? 'App port: answering' : (liveChecks.bootstrap_in_progress ? 'App port: build in progress' : 'App port: not answering')"></span>
+                <span x-show="liveChecks.wordpress_image_editor !== null && liveChecks.wordpress_image_editor !== undefined"
+                      x-text="liveChecks.wordpress_image_editor ? 'Images: processing ok' : 'Images: no editor'"></span>
+                <span x-show="liveChecks.wordpress_missing_thumbnails"
+                      x-text="'Thumbnails missing: ' + liveChecks.wordpress_missing_thumbnails"></span>
             </div>
         </template>
 

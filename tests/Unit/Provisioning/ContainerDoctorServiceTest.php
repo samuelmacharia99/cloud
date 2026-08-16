@@ -312,6 +312,111 @@ LOG;
         $this->assertSame('fix_vite_production_runtime', $finding['treat_action']);
     }
 
+    #[Test]
+    public function missing_image_editor_explains_the_document_icon_grid(): void
+    {
+        $findings = $this->callPrivate('wordPressMediaFindings', [
+            [
+                'gd' => false,
+                'imagick' => false,
+                'editor' => false,
+                'home' => 'https://shop.example.test',
+                'siteurl' => 'https://shop.example.test',
+                'basedir' => '/var/www/html/wp-content/uploads',
+                'images' => 32,
+                'missing_sizes' => 32,
+                'latest_file' => '2026/08/hero.jpg',
+                'latest_file_exists' => true,
+            ],
+            'https://shop.example.test',
+        ]);
+
+        $finding = collect($findings)->firstWhere('id', 'live_wordpress_image_editor_missing');
+
+        $this->assertNotNull($finding);
+        $this->assertSame('fix_wordpress_media_processing', $finding['treat_action']);
+        $this->assertContains('GD: missing', $finding['evidence']);
+        // The thumbnail finding would be redundant while there is no image editor at all.
+        $this->assertNull(collect($findings)->firstWhere('id', 'live_wordpress_missing_thumbnails'));
+    }
+
+    #[Test]
+    public function attachments_without_sizes_are_offered_a_thumbnail_rebuild(): void
+    {
+        $findings = $this->callPrivate('wordPressMediaFindings', [
+            [
+                'gd' => true,
+                'imagick' => false,
+                'editor' => true,
+                'home' => 'https://shop.example.test',
+                'siteurl' => 'https://shop.example.test',
+                'basedir' => '/var/www/html/wp-content/uploads',
+                'images' => 32,
+                'missing_sizes' => 4,
+                'latest_file' => '2026/08/hero.jpg',
+                'latest_file_exists' => true,
+            ],
+            'https://shop.example.test',
+        ]);
+
+        $finding = collect($findings)->firstWhere('id', 'live_wordpress_missing_thumbnails');
+
+        $this->assertNotNull($finding);
+        $this->assertSame('regenerate_wordpress_thumbnails', $finding['treat_action']);
+        $this->assertStringContainsString('4 image', $finding['title']);
+    }
+
+    #[Test]
+    public function a_stale_site_url_and_missing_files_are_reported_separately(): void
+    {
+        $findings = $this->callPrivate('wordPressMediaFindings', [
+            [
+                'gd' => true,
+                'imagick' => false,
+                'editor' => true,
+                'home' => 'http://31.97.60.10:30012',
+                'siteurl' => 'http://31.97.60.10:30012',
+                'basedir' => '/var/www/html/wp-content/uploads',
+                'images' => 8,
+                'missing_sizes' => 0,
+                'latest_file' => '2026/08/hero.jpg',
+                'latest_file_exists' => false,
+            ],
+            'https://shop.example.test',
+        ]);
+
+        $ids = array_column($findings, 'id');
+
+        $this->assertContains('live_wordpress_site_url_mismatch', $ids);
+        $this->assertContains('live_wordpress_media_files_missing', $ids);
+        $this->assertSame(
+            'fix_wordpress_site_url',
+            collect($findings)->firstWhere('id', 'live_wordpress_site_url_mismatch')['treat_action']
+        );
+    }
+
+    #[Test]
+    public function a_healthy_media_library_produces_no_findings(): void
+    {
+        $findings = $this->callPrivate('wordPressMediaFindings', [
+            [
+                'gd' => true,
+                'imagick' => true,
+                'editor' => true,
+                'home' => 'https://shop.example.test/',
+                'siteurl' => 'https://shop.example.test',
+                'basedir' => '/var/www/html/wp-content/uploads',
+                'images' => 12,
+                'missing_sizes' => 0,
+                'latest_file' => '2026/08/hero.jpg',
+                'latest_file_exists' => true,
+            ],
+            'https://shop.example.test',
+        ]);
+
+        $this->assertSame([], $findings);
+    }
+
     private function callPrivate(string $method, array $arguments): mixed
     {
         $service = app(ContainerDoctorService::class);

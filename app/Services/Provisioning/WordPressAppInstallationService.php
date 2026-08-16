@@ -214,7 +214,7 @@ class WordPressAppInstallationService
         }
     }
 
-    private function ensureWpCli(SSHService $ssh, string $containerPath, string $appService): void
+    public function ensureWpCli(SSHService $ssh, string $containerPath, string $appService): void
     {
         $pathArg = escapeshellarg($containerPath);
         $appArg = escapeshellarg($appService);

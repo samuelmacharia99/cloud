@@ -15,6 +15,7 @@ use App\Services\NotificationService;
 use App\Services\SSH\SSHService;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Symfony\Component\Yaml\Yaml;
 
@@ -1108,22 +1109,21 @@ class ContainerDeploymentService
         if ($template->volume_paths) {
             $compose['services'][$containerName]['volumes'] = [];
             $compose['volumes'] = [];
-            $wordpressBindMounted = false;
+            $bindMountTargets = $this->hostBindMountTargets($template, $hostAppPath);
 
             foreach ($template->volume_paths as $volumeName => $mountPath) {
                 // Bind host app dir for Laravel (/app) and WordPress (/var/www/html) so the
                 // customer file manager and convert import share the same filesystem.
-                if ($hostAppPath && in_array($volumeName, ['app_data', 'wp_data', 'web_root'], true)) {
+                if ($hostAppPath && in_array($volumeName, self::HOST_BIND_VOLUME_NAMES, true)) {
                     $compose['services'][$containerName]['volumes'][] = "{$hostAppPath}:{$mountPath}";
-                    if ($volumeName === 'wp_data') {
-                        $wordpressBindMounted = true;
-                    }
 
                     continue;
                 }
 
-                // Nested wp-content named volume would shadow the bind mount — skip it.
-                if ($wordpressBindMounted && $volumeName === 'wp_content') {
+                // Docker mounts deeper paths last, so a named volume nested inside the bind
+                // mount (wp_content under /var/www/html) hides customer files from the file
+                // manager, backups and permission repairs no matter how it was declared.
+                if ($this->mountIsNestedUnder((string) $mountPath, $bindMountTargets)) {
                     continue;
                 }
 
@@ -1359,6 +1359,46 @@ class ContainerDeploymentService
     /**
      * @param  array<string, string>  $envVars
      */
+    /**
+     * Template volume names that are replaced by a bind mount of the host app directory.
+     */
+    private const HOST_BIND_VOLUME_NAMES = ['app_data', 'wp_data', 'web_root'];
+
+    /**
+     * @return list<string>
+     */
+    private function hostBindMountTargets($template, ?string $hostAppPath): array
+    {
+        if (! $hostAppPath || ! $template->volume_paths) {
+            return [];
+        }
+
+        $targets = [];
+        foreach ($template->volume_paths as $volumeName => $mountPath) {
+            if (in_array($volumeName, self::HOST_BIND_VOLUME_NAMES, true)) {
+                $targets[] = rtrim((string) $mountPath, '/');
+            }
+        }
+
+        return array_values(array_filter($targets, fn (string $path) => $path !== ''));
+    }
+
+    /**
+     * @param  list<string>  $parents
+     */
+    private function mountIsNestedUnder(string $mountPath, array $parents): bool
+    {
+        $mountPath = rtrim($mountPath, '/');
+
+        foreach ($parents as $parent) {
+            if ($mountPath !== $parent && str_starts_with($mountPath, $parent.'/')) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /**
      * Vite reads its host allowlist once at boot, so a newly bound domain needs the
      * compose env rewritten and the container recreated before it stops being blocked.
@@ -2807,6 +2847,7 @@ class ContainerDeploymentService
         bool $recreate = false
     ): void {
         $this->ensureComposeFileExists($ssh, $deployment);
+        $this->rescueShadowedWordPressContent($ssh, $deployment);
         $this->refreshComposeYamlIfStale($ssh, $service, $deployment);
 
         $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
@@ -2853,6 +2894,91 @@ class ContainerDeploymentService
                 $containerPath
             );
         }
+    }
+
+    /**
+     * Older WordPress stacks mounted a named volume over /var/www/html/wp-content, so
+     * uploads, themes and plugins live inside Docker instead of the application directory.
+     * Copy them onto the bind mount before the stack restarts without that volume,
+     * otherwise the site comes back with an empty media library.
+     */
+    private function rescueShadowedWordPressContent(SSHService $ssh, ContainerDeployment $deployment): void
+    {
+        if (! str_contains((string) $deployment->docker_compose_content, 'wp_content:/var/www/html/wp-content')) {
+            return;
+        }
+
+        $hostContentPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name.'/app/wp-content';
+
+        try {
+            $volume = $this->resolveComposeVolumeName($ssh, $deployment->container_name, 'wp_content');
+            if ($volume === null) {
+                return;
+            }
+
+            $mountpoint = trim($ssh->exec(
+                'docker volume inspect -f '.escapeshellarg('{{.Mountpoint}}').' '.escapeshellarg($volume).' 2>/dev/null || true',
+                20
+            ));
+
+            if ($mountpoint === '' || ! str_starts_with($mountpoint, '/')) {
+                return;
+            }
+
+            // -n keeps anything already on the bind mount; the volume copy is only a fallback.
+            $ssh->exec(
+                'mkdir -p '.escapeshellarg($hostContentPath)
+                .' && cp -an '.escapeshellarg($mountpoint.'/.').' '.escapeshellarg($hostContentPath.'/').' 2>/dev/null || true'
+                .' && chown -R 33:33 '.escapeshellarg($hostContentPath),
+                300,
+                false
+            );
+
+            Log::info('Recovered WordPress wp-content from shadowed named volume', [
+                'deployment_id' => $deployment->id,
+                'volume' => $volume,
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to recover shadowed WordPress wp-content volume', [
+                'deployment_id' => $deployment->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function resolveComposeVolumeName(SSHService $ssh, string $containerName, string $volumeKey): ?string
+    {
+        $suffix = '_'.$volumeKey;
+        $names = trim($ssh->exec(
+            'docker volume ls --format '.escapeshellarg('{{.Name}}').' 2>/dev/null || true',
+            20
+        ));
+
+        $candidates = array_values(array_filter(
+            preg_split("/\r\n|\n|\r/", $names) ?: [],
+            fn ($name) => str_ends_with(trim($name), $suffix)
+        ));
+
+        $project = strtolower($containerName);
+        foreach ($candidates as $candidate) {
+            $candidate = trim($candidate);
+            if (strtolower($candidate) === $project.$suffix) {
+                return $candidate;
+            }
+        }
+
+        // Compose strips characters the project name cannot contain; fall back to a
+        // relaxed comparison rather than leaving customer media behind.
+        $normalized = preg_replace('/[^a-z0-9]/', '', $project);
+        foreach ($candidates as $candidate) {
+            $candidate = trim($candidate);
+            $candidateProject = preg_replace('/[^a-z0-9]/', '', strtolower(substr($candidate, 0, -strlen($suffix))));
+            if ($candidateProject === $normalized) {
+                return $candidate;
+            }
+        }
+
+        return null;
     }
 
     private function syncDatabaseCredentialsAfterStart(

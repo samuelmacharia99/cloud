@@ -15,12 +15,36 @@ use App\Services\Provisioning\ContainerStackCommandService;
 use App\Services\Provisioning\ContainerTemplateEnvironmentService;
 use App\Services\Provisioning\RuntimeImageProvisioner;
 use App\Services\SSH\SSHService;
+use Illuminate\Container\Container;
+use Illuminate\Log\Logger;
+use Illuminate\Support\Facades\Facade;
+use Monolog\Handler\NullHandler;
+use Monolog\Logger as Monolog;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
 
 class ContainerDeploymentComposeTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // These are container-free unit tests, but the deployment service logs recovery
+        // steps, so give the Log facade somewhere harmless to write.
+        $container = new Container;
+        $container->instance('log', new Logger(new Monolog('testing', [new NullHandler])));
+        Facade::setFacadeApplication($container);
+    }
+
+    protected function tearDown(): void
+    {
+        Facade::clearResolvedInstances();
+        Facade::setFacadeApplication(null);
+
+        parent::tearDown();
+    }
+
     #[Test]
     public function wordpress_template_does_not_auto_resolve_injected_database_sidecar(): void
     {
@@ -189,6 +213,105 @@ class ContainerDeploymentComposeTest extends TestCase
         $this->assertStringContainsString("{$hostApp}:/var/www/html", $yaml);
         $this->assertStringNotContainsString('wp_data:/var/www/html', $yaml);
         $this->assertStringNotContainsString('wp_content:/var/www/html/wp-content', $yaml);
+    }
+
+    #[Test]
+    public function render_compose_skips_nested_wp_content_volume_declared_before_wp_data(): void
+    {
+        // Seeded template order: wp_content is listed first, and Docker mounts the deeper
+        // path last, so an order-sensitive guard leaves uploads inside a hidden volume.
+        $template = new ContainerTemplate([
+            'slug' => 'wordpress',
+            'docker_image' => 'wordpress:latest',
+            'default_port' => 80,
+            'required_cpu_cores' => 1,
+            'required_ram_mb' => 512,
+            'volume_paths' => [
+                'wp_content' => '/var/www/html/wp-content',
+                'wp_data' => '/var/www/html',
+            ],
+        ]);
+
+        $runtimeImages = $this->createMock(RuntimeImageProvisioner::class);
+        $runtimeImages->method('usesRuntimeImage')->willReturn(false);
+
+        $deployer = new ContainerDeploymentService(
+            runtimeImages: $runtimeImages,
+            templateEnvironment: new ContainerTemplateEnvironmentService
+        );
+
+        $method = new ReflectionMethod(ContainerDeploymentService::class, 'renderCompose');
+        $method->setAccessible(true);
+
+        $hostApp = '/opt/talksasa/containers/user-1-service-20-wordpress/app';
+        $yaml = $method->invoke(
+            $deployer,
+            $template,
+            'user-1-service-20-wordpress',
+            30020,
+            [],
+            null,
+            null,
+            null,
+            $hostApp,
+            null
+        );
+
+        $this->assertStringContainsString("{$hostApp}:/var/www/html", $yaml);
+        $this->assertStringNotContainsString('wp_content:/var/www/html/wp-content', $yaml);
+    }
+
+    #[Test]
+    public function shadowed_wp_content_volume_is_copied_onto_the_bind_mount(): void
+    {
+        $deployment = new ContainerDeployment([
+            'container_name' => 'user-1-service-20-wordpress',
+            'docker_compose_content' => "services:\n  app:\n    volumes:\n"
+                ."      - /opt/app:/var/www/html\n      - wp_content:/var/www/html/wp-content\n",
+        ]);
+        $deployment->id = 55;
+
+        $commands = [];
+        $ssh = $this->createMock(SSHService::class);
+        $ssh->method('exec')->willReturnCallback(function (string $command) use (&$commands) {
+            $commands[] = $command;
+
+            if (str_contains($command, 'docker volume ls')) {
+                return "other_data\nuser-1-service-20-wordpress_wp_content\n";
+            }
+
+            if (str_contains($command, 'docker volume inspect')) {
+                return "/var/lib/docker/volumes/user-1-service-20-wordpress_wp_content/_data\n";
+            }
+
+            return '';
+        });
+
+        $method = new ReflectionMethod(ContainerDeploymentService::class, 'rescueShadowedWordPressContent');
+        $method->setAccessible(true);
+        $method->invoke(new ContainerDeploymentService(templateEnvironment: new ContainerTemplateEnvironmentService), $ssh, $deployment);
+
+        $copy = collect($commands)->first(fn (string $command) => str_contains($command, 'cp -an'));
+
+        $this->assertNotNull($copy);
+        $this->assertStringContainsString('/var/lib/docker/volumes/user-1-service-20-wordpress_wp_content/_data/.', $copy);
+        $this->assertStringContainsString('user-1-service-20-wordpress/app/wp-content', $copy);
+    }
+
+    #[Test]
+    public function stacks_without_a_shadowed_volume_are_left_alone(): void
+    {
+        $deployment = new ContainerDeployment([
+            'container_name' => 'user-1-service-20-wordpress',
+            'docker_compose_content' => "services:\n  app:\n    volumes:\n      - /opt/app:/var/www/html\n",
+        ]);
+
+        $ssh = $this->createMock(SSHService::class);
+        $ssh->expects($this->never())->method('exec');
+
+        $method = new ReflectionMethod(ContainerDeploymentService::class, 'rescueShadowedWordPressContent');
+        $method->setAccessible(true);
+        $method->invoke(new ContainerDeploymentService(templateEnvironment: new ContainerTemplateEnvironmentService), $ssh, $deployment);
     }
 
     #[Test]
