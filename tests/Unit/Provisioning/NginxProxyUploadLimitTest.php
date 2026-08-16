@@ -35,4 +35,44 @@ class NginxProxyUploadLimitTest extends TestCase
         $this->assertStringContainsString('listen 443 ssl', $https);
         $this->assertStringContainsString('client_max_body_size 100M;', $https);
     }
+
+    #[Test]
+    public function generated_vhost_streams_uploads_over_http_1_1(): void
+    {
+        config(['security.container_file_upload.max_size_mb' => 100]);
+
+        $nginx = new NginxProxyService;
+        $domain = new ContainerDomain(['domain' => 'example.test', 'ssl_enabled' => false]);
+        $deployment = new ContainerDeployment(['assigned_port' => 30001]);
+        $deployment->setRelation('node', new Node(['ip_address' => '10.0.0.1']));
+        $domain->setRelation('deployment', $deployment);
+
+        $http = $nginx->generateConfig($domain, false);
+
+        // HTTP/1.0 upstreams with request buffering off stall large media uploads.
+        $this->assertStringContainsString('proxy_http_version 1.1;', $http);
+        $this->assertStringNotContainsString('proxy_request_buffering off', $http);
+        $this->assertTrue($nginx->vhostIsCurrent($http));
+    }
+
+    #[Test]
+    public function vhosts_from_older_builds_are_not_treated_as_current(): void
+    {
+        config(['security.container_file_upload.max_size_mb' => 100]);
+
+        $legacy = <<<'CONF'
+server {
+    listen 80;
+    server_name example.test;
+    client_max_body_size 100M;
+
+    location / {
+        proxy_pass http://127.0.0.1:30001;
+        proxy_request_buffering off;
+    }
+}
+CONF;
+
+        $this->assertFalse((new NginxProxyService)->vhostIsCurrent($legacy));
+    }
 }

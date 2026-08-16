@@ -92,6 +92,7 @@ class ContainerDoctorService
             'fix_wordpress_media_processing' => $this->treatFixWordPressMediaProcessing($service),
             'regenerate_wordpress_thumbnails' => $this->treatRegenerateWordPressThumbnails($service),
             'fix_wordpress_site_url' => $this->treatFixWordPressSiteUrl($service),
+            'refresh_domain_proxy' => $this->treatRefreshDomainProxy($service),
             'restart_application' => $this->treatRestartApplication($service),
             'recreate_application' => $this->treatRecreateApplication($service),
             'fix_vite_production_runtime' => $this->treatFixViteProductionRuntime($service),
@@ -347,6 +348,11 @@ class ContainerDoctorService
                         ],
                         'source' => 'live',
                     ];
+                }
+
+                $proxyFinding = $this->staleProxyVhostFinding($ssh, $service, $deployment, $checks);
+                if ($proxyFinding !== null) {
+                    $findings[] = $proxyFinding;
                 }
 
                 $media = $this->probeWordPressMedia($ssh, $deployment);
@@ -1166,6 +1172,64 @@ PHP;
         }
 
         return $probe;
+    }
+
+    /**
+     * Vhosts written by older builds proxy over HTTP/1.0 with request buffering disabled,
+     * so a media upload can stall at the edge and never reach PHP. Nothing appears in the
+     * container log in that case — the request never arrives.
+     *
+     * @param  array<string, mixed>  $checks
+     * @return array<string, mixed>|null
+     */
+    private function staleProxyVhostFinding(SSHService $ssh, Service $service, $deployment, array &$checks): ?array
+    {
+        $domain = $deployment->relationLoaded('domains')
+            ? $deployment->domains->first(fn ($d) => in_array($d->status, ['active', 'pending'], true))
+            : $deployment->domains()->whereIn('status', ['active', 'pending'])->first();
+
+        if (! $domain || ! $domain->nginx_config_path) {
+            return null;
+        }
+
+        try {
+            $config = $ssh->exec('cat '.escapeshellarg($domain->nginx_config_path).' 2>/dev/null || true', 20);
+        } catch (\Throwable) {
+            return null;
+        }
+
+        if (trim($config) === '') {
+            return null;
+        }
+
+        $current = app(NginxProxyService::class)->vhostIsCurrent($config);
+        $checks['proxy_vhost_current'] = $current;
+
+        if ($current) {
+            return null;
+        }
+
+        return [
+            'id' => 'live_stale_proxy_vhost',
+            'severity' => 'warning',
+            'title' => 'Web proxy for '.$domain->domain.' uses an outdated template',
+            'summary' => 'This domain was bound by an older build that proxies over HTTP/1.0 with request '
+                .'buffering disabled. Large uploads — WordPress media in particular — can hang or be rejected '
+                .'before they reach the application, and nothing is written to the container log because the '
+                .'request never arrives. Refreshing rewrites the vhost and reloads nginx.',
+            'evidence' => array_values(array_filter([
+                'vhost: '.$domain->nginx_config_path,
+                str_contains($config, 'proxy_http_version 1.1') ? null : 'missing proxy_http_version 1.1',
+                str_contains($config, 'proxy_request_buffering off') ? 'proxy_request_buffering off' : null,
+            ])),
+            'treat_action' => 'refresh_domain_proxy',
+            'treat_label' => 'Refresh web proxy',
+            'manual_steps' => [
+                'Click Refresh web proxy, then retry the upload.',
+                'Unbinding and re-binding the domain has the same effect.',
+            ],
+            'source' => 'live',
+        ];
     }
 
     /**
@@ -2569,6 +2633,23 @@ PHP;
             return ['success' => false, 'message' => 'Failed to fix WordPress permissions: '.$e->getMessage()];
         } finally {
             $ssh->disconnect();
+        }
+    }
+
+    /**
+     * @return array{success: bool, message: string}
+     */
+    private function treatRefreshDomainProxy(Service $service): array
+    {
+        try {
+            app(WordPressContainerHardeningService::class)->ensureNginxUploadLimits($service);
+
+            return [
+                'success' => true,
+                'message' => 'Web proxy refreshed for every bound domain. Retry the upload.',
+            ];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'message' => 'Failed to refresh the web proxy: '.$e->getMessage()];
         }
     }
 

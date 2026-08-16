@@ -10,6 +10,11 @@ use Exception;
 class NginxProxyService
 {
     /**
+     * Bump when the generated vhost changes so existing sites are rewritten.
+     */
+    public const VHOST_REVISION = 'v2';
+
+    /**
      * Bind a domain to a container via nginx reverse proxy
      */
     public function bind(ContainerDomain $domain): void
@@ -17,7 +22,7 @@ class NginxProxyService
         $deployment = $domain->deployment;
         $node = $deployment->node;
 
-        if (!$node) {
+        if (! $node) {
             throw new Exception('Container deployment has no assigned node');
         }
 
@@ -32,13 +37,13 @@ class NginxProxyService
 
             if (! $this->isNginxInstalled($ssh)) {
                 throw new Exception(
-                    "Nginx is not installed on node {$node->hostname} ({$node->ip_address}). " .
-                    "Install nginx (and optionally grant sudo for nginx commands) before binding domains."
+                    "Nginx is not installed on node {$node->hostname} ({$node->ip_address}). ".
+                    'Install nginx (and optionally grant sudo for nginx commands) before binding domains.'
                 );
             }
 
             $configDir = $this->resolveNginxConfigDir($ssh);
-            $ssh->exec("mkdir -p " . escapeshellarg($configDir));
+            $ssh->exec('mkdir -p '.escapeshellarg($configDir));
 
             // Upload config — path is built from domain name, must be escaped
             $safeConfPath = escapeshellarg("{$configDir}/{$domain->domain}.conf");
@@ -52,7 +57,7 @@ class NginxProxyService
                 try {
                     $ssh->exec("rm -f {$safeConfPath}");
                 } catch (Exception $cleanupError) {
-                    \Log::warning("Failed to cleanup nginx config after bind failure", [
+                    \Log::warning('Failed to cleanup nginx config after bind failure', [
                         'node_id' => $node->id,
                         'domain' => $domain->domain,
                         'config_path' => $configPath,
@@ -173,7 +178,7 @@ class NginxProxyService
         $deployment = $domain->deployment;
         $node = $deployment->node;
 
-        if (!$node) {
+        if (! $node) {
             throw new Exception('Container deployment has no assigned node');
         }
 
@@ -184,9 +189,9 @@ class NginxProxyService
             $adminEmail = setting('admin_email', 'admin@talksasa.cloud');
 
             // Run certbot to obtain certificate — escape all user-supplied values
-            $certbotCmd = "certbot certonly --nginx -d " . escapeshellarg($domain->domain)
-                . " --non-interactive --agree-tos --email " . escapeshellarg($adminEmail)
-                . " --redirect 2>&1";
+            $certbotCmd = 'certbot certonly --nginx -d '.escapeshellarg($domain->domain)
+                .' --non-interactive --agree-tos --email '.escapeshellarg($adminEmail)
+                .' --redirect 2>&1';
             $certbotResult = $ssh->exec($certbotCmd);
 
             if (strpos($certbotResult, 'error') !== false || strpos($certbotResult, 'Error') !== false) {
@@ -198,7 +203,7 @@ class NginxProxyService
             $keyPath = "/etc/letsencrypt/live/{$domain->domain}/privkey.pem";
 
             // Verify certificates exist
-            $checkCmd = "[ -f " . escapeshellarg($certPath) . " ] && [ -f " . escapeshellarg($keyPath) . " ] && echo 'ok' || echo 'fail'";
+            $checkCmd = '[ -f '.escapeshellarg($certPath).' ] && [ -f '.escapeshellarg($keyPath)." ] && echo 'ok' || echo 'fail'";
             $checkResult = trim($ssh->exec($checkCmd));
 
             if ($checkResult !== 'ok') {
@@ -215,7 +220,7 @@ class NginxProxyService
 
             // Regenerate config with SSL blocks
             $config = $this->generateConfig($domain, true);
-            $configPath = $this->resolveNginxConfigDir($ssh) . "/{$domain->domain}.conf";
+            $configPath = $this->resolveNginxConfigDir($ssh)."/{$domain->domain}.conf";
             $ssh->upload($config, $configPath); // configPath is used as upload destination (not in exec)
 
             if (! $this->isNginxInstalled($ssh)) {
@@ -242,7 +247,7 @@ class NginxProxyService
         $deployment = $domain->deployment;
         $node = $deployment->node;
 
-        if (!$node || !$domain->ssl_enabled) {
+        if (! $node || ! $domain->ssl_enabled) {
             return;
         }
 
@@ -250,7 +255,7 @@ class NginxProxyService
             $ssh = SSHService::forNode($node);
 
             // Renew certificate — escape domain name to prevent injection
-            $renewCmd = "certbot renew --cert-name " . escapeshellarg($domain->domain) . " --quiet 2>&1";
+            $renewCmd = 'certbot renew --cert-name '.escapeshellarg($domain->domain).' --quiet 2>&1';
             $renewResult = $ssh->exec($renewCmd);
 
             if (strpos($renewResult, 'error') !== false) {
@@ -259,7 +264,7 @@ class NginxProxyService
 
             $ssh->disconnect();
         } catch (Exception $e) {
-            \Log::error("Failed to renew SSL for {$domain->domain}: " . $e->getMessage());
+            \Log::error("Failed to renew SSL for {$domain->domain}: ".$e->getMessage());
             throw $e;
         }
     }
@@ -275,28 +280,32 @@ class NginxProxyService
 
         // Default nginx client_max_body_size is 1m — WordPress media uploads return 413 without this.
         $uploadLimit = $this->clientMaxBodySize();
+        $revision = self::VHOST_REVISION;
 
         $httpBlock = <<<EOL
+# talksasa-vhost {$revision}
 server {
     listen 80;
     server_name {$domain->domain};
     client_max_body_size {$uploadLimit};
+    client_body_timeout 300s;
 
     location / {
         proxy_pass http://127.0.0.1:{$port};
+        proxy_http_version 1.1;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header Connection "";
         proxy_redirect off;
-        proxy_request_buffering off;
         proxy_read_timeout 300s;
         proxy_send_timeout 300s;
     }
 }
 EOL;
 
-        if (!$withSsl) {
+        if (! $withSsl) {
             return $httpBlock;
         }
 
@@ -304,6 +313,7 @@ EOL;
         $keyPath = $domain->ssl_key_path;
 
         return <<<EOL
+# talksasa-vhost {$revision}
 server {
     listen 80;
     server_name {$domain->domain};
@@ -314,6 +324,7 @@ server {
     listen 443 ssl http2;
     server_name {$domain->domain};
     client_max_body_size {$uploadLimit};
+    client_body_timeout 300s;
 
     ssl_certificate {$certPath};
     ssl_certificate_key {$keyPath};
@@ -323,12 +334,13 @@ server {
 
     location / {
         proxy_pass http://127.0.0.1:{$port};
+        proxy_http_version 1.1;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header Connection "";
         proxy_redirect off;
-        proxy_request_buffering off;
         proxy_read_timeout 300s;
         proxy_send_timeout 300s;
     }
@@ -337,7 +349,9 @@ EOL;
     }
 
     /**
-     * Rewrite nginx vhost if it is missing client_max_body_size (legacy 1m default → WP 413).
+     * Rewrite nginx vhosts generated before the current template. Older files kept the
+     * 1m body default (WordPress 413) or proxied over HTTP/1.0 with request buffering
+     * disabled, which stalls large uploads before they ever reach PHP.
      *
      * @return bool true when the config was rewritten
      */
@@ -367,8 +381,7 @@ EOL;
                 // Missing file — full bind will recreate it.
             }
 
-            $required = 'client_max_body_size '.$this->clientMaxBodySize();
-            if ($existing !== '' && str_contains($existing, $required)) {
+            if ($existing !== '' && $this->vhostIsCurrent($existing)) {
                 return false;
             }
 
@@ -413,6 +426,16 @@ EOL;
     }
 
     /**
+     * A vhost is current when it carries this revision marker and the configured body
+     * limit. Anything older is regenerated so long-lived sites pick up proxy fixes.
+     */
+    public function vhostIsCurrent(string $config): bool
+    {
+        return str_contains($config, '# talksasa-vhost '.self::VHOST_REVISION)
+            && str_contains($config, 'client_max_body_size '.$this->clientMaxBodySize());
+    }
+
+    /**
      * Max upload size for container reverse-proxy vhosts (WordPress media, etc.).
      */
     public function clientMaxBodySize(): string
@@ -444,23 +467,25 @@ EOL;
 
             return false;
         } catch (Exception $e) {
-            \Log::warning("Failed to check DNS for {$domain}: " . $e->getMessage());
+            \Log::warning("Failed to check DNS for {$domain}: ".$e->getMessage());
+
             return false;
         }
     }
 
     private function isNginxInstalled(SSHService $ssh): bool
     {
-        $result = trim($ssh->exec("if command -v nginx >/dev/null 2>&1; then echo yes; else echo no; fi"));
+        $result = trim($ssh->exec('if command -v nginx >/dev/null 2>&1; then echo yes; else echo no; fi'));
+
         return $result === 'yes';
     }
 
     private function resolveNginxConfigDir(SSHService $ssh): string
     {
         $result = trim($ssh->exec(
-            "if [ -d /etc/nginx/sites-enabled ]; then echo /etc/nginx/sites-enabled; " .
-            "elif [ -d /etc/nginx/conf.d ]; then echo /etc/nginx/conf.d; " .
-            "else echo /etc/nginx/sites-enabled; fi"
+            'if [ -d /etc/nginx/sites-enabled ]; then echo /etc/nginx/sites-enabled; '.
+            'elif [ -d /etc/nginx/conf.d ]; then echo /etc/nginx/conf.d; '.
+            'else echo /etc/nginx/sites-enabled; fi'
         ));
 
         return $result !== '' ? $result : '/etc/nginx/sites-enabled';
@@ -475,16 +500,18 @@ EOL;
     private function testNginxConfig(SSHService $ssh, Node $node): void
     {
         try {
-            $ssh->exec("nginx -t 2>&1");
+            $ssh->exec('nginx -t 2>&1');
+
             return;
         } catch (Exception $directError) {
             // Fall back to sudo if direct command is not permitted.
             try {
-                $ssh->exec("sudo -n nginx -t 2>&1");
+                $ssh->exec('sudo -n nginx -t 2>&1');
+
                 return;
             } catch (Exception $sudoError) {
                 throw new Exception(
-                    "nginx -t failed on node {$node->id}. " .
+                    "nginx -t failed on node {$node->id}. ".
                     "Direct error: {$directError->getMessage()} | Sudo error: {$sudoError->getMessage()}"
                 );
             }
@@ -494,15 +521,17 @@ EOL;
     private function reloadNginx(SSHService $ssh, Node $node): void
     {
         try {
-            $ssh->exec("nginx -s reload");
+            $ssh->exec('nginx -s reload');
+
             return;
         } catch (Exception $directError) {
             try {
-                $ssh->exec("sudo -n nginx -s reload");
+                $ssh->exec('sudo -n nginx -s reload');
+
                 return;
             } catch (Exception $sudoError) {
                 throw new Exception(
-                    "nginx reload failed on node {$node->id}. " .
+                    "nginx reload failed on node {$node->id}. ".
                     "Direct error: {$directError->getMessage()} | Sudo error: {$sudoError->getMessage()}"
                 );
             }
