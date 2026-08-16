@@ -17,6 +17,9 @@ return [
         'cron:backup-containers' => 600,
         'cron:collect-reseller-disk-usage' => 1800,
         'cron:reconcile-directadmin-hosted-accounts' => 1800,
+        // Runs every five minutes and degrades individual node/container failures
+        // instead of failing the scheduler. The command stops before this threshold.
+        'cron:collect-container-metrics' => 240,
         // Runs every minute; each customer job is capped, but a full batch can
         // still take a few minutes when SSH is slow.
         'cron:run-container-jobs' => 600,
@@ -37,6 +40,7 @@ return [
         'cron:backup-containers' => 15,
         'cron:collect-reseller-disk-usage' => 45,
         'cron:reconcile-directadmin-hosted-accounts' => 45,
+        'cron:collect-container-metrics' => 5,
         'cron:run-container-jobs' => 15,
     ],
 
@@ -48,6 +52,16 @@ return [
     'backup_containers' => [
         // Stop queueing new backups after this wall-clock budget.
         'max_runtime_seconds' => 300,
+    ],
+
+    'container_metrics' => [
+        // Leave headroom for finalizing logs before the platform queue timeout.
+        'max_runtime_seconds' => 210,
+        'stats_timeout_seconds' => 12,
+        'disk_timeout_seconds' => 12,
+        // Full-tree `du` is expensive; reuse the last disk sample between intervals.
+        'disk_interval_minutes' => 55,
+        'warning_cooldown_minutes' => 30,
     ],
 
 ];

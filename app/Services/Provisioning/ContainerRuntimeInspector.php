@@ -16,12 +16,13 @@ class ContainerRuntimeInspector
      *     exit_code: int|null
      * }
      */
-    public function inspect(SSHService $ssh, string $containerName): array
+    public function inspect(SSHService $ssh, string $containerName, bool $retry = true): array
     {
         $safeName = escapeshellarg($containerName);
         $output = trim($ssh->exec(
             "docker inspect --type container --format '{{.State.Status}}|{{.State.Running}}|{{.State.OOMKilled}}|{{.State.ExitCode}}' {$safeName} 2>/dev/null || echo ''",
-            10
+            10,
+            $retry
         ));
 
         if ($output === '') {
@@ -52,22 +53,28 @@ class ContainerRuntimeInspector
     public function syncDeploymentStatus(ContainerDeployment $deployment, array $inspect, ?string $detail = null): void
     {
         if (($inspect['missing'] ?? false) === true) {
-            $deployment->update([
-                'status' => 'stopped',
-                'last_status_check_at' => now(),
-                'last_status_check_output' => $detail ?? 'Container not found on node',
+            $status = 'stopped';
+            $output = $detail ?? 'Container not found on node';
+        } else {
+            $status = ($inspect['running'] ?? false) ? 'running' : 'stopped';
+            $output = $detail ?? json_encode([
+                'state' => $inspect['state'] ?? 'unknown',
+                'running' => $inspect['running'] ?? false,
+                'oom_killed' => $inspect['oom_killed'] ?? false,
+                'exit_code' => $inspect['exit_code'] ?? null,
             ]);
-
-            return;
         }
 
-        $status = ($inspect['running'] ?? false) ? 'running' : 'stopped';
-        $output = $detail ?? json_encode([
-            'state' => $inspect['state'] ?? 'unknown',
-            'running' => $inspect['running'] ?? false,
-            'oom_killed' => $inspect['oom_killed'] ?? false,
-            'exit_code' => $inspect['exit_code'] ?? null,
-        ]);
+        $statusChanged = $deployment->status !== $status;
+        $detailChanged = $deployment->last_status_check_output !== $output;
+        $staleHeartbeat = $deployment->last_status_check_at === null
+            || $deployment->last_status_check_at->lt(now()->subMinutes(15));
+
+        // Metrics runs every five minutes. Avoid rewriting the deployment row when
+        // nothing meaningful changed and the heartbeat is still fresh.
+        if (! $statusChanged && ! $detailChanged && ! $staleHeartbeat) {
+            return;
+        }
 
         $deployment->update([
             'status' => $status,

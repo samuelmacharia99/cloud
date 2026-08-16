@@ -33,6 +33,12 @@ class DockerStatsParser
         }
 
         $parts = preg_split("/\t+/", $line) ?: [];
+
+        // Batched collectors include the container name as the first column.
+        if (count($parts) >= 5 && ! str_contains($parts[0], '%')) {
+            $parts = array_slice($parts, 1);
+        }
+
         if (count($parts) < 4) {
             throw new \InvalidArgumentException("Failed to parse docker stats for {$containerName}");
         }
@@ -50,43 +56,80 @@ class DockerStatsParser
         ];
     }
 
+    /**
+     * Parse multi-line `docker stats` output that includes {{.Name}} as the first column.
+     *
+     * @return array<string, array{cpu: string, mem: string, net: string, block: string}>
+     */
+    public static function parseNamedLines(string $output): array
+    {
+        $result = [];
+
+        foreach (preg_split("/\r\n|\n|\r/", trim($output)) ?: [] as $line) {
+            $line = trim($line);
+            if ($line === '') {
+                continue;
+            }
+
+            $parts = preg_split("/\t+/", $line) ?: [];
+            if (count($parts) < 5) {
+                continue;
+            }
+
+            $name = trim($parts[0]);
+            if ($name === '') {
+                continue;
+            }
+
+            try {
+                $result[$name] = self::parseLine(implode("\t", array_slice($parts, 1)), $name);
+            } catch (\InvalidArgumentException) {
+                continue;
+            }
+        }
+
+        return $result;
+    }
+
     public static function parseMemoryToMb(string $value): int
     {
         $value = strtoupper(trim($value));
+        $amount = (float) $value;
 
-        if (str_contains($value, 'GIB')) {
-            return (int) ((float) $value * 1024);
-        }
-        if (str_contains($value, 'MIB')) {
-            return (int) (float) $value;
-        }
-        if (str_contains($value, 'KIB')) {
-            return (int) ((float) $value / 1024);
-        }
-        if (str_contains($value, 'B')) {
-            return (int) ((float) $value / 1024 / 1024);
-        }
-
-        return (int) (float) $value;
+        return match (true) {
+            str_contains($value, 'TIB'), str_contains($value, 'TB') => (int) ($amount * 1024 * 1024),
+            str_contains($value, 'GIB'), str_contains($value, 'GB') => (int) ($amount * 1024),
+            str_contains($value, 'MIB'), str_contains($value, 'MB') => (int) $amount,
+            str_contains($value, 'KIB'), str_contains($value, 'KB') => (int) ($amount / 1024),
+            str_contains($value, 'B') => (int) ($amount / 1024 / 1024),
+            default => (int) $amount,
+        };
     }
 
     public static function parseDataToBytes(string $value): int
     {
         $value = strtoupper(trim($value));
+        $amount = (float) $value;
 
-        if (str_contains($value, 'GB')) {
-            return (int) ((float) $value * 1024 * 1024 * 1024);
-        }
-        if (str_contains($value, 'MB')) {
-            return (int) ((float) $value * 1024 * 1024);
-        }
-        if (str_contains($value, 'KB')) {
-            return (int) ((float) $value * 1024);
-        }
-        if (str_contains($value, 'B')) {
-            return (int) (float) $value;
-        }
+        // Prefer binary units (MiB/GiB) before SI-looking suffixes (MB/GB), because
+        // Docker mixes both depending on metric and engine version.
+        return match (true) {
+            str_contains($value, 'TIB') => (int) ($amount * 1024 ** 4),
+            str_contains($value, 'GIB') => (int) ($amount * 1024 ** 3),
+            str_contains($value, 'MIB') => (int) ($amount * 1024 ** 2),
+            str_contains($value, 'KIB') => (int) ($amount * 1024),
+            str_contains($value, 'TB') => (int) ($amount * 1000 ** 4),
+            str_contains($value, 'GB') => (int) ($amount * 1000 ** 3),
+            str_contains($value, 'MB') => (int) ($amount * 1000 ** 2),
+            str_contains($value, 'KB') => (int) ($amount * 1000),
+            str_contains($value, 'B') => (int) $amount,
+            default => (int) $amount,
+        };
+    }
 
-        return (int) (float) $value;
+    public static function clampCpuPercentage(float $cpuPercent): float
+    {
+        // container_metrics.cpu_percentage is decimal(5,2).
+        return max(0, min(999.99, round($cpuPercent, 2)));
     }
 }
