@@ -917,6 +917,9 @@ function containerEnvironmentPanel(initialRows) {
             isNew: false,
         })),
         saving: false,
+        importing: false,
+        importMessage: '',
+        importError: false,
         addRow() {
             this.rows.push({
                 _id: 'env-' + (++rowSeq),
@@ -953,6 +956,147 @@ function containerEnvironmentPanel(initialRows) {
             `;
             document.body.appendChild(form);
             form.submit();
+        },
+        async importDotEnv(event) {
+            const input = event.target;
+            const file = input.files?.[0];
+            this.importMessage = '';
+            this.importError = false;
+
+            if (!file) return;
+
+            if (file.size > 256 * 1024) {
+                this.importMessage = 'The .env file is too large (maximum 256 KB).';
+                this.importError = true;
+                input.value = '';
+                return;
+            }
+
+            this.importing = true;
+
+            try {
+                const parsed = this.parseDotEnv(await file.text());
+                const entries = Object.entries(parsed);
+
+                if (entries.length === 0) {
+                    throw new Error('No valid environment variables were found in this file.');
+                }
+
+                const existing = new Map(
+                    this.rows.map((row, index) => [(row.key || '').trim().toUpperCase(), index])
+                );
+                const newKeyCount = entries.filter(([key]) => !existing.has(key)).length;
+
+                if (this.rows.length + newKeyCount > 100) {
+                    throw new Error('Import would exceed the 100-variable limit.');
+                }
+
+                for (const [key, value] of entries) {
+                    if (existing.has(key)) {
+                        this.rows[existing.get(key)].value = value;
+                        continue;
+                    }
+
+                    this.rows.push({
+                        _id: 'env-' + (++rowSeq),
+                        key,
+                        value,
+                        sensitive: this.isSensitiveEnvKey(key),
+                        platform_managed: this.isPlatformManagedEnvKey(key),
+                        reveal: false,
+                        isNew: true,
+                    });
+                    existing.set(key, this.rows.length - 1);
+                }
+
+                this.importMessage = `${entries.length} variable${entries.length === 1 ? '' : 's'} loaded from ${file.name}. Review them, then click Save & apply.`;
+            } catch (error) {
+                this.importMessage = error?.message || 'The .env file could not be read.';
+                this.importError = true;
+            } finally {
+                this.importing = false;
+                input.value = '';
+            }
+        },
+        parseDotEnv(content) {
+            const result = {};
+            const lines = String(content || '').replace(/^\uFEFF/, '').split(/\r\n|\n|\r/);
+
+            for (let index = 0; index < lines.length; index++) {
+                let line = lines[index].trim();
+                if (!line || line.startsWith('#')) continue;
+
+                if (line.startsWith('export ')) {
+                    line = line.slice(7).trimStart();
+                }
+
+                const match = line.match(/^([A-Za-z][A-Za-z0-9_]*)\s*=\s*(.*)$/);
+                if (!match) {
+                    throw new Error(`Invalid .env syntax on line ${index + 1}.`);
+                }
+
+                const key = match[1].toUpperCase();
+                let value = match[2];
+
+                if (value.startsWith('"') || value.startsWith("'")) {
+                    const quote = value[0];
+                    let quoted = value.slice(1);
+
+                    while (!this.hasClosingEnvQuote(quoted, quote) && index + 1 < lines.length) {
+                        quoted += '\n' + lines[++index];
+                    }
+
+                    const closeAt = this.closingEnvQuoteIndex(quoted, quote);
+                    if (closeAt < 0) {
+                        throw new Error(`Unclosed quoted value for ${key}.`);
+                    }
+
+                    const trailing = quoted.slice(closeAt + 1).trim();
+                    if (trailing && !trailing.startsWith('#')) {
+                        throw new Error(`Unexpected content after ${key}.`);
+                    }
+
+                    value = quoted.slice(0, closeAt);
+                    if (quote === '"') {
+                        value = value.replace(/\\(n|r|t|"|\\)/g, (_, token) => ({
+                            n: '\n',
+                            r: '\r',
+                            t: '\t',
+                            '"': '"',
+                            '\\': '\\',
+                        })[token]);
+                    }
+                } else {
+                    // In dotenv syntax an inline comment starts at a whitespace-prefixed #.
+                    value = value.replace(/\s+#.*$/, '').trim();
+                }
+
+                result[key] = value;
+            }
+
+            return result;
+        },
+        hasClosingEnvQuote(value, quote) {
+            return this.closingEnvQuoteIndex(value, quote) >= 0;
+        },
+        closingEnvQuoteIndex(value, quote) {
+            for (let index = 0; index < value.length; index++) {
+                if (value[index] !== quote) continue;
+
+                let slashes = 0;
+                for (let cursor = index - 1; cursor >= 0 && value[cursor] === '\\'; cursor--) {
+                    slashes++;
+                }
+                if (slashes % 2 === 0) return index;
+            }
+
+            return -1;
+        },
+        isSensitiveEnvKey(key) {
+            return /(PASSWORD|SECRET|TOKEN|KEY|PRIVATE|CREDENTIAL|AUTH)/i.test(key);
+        },
+        isPlatformManagedEnvKey(key) {
+            return @js(\App\Services\Provisioning\ContainerEnvironmentService::PLATFORM_MANAGED_KEYS).includes(key);
         },
         prepareSubmit(event) {
             this.rows.forEach((row) => {

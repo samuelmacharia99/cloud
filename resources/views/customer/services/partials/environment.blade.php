@@ -24,6 +24,43 @@
         Platform-managed database keys are editable but tied to your sidecar. Changing them restarts the stack and may require credential repair from the Database tab.
     </div>
 
+    <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+                <h4 class="font-semibold text-slate-900 dark:text-white">Import a .env file</h4>
+                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Autofills the table below and overwrites matching keys. Existing keys absent from the file are retained.
+                    The file is parsed in your browser and is not uploaded separately.
+                </p>
+            </div>
+            <div class="shrink-0">
+                <input
+                    x-ref="dotenvFile"
+                    type="file"
+                    accept=".env,text/plain"
+                    class="hidden"
+                    @change="importDotEnv($event)"
+                >
+                <button
+                    type="button"
+                    @click="$refs.dotenvFile.click()"
+                    :disabled="importing || saving"
+                    class="inline-flex items-center px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg text-sm font-medium hover:bg-slate-200 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                    @if (! $canSaveEnvironment) disabled @endif
+                >
+                    <span x-text="importing ? 'Reading…' : 'Choose .env file'"></span>
+                </button>
+            </div>
+        </div>
+
+        <p
+            x-show="importMessage"
+            x-text="importMessage"
+            class="mt-3 text-sm"
+            :class="importError ? 'text-red-600 dark:text-red-400' : 'text-emerald-700 dark:text-emerald-400'"
+        ></p>
+    </div>
+
     @if (! $canSaveEnvironment)
         <div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-4 text-sm text-slate-700 dark:text-slate-300">
             Environment editing is unavailable until this application is deployed.

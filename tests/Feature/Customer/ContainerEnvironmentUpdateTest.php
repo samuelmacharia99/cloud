@@ -3,6 +3,7 @@
 namespace Tests\Feature\Customer;
 
 use App\Models\ContainerDeployment;
+use App\Models\Node;
 use App\Models\Product;
 use App\Models\Service;
 use App\Models\User;
@@ -17,6 +18,7 @@ class ContainerEnvironmentUpdateTest extends TestCase
 
     private function containerServiceFor(User $customer, string $status = 'running'): Service
     {
+        $node = Node::factory()->containerHost()->create();
         $product = Product::factory()->containerHosting()->create();
         $service = Service::factory()->create([
             'user_id' => $customer->id,
@@ -32,6 +34,7 @@ class ContainerEnvironmentUpdateTest extends TestCase
 
         ContainerDeployment::factory()->create([
             'service_id' => $service->id,
+            'node_id' => $node->id,
             'status' => $status,
             'env_values' => [
                 'API_URL' => 'http://127.0.0.1:8001',
@@ -67,6 +70,24 @@ class ContainerEnvironmentUpdateTest extends TestCase
         $deployment = $service->fresh()->containerDeployment;
         $this->assertSame('https://atlas.car-washflow.com/api/v1', $deployment->env_values['API_URL']);
         $this->assertSame('https://atlas.car-washflow.com', $deployment->env_values['FRONTEND_URL']);
+    }
+
+    public function test_environment_tab_offers_browser_only_dotenv_import(): void
+    {
+        $customer = User::factory()->create();
+        $service = $this->containerServiceFor($customer);
+
+        $this->actingAs($customer)
+            ->get(route('customer.services.container.show', [
+                'service' => $service,
+                'tab' => 'environment',
+            ]))
+            ->assertOk()
+            ->assertSee('Import a .env file')
+            ->assertSee('Choose .env file')
+            ->assertSee('parsed in your browser and is not uploaded separately')
+            ->assertSee('accept=".env,text/plain"', false)
+            ->assertSee('parseDotEnv(content)', false);
     }
 
     public function test_customer_can_save_environment_while_deploying(): void
