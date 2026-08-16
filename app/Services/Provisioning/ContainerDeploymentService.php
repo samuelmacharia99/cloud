@@ -893,8 +893,6 @@ class ContainerDeploymentService
             'memory_mb' => (int) ($template->required_ram_mb ?? 0),
             'disk_gb' => (float) ($template->required_storage_gb ?? 0),
         ];
-        $reservedCpu = 0.0;
-        $reservedRamGb = 0.0;
         $reservedStorageGb = 0.0;
 
         foreach ($node->containerDeployments as $deployment) {
@@ -911,8 +909,6 @@ class ContainerDeploymentService
                 'memory_mb' => (int) ($deployment->memory_limit_mb ?? 0),
                 'disk_gb' => 0,
             ];
-            $reservedCpu += (float) $limits['cpu'];
-            $reservedRamGb += (float) $limits['memory_mb'] / 1024;
             $reservedStorageGb += (float) $limits['disk_gb'];
         }
 
@@ -923,13 +919,14 @@ class ContainerDeploymentService
         $ramCapacity = (float) $node->ram_gb * (1 - $ramHeadroom / 100);
         $storageCapacity = (float) $node->storage_gb * (1 - $storageHeadroom / 100);
 
-        // Protect both sold reservations and current burst pressure.
+        // Elastic CPU/RAM are soft oversubscribed plan allowances. Gate placement on
+        // live host pressure plus the incoming request; keep sold disk hard.
         $usedCpu = (float) $node->cpu_cores * ((float) $node->cpu_used / 100);
         $usedRamGb = (float) $node->ram_used_gb;
         $usedStorageGb = (float) $node->storage_used_gb;
 
-        return (max($reservedCpu, $usedCpu) + (float) $requested['cpu']) <= $cpuCapacity
-            && (max($reservedRamGb, $usedRamGb) + ((float) $requested['memory_mb'] / 1024)) <= $ramCapacity
+        return ($usedCpu + (float) $requested['cpu']) <= $cpuCapacity
+            && ($usedRamGb + ((float) $requested['memory_mb'] / 1024)) <= $ramCapacity
             && (max($reservedStorageGb, $usedStorageGb) + (float) $requested['disk_gb']) <= $storageCapacity;
     }
 

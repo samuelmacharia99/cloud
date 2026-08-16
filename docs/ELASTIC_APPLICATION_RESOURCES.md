@@ -15,8 +15,10 @@ allowance, and the excess is charged from collected metrics.
 
 ## Capacity safety
 
-New placement uses both sold reservations and live node utilization. Only online
-nodes are eligible, and the default protected headroom is:
+New placement gates CPU/RAM on live node utilization plus the incoming plan
+request, and gates disk on sold storage reservations. Soft CPU/RAM plan
+allowances intentionally oversubscribe and are not treated as hard sold capacity.
+Only online nodes are eligible, and the default protected headroom is:
 
 - RAM: 20%
 - CPU: 10%
@@ -25,11 +27,13 @@ nodes are eligible, and the default protected headroom is:
 Configure these with `CONTAINER_NODE_*_HEADROOM_PERCENT`. A node that cannot
 preserve headroom receives no new deployments.
 
-At ~70% pressure (live or reserved), `cron:check-container-node-capacity` alerts
+At ~70% live pressure (or sold disk), `cron:check-container-node-capacity` alerts
 admins over Telegram/email to provision another `container_host`. Talksasa does
 not create cloud VMs automatically; once the new node is active/online, placement
 uses it. Configure with `CONTAINER_NODE_SCALE_OUT_PERCENT` and
 `CONTAINER_NODE_SCALE_OUT_COOLDOWN_MINUTES`.
+
+Sold CPU/RAM percentages in alerts are informational and may exceed 100%.
 
 Adding provider-level node autoscaling remains an infrastructure integration.
 

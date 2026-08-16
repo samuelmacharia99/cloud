@@ -938,7 +938,7 @@ class NotificationService
         $drivers = implode(', ', $evaluation['drivers'] ?: ['capacity']);
         $subject = "Scale out: {$node->name} is at {$evaluation['pressure_percent']}% capacity";
         $body = <<<EOT
-An application host has reached the elastic scale-out threshold. Provision another container host before placement headroom is exhausted.
+An application host has reached the elastic scale-out threshold. Provision another container host before live headroom is exhausted.
 
 Node: {$node->name}
 Hostname: {$node->hostname}
@@ -948,7 +948,9 @@ Drivers: {$drivers}
 Deployments: {$evaluation['deployment_count']}
 
 Live — CPU {$evaluation['live']['cpu']}%, RAM {$evaluation['live']['ram']}%, Storage {$evaluation['live']['storage']}%
-Reserved — CPU {$evaluation['reserved']['cpu']}%, RAM {$evaluation['reserved']['ram']}%, Storage {$evaluation['reserved']['storage']}%
+Sold allowances — CPU {$evaluation['reserved']['cpu']}%, RAM {$evaluation['reserved']['ram']}%, Storage {$evaluation['reserved']['storage']}%
+
+Note: sold CPU/RAM may exceed 100% under elastic soft reservations. Pressure uses live utilization (and sold disk), matching Admin → Nodes.
 
 Action: create/configure a new container_host node in Admin → Nodes, install Docker + Talksasa runtime, mark it active/online. New apps will place there automatically once capacity is available.
 EOT;
@@ -982,7 +984,7 @@ Every active application host is at or above the elastic scale-out threshold ({$
 
 Pressured hosts: {$pressuredNodes}
 
-New deployments will start failing or packing onto overloaded nodes once reserved/live headroom is gone. Provision at least one additional container_host immediately.
+New deployments will start failing or packing onto overloaded nodes once live headroom (and sold disk) is gone. Provision at least one additional container_host immediately.
 EOT;
 
         $this->telegram()->systemAlert($subject, [
