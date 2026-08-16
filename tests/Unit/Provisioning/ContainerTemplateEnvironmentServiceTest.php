@@ -96,7 +96,8 @@ class ContainerTemplateEnvironmentServiceTest extends TestCase
         $this->assertSame('root-secret', $compose['services']['mysql']['environment']['MYSQL_ROOT_PASSWORD']);
         $this->assertSame('app-service-mysql', $compose['services']['mysql']['container_name']);
         $this->assertSame('always', $compose['services']['mysql']['restart']);
-        $this->assertSame('512M', $compose['services']['mysql']['mem_limit']);
+        $this->assertArrayNotHasKey('mem_limit', $compose['services']['mysql']);
+        $this->assertSame('256M', $compose['services']['mysql']['mem_reservation']);
         $this->assertContains('--innodb-buffer-pool-size=256M', $compose['services']['mysql']['command']);
         $this->assertSame('always', $compose['services']['app-service']['restart']);
         $this->assertSame('CMD-SHELL', $compose['services']['mysql']['healthcheck']['test'][0]);

@@ -41,6 +41,8 @@ class ContainerDeploymentService
 
     private WordPressContainerHardeningService $wordpressHardening;
 
+    private ContainerElasticResourceService $elasticResources;
+
     private const PORT_RANGE_START = 30000;
 
     private const PORT_RANGE_END = 40000;
@@ -58,6 +60,7 @@ class ContainerDeploymentService
         ?ContainerStackCommandService $stackCommands = null,
         ?ContainerApplicationRuntimeService $applicationRuntime = null,
         ?WordPressContainerHardeningService $wordpressHardening = null,
+        ?ContainerElasticResourceService $elasticResources = null,
     ) {
         $this->runtimeImages = $runtimeImages ?? new RuntimeImageProvisioner;
         $this->appDirectory = $appDirectory ?? new ContainerAppDirectoryService;
@@ -65,6 +68,7 @@ class ContainerDeploymentService
         $this->stackCommands = $stackCommands ?? new ContainerStackCommandService;
         $this->applicationRuntime = $applicationRuntime ?? new ContainerApplicationRuntimeService;
         $this->wordpressHardening = $wordpressHardening ?? new WordPressContainerHardeningService;
+        $this->elasticResources = $elasticResources ?? new ContainerElasticResourceService;
     }
 
     /**
@@ -100,8 +104,7 @@ class ContainerDeploymentService
 
             // Select node if not already set
             if (! $service->node_id) {
-                $node = $this->selectNode($template);
-                $service->update(['node_id' => $node->id]);
+                $node = $this->selectNode($template, $service);
             } else {
                 $node = $service->node;
             }
@@ -156,7 +159,20 @@ class ContainerDeploymentService
                         $selectedVersion
                     ) {
                         // Serialize reservation/allocation by locking node row.
-                        Node::whereKey($node->id)->lockForUpdate()->first();
+                        $lockedNode = Node::whereKey($node->id)->lockForUpdate()->firstOrFail();
+                        $lockedNode->load([
+                            'containerDeployments' => fn ($query) => $query
+                                ->where('status', '!=', 'terminated')
+                                ->with('service.product.containerTemplate'),
+                        ]);
+                        if (! $this->nodeHasCapacity($lockedNode, $service, $template)) {
+                            throw new \DomainException(
+                                "Container host '{$lockedNode->name}' no longer has safe reserved capacity. Retry to select another host."
+                            );
+                        }
+                        if (! $service->node_id) {
+                            $service->update(['node_id' => $lockedNode->id]);
+                        }
 
                         $port = $this->assignPort($node);
                         $envVars = $this->buildEnvironmentVariables($template, $envValues, $service, $databaseTemplate, $port);
@@ -840,10 +856,16 @@ class ContainerDeploymentService
     /**
      * Select the least-loaded container host node
      */
-    private function selectNode($template = null): Node
+    private function selectNode($template = null, ?Service $service = null): Node
     {
         $nodes = Node::where('type', 'container_host')
             ->where('is_active', true)
+            ->where('status', 'online')
+            ->with([
+                'containerDeployments' => fn ($query) => $query
+                    ->where('status', '!=', 'terminated')
+                    ->with('service.product.containerTemplate'),
+            ])
             ->orderBy('container_count')
             ->get();
 
@@ -855,25 +877,60 @@ class ContainerDeploymentService
             return $nodes->first();
         }
 
-        $requiredCpuCores = (float) ($template->required_cpu_cores ?? 0);
-        $requiredRamGb = (float) (($template->required_ram_mb ?? 0) / 1024);
-        $requiredStorageGb = (float) ($template->required_storage_gb ?? 0);
-
-        $node = $nodes->first(function (Node $node) use ($requiredCpuCores, $requiredRamGb, $requiredStorageGb) {
-            $availableCpu = (float) $node->getAvailableCpuCores();
-            $availableRam = (float) $node->getAvailableRamGb();
-            $availableStorage = (float) $node->getAvailableStorageGb();
-
-            return $availableCpu >= $requiredCpuCores
-                && $availableRam >= $requiredRamGb
-                && $availableStorage >= $requiredStorageGb;
-        });
+        $node = $nodes->first(fn (Node $node) => $this->nodeHasCapacity($node, $service, $template));
 
         if (! $node) {
             throw new \DomainException('No container host has enough available resources for this template');
         }
 
         return $node;
+    }
+
+    private function nodeHasCapacity(Node $node, ?Service $service, object $template): bool
+    {
+        $requested = $service?->product?->getIncludedContainerLimits($template) ?? [
+            'cpu' => (float) ($template->required_cpu_cores ?? 0),
+            'memory_mb' => (int) ($template->required_ram_mb ?? 0),
+            'disk_gb' => (float) ($template->required_storage_gb ?? 0),
+        ];
+        $reservedCpu = 0.0;
+        $reservedRamGb = 0.0;
+        $reservedStorageGb = 0.0;
+
+        foreach ($node->containerDeployments as $deployment) {
+            // A redeploy replaces its reservation instead of consuming it twice.
+            if ($service && (int) $deployment->service_id === (int) $service->id) {
+                continue;
+            }
+
+            $limits = $deployment->service?->product?->getIncludedContainerLimits(
+                $deployment->service?->product?->containerTemplate,
+                $deployment
+            ) ?? [
+                'cpu' => (float) ($deployment->cpu_limit ?? 0),
+                'memory_mb' => (int) ($deployment->memory_limit_mb ?? 0),
+                'disk_gb' => 0,
+            ];
+            $reservedCpu += (float) $limits['cpu'];
+            $reservedRamGb += (float) $limits['memory_mb'] / 1024;
+            $reservedStorageGb += (float) $limits['disk_gb'];
+        }
+
+        $ramHeadroom = max(0, min(50, (int) config('containers.elastic_resources.node_ram_headroom_percent', 20)));
+        $cpuHeadroom = max(0, min(50, (int) config('containers.elastic_resources.node_cpu_headroom_percent', 10)));
+        $storageHeadroom = max(0, min(50, (int) config('containers.elastic_resources.node_storage_headroom_percent', 10)));
+        $cpuCapacity = (float) $node->cpu_cores * (1 - $cpuHeadroom / 100);
+        $ramCapacity = (float) $node->ram_gb * (1 - $ramHeadroom / 100);
+        $storageCapacity = (float) $node->storage_gb * (1 - $storageHeadroom / 100);
+
+        // Protect both sold reservations and current burst pressure.
+        $usedCpu = (float) $node->cpu_cores * ((float) $node->cpu_used / 100);
+        $usedRamGb = (float) $node->ram_used_gb;
+        $usedStorageGb = (float) $node->storage_used_gb;
+
+        return (max($reservedCpu, $usedCpu) + (float) $requested['cpu']) <= $cpuCapacity
+            && (max($reservedRamGb, $usedRamGb) + ((float) $requested['memory_mb'] / 1024)) <= $ramCapacity
+            && (max($reservedStorageGb, $usedStorageGb) + (float) $requested['disk_gb']) <= $storageCapacity;
     }
 
     /**
@@ -980,6 +1037,7 @@ class ContainerDeploymentService
 
         $compose['services']['db'] = array_filter([
             'image' => $db->docker_image,
+            'container_name' => $appServiceName.'-db',
             'restart' => 'always',
             'mem_limit' => '512M',
             'environment' => $dbEnv ?: null,
@@ -1185,6 +1243,12 @@ class ContainerDeploymentService
         }
 
         $this->ensureNamedVolumesDeclared($compose);
+        $this->elasticResources->apply(
+            $compose,
+            $serveNextFrontend ? LaravelNextGatewayProxy::BACKEND_SERVICE : $containerName,
+            (float) $cpuLimit,
+            (int) $memoryLimit
+        );
 
         return Yaml::dump($compose, 10, 2);
     }
@@ -3943,8 +4007,8 @@ class ContainerDeploymentService
     }
 
     /**
-     * Re-render and upload compose when WordPress MySQL sidecar is missing memory/restart hardening.
-     * Existing stacks keep volumes/env; only the YAML policy/limits are refreshed before compose up.
+     * Upgrade existing compose files to the current elastic resource policy. WordPress
+     * additionally receives its DB/restart/upload hardening when older YAML is detected.
      */
     public function refreshComposeYamlIfStale(
         SSHService $ssh,
@@ -3954,14 +4018,44 @@ class ContainerDeploymentService
         $service->loadMissing('product.containerTemplate');
         $template = $this->resolveContainerTemplate($service);
 
-        if (! $template || ($template->slug ?? '') !== 'wordpress') {
+        if (! $template) {
             return;
         }
 
         $existing = (string) ($deployment->docker_compose_content ?? '');
+        $containerName = $deployment->container_name;
+        $containerPath = self::CONTAINER_BASE_PATH.'/'.$containerName;
+
+        if ($existing !== '' && ! $this->elasticResources->isCurrent($existing)) {
+            try {
+                $included = $service->product?->getIncludedContainerLimits($template, $deployment) ?? [
+                    'cpu' => (float) ($deployment->cpu_limit ?: $template->required_cpu_cores ?: 1),
+                    'memory_mb' => (int) ($deployment->memory_limit_mb ?: $template->required_ram_mb ?: 256),
+                ];
+                $appService = $this->usesLaravelNextSidecarStack($deployment)
+                    ? LaravelNextGatewayProxy::BACKEND_SERVICE
+                    : $containerName;
+                $existing = $this->elasticResources->applyToYaml(
+                    $existing,
+                    $appService,
+                    (float) $included['cpu'],
+                    (int) $included['memory_mb']
+                );
+                $deployment->update(['docker_compose_content' => $existing]);
+                $ssh->upload($existing, $containerPath.'/docker-compose.yml');
+            } catch (\Throwable $e) {
+                Log::warning('Elastic compose policy refresh failed', [
+                    'deployment_id' => $deployment->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        if (($template->slug ?? '') !== 'wordpress') {
+            return;
+        }
+
         $needsRefresh = $existing === ''
-            || ! preg_match('/^\s*mem_limit:\s*[\'"]?512[mM][\'"]?\s*$/mi', $existing)
-            || preg_match('/^\s*mem_limit:\s*[\'"]?1[gG][\'"]?\s*$/mi', $existing) === 1
             || str_contains($existing, 'innodb-buffer-pool-size=512M')
             || ! preg_match('/^\s*restart:\s*[\'"]?always[\'"]?\s*$/mi', $existing)
             || str_contains($existing, 'service_healthy')
@@ -3977,7 +4071,6 @@ class ContainerDeploymentService
             return;
         }
 
-        $containerName = $deployment->container_name;
         $port = (int) ($deployment->assigned_port ?? 0);
         if ($port <= 0) {
             return;
@@ -4024,7 +4117,6 @@ class ContainerDeploymentService
             'restart_policy' => 'always',
         ]);
 
-        $containerPath = self::CONTAINER_BASE_PATH.'/'.$containerName;
         $ssh->upload($composeYaml, $containerPath.'/docker-compose.yml');
 
         \Log::info('Refreshed WordPress docker-compose.yml with MySQL memory/restart hardening', [

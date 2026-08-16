@@ -6,6 +6,7 @@ use App\Models\ContainerDeployment;
 use App\Models\ContainerMetric;
 use App\Models\ContainerTemplate;
 use App\Models\Invoice;
+use App\Models\InvoiceItem;
 use App\Models\Node;
 use App\Models\Product;
 use App\Models\Service;
@@ -75,6 +76,43 @@ class ContainerOverageBillingServiceTest extends TestCase
         $this->assertSame(2.0, $limits['disk_gb']);
     }
 
+    public function test_next_invoice_resumes_from_previous_metering_snapshot_without_a_gap(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-03-20 12:00:00'));
+        $user = User::factory()->create();
+        $product = Product::factory()->containerHosting()->create();
+        $service = Service::factory()->create([
+            'user_id' => $user->id,
+            'product_id' => $product->id,
+            'next_due_date' => Carbon::parse('2026-04-01'),
+            'commenced_at' => Carbon::parse('2026-01-01'),
+            'billing_cycle' => 'monthly',
+        ]);
+        $previousInvoice = Invoice::factory()->create(['user_id' => $user->id]);
+        InvoiceItem::create([
+            'invoice_id' => $previousInvoice->id,
+            'service_id' => $service->id,
+            'product_id' => $product->id,
+            'product_type' => 'container_ram_overage',
+            'description' => 'RAM Overage — previous snapshot',
+            'quantity' => 1,
+            'unit_price' => 1,
+            'amount' => 1,
+            'custom_options' => [
+                'metered_billing_from' => '2026-02-01T00:00:00+00:00',
+                'metered_billing_to' => '2026-02-20T00:00:00+00:00',
+            ],
+        ]);
+        $nextInvoice = Invoice::factory()->create(['user_id' => $user->id]);
+
+        $period = $this->billing->resolveBillingPeriod($service, $nextInvoice);
+
+        $this->assertNotNull($period);
+        $this->assertSame('2026-02-20 00:00:00', $period['from']->format('Y-m-d H:i:s'));
+        $this->assertSame('2026-03-20 12:00:00', $period['to']->format('Y-m-d H:i:s'));
+        Carbon::setTestNow();
+    }
+
     public function test_adds_cpu_and_ram_overage_items_to_invoice_when_usage_exceeds_limits(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-03-15 12:00:00'));
@@ -123,7 +161,8 @@ class ContainerOverageBillingServiceTest extends TestCase
         ContainerMetric::create([
             'container_deployment_id' => $deployment->id,
             'sample_type' => ContainerMetric::SAMPLE_USAGE,
-            'cpu_percentage' => 50,
+            // Docker CPU% is absolute: 250% means an average of 2.5 cores.
+            'cpu_percentage' => 250,
             'memory_used_mb' => 1024,
             'memory_limit_mb' => 2048,
             'memory_percentage' => 50,
@@ -149,6 +188,12 @@ class ContainerOverageBillingServiceTest extends TestCase
         $this->assertTrue(collect($items)->contains(fn (string $line) => str_contains($line, 'RAM Overage')));
         $this->assertTrue(collect($items)->contains(fn (string $line) => str_contains($line, 'Disk Overage')));
         $this->assertGreaterThan(1000, (float) $invoice->total);
+
+        $firstTotal = (float) $invoice->total;
+        $this->billing->addOverageItemsToInvoice($invoice, $service);
+        $invoice->refresh();
+        $this->assertCount(3, $invoice->items);
+        $this->assertSame($firstTotal, (float) $invoice->total);
 
         Carbon::setTestNow();
     }

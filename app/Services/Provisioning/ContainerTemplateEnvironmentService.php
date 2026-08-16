@@ -88,10 +88,10 @@ class ContainerTemplateEnvironmentService
         // Host reboots / docker restarts: always bring the DB back even if it was stopped for maintenance.
         $compose['services']['mysql']['restart'] = 'always';
 
-        // Cap MySQL for shared container hosts (many WP stacks per node).
-        // 1g + 512M buffer pool per site caused host pressure → slow MySQL → nginx 504s.
-        $compose['services']['mysql']['mem_limit'] = '512M';
-        $compose['services']['mysql']['cpus'] = $compose['services']['mysql']['cpus'] ?? 1.0;
+        // This is a soft reservation, not a kill threshold. The final compose resource
+        // policy normalizes app + MySQL reservations to the plan's included resources.
+        unset($compose['services']['mysql']['mem_limit'], $compose['services']['mysql']['cpus']);
+        $compose['services']['mysql']['mem_reservation'] = '256M';
 
         // Keep InnoDB comfortably inside the 512M container budget.
         $compose['services']['mysql']['command'] = [

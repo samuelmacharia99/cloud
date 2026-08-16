@@ -14,6 +14,7 @@ use Closure;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use Symfony\Component\Yaml\Yaml;
 
 class CollectContainerMetricsCommand extends BaseCronCommand
 {
@@ -209,23 +210,22 @@ class CollectContainerMetricsCommand extends BaseCronCommand
      */
     private function collectBatchedStats(SSHService $ssh, array $deployments): array
     {
-        $names = array_values(array_filter(array_map(
-            fn (ContainerDeployment $deployment) => trim((string) $deployment->container_name),
+        $names = array_values(array_unique(array_merge(...array_map(
+            fn (ContainerDeployment $deployment) => $this->runtimeContainerNames($deployment),
             $deployments
-        )));
+        ))));
 
         if ($names === []) {
             return [];
         }
 
-        $args = implode(' ', array_map('escapeshellarg', $names));
         $timeout = max(
             5,
             (int) config('cron.container_metrics.stats_timeout_seconds', 12) + min(30, count($names))
         );
 
         $output = trim($ssh->exec(
-            "docker stats {$args} --no-stream --format '{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}\t{{.BlockIO}}' 2>/dev/null || true",
+            "docker stats --no-stream --format '{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}\t{{.BlockIO}}' 2>/dev/null || true",
             $timeout,
             false
         ));
@@ -268,22 +268,37 @@ class CollectContainerMetricsCommand extends BaseCronCommand
             return null;
         }
 
-        $cpuPercent = DockerStatsParser::clampCpuPercentage(
-            (float) str_replace('%', '', $data['cpu'])
+        $runtimeNames = $this->runtimeContainerNames($deployment);
+        $samples = array_values(array_filter(array_map(
+            fn (string $name) => $statsByName[$name] ?? null,
+            $runtimeNames
+        )));
+
+        $cpuPercent = DockerStatsParser::clampCpuPercentage(array_sum(array_map(
+            fn (array $sample) => (float) str_replace('%', '', $sample['cpu']),
+            $samples
+        )));
+        $memUsedMb = array_sum(array_map(function (array $sample): int {
+            $parts = explode('/', $sample['mem']);
+
+            return DockerStatsParser::parseMemoryToMb(trim($parts[0] ?? '0'));
+        }, $samples));
+        $included = $deployment->service?->product?->getIncludedContainerLimits(
+            $deployment->service?->product?->containerTemplate,
+            $deployment
         );
-
-        $memParts = explode('/', $data['mem']);
-        $memUsedMb = DockerStatsParser::parseMemoryToMb(trim($memParts[0] ?? '0'));
-        $memLimitMb = DockerStatsParser::parseMemoryToMb(trim($memParts[1] ?? '0'));
+        $memLimitMb = (int) ($included['memory_mb'] ?? $deployment->memory_limit_mb ?? 256);
         $memPercent = $memLimitMb > 0 ? ($memUsedMb / $memLimitMb) * 100 : 0;
+        $netRxBytes = $netTxBytes = $blockReadBytes = $blockWriteBytes = 0;
+        foreach ($samples as $sample) {
+            $netParts = explode('/', $sample['net']);
+            $netRxBytes += DockerStatsParser::parseDataToBytes(trim($netParts[0] ?? '0'));
+            $netTxBytes += DockerStatsParser::parseDataToBytes(trim($netParts[1] ?? '0'));
 
-        $netParts = explode('/', $data['net']);
-        $netRxBytes = DockerStatsParser::parseDataToBytes(trim($netParts[0] ?? '0'));
-        $netTxBytes = DockerStatsParser::parseDataToBytes(trim($netParts[1] ?? '0'));
-
-        $blockParts = explode('/', $data['block']);
-        $blockReadBytes = DockerStatsParser::parseDataToBytes(trim($blockParts[0] ?? '0'));
-        $blockWriteBytes = DockerStatsParser::parseDataToBytes(trim($blockParts[1] ?? '0'));
+            $blockParts = explode('/', $sample['block']);
+            $blockReadBytes += DockerStatsParser::parseDataToBytes(trim($blockParts[0] ?? '0'));
+            $blockWriteBytes += DockerStatsParser::parseDataToBytes(trim($blockParts[1] ?? '0'));
+        }
 
         ContainerMetric::create([
             'container_deployment_id' => $deployment->id,
@@ -301,6 +316,30 @@ class CollectContainerMetricsCommand extends BaseCronCommand
         ]);
 
         return 'usage';
+    }
+
+    /**
+     * Main app plus explicitly named DB/frontend/edge sidecars. New compose files name
+     * every billable sidecar; legacy files continue metering the primary until refreshed.
+     *
+     * @return list<string>
+     */
+    private function runtimeContainerNames(ContainerDeployment $deployment): array
+    {
+        $names = [trim((string) $deployment->container_name)];
+
+        try {
+            $compose = Yaml::parse((string) $deployment->docker_compose_content);
+            foreach (($compose['services'] ?? []) as $service) {
+                if (is_array($service) && filled($service['container_name'] ?? null)) {
+                    $names[] = trim((string) $service['container_name']);
+                }
+            }
+        } catch (\Throwable) {
+            // Primary-container metering is still valid while malformed YAML is repaired.
+        }
+
+        return array_values(array_unique(array_filter($names)));
     }
 
     private function recordDowntimeSample(ContainerDeployment $deployment): void

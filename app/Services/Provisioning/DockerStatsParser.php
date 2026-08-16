@@ -129,7 +129,7 @@ class DockerStatsParser
 
     public static function clampCpuPercentage(float $cpuPercent): float
     {
-        // container_metrics.cpu_percentage is decimal(5,2).
-        return max(0, min(999.99, round($cpuPercent, 2)));
+        // Elastic multi-container stacks can legitimately consume many cores.
+        return max(0, min(999999.99, round($cpuPercent, 2)));
     }
 }

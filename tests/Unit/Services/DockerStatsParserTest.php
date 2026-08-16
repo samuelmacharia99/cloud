@@ -54,6 +54,6 @@ class DockerStatsParserTest extends TestCase
         $this->assertSame(1024, DockerStatsParser::parseMemoryToMb('1GiB'));
         $this->assertSame(512, DockerStatsParser::parseMemoryToMb('0.5GB'));
         $this->assertSame(1000 * 1000, DockerStatsParser::parseDataToBytes('1MB'));
-        $this->assertSame(999.99, DockerStatsParser::clampCpuPercentage(1500));
+        $this->assertSame(1500.0, DockerStatsParser::clampCpuPercentage(1500));
     }
 }

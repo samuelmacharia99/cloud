@@ -20,6 +20,22 @@ return [
     // Bumped when runtime Dockerfiles change so nodes rebuild images (e.g. new PHP extensions).
     'runtime_build_revision' => (int) env('CONTAINER_RUNTIME_BUILD_REVISION', 5),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Elastic application resources
+    |--------------------------------------------------------------------------
+    |
+    | Plans define included/billable reservations, not Docker kill thresholds.
+    | Node headroom prevents new placement while capacity is tight, allowing
+    | operators/autoscaling to add or drain hosts before Linux reaches OOM.
+    |
+    */
+    'elastic_resources' => [
+        'node_ram_headroom_percent' => (int) env('CONTAINER_NODE_RAM_HEADROOM_PERCENT', 20),
+        'node_cpu_headroom_percent' => (int) env('CONTAINER_NODE_CPU_HEADROOM_PERCENT', 10),
+        'node_storage_headroom_percent' => (int) env('CONTAINER_NODE_STORAGE_HEADROOM_PERCENT', 10),
+    ],
+
     'runtime_templates' => [
         'laravel' => [
             'runtime' => 'laravel',

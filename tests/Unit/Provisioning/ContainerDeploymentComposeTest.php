@@ -148,7 +148,9 @@ class ContainerDeploymentComposeTest extends TestCase
         $this->assertStringContainsString('generated-password', $yaml);
         $this->assertStringContainsString('depends_on', $yaml);
         $this->assertStringContainsString('service_started', $yaml);
-        $this->assertStringContainsString('mem_limit', $yaml);
+        $this->assertStringNotContainsString('mem_limit', $yaml);
+        $this->assertStringContainsString('mem_reservation', $yaml);
+        $this->assertStringContainsString('elastic-v1', $yaml);
         $this->assertStringContainsString('innodb-buffer-pool-size', $yaml);
         $this->assertStringContainsString('mysql_data:/var/lib/mysql', $yaml);
         $this->assertStringContainsString('uploads.ini', $yaml);

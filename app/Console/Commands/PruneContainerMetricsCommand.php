@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\DB;
 
 class PruneContainerMetricsCommand extends BaseCronCommand
 {
-    protected $signature = 'cron:prune-container-metrics {--days=90 : Delete metrics older than this many days}';
+    protected $signature = 'cron:prune-container-metrics {--days=400 : Delete metrics older than this many days}';
 
     protected $description = 'Delete container metric samples older than the retention window';
 

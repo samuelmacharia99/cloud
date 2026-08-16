@@ -180,7 +180,7 @@
 
             <p class="text-sm text-slate-500">
                 @if (!empty($isContainerPlanChange))
-                    Confirming applies new CPU/memory limits to your running app after payment (or immediately when free).
+                    Confirming applies the new included CPU and memory allowances to your running app after payment (or immediately when free). Usage may burst above these allowances and is metered at your plan's overage rates.
                 @else
                     The amount due today is a prorated upgrade charge for the rest of your current billing period — not the full annual plan price. Downgrades apply at no extra cost after you confirm.
                 @endif

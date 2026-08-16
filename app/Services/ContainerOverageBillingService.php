@@ -27,7 +27,7 @@ class ContainerOverageBillingService
             return;
         }
 
-        $period = $this->resolveBillingPeriod($service);
+        $period = $this->resolveBillingPeriod($service, $invoice);
         if ($period === null) {
             return;
         }
@@ -44,12 +44,12 @@ class ContainerOverageBillingService
             $deployment
         );
 
-        $cpuLimitCores = max(0.1, (float) ($deployment->cpu_limit ?? $included['cpu'] ?? 1));
-
         $avgCpuPercent = ContainerMetric::averageCpuPercent($deployment, $from, $to);
         $avgDiskGb = ContainerMetric::averageDiskUsedGb($deployment, $from, $to);
 
-        $avgCpuCores = ($avgCpuPercent / 100) * $cpuLimitCores;
+        // Docker reports 100% per fully-used core. It is not a percentage of the
+        // configured plan limit, so multiplying by that limit over-bills multi-core plans.
+        $avgCpuCores = $avgCpuPercent / 100;
         $includedMemoryGb = $included['memory_mb'] / 1024;
         $memoryOverage = ContainerMetric::memoryOverageGbHours(
             $deployment,
@@ -65,8 +65,10 @@ class ContainerOverageBillingService
         $cpuRate = (float) $product->cpu_overage_rate;
         $ramRate = (float) $product->ram_overage_rate;
         $diskRate = (float) $product->disk_overage_rate;
+        $activeTypes = [];
 
         if ($cpuOverageHours > 0 && $cpuRate > 0) {
+            $activeTypes[] = 'container_cpu_overage';
             $this->appendOverageItem(
                 $invoice,
                 $service,
@@ -80,10 +82,14 @@ class ContainerOverageBillingService
                 ),
                 $cpuOverageHours,
                 $cpuRate,
+                'container_cpu_overage',
+                $from,
+                $to,
             );
         }
 
         if ($memoryOverageGbHours > 0 && $ramRate > 0) {
+            $activeTypes[] = 'container_ram_overage';
             $this->appendOverageItem(
                 $invoice,
                 $service,
@@ -98,10 +104,14 @@ class ContainerOverageBillingService
                 ),
                 $memoryOverageGbHours,
                 $ramRate,
+                'container_ram_overage',
+                $from,
+                $to,
             );
         }
 
         if ($diskOverageGbHours > 0 && $diskRate > 0 && $included['disk_gb'] > 0) {
+            $activeTypes[] = 'container_disk_overage';
             $this->appendOverageItem(
                 $invoice,
                 $service,
@@ -115,8 +125,13 @@ class ContainerOverageBillingService
                 ),
                 $diskOverageGbHours,
                 $diskRate,
+                'container_disk_overage',
+                $from,
+                $to,
             );
         }
+
+        $this->removeStaleOverageItems($invoice, $service, $activeTypes);
     }
 
     /**
@@ -124,7 +139,7 @@ class ContainerOverageBillingService
      *
      * @return array{from: Carbon, to: Carbon}|null
      */
-    public function resolveBillingPeriod(Service $service): ?array
+    public function resolveBillingPeriod(Service $service, ?Invoice $invoice = null): ?array
     {
         if (! $service->next_due_date) {
             return null;
@@ -136,6 +151,14 @@ class ContainerOverageBillingService
         $earliest = Carbon::parse($service->commenced_at ?? $service->created_at);
         if ($periodStart->lessThan($earliest)) {
             $periodStart = $earliest->copy();
+        }
+
+        // Renewal invoices are generated before their due date. Preserve a continuous
+        // settlement cursor so usage after the previous invoice snapshot is carried onto
+        // the next invoice instead of disappearing between billing cycles.
+        $cursor = $this->settlementCursor($service, $invoice);
+        if ($cursor !== null && $cursor->greaterThan($earliest) && $cursor->lessThan($periodEnd)) {
+            $periodStart = $cursor;
         }
 
         $metricsEnd = Carbon::now()->min($periodEnd);
@@ -156,24 +179,73 @@ class ContainerOverageBillingService
         string $description,
         float $quantity,
         float $unitPrice,
+        string $productType,
+        Carbon $billingFrom,
+        Carbon $billingTo,
     ): void {
         $amount = round($quantity * $unitPrice, 2);
         $invoice->loadMissing('user');
-        $breakdown = TaxService::calculateForUser($amount, $invoice->user);
+        $existing = InvoiceItem::query()
+            ->where('invoice_id', $invoice->id)
+            ->where('service_id', $service->id)
+            ->where('product_type', $productType)
+            ->first();
+        $previousAmount = (float) ($existing?->amount ?? 0);
+        $delta = $amount - $previousAmount;
 
-        InvoiceItem::create([
+        InvoiceItem::updateOrCreate([
             'invoice_id' => $invoice->id,
             'service_id' => $service->id,
+            'product_type' => $productType,
+        ], [
             'product_id' => $product->id,
             'description' => $description,
             'quantity' => round($quantity, 4),
             'unit_price' => $unitPrice,
             'amount' => $amount,
+            'custom_options' => [
+                'metered_billing_from' => $billingFrom->toIso8601String(),
+                'metered_billing_to' => $billingTo->toIso8601String(),
+            ],
         ]);
 
+        if (abs($delta) < 0.005) {
+            return;
+        }
+
+        $breakdown = TaxService::calculateForUser($delta, $invoice->user);
         $invoice->increment('subtotal', $breakdown['subtotal']);
         $invoice->increment('tax', $breakdown['tax']);
         $invoice->increment('total', $breakdown['total']);
+    }
+
+    /**
+     * Re-running invoice generation must update metered charges, not duplicate or retain
+     * an overage that later complete-period samples no longer support.
+     *
+     * @param  list<string>  $activeTypes
+     */
+    private function removeStaleOverageItems(Invoice $invoice, Service $service, array $activeTypes): void
+    {
+        $stale = InvoiceItem::query()
+            ->where('invoice_id', $invoice->id)
+            ->where('service_id', $service->id)
+            ->whereIn('product_type', [
+                'container_cpu_overage',
+                'container_ram_overage',
+                'container_disk_overage',
+            ])
+            ->when($activeTypes !== [], fn ($query) => $query->whereNotIn('product_type', $activeTypes))
+            ->get();
+
+        foreach ($stale as $item) {
+            $invoice->loadMissing('user');
+            $breakdown = TaxService::calculateForUser(-((float) $item->amount), $invoice->user);
+            $item->delete();
+            $invoice->increment('subtotal', $breakdown['subtotal']);
+            $invoice->increment('tax', $breakdown['tax']);
+            $invoice->increment('total', $breakdown['total']);
+        }
     }
 
     private function subtractBillingCycle(Carbon $dueDate, string $billingCycle): Carbon
@@ -185,6 +257,49 @@ class ContainerOverageBillingService
             'annual' => $dueDate->copy()->subYear(),
             default => $dueDate->copy()->subMonth(),
         };
+    }
+
+    private function settlementCursor(Service $service, ?Invoice $invoice): ?Carbon
+    {
+        if ($invoice) {
+            $current = InvoiceItem::query()
+                ->where('invoice_id', $invoice->id)
+                ->where('service_id', $service->id)
+                ->whereIn('product_type', [
+                    'container_cpu_overage',
+                    'container_ram_overage',
+                    'container_disk_overage',
+                ])
+                ->first();
+            $currentOptions = is_array($current?->custom_options) ? $current->custom_options : [];
+            $from = $currentOptions['metered_billing_from'] ?? null;
+            if ($from) {
+                return Carbon::parse($from);
+            }
+        }
+
+        $previous = InvoiceItem::query()
+            ->where('service_id', $service->id)
+            ->when($invoice, fn ($query) => $query->where('invoice_id', '!=', $invoice->id))
+            ->where(function ($query) {
+                $query->whereIn('product_type', [
+                    'container_cpu_overage',
+                    'container_ram_overage',
+                    'container_disk_overage',
+                ])->orWhere('description', 'like', '% Overage — %');
+            })
+            ->latest('created_at')
+            ->latest('id')
+            ->first();
+
+        if (! $previous) {
+            return null;
+        }
+
+        $previousOptions = is_array($previous->custom_options) ? $previous->custom_options : [];
+        $to = $previousOptions['metered_billing_to'] ?? null;
+
+        return Carbon::parse($to ?: $previous->created_at);
     }
 
     private function formatQuantity(float $value): string

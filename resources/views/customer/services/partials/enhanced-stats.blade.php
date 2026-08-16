@@ -59,7 +59,7 @@
             <div class="bg-white dark:bg-slate-800 rounded-lg p-4 border border-slate-200 dark:border-slate-700">
                 <p class="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wide">Memory</p>
                 <p class="text-2xl font-bold text-green-600 dark:text-green-400 mt-1" x-text="`${summary?.memory_used_mb || 0} MB`"></p>
-                <p class="text-xs text-slate-500 dark:text-slate-500 mt-1" x-text="`${Math.round((summary?.memory_used_mb || 0) / (summary?.memory_limit_mb || {{ $containerLimits['memory_mb'] }} || 1) * 100)}% of limit`"></p>
+                <p class="text-xs text-slate-500 dark:text-slate-500 mt-1" x-text="`${Math.round((summary?.memory_used_mb || 0) / (summary?.memory_limit_mb || {{ $containerLimits['memory_mb'] }} || 1) * 100)}% of included RAM`"></p>
             </div>
             <div class="bg-white dark:bg-slate-800 rounded-lg p-4 border border-slate-200 dark:border-slate-700">
                 <p class="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wide">Storage</p>
@@ -539,7 +539,7 @@ function containerDashboard() {
                             fill: true
                         },
                         {
-                            label: 'Memory Limit',
+                            label: 'Included RAM',
                             data: Array(this.labels.length).fill(this.memoryLimit),
                             borderColor: '#ef4444',
                             borderDash: [5, 5],

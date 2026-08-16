@@ -159,7 +159,7 @@ class CronJobSeeder extends Seeder
             ],
             [
                 'name' => 'Prune Container Metrics',
-                'description' => 'Deletes container metric samples older than 90 days.',
+                'description' => 'Retains 400 days of container metrics for annual-cycle overage billing.',
                 'command' => 'cron:prune-container-metrics',
                 'schedule' => '30 2 * * 0',
                 'enabled' => true,

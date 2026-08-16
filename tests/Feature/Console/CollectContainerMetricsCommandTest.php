@@ -179,6 +179,13 @@ class CollectContainerMetricsCommandTest extends TestCase
         $node = Node::factory()->containerHost()->create();
         $first = $this->deployment($node);
         $second = $this->deployment($node);
+        $firstSidecar = $first->container_name.'-db';
+        $first->update([
+            'docker_compose_content' => "services:\n"
+                ."  app:\n    container_name: {$first->container_name}\n"
+                ."  db:\n    container_name: {$firstSidecar}\n",
+        ]);
+        $first->refresh();
 
         ContainerMetric::create([
             'container_deployment_id' => $first->id,
@@ -222,14 +229,14 @@ class CollectContainerMetricsCommandTest extends TestCase
         $ssh = Mockery::mock(SSHService::class);
         $ssh->shouldReceive('exec')
             ->once()
-            ->with(Mockery::on(function (string $command) use ($first, $second) {
+            ->with(Mockery::on(function (string $command) {
                 return str_contains($command, 'docker stats')
-                    && str_contains($command, $first->container_name)
-                    && str_contains($command, $second->container_name)
+                    && str_contains($command, '--no-stream')
                     && str_contains($command, '{{.Name}}');
             }), Mockery::type('int'), false)
             ->andReturn(
                 $first->container_name."\t1.00%\t64MiB / 256MiB\t1KiB / 2KiB\t3MiB / 4MiB\n"
+                .$firstSidecar."\t50.00%\t32MiB / 128MiB\t2KiB / 3KiB\t4MiB / 5MiB\n"
                 .$second->container_name."\t2.00%\t128MiB / 512MiB\t5MiB / 6MiB\t7GiB / 8GiB"
             );
         $ssh->shouldReceive('exec')->never()->withArgs(fn ($command) => is_string($command) && str_contains($command, 'du -sb'));
@@ -243,6 +250,14 @@ class CollectContainerMetricsCommandTest extends TestCase
         $this->assertSame(0, $command->handle());
         $this->assertStringContainsString('Collected metrics for 2 containers', $output->fetch());
         $this->assertDatabaseCount('container_metrics', 4);
+        $aggregate = ContainerMetric::query()
+            ->where('container_deployment_id', $first->id)
+            ->latest('recorded_at')
+            ->latest('id')
+            ->firstOrFail();
+        $this->assertSame(51.0, $aggregate->cpu_percentage);
+        $this->assertSame(96, $aggregate->memory_used_mb);
+        $this->assertSame(3 * 1024, $aggregate->net_io_rx_bytes);
     }
 
     private function deployment(Node $node): ContainerDeployment
