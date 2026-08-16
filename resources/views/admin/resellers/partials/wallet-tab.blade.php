@@ -27,6 +27,7 @@
 
         <form method="POST" action="{{ route('admin.resellers.wallet-adjust', $user) }}" class="space-y-4">
             @csrf
+            <input type="hidden" name="_form" value="adjust_wallet">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                     <label for="wallet_amount" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Amount ({{ $wallet->currency }})</label>
@@ -36,7 +37,7 @@
                         name="amount"
                         step="0.01"
                         required
-                        value="{{ old('amount') }}"
+                        value="{{ old('_form') === 'adjust_wallet' ? old('amount') : '' }}"
                         class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 @error('amount') border-red-500 @enderror"
                         placeholder="e.g. 5000 or -2000"
                     >
@@ -54,7 +55,7 @@
                         required
                         minlength="10"
                         maxlength="500"
-                        value="{{ old('reason') }}"
+                        value="{{ old('_form') === 'adjust_wallet' ? old('reason') : '' }}"
                         class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 @error('reason') border-red-500 @enderror"
                         placeholder="e.g. Manual top-up per bank transfer REF123"
                     >
@@ -67,6 +68,63 @@
                 Apply adjustment
             </button>
         </form>
+    </div>
+
+    <!-- Remove complete balance -->
+    <div class="bg-red-50 dark:bg-red-950/30 rounded-xl border border-red-200 dark:border-red-900 p-6">
+        <h3 class="text-lg font-semibold text-red-900 dark:text-red-200 mb-1">Remove entire wallet balance</h3>
+        <p class="text-sm text-red-700 dark:text-red-300 mb-4">
+            This creates an audited debit adjustment for the exact balance and sets the wallet to zero.
+            Existing transaction history is preserved.
+        </p>
+
+        @if((float) $wallet->balance > 0)
+            <form
+                method="POST"
+                action="{{ route('admin.resellers.wallet-clear', $user) }}"
+                class="space-y-4"
+                onsubmit="return confirm('Remove the entire {{ $wallet->currency }} {{ number_format((float) $wallet->balance, 2) }} wallet balance? This cannot be undone automatically.');"
+            >
+                @csrf
+                <input type="hidden" name="_form" value="clear_wallet">
+
+                <div>
+                    <label for="wallet_clear_reason" class="block text-sm font-medium text-red-900 dark:text-red-200 mb-2">
+                        Reason for removing {{ $wallet->currency }} {{ number_format((float) $wallet->balance, 2) }}
+                    </label>
+                    <input
+                        type="text"
+                        id="wallet_clear_reason"
+                        name="reason"
+                        required
+                        minlength="10"
+                        maxlength="500"
+                        value="{{ old('_form') === 'clear_wallet' ? old('reason') : '' }}"
+                        placeholder="E.g., Reverse an incorrect manual credit"
+                        class="w-full px-4 py-2 border border-red-300 dark:border-red-800 bg-white dark:bg-slate-900 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-red-500"
+                    >
+                    @if(old('_form') === 'clear_wallet')
+                        @error('reason')
+                            <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                        @enderror
+                    @endif
+                </div>
+
+                <label class="flex items-start gap-3 text-sm text-red-900 dark:text-red-200">
+                    <input type="checkbox" name="confirm_removal" value="1" required class="mt-1 rounded border-red-400 text-red-600 focus:ring-red-500">
+                    <span>I confirm that the reseller’s complete wallet balance should be removed and set to zero.</span>
+                </label>
+                @error('confirm_removal')
+                    <p class="text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                @enderror
+
+                <button type="submit" class="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition">
+                    Remove {{ $wallet->getFormattedBalance() }}
+                </button>
+            </form>
+        @else
+            <p class="text-sm font-medium text-slate-600 dark:text-slate-400">The wallet balance is already zero.</p>
+        @endif
     </div>
 
     <!-- Transactions -->

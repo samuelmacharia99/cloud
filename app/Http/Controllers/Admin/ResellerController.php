@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AdjustWalletBalanceRequest;
+use App\Http\Requests\ClearResellerWalletRequest;
 use App\Models\Domain;
 use App\Models\DomainExtension;
 use App\Models\Invoice;
@@ -176,6 +177,53 @@ class ResellerController extends Controller
             return redirect()
                 ->route('admin.resellers.show', ['user' => $user, 'tab' => 'wallet'])
                 ->with('error', 'Wallet adjustment failed: '.$e->getMessage());
+        }
+    }
+
+    public function clearWallet(ClearResellerWalletRequest $request, User $user)
+    {
+        abort_if(! $user->is_reseller, 404);
+
+        try {
+            $transaction = app(ResellerWalletService::class)->clearBalance(
+                $user,
+                $request->validated('reason'),
+                $request->user(),
+            );
+
+            AdminActivityService::log(
+                'reseller.wallet_clear',
+                "Removed the complete wallet balance for {$user->name}",
+                $user,
+                [
+                    'removed_amount' => (float) $transaction->amount,
+                    'balance_before' => (float) $transaction->balance_before,
+                    'balance_after' => (float) $transaction->balance_after,
+                    'reason' => $transaction->description,
+                ],
+            );
+
+            return redirect()
+                ->route('admin.resellers.show', ['user' => $user, 'tab' => 'wallet'])
+                ->with(
+                    'success',
+                    'The complete wallet balance of KES '.number_format((float) $transaction->amount, 2).
+                    ' was removed and recorded in the wallet statement.'
+                );
+        } catch (\InvalidArgumentException $e) {
+            return redirect()
+                ->route('admin.resellers.show', ['user' => $user, 'tab' => 'wallet'])
+                ->with('error', $e->getMessage());
+        } catch (\Throwable $e) {
+            Log::error('Failed to remove complete reseller wallet balance', [
+                'reseller_id' => $user->id,
+                'admin_id' => $request->user()?->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return redirect()
+                ->route('admin.resellers.show', ['user' => $user, 'tab' => 'wallet'])
+                ->with('error', 'Wallet balance removal failed. No balance was changed.');
         }
     }
 

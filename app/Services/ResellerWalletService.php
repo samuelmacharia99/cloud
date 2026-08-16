@@ -166,6 +166,57 @@ class ResellerWalletService
         });
     }
 
+    /**
+     * Atomically remove the complete current balance while preserving an auditable ledger entry.
+     */
+    public function clearBalance(User $reseller, string $description, User $admin): WalletTransaction
+    {
+        $transaction = $this->db->transaction(function () use ($reseller, $description, $admin) {
+            $wallet = $this->getOrCreate($reseller);
+            $wallet = ResellerWallet::query()
+                ->whereKey($wallet->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $balanceBefore = (float) $wallet->balance;
+
+            if ($balanceBefore <= 0) {
+                throw new \InvalidArgumentException('The reseller wallet balance is already zero.');
+            }
+
+            $wallet->update(['balance' => 0]);
+
+            return WalletTransaction::create([
+                'wallet_id' => $wallet->id,
+                'type' => 'adjustment',
+                'amount' => $balanceBefore,
+                'balance_before' => $balanceBefore,
+                'balance_after' => 0,
+                'description' => $description,
+                'status' => 'completed',
+                'performed_by' => $admin->id,
+                'metadata' => [
+                    'operation' => 'clear_balance',
+                    'removed_amount' => $balanceBefore,
+                ],
+            ]);
+        });
+
+        try {
+            app(WalletNotificationService::class)->sendManualAdjustmentNotification(
+                $transaction,
+                -((float) $transaction->amount)
+            );
+        } catch (\Throwable $e) {
+            Log::warning('Wallet balance was removed but reseller notification failed', [
+                'reseller_id' => $reseller->id,
+                'wallet_transaction_id' => $transaction->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return $transaction;
+    }
+
     public function getTransactions(User $reseller, array $filters = [], int $perPage = 20): LengthAwarePaginator
     {
         $wallet = $this->getOrCreate($reseller);
