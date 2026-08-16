@@ -1,0 +1,42 @@
+---
+description: Require enterprise-grade, production-ready code — no toy or demo implementations
+alwaysApply: true
+---
+
+# Enterprise Quality Standard
+
+Talksasa Cloud is a production billing and hosting platform. Every change must be enterprise-grade: think through the real operator workflow, money/safety impact, and failure modes before coding.
+
+## Required thinking before implementation
+
+1. Confirm the actual user job (amount, reason, confirm, audit) — not a simplified stand-in.
+2. Match existing service/controller/request/view patterns; prefer extending proven paths over one-off UI.
+3. Cover money, auth, concurrency, validation, empty states, and notification failure without rolling back ledger success incorrectly.
+4. Ship tests for the happy path and the rejection paths that matter in production.
+
+## Forbidden (toy code)
+
+- Fields that look like amounts but are reasons (or vice versa); wrong input types; fake min-lengths that block real data
+- Hard-coding “clear entire balance” when the job is “deduct N”
+- Demo-only shortcuts: skip audit, skip authorize, skip FormRequest, silent catch-all
+- Placeholder copy, TODO-as-behavior, or UI that cannot survive a real admin session
+
+## Required (enterprise)
+
+- Correct domain model: amount vs reason vs confirmation as separate validated inputs
+- Atomic wallet/ledger updates with row locks where balances change
+- Auditable transactions + admin activity where money moves
+- Clear operator errors; no balance change on validation/business rejection
+- Feature tests that assert balance math and rejection cases
+
+## Example
+
+```php
+// ❌ BAD — toy: reason field used as amount UX; always zeros wallet
+public function clearBalance(User $reseller, string $reason, User $admin): WalletTransaction
+
+// ✅ GOOD — enterprise: keyed amount, capped by available balance, audited debit
+public function removeBalance(User $reseller, float $amount, string $description, User $admin): WalletTransaction
+```
+
+If a request is ambiguous, ask one clarifying question about the production workflow before shipping a simplified stand-in.

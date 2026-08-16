@@ -14,7 +14,8 @@ class ClearResellerWalletRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'reason' => ['required', 'string', 'min:10', 'max:500'],
+            'amount' => ['required', 'numeric', 'min:0.01'],
+            'reason' => ['nullable', 'string', 'max:500'],
             'confirm_removal' => ['required', 'accepted'],
         ];
     }
@@ -22,8 +23,8 @@ class ClearResellerWalletRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'reason.min' => 'Explain why the complete wallet balance is being removed (at least 10 characters).',
-            'confirm_removal.accepted' => 'Confirm that you want to remove the reseller’s entire wallet balance.',
+            'amount.min' => 'Enter an amount greater than zero.',
+            'confirm_removal.accepted' => 'Confirm that you want to deduct this amount from the reseller’s wallet.',
         ];
     }
 }

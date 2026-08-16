@@ -167,11 +167,11 @@ class ResellerWalletService
     }
 
     /**
-     * Atomically remove the complete current balance while preserving an auditable ledger entry.
+     * Atomically deduct an amount while preserving an auditable ledger entry.
      */
-    public function clearBalance(User $reseller, string $description, User $admin): WalletTransaction
+    public function removeBalance(User $reseller, float $amount, string $description, User $admin): WalletTransaction
     {
-        $transaction = $this->db->transaction(function () use ($reseller, $description, $admin) {
+        $transaction = $this->db->transaction(function () use ($reseller, $amount, $description, $admin) {
             $wallet = $this->getOrCreate($reseller);
             $wallet = ResellerWallet::query()
                 ->whereKey($wallet->id)
@@ -179,24 +179,31 @@ class ResellerWalletService
                 ->firstOrFail();
             $balanceBefore = (float) $wallet->balance;
 
-            if ($balanceBefore <= 0) {
-                throw new \InvalidArgumentException('The reseller wallet balance is already zero.');
+            if ($amount <= 0) {
+                throw new \InvalidArgumentException('The amount to remove must be greater than zero.');
             }
 
-            $wallet->update(['balance' => 0]);
+            if ($amount > $balanceBefore) {
+                throw new \InvalidArgumentException(
+                    'The amount to remove cannot exceed the available wallet balance.'
+                );
+            }
+
+            $balanceAfter = $balanceBefore - $amount;
+            $wallet->update(['balance' => $balanceAfter]);
 
             return WalletTransaction::create([
                 'wallet_id' => $wallet->id,
                 'type' => 'adjustment',
-                'amount' => $balanceBefore,
+                'amount' => $amount,
                 'balance_before' => $balanceBefore,
-                'balance_after' => 0,
+                'balance_after' => $balanceAfter,
                 'description' => $description,
                 'status' => 'completed',
                 'performed_by' => $admin->id,
                 'metadata' => [
-                    'operation' => 'clear_balance',
-                    'removed_amount' => $balanceBefore,
+                    'operation' => 'remove_balance',
+                    'removed_amount' => $amount,
                 ],
             ]);
         });
@@ -207,7 +214,7 @@ class ResellerWalletService
                 -((float) $transaction->amount)
             );
         } catch (\Throwable $e) {
-            Log::warning('Wallet balance was removed but reseller notification failed', [
+            Log::warning('Wallet amount was removed but reseller notification failed', [
                 'reseller_id' => $reseller->id,
                 'wallet_transaction_id' => $transaction->id,
                 'error' => $e->getMessage(),

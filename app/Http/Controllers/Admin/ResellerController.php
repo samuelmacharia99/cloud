@@ -183,17 +183,19 @@ class ResellerController extends Controller
     public function clearWallet(ClearResellerWalletRequest $request, User $user)
     {
         abort_if(! $user->is_reseller, 404);
+        $validated = $request->validated();
 
         try {
-            $transaction = app(ResellerWalletService::class)->clearBalance(
+            $transaction = app(ResellerWalletService::class)->removeBalance(
                 $user,
-                $request->validated('reason'),
+                (float) $validated['amount'],
+                ($validated['reason'] ?? null) ?: 'Manual wallet deduction',
                 $request->user(),
             );
 
             AdminActivityService::log(
-                'reseller.wallet_clear',
-                "Removed the complete wallet balance for {$user->name}",
+                'reseller.wallet_remove',
+                "Removed funds from {$user->name}'s wallet",
                 $user,
                 [
                     'removed_amount' => (float) $transaction->amount,
@@ -207,7 +209,7 @@ class ResellerController extends Controller
                 ->route('admin.resellers.show', ['user' => $user, 'tab' => 'wallet'])
                 ->with(
                     'success',
-                    'The complete wallet balance of KES '.number_format((float) $transaction->amount, 2).
+                    'KES '.number_format((float) $transaction->amount, 2).
                     ' was removed and recorded in the wallet statement.'
                 );
         } catch (\InvalidArgumentException $e) {
@@ -215,7 +217,7 @@ class ResellerController extends Controller
                 ->route('admin.resellers.show', ['user' => $user, 'tab' => 'wallet'])
                 ->with('error', $e->getMessage());
         } catch (\Throwable $e) {
-            Log::error('Failed to remove complete reseller wallet balance', [
+            Log::error('Failed to remove amount from reseller wallet', [
                 'reseller_id' => $user->id,
                 'admin_id' => $request->user()?->id,
                 'error' => $e->getMessage(),
