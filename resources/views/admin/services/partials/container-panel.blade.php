@@ -1,7 +1,12 @@
 @if ($service->product?->type === 'container_hosting' && $service->containerDeployment)
     @php
         $deployment = $service->containerDeployment;
-        $template = $service->product->containerTemplate;
+        $template = $service->effectiveContainerTemplate();
+        $limits = $service->product?->getIncludedContainerLimits($template, $deployment) ?? [
+            'cpu' => (float) ($template?->required_cpu_cores ?? $deployment->cpu_limit ?? 0),
+            'memory_mb' => (int) ($template?->required_ram_mb ?? $deployment->memory_limit_mb ?? 0),
+            'disk_gb' => (float) ($template?->required_storage_gb ?? 0),
+        ];
     @endphp
 
     <div class="bg-white rounded-lg shadow p-6 mt-6">
@@ -58,15 +63,15 @@
             <div class="grid grid-cols-3 gap-4">
                 <div>
                     <p class="text-sm text-gray-500 mb-1">CPU Cores</p>
-                    <p class="font-semibold">{{ $template->required_cpu_cores }}</p>
+                    <p class="font-semibold">{{ $limits['cpu'] }}</p>
                 </div>
                 <div>
                     <p class="text-sm text-gray-500 mb-1">RAM</p>
-                    <p class="font-semibold">{{ $template->required_ram_mb }}MB</p>
+                    <p class="font-semibold">{{ $limits['memory_mb'] }}MB</p>
                 </div>
                 <div>
                     <p class="text-sm text-gray-500 mb-1">Storage</p>
-                    <p class="font-semibold">{{ $template->required_storage_gb }}GB</p>
+                    <p class="font-semibold">{{ $limits['disk_gb'] }}GB</p>
                 </div>
             </div>
         </div>
