@@ -47,6 +47,63 @@ LOG;
     }
 
     #[Test]
+    public function it_flags_preview_runtime_that_hides_custom_api_routes(): void
+    {
+        $compose = "services:\n  app:\n    command:\n    - sh\n    - -lc\n"
+            ."    - cd /app && exec npx vite preview --host 0.0.0.0 --port \${PORT:-3000} --strictPort\n";
+        $packageJson = json_encode([
+            'scripts' => [
+                'build' => 'vite build',
+                'start' => 'node dist/server.cjs',
+            ],
+            'devDependencies' => ['vite' => '^6.0.0'],
+        ], JSON_THROW_ON_ERROR);
+
+        $this->assertTrue(
+            app(ContainerDoctorService::class)->spaRuntimeHidesApiRoutes($compose, $packageJson)
+        );
+    }
+
+    #[Test]
+    public function it_does_not_flag_preview_runtime_for_spa_only_apps(): void
+    {
+        $compose = "services:\n  app:\n    command:\n    - sh\n    - -lc\n"
+            ."    - cd /app && exec npx vite preview --host 0.0.0.0 --port \${PORT:-3000} --strictPort\n";
+        $doctor = app(ContainerDoctorService::class);
+
+        $bareCli = json_encode([
+            'scripts' => ['build' => 'vite build', 'start' => 'vite --host 0.0.0.0'],
+            'devDependencies' => ['vite' => '^5.0.0'],
+        ], JSON_THROW_ON_ERROR);
+        $alreadyPreview = json_encode([
+            'scripts' => ['build' => 'vite build', 'start' => 'vite preview'],
+            'devDependencies' => ['vite' => '^5.0.0'],
+        ], JSON_THROW_ON_ERROR);
+
+        $this->assertFalse($doctor->spaRuntimeHidesApiRoutes($compose, $bareCli));
+        $this->assertFalse($doctor->spaRuntimeHidesApiRoutes($compose, $alreadyPreview));
+        $this->assertFalse($doctor->spaRuntimeHidesApiRoutes($compose, null));
+    }
+
+    #[Test]
+    public function it_does_not_flag_api_mismatch_when_runtime_keeps_the_app_server(): void
+    {
+        $compose = "services:\n  app:\n    command:\n    - sh\n    - -lc\n"
+            ."    - cd /app && export PORT=\${PORT:-3000} && exec npm start\n";
+        $packageJson = json_encode([
+            'scripts' => [
+                'build' => 'vite build',
+                'start' => 'node dist/server.cjs',
+            ],
+            'devDependencies' => ['vite' => '^6.0.0'],
+        ], JSON_THROW_ON_ERROR);
+
+        $this->assertFalse(
+            app(ContainerDoctorService::class)->spaRuntimeHidesApiRoutes($compose, $packageJson)
+        );
+    }
+
+    #[Test]
     public function it_detects_postgres_password_authentication_failures(): void
     {
         $logs = <<<'LOG'

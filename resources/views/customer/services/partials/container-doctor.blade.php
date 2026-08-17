@@ -81,6 +81,7 @@
                       x-text="liveChecks.wordpress_image_editor ? 'Images: processing ok' : 'Images: no editor'"></span>
                 <span x-show="liveChecks.wordpress_missing_thumbnails"
                       x-text="'Thumbnails missing: ' + liveChecks.wordpress_missing_thumbnails"></span>
+                <span x-show="liveChecks.spa_runtime_api_mismatch === true">API routes: not served</span>
             </div>
         </template>
 

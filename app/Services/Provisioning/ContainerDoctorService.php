@@ -285,6 +285,7 @@ class ContainerDoctorService
             'upstream_reachable' => null,
             'upstream_local_status' => null,
             'containers_stopped' => null,
+            'spa_runtime_api_mismatch' => null,
         ];
         $findings = [];
 
@@ -576,6 +577,13 @@ class ContainerDoctorService
                             'source' => 'live',
                         ];
                     }
+                }
+            }
+
+            if ($stack === 'nodejs') {
+                $apiMismatch = $this->spaRuntimeApiMismatchFinding($ssh, $deployment, $checks);
+                if ($apiMismatch !== null) {
+                    $findings[] = $apiMismatch;
                 }
             }
 
@@ -1172,6 +1180,81 @@ PHP;
         }
 
         return $probe;
+    }
+
+    /**
+     * True when the container is started with `vite preview` (built SPA only) while the repo's
+     * own start command is a server that owns /api routes. Those routes then answer 404.
+     */
+    public function spaRuntimeHidesApiRoutes(?string $composeContent, ?string $packageJson): bool
+    {
+        if (! is_string($composeContent) || ! str_contains($composeContent, 'vite preview')) {
+            return false;
+        }
+
+        $runtime = app(ContainerApplicationRuntimeService::class);
+        $start = $runtime->packageJsonStartScript($packageJson);
+        if ($start === null) {
+            return false;
+        }
+
+        // A bare Vite CLI start is SPA-only anyway, so preview serves exactly the same thing.
+        if ($runtime->commandLooksLikeBareViteCli($start) || $runtime->commandLooksLikeVitePreview($start)) {
+            return false;
+        }
+
+        return $runtime->commandLooksLikeViteDevServer($start);
+    }
+
+    /**
+     * @param  array<string, mixed>  $checks
+     * @return array<string, mixed>|null
+     */
+    private function spaRuntimeApiMismatchFinding(SSHService $ssh, $deployment, array &$checks): ?array
+    {
+        $hostAppPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name.'/app';
+
+        try {
+            $packageJson = $ssh->exec(
+                'head -c 65536 '.escapeshellarg($hostAppPath.'/package.json').' 2>/dev/null || true',
+                20
+            );
+        } catch (\Throwable) {
+            return null;
+        }
+
+        $mismatch = $this->spaRuntimeHidesApiRoutes(
+            (string) $deployment->docker_compose_content,
+            trim($packageJson) !== '' ? $packageJson : null
+        );
+        $checks['spa_runtime_api_mismatch'] = $mismatch;
+
+        if (! $mismatch) {
+            return null;
+        }
+
+        $start = app(ContainerApplicationRuntimeService::class)->packageJsonStartScript($packageJson);
+
+        return [
+            'id' => 'live_spa_runtime_hides_api',
+            'severity' => 'critical',
+            'title' => 'API routes are not being served',
+            'summary' => 'The container is running `vite preview`, which only serves the built frontend. '
+                .'Your app starts with "'.$start.'", and that server is what handles /api routes, '
+                .'so API requests return 404 while the site itself loads normally. '
+                .'Repair Vite runtime restores your own start command and keeps Vite installed.',
+            'evidence' => array_values(array_filter([
+                'compose start: npx vite preview',
+                $start !== null ? 'package.json start: '.$start : null,
+            ])),
+            'treat_action' => 'fix_vite_production_runtime',
+            'treat_label' => 'Repair Vite runtime',
+            'manual_steps' => [
+                'Click Repair Vite runtime — the container restarts with your start command and a full dependency install.',
+                'No repo change is needed; keep serving the SPA and /api from the same server.',
+            ],
+            'source' => 'live',
+        ];
     }
 
     /**
