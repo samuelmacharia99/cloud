@@ -165,15 +165,31 @@
         </div>
     @endif
 
+    @php
+        $isContainerService = $service->isContainerHosting();
+        $containerTemplate = $isContainerService ? $service->effectiveContainerTemplate() : null;
+        $containerDeployment = $isContainerService ? $service->containerDeployment : null;
+        $containerAccessUrl = $containerDeployment?->getAccessUrl();
+        $containerStackLabel = $containerTemplate?->name
+            ?? (filled($service->service_meta['application_stack'] ?? null) ? (string) $service->service_meta['application_stack'] : null)
+            ?? (filled($service->service_meta['language_slug'] ?? null) ? ucfirst((string) $service->service_meta['language_slug']) : null);
+    @endphp
+
     <!-- Header -->
-    <div class="ui-card p-8">
-        <div class="flex items-start justify-between">
-            <div>
+    <div class="ui-card p-6 sm:p-8">
+        <div class="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
+            <div class="min-w-0">
                 <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Service #{{ $service->id }}</h1>
-                <p class="text-slate-600 dark:text-slate-400 mt-2">{{ $service->product->name }} • {{ ucfirst(str_replace('_', ' ', $service->product->type)) }}</p>
+                <p class="text-slate-600 dark:text-slate-400 mt-2">
+                    {{ $service->name && $service->name !== $service->product->name ? $service->name.' · ' : '' }}{{ $service->product->name }}
+                    · {{ $isContainerService ? ($containerStackLabel ?? 'Application hosting') : ucfirst(str_replace('_', ' ', $service->product->type)) }}
+                </p>
+                @if ($containerAccessUrl)
+                    <a href="{{ $containerAccessUrl }}" target="_blank" rel="noopener noreferrer" class="mt-2 inline-block font-mono text-sm text-blue-600 dark:text-blue-400 hover:underline break-all">{{ $containerAccessUrl }}</a>
+                @endif
 
                 <!-- Status badge -->
-                <div class="mt-4">
+                <div class="mt-4 flex flex-wrap items-center gap-2">
                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
                         @if($service->status->value === 'active')
                             bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300
@@ -191,6 +207,18 @@
                     ">
                         {{ ucfirst($service->status->value) }}
                     </span>
+                    @if ($containerDeployment)
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                            @if($containerDeployment->status === 'running') bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300
+                            @elseif(in_array($containerDeployment->status, ['stopped', 'suspended'], true)) bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300
+                            @elseif(in_array($containerDeployment->status, ['deploying', 'pending'], true)) bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300
+                            @elseif($containerDeployment->status === 'failed') bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300
+                            @else bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300
+                            @endif
+                        ">
+                            Runtime: {{ ucfirst($containerDeployment->status) }}
+                        </span>
+                    @endif
                 </div>
 
                 @if ($service->status->value === 'suspended')
@@ -210,7 +238,13 @@
             </div>
 
             <!-- Action buttons -->
-            <div class="flex items-center gap-2 flex-wrap">
+            <div class="flex items-center gap-2 flex-wrap xl:justify-end xl:max-w-xl">
+                @if ($containerAccessUrl)
+                    <a href="{{ $containerAccessUrl }}" target="_blank" rel="noopener noreferrer" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-sm">
+                        Open site
+                    </a>
+                @endif
+
                 @if ($service->isSharedHosting() && ($service->external_reference || filled($service->service_meta['username'] ?? null)))
                     <button type="button" @click="upgradeHostingModal = true" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg transition text-sm">
                         Upgrade Hosting
@@ -230,12 +264,6 @@
                             Revert to DirectAdmin
                         </button>
                     </form>
-                @endif
-
-                @if ($service->isContainerHosting() && $service->containerDeployment)
-                    <a href="{{ route('admin.services.container.migrate', $service) }}" class="px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white font-medium rounded-lg transition text-sm">
-                        Migrate Node
-                    </a>
                 @endif
 
                 @if (in_array($service->status->value, ['pending', 'provisioning']))
@@ -391,6 +419,9 @@
                 </div>
             </div>
 
+            @include('admin.services.partials.container-panel')
+
+            @unless ($isContainerService)
             <!-- Configuration -->
             <div class="ui-card p-6">
                 <div class="flex items-center justify-between mb-4">
@@ -474,6 +505,7 @@
                     @endif
                 </div>
             </div>
+            @endunless
 
             <!-- DirectAdmin API Endpoint Debug Info -->
             @if ($service->node && $service->node->type === 'directadmin')
@@ -525,8 +557,84 @@
                 </div>
             @endif
 
-            <!-- Service Metadata -->
-            @if ($service->service_meta)
+            <!-- Application -->
+            @if ($isContainerService && $service->service_meta)
+                @php
+                    $containerMeta = is_array($service->service_meta) ? $service->service_meta : [];
+                    $redactMeta = static function (array $meta) use (&$redactMeta): array {
+                        foreach ($meta as $key => $value) {
+                            $lower = strtolower((string) $key);
+                            $isSecret = str_contains($lower, 'password')
+                                || str_contains($lower, 'secret')
+                                || str_contains($lower, 'token')
+                                || in_array($lower, ['env_values', 'credentials'], true);
+                            if ($isSecret) {
+                                $meta[$key] = is_array($value)
+                                    ? '[redacted '.count($value).' keys]'
+                                    : '[redacted]';
+                                continue;
+                            }
+                            if (is_array($value)) {
+                                $meta[$key] = $redactMeta($value);
+                            }
+                        }
+
+                        return $meta;
+                    };
+                    $envCount = is_array($containerMeta['env_values'] ?? null) ? count($containerMeta['env_values']) : 0;
+                @endphp
+                <div class="ui-card p-6">
+                    <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Application</h2>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        @if ($containerStackLabel)
+                            <div class="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                                <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Stack</p>
+                                <p class="text-sm text-slate-900 dark:text-white mt-1">{{ $containerStackLabel }}</p>
+                            </div>
+                        @endif
+                        @if (!empty($containerMeta['source_repo_url']))
+                            <div class="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                                <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Repository</p>
+                                <p class="text-sm font-mono text-slate-900 dark:text-white mt-1 break-all">{{ $containerMeta['source_repo_url'] }}</p>
+                            </div>
+                        @endif
+                        @if (!empty($containerMeta['source_repo_branch']))
+                            <div class="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                                <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Branch</p>
+                                <p class="text-sm font-mono text-slate-900 dark:text-white mt-1">{{ $containerMeta['source_repo_branch'] }}</p>
+                            </div>
+                        @endif
+                        @if (!empty($containerMeta['primary_domain']))
+                            <div class="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                                <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Primary domain</p>
+                                <p class="text-sm font-mono text-slate-900 dark:text-white mt-1">{{ $containerMeta['primary_domain'] }}</p>
+                            </div>
+                        @endif
+                        @if (!empty($containerMeta['database_template_name']) || !empty($containerMeta['database_id']))
+                            <div class="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                                <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Database</p>
+                                <p class="text-sm text-slate-900 dark:text-white mt-1">{{ $containerMeta['database_template_name'] ?? 'Attached' }}</p>
+                            </div>
+                        @endif
+                        @if (!empty($containerMeta['framework']) || !empty($containerMeta['frontend']))
+                            <div class="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                                <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Frontend</p>
+                                <p class="text-sm text-slate-900 dark:text-white mt-1">{{ $containerMeta['framework'] ?? $containerMeta['frontend'] }}</p>
+                            </div>
+                        @endif
+                        @if ($envCount > 0)
+                            <div class="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                                <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Environment variables</p>
+                                <p class="text-sm text-slate-900 dark:text-white mt-1">{{ $envCount }} stored (values hidden)</p>
+                            </div>
+                        @endif
+                    </div>
+                    <details class="mt-4">
+                        <summary class="cursor-pointer text-sm font-medium text-slate-600 dark:text-slate-300">Technical metadata</summary>
+                        <pre class="mt-3 bg-slate-50 dark:bg-slate-800 p-4 rounded-lg text-xs text-slate-900 dark:text-slate-100 overflow-x-auto">{{ json_encode($redactMeta($containerMeta), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre>
+                    </details>
+                </div>
+            @elseif ($service->service_meta)
                 <div class="ui-card p-6">
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Service Metadata</h2>
                     <pre class="bg-slate-50 dark:bg-slate-800 p-4 rounded-lg text-xs text-slate-900 dark:text-slate-100 overflow-x-auto">{{ json_encode($service->service_meta, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre>
@@ -652,8 +760,6 @@
                 </div>
             @endif
 
-            <!-- Container Panel (if applicable) -->
-            @include('admin.services.partials.container-panel')
         </div>
 
         <!-- Sidebar -->

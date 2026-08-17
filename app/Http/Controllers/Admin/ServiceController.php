@@ -182,7 +182,16 @@ class ServiceController extends Controller
 
     public function show(Service $service, ServiceStatusSyncService $syncService)
     {
-        $service->load(['user', 'product', 'invoice', 'node', 'containerDeployment.node']);
+        $service->load([
+            'user',
+            'product',
+            'invoice',
+            'node',
+            'containerDeployment.node',
+            'containerDeployment.domains',
+            'containerDeployment.migratedFromNode',
+            'containerDeployment.backups',
+        ]);
 
         $liveStatus = null;
         if ($service->supportsLiveStatusProbe()) {
@@ -244,6 +253,17 @@ class ServiceController extends Controller
             ->where('id', '!=', $service->user_id)
             ->orderBy('name')
             ->get(['id', 'name', 'email', 'reseller_id']);
+
+        $service->load([
+            'user',
+            'product',
+            'invoice',
+            'node',
+            'containerDeployment.node',
+            'containerDeployment.domains',
+            'containerDeployment.migratedFromNode',
+            'containerDeployment.backups',
+        ]);
 
         return view('admin.services.show', compact(
             'service',

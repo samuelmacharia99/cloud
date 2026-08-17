@@ -1,4 +1,4 @@
-@if ($service->product?->type === 'container_hosting' && $service->containerDeployment)
+@if ($service->isContainerHosting() && $service->containerDeployment)
     @php
         $deployment = $service->containerDeployment;
         $template = $service->effectiveContainerTemplate();
@@ -7,326 +7,339 @@
             'memory_mb' => (int) ($template?->required_ram_mb ?? $deployment->memory_limit_mb ?? 0),
             'disk_gb' => (float) ($template?->required_storage_gb ?? 0),
         ];
+        $accessUrl = $deployment->getAccessUrl();
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        $repoUrl = trim((string) ($meta['source_repo_url'] ?? ''));
+        $repoBranch = trim((string) ($meta['source_repo_branch'] ?? 'main')) ?: 'main';
+        $stackLabel = $template?->name
+            ?? (filled($meta['application_stack'] ?? null) ? (string) $meta['application_stack'] : null)
+            ?? (filled($meta['language_slug'] ?? null) ? ucfirst((string) $meta['language_slug']) : 'Application');
+        $statusStyles = match ($deployment->status) {
+            'running' => ['dot' => 'bg-emerald-500', 'pulse' => true, 'badge' => 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300'],
+            'stopped', 'suspended' => ['dot' => 'bg-amber-400', 'pulse' => false, 'badge' => 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300'],
+            'deploying', 'pending' => ['dot' => 'bg-blue-500', 'pulse' => true, 'badge' => 'bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300'],
+            'failed' => ['dot' => 'bg-red-500', 'pulse' => false, 'badge' => 'bg-red-100 dark:bg-red-950 text-red-800 dark:text-red-300'],
+            default => ['dot' => 'bg-slate-400', 'pulse' => false, 'badge' => 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'],
+        };
+        $activeBackups = $deployment->relationLoaded('backups')
+            ? $deployment->backups->whereNotIn('status', ['deleted'])->sortByDesc('created_at')
+            : $deployment->backups()->whereNotIn('status', ['deleted'])->latest()->get();
+        $domains = $deployment->relationLoaded('domains')
+            ? $deployment->domains
+            : $deployment->domains()->get();
     @endphp
 
-    <div class="bg-white rounded-lg shadow p-6 mt-6">
-        <h3 class="text-xl font-bold mb-6">Container Deployment</h3>
-
-        <!-- Status Card -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            <div class="border rounded-lg p-4">
-                <p class="text-sm text-gray-500 mb-1">Status</p>
-                <div class="flex items-center gap-2">
-                    @php
-                        $statusColor = match($deployment->status) {
-                            'running' => 'bg-green-100 text-green-800',
-                            'stopped' => 'bg-yellow-100 text-yellow-800',
-                            'deploying' => 'bg-blue-100 text-blue-800',
-                            'failed' => 'bg-red-100 text-red-800',
-                            'terminated' => 'bg-gray-100 text-gray-800',
-                            default => 'bg-gray-100 text-gray-800'
-                        };
-                    @endphp
-                    <span class="px-3 py-1 rounded-full text-sm font-semibold {{ $statusColor }}">
-                        {{ ucfirst($deployment->status) }}
-                    </span>
-                </div>
+    <div
+        class="ui-card p-6 space-y-6"
+        x-data="{
+            logsOpen: false,
+            composeOpen: false,
+            logs: '',
+            logsLoading: false,
+            logsError: '',
+            async loadLogs() {
+                this.logsOpen = true;
+                this.logsLoading = true;
+                this.logsError = '';
+                try {
+                    const response = await fetch(@js(route('admin.services.container.logs', $service)));
+                    const data = await response.json();
+                    if (data.error) {
+                        this.logsError = data.error;
+                        this.logs = '';
+                    } else {
+                        this.logs = data.logs || 'No logs available';
+                    }
+                } catch (error) {
+                    this.logsError = 'Failed to fetch logs';
+                    this.logs = '';
+                } finally {
+                    this.logsLoading = false;
+                }
+            }
+        }"
+    >
+        <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div class="min-w-0">
+                <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Application runtime</h2>
+                <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">{{ $stackLabel }} on {{ $deployment->node?->hostname ?? $deployment->node?->name ?? 'unassigned node' }}</p>
             </div>
-
-            <div class="border rounded-lg p-4">
-                <p class="text-sm text-gray-500 mb-1">Container Name</p>
-                <p class="font-mono text-sm break-all">{{ $deployment->container_name }}</p>
-            </div>
-
-            <div class="border rounded-lg p-4">
-                <p class="text-sm text-gray-500 mb-1">Node</p>
-                <p class="font-semibold">
-                    @if ($deployment->node)
-                        <a href="{{ route('admin.nodes.show', $deployment->node) }}" class="text-blue-600 hover:text-blue-700">
-                            {{ $deployment->node->hostname }}
-                        </a>
-                    @else
-                        <span class="text-gray-400">Not assigned</span>
+            <span class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-semibold {{ $statusStyles['badge'] }}">
+                <span class="relative flex h-2 w-2">
+                    @if ($statusStyles['pulse'])
+                        <span class="absolute inline-flex h-full w-full rounded-full {{ $statusStyles['dot'] }} opacity-75 animate-ping"></span>
                     @endif
-                </p>
-            </div>
-
-            <div class="border rounded-lg p-4">
-                <p class="text-sm text-gray-500 mb-1">Port</p>
-                <p class="font-semibold">{{ $deployment->assigned_port }}</p>
-            </div>
+                    <span class="relative inline-flex h-2 w-2 rounded-full {{ $statusStyles['dot'] }}"></span>
+                </span>
+                {{ ucfirst($deployment->status) }}
+            </span>
         </div>
 
-        <!-- Resource Allocation -->
-        <div class="mb-6 border rounded-lg p-4">
-            <h4 class="font-semibold mb-4">Resource Allocation</h4>
-            <div class="grid grid-cols-3 gap-4">
-                <div>
-                    <p class="text-sm text-gray-500 mb-1">CPU Cores</p>
-                    <p class="font-semibold">{{ $limits['cpu'] }}</p>
-                </div>
-                <div>
-                    <p class="text-sm text-gray-500 mb-1">RAM</p>
-                    <p class="font-semibold">{{ $limits['memory_mb'] }}MB</p>
-                </div>
-                <div>
-                    <p class="text-sm text-gray-500 mb-1">Storage</p>
-                    <p class="font-semibold">{{ $limits['disk_gb'] }}GB</p>
-                </div>
-            </div>
-        </div>
-
-        <!-- Access URL -->
-        @if ($deployment->getAccessUrl())
-            <div class="mb-6 border rounded-lg p-4 bg-blue-50">
-                <p class="text-sm text-gray-500 mb-2">Access URL</p>
-                <p class="font-mono text-sm break-all">
-                    <a href="{{ $deployment->getAccessUrl() }}" target="_blank" class="text-blue-600 hover:text-blue-700">
-                        {{ $deployment->getAccessUrl() }}
-                    </a>
-                </p>
-            </div>
-        @endif
-
-        <!-- Deployment Details -->
-        <div class="grid grid-cols-2 gap-4 mb-6">
-            @if ($deployment->deployed_at)
-                <div class="border rounded-lg p-4">
-                    <p class="text-sm text-gray-500 mb-1">Deployed</p>
-                    <p class="font-semibold">{{ $deployment->deployed_at->diffForHumans() }}</p>
-                </div>
-            @endif
-
-            @if ($deployment->terminated_at)
-                <div class="border rounded-lg p-4">
-                    <p class="text-sm text-gray-500 mb-1">Terminated</p>
-                    <p class="font-semibold">{{ $deployment->terminated_at->diffForHumans() }}</p>
-                </div>
-            @endif
-
-            @if ($deployment->last_status_check_at)
-                <div class="border rounded-lg p-4">
-                    <p class="text-sm text-gray-500 mb-1">Last Status Check</p>
-                    <p class="font-semibold">{{ $deployment->last_status_check_at->diffForHumans() }}</p>
-                </div>
-            @endif
-        </div>
-
-        <!-- Node Status Alert -->
         @if ($deployment->node && $deployment->node->status === 'offline')
-            <div class="mb-6 bg-red-100 border border-red-400 rounded-lg p-4">
-                <p class="text-red-700 font-semibold mb-2">⚠️ Container Host Offline</p>
-                <p class="text-sm text-red-600 mb-3">The node hosting this container is offline. Immediate action recommended.</p>
-                <a href="{{ route('admin.services.container.migrate', $service) }}" class="inline-block px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">
-                    Migrate Now
+            <div class="rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/40 px-4 py-3">
+                <p class="text-sm font-semibold text-red-900 dark:text-red-100">Container host is offline</p>
+                <p class="text-sm text-red-800 dark:text-red-200 mt-1">{{ $deployment->node->hostname ?? $deployment->node->name }} is not responding. Migrate this application to a healthy node.</p>
+                <a href="{{ route('admin.services.container.migrate', $service) }}" class="inline-flex mt-3 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition">
+                    Migrate now
                 </a>
             </div>
         @endif
 
-        <!-- Migration History -->
-        @if ($deployment->migrated_at)
-            <div class="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <p class="text-sm text-blue-800 mb-1">
-                    <strong>Last Migration:</strong> {{ $deployment->migrated_at->format('M d, Y H:i') }}
-                </p>
-                <p class="text-sm text-blue-700">
-                    From <strong>{{ $deployment->migratedFromNode?->hostname ?? 'Unknown' }}</strong>
-                    ({{ ucfirst(str_replace('_', ' ', $deployment->migration_reason ?? 'manual')) }})
-                </p>
+        @if ($deployment->status === 'failed' && filled($deployment->last_status_check_output))
+            <div class="rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/40 px-4 py-3">
+                <p class="text-sm font-semibold text-red-900 dark:text-red-100">Last runtime check failed</p>
+                <pre class="mt-2 text-xs font-mono text-red-800 dark:text-red-200 whitespace-pre-wrap break-all max-h-32 overflow-y-auto">{{ $deployment->last_status_check_output }}</pre>
             </div>
         @endif
 
-        <!-- Action Buttons -->
-        <div class="flex flex-wrap gap-3 mb-6">
+        @if ($deployment->migrated_at)
+            <div class="rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 px-4 py-3 text-sm text-blue-900 dark:text-blue-100">
+                Last migrated {{ $deployment->migrated_at->format('M d, Y H:i') }}
+                from {{ $deployment->migratedFromNode?->hostname ?? 'unknown node' }}
+                ({{ ucfirst(str_replace('_', ' ', $deployment->migration_reason ?? 'manual')) }}).
+            </div>
+        @endif
+
+        <dl class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            @if ($accessUrl)
+                <div class="p-3 bg-slate-50 dark:bg-slate-800/80 rounded-lg sm:col-span-2">
+                    <dt class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Access URL</dt>
+                    <dd class="mt-1 font-mono text-sm break-all">
+                        <a href="{{ $accessUrl }}" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:underline">{{ $accessUrl }}</a>
+                    </dd>
+                </div>
+            @endif
+            <div class="p-3 bg-slate-50 dark:bg-slate-800/80 rounded-lg">
+                <dt class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Container</dt>
+                <dd class="mt-1 font-mono text-sm text-slate-900 dark:text-white break-all">{{ $deployment->container_name }}</dd>
+            </div>
+            <div class="p-3 bg-slate-50 dark:bg-slate-800/80 rounded-lg">
+                <dt class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Node</dt>
+                <dd class="mt-1 text-sm text-slate-900 dark:text-white">
+                    @if ($deployment->node)
+                        <a href="{{ route('admin.nodes.show', $deployment->node) }}" class="text-blue-600 dark:text-blue-400 hover:underline">{{ $deployment->node->hostname ?? $deployment->node->name }}</a>
+                    @else
+                        <span class="text-slate-400">Not assigned</span>
+                    @endif
+                </dd>
+            </div>
+            <div class="p-3 bg-slate-50 dark:bg-slate-800/80 rounded-lg">
+                <dt class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Port</dt>
+                <dd class="mt-1 font-mono text-sm text-slate-900 dark:text-white">{{ $deployment->assigned_port ?? '—' }}</dd>
+            </div>
+            @if ($repoUrl !== '')
+                <div class="p-3 bg-slate-50 dark:bg-slate-800/80 rounded-lg">
+                    <dt class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Git repository</dt>
+                    <dd class="mt-1 font-mono text-sm text-slate-900 dark:text-white break-all">{{ $repoUrl }} <span class="text-slate-500 dark:text-slate-400">({{ $repoBranch }})</span></dd>
+                </div>
+            @endif
+            @if ($deployment->deployed_at)
+                <div class="p-3 bg-slate-50 dark:bg-slate-800/80 rounded-lg">
+                    <dt class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Deployed</dt>
+                    <dd class="mt-1 text-sm text-slate-900 dark:text-white">{{ $deployment->deployed_at->diffForHumans() }}</dd>
+                </div>
+            @endif
+            @if ($deployment->last_status_check_at)
+                <div class="p-3 bg-slate-50 dark:bg-slate-800/80 rounded-lg">
+                    <dt class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Last status check</dt>
+                    <dd class="mt-1 text-sm text-slate-900 dark:text-white">{{ $deployment->last_status_check_at->diffForHumans() }}</dd>
+                </div>
+            @endif
+            @if ($deployment->terminated_at)
+                <div class="p-3 bg-slate-50 dark:bg-slate-800/80 rounded-lg">
+                    <dt class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Terminated</dt>
+                    <dd class="mt-1 text-sm text-slate-900 dark:text-white">{{ $deployment->terminated_at->diffForHumans() }}</dd>
+                </div>
+            @endif
+        </dl>
+
+        <div class="flex flex-wrap gap-2">
             @if ($deployment->status === 'pending')
-                <form method="POST" action="{{ route('admin.services.container.provision', $service) }}" style="display:inline;">
+                <form method="POST" action="{{ route('admin.services.container.provision', $service) }}">
                     @csrf
-                    <button type="submit" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
-                        Provision
-                    </button>
+                    <button type="submit" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition">Provision</button>
                 </form>
             @elseif ($deployment->isRunning())
-                <form method="POST" action="{{ route('admin.services.container.suspend', $service) }}" style="display:inline;">
+                <form method="POST" action="{{ route('admin.services.container.restart', $service) }}">
                     @csrf
-                    <button type="submit" class="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700">
-                        Suspend
-                    </button>
+                    <button type="submit" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition">Restart</button>
                 </form>
-
-                <form method="POST" action="{{ route('admin.services.container.restart', $service) }}" style="display:inline;">
+                <form method="POST" action="{{ route('admin.services.container.suspend', $service) }}" data-confirm="Suspend this container? The application will stop until it is started again." data-confirm-title="Suspend container">
                     @csrf
-                    <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                        Restart
-                    </button>
+                    <button type="submit" class="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg transition">Suspend</button>
                 </form>
-            @elseif ($deployment->status === 'stopped' || $deployment->status === 'suspended')
-                <form method="POST" action="{{ route('admin.services.container.start', $service) }}" style="display:inline;">
+            @elseif (in_array($deployment->status, ['stopped', 'suspended'], true))
+                <form method="POST" action="{{ route('admin.services.container.start', $service) }}">
                     @csrf
-                    <button type="submit" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
-                        Start
-                    </button>
+                    <button type="submit" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition">Start</button>
                 </form>
             @endif
 
-            <a href="{{ route('admin.services.container.edit', $service) }}" class="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700">
-                Edit
-            </a>
-
-            <form method="POST" action="{{ route('admin.services.container.redeploy', $service) }}" class="inline-flex items-center gap-2">
-                @csrf
-                <label class="inline-flex items-center gap-1 text-xs text-slate-600">
-                    <input type="checkbox" name="reset_database" value="1" class="rounded border-slate-300">
-                    Reset DB
-                </label>
-                <button type="submit" class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
-                    Redeploy
-                </button>
-            </form>
-
-            <a href="{{ route('admin.services.container.migrate', $service) }}" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
-                Migrate
-            </a>
-
-            <button type="button" class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700" onclick="toggleLogs()">
-                View Logs
+            <button type="button" @click="loadLogs()" class="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 text-sm font-medium rounded-lg transition">
+                View logs
             </button>
+            <a href="{{ route('admin.services.container.edit', $service) }}" class="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 text-sm font-medium rounded-lg transition">
+                Edit runtime
+            </a>
+            <a href="{{ route('admin.services.container.migrate', $service) }}" class="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 text-sm font-medium rounded-lg transition">
+                Migrate node
+            </a>
         </div>
 
-        <!-- Resource Usage Metrics -->
-        <div class="mb-6 border rounded-lg p-4">
-            <h4 class="font-semibold mb-4">Resource Usage (Last 24 Hours)</h4>
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div>
-                    <canvas id="cpuChart" height="80"></canvas>
+        <form method="POST" action="{{ route('admin.services.container.redeploy', $service) }}" class="flex flex-col sm:flex-row sm:items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700" data-confirm="Redeploy this container? Files in /app are kept unless you reset the database." data-confirm-title="Redeploy stack">
+            @csrf
+            <div class="flex-1">
+                <p class="text-sm font-medium text-slate-900 dark:text-white">Redeploy stack</p>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Recreate the runtime from the current Git source and compose file.</p>
+            </div>
+            <label class="inline-flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+                <input type="checkbox" name="reset_database" value="1" class="rounded border-slate-300 dark:border-slate-600">
+                Reset database
+            </label>
+            <button type="submit" class="px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg transition">
+                Redeploy
+            </button>
+        </form>
+
+        <div>
+            <h3 class="text-sm font-semibold text-slate-900 dark:text-white mb-3">Resource Allocation</h3>
+            <div class="grid grid-cols-3 gap-3">
+                <div class="p-3 bg-slate-50 dark:bg-slate-800/80 rounded-lg">
+                    <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">CPU</p>
+                    <p class="text-sm font-semibold text-slate-900 dark:text-white mt-1">{{ $limits['cpu'] }} {{ (float) $limits['cpu'] == 1.0 ? 'core' : 'cores' }}</p>
                 </div>
-                <div>
-                    <canvas id="memoryChart" height="80"></canvas>
+                <div class="p-3 bg-slate-50 dark:bg-slate-800/80 rounded-lg">
+                    <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">RAM</p>
+                    <p class="text-sm font-semibold text-slate-900 dark:text-white mt-1">{{ $limits['memory_mb'] }}MB</p>
+                </div>
+                <div class="p-3 bg-slate-50 dark:bg-slate-800/80 rounded-lg">
+                    <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Storage</p>
+                    <p class="text-sm font-semibold text-slate-900 dark:text-white mt-1">{{ $limits['disk_gb'] }}GB</p>
                 </div>
             </div>
         </div>
 
-        <!-- Custom Domains -->
-        <div class="mb-6 border rounded-lg p-4">
-            <h4 class="font-semibold mb-4">Custom Domains</h4>
+        <div>
+            <h3 class="text-sm font-semibold text-slate-900 dark:text-white mb-3">Resource usage (last 24 hours)</h3>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div class="h-40">
+                    <canvas id="cpuChart"></canvas>
+                </div>
+                <div class="h-40">
+                    <canvas id="memoryChart"></canvas>
+                </div>
+            </div>
+        </div>
 
-            @if ($deployment->domains()->count() > 0)
+        <div>
+            <h3 class="text-sm font-semibold text-slate-900 dark:text-white mb-3">Custom domains</h3>
+            @if ($domains->isNotEmpty())
                 <div class="space-y-2 mb-4">
-                    @foreach ($deployment->domains as $domain)
-                        <div class="flex items-center justify-between bg-gray-50 p-3 rounded">
+                    @foreach ($domains as $domain)
+                        @php
+                            $domainStatus = match ($domain->status) {
+                                'pending' => 'bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300',
+                                'active' => 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300',
+                                'failed' => 'bg-red-100 dark:bg-red-950 text-red-800 dark:text-red-300',
+                                'removing' => 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300',
+                                default => 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300',
+                            };
+                        @endphp
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 bg-slate-50 dark:bg-slate-800/80 rounded-lg">
                             <div>
-                                <p class="font-mono text-sm">{{ $domain->domain }}</p>
+                                <p class="font-mono text-sm text-slate-900 dark:text-white">{{ $domain->domain }}</p>
                                 <div class="flex items-center gap-2 mt-1">
-                                    @php
-                                        $statusColor = $domain->getStatusColor();
-                                    @endphp
-                                    <span class="px-2 py-1 rounded text-xs font-semibold {{ $statusColor }}">
-                                        {{ ucfirst($domain->status) }}
-                                    </span>
+                                    <span class="px-2 py-0.5 rounded text-xs font-semibold {{ $domainStatus }}">{{ ucfirst($domain->status) }}</span>
                                     @if ($domain->hasSsl())
-                                        <span class="px-2 py-1 rounded text-xs font-semibold bg-green-100 text-green-800">SSL ✓</span>
+                                        <span class="px-2 py-0.5 rounded text-xs font-semibold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300">SSL</span>
                                     @endif
                                 </div>
                             </div>
                             <div class="flex gap-2">
-                                @if ($domain->status === 'active' && !$domain->ssl_enabled)
-                                    <form method="POST" action="{{ route('admin.services.container.domains.ssl', [$service, $domain]) }}" style="display:inline;">
+                                @if ($domain->status === 'active' && ! $domain->ssl_enabled)
+                                    <form method="POST" action="{{ route('admin.services.container.domains.ssl', [$service, $domain]) }}">
                                         @csrf
-                                        <button type="submit" class="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">
-                                            Enable SSL
-                                        </button>
+                                        <button type="submit" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition">Enable SSL</button>
                                     </form>
                                 @endif
-                                <form method="POST" action="{{ route('admin.services.container.domains.unbind', [$service, $domain]) }}" style="display:inline;">
+                                <form method="POST" action="{{ route('admin.services.container.domains.unbind', [$service, $domain]) }}" data-confirm="Remove {{ $domain->domain }} from this container?" data-confirm-title="Remove domain">
                                     @csrf
                                     @method('DELETE')
-                                    <button type="submit" class="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700">
-                                        Remove
-                                    </button>
+                                    <button type="submit" class="px-3 py-1.5 border border-red-300 dark:border-red-800 text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/40 text-xs font-medium rounded-lg transition">Remove</button>
                                 </form>
                             </div>
                         </div>
                     @endforeach
                 </div>
+            @else
+                <p class="text-sm text-slate-500 dark:text-slate-400 mb-3">No custom domains bound yet.</p>
             @endif
 
-            <form method="POST" action="{{ route('admin.services.container.domains.bind', $service) }}" class="flex gap-2">
+            <form method="POST" action="{{ route('admin.services.container.domains.bind', $service) }}" class="flex flex-col sm:flex-row gap-2">
                 @csrf
-                <input type="text" name="domain" placeholder="example.com" class="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm" required>
-                <button type="submit" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm">
-                    Bind Domain
-                </button>
+                <input type="text" name="domain" placeholder="example.com" class="flex-1 px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white rounded-lg text-sm" required>
+                <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition">Bind domain</button>
             </form>
         </div>
 
-        <!-- Backups Section -->
-        <div class="mb-6 border rounded-lg p-4">
-            <h4 class="font-semibold mb-4">Container Backups</h4>
-
-            @php
-                $backups = $deployment->backups()->whereNotIn('status', ['deleted'])->orderByDesc('created_at')->get();
-            @endphp
-
-            @if ($backups->count() > 0)
+        <div>
+            <h3 class="text-sm font-semibold text-slate-900 dark:text-white mb-3">Backups</h3>
+            @if ($activeBackups->isNotEmpty())
                 <div class="space-y-2 mb-4">
-                    @foreach ($backups as $backup)
-                    <div class="flex items-center justify-between bg-gray-50 p-3 rounded text-sm">
-                        <div>
-                            <p class="font-mono">{{ $backup->backup_name }}</p>
-                            <p class="text-gray-600 text-xs">
-                                {{ $backup->status === 'completed' ? 'Size: ' . formatBytes($backup->size_bytes) : ucfirst($backup->status) }}
-                            </p>
-                            <p class="text-gray-500 text-xs">{{ $backup->created_at->diffForHumans() }}</p>
+                    @foreach ($activeBackups as $backup)
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 bg-slate-50 dark:bg-slate-800/80 rounded-lg text-sm">
+                            <div>
+                                <p class="font-mono text-slate-900 dark:text-white">{{ $backup->backup_name }}</p>
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                    {{ $backup->status === 'completed' ? 'Size: '.formatBytes($backup->size_bytes) : ucfirst($backup->status) }}
+                                    · {{ $backup->created_at->diffForHumans() }}
+                                </p>
+                            </div>
+                            <div class="flex gap-2">
+                                @if ($backup->status === 'completed')
+                                    <form method="POST" action="{{ route('admin.services.container.backups.restore', [$service, $backup]) }}" data-confirm="Restore this backup? The running application will be replaced." data-confirm-title="Restore backup">
+                                        @csrf
+                                        <button type="submit" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition">Restore</button>
+                                    </form>
+                                @endif
+                                <form method="POST" action="{{ route('admin.services.container.backups.delete', [$service, $backup]) }}" data-confirm="Delete this backup permanently?" data-confirm-title="Delete backup">
+                                    @csrf
+                                    @method('DELETE')
+                                    <button type="submit" class="px-3 py-1.5 border border-red-300 dark:border-red-800 text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/40 text-xs font-medium rounded-lg transition">Delete</button>
+                                </form>
+                            </div>
                         </div>
-                        <div class="flex gap-2">
-                            @if ($backup->status === 'completed')
-                            <form method="POST" action="{{ route('admin.services.container.backups.restore', [$service, $backup]) }}" style="display:inline;">
-                                @csrf
-                                <button type="submit" class="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700">
-                                    Restore
-                                </button>
-                            </form>
-                            @endif
-                            <form method="POST" action="{{ route('admin.services.container.backups.delete', [$service, $backup]) }}" style="display:inline;">
-                                @csrf
-                                @method('DELETE')
-                                <button type="submit" class="px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700">
-                                    Delete
-                                </button>
-                            </form>
-                        </div>
-                    </div>
                     @endforeach
                 </div>
             @else
-                <p class="text-gray-500 text-sm mb-4">No backups yet</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400 mb-3">No backups yet.</p>
             @endif
 
-            <form method="POST" action="{{ route('admin.services.container.backups.create', $service) }}" style="display:inline;">
+            <form method="POST" action="{{ route('admin.services.container.backups.create', $service) }}">
                 @csrf
-                <button type="submit" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm">
-                    Create Backup Now
-                </button>
+                <button type="submit" class="px-4 py-2 bg-slate-800 hover:bg-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 text-white text-sm font-medium rounded-lg transition">Create backup</button>
             </form>
         </div>
 
-        <!-- Docker Compose YAML -->
-        <div class="mb-6 border rounded-lg p-4">
-            <button type="button" class="flex items-center justify-between w-full font-semibold mb-2" onclick="toggleCompose()">
-                <span>Docker Compose Configuration</span>
-                <span id="compose-toggle" class="text-gray-500">▼</span>
-            </button>
-            <pre id="compose-content" class="bg-gray-900 text-green-400 p-4 rounded text-sm overflow-x-auto hidden max-h-96">{{ $deployment->docker_compose_content }}</pre>
-        </div>
+        @if (filled($deployment->docker_compose_content))
+            <div>
+                <button type="button" class="flex items-center justify-between w-full text-sm font-semibold text-slate-900 dark:text-white" @click="composeOpen = !composeOpen">
+                    <span>Docker Compose</span>
+                    <span class="text-slate-400" x-text="composeOpen ? 'Hide' : 'Show'"></span>
+                </button>
+                <pre x-show="composeOpen" x-cloak class="mt-3 bg-slate-950 text-emerald-300 p-4 rounded-lg text-xs overflow-x-auto max-h-96">{{ $deployment->docker_compose_content }}</pre>
+            </div>
+        @endif
 
-        <!-- Logs Panel -->
-        <div id="logs-container" class="border rounded-lg p-4 hidden">
-            <div class="flex justify-between items-center mb-2">
-                <h4 class="font-semibold">Recent Logs</h4>
-                <button type="button" class="text-sm text-gray-500 hover:text-gray-700" onclick="toggleLogs()">✕</button>
+        <div x-show="logsOpen" x-cloak class="rounded-xl border border-slate-200 dark:border-slate-700 p-4">
+            <div class="flex items-center justify-between mb-2">
+                <h3 class="text-sm font-semibold text-slate-900 dark:text-white">Recent logs</h3>
+                <div class="flex items-center gap-2">
+                    <button type="button" class="text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-200" @click="loadLogs()">Refresh</button>
+                    <button type="button" class="text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-200" @click="logsOpen = false">Close</button>
+                </div>
             </div>
-            <div id="logs-content" class="bg-gray-900 text-gray-300 p-4 rounded text-sm overflow-x-auto max-h-96">
-                <p class="text-gray-500">Loading logs...</p>
-            </div>
+            <pre class="bg-slate-950 p-4 rounded-lg text-xs overflow-x-auto max-h-96 whitespace-pre-wrap break-all" :class="logsError ? 'text-red-400' : 'text-slate-200'" x-text="logsLoading ? 'Loading logs...' : (logsError ? ('Error: ' + logsError) : logs)"></pre>
         </div>
     </div>
 
@@ -336,8 +349,16 @@
         let cpuChart = null;
         let memoryChart = null;
 
+        function chartTheme() {
+            const isDark = document.documentElement.classList.contains('dark');
+            return {
+                tick: isDark ? '#94a3b8' : '#64748b',
+                grid: isDark ? 'rgba(148, 163, 184, 0.12)' : 'rgba(15, 23, 42, 0.08)',
+            };
+        }
+
         function initializeCharts() {
-            fetch('{{ route("admin.services.container.metrics", $service) }}')
+            fetch(@js(route('admin.services.container.metrics', $service)))
                 .then(response => response.json())
                 .then(data => {
                     if (data.labels && data.labels.length > 0) {
@@ -350,6 +371,7 @@
 
         function renderCpuChart(data) {
             const ctx = document.getElementById('cpuChart').getContext('2d');
+            const theme = chartTheme();
             if (cpuChart) cpuChart.destroy();
             cpuChart = new Chart(ctx, {
                 type: 'line',
@@ -359,8 +381,8 @@
                         label: 'CPU %',
                         data: data.cpu,
                         borderColor: 'rgb(59, 130, 246)',
-                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                        borderWidth: 1,
+                        backgroundColor: 'rgba(59, 130, 246, 0.12)',
+                        borderWidth: 1.5,
                         tension: 0.3,
                         fill: true
                     }]
@@ -368,14 +390,18 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: { legend: { display: true, position: 'top' } },
-                    scales: { y: { beginAtZero: true, max: 100 } }
+                    plugins: { legend: { display: true, position: 'top', labels: { color: theme.tick } } },
+                    scales: {
+                        x: { ticks: { color: theme.tick }, grid: { color: theme.grid } },
+                        y: { beginAtZero: true, max: 100, ticks: { color: theme.tick }, grid: { color: theme.grid } }
+                    }
                 }
             });
         }
 
         function renderMemoryChart(data) {
             const ctx = document.getElementById('memoryChart').getContext('2d');
+            const theme = chartTheme();
             if (memoryChart) memoryChart.destroy();
             memoryChart = new Chart(ctx, {
                 type: 'line',
@@ -384,9 +410,9 @@
                     datasets: [{
                         label: 'Memory (MB)',
                         data: data.memory,
-                        borderColor: 'rgb(34, 197, 94)',
-                        backgroundColor: 'rgba(34, 197, 94, 0.1)',
-                        borderWidth: 1,
+                        borderColor: 'rgb(16, 185, 129)',
+                        backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                        borderWidth: 1.5,
                         tension: 0.3,
                         fill: true
                     }]
@@ -394,49 +420,29 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: { legend: { display: true, position: 'top' } },
-                    scales: { y: { beginAtZero: true } }
+                    plugins: { legend: { display: true, position: 'top', labels: { color: theme.tick } } },
+                    scales: {
+                        x: { ticks: { color: theme.tick }, grid: { color: theme.grid } },
+                        y: { beginAtZero: true, ticks: { color: theme.tick }, grid: { color: theme.grid } }
+                    }
                 }
             });
         }
 
-        // Initialize charts on page load
         document.addEventListener('DOMContentLoaded', initializeCharts);
-
-        function toggleCompose() {
-            const content = document.getElementById('compose-content');
-            const toggle = document.getElementById('compose-toggle');
-            content.classList.toggle('hidden');
-            toggle.textContent = content.classList.contains('hidden') ? '▼' : '▲';
-        }
-
-        function toggleLogs() {
-            const container = document.getElementById('logs-container');
-            container.classList.toggle('hidden');
-
-            if (!container.classList.contains('hidden')) {
-                fetchLogs();
-            }
-        }
-
-        function fetchLogs() {
-            const logsContent = document.getElementById('logs-content');
-            logsContent.innerHTML = '<p class="text-gray-500">Loading logs...</p>';
-
-            fetch('{{ route("admin.services.container.logs", $service) }}')
-                .then(response => response.json())
-                .then(data => {
-                    if (data.error) {
-                        logsContent.innerHTML = '<p class="text-red-400">Error: ' + data.error + '</p>';
-                    } else {
-                        logsContent.textContent = data.logs || 'No logs available';
-                    }
-                })
-                .catch(error => {
-                    logsContent.innerHTML = '<p class="text-red-400">Failed to fetch logs</p>';
-                    console.error('Error:', error);
-                });
-        }
     </script>
     @endpush
+@elseif ($service->isContainerHosting())
+    <div class="ui-card p-6">
+        <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Application runtime</h2>
+        <p class="text-sm text-slate-600 dark:text-slate-400 mt-2">No container has been provisioned for this service yet.</p>
+        @if (in_array($service->status->value, ['pending', 'provisioning', 'failed'], true))
+            <form method="POST" action="{{ route('admin.services.provision', $service) }}" class="mt-4">
+                @csrf
+                <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition">
+                    {{ $service->status->value === 'provisioning' ? 'Retry provisioning' : 'Provision' }}
+                </button>
+            </form>
+        @endif
+    </div>
 @endif

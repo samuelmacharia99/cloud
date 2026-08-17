@@ -21,6 +21,7 @@ class AdminServiceShowContainerPanelTest extends TestCase
         $customer = User::factory()->create();
         $template = ContainerTemplate::factory()->create([
             'slug' => 'nodejs',
+            'name' => 'Node.js',
             'required_cpu_cores' => 1,
             'required_ram_mb' => 1024,
             'required_storage_gb' => 10,
@@ -39,6 +40,12 @@ class AdminServiceShowContainerPanelTest extends TestCase
             'service_meta' => [
                 'language_slug' => 'nodejs',
                 'container_template_id' => $template->id,
+                'source_repo_url' => 'animated123/apigateway',
+                'source_repo_branch' => 'main',
+                'env_values' => [
+                    'JWT_SECRET' => 'super-secret-jwt-xyz-193',
+                ],
+                'auto_deploy_secret_encrypted' => 'enc-secret-should-not-leak',
             ],
         ]);
         ContainerDeployment::factory()->create([
@@ -47,6 +54,7 @@ class AdminServiceShowContainerPanelTest extends TestCase
             'status' => 'running',
             'container_name' => 'user-'.$customer->id.'-service-'.$service->id.'-nodejs',
             'assigned_port' => 30022,
+            'domain' => 'gateway.example.test',
         ]);
 
         $this->assertNull($service->fresh()->product?->containerTemplate);
@@ -54,8 +62,45 @@ class AdminServiceShowContainerPanelTest extends TestCase
         $this->actingAs($admin)
             ->get(route('admin.services.show', $service))
             ->assertOk()
+            ->assertSee('Application runtime')
             ->assertSee('Resource Allocation')
             ->assertSee('1024MB')
-            ->assertSee('10GB');
+            ->assertSee('10GB')
+            ->assertSee('Node.js')
+            ->assertSee('Open site')
+            ->assertSee('https://gateway.example.test')
+            ->assertSee('animated123/apigateway')
+            ->assertSee('Environment variables')
+            ->assertDontSee('Service Metadata')
+            ->assertDontSee('super-secret-jwt-xyz-193')
+            ->assertDontSee('enc-secret-should-not-leak');
+    }
+
+    public function test_admin_sees_empty_runtime_state_when_container_is_not_provisioned(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $customer = User::factory()->create();
+        $template = ContainerTemplate::factory()->create(['slug' => 'nodejs', 'name' => 'Node.js']);
+        $product = Product::factory()->containerHosting()->create([
+            'container_template_id' => null,
+            'name' => 'TIER 1',
+        ]);
+        $service = Service::factory()->create([
+            'user_id' => $customer->id,
+            'product_id' => $product->id,
+            'name' => 'TIER 1',
+            'status' => 'pending',
+            'provisioning_driver_key' => 'container',
+            'service_meta' => [
+                'language_slug' => 'nodejs',
+                'container_template_id' => $template->id,
+            ],
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('admin.services.show', $service))
+            ->assertOk()
+            ->assertSee('Application runtime')
+            ->assertSee('No container has been provisioned for this service yet.');
     }
 }
