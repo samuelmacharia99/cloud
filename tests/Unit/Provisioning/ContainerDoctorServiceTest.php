@@ -28,6 +28,25 @@ LOG;
     }
 
     #[Test]
+    public function it_detects_vite_missing_from_bundled_dist_server(): void
+    {
+        $logs = <<<'LOG'
+> react-example@0.0.0 start
+> node dist/server.cjs
+
+Error: Cannot find module 'vite'
+Require stack:
+- /app/dist/server.cjs
+LOG;
+
+        $findings = app(ContainerDoctorService::class)->analyzeLogs($logs, 'nodejs');
+        $finding = collect($findings)->firstWhere('id', 'vite_missing_in_production');
+
+        $this->assertNotNull($finding);
+        $this->assertSame('fix_vite_production_runtime', $finding['treat_action']);
+    }
+
+    #[Test]
     public function it_detects_postgres_password_authentication_failures(): void
     {
         $logs = <<<'LOG'

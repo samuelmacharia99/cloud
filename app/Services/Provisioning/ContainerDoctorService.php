@@ -1653,12 +1653,12 @@ PHP;
                     '/Cannot find module [\'"]vite[\'"]/i',
                 ],
                 'title' => 'Vite missing from production start',
-                'summary' => 'This app starts with a Vite middleware/dev entry (often `tsx server.ts`) after a production install that strips `vite`. Talksasa rewrites that to a production `vite preview` start and keeps Vite available at runtime.',
+                'summary' => 'This app starts a Vite-dependent entry (`tsx server.ts` or `node dist/server.cjs`) after a production install that strips `vite`. Talksasa rewrites that to a production `vite preview` start and keeps Vite available at runtime.',
                 'treat_action' => 'fix_vite_production_runtime',
                 'treat_label' => 'Switch to Vite production',
                 'manual_steps' => [
                     'Click Switch to Vite production — rebuilds, rewrites the start command to vite preview, and recreates the container.',
-                    'Custom API routes that only exist in the Vite middleware server still need a production Node entrypoint in the repo.',
+                    'Custom API routes that only exist in the Vite middleware / dist/server entry still need a production Node entrypoint in the repo.',
                 ],
             ],
             [

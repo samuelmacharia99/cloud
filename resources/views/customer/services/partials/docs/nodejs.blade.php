@@ -37,7 +37,7 @@
     <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-6 space-y-3">
         <h4 class="font-semibold text-slate-900 dark:text-white">Vite / React example templates</h4>
         <ul class="text-sm text-slate-600 dark:text-slate-300 space-y-2">
-            <li>Many Vite starters use <code class="font-mono text-xs">"start": "tsx server.ts"</code> with a Vite middleware server. That fails after production installs strip <code class="font-mono text-xs">vite</code>.</li>
+            <li>Many Vite starters use <code class="font-mono text-xs">"start": "tsx server.ts"</code> or <code class="font-mono text-xs">"start": "node dist/server.cjs"</code> with a Vite middleware server. That fails after production installs strip <code class="font-mono text-xs">vite</code>.</li>
             <li>Talksasa detects that pattern, runs <code class="font-mono text-xs">vite build</code>, then starts <code class="font-mono text-xs">vite preview --host 0.0.0.0 --port $PORT --strictPort</code>. Dev dependencies are kept installed for these apps because <code class="font-mono text-xs">vite.config</code> imports Vite and its plugins at boot.</li>
             <li>Vite only answers for hostnames on its allowlist. Every domain you bind is passed to the preview server automatically, so a newly bound domain briefly restarts the container.</li>
             <li>The first build after a deploy or a Doctor fix can run for several minutes. Doctor reports <em>build in progress</em> instead of an error while that runs.</li>
@@ -58,7 +58,7 @@
         <h4 class="font-semibold text-amber-900 dark:text-amber-100">Troubleshooting</h4>
         <ul class="text-sm text-amber-900/90 dark:text-amber-100/90 space-y-2">
             <li><strong>App restart loop</strong> — Load <strong>Logs</strong>. If you see <em>"Could not find a production build in the '.next' directory"</em>, pull code again (build runs automatically) or run <code class="font-mono text-xs">npm run build</code> in Terminal.</li>
-            <li><strong>Cannot find package 'vite'</strong> — The start script is still a Vite middleware/dev server. Use Container Doctor → Switch to Vite production, or change <code class="font-mono text-xs">start</code> to serve <code class="font-mono text-xs">dist/</code>.</li>
+            <li><strong>Cannot find package/module 'vite'</strong> — The start script still depends on Vite at runtime (<code class="font-mono text-xs">tsx server.ts</code> or <code class="font-mono text-xs">node dist/server.cjs</code>). Use Container Doctor → Switch to Vite production, or change <code class="font-mono text-xs">start</code> to serve <code class="font-mono text-xs">dist/</code> without requiring Vite.</li>
             <li><strong>Blocked request. This host is not allowed</strong> — Vite is rejecting your domain. Bind the domain under <strong>Domains</strong>, then run Container Doctor → <strong>Allow bound domains</strong>.</li>
             <li><strong>Port already in use</strong> — Bind to <code class="font-mono text-xs">process.env.PORT</code>, not a hard-coded port.</li>
             <li><strong>Build fails on pull</strong> — Check build logs in Terminal. Often missing env vars required at build time (e.g. Next.js <code class="font-mono text-xs">NEXT_PUBLIC_*</code>).</li>

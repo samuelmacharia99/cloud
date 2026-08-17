@@ -349,7 +349,8 @@ class ContainerApplicationRuntimeService
     }
 
     /**
-     * True when the start script is a Vite middleware / tsx-dev entry that imports Vite at runtime.
+     * True when the start script is a Vite middleware / tsx-dev entry that imports Vite at runtime,
+     * or a Vite template custom server under dist/ that still requires Vite after build.
      * Those apps must be rewritten to `vite preview` after a production build.
      */
     public function commandLooksLikeViteDevServer(string $command): bool
@@ -377,7 +378,27 @@ class ContainerApplicationRuntimeService
             return true;
         }
 
+        // AI Studio / react-example style: "start": "node dist/server.cjs" where the bundle
+        // still require()'s vite. Production --omit=dev then crash-loops the container.
+        if ($this->commandLooksLikeViteBundledCustomServer($normalized)) {
+            return true;
+        }
+
         return false;
+    }
+
+    /**
+     * Vite SPA templates that ship a custom Node server built to dist/server.* often leave
+     * `require('vite')` in the bundle. Prefer vite preview over running that server.
+     */
+    public function commandLooksLikeViteBundledCustomServer(string $command): bool
+    {
+        $normalized = strtolower(trim($command));
+
+        return (bool) preg_match(
+            '/\bnode\b(?:\s+[^\s]+)*\s+[\'"]?(?:\.\/)?(?:dist|build)\/server(?:\.[cm]?js)?[\'"]?(?:\s|$)/',
+            $normalized
+        );
     }
 
     public function commandLooksLikeVitePreview(string $command): bool

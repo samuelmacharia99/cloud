@@ -219,6 +219,70 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
     }
 
     #[Test]
+    public function it_rewrites_vite_bundled_dist_server_start_to_production_preview(): void
+    {
+        $packageJson = json_encode([
+            'name' => 'react-example',
+            'scripts' => [
+                'build' => 'vite build',
+                'start' => 'node dist/server.cjs',
+            ],
+            'devDependencies' => [
+                'vite' => '^6.0.0',
+            ],
+        ], JSON_THROW_ON_ERROR);
+
+        $runtime = $this->service->detectNodeFromContents(
+            null,
+            $packageJson,
+            false,
+            false,
+            false,
+            3000
+        );
+
+        $this->assertSame('vite', $runtime->source);
+        $this->assertTrue($this->service->commandLooksLikeViteBundledCustomServer('node dist/server.cjs'));
+        $this->assertTrue($this->service->shouldRewriteStartToVitePreview('node dist/server.cjs', $packageJson));
+        $this->assertStringContainsString(
+            'npx vite preview --host 0.0.0.0 --port ${PORT:-3000}',
+            $runtime->command[2]
+        );
+        $this->assertTrue($this->service->productionStartRequiresVite($packageJson));
+        $this->assertStringNotContainsString('npm install --omit=dev', $runtime->command[2]);
+        $this->assertStringNotContainsString('prune --omit=dev', $runtime->command[2]);
+    }
+
+    #[Test]
+    public function it_does_not_rewrite_plain_express_dist_entry_without_vite(): void
+    {
+        $packageJson = json_encode([
+            'scripts' => [
+                'build' => 'tsc',
+                'start' => 'node dist/index.js',
+            ],
+            'dependencies' => [
+                'express' => '^4.18.0',
+            ],
+        ], JSON_THROW_ON_ERROR);
+
+        $runtime = $this->service->detectNodeFromContents(
+            null,
+            $packageJson,
+            false,
+            false,
+            false,
+            3000
+        );
+
+        $this->assertNotSame('vite', $runtime->source);
+        $this->assertStringContainsString('npm start', $runtime->command[2]);
+        $this->assertFalse(
+            $this->service->shouldRewriteStartToVitePreview('node dist/index.js', $packageJson)
+        );
+    }
+
+    #[Test]
     public function it_normalizes_existing_vite_preview_start_commands(): void
     {
         $packageJson = json_encode([
