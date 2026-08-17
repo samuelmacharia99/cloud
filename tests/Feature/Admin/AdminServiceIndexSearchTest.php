@@ -114,4 +114,31 @@ class AdminServiceIndexSearchTest extends TestCase
             ->assertSee('#'.$matching->id, false)
             ->assertDontSee('#'.$other->id, false);
     }
+
+    public function test_admin_can_search_services_by_id_with_hash_suffix(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $customer = User::factory()->create();
+
+        $matching = Service::factory()->create([
+            'user_id' => $customer->id,
+            'name' => 'Numbered App Hosting',
+        ]);
+        $other = Service::factory()->create([
+            'user_id' => $customer->id,
+            'name' => 'Unrelated Hosting',
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('admin.services.index', ['search' => $matching->id.'#']))
+            ->assertOk()
+            ->assertSee('#'.$matching->id, false)
+            ->assertDontSee('#'.$other->id, false);
+
+        $this->actingAs($admin)
+            ->get(route('admin.services.index', ['search' => '#'.$matching->id]))
+            ->assertOk()
+            ->assertSee('#'.$matching->id, false)
+            ->assertDontSee('#'.$other->id, false);
+    }
 }

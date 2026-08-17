@@ -1720,13 +1720,13 @@ class ContainerDeploymentService
 
     public function resolveDatabaseTemplateForService(Service $service): ?DatabaseTemplate
     {
-        $service->loadMissing('product.containerTemplate');
+        $template = $this->resolveContainerTemplate($service);
 
-        if (! $service->product?->containerTemplate) {
+        if (! $template) {
             return null;
         }
 
-        return $this->resolveDatabaseTemplate($service, $service->product->containerTemplate);
+        return $this->resolveDatabaseTemplate($service, $template);
     }
 
     /**
@@ -3527,7 +3527,7 @@ class ContainerDeploymentService
             throw new \DomainException('Container host is not available.');
         }
 
-        $template = $service->product?->containerTemplate;
+        $template = $this->resolveContainerTemplate($service);
         if (! $template) {
             throw new \DomainException('Container template is missing.');
         }

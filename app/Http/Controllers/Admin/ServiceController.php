@@ -799,30 +799,41 @@ class ServiceController extends Controller
 
         if ($request->filled('search')) {
             $search = trim((string) $request->search);
+            $normalized = trim($search, " \t\n\r\0\x0B#");
+            $terms = array_values(array_unique(array_filter(
+                [$search, $normalized],
+                fn (string $term): bool => $term !== ''
+            )));
 
-            $query->where(function ($q) use ($search) {
-                $q->where('id', 'like', "%{$search}%")
-                    ->orWhere('name', 'like', "%{$search}%")
-                    ->orWhere('service_meta->domain', 'like', "%{$search}%")
-                    ->orWhere('service_meta->primary_domain', 'like', "%{$search}%")
-                    ->orWhereHas('user', function ($userQuery) use ($search) {
-                        $userQuery->where('name', 'like', "%{$search}%");
-                    })
-                    ->orWhereHas('containerDeployment', function ($deploymentQuery) use ($search) {
-                        $deploymentQuery->where('domain', 'like', "%{$search}%");
-                    })
-                    ->orWhereHas('containerDeployment.domains', function ($domainQuery) use ($search) {
-                        $domainQuery->where('domain', 'like', "%{$search}%");
-                    });
+            $query->where(function ($q) use ($terms) {
+                foreach ($terms as $term) {
+                    $q->orWhere('id', 'like', "%{$term}%")
+                        ->orWhere('name', 'like', "%{$term}%")
+                        ->orWhere('service_meta->domain', 'like', "%{$term}%")
+                        ->orWhere('service_meta->primary_domain', 'like', "%{$term}%")
+                        ->orWhereHas('user', function ($userQuery) use ($term) {
+                            $userQuery->where('name', 'like', "%{$term}%");
+                        })
+                        ->orWhereHas('containerDeployment', function ($deploymentQuery) use ($term) {
+                            $deploymentQuery->where('domain', 'like', "%{$term}%");
+                        })
+                        ->orWhereHas('containerDeployment.domains', function ($domainQuery) use ($term) {
+                            $domainQuery->where('domain', 'like', "%{$term}%");
+                        });
 
-                $matchingDomainIds = $this->domainIdsMatchingSearch($search);
+                    if (ctype_digit($term)) {
+                        $q->orWhere('id', (int) $term);
+                    }
 
-                if ($matchingDomainIds->isNotEmpty()) {
-                    $q->orWhere(function ($domainLinkQuery) use ($matchingDomainIds) {
-                        foreach ($matchingDomainIds as $domainId) {
-                            $domainLinkQuery->orWhere('service_meta->domain_id', $domainId);
-                        }
-                    });
+                    $matchingDomainIds = $this->domainIdsMatchingSearch($term);
+
+                    if ($matchingDomainIds->isNotEmpty()) {
+                        $q->orWhere(function ($domainLinkQuery) use ($matchingDomainIds) {
+                            foreach ($matchingDomainIds as $domainId) {
+                                $domainLinkQuery->orWhere('service_meta->domain_id', $domainId);
+                            }
+                        });
+                    }
                 }
             });
         }
