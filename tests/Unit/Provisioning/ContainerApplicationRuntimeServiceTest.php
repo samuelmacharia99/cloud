@@ -183,7 +183,7 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
     }
 
     #[Test]
-    public function it_rewrites_vite_middleware_start_to_production_preview(): void
+    public function it_preserves_vite_middleware_start_and_keeps_vite_installed(): void
     {
         $packageJson = json_encode([
             'name' => 'react-example',
@@ -207,19 +207,22 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
         );
 
         $this->assertSame('vite', $runtime->source);
-        $this->assertSame('Vite production preview', $runtime->label);
-        $this->assertStringContainsString(
-            'npx vite preview --host 0.0.0.0 --port ${PORT:-3000}',
-            $runtime->command[2]
+        $this->assertSame('Vite app server', $runtime->label);
+        $this->assertStringContainsString('npm start', $runtime->command[2]);
+        $this->assertStringNotContainsString('vite preview', $runtime->command[2]);
+        $this->assertFalse(
+            $this->service->shouldRewriteStartToVitePreview(
+                "NODE_OPTIONS='--no-warnings' tsx server.ts",
+                $packageJson
+            )
         );
         $this->assertTrue($this->service->productionStartRequiresVite($packageJson));
-        // vite.config imports vite and its plugins at boot, so the dev tree must survive.
         $this->assertStringNotContainsString('prune --omit=dev', $runtime->command[2]);
         $this->assertStringNotContainsString('npm install --omit=dev', $runtime->command[2]);
     }
 
     #[Test]
-    public function it_rewrites_vite_bundled_dist_server_start_to_production_preview(): void
+    public function it_preserves_vite_bundled_dist_server_and_keeps_vite_installed(): void
     {
         $packageJson = json_encode([
             'name' => 'react-example',
@@ -242,15 +245,44 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
         );
 
         $this->assertSame('vite', $runtime->source);
+        $this->assertSame('Vite app server', $runtime->label);
         $this->assertTrue($this->service->commandLooksLikeViteBundledCustomServer('node dist/server.cjs'));
-        $this->assertTrue($this->service->shouldRewriteStartToVitePreview('node dist/server.cjs', $packageJson));
+        $this->assertFalse($this->service->shouldRewriteStartToVitePreview('node dist/server.cjs', $packageJson));
+        $this->assertStringContainsString('npm start', $runtime->command[2]);
+        $this->assertStringNotContainsString('vite preview', $runtime->command[2]);
+        $this->assertTrue($this->service->productionStartRequiresVite($packageJson));
+        $this->assertStringNotContainsString('npm install --omit=dev', $runtime->command[2]);
+        $this->assertStringNotContainsString('prune --omit=dev', $runtime->command[2]);
+    }
+
+    #[Test]
+    public function it_rewrites_bare_vite_cli_to_production_preview(): void
+    {
+        $packageJson = json_encode([
+            'scripts' => [
+                'build' => 'vite build',
+                'start' => 'vite --host 0.0.0.0',
+            ],
+            'devDependencies' => [
+                'vite' => '^5.0.0',
+            ],
+        ], JSON_THROW_ON_ERROR);
+
+        $runtime = $this->service->detectNodeFromContents(
+            null,
+            $packageJson,
+            false,
+            false,
+            false,
+            3000
+        );
+
+        $this->assertSame('vite', $runtime->source);
+        $this->assertTrue($this->service->shouldRewriteStartToVitePreview('vite --host 0.0.0.0', $packageJson));
         $this->assertStringContainsString(
             'npx vite preview --host 0.0.0.0 --port ${PORT:-3000}',
             $runtime->command[2]
         );
-        $this->assertTrue($this->service->productionStartRequiresVite($packageJson));
-        $this->assertStringNotContainsString('npm install --omit=dev', $runtime->command[2]);
-        $this->assertStringNotContainsString('prune --omit=dev', $runtime->command[2]);
     }
 
     #[Test]

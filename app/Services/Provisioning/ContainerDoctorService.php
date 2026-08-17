@@ -74,7 +74,7 @@ class ContainerDoctorService
             return ['success' => false, 'message' => 'Application is not deployed.'];
         }
 
-        // Recreating / Vite production rewrite can revive a crash-looping stack.
+        // Recreating / Vite runtime repair can revive a crash-looping stack.
         if (! $deployment->isRunning()
             && ! in_array($action, ['recreate_application', 'fix_vite_production_runtime'], true)) {
             return ['success' => false, 'message' => 'Application must be running before applying a fix.'];
@@ -1653,12 +1653,12 @@ PHP;
                     '/Cannot find module [\'"]vite[\'"]/i',
                 ],
                 'title' => 'Vite missing from production start',
-                'summary' => 'This app starts a Vite-dependent entry (`tsx server.ts` or `node dist/server.cjs`) after a production install that strips `vite`. Talksasa rewrites that to a production `vite preview` start and keeps Vite available at runtime.',
+                'summary' => 'This app’s start command needs Vite at runtime (`tsx server.ts` or `node dist/server.cjs`), but a production install stripped it. Talksasa keeps the app’s own server (so `/api` routes keep working) and reinstalls Vite plus the build.',
                 'treat_action' => 'fix_vite_production_runtime',
-                'treat_label' => 'Switch to Vite production',
+                'treat_label' => 'Repair Vite runtime',
                 'manual_steps' => [
-                    'Click Switch to Vite production — rebuilds, rewrites the start command to vite preview, and recreates the container.',
-                    'Custom API routes that only exist in the Vite middleware / dist/server entry still need a production Node entrypoint in the repo.',
+                    'Click Repair Vite runtime — rebuilds, keeps your start command, installs Vite, and recreates the container.',
+                    'No repo change is required for AI Studio / react-example style apps.',
                 ],
             ],
             [
@@ -2796,7 +2796,7 @@ PHP;
     }
 
     /**
-     * Rewrite Vite middleware/dev starts to production preview and recreate the stack.
+     * Repair Vite-dependent starts: rebuild, keep the app server (and /api routes), install Vite.
      *
      * @return array{success: bool, message: string}
      */
@@ -2812,12 +2812,12 @@ PHP;
         $hostAppPath = $containerPath.'/app';
 
         try {
-            // Drop the SPA build so container bootstrap reinstalls with build tools,
-            // runs vite build, then keeps vite for `vite preview`.
+            // Drop the SPA build so container bootstrap reinstalls with Vite present and rebuilds.
             @$ssh->exec(
                 'rm -rf '.escapeshellarg($hostAppPath.'/dist').' '
-                .escapeshellarg($hostAppPath.'/.vite'),
-                30
+                .escapeshellarg($hostAppPath.'/.vite').' '
+                .escapeshellarg($hostAppPath.'/node_modules'),
+                60
             );
 
             $message = app(ContainerDeploymentService::class)
@@ -2829,7 +2829,7 @@ PHP;
                 if (! $probe['reachable']) {
                     return [
                         // A running install/build is the expected state here: the fix drops the
-                        // stale build so the container rebuilds before `vite preview` starts.
+                        // stale install so the container rebuilds before the app server starts.
                         'success' => is_string($probe['bootstrapping']),
                         'message' => ($message !== '' ? $message.' ' : '')
                             .$this->upstreamFailureMessage($probe),
@@ -2841,10 +2841,10 @@ PHP;
                 'success' => true,
                 'message' => $message !== ''
                     ? $message
-                    : 'Switched to Vite production preview and recreated the container.',
+                    : 'Repaired Vite runtime, kept the app start command, and recreated the container.',
             ];
         } catch (\Throwable $e) {
-            return ['success' => false, 'message' => 'Vite production fix failed: '.$e->getMessage()];
+            return ['success' => false, 'message' => 'Vite runtime repair failed: '.$e->getMessage()];
         } finally {
             $ssh->disconnect();
         }

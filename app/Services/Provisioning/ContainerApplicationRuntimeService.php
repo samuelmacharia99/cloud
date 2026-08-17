@@ -79,6 +79,18 @@ class ContainerApplicationRuntimeService
                         return $this->platformNodeRuntime($platformCommand, $defaultPort, $packageJson);
                     }
 
+                    // Keep custom Vite servers (API + SPA). Install Vite; do not strip to preview.
+                    if ($this->productionStartRequiresVite($packageJson)
+                        && $this->commandLooksLikeViteDevServer($start)) {
+                        return $this->shellRuntime(
+                            'npm start',
+                            $defaultPort,
+                            'vite',
+                            'Vite app server',
+                            $this->nodeBootstrap($packageJson)
+                        );
+                    }
+
                     return $this->shellRuntime(
                         'npm start',
                         $defaultPort,
@@ -306,12 +318,14 @@ class ContainerApplicationRuntimeService
     }
 
     /**
-     * Rewrite framework start commands that hardcode a listen port/hostname or use a
-     * development middleware server that cannot survive production installs.
+     * Rewrite framework start commands that hardcode a listen port/hostname.
      *
      * Customer apps often ship:
      * - `next start -p 3001` → 502 behind our PORT mapping
-     * - `tsx server.ts` that `import 'vite'` → crash after `npm install --omit=dev`
+     * - bare `vite` (dev CLI) → rewrite to `vite preview`
+     *
+     * Vite middleware / `node dist/server.cjs` starts are NOT rewritten: those servers
+     * usually own `/api/*`. We keep their start command and install Vite at runtime.
      */
     public function platformNodeListenCommand(string $command, int $defaultPort, ?string $packageJson = null): ?string
     {
@@ -351,7 +365,7 @@ class ContainerApplicationRuntimeService
     /**
      * True when the start script is a Vite middleware / tsx-dev entry that imports Vite at runtime,
      * or a Vite template custom server under dist/ that still requires Vite after build.
-     * Those apps must be rewritten to `vite preview` after a production build.
+     * Those apps keep their start command; Talksasa installs the Vite tree so they do not crash.
      */
     public function commandLooksLikeViteDevServer(string $command): bool
     {
@@ -364,7 +378,7 @@ class ContainerApplicationRuntimeService
             return false;
         }
 
-        if (preg_match('/\bvite\b/', $normalized) && ! preg_match('/\bvite\s+build\b/', $normalized)) {
+        if ($this->commandLooksLikeBareViteCli($normalized)) {
             return true;
         }
 
@@ -389,7 +403,7 @@ class ContainerApplicationRuntimeService
 
     /**
      * Vite SPA templates that ship a custom Node server built to dist/server.* often leave
-     * `require('vite')` in the bundle. Prefer vite preview over running that server.
+     * `require('vite')` in the bundle and also expose /api routes. Keep that server; install Vite.
      */
     public function commandLooksLikeViteBundledCustomServer(string $command): bool
     {
@@ -399,6 +413,27 @@ class ContainerApplicationRuntimeService
             '/\bnode\b(?:\s+[^\s]+)*\s+[\'"]?(?:\.\/)?(?:dist|build)\/server(?:\.[cm]?js)?[\'"]?(?:\s|$)/',
             $normalized
         );
+    }
+
+    /**
+     * Bare Vite CLI (`vite`, `npx vite --host`) with no preview/build — SPA-only, safe to preview.
+     */
+    public function commandLooksLikeBareViteCli(string $command): bool
+    {
+        $normalized = strtolower(trim($command));
+        if ($normalized === '' || $this->commandLooksLikeVitePreview($normalized)) {
+            return false;
+        }
+
+        if (preg_match('/\bvite\s+build\b/', $normalized)) {
+            return false;
+        }
+
+        if (preg_match('/\b(tsx|ts-node|ts-node-esm|node)\b/', $normalized)) {
+            return false;
+        }
+
+        return (bool) preg_match('/^(?:npx\s+)?vite(?:\s|$)/', $normalized);
     }
 
     public function commandLooksLikeVitePreview(string $command): bool
@@ -416,7 +451,8 @@ class ContainerApplicationRuntimeService
             return false;
         }
 
-        return $this->commandLooksLikeViteDevServer($command);
+        // Only rewrite the bare Vite CLI. Preserve custom servers that own /api routes.
+        return $this->commandLooksLikeBareViteCli($command);
     }
 
     public function productionStartRequiresVite(?string $packageJson): bool
@@ -428,6 +464,11 @@ class ContainerApplicationRuntimeService
         $start = $this->packageJsonStartScript($packageJson);
         if ($start === null) {
             return false;
+        }
+
+        if ($this->commandLooksLikeVitePreview($start)
+            || $this->commandLooksLikeViteDevServer($start)) {
+            return true;
         }
 
         $platform = $this->platformNodeListenCommand($start, 3000, $packageJson);
@@ -1153,9 +1194,8 @@ class ContainerApplicationRuntimeService
         $prepareStep = $this->nodeBuildPrepareEnabled()
             ? '[ -f .talksasa/prepare-build.cjs ] && node .talksasa/prepare-build.cjs && '
             : '';
-        // `vite preview` boots through vite.config, which imports vite itself plus plugins
-        // like @vitejs/plugin-react — all devDependencies. Pruning them is what crash-loops
-        // these apps, so Vite runtimes keep their dev tree instead of reinstalling pieces.
+        // `vite preview` and Vite custom servers (tsx / dist/server.cjs) import vite + plugins
+        // from devDependencies. Pruning them crash-loops the container, so keep the full tree.
         $keepDevDependencies = $this->productionStartRequiresVite($packageJson);
         $steadyStateInstall = $keepDevDependencies
             ? $this->npmDevInstallShellCommand($packageJson)
