@@ -108,8 +108,19 @@
 
         <hr class="border-slate-200 dark:border-slate-700">
 
+        @if(! empty($registry['message']))
+            <div class="p-4 rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 text-sm text-amber-900 dark:text-amber-200">
+                {{ $registry['message'] }}
+            </div>
+        @endif
+
         <div>
-            <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-1">Nameservers</h2>
+            <div class="flex items-start justify-between gap-3 mb-1">
+                <h2 class="text-lg font-bold text-slate-900 dark:text-white">Nameservers</h2>
+                @if(! empty($registry['nameservers_live']))
+                    <span class="shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200">Live from Cosmotown</span>
+                @endif
+            </div>
             <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">
                 At least two unique nameservers are required. When this domain is linked at the registrar, saving pushes the change there (including Cosmotown). DNS can take up to 48 hours to propagate.
             </p>
@@ -124,7 +135,7 @@
                                 id="{{ $field }}"
                                 type="text"
                                 name="{{ $field }}"
-                                value="{{ old($field, $domain->{$field}) }}"
+                                value="{{ old($field, $nameservers[$field] ?? $domain->{$field}) }}"
                                 placeholder="ns1.example.com"
                                 class="w-full px-3 py-2 font-mono text-sm border rounded-lg bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 text-slate-900 dark:text-white @error($field) border-red-500 @enderror"
                                 @if(in_array($field, ['nameserver_1', 'nameserver_2'], true)) required @endif
@@ -139,6 +150,49 @@
                     Save nameservers
                 </button>
             </form>
+        </div>
+
+        <hr class="border-slate-200 dark:border-slate-700">
+
+        <div x-data="{ revealed: false, copied: false }">
+            <div class="flex items-start justify-between gap-3 mb-1">
+                <h2 class="text-lg font-bold text-slate-900 dark:text-white">EPP / auth code</h2>
+                @if(! empty($registry['epp_live']))
+                    <span class="shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200">Live from Cosmotown</span>
+                @endif
+            </div>
+            <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                Pulled from Cosmotown when this domain is in that account. Anyone with the code can start a transfer — keep it private.
+            </p>
+            @if(filled($eppCode))
+                <div class="flex flex-col sm:flex-row sm:items-center gap-2">
+                    <p class="flex-1 px-3 py-2 font-mono text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white break-all">
+                        <span x-show="!revealed">••••••••••••</span>
+                        <span x-show="revealed" x-cloak>{{ $eppCode }}</span>
+                    </p>
+                    <div class="flex gap-2 shrink-0">
+                        <button type="button" @click="revealed = !revealed" class="px-3 py-2 text-sm font-medium rounded-lg border border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800">
+                            <span x-text="revealed ? 'Hide' : 'Reveal'"></span>
+                        </button>
+                        <button type="button"
+                            @click="navigator.clipboard.writeText(@js($eppCode)); copied = true; setTimeout(() => copied = false, 2000)"
+                            class="px-3 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white">
+                            <span x-text="copied ? 'Copied' : 'Copy'"></span>
+                        </button>
+                    </div>
+                </div>
+                @if(empty($registry['epp_live']))
+                    <p class="text-xs text-slate-500 mt-2">Last saved authorization code for this domain.</p>
+                @endif
+            @else
+                <p class="text-sm text-slate-500">
+                    @if(! empty($registry['attempted']))
+                        Cosmotown did not return an authorization code for this domain. If the domain is locked, unlock it and reload this page.
+                    @else
+                        An EPP / auth code appears here after the domain is registered at Cosmotown.
+                    @endif
+                </p>
+            @endif
         </div>
 
         @if ($domain->notes)

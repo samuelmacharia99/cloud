@@ -229,9 +229,14 @@ class DomainController extends Controller
 
     public function show(Domain $domain)
     {
+        $registry = app(RegistrarFulfillmentService::class)->refreshLiveRegistryDetails($domain);
+
         $domain->load('user', 'domainExtension', 'dnsZones');
 
-        return view('admin.domains.show', compact('domain'));
+        $nameservers = $registry['nameservers'];
+        $eppCode = $registry['epp_code'];
+
+        return view('admin.domains.show', compact('domain', 'nameservers', 'eppCode', 'registry'));
     }
 
     public function updateNameservers(Request $request, Domain $domain)
