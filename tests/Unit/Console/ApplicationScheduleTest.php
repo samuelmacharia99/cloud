@@ -75,11 +75,38 @@ class ApplicationScheduleTest extends TestCase
         );
     }
 
+    public function test_local_environment_skips_live_status_sync_even_with_heal_flag(): void
+    {
+        Config::set('scheduler.enabled', true);
+        $this->app->detectEnvironment(fn () => 'local');
+
+        CronJob::create([
+            'name' => 'Sync Service Live Status',
+            'description' => 'Test',
+            'command' => 'cron:sync-service-live-status --heal',
+            'schedule' => '*/15 * * * *',
+            'enabled' => true,
+        ]);
+
+        $schedule = app(Schedule::class);
+        app(ApplicationSchedule::class)->configure($schedule);
+
+        $commands = collect($schedule->events())
+            ->map(fn ($event) => (string) ($event->command ?? $event->description ?? ''))
+            ->all();
+
+        $this->assertFalse(
+            collect($commands)->contains(fn ($cmd) => str_contains($cmd, 'cron:sync-service-live-status')),
+            'Live status probes should be skipped in local'
+        );
+    }
+
     public function test_backup_dispatch_uses_bounded_overlap_mutex(): void
     {
         $schedule = app(ApplicationSchedule::class);
 
         $this->assertSame(15, $schedule->overlapExpiresMinutes('cron:backup-containers'));
+        $this->assertSame(20, $schedule->overlapExpiresMinutes('cron:sync-service-live-status --heal'));
         $this->assertSame(60, $schedule->overlapExpiresMinutes('cron:mark-invoices-overdue'));
     }
 

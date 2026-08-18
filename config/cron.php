@@ -23,6 +23,13 @@ return [
         // Runs every minute; each customer job is capped, but a full batch can
         // still take a few minutes when SSH is slow.
         'cron:run-container-jobs' => 600,
+        // Probes DirectAdmin + Docker for up to 100 services; a slow node is
+        // expected to take several minutes. The command stops at live_status.max_runtime_seconds.
+        'cron:sync-service-live-status' => 900,
+        // Six SSH commands per node every two minutes.
+        'cron:poll-node-health' => 300,
+        // Compose restarts wait up to 120s each.
+        'cron:auto-restart-containers' => 600,
     ],
 
     /*
@@ -42,6 +49,9 @@ return [
         'cron:reconcile-directadmin-hosted-accounts' => 45,
         'cron:collect-container-metrics' => 5,
         'cron:run-container-jobs' => 15,
+        'cron:sync-service-live-status' => 20,
+        'cron:poll-node-health' => 5,
+        'cron:auto-restart-containers' => 15,
     ],
 
     /*
@@ -62,6 +72,12 @@ return [
         // Full-tree `du` is expensive; reuse the last disk sample between intervals.
         'disk_interval_minutes' => 55,
         'warning_cooldown_minutes' => 30,
+    ],
+
+    'live_status' => [
+        // Stop starting new probes so the 15-minute cadence can continue
+        // oldest-first instead of hanging the worker on a 100-service batch.
+        'max_runtime_seconds' => 240,
     ],
 
 ];

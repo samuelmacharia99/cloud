@@ -7,6 +7,7 @@ use App\Models\Service;
 use App\Services\Provisioning\ContainerDeploymentService;
 use App\Services\Provisioning\DirectAdminService;
 use App\Support\ServiceLiveStatusResult;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
@@ -44,13 +45,29 @@ class ServiceStatusSyncService
     }
 
     /**
-     * @return array{checked: int, mismatches: int, errors: int}
+     * @return array{checked: int, mismatches: int, errors: int, deferred: int}
      */
-    public function syncMany(iterable $services, bool $applyHealing = false): array
+    public function syncMany(iterable $services, bool $applyHealing = false, ?Carbon $deadline = null): array
     {
-        $summary = ['checked' => 0, 'mismatches' => 0, 'errors' => 0];
+        $summary = ['checked' => 0, 'mismatches' => 0, 'errors' => 0, 'deferred' => 0];
+        $remaining = is_countable($services) ? count($services) : null;
+        $index = 0;
 
         foreach ($services as $service) {
+            if ($deadline && now()->greaterThanOrEqualTo($deadline)) {
+                $summary['deferred'] = $remaining !== null
+                    ? max(0, $remaining - $index)
+                    : $summary['deferred'] + 1;
+
+                if ($remaining !== null) {
+                    break;
+                }
+
+                continue;
+            }
+
+            $index++;
+
             try {
                 $result = $this->sync($service, $applyHealing);
                 $summary['checked']++;

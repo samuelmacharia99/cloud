@@ -7,6 +7,7 @@ use App\Models\Node;
 use App\Models\Service;
 use App\Models\User;
 use App\Services\Provisioning\DirectAdminService;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -450,5 +451,43 @@ class DirectAdminServiceTest extends TestCase
         $da = DirectAdminService::forResellerAccount($node, 'res_acme', 'reseller-key');
 
         $this->assertTrue($da->usesDirectResellerAuth());
+    }
+
+    public function test_get_account_live_status_uses_a_single_user_config_call(): void
+    {
+        Http::fake([
+            '*' => Http::response('error=0&suspended=no&domain=example.com&package=Bronze', 200),
+        ]);
+
+        $status = (new DirectAdminService($this->createDirectAdminNode()))
+            ->getAccountLiveStatus('cust001');
+
+        $this->assertSame('active', $status['live_status']);
+        Http::assertSentCount(1);
+    }
+
+    public function test_get_account_live_status_treats_missing_user_as_terminated(): void
+    {
+        Http::fake([
+            '*' => Http::response('error=1&text=The%20user%20does%20not%20exist', 200),
+        ]);
+
+        $status = (new DirectAdminService($this->createDirectAdminNode()))
+            ->getAccountLiveStatus('goneuser');
+
+        $this->assertSame('terminated', $status['live_status']);
+    }
+
+    public function test_get_account_live_status_treats_timeouts_as_unknown_not_terminated(): void
+    {
+        Http::fake(function () {
+            throw new ConnectionException('cURL error 28: Timeout was reached');
+        });
+
+        $status = (new DirectAdminService($this->createDirectAdminNode()))
+            ->getAccountLiveStatus('cust001');
+
+        $this->assertSame('unknown', $status['live_status']);
+        $this->assertStringContainsString('Timeout', $status['label']);
     }
 }

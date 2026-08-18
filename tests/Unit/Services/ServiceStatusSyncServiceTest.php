@@ -77,6 +77,31 @@ class ServiceStatusSyncServiceTest extends TestCase
         $this->assertFalse($service->live_status_mismatch);
     }
 
+    public function test_sync_many_defers_remaining_services_when_deadline_has_passed(): void
+    {
+        $product = Product::factory()->create([
+            'type' => 'container_hosting',
+            'provisioning_driver_key' => 'container',
+        ]);
+        $services = collect([
+            Service::factory()->create([
+                'product_id' => $product->id,
+                'status' => ServiceStatus::Pending,
+                'provisioning_driver_key' => 'container',
+            ]),
+            Service::factory()->create([
+                'product_id' => $product->id,
+                'status' => ServiceStatus::Pending,
+                'provisioning_driver_key' => 'container',
+            ]),
+        ]);
+
+        $summary = $this->sync->syncMany($services, false, now()->subSecond());
+
+        $this->assertSame(0, $summary['checked']);
+        $this->assertSame(2, $summary['deferred']);
+    }
+
     private function makeService(ServiceStatus $status): Service
     {
         $product = Product::factory()->create([

@@ -121,7 +121,11 @@ class ApplicationSchedule
             return true;
         }
 
-        return ! in_array($job->command, config('scheduler.skip_in_local', []), true);
+        $skip = config('scheduler.skip_in_local', []);
+        $commandName = trim(explode(' ', $job->command)[0] ?? '');
+
+        return ! in_array($job->command, $skip, true)
+            && ! in_array($commandName, $skip, true);
     }
 
     /**

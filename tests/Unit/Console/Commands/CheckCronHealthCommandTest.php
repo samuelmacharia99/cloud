@@ -28,12 +28,40 @@ class CheckCronHealthCommandTest extends TestCase
 
     public function test_hang_threshold_ignores_command_options(): void
     {
-        config()->set('cron.hang_thresholds.cron:sync-service-live-status', 900);
-
         $command = new CheckCronHealthCommand;
         $job = new CronJob(['command' => 'cron:sync-service-live-status --heal']);
 
         $this->assertSame(900, $command->maxRuntimeSeconds($job, 120));
+    }
+
+    public function test_live_status_sync_running_under_threshold_is_not_marked_hung(): void
+    {
+        Setting::updateOrCreate(
+            ['key' => 'max_execution_time'],
+            ['value' => '120', 'description' => 'test']
+        );
+
+        $job = CronJob::create([
+            'name' => 'Sync Service Live Status',
+            'command' => 'cron:sync-service-live-status --heal',
+            'schedule' => '*/15 * * * *',
+            'enabled' => true,
+        ]);
+
+        CronJobLog::create([
+            'cron_job_id' => $job->id,
+            'status' => 'running',
+            'started_at' => now()->subSeconds(303),
+        ]);
+
+        $this->artisan('cron:check-health')
+            ->assertSuccessful()
+            ->expectsOutputToContain('no issues detected');
+
+        $this->assertDatabaseHas('cron_job_logs', [
+            'cron_job_id' => $job->id,
+            'status' => 'running',
+        ]);
     }
 
     public function test_backup_dispatch_uses_bounded_hang_threshold(): void

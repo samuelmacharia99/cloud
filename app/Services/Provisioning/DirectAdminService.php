@@ -477,19 +477,20 @@ class DirectAdminService
             ];
         }
 
-        if (! $this->accountExists($username)) {
-            return [
-                'live_status' => 'terminated',
-                'label' => 'Account not found on DirectAdmin',
-                'detail' => ['username' => $username],
-            ];
-        }
-
         $config = $this->executeAdminApiCall('CMD_API_SHOW_USER_CONFIG', ['user' => $username]);
         if (! $config['success']) {
+            $message = (string) ($config['message'] ?? '');
+            if ($this->isMissingDirectAdminUserMessage($message)) {
+                return [
+                    'live_status' => 'terminated',
+                    'label' => 'Account not found on DirectAdmin',
+                    'detail' => ['username' => $username],
+                ];
+            }
+
             return [
                 'live_status' => 'unknown',
-                'label' => $config['message'] ?? 'Could not read DirectAdmin account',
+                'label' => $message !== '' ? $message : 'Could not read DirectAdmin account',
                 'detail' => [],
             ];
         }
@@ -540,6 +541,19 @@ class DirectAdminService
     private function isDirectAdminSuspendedFlag(mixed $value): bool
     {
         return in_array(strtolower(trim((string) $value)), ['yes', '1', 'on', 'true'], true);
+    }
+
+    private function isMissingDirectAdminUserMessage(string $message): bool
+    {
+        $haystack = strtolower($message);
+
+        foreach (['does not exist', 'no such user', 'unable to find user', 'user not found', 'invalid user'] as $needle) {
+            if (str_contains($haystack, $needle)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

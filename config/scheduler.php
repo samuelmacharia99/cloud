@@ -53,6 +53,7 @@ return [
         'cron:provision-pending-mailcow',
         'directadmin:provision-pending',
         'cron:provision-reseller-ssl',
+        'cron:sync-service-live-status',
     ],
 
     /*
