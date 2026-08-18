@@ -10,6 +10,7 @@ use App\Services\Registrar\Cosmotown\CosmotownException;
 use App\Services\Registrar\Drivers\CosmotownRegistrarDriver;
 use App\Services\Registrar\RegistrarManager;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -77,16 +78,19 @@ class CosmotownRegistrarDriverTest extends TestCase
         });
     }
 
-    public function test_client_maps_403_to_cosmotown_exception(): void
+    public function test_client_maps_403_to_cosmotown_exception_with_outbound_ip(): void
     {
+        Cache::flush();
         Http::fake([
             'sandbox.cosmotown.com/v1/reseller/domainepp*' => Http::response([
-                'error_message' => 'API key is invalid or IP is not whitelisted.',
+                'error_message' => 'Your IP is not whitelisted',
             ], 403),
+            'api.ipify.org*' => Http::response(['ip' => '203.0.113.10']),
+            'api64.ipify.org*' => Http::response(['ip' => '203.0.113.10']),
         ]);
 
         $this->expectException(CosmotownException::class);
-        $this->expectExceptionMessage('API key is invalid or IP is not whitelisted.');
+        $this->expectExceptionMessage('Your IP is not whitelisted. Whitelist this app server\'s public IP in Cosmotown Reseller API settings: 203.0.113.10.');
 
         CosmotownClient::forRegistrar($this->makeRegistrar())->getDomainAuthCode('example.com');
     }
@@ -165,19 +169,23 @@ class CosmotownRegistrarDriverTest extends TestCase
         CosmotownClient::forRegistrar($this->makeRegistrar([], 'production'))->listDomains(5, 0);
     }
 
-    public function test_test_connection_fails_on_403(): void
+    public function test_test_connection_fails_on_403_and_names_the_outbound_ip(): void
     {
+        Cache::flush();
         Http::fake([
             'sandbox.cosmotown.com/v1/reseller/listdomains*' => Http::response([
-                'error_message' => 'Unauthorized',
+                'error_message' => 'Your IP is not whitelisted',
             ], 403),
+            'api.ipify.org*' => Http::response(['ip' => '198.51.100.20']),
+            'api64.ipify.org*' => Http::response(['ip' => '198.51.100.20']),
         ]);
 
         $driver = new CosmotownRegistrarDriver;
         $result = $driver->testConnection($this->makeRegistrar());
 
         $this->assertFalse($result['success']);
-        $this->assertSame('Unauthorized', $result['message']);
+        $this->assertStringContainsString('Your IP is not whitelisted', $result['message']);
+        $this->assertStringContainsString('198.51.100.20', $result['message']);
     }
 
     public function test_get_domain_auth_code_via_driver(): void

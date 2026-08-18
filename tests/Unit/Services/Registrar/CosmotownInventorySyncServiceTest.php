@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\Registrar\Cosmotown\CosmotownClient;
 use App\Services\Registrar\CosmotownInventorySyncService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -137,5 +138,24 @@ class CosmotownInventorySyncServiceTest extends TestCase
         $this->assertSame('suspended', $domain->status);
         $this->assertSame('2028-01-01', $domain->expires_at?->toDateString());
         $this->assertSame('ns1.talksasa.com', $domain->nameserver_1);
+    }
+
+    public function test_sync_reports_whitelist_failure_with_outbound_ip(): void
+    {
+        Cache::flush();
+        Http::fake([
+            'www.cosmotown.com/v1/reseller/listdomains*' => Http::response([
+                'error_message' => 'Your IP is not whitelisted',
+            ], 403),
+            'api.ipify.org*' => Http::response(['ip' => '192.0.2.80']),
+            'api64.ipify.org*' => Http::response(['ip' => '192.0.2.80']),
+        ]);
+
+        $result = app(CosmotownInventorySyncService::class)->sync($this->makeRegistrar());
+
+        $this->assertFalse($result['success']);
+        $this->assertSame(0, $result['fetched']);
+        $this->assertStringContainsString('Your IP is not whitelisted', $result['message']);
+        $this->assertStringContainsString('192.0.2.80', $result['message']);
     }
 }

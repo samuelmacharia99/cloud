@@ -20,7 +20,7 @@
             <div>
                 <h2 class="text-xl font-semibold text-slate-900 dark:text-white">Domain registrars</h2>
                 <p class="mt-1 text-sm text-slate-600 dark:text-slate-400 max-w-2xl">
-                    Connect Cosmotown Reseller API for wholesale registration, renewal, transfer, nameservers, and EPP codes. Assign TLDs to Cosmotown (Kenya <code class="text-xs">*.ke</code> stays manual unless you add another registrar). Nameservers come from the customer&apos;s hosting node when linked, otherwise platform defaults. Switch this registrar to <strong>production</strong> and whitelist the app server IP before live orders.
+                    Connect Cosmotown Reseller API for wholesale registration, renewal, transfer, nameservers, and EPP codes. Assign TLDs to Cosmotown (Kenya <code class="text-xs">*.ke</code> stays manual unless you add another registrar). Nameservers come from the customer&apos;s hosting node when linked, otherwise platform defaults. Switch this registrar to <strong>production</strong> and whitelist this app server&apos;s public IPv4 in Cosmotown Reseller API settings before live orders. Test Connection names the IP Cosmotown must allow.
                 </p>
             </div>
             <button type="button" @click="openCreate()" class="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors">

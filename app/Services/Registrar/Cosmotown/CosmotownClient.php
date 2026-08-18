@@ -5,6 +5,7 @@ namespace App\Services\Registrar\Cosmotown;
 use App\Models\Registrar;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
 class CosmotownClient
@@ -253,6 +254,7 @@ class CosmotownClient
         return Http::timeout(30)
             ->acceptJson()
             ->asJson()
+            ->withOptions(['force_ip_resolve' => 'v4'])
             ->withHeaders([
                 'X-API-TOKEN' => $token,
             ]);
@@ -280,10 +282,10 @@ class CosmotownClient
 
         $status = $response->status();
 
-        if ($status === 403) {
+        if (in_array($status, [401, 403], true)) {
             throw new CosmotownException(
-                $this->errorMessage($payload, 'Unauthorized. API key is invalid or IP is not whitelisted.'),
-                403,
+                $this->unauthorizedMessage($payload),
+                $status,
                 $payload
             );
         }
@@ -358,6 +360,72 @@ class CosmotownClient
         }
 
         return $fallback;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function unauthorizedMessage(array $payload): string
+    {
+        $message = rtrim($this->errorMessage(
+            $payload,
+            'Unauthorized. API key is invalid or IP is not whitelisted.'
+        ), '.');
+
+        return $message.'. '.$this->outboundIpHint();
+    }
+
+    private function outboundIpHint(): string
+    {
+        $ips = $this->detectOutboundIps();
+        if ($ips === []) {
+            return 'Whitelist this app server\'s public IPv4 in Cosmotown Reseller API settings.';
+        }
+
+        return 'Whitelist this app server\'s public IP in Cosmotown Reseller API settings: '.implode(', ', $ips).'.';
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function detectOutboundIps(): array
+    {
+        $ips = [];
+
+        foreach ([
+            'https://api.ipify.org?format=json',
+            'https://api64.ipify.org?format=json',
+        ] as $url) {
+            $ip = $this->lookupPublicIp($url);
+            if ($ip !== null && ! in_array($ip, $ips, true)) {
+                $ips[] = $ip;
+            }
+        }
+
+        return $ips;
+    }
+
+    private function lookupPublicIp(string $url): ?string
+    {
+        $cacheKey = 'cosmotown.egress.'.md5($url);
+        $cached = Cache::get($cacheKey);
+        if (is_string($cached) && filter_var($cached, FILTER_VALIDATE_IP)) {
+            return $cached;
+        }
+
+        try {
+            $ip = trim((string) Http::timeout(3)->acceptJson()->get($url)->json('ip'));
+        } catch (\Throwable) {
+            return null;
+        }
+
+        if (! filter_var($ip, FILTER_VALIDATE_IP)) {
+            return null;
+        }
+
+        Cache::put($cacheKey, $ip, now()->addHours(6));
+
+        return $ip;
     }
 
     private function normalizeDomain(string $domain): string
