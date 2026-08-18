@@ -233,6 +233,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/nodes/{node}/detach-services', [NodeController::class, 'detachServices'])->name('admin.nodes.detach-services');
         Route::delete('admin/nodes/{node}', [NodeController::class, 'delete'])->name('admin.nodes.delete');
         Route::resource('admin/domains', DomainController::class)->names('admin.domains');
+        Route::post('admin/domains/sync-cosmotown', [DomainController::class, 'syncCosmotownInventory'])->name('admin.domains.sync-cosmotown');
         Route::post('admin/domains/{domain}/generate-invoice', [DomainController::class, 'generateInvoice'])->name('admin.domains.generate-invoice');
         Route::get('admin/domains-pricing', [DomainController::class, 'pricing'])->name('admin.domains.pricing');
         Route::post('admin/domains-pricing', [DomainController::class, 'storePricing'])->name('admin.domains.pricing.store');
@@ -291,6 +292,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::put('admin/registrars/{registrar}', [RegistrarController::class, 'update'])->name('admin.registrars.update');
         Route::delete('admin/registrars/{registrar}', [RegistrarController::class, 'destroy'])->name('admin.registrars.destroy');
         Route::post('admin/registrars/{registrar}/test', [RegistrarController::class, 'test'])->name('admin.registrars.test');
+        Route::post('admin/registrars/{registrar}/sync-inventory', [RegistrarController::class, 'syncInventory'])->name('admin.registrars.sync-inventory');
 
         // Manual Payment Settings
         Route::get('admin/manual-payment', [ManualPaymentController::class, 'index'])->name('admin.manual-payment.index');

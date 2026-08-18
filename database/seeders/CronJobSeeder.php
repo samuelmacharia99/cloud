@@ -312,6 +312,13 @@ class CronJobSeeder extends Seeder
                 'enabled' => true,
             ],
             [
+                'name' => 'Cosmotown Inventory Sync',
+                'description' => 'Updates Admin → Domains with live Cosmotown expiry dates and nameservers for domains already in the database.',
+                'command' => 'registrar:sync-cosmotown-inventory',
+                'schedule' => '0 */6 * * *',
+                'enabled' => true,
+            ],
+            [
                 'name' => 'Telegram Log Monitor',
                 'description' => 'Scans Laravel logs and sends new errors to Telegram.',
                 'command' => 'telegram:monitor-logs',

@@ -6,6 +6,7 @@ use App\Enums\RegistrarDriver;
 use App\Http\Controllers\Controller;
 use App\Models\DomainExtension;
 use App\Models\Registrar;
+use App\Services\Registrar\CosmotownInventorySyncService;
 use App\Services\Registrar\RegistrarManager;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -120,6 +121,23 @@ class RegistrarController extends Controller
         }
 
         $key = $result['success'] ? 'success' : 'error';
+
+        return redirect()
+            ->route('admin.settings.index', ['tab' => 'registrars'])
+            ->with($key, $result['message']);
+    }
+
+    public function syncInventory(Request $request, Registrar $registrar): RedirectResponse|JsonResponse
+    {
+        $this->authorize('update', $registrar);
+
+        $result = app(CosmotownInventorySyncService::class)->sync($registrar);
+
+        if ($request->expectsJson()) {
+            return response()->json($result, $result['success'] || $result['fetched'] > 0 ? 200 : 422);
+        }
+
+        $key = ($result['success'] || $result['updated'] > 0) ? 'success' : 'error';
 
         return redirect()
             ->route('admin.settings.index', ['tab' => 'registrars'])

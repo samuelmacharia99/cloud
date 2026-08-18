@@ -10,6 +10,7 @@ use App\Models\DomainRenewalOrder;
 use App\Services\DomainActivationService;
 use App\Services\DomainRenewalService;
 use App\Services\NotificationService;
+use App\Services\Registrar\CosmotownInventorySyncService;
 use Illuminate\Http\Request;
 
 class DomainController extends Controller
@@ -93,8 +94,9 @@ class DomainController extends Controller
         $extensions = DomainExtension::where('enabled', true)->orderBy('extension')->pluck('extension');
         $statuses = ['active', 'expired', 'suspended'];
         $registrars = Domain::distinct()->pluck('registrar')->filter()->sort();
+        $cosmotownRegistrar = app(CosmotownInventorySyncService::class)->activeCosmotownRegistrar();
 
-        return view('admin.domains.index', compact('domains', 'extensions', 'statuses', 'registrars'));
+        return view('admin.domains.index', compact('domains', 'extensions', 'statuses', 'registrars', 'cosmotownRegistrar'));
     }
 
     public function pricing(Request $request)
@@ -109,6 +111,18 @@ class DomainController extends Controller
         }
 
         return view('admin.domains.pricing', compact('extensions', 'periods', 'selectedExtension'));
+    }
+
+    public function syncCosmotownInventory(CosmotownInventorySyncService $sync)
+    {
+        $this->authorize('viewAny', Domain::class);
+
+        $result = $sync->sync();
+        $key = ($result['success'] || $result['updated'] > 0) ? 'success' : 'error';
+
+        return redirect()
+            ->route('admin.domains.index')
+            ->with($key, $result['message']);
     }
 
     public function storePricing(Request $request)

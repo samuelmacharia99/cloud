@@ -14,12 +14,22 @@
             <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Domains & Pricing</h1>
             <p class="text-slate-600 dark:text-slate-400 mt-1">Manage registered domains and configure pricing.</p>
         </div>
-        <a href="{{ route('admin.domains.pricing') }}" class="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition">
+        <div class="flex items-center gap-3">
+            @if (! empty($cosmotownRegistrar))
+                <form method="POST" action="{{ route('admin.domains.sync-cosmotown') }}" data-confirm="Update expiry dates and nameservers on matching Admin → Domains from Cosmotown? This does not create new customer domains.">
+                    @csrf
+                    <button type="submit" class="px-6 py-3 bg-slate-700 hover:bg-slate-800 text-white font-medium rounded-lg transition">
+                        Sync from Cosmotown
+                    </button>
+                </form>
+            @endif
+            <a href="{{ route('admin.domains.pricing') }}" class="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition">
             <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
             </svg>
             Pricing
         </a>
+        </div>
     </div>
 
     <!-- Filters -->

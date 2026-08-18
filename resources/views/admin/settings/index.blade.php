@@ -2310,6 +2310,7 @@
             saving: false,
             formError: '',
             testingId: null,
+            syncingId: null,
             testBanner: { message: '', success: false },
 
             get selectedDriver() {
@@ -2444,6 +2445,36 @@
                     this.testBanner = { success: false, message: `${registrar.name}: ${error.message}` };
                 } finally {
                     this.testingId = null;
+                }
+            },
+
+            async syncInventory(registrar) {
+                if (! confirm('Update expiry dates and nameservers on matching Admin → Domains from Cosmotown? This does not create new customer domains.')) {
+                    return;
+                }
+
+                this.syncingId = registrar.id;
+                this.testBanner = { message: '', success: false };
+
+                try {
+                    const response = await fetch(this.routeFor(this.routes.syncInventory, registrar.id), {
+                        method: 'POST',
+                        headers: {
+                            'Accept': 'application/json',
+                            'X-CSRF-TOKEN': settingsCsrfToken(),
+                            'X-Requested-With': 'XMLHttpRequest',
+                        },
+                    });
+
+                    const data = await response.json();
+                    this.testBanner = {
+                        success: !! data.success || (data.updated || 0) > 0,
+                        message: `${registrar.name}: ${data.message || 'Inventory sync finished.'}`,
+                    };
+                } catch (error) {
+                    this.testBanner = { success: false, message: `${registrar.name}: ${error.message}` };
+                } finally {
+                    this.syncingId = null;
                 }
             },
 

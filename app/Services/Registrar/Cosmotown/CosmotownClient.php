@@ -59,12 +59,33 @@ class CosmotownClient
             'offset' => max(0, $offset),
         ]);
 
-        $domains = $payload['domains'] ?? [];
+        $domains = $payload['domains'] ?? null;
+        if (! is_array($domains) && array_is_list($payload)) {
+            $domains = $payload;
+        }
         if (! is_array($domains)) {
             $domains = [];
         }
 
-        return ['domains' => array_values($domains)];
+        return ['domains' => array_values(array_filter($domains, 'is_array'))];
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function listAllDomains(int $pageSize = 100): array
+    {
+        $all = [];
+        $offset = 0;
+        $pageSize = max(1, min(100, $pageSize));
+
+        do {
+            $page = $this->listDomains($pageSize, $offset);
+            $all = array_merge($all, $page['domains']);
+            $offset += $pageSize;
+        } while (count($page['domains']) === $pageSize);
+
+        return $all;
     }
 
     /**

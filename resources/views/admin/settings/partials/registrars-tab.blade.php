@@ -12,6 +12,7 @@
         'update' => route('admin.registrars.update', ['registrar' => '__ID__']),
         'destroy' => route('admin.registrars.destroy', ['registrar' => '__ID__']),
         'test' => route('admin.registrars.test', ['registrar' => '__ID__']),
+        'syncInventory' => route('admin.registrars.sync-inventory', ['registrar' => '__ID__']),
     ],
 ]))">
     <div class="ui-card p-6 sm:p-8">
@@ -42,6 +43,10 @@
                 <p class="mt-1 text-2xl font-semibold text-slate-900 dark:text-white" x-text="registrars.reduce((sum, r) => sum + r.tld_count, 0)"></p>
             </div>
         </div>
+
+        <div x-show="testBanner.message" x-cloak class="mb-6 rounded-lg border px-4 py-3 text-sm"
+             :class="testBanner.success ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-900 dark:text-emerald-100' : 'border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 text-red-900 dark:text-red-100'"
+             x-text="testBanner.message"></div>
 
         <template x-if="registrars.length === 0">
             <div class="rounded-lg border border-dashed border-slate-300 dark:border-slate-700 p-10 text-center">
@@ -102,6 +107,7 @@
                                 <td class="px-4 py-3">
                                     <div class="flex items-center justify-end gap-2">
                                         <button type="button" @click="testRegistrar(registrar)" :disabled="testingId === registrar.id" class="text-xs px-2.5 py-1.5 rounded-md border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50" x-text="testingId === registrar.id ? 'Testing…' : 'Test'"></button>
+                                        <button type="button" x-show="registrar.driver === 'cosmotown'" @click="syncInventory(registrar)" :disabled="syncingId === registrar.id" class="text-xs px-2.5 py-1.5 rounded-md border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50" x-text="syncingId === registrar.id ? 'Syncing…' : 'Sync domains'"></button>
                                         <button type="button" @click="openEdit(registrar)" class="text-xs px-2.5 py-1.5 rounded-md border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">Edit</button>
                                         <button type="button" @click="deleteRegistrar(registrar)" class="text-xs px-2.5 py-1.5 rounded-md border border-red-200 dark:border-red-900 text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/30">Delete</button>
                                     </div>
