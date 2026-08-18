@@ -38,12 +38,12 @@ class AdminCosmotownInventorySyncTest extends TestCase
         ]);
 
         Http::fake([
-            'cosmotown.com/v1/reseller/listdomains*' => Http::response([
+            'www.cosmotown.com/v1/reseller/listdomains*' => Http::response([
                 'domains' => [
                     ['domain' => 'shop.com', 'expiration_date' => '2027-12-01'],
                 ],
             ], 200),
-            'cosmotown.com/v1/reseller/domaininfo*' => Http::response([
+            'www.cosmotown.com/v1/reseller/domaininfo*' => Http::response([
                 'domain' => 'shop.com',
                 'expiration_date' => '2027-12-01',
                 'nameservers' => ['ns1.talksasa.com', 'ns2.talksasa.com'],

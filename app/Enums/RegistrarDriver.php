@@ -49,7 +49,7 @@ enum RegistrarDriver: string
             self::Cosmotown => [
                 ['key' => 'api_token', 'label' => 'API token', 'type' => 'password', 'help' => 'X-API-TOKEN from Cosmotown Reseller API settings. Whitelist this server IP.'],
                 ['key' => 'api_secret', 'label' => 'API secret (optional)', 'type' => 'password', 'help' => 'Optional — Cosmotown docs mention a secret for production keys.'],
-                ['key' => 'api_base_url', 'label' => 'API base URL (optional)', 'type' => 'url', 'placeholder' => 'Leave blank for sandbox/production default'],
+                ['key' => 'api_base_url', 'label' => 'API base URL (optional)', 'type' => 'url', 'placeholder' => 'Leave blank for sandbox/production default', 'help' => 'Production default is https://www.cosmotown.com/v1/. Leave blank unless Cosmotown gave you a different host.'],
                 ['key' => 'coupon_id', 'label' => 'Coupon ID (optional)', 'type' => 'text', 'help' => 'Passed on register when Cosmotown issued you a reseller coupon.'],
                 ['key' => 'contact_first_name', 'label' => 'Contact first name', 'type' => 'text', 'help' => 'Default contact used for /v1/reseller/contactinfo (all roles).'],
                 ['key' => 'contact_last_name', 'label' => 'Contact last name', 'type' => 'text'],

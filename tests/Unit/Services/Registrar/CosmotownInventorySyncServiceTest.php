@@ -77,13 +77,13 @@ class CosmotownInventorySyncServiceTest extends TestCase
         ]);
 
         Http::fake([
-            'cosmotown.com/v1/reseller/listdomains*' => Http::response([
+            'www.cosmotown.com/v1/reseller/listdomains*' => Http::response([
                 'domains' => [
                     ['domain' => 'example.com', 'expiration_date' => '2027-08-18'],
                     ['domain' => 'only-at-cosmotown.com', 'expiration_date' => '2027-01-01'],
                 ],
             ], 200),
-            'cosmotown.com/v1/reseller/domaininfo*' => Http::response([
+            'www.cosmotown.com/v1/reseller/domaininfo*' => Http::response([
                 'domain' => 'example.com',
                 'expiration_date' => '2027-08-18',
                 'nameservers' => ['ns1.talksasa.com', 'ns2.talksasa.com'],
@@ -119,12 +119,12 @@ class CosmotownInventorySyncServiceTest extends TestCase
         ]);
 
         Http::fake([
-            'cosmotown.com/v1/reseller/listdomains*' => Http::response([
+            'www.cosmotown.com/v1/reseller/listdomains*' => Http::response([
                 'domains' => [
                     ['domain' => 'held.com', 'expiration_date' => '2028-01-01'],
                 ],
             ], 200),
-            'cosmotown.com/v1/reseller/domaininfo*' => Http::response([
+            'www.cosmotown.com/v1/reseller/domaininfo*' => Http::response([
                 'domain' => 'held.com',
                 'expiration_date' => '2028-01-01',
                 'nameservers' => ['ns1.talksasa.com', 'ns2.talksasa.com'],

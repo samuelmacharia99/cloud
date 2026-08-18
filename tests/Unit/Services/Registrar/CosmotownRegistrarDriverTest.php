@@ -47,10 +47,15 @@ class CosmotownRegistrarDriverTest extends TestCase
         $sandbox = $this->makeRegistrar([], 'sandbox');
         $production = $this->makeRegistrar([], 'production');
         $override = $this->makeRegistrar(['api_base_url' => 'https://custom.example/v1']);
+        $apex = $this->makeRegistrar(['api_base_url' => 'https://cosmotown.com/v1/'], 'production');
+        $homepage = $this->makeRegistrar(['api_base_url' => 'https://www.cosmotown.com/'], 'production');
 
         $this->assertSame(CosmotownClient::SANDBOX_BASE, CosmotownClient::forRegistrar($sandbox)->baseUrl());
+        $this->assertSame('https://www.cosmotown.com/v1/', CosmotownClient::PRODUCTION_BASE);
         $this->assertSame(CosmotownClient::PRODUCTION_BASE, CosmotownClient::forRegistrar($production)->baseUrl());
         $this->assertSame('https://custom.example/v1/', CosmotownClient::forRegistrar($override)->baseUrl());
+        $this->assertSame('https://www.cosmotown.com/v1/', CosmotownClient::forRegistrar($apex)->baseUrl());
+        $this->assertSame('https://www.cosmotown.com/v1/', CosmotownClient::forRegistrar($homepage)->baseUrl());
     }
 
     public function test_client_sends_api_token_header_and_returns_auth_code(): void
@@ -86,10 +91,9 @@ class CosmotownRegistrarDriverTest extends TestCase
         CosmotownClient::forRegistrar($this->makeRegistrar())->getDomainAuthCode('example.com');
     }
 
-    public function test_test_connection_pings_and_lists_domains(): void
+    public function test_test_connection_lists_domains_without_ping(): void
     {
         Http::fake([
-            'sandbox.cosmotown.com/v1/reseller/ping' => Http::response(['ip' => '203.0.113.10'], 200),
             'sandbox.cosmotown.com/v1/reseller/listdomains*' => Http::response([
                 'domains' => [
                     ['domain' => 'one.example', 'expiration_date' => '2027-01-01'],
@@ -102,16 +106,69 @@ class CosmotownRegistrarDriverTest extends TestCase
         $result = $driver->testConnection($this->makeRegistrar());
 
         $this->assertTrue($result['success']);
-        $this->assertSame('203.0.113.10', $result['ip']);
         $this->assertSame(2, $result['domain_sample_count']);
         $this->assertStringContainsString('sandbox', $result['message']);
+        $this->assertStringContainsString('sandbox.cosmotown.com', $result['message']);
         $this->assertStringContainsString('2 domain(s)', $result['message']);
+    }
+
+    public function test_test_connection_uses_www_production_host(): void
+    {
+        Http::fake([
+            'www.cosmotown.com/v1/reseller/listdomains*' => Http::response([
+                'domains' => [
+                    ['domain' => 'live.example'],
+                ],
+            ], 200),
+        ]);
+
+        $driver = new CosmotownRegistrarDriver;
+        $result = $driver->testConnection($this->makeRegistrar([], 'production'));
+
+        $this->assertTrue($result['success']);
+        $this->assertStringContainsString('www.cosmotown.com', $result['message']);
+        $this->assertSame(1, $result['domain_sample_count']);
+    }
+
+    public function test_test_connection_falls_back_to_domainepp_when_list_is_unavailable(): void
+    {
+        Http::fake([
+            'sandbox.cosmotown.com/v1/reseller/listdomains*' => Http::response([
+                'error_message' => 'Domain API under maintenance',
+            ], 503),
+            'sandbox.cosmotown.com/v1/reseller/domainepp*' => Http::response([
+                'auth_code' => '',
+            ], 200),
+        ]);
+
+        $driver = new CosmotownRegistrarDriver;
+        $result = $driver->testConnection($this->makeRegistrar());
+
+        $this->assertTrue($result['success']);
+        $this->assertStringContainsString('Token accepted', $result['message']);
+        $this->assertNull($result['domain_sample_count']);
+    }
+
+    public function test_client_rejects_html_success_as_wrong_host(): void
+    {
+        Http::fake([
+            'www.cosmotown.com/v1/reseller/listdomains*' => Http::response(
+                '<!DOCTYPE html><html><body>Home</body></html>',
+                200,
+                ['Content-Type' => 'text/html']
+            ),
+        ]);
+
+        $this->expectException(CosmotownException::class);
+        $this->expectExceptionMessage('web page instead of JSON');
+
+        CosmotownClient::forRegistrar($this->makeRegistrar([], 'production'))->listDomains(5, 0);
     }
 
     public function test_test_connection_fails_on_403(): void
     {
         Http::fake([
-            'sandbox.cosmotown.com/v1/reseller/ping' => Http::response([
+            'sandbox.cosmotown.com/v1/reseller/listdomains*' => Http::response([
                 'error_message' => 'Unauthorized',
             ], 403),
         ]);

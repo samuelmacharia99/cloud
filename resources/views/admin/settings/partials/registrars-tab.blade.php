@@ -151,7 +151,7 @@
                             <option value="sandbox">Sandbox</option>
                             <option value="production">Production</option>
                         </select>
-                        <p x-show="form.driver === 'cosmotown'" class="mt-1 text-xs text-slate-500 dark:text-slate-400">Sandbox uses sandbox.cosmotown.com; production uses cosmotown.com. Live customer domains must use production plus a whitelisted server IP.</p>
+                        <p x-show="form.driver === 'cosmotown'" class="mt-1 text-xs text-slate-500 dark:text-slate-400">Sandbox uses sandbox.cosmotown.com; production uses www.cosmotown.com (not the apex marketing site). Live customer domains must use production plus a whitelisted server IP.</p>
                         <p x-show="form.driver === 'openprovider'" class="mt-1 text-xs text-slate-500 dark:text-slate-400">Sandbox: api.cte.openprovider.eu. Production: api.openprovider.eu. Autorenew is always sent as <strong>off</strong>.</p>
                     </div>
                     <div class="sm:col-span-2">

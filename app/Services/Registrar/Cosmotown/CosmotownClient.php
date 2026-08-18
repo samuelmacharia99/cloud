@@ -11,7 +11,7 @@ class CosmotownClient
 {
     public const SANDBOX_BASE = 'https://sandbox.cosmotown.com/v1/';
 
-    public const PRODUCTION_BASE = 'https://cosmotown.com/v1/';
+    public const PRODUCTION_BASE = 'https://www.cosmotown.com/v1/';
 
     public function __construct(private Registrar $registrar) {}
 
@@ -25,13 +25,13 @@ class CosmotownClient
         $config = $this->registrar->config ?? [];
         $configured = trim((string) ($config['api_base_url'] ?? ''));
 
-        if ($configured !== '') {
-            return rtrim($configured, '/').'/';
-        }
+        $url = $configured !== ''
+            ? $configured
+            : ($this->registrar->environment === 'sandbox'
+                ? self::SANDBOX_BASE
+                : self::PRODUCTION_BASE);
 
-        return $this->registrar->environment === 'sandbox'
-            ? self::SANDBOX_BASE
-            : self::PRODUCTION_BASE;
+        return $this->normalizeBaseUrl($url);
     }
 
     /**
@@ -40,13 +40,38 @@ class CosmotownClient
     public function ping(): array
     {
         $payload = $this->get('reseller/ping');
-        $ip = trim((string) ($payload['ip'] ?? ''));
-
-        if ($ip === '') {
-            throw new CosmotownException('Cosmotown ping succeeded but returned no IP.', 200, $payload);
-        }
+        $ip = trim((string) (
+            $payload['ip']
+            ?? $payload['IP']
+            ?? $payload['client_ip']
+            ?? $payload['remote_ip']
+            ?? ''
+        ));
 
         return ['ip' => $ip];
+    }
+
+    /**
+     * Confirms the API token is accepted using the documented domainepp endpoint.
+     * An empty auth_code or a 4xx domain error still means Cosmotown authenticated the request.
+     *
+     * @return array<string, mixed>
+     */
+    public function probeAuthentication(): array
+    {
+        try {
+            return $this->get('reseller/domainepp', ['domain' => 'connection-test.invalid']);
+        } catch (CosmotownException $e) {
+            if (in_array($e->httpStatus, [401, 403], true)) {
+                throw $e;
+            }
+
+            if ($e->httpStatus >= 400 && $e->httpStatus < 500) {
+                return $e->response ?? ['authenticated' => true];
+            }
+
+            throw $e;
+        }
     }
 
     /**
@@ -238,9 +263,19 @@ class CosmotownClient
      */
     private function decode(Response $response): array
     {
+        $body = $response->body();
         $payload = $response->json();
+
         if (! is_array($payload)) {
-            $payload = ['raw' => $response->body()];
+            if ($this->looksLikeHtml($body, $response->header('Content-Type'))) {
+                throw new CosmotownException(
+                    'Cosmotown returned a web page instead of JSON. Production Reseller API is https://www.cosmotown.com/v1/ (not the apex marketing site).',
+                    $response->status(),
+                    ['raw' => substr($body, 0, 240)]
+                );
+            }
+
+            $payload = ['raw' => $body];
         }
 
         $status = $response->status();
@@ -333,5 +368,36 @@ class CosmotownClient
         }
 
         return $domain;
+    }
+
+    private function normalizeBaseUrl(string $url): string
+    {
+        $url = trim($url);
+        $parts = parse_url($url);
+        $host = strtolower((string) ($parts['host'] ?? ''));
+        $scheme = strtolower((string) ($parts['scheme'] ?? 'https')) === 'http' ? 'http' : 'https';
+
+        if ($host === 'cosmotown.com') {
+            $host = 'www.cosmotown.com';
+        }
+
+        if (in_array($host, ['www.cosmotown.com', 'sandbox.cosmotown.com'], true)) {
+            return "{$scheme}://{$host}/v1/";
+        }
+
+        return rtrim($url, '/').'/';
+    }
+
+    private function looksLikeHtml(string $body, mixed $contentType): bool
+    {
+        $type = strtolower(trim((string) $contentType));
+        if (str_contains($type, 'text/html')) {
+            return true;
+        }
+
+        $trimmed = ltrim($body);
+
+        return str_starts_with($trimmed, '<!')
+            || str_starts_with(strtolower($trimmed), '<html');
     }
 }

@@ -15,18 +15,36 @@ class CosmotownRegistrarDriver implements RegistrarOperationsInterface
     {
         try {
             $client = CosmotownClient::forRegistrar($registrar);
-            $ping = $client->ping();
-            $listed = $client->listDomains(5, 0);
-            $sampleCount = count($listed['domains']);
-            $host = parse_url($client->baseUrl(), PHP_URL_HOST) ?: 'cosmotown.com';
+            $host = parse_url($client->baseUrl(), PHP_URL_HOST) ?: 'www.cosmotown.com';
             $environment = $registrar->environment === 'sandbox' ? 'sandbox' : 'production';
 
-            return [
-                'success' => true,
-                'message' => "Connected to Cosmotown {$environment} ({$host}) from IP {$ping['ip']}. Account lists {$sampleCount} domain(s) in this sample.",
-                'ip' => $ping['ip'],
-                'domain_sample_count' => $sampleCount,
-            ];
+            try {
+                $listed = $client->listDomains(5, 0);
+                $sampleCount = count($listed['domains']);
+
+                return [
+                    'success' => true,
+                    'message' => "Connected to Cosmotown {$environment} ({$host}). Account lists {$sampleCount} domain(s) in this sample.",
+                    'domain_sample_count' => $sampleCount,
+                ];
+            } catch (CosmotownException $listError) {
+                if (in_array($listError->httpStatus, [401, 403], true)) {
+                    throw $listError;
+                }
+
+                if ($this->isHtmlOrWrongHostError($listError)) {
+                    throw $listError;
+                }
+
+                // Domain list API may be under maintenance; probe the documented domainepp endpoint.
+                $client->probeAuthentication();
+
+                return [
+                    'success' => true,
+                    'message' => "Connected to Cosmotown {$environment} ({$host}). Token accepted; domain list is unavailable ({$listError->getMessage()}).",
+                    'domain_sample_count' => null,
+                ];
+            }
         } catch (CosmotownException $e) {
             return [
                 'success' => false,
@@ -369,6 +387,11 @@ class CosmotownRegistrarDriver implements RegistrarOperationsInterface
     private function fqdn(Domain $domain): string
     {
         return strtolower(trim($domain->fqdn()));
+    }
+
+    private function isHtmlOrWrongHostError(CosmotownException $e): bool
+    {
+        return str_contains($e->getMessage(), 'web page instead of JSON');
     }
 
     /**
