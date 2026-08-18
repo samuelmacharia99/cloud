@@ -14,6 +14,7 @@ use App\Services\DomainPushService;
 use App\Services\DomainRenewalService;
 use App\Services\DomainTransferService;
 use App\Services\NodeNameserverService;
+use App\Services\Registrar\Cosmotown\CosmotownException;
 use App\Services\Registrar\Drivers\OpenproviderRegistrarDriver;
 use App\Services\Registrar\Openprovider\OpenproviderClient;
 use App\Services\Registrar\Openprovider\OpenproviderException;
@@ -90,7 +91,7 @@ class RegistrarFulfillmentService
                 : ['success' => false, 'message' => ''];
         }
 
-        if ($domain->registrar_external_id && in_array($domain->status, ['pending', 'active'], true)) {
+        if ($domain->isLinkedToRegistrarApi() && in_array($domain->status, ['pending', 'active'], true)) {
             if ($manual) {
                 return ['success' => false, 'message' => 'This domain already has an active registrar submission.'];
             }
@@ -175,6 +176,11 @@ class RegistrarFulfillmentService
 
             if ($e instanceof OpenproviderException) {
                 $context['api_code'] = $e->apiCode;
+                $context['response'] = $e->response;
+            }
+
+            if ($e instanceof CosmotownException) {
+                $context['http_status'] = $e->httpStatus;
                 $context['response'] = $e->response;
             }
 
@@ -264,7 +270,7 @@ class RegistrarFulfillmentService
             if (($result['status'] ?? '') === 'ACT') {
                 app(DomainRenewalService::class)->completeRenewal(
                     $renewalOrder,
-                    'Renewed automatically via Openprovider.',
+                    'Renewed automatically via '.$registrar->name.'.',
                 );
 
                 if ($expiry = OpenproviderRegistrarDriver::parseExpiration($result['expiration_date'] ?? null)) {
@@ -297,9 +303,7 @@ class RegistrarFulfillmentService
 
         $updates = [];
 
-        if (! empty($result['external_id'])) {
-            $updates['registrar_external_id'] = $result['external_id'];
-        }
+        $this->storeRemoteRegistrarId($updates, $result['external_id'] ?? null);
 
         if ($expiry = OpenproviderRegistrarDriver::parseExpiration($result['expiration_date'] ?? null)) {
             $updates['expires_at'] = $expiry;
@@ -362,7 +366,7 @@ class RegistrarFulfillmentService
         $registrar = $this->resolveRegistrar($domain);
         $driver = $this->operationsDriver($registrar);
 
-        if (! $driver || ! $domain->registrar_external_id) {
+        if (! $driver || ! $domain->isLinkedToRegistrarApi()) {
             return [
                 'success' => true,
                 'pushed' => false,
@@ -470,9 +474,7 @@ class RegistrarFulfillmentService
             'registrar' => $registrar->slug,
         ];
 
-        if (! empty($result['external_id'])) {
-            $updates['registrar_external_id'] = $result['external_id'];
-        }
+        $this->storeRemoteRegistrarId($updates, $result['external_id'] ?? null);
 
         if (! empty($result['auth_code'])) {
             $updates['epp_code'] = $result['auth_code'];
@@ -483,6 +485,24 @@ class RegistrarFulfillmentService
         }
 
         $domain->update($updates);
+    }
+
+    /**
+     * @param  array<string, mixed>  $updates
+     */
+    private function storeRemoteRegistrarId(array &$updates, mixed $externalId): void
+    {
+        if ($externalId === null || $externalId === '') {
+            return;
+        }
+
+        if (is_numeric($externalId)) {
+            $updates['registrar_external_id'] = (int) $externalId;
+
+            return;
+        }
+
+        $updates['registrar_handle'] = (string) $externalId;
     }
 
     private function activateLinkedServices(ResellerDomainOrder $order): void

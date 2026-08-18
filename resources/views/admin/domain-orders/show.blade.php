@@ -306,7 +306,7 @@
     <div class="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-2xl p-4 text-sm text-amber-900 dark:text-amber-200">
         @if($order->isPlatformOrder())
             @if($order->hasPaidCustomerInvoice())
-                <strong>Customer paid</strong> — registration at Openprovider runs automatically after payment.
+                <strong>Customer paid</strong> — registration at the API registrar runs automatically after payment.
             @else
                 <strong>Queued</strong> — waiting for the customer to pay their domain invoice.
             @endif
@@ -321,11 +321,11 @@
     @if($order->status === 'pushed' || $order->status === 'failed')
     <div class="bg-violet-50 dark:bg-violet-950/40 border border-violet-200 dark:border-violet-800 rounded-2xl p-4 text-sm text-violet-900 dark:text-violet-200">
         @if($order->status === 'failed')
-            <strong>Registrar submission failed</strong> — {{ $order->failure_reason ?? 'See logs for details.' }} Top up Openprovider balance, verify contact handles and nameservers, then use <strong>Push to registrar</strong> to retry.
+            <strong>Registrar submission failed</strong> — {{ $order->failure_reason ?? 'See logs for details.' }} Top up Cosmotown funds, verify default contacts and nameservers, then use <strong>Push to registrar</strong> to retry.
         @elseif($order->hasPendingRegistrarSubmission())
-            <strong>Submitted to Openprovider</strong> — awaiting registry activation. The order will complete automatically when the domain becomes active (sync cron). No admin action needed unless this stalls.
+            <strong>Submitted to the registrar</strong> — awaiting registry activation. The order will complete automatically when the domain becomes active (sync cron). No admin action needed unless this stalls.
         @else
-            <strong>Processing</strong> — wholesale payment is confirmed. Registration at Openprovider runs automatically; use <strong>Push to registrar</strong> only if automatic submission failed.
+            <strong>Processing</strong> — wholesale payment is confirmed. Registration at Cosmotown runs automatically; use <strong>Push to registrar</strong> only if automatic submission failed.
         @endif
     </div>
     @endif
@@ -348,7 +348,7 @@
             <form method="POST" action="{{ route('admin.domain-orders.push-registrar', $order) }}" data-confirm="Submit this domain to the API registrar now?@if($order->status === 'failed') This retries a failed automatic submission.@endif">
                 @csrf
                 <input type="hidden" name="stay_on_detail" value="1">
-                <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg transition" title="Retry registration at Openprovider after a failed automatic submission">
+                <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg transition" title="Retry registration at the API registrar after a failed automatic submission">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/></svg>
                     Retry at registrar
                 </button>
@@ -384,7 +384,7 @@
     <!-- Complete Order Form -->
     <div class="ui-card p-6">
         <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-2">Complete Domain Order</h3>
-        <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Record a manual registration or transfer (e.g. no API registrar configured). Does not submit to Openprovider.</p>
+        <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Record a manual registration or transfer (e.g. no API registrar configured). Does not submit to Cosmotown.</p>
         <form method="POST" action="{{ route('admin.domain-orders.complete', $order) }}" class="space-y-4">
             @csrf
             <input type="hidden" name="stay_on_detail" value="1">

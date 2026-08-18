@@ -222,7 +222,7 @@ class ResellerDomainOrder extends Model
             return false;
         }
 
-        if ($domain->registrar_external_id && in_array($domain->status, ['pending', 'active'], true)) {
+        if ($domain->isLinkedToRegistrarApi() && in_array($domain->status, ['pending', 'active'], true)) {
             return false;
         }
 
@@ -234,7 +234,7 @@ class ResellerDomainOrder extends Model
         $domain = $this->relationLoaded('domain') ? $this->domain : $this->domain()->first();
 
         return $domain
-            && $domain->registrar_external_id
+            && $domain->isLinkedToRegistrarApi()
             && $domain->status === 'pending'
             && $this->status === 'pushed';
     }
@@ -260,7 +260,7 @@ class ResellerDomainOrder extends Model
             return false;
         }
 
-        if ($domain->status === 'active' && $domain->registrar_external_id) {
+        if ($domain->status === 'active' && $domain->isLinkedToRegistrarApi()) {
             return false;
         }
 

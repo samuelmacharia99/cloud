@@ -142,7 +142,7 @@
             <div class="relative w-full max-w-md ui-card shadow-xl p-6">
                 <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-1">Complete domain order</h3>
                 <p class="text-sm text-slate-600 dark:text-slate-400 mb-2" x-text="completeDomain"></p>
-                <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">Use when registration or transfer was done manually (no API registrar). This marks the order completed — it does not call Openprovider.</p>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">Use when registration or transfer was done manually (no API registrar). This marks the order completed — it does not call Cosmotown.</p>
                 @foreach ($orders as $order)
                     <form
                         x-show="completeOrderId === {{ $order->id }}"

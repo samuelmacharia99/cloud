@@ -86,25 +86,32 @@ class CosmotownRegistrarDriverTest extends TestCase
         CosmotownClient::forRegistrar($this->makeRegistrar())->getDomainAuthCode('example.com');
     }
 
-    public function test_test_connection_succeeds_on_authenticated_400(): void
+    public function test_test_connection_pings_and_lists_domains(): void
     {
         Http::fake([
-            'sandbox.cosmotown.com/v1/reseller/domainepp*' => Http::response([
-                'error_message' => 'Domain not found',
-            ], 400),
+            'sandbox.cosmotown.com/v1/reseller/ping' => Http::response(['ip' => '203.0.113.10'], 200),
+            'sandbox.cosmotown.com/v1/reseller/listdomains*' => Http::response([
+                'domains' => [
+                    ['domain' => 'one.example', 'expiration_date' => '2027-01-01'],
+                    ['domain' => 'two.example', 'expiration_date' => '2027-06-01'],
+                ],
+            ], 200),
         ]);
 
         $driver = new CosmotownRegistrarDriver;
         $result = $driver->testConnection($this->makeRegistrar());
 
         $this->assertTrue($result['success']);
-        $this->assertStringContainsString('Connected to Cosmotown', $result['message']);
+        $this->assertSame('203.0.113.10', $result['ip']);
+        $this->assertSame(2, $result['domain_sample_count']);
+        $this->assertStringContainsString('sandbox', $result['message']);
+        $this->assertStringContainsString('2 domain(s)', $result['message']);
     }
 
     public function test_test_connection_fails_on_403(): void
     {
         Http::fake([
-            'sandbox.cosmotown.com/v1/reseller/domainepp*' => Http::response([
+            'sandbox.cosmotown.com/v1/reseller/ping' => Http::response([
                 'error_message' => 'Unauthorized',
             ], 403),
         ]);
@@ -153,8 +160,20 @@ class CosmotownRegistrarDriverTest extends TestCase
         });
     }
 
-    public function test_register_domain_is_unsupported(): void
+    public function test_register_domain_submits_items_and_nameservers(): void
     {
+        Http::fake([
+            'sandbox.cosmotown.com/v1/reseller/contactinfo*' => Http::response(['status' => 'processed'], 200),
+            'sandbox.cosmotown.com/v1/reseller/registerdomains' => Http::response([
+                ['domain' => 'example.com', 'status' => 'processed'],
+            ], 200),
+            'sandbox.cosmotown.com/v1/reseller/savedomainnameservers' => Http::response(['status' => 'processed'], 200),
+            'sandbox.cosmotown.com/v1/reseller/domaininfo*' => Http::response([
+                'domain' => 'example.com',
+                'expiration_date' => '2027-08-18',
+            ], 200),
+        ]);
+
         $domain = new Domain([
             'name' => 'example',
             'extension' => '.com',
@@ -164,12 +183,112 @@ class CosmotownRegistrarDriverTest extends TestCase
             $this->makeRegistrar(),
             $domain,
             1,
-            [['name' => 'ns1.example.com']]
+            [['name' => 'ns1.talksasa.com'], ['name' => 'ns2.talksasa.com']]
         );
 
-        $this->assertFalse($result['success']);
-        $this->assertStringContainsString('does not document this operation', $result['message']);
-        $this->assertFalse((new CosmotownRegistrarDriver)->supportsRegistration());
+        $this->assertTrue($result['success']);
+        $this->assertSame('REQ', $result['status']);
+        $this->assertSame('example.com', $result['external_id']);
+        $this->assertTrue((new CosmotownRegistrarDriver)->supportsRegistration());
+
+        Http::assertSent(function ($request) {
+            $body = $request->data();
+
+            return $request->method() === 'POST'
+                && str_contains($request->url(), 'reseller/registerdomains')
+                && ($body['items'][0]['name'] ?? null) === 'example.com'
+                && (int) ($body['items'][0]['years'] ?? 0) === 1;
+        });
+        Http::assertSent(function ($request) {
+            $body = $request->data();
+
+            return $request->method() === 'POST'
+                && str_contains($request->url(), 'reseller/savedomainnameservers')
+                && ($body['domain'] ?? null) === 'example.com'
+                && ($body['nameservers'] ?? []) === ['ns1.talksasa.com', 'ns2.talksasa.com'];
+        });
+    }
+
+    public function test_transfer_domain_base64_encodes_auth_code(): void
+    {
+        Http::fake([
+            'sandbox.cosmotown.com/v1/reseller/contactinfo*' => Http::response(['status' => 'processed'], 200),
+            'sandbox.cosmotown.com/v1/reseller/transferdomains' => Http::response([
+                ['domain' => 'move.com', 'status' => 'processed'],
+            ], 200),
+            'sandbox.cosmotown.com/v1/reseller/savedomainnameservers' => Http::response(['status' => 'processed'], 200),
+        ]);
+
+        $domain = new Domain([
+            'name' => 'move',
+            'extension' => '.com',
+        ]);
+
+        $result = (new CosmotownRegistrarDriver)->transferDomain(
+            $this->makeRegistrar(),
+            $domain,
+            'SecretEpp!',
+            [['name' => 'ns1.talksasa.com'], ['name' => 'ns2.talksasa.com']]
+        );
+
+        $this->assertTrue($result['success']);
+        $this->assertSame('REQ', $result['status']);
+
+        Http::assertSent(function ($request) {
+            $body = $request->data();
+
+            return $request->method() === 'POST'
+                && str_contains($request->url(), 'reseller/transferdomains')
+                && ($body['items'][0]['name'] ?? null) === 'move.com'
+                && ($body['items'][0]['authCode'] ?? null) === base64_encode('SecretEpp!');
+        });
+    }
+
+    public function test_renew_domain_treats_processed_as_success(): void
+    {
+        Http::fake([
+            'sandbox.cosmotown.com/v1/reseller/renewdomains' => Http::response(['status' => 'processed'], 200),
+            'sandbox.cosmotown.com/v1/reseller/domaininfo*' => Http::response([
+                'domain' => 'example.com',
+                'expiration_date' => '2028-01-01',
+            ], 200),
+        ]);
+
+        $domain = new Domain([
+            'name' => 'example',
+            'extension' => '.com',
+        ]);
+
+        $result = (new CosmotownRegistrarDriver)->renewDomain($this->makeRegistrar(), $domain, 1);
+
+        $this->assertTrue($result['success']);
+        $this->assertSame('ACT', $result['status']);
+        $this->assertSame('2028-01-01', $result['expiration_date']);
+    }
+
+    public function test_sync_domain_status_maps_active_registration(): void
+    {
+        Http::fake([
+            'sandbox.cosmotown.com/v1/reseller/domainstatus' => Http::response([
+                ['domain' => 'example.com', 'registration_status' => 'active'],
+            ], 200),
+            'sandbox.cosmotown.com/v1/reseller/domaininfo*' => Http::response([
+                'domain' => 'example.com',
+                'expiration_date' => '2027-08-18',
+            ], 200),
+        ]);
+
+        $domain = new Domain([
+            'name' => 'example',
+            'extension' => '.com',
+        ]);
+
+        $result = (new CosmotownRegistrarDriver)->syncDomainStatus($this->makeRegistrar(), $domain);
+
+        $this->assertTrue($result['success']);
+        $this->assertSame('ACT', $result['status']);
+        $this->assertSame('example.com', $result['external_id']);
+        $this->assertSame('2027-08-18', $result['expiration_date']);
     }
 
     public function test_registrar_manager_resolves_cosmotown_driver(): void

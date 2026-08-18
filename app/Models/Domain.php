@@ -17,6 +17,7 @@ class Domain extends Model
         'type',
         'registrar',
         'registrar_external_id',
+        'registrar_handle',
         'status',
         'transfer_status',
         'registered_at',
@@ -108,6 +109,11 @@ class Domain extends Model
     public function fqdn(): string
     {
         return $this->name.($this->extension ?? '');
+    }
+
+    public function isLinkedToRegistrarApi(): bool
+    {
+        return filled($this->registrar_external_id) || filled($this->registrar_handle);
     }
 
     /**

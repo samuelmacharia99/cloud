@@ -19,7 +19,7 @@
             <div>
                 <h2 class="text-xl font-semibold text-slate-900 dark:text-white">Domain registrars</h2>
                 <p class="mt-1 text-sm text-slate-600 dark:text-slate-400 max-w-2xl">
-                    Connect registrar APIs and assign TLDs. Openprovider handles wholesale registration for most extensions (except Kenya <code class="text-xs">*.ke</code>). Cosmotown Reseller API V1.2 currently supports EPP/auth codes and default contacts — register/renew/transfer land when Cosmotown documents them. Nameservers come from the customer&apos;s hosting node when linked, otherwise platform defaults.
+                    Connect Cosmotown Reseller API for wholesale registration, renewal, transfer, nameservers, and EPP codes. Assign TLDs to Cosmotown (Kenya <code class="text-xs">*.ke</code> stays manual unless you add another registrar). Nameservers come from the customer&apos;s hosting node when linked, otherwise platform defaults. Switch this registrar to <strong>production</strong> and whitelist the app server IP before live orders.
                 </p>
             </div>
             <button type="button" @click="openCreate()" class="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors">
@@ -128,7 +128,7 @@
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div class="sm:col-span-2">
                         <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Name</label>
-                        <input type="text" x-model="form.name" required class="block w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" placeholder="e.g. Openprovider">
+                        <input type="text" x-model="form.name" required class="block w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" placeholder="e.g. Cosmotown">
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Driver</label>
@@ -142,10 +142,11 @@
                     <div>
                         <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Environment</label>
                         <select x-model="form.environment" class="block w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
-                            <option value="sandbox">Sandbox (api.cte.openprovider.eu)</option>
-                            <option value="production">Production (api.openprovider.eu)</option>
+                            <option value="sandbox">Sandbox</option>
+                            <option value="production">Production</option>
                         </select>
-                        <p x-show="form.driver === 'openprovider'" class="mt-1 text-xs text-slate-500 dark:text-slate-400">Autorenew is always sent as <strong>off</strong> to Openprovider.</p>
+                        <p x-show="form.driver === 'cosmotown'" class="mt-1 text-xs text-slate-500 dark:text-slate-400">Sandbox uses sandbox.cosmotown.com; production uses cosmotown.com. Live customer domains must use production plus a whitelisted server IP.</p>
+                        <p x-show="form.driver === 'openprovider'" class="mt-1 text-xs text-slate-500 dark:text-slate-400">Sandbox: api.cte.openprovider.eu. Production: api.openprovider.eu. Autorenew is always sent as <strong>off</strong>.</p>
                     </div>
                     <div class="sm:col-span-2">
                         <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Description</label>

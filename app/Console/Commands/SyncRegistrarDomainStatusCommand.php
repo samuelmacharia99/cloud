@@ -14,19 +14,20 @@ class SyncRegistrarDomainStatusCommand extends BaseCronCommand
 {
     protected $signature = 'registrar:sync-domains {--limit=100 : Maximum domains to check per run}';
 
-    protected $description = 'Sync Openprovider domain statuses and complete pending orders when active';
+    protected $description = 'Sync Cosmotown/Openprovider domain statuses and complete pending orders when active';
 
     protected function handleCron(): string
     {
         $fulfillment = app(RegistrarFulfillmentService::class);
 
-        $registrar = Registrar::query()
-            ->where('driver', RegistrarDriver::Openprovider)
+        $registrars = Registrar::query()
+            ->whereIn('driver', [RegistrarDriver::Cosmotown, RegistrarDriver::Openprovider])
             ->where('is_active', true)
-            ->first();
+            ->get()
+            ->keyBy('slug');
 
-        if (! $registrar) {
-            return 'No active Openprovider registrar configured.';
+        if ($registrars->isEmpty()) {
+            return 'No active API registrar configured.';
         }
 
         $limit = (int) $this->option('limit');
@@ -39,9 +40,10 @@ class SyncRegistrarDomainStatusCommand extends BaseCronCommand
                             ->whereIn('transfer_status', ['initiated', 'in_progress', 'pending']);
                     });
             })
-            ->where(function ($query) use ($registrar) {
+            ->where(function ($query) use ($registrars) {
                 $query->whereNotNull('registrar_external_id')
-                    ->orWhere('registrar', $registrar->slug);
+                    ->orWhereNotNull('registrar_handle')
+                    ->orWhereIn('registrar', $registrars->keys()->all());
             })
             ->orderBy('updated_at')
             ->limit($limit)
@@ -60,8 +62,12 @@ class SyncRegistrarDomainStatusCommand extends BaseCronCommand
             $synced++;
             $domain->refresh();
 
+            $registrarName = $registrars->get($domain->registrar)?->name
+                ?? $registrars->first()?->name
+                ?? 'registrar';
+
             if (! $wasActive && $domain->status === 'active') {
-                $completed += $this->completeLinkedOrders($domain, $registrar->name);
+                $completed += $this->completeLinkedOrders($domain, $registrarName);
             }
         }
 

@@ -14,7 +14,7 @@ interface RegistrarOperationsInterface extends RegistrarDriverInterface
 
     /**
      * @param  list<array{name: string}>  $nameServers
-     * @return array{success: bool, status: string, external_id: ?int, auth_code: ?string, expiration_date: ?string, message: string}
+     * @return array{success: bool, status: string, external_id: int|string|null, auth_code: ?string, expiration_date: ?string, message: string}
      */
     public function registerDomain(Registrar $registrar, Domain $domain, int $years, array $nameServers): array;
 

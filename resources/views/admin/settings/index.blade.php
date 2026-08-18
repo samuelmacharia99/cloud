@@ -2279,7 +2279,8 @@
 
 <script>
     function registrarSettings(initial) {
-        const defaultDriver = initial.drivers.find(d => d.value === 'openprovider')?.value
+        const defaultDriver = initial.drivers.find(d => d.value === 'cosmotown')?.value
+            || initial.drivers.find(d => d.value === 'openprovider')?.value
             || initial.drivers[0]?.value
             || 'manual';
 
@@ -2288,13 +2289,13 @@
             .map(tld => tld.id);
 
         const emptyForm = () => ({
-            name: 'Openprovider',
+            name: 'Cosmotown',
             driver: defaultDriver,
             environment: 'sandbox',
-            description: 'Wholesale domains via Openprovider — all TLDs except Kenya (.ke) zones.',
+            description: 'Wholesale domains via Cosmotown Reseller API.',
             is_active: true,
             is_default: true,
-            config: { login_ip: '0.0.0.0' },
+            config: {},
             tld_ids: nonKeTldIds(),
         });
 

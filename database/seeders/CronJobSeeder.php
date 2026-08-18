@@ -306,7 +306,7 @@ class CronJobSeeder extends Seeder
             ],
             [
                 'name' => 'Registrar Domain Status Sync',
-                'description' => 'Syncs Openprovider domain statuses and completes pending orders when active.',
+                'description' => 'Syncs Cosmotown and Openprovider domain statuses and completes pending orders when active.',
                 'command' => 'registrar:sync-domains',
                 'schedule' => '*/15 * * * *',
                 'enabled' => true,
