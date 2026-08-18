@@ -72,6 +72,16 @@
                 <form action="{{ route('customer.domains.transfer-checkout-confirm') }}" method="POST" class="space-y-6">
                     @csrf
 
+                    <div>
+                        <h3 class="text-base font-semibold text-slate-900 dark:text-white mb-1">Domain registrant (WHOIS)</h3>
+                        <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">
+                            Required for registry contact after the transfer completes. This is the legal owner at the registry, not a platform placeholder.
+                        </p>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            @include('domains.partials.registrant-fields', ['contact' => $registrant ?? []])
+                        </div>
+                    </div>
+
                     <div class="flex items-start gap-3 p-4 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
                         <input
                             type="checkbox"

@@ -261,9 +261,9 @@ class DomainAutoRenewTest extends TestCase
             ],
         ]);
 
-        $this->post(route('customer.checkout.process'), [
+        $this->post(route('customer.checkout.process'), $this->withRegistrant([
             'agree_terms' => '1',
-        ])->assertRedirect();
+        ], $customer))->assertRedirect();
 
         $domain = Domain::query()->where('user_id', $customer->id)->where('name', 'checkoutcover')->first();
         $this->assertNotNull($domain);
@@ -291,9 +291,9 @@ class DomainAutoRenewTest extends TestCase
             ],
         ]);
 
-        $this->post(route('customer.checkout.process'), [
+        $this->post(route('customer.checkout.process'), $this->withRegistrant([
             'agree_terms' => '1',
-        ])->assertRedirect();
+        ], $customer))->assertRedirect();
 
         $domain = Domain::query()->where('user_id', $customer->id)->where('name', 'checkoutshort')->first();
         $this->assertNotNull($domain);

@@ -91,6 +91,22 @@
                     </div>
                 </div>
 
+                @if(! empty($hasRegistryDomain))
+                    <div class="ui-card p-6">
+                        <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-1">Domain registrant (WHOIS)</h2>
+                        <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">
+                            @if ($isCustomerCheckout ?? false)
+                                This is the legal owner at the registry for {{ $checkoutCustomer->name }}. It is not the platform default contact.
+                            @else
+                                This is the legal owner at the registry, not a platform placeholder.
+                            @endif
+                        </p>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            @include('domains.partials.registrant-fields', ['contact' => $registrant ?? []])
+                        </div>
+                    </div>
+                @endif
+
             @if ($isCustomerCheckout ?? false)
                 <div class="ui-card p-6">
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Bill to customer</h2>

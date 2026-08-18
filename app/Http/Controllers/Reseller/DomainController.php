@@ -11,6 +11,7 @@ use App\Models\Service;
 use App\Models\User;
 use App\Services\DomainAutoRenewService;
 use App\Services\DomainAvailabilityService;
+use App\Services\DomainRegistrantContactService;
 use App\Services\DomainRenewalService;
 use App\Services\Registrar\RegistrarFulfillmentService;
 use App\Services\ResellerCustomerCatalogService;
@@ -137,7 +138,8 @@ class DomainController extends Controller
             'source' => $check['source'],
             'message' => $check['available']
                 ? 'Domain is available for registration.'
-                : 'Domain is already taken.',
+                : (app(DomainAvailabilityService::class)->registrationBlockMessage($check) ?? 'Domain is already taken.'),
+            'blocked_reason' => $check['blocked_reason'] ?? null,
         ]);
     }
 
@@ -236,6 +238,12 @@ class DomainController extends Controller
 
         $nameservers = $registry['nameservers'];
         $eppCode = $registry['epp_code'];
+        $contacts = app(DomainRegistrantContactService::class);
+        $registrant = $contacts->normalize(
+            $registry['registrant'] !== []
+                ? $registry['registrant']
+                : ($domain->user ? $contacts->fromUser($domain->user) : [])
+        );
 
         return view('reseller.domains.show', compact(
             'domain',
@@ -244,6 +252,7 @@ class DomainController extends Controller
             'nameservers',
             'eppCode',
             'registry',
+            'registrant',
         ));
     }
 
@@ -314,6 +323,54 @@ class DomainController extends Controller
         $flashKey = $result['pushed'] ? 'success' : 'warning';
 
         return back()->with($flashKey, $this->registrarFulfillment->concealProviderMessage($result['message']));
+    }
+
+    public function updateRegistrant(Request $request, Domain $domain)
+    {
+        $this->assertResellerCanManageDomain($domain);
+
+        $contacts = app(DomainRegistrantContactService::class);
+        $validated = $request->validate($contacts->rules('registrant'));
+        $result = $this->registrarFulfillment->updateDomainRegistrant($domain, $validated['registrant']);
+
+        if (! $result['success']) {
+            return back()->with('error', $this->registrarFulfillment->concealProviderMessage($result['message']))->withInput();
+        }
+
+        return back()->with(
+            $result['pushed'] ? 'success' : 'warning',
+            $this->registrarFulfillment->concealProviderMessage($result['message'])
+        );
+    }
+
+    public function updateRegistryOptions(Request $request, Domain $domain)
+    {
+        $this->assertResellerCanManageDomain($domain);
+
+        $request->validate([
+            'registry_locked' => 'required|boolean',
+            'whois_privacy' => 'required|boolean',
+        ]);
+
+        if ($domain->registry_locked && ! $request->boolean('registry_locked')) {
+            $request->validate([
+                'confirm_unlock' => 'accepted',
+            ], [
+                'confirm_unlock.accepted' => 'Confirm that unlocking this domain allows a transfer to start with the EPP code.',
+            ]);
+        }
+
+        $result = $this->registrarFulfillment->updateDomainRegistryOptions(
+            $domain,
+            $request->boolean('registry_locked'),
+            $request->boolean('whois_privacy'),
+        );
+
+        if (! $result['success']) {
+            return back()->with('error', $this->registrarFulfillment->concealProviderMessage($result['message']));
+        }
+
+        return back()->with('success', $this->registrarFulfillment->concealProviderMessage($result['message']));
     }
 
     public function initiateTransfer(Request $request, Domain $domain)

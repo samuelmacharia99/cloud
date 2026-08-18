@@ -4,6 +4,7 @@ namespace App\Services\Registrar\Drivers;
 
 use App\Models\Domain;
 use App\Models\Registrar;
+use App\Services\DomainRegistrantContactService;
 use App\Services\Registrar\Cosmotown\CosmotownClient;
 use App\Services\Registrar\Cosmotown\CosmotownException;
 use App\Services\Registrar\RegistrarOperationsInterface;
@@ -104,6 +105,7 @@ class CosmotownRegistrarDriver implements RegistrarOperationsInterface
 
             if ($mapped['success']) {
                 $this->pushNameserversQuietly($client, $fqdn, $nameServers);
+                $this->pushRegistrantQuietly($client, $domain, $fqdn);
                 $mapped = $this->enrichFromDomainInfo($client, $fqdn, $mapped);
             }
 
@@ -141,6 +143,7 @@ class CosmotownRegistrarDriver implements RegistrarOperationsInterface
 
             if ($mapped['success']) {
                 $this->pushNameserversQuietly($client, $fqdn, $nameServers);
+                $this->pushRegistrantQuietly($client, $domain, $fqdn);
             }
 
             $mapped['external_id'] = $fqdn;
@@ -297,7 +300,13 @@ class CosmotownRegistrarDriver implements RegistrarOperationsInterface
     }
 
     /**
-     * @return array{nameservers: list<string>, auth_code: ?string}
+     * @return array{
+     *     nameservers: list<string>,
+     *     auth_code: ?string,
+     *     locked: ?bool,
+     *     whois_privacy: ?bool,
+     *     contacts: ?array<string, mixed>
+     * }
      */
     public function liveRegistrySnapshot(Registrar $registrar, Domain $domain): array
     {
@@ -314,10 +323,88 @@ class CosmotownRegistrarDriver implements RegistrarOperationsInterface
             }
         }
 
+        $contacts = app(DomainRegistrantContactService::class)->fromCosmotownPayload($info);
+
         return [
             'nameservers' => self::nameserversFromPayload($info),
             'auth_code' => $auth !== '' ? $auth : null,
+            'locked' => $this->boolFromPayload($info, ['locked', 'lock_domain', 'domain_locked']),
+            'whois_privacy' => $this->boolFromPayload($info, ['whois_privacy', 'enable_private_whois', 'private_whois']),
+            'contacts' => filled($contacts['email'] ?? null) ? $contacts : null,
         ];
+    }
+
+    /**
+     * @param  array{enable_private_whois?: bool, lock_domain?: bool, enable_auto_billing?: bool}  $options
+     * @return array{success: bool, status: string, message: string}
+     */
+    public function changeDomainOptions(Registrar $registrar, Domain $domain, array $options): array
+    {
+        try {
+            $response = CosmotownClient::forRegistrar($registrar)->changeDomainOptions(
+                $this->fqdn($domain),
+                $options
+            );
+
+            $statusText = strtolower((string) ($response['status'] ?? $response['message'] ?? 'processed'));
+            $accepted = $statusText === '' || str_contains($statusText, 'processed') || str_contains($statusText, 'success');
+
+            if (! $accepted) {
+                return [
+                    'success' => false,
+                    'status' => 'FAI',
+                    'message' => $this->rowMessage($response, 'Cosmotown rejected the domain option change.'),
+                ];
+            }
+
+            return [
+                'success' => true,
+                'status' => 'ACT',
+                'message' => 'Domain options updated at Cosmotown.',
+            ];
+        } catch (CosmotownException $e) {
+            return [
+                'success' => false,
+                'status' => 'FAI',
+                'message' => $e->getMessage(),
+            ];
+        } catch (\Throwable $e) {
+            return [
+                'success' => false,
+                'status' => 'FAI',
+                'message' => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $contact
+     * @return array{success: bool, status: string, message: string}
+     */
+    public function saveDomainContacts(Registrar $registrar, Domain $domain, array $contact): array
+    {
+        try {
+            $payload = app(DomainRegistrantContactService::class)->toCosmotownPayload($contact);
+            CosmotownClient::forRegistrar($registrar)->saveContactInfo($payload, $this->fqdn($domain));
+
+            return [
+                'success' => true,
+                'status' => 'ACT',
+                'message' => 'Registrant contact updated at Cosmotown.',
+            ];
+        } catch (CosmotownException $e) {
+            return [
+                'success' => false,
+                'status' => 'FAI',
+                'message' => $e->getMessage(),
+            ];
+        } catch (\Throwable $e) {
+            return [
+                'success' => false,
+                'status' => 'FAI',
+                'message' => $e->getMessage(),
+            ];
+        }
     }
 
     /**
@@ -506,6 +593,69 @@ class CosmotownRegistrarDriver implements RegistrarOperationsInterface
         } catch (\Throwable) {
             // Registration/transfer was accepted; nameservers can be retried from the domain page.
         }
+    }
+
+    private function pushRegistrantQuietly(CosmotownClient $client, Domain $domain, string $fqdn): void
+    {
+        $contacts = app(DomainRegistrantContactService::class);
+        $payload = is_array($domain->registrant_contact) ? $domain->registrant_contact : [];
+
+        if (! $contacts->isComplete($payload) && $domain->user) {
+            $payload = $contacts->fromUser($domain->user);
+        }
+
+        if (! $contacts->isComplete($payload)) {
+            return;
+        }
+
+        try {
+            $client->saveContactInfo($contacts->toCosmotownPayload($payload), $fqdn);
+            $domain->update(['registrant_contact' => $contacts->normalize($payload)]);
+        } catch (\Throwable) {
+            // Registration/transfer was accepted; WHOIS can be retried from the domain page.
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @param  list<string>  $keys
+     */
+    private function boolFromPayload(array $data, array $keys): ?bool
+    {
+        $bags = [$data];
+        if (isset($data['domain']) && is_array($data['domain'])) {
+            $bags[] = $data['domain'];
+        }
+        if (isset($data['options']) && is_array($data['options'])) {
+            $bags[] = $data['options'];
+        }
+
+        foreach ($bags as $bag) {
+            foreach ($keys as $key) {
+                if (! array_key_exists($key, $bag)) {
+                    continue;
+                }
+
+                $value = $bag[$key];
+                if (is_bool($value)) {
+                    return $value;
+                }
+                if (is_int($value) || is_float($value)) {
+                    return (bool) $value;
+                }
+                if (is_string($value)) {
+                    $normalized = strtolower(trim($value));
+                    if (in_array($normalized, ['1', 'true', 'yes', 'on'], true)) {
+                        return true;
+                    }
+                    if (in_array($normalized, ['0', 'false', 'no', 'off'], true)) {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        return null;
     }
 
     /**

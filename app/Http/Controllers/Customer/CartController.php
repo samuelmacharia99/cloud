@@ -287,8 +287,10 @@ class CartController extends Controller
                 ], 422);
             }
 
-            if (! app(DomainAvailabilityService::class)->isAvailable($request->domain, $request->extension)) {
-                $message = 'This domain is not available for registration.';
+            $inspect = app(DomainAvailabilityService::class)->inspect($request->domain, $request->extension);
+            $block = app(DomainAvailabilityService::class)->registrationBlockMessage($inspect);
+            if ($block) {
+                $message = $block;
 
                 if ($request->expectsJson()) {
                     return response()->json(['success' => false, 'message' => $message], 422);
@@ -424,8 +426,9 @@ class CartController extends Controller
 
         try {
             $fullDomain = $parsed['name'].$parsed['extension'];
-            $available = app(DomainAvailabilityService::class)
-                ->isAvailable($parsed['name'], $parsed['extension'], $fullDomain);
+            $inspect = app(DomainAvailabilityService::class)
+                ->inspect($parsed['name'], $parsed['extension'], $fullDomain);
+            $available = $inspect['available'];
 
             $years = max(1, min(10, (int) $request->input('years', 1)));
 

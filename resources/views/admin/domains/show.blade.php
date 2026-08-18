@@ -195,6 +195,15 @@
             @endif
         </div>
 
+        <hr class="border-slate-200 dark:border-slate-700">
+
+        @include('domains.partials.registry-management', [
+            'audience' => 'admin',
+            'showEpp' => false,
+            'registrantRoute' => route('admin.domains.registrant', $domain),
+            'optionsRoute' => route('admin.domains.registry-options', $domain),
+        ])
+
         @if ($domain->notes)
             <hr class="border-slate-200 dark:border-slate-700">
             <div>

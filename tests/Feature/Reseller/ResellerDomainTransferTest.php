@@ -8,6 +8,7 @@ use App\Models\DomainExtension;
 use App\Models\DomainPricing;
 use App\Models\Invoice;
 use App\Models\ResellerDomainOrder;
+use App\Models\ResellerDomainPricing;
 use App\Models\ResellerPackage;
 use App\Models\User;
 use App\Support\ResellerCartContext;
@@ -93,7 +94,7 @@ class ResellerDomainTransferTest extends TestCase
             ->assertJson(['success' => true]);
 
         $this->actingAs($reseller)
-            ->post(route('reseller.checkout.process'), ['agree' => '1'])
+            ->post(route('reseller.checkout.process'), $this->withRegistrant(['agree' => '1'], $reseller))
             ->assertRedirect();
 
         $order = ResellerDomainOrder::query()->first();
@@ -107,10 +108,36 @@ class ResellerDomainTransferTest extends TestCase
         $this->assertNotNull($domain);
         $this->assertSame('transfer', $domain->type);
         $this->assertSame('EPP-CODE-12345', $domain->epp_code);
+        $this->assertSame('Amina', $domain->registrant_contact['first_name']);
 
         $invoice = Invoice::query()->where('user_id', $reseller->id)->first();
         $this->assertNotNull($invoice);
         $this->assertSame(850.0, (float) $invoice->total);
+    }
+
+    public function test_reseller_checkout_rejects_transfer_without_registrant(): void
+    {
+        $reseller = $this->createReseller();
+        $this->seedExtensionWithTransfer('.xfer', 850);
+        ResellerCartContext::setSelf();
+
+        $this->actingAs($reseller)
+            ->postJson(route('reseller.cart.transfer'), [
+                'domain' => 'noreg',
+                'extension' => '.xfer',
+                'price' => 850,
+                'epp_code' => 'EPP-CODE-12345',
+                'old_registrar' => 'GoDaddy',
+            ])
+            ->assertOk();
+
+        $this->actingAs($reseller)
+            ->from(route('reseller.checkout.show'))
+            ->post(route('reseller.checkout.process'), ['agree' => '1'])
+            ->assertRedirect(route('reseller.checkout.show'))
+            ->assertSessionHasErrors('registrant.first_name');
+
+        $this->assertDatabaseMissing('domains', ['name' => 'noreg']);
     }
 
     public function test_customer_mode_transfer_uses_retail_transfer_price(): void
@@ -124,6 +151,14 @@ class ResellerDomainTransferTest extends TestCase
             'period_years' => 1,
             'tier' => 'retail',
             'price' => 1200,
+            'enabled' => true,
+        ]);
+
+        ResellerDomainPricing::create([
+            'reseller_id' => $reseller->id,
+            'domain_extension_id' => $extension->id,
+            'period_years' => 1,
+            'retail_price' => 1600,
             'enabled' => true,
         ]);
 
@@ -147,7 +182,7 @@ class ResellerDomainTransferTest extends TestCase
             ->assertOk();
 
         $this->actingAs($reseller)
-            ->post(route('reseller.checkout.process'), ['agree' => '1'])
+            ->post(route('reseller.checkout.process'), $this->withRegistrant(['agree' => '1'], $reseller))
             ->assertRedirect();
 
         $order = ResellerDomainOrder::query()->first();

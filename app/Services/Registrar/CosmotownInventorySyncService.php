@@ -4,8 +4,11 @@ namespace App\Services\Registrar;
 
 use App\Enums\RegistrarDriver;
 use App\Models\Domain;
+use App\Models\DomainExtension;
 use App\Models\Registrar;
+use App\Models\User;
 use App\Services\AdminActivityService;
+use App\Services\DomainInputParser;
 use App\Services\InvoiceGenerationScheduleService;
 use App\Services\Registrar\Cosmotown\CosmotownClient;
 use App\Services\Registrar\Cosmotown\CosmotownException;
@@ -156,6 +159,136 @@ class CosmotownInventorySyncService
     }
 
     /**
+     * Live Cosmotown names that have no Admin → Domains row yet.
+     *
+     * @return list<array{fqdn: string, expires_at: ?string, locked: ?bool, whois_privacy: ?bool}>
+     */
+    public function unmatchedAtRegistrar(?Registrar $registrar = null): array
+    {
+        $registrar ??= $this->activeCosmotownRegistrar();
+        if (! $registrar) {
+            throw new \InvalidArgumentException('No active Cosmotown registrar is configured.');
+        }
+
+        $remote = CosmotownClient::forRegistrar($registrar)->listAllDomains();
+        $local = $this->localByFqdn();
+        $unmatched = [];
+
+        foreach ($remote as $row) {
+            $fqdn = $this->fqdnFromRow($row);
+            if ($fqdn === '' || $local->has($fqdn)) {
+                continue;
+            }
+
+            $expiry = $this->expirationFrom($row);
+
+            $unmatched[] = [
+                'fqdn' => $fqdn,
+                'expires_at' => $expiry?->toDateString(),
+                'locked' => $this->boolFrom($row, ['locked', 'lock_domain']),
+                'whois_privacy' => $this->boolFrom($row, ['whois_privacy', 'enable_private_whois', 'private_whois']),
+            ];
+        }
+
+        usort($unmatched, fn (array $a, array $b) => strcmp($a['fqdn'], $b['fqdn']));
+
+        return $unmatched;
+    }
+
+    /**
+     * Attach a Cosmotown-only name to an existing customer. Does not create an invoice or order.
+     */
+    public function importToCustomer(string $fqdn, User $owner, User $admin, bool $confirmedNoInvoice): Domain
+    {
+        if (! $confirmedNoInvoice) {
+            throw new \InvalidArgumentException(
+                'Confirm that this domain is already at Cosmotown and should appear on the customer account without creating an invoice.'
+            );
+        }
+
+        if ($owner->is_admin) {
+            throw new \InvalidArgumentException('Import onto a customer or reseller account, not an admin user.');
+        }
+
+        $registrar = $this->activeCosmotownRegistrar();
+        if (! $registrar) {
+            throw new \InvalidArgumentException('No active Cosmotown registrar is configured.');
+        }
+
+        $fqdn = strtolower(trim($fqdn));
+        $extensions = DomainExtension::query()->pluck('extension')->all();
+        $parsed = app(DomainInputParser::class)->parse($fqdn, null, $extensions);
+        if ($parsed === null) {
+            throw new \InvalidArgumentException(
+                'That name does not match a TLD in Admin → Domain pricing. Add the extension first, then import.'
+            );
+        }
+
+        $existing = Domain::query()
+            ->where('name', $parsed['name'])
+            ->where('extension', $parsed['extension'])
+            ->first();
+        if ($existing) {
+            throw new \InvalidArgumentException(
+                $fqdn.' is already on account #'.$existing->user_id.' (domain #'.$existing->id.').'
+            );
+        }
+
+        $client = CosmotownClient::forRegistrar($registrar);
+
+        try {
+            $info = $client->getDomainInfo($fqdn);
+        } catch (CosmotownException $e) {
+            throw new \InvalidArgumentException(
+                'Cosmotown does not list '.$fqdn.' on this reseller account. '.$e->getMessage()
+            );
+        }
+
+        $expiry = $this->expirationFrom($info);
+        $created = $this->createdFrom($info);
+        $nameservers = $this->nameserversFrom($info);
+
+        $domain = Domain::create([
+            'user_id' => $owner->id,
+            'reseller_id' => $owner->is_reseller ? $owner->id : $owner->reseller_id,
+            'name' => $parsed['name'],
+            'extension' => $parsed['extension'],
+            'type' => 'registration',
+            'status' => ($expiry && $expiry->isPast()) ? 'expired' : 'active',
+            'registrar' => $registrar->slug,
+            'registrar_handle' => $fqdn,
+            'registered_at' => $created,
+            'expires_at' => $expiry?->toDateString(),
+            'auto_renew' => false,
+            'nameserver_1' => $nameservers[0] ?? null,
+            'nameserver_2' => $nameservers[1] ?? null,
+            'nameserver_3' => $nameservers[2] ?? null,
+            'nameserver_4' => $nameservers[3] ?? null,
+            'registry_locked' => $this->boolFrom($info, ['locked', 'lock_domain']) ?? false,
+            'whois_privacy' => $this->boolFrom($info, ['whois_privacy', 'enable_private_whois', 'private_whois']) ?? false,
+        ]);
+
+        if ($expiry) {
+            $domain->update([
+                'next_invoice_date' => $this->invoiceSchedule->domainNextInvoiceDate($domain->fresh())->toDateString(),
+            ]);
+        }
+
+        AdminActivityService::log(
+            'cosmotown_inventory_import',
+            'Imported '.$fqdn.' from Cosmotown onto '.$owner->email.' without creating an invoice.',
+            $domain,
+            [
+                'fqdn' => $fqdn,
+                'owner_user_id' => $owner->id,
+                'expires_at' => $expiry?->toDateString(),
+            ],
+        );
+
+        return $domain->fresh();
+    }
+
+    /**
      * @return Collection<string, Collection<int, Domain>>
      */
     private function localByFqdn(): Collection
@@ -231,6 +364,16 @@ class CosmotownInventorySyncService
             $updates['nameserver_4'] = $nameservers[3] ?? null;
         }
 
+        $locked = $this->boolFrom($info) ?? $this->boolFrom($row, ['locked', 'lock_domain']);
+        if ($locked !== null) {
+            $updates['registry_locked'] = $locked;
+        }
+        $privacy = $this->boolFrom($info, ['whois_privacy', 'enable_private_whois', 'private_whois'])
+            ?? $this->boolFrom($row, ['whois_privacy', 'enable_private_whois', 'private_whois']);
+        if ($privacy !== null) {
+            $updates['whois_privacy'] = $privacy;
+        }
+
         $status = $this->statusFromExpiry($domain, $expiry);
         if ($status !== null) {
             $updates['status'] = $status;
@@ -257,6 +400,44 @@ class CosmotownInventorySyncService
         $domain->update($updates);
 
         return true;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @param  list<string>  $keys
+     */
+    private function boolFrom(array $data, array $keys = ['locked', 'lock_domain']): ?bool
+    {
+        $bags = [$data];
+        if (isset($data['domain']) && is_array($data['domain'])) {
+            $bags[] = $data['domain'];
+        }
+
+        foreach ($bags as $bag) {
+            foreach ($keys as $key) {
+                if (! array_key_exists($key, $bag)) {
+                    continue;
+                }
+                $value = $bag[$key];
+                if (is_bool($value)) {
+                    return $value;
+                }
+                if (is_numeric($value)) {
+                    return (bool) $value;
+                }
+                if (is_string($value)) {
+                    $normalized = strtolower(trim($value));
+                    if (in_array($normalized, ['1', 'true', 'yes', 'on'], true)) {
+                        return true;
+                    }
+                    if (in_array($normalized, ['0', 'false', 'no', 'off'], true)) {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        return null;
     }
 
     /**

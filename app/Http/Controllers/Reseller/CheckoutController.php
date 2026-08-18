@@ -15,6 +15,7 @@ use App\Models\Setting;
 use App\Models\User;
 use App\Services\Billing\InvoiceNumberService;
 use App\Services\DomainPushService;
+use App\Services\DomainRegistrantContactService;
 use App\Services\DomainRenewalPushService;
 use App\Services\DomainRenewalService;
 use App\Services\DomainTransferService;
@@ -73,6 +74,10 @@ class CheckoutController extends Controller
 
         $wallet = $this->walletService->getOrCreate($user);
         $walletApplicable = $isCustomerCheckout ? 0 : min((float) $wallet->balance, $taxBreakdown['total']);
+        $hasRegistryDomain = collect($items)->contains(
+            fn (array $item) => in_array($item['type'] ?? 'domain', ['domain', 'domain_transfer'], true)
+        );
+        $whoisUser = $checkoutCustomer ?? $user;
 
         return view('reseller.checkout.index', [
             'items' => $items,
@@ -89,6 +94,8 @@ class CheckoutController extends Controller
             'isCustomerCheckout' => $isCustomerCheckout,
             'resellerDefaults' => $this->nameservers->defaultsForReseller($user),
             'platformDefaults' => $this->nameservers->platformDefaults(),
+            'hasRegistryDomain' => $hasRegistryDomain,
+            'registrant' => app(DomainRegistrantContactService::class)->fromUser($whoisUser),
         ]);
     }
 
@@ -120,9 +127,12 @@ class CheckoutController extends Controller
                 ->withErrors($e->errors());
         }
 
+        $this->validateRegistrantIfNeeded($request, $cart);
+        $registrantContact = $this->registrantContactFromRequest($request, $this->resolveCheckoutCustomer() ?? $reseller);
+
         $checkoutCustomer = $this->resolveCheckoutCustomer();
         if ($checkoutCustomer) {
-            return $this->processCustomerCheckout($cart, $reseller, $checkoutCustomer);
+            return $this->processCustomerCheckout($cart, $reseller, $checkoutCustomer, $registrantContact);
         }
         $subtotal = 0;
         $invoiceItems = [];
@@ -188,6 +198,7 @@ class CheckoutController extends Controller
                         $item['epp_code'],
                         $item['old_registrar'],
                         $item['old_registrar_url'] ?? null,
+                        $registrantContact,
                     );
 
                     $domain->update($this->nameservers->domainColumnsForItem($reseller, $item));
@@ -255,6 +266,7 @@ class CheckoutController extends Controller
                         'status' => 'pending',
                         'type' => 'registration',
                         'auto_renew' => false,
+                        'registrant_contact' => $registrantContact,
                     ], $this->nameservers->domainColumnsForItem($reseller, $item)));
 
                     // Create reseller domain order
@@ -406,14 +418,16 @@ class CheckoutController extends Controller
 
     /**
      * @param  array<string, array<string, mixed>>  $cart
+     * @param  array<string, mixed>  $registrantContact
      */
-    private function processCustomerCheckout(array $cart, $reseller, $checkoutCustomer): RedirectResponse
+    private function processCustomerCheckout(array $cart, $reseller, $checkoutCustomer, array $registrantContact): RedirectResponse
     {
         try {
             $invoice = $this->customerOrders->checkoutDomainCartForCustomer(
                 $reseller,
                 $checkoutCustomer,
                 array_values($cart),
+                $registrantContact,
             );
 
             session()->forget(CartController::CART_KEY);
@@ -430,6 +444,45 @@ class CheckoutController extends Controller
             return redirect()->route('reseller.checkout.show')
                 ->with('error', 'Failed to create customer invoice.');
         }
+    }
+
+    /**
+     * @param  array<string, array<string, mixed>>  $cart
+     */
+    private function cartHasRegistryDomain(array $cart): bool
+    {
+        foreach ($cart as $item) {
+            if (in_array($item['type'] ?? 'domain', ['domain', 'domain_transfer'], true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  array<string, array<string, mixed>>  $cart
+     */
+    private function validateRegistrantIfNeeded(Request $request, array $cart): void
+    {
+        if (! $this->cartHasRegistryDomain($cart)) {
+            return;
+        }
+
+        $request->validate(app(DomainRegistrantContactService::class)->rules('registrant'));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function registrantContactFromRequest(Request $request, User $fallback): array
+    {
+        $contacts = app(DomainRegistrantContactService::class);
+        if ($request->filled('registrant.first_name')) {
+            return $contacts->normalize($request->input('registrant', []));
+        }
+
+        return $contacts->fromUser($fallback);
     }
 
     private function resolveCheckoutCustomer(): ?User

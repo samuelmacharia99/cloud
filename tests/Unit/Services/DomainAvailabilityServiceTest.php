@@ -75,4 +75,21 @@ class DomainAvailabilityServiceTest extends TestCase
         $this->assertTrue($available);
         $this->assertFalse($taken);
     }
+
+    public function test_interprets_premium_whois_as_not_registerable_at_standard_price(): void
+    {
+        $reflection = new ReflectionClass(DomainAvailabilityService::class);
+        $method = $reflection->getMethod('interpretWhoisDetailed');
+        $method->setAccessible(true);
+
+        $premium = $method->invoke($this->service, 'This name is a premium domain and is not available at standard pricing.');
+        $reserved = $method->invoke($this->service, 'This name is reserved by the registry.');
+
+        $this->assertSame(['available' => false, 'reason' => 'premium'], $premium);
+        $this->assertSame(['available' => false, 'reason' => 'reserved'], $reserved);
+        $this->assertStringContainsString('premium', app(DomainAvailabilityService::class)->registrationBlockMessage([
+            'available' => false,
+            'blocked_reason' => 'premium',
+        ]));
+    }
 }

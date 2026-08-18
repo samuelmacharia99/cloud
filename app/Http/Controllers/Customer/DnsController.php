@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Customer;
 use App\Http\Controllers\Controller;
 use App\Models\Domain;
 use App\Services\Dns\DomainCloudflareDnsService;
+use App\Services\Registrar\RegistrarFulfillmentService;
 use Illuminate\Http\Request;
 
 class DnsController extends Controller
@@ -83,19 +84,32 @@ class DnsController extends Controller
 
         $validated = $request->validate([
             'nameserver_1' => 'required|string|min:3|max:253',
-            'nameserver_2' => 'nullable|string|min:3|max:253',
+            'nameserver_2' => 'required|string|min:3|max:253',
             'nameserver_3' => 'nullable|string|min:3|max:253',
             'nameserver_4' => 'nullable|string|min:3|max:253',
         ]);
 
+        $result = app(RegistrarFulfillmentService::class)->updateDomainNameservers($domain, [
+            'ns1' => $validated['nameserver_1'],
+            'ns2' => $validated['nameserver_2'],
+            'ns3' => $validated['nameserver_3'] ?? null,
+            'ns4' => $validated['nameserver_4'] ?? null,
+        ]);
+
+        if (! $result['success']) {
+            return back()->with('error', app(RegistrarFulfillmentService::class)->concealProviderMessage($result['message']))->withInput();
+        }
+
         $domain->update([
             'nameserver_1' => $validated['nameserver_1'],
-            'nameserver_2' => $validated['nameserver_2'] ?? null,
+            'nameserver_2' => $validated['nameserver_2'],
             'nameserver_3' => $validated['nameserver_3'] ?? null,
             'nameserver_4' => $validated['nameserver_4'] ?? null,
         ]);
 
-        return back()->with('success', 'Nameservers updated successfully. Changes may take up to 48 hours to propagate.');
+        $flashKey = $result['pushed'] ? 'success' : 'warning';
+
+        return back()->with($flashKey, app(RegistrarFulfillmentService::class)->concealProviderMessage($result['message']));
     }
 
     public function addRecord(Request $request, Domain $domain)

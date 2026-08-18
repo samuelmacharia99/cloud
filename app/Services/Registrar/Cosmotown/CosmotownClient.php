@@ -237,6 +237,18 @@ class CosmotownClient
     }
 
     /**
+     * @param  array{enable_private_whois?: bool, lock_domain?: bool, enable_auto_billing?: bool}  $options
+     * @return array<string, mixed>
+     */
+    public function changeDomainOptions(string $domain, array $options): array
+    {
+        return $this->post('reseller/domaininfo', [
+            'domain' => $this->normalizeDomain($domain),
+            'options' => $options,
+        ]);
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function get(string $path, array $query = []): array

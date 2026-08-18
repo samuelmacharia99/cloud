@@ -207,6 +207,7 @@ class CosmotownRegistrarDriverTest extends TestCase
             'sandbox.cosmotown.com/v1/reseller/domaininfo*' => Http::response([
                 'nameservers' => ['ns1.live.example', 'ns2.live.example'],
             ], 200),
+            'sandbox.cosmotown.com/v1/reseller/domainepp*' => Http::response(['auth_code' => ''], 200),
         ]);
 
         $domain = new Domain([
@@ -379,6 +380,34 @@ class CosmotownRegistrarDriverTest extends TestCase
         $this->assertSame('ACT', $result['status']);
         $this->assertSame('example.com', $result['external_id']);
         $this->assertSame('2027-08-18', $result['expiration_date']);
+    }
+
+    public function test_change_domain_options_posts_lock_and_privacy(): void
+    {
+        Http::fake([
+            'sandbox.cosmotown.com/v1/reseller/domaininfo' => Http::response(['status' => 'processed'], 200),
+        ]);
+
+        $domain = new Domain([
+            'name' => 'example',
+            'extension' => '.com',
+        ]);
+
+        $result = (new CosmotownRegistrarDriver)->changeDomainOptions($this->makeRegistrar(), $domain, [
+            'lock_domain' => false,
+            'enable_private_whois' => true,
+        ]);
+
+        $this->assertTrue($result['success']);
+        Http::assertSent(function ($request) {
+            $body = $request->data();
+
+            return $request->method() === 'POST'
+                && str_contains($request->url(), 'reseller/domaininfo')
+                && ($body['domain'] ?? null) === 'example.com'
+                && ($body['options']['lock_domain'] ?? null) === false
+                && ($body['options']['enable_private_whois'] ?? null) === true;
+        });
     }
 
     public function test_registrar_manager_resolves_cosmotown_driver(): void

@@ -13,6 +13,7 @@ use App\Services\ResellerNameserverService;
 use App\Services\ResellerScopeService;
 use App\Services\TaxService;
 use App\Support\ResellerCartContext;
+use App\Support\SessionCart;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -122,10 +123,12 @@ class CartController extends Controller
             return response()->json(['success' => false, 'message' => 'Extension not available.'], 422);
         }
 
-        if (! $this->availability->isAvailable($validated['domain'], $validated['extension'])) {
+        $inspect = $this->availability->inspect($validated['domain'], $validated['extension']);
+        $block = $this->availability->registrationBlockMessage($inspect);
+        if ($block) {
             return response()->json([
                 'success' => false,
-                'message' => 'This domain is not available for registration.',
+                'message' => $block,
             ], 422);
         }
 
@@ -143,7 +146,7 @@ class CartController extends Controller
         }
 
         $cart = session()->get(self::CART_KEY, []);
-        $key = \App\Support\SessionCart::newLineKey('d');
+        $key = SessionCart::newLineKey('d');
 
         $cart[$key] = [
             'type' => 'domain',
@@ -207,7 +210,7 @@ class CartController extends Controller
         }
 
         $cart = session()->get(self::CART_KEY, []);
-        $key = \App\Support\SessionCart::newLineKey('cust');
+        $key = SessionCart::newLineKey('cust');
 
         $cart[$key] = [
             'type' => 'domain',
@@ -271,7 +274,7 @@ class CartController extends Controller
         }
 
         $cart = session()->get(self::CART_KEY, []);
-        $key = \App\Support\SessionCart::newLineKey('xfer');
+        $key = SessionCart::newLineKey('xfer');
 
         $cart[$key] = [
             'type' => 'domain_transfer',
@@ -325,7 +328,7 @@ class CartController extends Controller
         }
 
         $cart = session()->get(self::CART_KEY, []);
-        $key = \App\Support\SessionCart::newLineKey('xfer');
+        $key = SessionCart::newLineKey('xfer');
 
         $cart[$key] = [
             'type' => 'domain_transfer',

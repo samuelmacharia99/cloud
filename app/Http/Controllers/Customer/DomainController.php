@@ -12,8 +12,10 @@ use App\Models\InvoiceItem;
 use App\Models\Service;
 use App\Services\Dns\DomainCloudflareDnsService;
 use App\Services\DomainAutoRenewService;
+use App\Services\DomainRegistrantContactService;
 use App\Services\DomainRenewalService;
 use App\Services\DomainTransferService;
+use App\Services\Registrar\RegistrarFulfillmentService;
 use App\Services\ResellerCustomerCatalogService;
 use App\Services\ResellerDomainOrderService;
 use App\Services\TaxService;
@@ -49,6 +51,126 @@ class DomainController extends Controller
             'domainServices' => $domainServices,
             'cloudflareDnsAvailable' => app(DomainCloudflareDnsService::class)->isAvailableForCustomer(auth()->user()),
         ]);
+    }
+
+    public function show(Domain $domain)
+    {
+        $this->authorize('view', $domain);
+
+        $fulfillment = app(RegistrarFulfillmentService::class);
+        $registry = $fulfillment->refreshLiveRegistryDetails($domain);
+        $domain->concealUpstreamProviderDetails();
+
+        $contacts = app(DomainRegistrantContactService::class);
+        $registrant = $registry['registrant'] !== []
+            ? $contacts->normalize($registry['registrant'])
+            : $contacts->fromUser($domain->user ?? auth()->user());
+
+        return view('customer.domains.show', [
+            'domain' => $domain->fresh(),
+            'nameservers' => $registry['nameservers'],
+            'eppCode' => $registry['epp_code'],
+            'registry' => $registry,
+            'registrant' => $registrant,
+            'cloudflareManaged' => app(DomainCloudflareDnsService::class)->usesCloudflareDns($domain),
+        ]);
+    }
+
+    public function updateNameservers(Request $request, Domain $domain)
+    {
+        $this->authorize('update', $domain);
+
+        if ($domain->isDnsManaged() || app(DomainCloudflareDnsService::class)->usesCloudflareDns($domain)) {
+            return back()->with('error', 'Nameservers for this domain are managed with DNS. Change them from DNS management.');
+        }
+
+        $validated = $request->validate([
+            'nameserver_1' => 'required|string|min:3|max:253',
+            'nameserver_2' => 'required|string|min:3|max:253',
+            'nameserver_3' => 'nullable|string|min:3|max:253',
+            'nameserver_4' => 'nullable|string|min:3|max:253',
+        ]);
+
+        $nameservers = [
+            'ns1' => $validated['nameserver_1'],
+            'ns2' => $validated['nameserver_2'],
+            'ns3' => $validated['nameserver_3'] ?? null,
+            'ns4' => $validated['nameserver_4'] ?? null,
+        ];
+
+        $fulfillment = app(RegistrarFulfillmentService::class);
+        $result = $fulfillment->updateDomainNameservers($domain, $nameservers);
+
+        if (! $result['success']) {
+            return back()->with('error', $fulfillment->concealProviderMessage($result['message']))->withInput();
+        }
+
+        $domain->update([
+            'nameserver_1' => $validated['nameserver_1'],
+            'nameserver_2' => $validated['nameserver_2'],
+            'nameserver_3' => $validated['nameserver_3'] ?? null,
+            'nameserver_4' => $validated['nameserver_4'] ?? null,
+        ]);
+
+        $flashKey = $result['pushed'] ? 'success' : 'warning';
+
+        return back()->with($flashKey, $fulfillment->concealProviderMessage($result['message']));
+    }
+
+    public function updateRegistrant(Request $request, Domain $domain)
+    {
+        $this->authorize('update', $domain);
+
+        if ($domain->isDnsManaged()) {
+            return back()->with('error', 'DNS-only domains do not have a registry registrant.');
+        }
+
+        $contacts = app(DomainRegistrantContactService::class);
+        $validated = $request->validate($contacts->rules('registrant'));
+        $result = app(RegistrarFulfillmentService::class)->updateDomainRegistrant($domain, $validated['registrant']);
+
+        if (! $result['success']) {
+            return back()->with('error', app(RegistrarFulfillmentService::class)->concealProviderMessage($result['message']))->withInput();
+        }
+
+        $flashKey = $result['pushed'] ? 'success' : 'warning';
+
+        return back()->with($flashKey, app(RegistrarFulfillmentService::class)->concealProviderMessage($result['message']));
+    }
+
+    public function updateRegistryOptions(Request $request, Domain $domain)
+    {
+        $this->authorize('update', $domain);
+
+        if ($domain->isDnsManaged()) {
+            return back()->with('error', 'DNS-only domains have no registry lock or privacy settings.');
+        }
+
+        $validated = $request->validate([
+            'registry_locked' => 'required|boolean',
+            'whois_privacy' => 'required|boolean',
+        ]);
+
+        if ($domain->registry_locked && ! $request->boolean('registry_locked')) {
+            $request->validate([
+                'confirm_unlock' => 'accepted',
+            ], [
+                'confirm_unlock.accepted' => 'Confirm that unlocking this domain allows a transfer to start with the EPP code.',
+            ]);
+        }
+
+        $fulfillment = app(RegistrarFulfillmentService::class);
+        $result = $fulfillment->updateDomainRegistryOptions(
+            $domain,
+            $request->boolean('registry_locked'),
+            $request->boolean('whois_privacy'),
+        );
+
+        if (! $result['success']) {
+            return back()->with('error', $fulfillment->concealProviderMessage($result['message']));
+        }
+
+        return back()->with('success', $fulfillment->concealProviderMessage($result['message']));
     }
 
     /**
@@ -340,6 +462,7 @@ class DomainController extends Controller
             'total' => $taxBreakdown['total'],
             'currency' => $currency,
             'currencyCode' => $currencyCode,
+            'registrant' => app(DomainRegistrantContactService::class)->fromUser($domain->user ?? auth()->user()),
         ]);
     }
 
@@ -351,6 +474,7 @@ class DomainController extends Controller
         $request->validate([
             'agree_terms' => 'required|accepted',
         ]);
+        $request->validate(app(DomainRegistrantContactService::class)->rules('registrant'));
 
         $transferCheckout = session('transfer_checkout');
         abort_if(! $transferCheckout, 404, 'Transfer not found');
@@ -363,7 +487,10 @@ class DomainController extends Controller
             $user = auth()->user();
 
             // Create invoice and invoice item within a transaction
-            $invoice = DB::transaction(function () use ($domain, $transferCheckout, $user) {
+            $invoice = DB::transaction(function () use ($domain, $transferCheckout, $user, $request) {
+                $domain->update([
+                    'registrant_contact' => app(DomainRegistrantContactService::class)->normalize($request->input('registrant', [])),
+                ]);
                 $transferPrice = $transferCheckout['transfer_price'];
                 $taxBreakdown = TaxService::calculateForUser((float) $transferPrice, $user);
 

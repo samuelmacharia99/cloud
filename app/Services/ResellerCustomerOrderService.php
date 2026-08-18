@@ -336,7 +336,11 @@ class ResellerCustomerOrderService
      *
      * @param  array<int, array<string, mixed>>  $cartItems
      */
-    public function checkoutDomainCartForCustomer(User $reseller, User $customer, array $cartItems): Invoice
+    /**
+     * @param  list<array<string, mixed>>  $cartItems
+     * @param  array<string, mixed>|null  $registrantContact
+     */
+    public function checkoutDomainCartForCustomer(User $reseller, User $customer, array $cartItems, ?array $registrantContact = null): Invoice
     {
         $this->billing->ensureManagedCustomer($reseller, $customer);
 
@@ -349,7 +353,7 @@ class ResellerCustomerOrderService
             throw new \InvalidArgumentException('Your cart has no domain orders for this customer.');
         }
 
-        return DB::transaction(function () use ($reseller, $customer, $domainItems) {
+        return DB::transaction(function () use ($reseller, $customer, $domainItems, $registrantContact) {
             $lineItems = [];
             $renewalOrders = [];
 
@@ -382,6 +386,7 @@ class ResellerCustomerOrderService
                         $item['old_registrar_url'] ?? null,
                         isset($item['retail_total']) ? (float) $item['retail_total'] : null,
                         $item,
+                        $registrantContact,
                     );
                 } else {
                     $prepared = $this->prepareDomainRegistration(
@@ -393,6 +398,7 @@ class ResellerCustomerOrderService
                         null,
                         null,
                         $item,
+                        $registrantContact,
                     );
                 }
 
@@ -524,6 +530,7 @@ class ResellerCustomerOrderService
         ?string $oldRegistrarUrl = null,
         ?float $retailAmount = null,
         array $cartItem = [],
+        ?array $registrantContact = null,
     ): array {
         $domainName = strtolower($domainName);
         $wholesaleAmount = app(ResellerDomainOrderService::class)
@@ -559,6 +566,7 @@ class ResellerCustomerOrderService
             'old_registrar_url' => $oldRegistrarUrl,
             'transfer_notes' => 'Transfer initiated on '.now()->format('Y-m-d H:i:s'),
             'auto_renew' => false,
+            'registrant_contact' => $this->resolvedRegistrantContact($customer, $registrantContact),
         ], app(ResellerNameserverService::class)->domainColumnsForItem($reseller, $cartItem)));
 
         $order = ResellerDomainOrder::create([
@@ -611,6 +619,7 @@ class ResellerCustomerOrderService
         ?float $retailAmount = null,
         ?string $expiresAt = null,
         array $cartItem = [],
+        ?array $registrantContact = null,
     ): array {
         $wholesale = $extension->pricing()
             ->where('tier', 'wholesale')
@@ -635,6 +644,7 @@ class ResellerCustomerOrderService
             'type' => 'registration',
             'auto_renew' => false,
             'expires_at' => $domainExpiresAt,
+            'registrant_contact' => $this->resolvedRegistrantContact($customer, $registrantContact),
         ], app(ResellerNameserverService::class)->domainColumnsForItem($reseller, $cartItem)));
 
         $order = ResellerDomainOrder::create([
@@ -689,6 +699,20 @@ class ResellerCustomerOrderService
                 'custom_options' => ['domain_order_id' => $order->id],
             ]);
         }
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $submitted
+     * @return array<string, mixed>|null
+     */
+    private function resolvedRegistrantContact(User $customer, ?array $submitted): ?array
+    {
+        $contacts = app(DomainRegistrantContactService::class);
+        $normalized = $submitted !== null && $submitted !== []
+            ? $contacts->normalize($submitted)
+            : $contacts->fromUser($customer);
+
+        return $contacts->isComplete($normalized) ? $normalized : null;
     }
 
     public function wholesaleAmountForExtension(DomainExtension $extension, int $years): float

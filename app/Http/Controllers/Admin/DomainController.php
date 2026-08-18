@@ -7,7 +7,9 @@ use App\Models\Domain;
 use App\Models\DomainExtension;
 use App\Models\DomainPricing;
 use App\Models\DomainRenewalOrder;
+use App\Models\User;
 use App\Services\DomainActivationService;
+use App\Services\DomainRegistrantContactService;
 use App\Services\DomainRenewalService;
 use App\Services\NotificationService;
 use App\Services\Registrar\CosmotownInventorySyncService;
@@ -235,8 +237,13 @@ class DomainController extends Controller
 
         $nameservers = $registry['nameservers'];
         $eppCode = $registry['epp_code'];
+        $registrant = app(DomainRegistrantContactService::class)->normalize(
+            $registry['registrant'] !== []
+                ? $registry['registrant']
+                : ($domain->user ? app(DomainRegistrantContactService::class)->fromUser($domain->user) : [])
+        );
 
-        return view('admin.domains.show', compact('domain', 'nameservers', 'eppCode', 'registry'));
+        return view('admin.domains.show', compact('domain', 'nameservers', 'eppCode', 'registry', 'registrant'));
     }
 
     public function updateNameservers(Request $request, Domain $domain)
@@ -273,6 +280,100 @@ class DomainController extends Controller
         $flashKey = $result['pushed'] ? 'success' : 'warning';
 
         return back()->with($flashKey, $result['message']);
+    }
+
+    public function updateRegistrant(Request $request, Domain $domain)
+    {
+        $this->authorize('update', $domain);
+
+        $contacts = app(DomainRegistrantContactService::class);
+        $validated = $request->validate($contacts->rules('registrant'));
+        $result = app(RegistrarFulfillmentService::class)->updateDomainRegistrant($domain, $validated['registrant']);
+
+        if (! $result['success']) {
+            return back()->with('error', $result['message'])->withInput();
+        }
+
+        return back()->with($result['pushed'] ? 'success' : 'warning', $result['message']);
+    }
+
+    public function updateRegistryOptions(Request $request, Domain $domain)
+    {
+        $this->authorize('update', $domain);
+
+        $request->validate([
+            'registry_locked' => 'required|boolean',
+            'whois_privacy' => 'required|boolean',
+        ]);
+
+        if ($domain->registry_locked && ! $request->boolean('registry_locked')) {
+            $request->validate([
+                'confirm_unlock' => 'accepted',
+            ], [
+                'confirm_unlock.accepted' => 'Confirm that unlocking this domain allows a transfer to start with the EPP code.',
+            ]);
+        }
+
+        $result = app(RegistrarFulfillmentService::class)->updateDomainRegistryOptions(
+            $domain,
+            $request->boolean('registry_locked'),
+            $request->boolean('whois_privacy'),
+        );
+
+        if (! $result['success']) {
+            return back()->with('error', $result['message']);
+        }
+
+        return back()->with('success', $result['message']);
+    }
+
+    public function unmatchedCosmotown(CosmotownInventorySyncService $sync)
+    {
+        $this->authorize('viewAny', Domain::class);
+
+        try {
+            $unmatched = $sync->unmatchedAtRegistrar();
+        } catch (\InvalidArgumentException $e) {
+            return redirect()->route('admin.domains.index')->with('error', $e->getMessage());
+        }
+
+        $customers = User::query()
+            ->where('is_admin', false)
+            ->orderBy('name')
+            ->limit(500)
+            ->get(['id', 'name', 'email']);
+
+        return view('admin.domains.cosmotown-unmatched', compact('unmatched', 'customers'));
+    }
+
+    public function importCosmotown(Request $request, CosmotownInventorySyncService $sync)
+    {
+        $this->authorize('create', Domain::class);
+
+        $validated = $request->validate([
+            'fqdn' => 'required|string|max:253',
+            'user_id' => 'required|integer|exists:users,id',
+            'confirm_no_invoice' => 'accepted',
+        ], [
+            'confirm_no_invoice.accepted' => 'Confirm this domain is already at Cosmotown and should be attached without creating an invoice.',
+        ]);
+
+        $owner = User::query()->findOrFail($validated['user_id']);
+
+        try {
+            $domain = $sync->importToCustomer(
+                $validated['fqdn'],
+                $owner,
+                $request->user(),
+                $request->boolean('confirm_no_invoice'),
+            );
+        } catch (\InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage())->withInput();
+        }
+
+        return redirect()
+            ->route('admin.domains.show', $domain)
+            ->with('success', $domain->fqdn().' is now on '.$owner->email.' with live Cosmotown expiry. No invoice was created.');
     }
 
     public function edit(Domain $domain)

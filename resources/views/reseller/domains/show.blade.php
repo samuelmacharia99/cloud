@@ -132,6 +132,15 @@
                 @endif
             </div>
 
+            <div class="ui-card p-6 space-y-8">
+                @include('domains.partials.registry-management', [
+                    'audience' => 'reseller',
+                    'showEpp' => false,
+                    'registrantRoute' => route('reseller.domains.registrant', $domain),
+                    'optionsRoute' => route('reseller.domains.registry-options', $domain),
+                ])
+            </div>
+
             <div class="ui-card p-6">
                 <h2 class="font-semibold text-slate-900 dark:text-white mb-4">Transfer to another customer</h2>
             <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Immediately moves ownership to another customer you manage. No recipient approval required.</p>

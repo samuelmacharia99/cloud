@@ -233,9 +233,13 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/nodes/{node}/detach-services', [NodeController::class, 'detachServices'])->name('admin.nodes.detach-services');
         Route::delete('admin/nodes/{node}', [NodeController::class, 'delete'])->name('admin.nodes.delete');
         Route::resource('admin/domains', DomainController::class)->names('admin.domains');
+        Route::get('admin/cosmotown-domains/unmatched', [DomainController::class, 'unmatchedCosmotown'])->name('admin.domains.cosmotown-unmatched');
+        Route::post('admin/cosmotown-domains/import', [DomainController::class, 'importCosmotown'])->name('admin.domains.cosmotown-import');
         Route::post('admin/domains/sync-cosmotown', [DomainController::class, 'syncCosmotownInventory'])->name('admin.domains.sync-cosmotown');
         Route::post('admin/domains/{domain}/generate-invoice', [DomainController::class, 'generateInvoice'])->name('admin.domains.generate-invoice');
         Route::put('admin/domains/{domain}/nameservers', [DomainController::class, 'updateNameservers'])->name('admin.domains.nameservers');
+        Route::put('admin/domains/{domain}/registrant', [DomainController::class, 'updateRegistrant'])->name('admin.domains.registrant');
+        Route::put('admin/domains/{domain}/registry-options', [DomainController::class, 'updateRegistryOptions'])->name('admin.domains.registry-options');
         Route::get('admin/domains-pricing', [DomainController::class, 'pricing'])->name('admin.domains.pricing');
         Route::post('admin/domains-pricing', [DomainController::class, 'storePricing'])->name('admin.domains.pricing.store');
         Route::post('admin/domain-extensions', [DomainController::class, 'storeExtension'])->name('admin.domain-extensions.store');
@@ -545,6 +549,8 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
             Route::get('reseller/domains', [App\Http\Controllers\Reseller\DomainController::class, 'index'])->name('reseller.domains.index');
             Route::get('reseller/domains/{domain}', [App\Http\Controllers\Reseller\DomainController::class, 'show'])->name('reseller.domains.show');
             Route::put('reseller/domains/{domain}/nameservers', [App\Http\Controllers\Reseller\DomainController::class, 'updateNameservers'])->name('reseller.domains.nameservers');
+            Route::put('reseller/domains/{domain}/registrant', [App\Http\Controllers\Reseller\DomainController::class, 'updateRegistrant'])->name('reseller.domains.registrant');
+            Route::put('reseller/domains/{domain}/registry-options', [App\Http\Controllers\Reseller\DomainController::class, 'updateRegistryOptions'])->name('reseller.domains.registry-options');
             Route::post('reseller/domains/{domain}/transfer', [App\Http\Controllers\Reseller\DomainController::class, 'initiateTransfer'])->name('reseller.domains.transfer');
             Route::post('reseller/domains/{domain}/renew', [App\Http\Controllers\Reseller\DomainController::class, 'addRenewalToCart'])->name('reseller.domains.renew');
             Route::post('reseller/domains/{domain}/auto-renew', [App\Http\Controllers\Reseller\DomainController::class, 'toggleAutoRenew'])->middleware('throttle:20,1')->name('reseller.domains.auto-renew');
@@ -803,6 +809,10 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::delete('my/services/{service}/container/backups/{backup}', [App\Http\Controllers\Customer\ContainerController::class, 'deleteBackup'])->name('customer.services.container.backups.delete');
 
         Route::get('/my/domains/available', fn () => view('customer.domains.available', ['extensions' => DomainExtension::where('enabled', true)->get()]))->name('customer.domains.available');
+        Route::get('/my/domains/{domain}', [App\Http\Controllers\Customer\DomainController::class, 'show'])->name('customer.domains.show');
+        Route::put('/my/domains/{domain}/nameservers', [App\Http\Controllers\Customer\DomainController::class, 'updateNameservers'])->name('customer.domains.nameservers');
+        Route::put('/my/domains/{domain}/registrant', [App\Http\Controllers\Customer\DomainController::class, 'updateRegistrant'])->name('customer.domains.registrant');
+        Route::put('/my/domains/{domain}/registry-options', [App\Http\Controllers\Customer\DomainController::class, 'updateRegistryOptions'])->name('customer.domains.registry-options');
 
         // Customer Ticket Management
         Route::resource('my/tickets', App\Http\Controllers\Customer\TicketController::class)

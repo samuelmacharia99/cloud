@@ -8,6 +8,7 @@ use App\Services\Registrar\Openprovider\OpenproviderException;
 use App\Services\Registrar\RegistrarFulfillmentService;
 use App\Services\Registrar\RegistrarManager;
 use App\Services\Registrar\RegistrarOperationsInterface;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
 class DomainAvailabilityService
@@ -27,6 +28,25 @@ class DomainAvailabilityService
         'available for registration',
     ];
 
+    /** @var list<string> */
+    private const PREMIUM_PATTERNS = [
+        'premium domain',
+        'premium name',
+        'this name is premium',
+        'is a premium',
+        'premium priced',
+    ];
+
+    /** @var list<string> */
+    private const RESERVED_PATTERNS = [
+        'reserved by the registry',
+        'reserved name',
+        'this name is reserved',
+        'not available for registration',
+        'blocked by the registry',
+        'registry reserved',
+    ];
+
     public function __construct(
         private DomainInputParser $parser,
         private RegistrarManager $registrarManager,
@@ -35,7 +55,14 @@ class DomainAvailabilityService
 
     /**
      * @param  array<int, string>|null  $allowedExtensions
-     * @return array{available: bool, full_domain: string, name: string, extension: string, source: string}|null
+     * @return array{
+     *     available: bool,
+     *     full_domain: string,
+     *     name: string,
+     *     extension: string,
+     *     source: string,
+     *     blocked_reason: ?string
+     * }|null
      */
     public function checkInput(string $input, ?string $extensionInput = null, ?array $allowedExtensions = null): ?array
     {
@@ -51,28 +78,32 @@ class DomainAvailabilityService
         }
 
         $fullDomain = $parsed['name'].$parsed['extension'];
-        $available = $this->isAvailable($parsed['name'], $parsed['extension'], $fullDomain);
+        $inspect = $this->inspect($parsed['name'], $parsed['extension'], $fullDomain);
 
         return [
-            'available' => $available,
+            'available' => $inspect['available'],
             'full_domain' => $fullDomain,
             'name' => $parsed['name'],
             'extension' => $parsed['extension'],
-            'source' => $this->lastSource,
+            'source' => $inspect['source'],
+            'blocked_reason' => $inspect['blocked_reason'],
         ];
     }
 
-    private string $lastSource = 'unknown';
-
-    public function isAvailable(string $name, string $extension, ?string $fullDomain = null): bool
+    /**
+     * @return array{available: bool, source: string, blocked_reason: ?string}
+     */
+    public function inspect(string $name, string $extension, ?string $fullDomain = null): array
     {
         $fullDomain ??= $name.$extension;
         $this->lastSource = 'unknown';
+        $this->lastBlockedReason = null;
 
         if ($this->isRegisteredLocally($name, $extension)) {
             $this->lastSource = 'local';
+            $this->lastBlockedReason = 'taken';
 
-            return false;
+            return $this->inspectResult(false);
         }
 
         $domainExtension = DomainExtension::where('extension', $extension)->first();
@@ -84,8 +115,14 @@ class DomainAvailabilityService
                 try {
                     $result = $driver->checkAvailability($registrar, $name, $extension);
                     $this->lastSource = $result['source'] ?? 'openprovider';
+                    $available = (bool) ($result['available'] ?? false);
+                    if (! $available && ! empty($result['is_premium'])) {
+                        $this->lastBlockedReason = 'premium';
+                    } elseif (! $available) {
+                        $this->lastBlockedReason = 'taken';
+                    }
 
-                    return (bool) ($result['available'] ?? false);
+                    return $this->inspectResult($available);
                 } catch (OpenproviderException $e) {
                     $this->lastSource = 'openprovider-error';
                     \Log::warning('Openprovider availability check failed, falling back to WHOIS', [
@@ -96,17 +133,49 @@ class DomainAvailabilityService
             }
         }
 
-        $whoisResult = $this->checkWhois($fullDomain, $extension);
-
+        $whoisResult = $this->checkWhoisDetailed($fullDomain, $extension);
         if ($whoisResult !== null) {
             $this->lastSource = 'whois';
+            $this->lastBlockedReason = $whoisResult['reason'];
 
-            return $whoisResult;
+            return $this->inspectResult($whoisResult['available']);
+        }
+
+        $rdap = $this->checkRdap($fullDomain);
+        if ($rdap !== null) {
+            $this->lastSource = 'rdap';
+            $this->lastBlockedReason = $rdap ? null : 'taken';
+
+            return $this->inspectResult($rdap);
         }
 
         $this->lastSource = 'dns';
+        $available = $this->checkDns($fullDomain);
+        $this->lastBlockedReason = $available ? null : 'taken';
 
-        return $this->checkDns($fullDomain);
+        return $this->inspectResult($available);
+    }
+
+    public function registrationBlockMessage(array $check): ?string
+    {
+        if ($check['available'] ?? false) {
+            return null;
+        }
+
+        return match ($check['blocked_reason'] ?? 'taken') {
+            'premium' => 'This name is a premium domain. We cannot sell it at standard TLD pricing — contact support.',
+            'reserved' => 'This name is reserved at the registry and cannot be registered at standard pricing.',
+            default => 'This domain is not available for registration.',
+        };
+    }
+
+    private string $lastSource = 'unknown';
+
+    private ?string $lastBlockedReason = null;
+
+    public function isAvailable(string $name, string $extension, ?string $fullDomain = null): bool
+    {
+        return $this->inspect($name, $extension, $fullDomain)['available'];
     }
 
     private function isRegisteredLocally(string $name, string $extension): bool
@@ -120,13 +189,23 @@ class DomainAvailabilityService
 
     private function checkWhois(string $fullDomain, string $extension): ?bool
     {
+        $detailed = $this->checkWhoisDetailed($fullDomain, $extension);
+
+        return $detailed['available'] ?? null;
+    }
+
+    /**
+     * @return array{available: bool, reason: ?string}|null
+     */
+    private function checkWhoisDetailed(string $fullDomain, string $extension): ?array
+    {
         $response = $this->queryWhois($fullDomain, $this->resolveWhoisServer($extension));
 
         if ($response === '') {
             return null;
         }
 
-        $interpreted = $this->interpretWhoisResponse($response);
+        $interpreted = $this->interpretWhoisDetailed($response);
 
         if ($interpreted !== null) {
             return $interpreted;
@@ -138,7 +217,7 @@ class DomainAvailabilityService
             if ($referral !== '' && ! str_contains($referral, 'verisign')) {
                 $referralResponse = $this->queryWhois($fullDomain, $referral);
                 $referralResult = $referralResponse !== ''
-                    ? $this->interpretWhoisResponse($referralResponse)
+                    ? $this->interpretWhoisDetailed($referralResponse)
                     : null;
 
                 if ($referralResult !== null) {
@@ -148,6 +227,76 @@ class DomainAvailabilityService
         }
 
         return null;
+    }
+
+    /**
+     * @return array{available: bool, reason: ?string}|null
+     */
+    private function interpretWhoisDetailed(string $response): ?array
+    {
+        $lower = strtolower($response);
+
+        foreach (self::PREMIUM_PATTERNS as $pattern) {
+            if (str_contains($lower, $pattern)) {
+                return ['available' => false, 'reason' => 'premium'];
+            }
+        }
+
+        foreach (self::RESERVED_PATTERNS as $pattern) {
+            if (str_contains($lower, $pattern)) {
+                return ['available' => false, 'reason' => 'reserved'];
+            }
+        }
+
+        $available = $this->interpretWhoisResponse($response);
+        if ($available === null) {
+            return null;
+        }
+
+        return [
+            'available' => $available,
+            'reason' => $available ? null : 'taken',
+        ];
+    }
+
+    /**
+     * RDAP: 404 usually means unregistered; 200 means registered. Cosmotown has no availability API.
+     */
+    private function checkRdap(string $fullDomain): ?bool
+    {
+        try {
+            $response = Http::timeout(6)
+                ->acceptJson()
+                ->withOptions(['force_ip_resolve' => 'v4'])
+                ->get('https://rdap.org/domain/'.$fullDomain);
+
+            if ($response->status() === 404) {
+                return true;
+            }
+
+            if ($response->successful()) {
+                return false;
+            }
+        } catch (\Throwable $e) {
+            \Log::info('RDAP availability lookup skipped', [
+                'domain' => $fullDomain,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array{available: bool, source: string, blocked_reason: ?string}
+     */
+    private function inspectResult(bool $available): array
+    {
+        return [
+            'available' => $available,
+            'source' => $this->lastSource,
+            'blocked_reason' => $available ? null : $this->lastBlockedReason,
+        ];
     }
 
     private function queryWhois(string $domain, string $server): string

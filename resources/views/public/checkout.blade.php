@@ -261,6 +261,16 @@
                                         <input type="password" id="password_confirmation" name="password_confirmation" class="input-dark w-full" required>
                                     </div>
 
+                                    @if(! empty($hasRegistryDomain))
+                                        <div class="border border-[rgba(0,217,255,0.2)] rounded-lg p-4 space-y-3">
+                                            <h3 class="text-white font-semibold">Domain registrant (WHOIS)</h3>
+                                            <p class="text-sm text-slate-400">Legal owner at the registry. Required for domain registration and transfer.</p>
+                                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                @include('domains.partials.registrant-fields', ['contact' => $registrant ?? []])
+                                            </div>
+                                        </div>
+                                    @endif
+
                                     <div class="bg-[rgba(0,217,255,0.1)] border border-[rgba(0,217,255,0.2)] rounded-lg p-4">
                                         <label class="flex items-start gap-3 cursor-pointer">
                                             <input type="checkbox" name="agree_terms" class="mt-1 @error('agree_terms') border-red-500 @enderror" required>
@@ -289,6 +299,16 @@
 
                             <form action="{{ route('customer.checkout.process') }}" method="POST" class="space-y-6">
                                 @csrf
+
+                                @if(! empty($hasRegistryDomain))
+                                    <div class="border border-[rgba(0,217,255,0.2)] rounded-lg p-4 space-y-3">
+                                        <h3 class="text-white font-semibold">Domain registrant (WHOIS)</h3>
+                                        <p class="text-sm text-slate-400">Legal owner at the registry. Required for domain registration and transfer.</p>
+                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            @include('domains.partials.registrant-fields', ['contact' => $registrant ?? []])
+                                        </div>
+                                    </div>
+                                @endif
 
                                 <div class="bg-[rgba(0,217,255,0.1)] border border-[rgba(0,217,255,0.2)] rounded-lg p-4 mb-6">
                                     <label class="flex items-start gap-3 cursor-pointer">

@@ -17,7 +17,8 @@ class DomainTransferService
         string $extension,
         string $eppCode,
         string $oldRegistrar,
-        ?string $oldRegistrarUrl = null
+        ?string $oldRegistrarUrl = null,
+        ?array $registrantContact = null,
     ): Domain {
         // Check if domain already exists for user
         $existing = Domain::where('user_id', $user->id)
@@ -28,6 +29,11 @@ class DomainTransferService
         if ($existing) {
             throw new \Exception("Domain {$domainName}{$extension} already exists in your account");
         }
+
+        $contacts = app(DomainRegistrantContactService::class);
+        $normalizedRegistrant = $registrantContact !== null
+            ? $contacts->normalize($registrantContact)
+            : $contacts->fromUser($user);
 
         // Create domain transfer record
         $domain = Domain::create([
@@ -43,6 +49,7 @@ class DomainTransferService
             'old_registrar_url' => $oldRegistrarUrl,
             'transfer_notes' => 'Transfer initiated on '.now()->format('Y-m-d H:i:s'),
             'expires_at' => null,
+            'registrant_contact' => $contacts->isComplete($normalizedRegistrant) ? $normalizedRegistrant : null,
         ]);
 
         // Log the transfer request

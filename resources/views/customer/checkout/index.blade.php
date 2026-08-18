@@ -115,6 +115,18 @@
                     </div>
                 @endif
 
+                @if(! empty($hasRegistryDomain))
+                    <div class="ui-card p-6">
+                        <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-2">Domain registrant (WHOIS)</h2>
+                        <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">
+                            Required for registry contact. This is the legal owner published at the registry, not a platform placeholder.
+                        </p>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            @include('domains.partials.registrant-fields', ['contact' => $registrant ?? []])
+                        </div>
+                    </div>
+                @endif
+
                 <div class="ui-card p-6">
                     <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-4">Your Information</h2>
                     <div class="space-y-4">

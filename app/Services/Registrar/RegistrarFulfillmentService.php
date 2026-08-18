@@ -11,6 +11,7 @@ use App\Models\Registrar;
 use App\Models\ResellerDomainOrder;
 use App\Models\Service;
 use App\Services\DomainPushService;
+use App\Services\DomainRegistrantContactService;
 use App\Services\DomainRenewalService;
 use App\Services\DomainTransferService;
 use App\Services\NodeNameserverService;
@@ -364,7 +365,7 @@ class RegistrarFulfillmentService
             ];
         }
 
-        $registrar = $this->resolveRegistrar($domain);
+        $registrar = $this->resolveLiveRegistrar($domain);
         $driver = $this->operationsDriver($registrar);
 
         if (! $driver || ! $domain->isLinkedToRegistrarApi()) {
@@ -415,13 +416,18 @@ class RegistrarFulfillmentService
      *     nameservers_live: bool,
      *     epp_live: bool,
      *     attempted: bool,
-     *     message: ?string
+     *     message: ?string,
+     *     locked: bool,
+     *     whois_privacy: bool,
+     *     registrant: array<string, mixed>
      * }
      */
     public function refreshLiveRegistryDetails(Domain $domain): array
     {
         $local = $this->localNameserverColumns($domain);
         $localEpp = filled($domain->epp_code) ? (string) $domain->epp_code : null;
+        $contacts = app(DomainRegistrantContactService::class);
+        $localRegistrant = is_array($domain->registrant_contact) ? $domain->registrant_contact : [];
 
         $fallback = [
             'nameservers' => $local,
@@ -430,6 +436,9 @@ class RegistrarFulfillmentService
             'epp_live' => false,
             'attempted' => false,
             'message' => null,
+            'locked' => (bool) $domain->registry_locked,
+            'whois_privacy' => (bool) $domain->whois_privacy,
+            'registrant' => $localRegistrant,
         ];
 
         if ($domain->isDnsManaged()) {
@@ -461,6 +470,15 @@ class RegistrarFulfillmentService
                     $updates['epp_code'] = (string) $snapshot['auth_code'];
                     $liveEpp = true;
                 }
+                if (array_key_exists('locked', $snapshot) && $snapshot['locked'] !== null) {
+                    $updates['registry_locked'] = (bool) $snapshot['locked'];
+                }
+                if (array_key_exists('whois_privacy', $snapshot) && $snapshot['whois_privacy'] !== null) {
+                    $updates['whois_privacy'] = (bool) $snapshot['whois_privacy'];
+                }
+                if (! empty($snapshot['contacts']) && is_array($snapshot['contacts']) && $contacts->isComplete($snapshot['contacts'])) {
+                    $updates['registrant_contact'] = $contacts->normalize($snapshot['contacts']);
+                }
             } catch (\Throwable $e) {
                 Log::warning('Live registry details failed', [
                     'domain_id' => $domain->id,
@@ -486,7 +504,143 @@ class RegistrarFulfillmentService
             'epp_live' => $liveEpp,
             'attempted' => $attempted,
             'message' => $message,
+            'locked' => (bool) $domain->registry_locked,
+            'whois_privacy' => (bool) $domain->whois_privacy,
+            'registrant' => is_array($domain->registrant_contact) ? $domain->registrant_contact : $localRegistrant,
         ];
+    }
+
+    /**
+     * @return array{success: bool, pushed: bool, message: string}
+     */
+    public function updateDomainRegistryOptions(Domain $domain, ?bool $lock = null, ?bool $privacy = null): array
+    {
+        if ($lock === null && $privacy === null) {
+            return [
+                'success' => false,
+                'pushed' => false,
+                'message' => 'Choose lock or WHOIS privacy to change.',
+            ];
+        }
+
+        $registrar = $this->resolveLiveRegistrar($domain);
+        $driver = $this->operationsDriver($registrar);
+
+        if (! $driver instanceof CosmotownRegistrarDriver || ! $domain->isLinkedToRegistrarApi()) {
+            return [
+                'success' => false,
+                'pushed' => false,
+                'message' => 'This domain is not linked at the registry, so lock and privacy cannot be changed here.',
+            ];
+        }
+
+        $options = [];
+        if ($lock !== null) {
+            $options['lock_domain'] = $lock;
+        }
+        if ($privacy !== null) {
+            $options['enable_private_whois'] = $privacy;
+        }
+
+        try {
+            $result = $driver->changeDomainOptions($registrar, $domain, $options);
+            if (! ($result['success'] ?? false)) {
+                return [
+                    'success' => false,
+                    'pushed' => false,
+                    'message' => $result['message'] ?? 'The registry rejected the option change.',
+                ];
+            }
+
+            $updates = [];
+            if ($lock !== null) {
+                $updates['registry_locked'] = $lock;
+            }
+            if ($privacy !== null) {
+                $updates['whois_privacy'] = $privacy;
+            }
+            if ($updates !== []) {
+                $domain->update($updates);
+            }
+
+            return [
+                'success' => true,
+                'pushed' => true,
+                'message' => $result['message'] ?? 'Registry options updated.',
+            ];
+        } catch (\Throwable $e) {
+            Log::error('Registry option update failed', [
+                'domain_id' => $domain->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'pushed' => false,
+                'message' => 'Could not update registry options: '.$e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $contact
+     * @return array{success: bool, pushed: bool, message: string}
+     */
+    public function updateDomainRegistrant(Domain $domain, array $contact): array
+    {
+        $contacts = app(DomainRegistrantContactService::class);
+        $normalized = $contacts->normalize($contact);
+
+        if (! $contacts->isComplete($normalized)) {
+            return [
+                'success' => false,
+                'pushed' => false,
+                'message' => 'Registrant first name, last name, email, phone, address, city, and country are required.',
+            ];
+        }
+
+        $registrar = $this->resolveLiveRegistrar($domain);
+        $driver = $this->operationsDriver($registrar);
+
+        if (! $driver instanceof CosmotownRegistrarDriver || ! $domain->isLinkedToRegistrarApi()) {
+            $domain->update(['registrant_contact' => $normalized]);
+
+            return [
+                'success' => true,
+                'pushed' => false,
+                'message' => 'Registrant details saved locally. They will be sent to the registry when this domain is registered there.',
+            ];
+        }
+
+        try {
+            $result = $driver->saveDomainContacts($registrar, $domain, $normalized);
+            if (! ($result['success'] ?? false)) {
+                return [
+                    'success' => false,
+                    'pushed' => false,
+                    'message' => $result['message'] ?? 'The registry rejected the registrant update.',
+                ];
+            }
+
+            $domain->update(['registrant_contact' => $normalized]);
+
+            return [
+                'success' => true,
+                'pushed' => true,
+                'message' => $result['message'] ?? 'Registrant contact updated at the registry.',
+            ];
+        } catch (\Throwable $e) {
+            Log::error('Registrant update failed', [
+                'domain_id' => $domain->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'pushed' => false,
+                'message' => 'Could not update registrant contact: '.$e->getMessage(),
+            ];
+        }
     }
 
     /**

@@ -42,7 +42,7 @@
                             <p class="font-semibold" x-text="row.full_domain"></p>
                             <p class="text-xs mt-1"
                                :class="row.available ? 'text-emerald-600' : 'text-rose-600'"
-                               x-text="row.available ? 'Available' : 'Unavailable'"></p>
+                               x-text="row.available ? 'Available' : (row.status_label || 'Unavailable')"></p>
                         </div>
                         <div class="flex items-center gap-4">
                             <span class="font-semibold" x-show="row.available && row.price != null">

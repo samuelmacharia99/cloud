@@ -38,7 +38,7 @@
                             :class="result.available ? 'bg-emerald-50/80 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/60' : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700'">
                             <div>
                                 <p class="font-semibold text-slate-900 dark:text-white font-mono" x-text="result.full_domain"></p>
-                                <p class="text-sm mt-0.5" :class="result.available ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-500'" x-text="result.available ? 'Available' : 'Taken'"></p>
+                                <p class="text-sm mt-0.5" :class="result.available ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-500'" x-text="result.available ? 'Available' : (result.status_label || 'Taken')"></p>
                             </div>
                             <div class="flex items-center gap-3">
                                 <p class="font-bold text-slate-900 dark:text-white" x-text="`KES ${result.price.toLocaleString()}`"></p>
@@ -126,7 +126,7 @@
                             <tr>
                                 <td>
                                     <div class="flex flex-col gap-1">
-                                        <span class="font-semibold text-slate-900 dark:text-white font-mono text-sm">{{ $domain->name }}{{ $domain->extension }}</span>
+                                        <a href="{{ route('customer.domains.show', $domain) }}" class="font-semibold text-slate-900 dark:text-white font-mono text-sm hover:underline">{{ $domain->name }}{{ $domain->extension }}</a>
                                         @if($domain->isDnsManaged())
                                             <span class="inline-flex w-fit px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide bg-sky-100 text-sky-800 dark:bg-sky-950/50 dark:text-sky-200">DNS only</span>
                                         @elseif($domain->isTransfer())
@@ -174,6 +174,7 @@
                                                         <span class="font-medium text-sm">Renew domain</span>
                                                     </button>
                                                 @endunless
+                                                    <a href="{{ route('customer.domains.show', $domain) }}" class="block px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800 transition text-sm font-medium border-b border-slate-100 dark:border-slate-800">Manage domain</a>
                                                 <a href="{{ route('customer.domains.dns.index', $domain) }}" class="block px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800 transition text-sm font-medium border-b border-slate-100 dark:border-slate-800">DNS management</a>
                                             </div>
                                             <div x-show="showRenewal" class="p-4">

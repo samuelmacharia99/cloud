@@ -16,6 +16,9 @@
         </div>
         <div class="flex items-center gap-3">
             @if (! empty($cosmotownRegistrar))
+                <a href="{{ route('admin.domains.cosmotown-unmatched') }}" class="px-6 py-3 border border-slate-300 dark:border-slate-600 rounded-lg font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800">
+                    Unmatched Cosmotown
+                </a>
                 <form method="POST" action="{{ route('admin.domains.sync-cosmotown') }}" data-confirm="Update expiry dates and nameservers on matching Admin → Domains from Cosmotown? This does not create new customer domains.">
                     @csrf
                     <button type="submit" class="px-6 py-3 bg-slate-700 hover:bg-slate-800 text-white font-medium rounded-lg transition">

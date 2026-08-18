@@ -42,6 +42,9 @@ class Domain extends Model
         'transfer_token',
         'transfer_requested_at',
         'notes',
+        'registrant_contact',
+        'whois_privacy',
+        'registry_locked',
     ];
 
     protected $casts = [
@@ -50,6 +53,9 @@ class Domain extends Model
         'next_invoice_date' => 'datetime',
         'auto_renew' => 'boolean',
         'cloudflare_dns_enabled' => 'boolean',
+        'whois_privacy' => 'boolean',
+        'registry_locked' => 'boolean',
+        'registrant_contact' => 'array',
         'transfer_initiated_at' => 'datetime',
         'transfer_completed_at' => 'datetime',
         'transfer_requested_at' => 'datetime',

@@ -305,6 +305,11 @@ class ResellerCustomerBillingTest extends TestCase
                 'years' => 1,
                 'price' => 900,
                 'retail_total' => 900,
+                'nameservers' => [
+                    'use_default' => true,
+                    'ns1' => 'ns1.talksasa.com',
+                    'ns2' => 'ns2.talksasa.com',
+                ],
             ],
             'k2' => [
                 'type' => 'domain',
@@ -313,6 +318,11 @@ class ResellerCustomerBillingTest extends TestCase
                 'years' => 1,
                 'price' => 900,
                 'retail_total' => 900,
+                'nameservers' => [
+                    'use_default' => true,
+                    'ns1' => 'ns1.talksasa.com',
+                    'ns2' => 'ns2.talksasa.com',
+                ],
             ],
         ];
 
@@ -322,7 +332,7 @@ class ResellerCustomerBillingTest extends TestCase
 
         $this->actingAs($reseller)
             ->withSession([CartController::CART_KEY => $cart])
-            ->post(route('reseller.checkout.process'), ['agree' => '1'])
+            ->post(route('reseller.checkout.process'), $this->withRegistrant(['agree' => '1'], $customer))
             ->assertRedirect();
 
         $invoice = Invoice::where('user_id', $customer->id)->latest()->first();

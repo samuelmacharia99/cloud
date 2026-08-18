@@ -27,6 +27,7 @@ use App\Services\CreditService;
 use App\Services\Customer\CustomerProjectService;
 use App\Services\Dns\DomainCloudflareDnsService;
 use App\Services\DomainAutoRenewService;
+use App\Services\DomainRegistrantContactService;
 use App\Services\DomainTransferService;
 use App\Services\EmailVerificationService;
 use App\Services\NotificationService;
@@ -51,6 +52,7 @@ use App\Support\SessionCart;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\ValidationException;
 
 class CheckoutController extends Controller
 {
@@ -250,6 +252,8 @@ class CheckoutController extends Controller
             'currency' => $currency,
             'currencyCode' => $currencyCode,
             'creditBalance' => CreditService::getAvailableBalance($user),
+            'hasRegistryDomain' => $this->cartHasRegistryDomain($cartItems),
+            'registrant' => app(DomainRegistrantContactService::class)->fromUser($user),
         ]);
     }
 
@@ -284,6 +288,7 @@ class CheckoutController extends Controller
         app(SharedHostingCheckoutService::class)->validateCheckoutRequest($request, $cart);
         app(EmailHostingCheckoutService::class)->validateCheckoutRequest($request, $cart);
         app(ContainerEmailBundleService::class)->validateCheckoutRequest($request, $cart);
+        $this->validateRegistrantIfNeeded($request, $cart);
 
         try {
             $order = \DB::transaction(function () use ($cart, $user, $request) {
@@ -599,6 +604,7 @@ class CheckoutController extends Controller
                             'nameserver_4' => $resolvedNs['ns4'],
                             'cloudflare_dns_enabled' => $cloudflareDns,
                             'auto_renew' => $this->autoRenewFromCartItem($user, $item, $extension),
+                            'registrant_contact' => $this->registrantContactForCheckout($request, $user),
                         ]);
 
                         $domainsCreatedByCartKey[$item['key']] = $domain->id;
@@ -712,6 +718,8 @@ class CheckoutController extends Controller
             return redirect()
                 ->route('customer.payment.select-method', $invoice)
                 ->with('success', 'Order placed successfully! Choose a payment method to activate your services.');
+        } catch (ValidationException $e) {
+            throw $e;
         } catch (\Exception $e) {
             \Log::error("Checkout failed: {$e->getMessage()}");
 
@@ -1032,6 +1040,10 @@ class CheckoutController extends Controller
             'isResellerStorefront' => (bool) $hostReseller,
             'cartUrl' => $hostReseller ? route('reseller.public.store.cart.show') : '/',
             'loginAtCheckoutUrl' => $hostReseller ? route('reseller.public.store.checkout.login') : null,
+            'hasRegistryDomain' => $this->cartHasRegistryDomain($sessionCart),
+            'registrant' => $user
+                ? app(DomainRegistrantContactService::class)->fromUser($user)
+                : [],
         ]);
     }
 
@@ -1103,6 +1115,8 @@ class CheckoutController extends Controller
 
             // Now process the order using the authenticated user
             return $this->processCheckout($user, $cart, $request);
+        } catch (ValidationException $e) {
+            throw $e;
         } catch (\Exception $e) {
             \Log::error("Public checkout failed: {$e->getMessage()}");
 
@@ -1137,6 +1151,7 @@ class CheckoutController extends Controller
                 app(SharedHostingCheckoutService::class)->validateCheckoutRequest($request, $cart);
                 app(EmailHostingCheckoutService::class)->validateCheckoutRequest($request, $cart);
                 app(ContainerEmailBundleService::class)->validateCheckoutRequest($request, $cart);
+                $this->validateRegistrantIfNeeded($request, $cart);
             }
 
             $order = \DB::transaction(function () use ($cart, $user, $request) {
@@ -1446,6 +1461,7 @@ class CheckoutController extends Controller
                             'nameserver_4' => $resolvedNs['ns4'],
                             'cloudflare_dns_enabled' => $cloudflareDns,
                             'auto_renew' => $this->autoRenewFromCartItem($user, $item, $extension),
+                            'registrant_contact' => $this->registrantContactForCheckout($request, $user),
                         ]);
 
                         $domainsCreatedByCartKey[$item['key']] = $domain->id;
@@ -1559,6 +1575,8 @@ class CheckoutController extends Controller
             return redirect()
                 ->route('customer.payment.select-method', $invoice)
                 ->with('success', 'Account created and order placed! Choose a payment method to activate your services.');
+        } catch (ValidationException $e) {
+            throw $e;
         } catch (\Exception $e) {
             \Log::error("Checkout processing failed: {$e->getMessage()}");
 
@@ -1625,6 +1643,45 @@ class CheckoutController extends Controller
     /**
      * @param  array<string, mixed>  $item
      */
+    /**
+     * @param  array<int, array<string, mixed>>  $cart
+     */
+    private function cartHasRegistryDomain(array $cart): bool
+    {
+        foreach ($cart as $item) {
+            if (in_array($item['type'] ?? '', ['domain', 'domain_transfer'], true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  array<string, mixed>  $cart
+     */
+    private function validateRegistrantIfNeeded(Request $request, array $cart): void
+    {
+        if (! $this->cartHasRegistryDomain($cart)) {
+            return;
+        }
+
+        $request->validate(app(DomainRegistrantContactService::class)->rules('registrant'));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function registrantContactForCheckout(?Request $request, User $user): array
+    {
+        $contacts = app(DomainRegistrantContactService::class);
+        if ($request && $request->filled('registrant.first_name')) {
+            return $contacts->normalize($request->input('registrant', []));
+        }
+
+        return $contacts->fromUser($user);
+    }
+
     private function autoRenewFromCartItem(User $user, array $item, ?DomainExtension $extension): bool
     {
         if (! $extension) {
@@ -1701,6 +1758,7 @@ class CheckoutController extends Controller
             (string) $item['epp_code'],
             (string) $item['old_registrar'],
             $item['old_registrar_url'] ?? null,
+            $this->registrantContactForCheckout(request(), $user),
         );
 
         $domain->update([
