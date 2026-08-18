@@ -94,7 +94,11 @@ class GenerateDomainInvoicesCommand extends BaseCronCommand
             }
 
             if (! $payload['already_invoiced']) {
-                app(NotificationService::class)->notifyDomainRenewalInvoice($payload['invoice'], $domain);
+                if ($domain->fresh()->auto_renew) {
+                    app(NotificationService::class)->notifyDomainAutoRenewUnpaid($payload['invoice'], $domain);
+                } else {
+                    app(NotificationService::class)->notifyDomainRenewalInvoice($payload['invoice'], $domain);
+                }
                 $invoiced = true;
             }
         } catch (\Exception $e) {

@@ -209,7 +209,11 @@ class GenerateInvoicesByDateCommand extends Command
                 $autoPaid = $autoRenew->attemptAutoPay($payload->fresh(), $domain->fresh());
 
                 if ($sendNotifications && ! $autoPaid) {
-                    app(NotificationService::class)->notifyDomainRenewalInvoice($payload, $domain);
+                    if ($domain->fresh()->auto_renew) {
+                        app(NotificationService::class)->notifyDomainAutoRenewUnpaid($payload, $domain);
+                    } else {
+                        app(NotificationService::class)->notifyDomainRenewalInvoice($payload, $domain);
+                    }
                 }
             } catch (\Exception $e) {
                 $this->error("  ✗ Failed for {$domain->name}{$domain->extension}: {$e->getMessage()}");

@@ -11,6 +11,7 @@ use App\Services\DomainActivationService;
 use App\Services\DomainRenewalService;
 use App\Services\NotificationService;
 use App\Services\Registrar\CosmotownInventorySyncService;
+use App\Services\Registrar\RegistrarFulfillmentService;
 use Illuminate\Http\Request;
 
 class DomainController extends Controller
@@ -231,6 +232,42 @@ class DomainController extends Controller
         $domain->load('user', 'domainExtension', 'dnsZones');
 
         return view('admin.domains.show', compact('domain'));
+    }
+
+    public function updateNameservers(Request $request, Domain $domain)
+    {
+        $this->authorize('update', $domain);
+
+        $validated = $request->validate([
+            'nameserver_1' => 'required|string|min:3|max:253',
+            'nameserver_2' => 'required|string|min:3|max:253',
+            'nameserver_3' => 'nullable|string|min:3|max:253',
+            'nameserver_4' => 'nullable|string|min:3|max:253',
+        ]);
+
+        $nameservers = [
+            'ns1' => $validated['nameserver_1'],
+            'ns2' => $validated['nameserver_2'],
+            'ns3' => $validated['nameserver_3'] ?? null,
+            'ns4' => $validated['nameserver_4'] ?? null,
+        ];
+
+        $result = app(RegistrarFulfillmentService::class)->updateDomainNameservers($domain, $nameservers);
+
+        if (! $result['success']) {
+            return back()->with('error', $result['message'])->withInput();
+        }
+
+        $domain->update([
+            'nameserver_1' => $validated['nameserver_1'],
+            'nameserver_2' => $validated['nameserver_2'],
+            'nameserver_3' => $validated['nameserver_3'] ?? null,
+            'nameserver_4' => $validated['nameserver_4'] ?? null,
+        ]);
+
+        $flashKey = $result['pushed'] ? 'success' : 'warning';
+
+        return back()->with($flashKey, $result['message']);
     }
 
     public function edit(Domain $domain)

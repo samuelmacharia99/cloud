@@ -235,6 +235,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::resource('admin/domains', DomainController::class)->names('admin.domains');
         Route::post('admin/domains/sync-cosmotown', [DomainController::class, 'syncCosmotownInventory'])->name('admin.domains.sync-cosmotown');
         Route::post('admin/domains/{domain}/generate-invoice', [DomainController::class, 'generateInvoice'])->name('admin.domains.generate-invoice');
+        Route::put('admin/domains/{domain}/nameservers', [DomainController::class, 'updateNameservers'])->name('admin.domains.nameservers');
         Route::get('admin/domains-pricing', [DomainController::class, 'pricing'])->name('admin.domains.pricing');
         Route::post('admin/domains-pricing', [DomainController::class, 'storePricing'])->name('admin.domains.pricing.store');
         Route::post('admin/domain-extensions', [DomainController::class, 'storeExtension'])->name('admin.domain-extensions.store');
@@ -715,6 +716,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('/my/cart/check-domain', [App\Http\Controllers\Customer\CartController::class, 'checkDomainAvailability'])->name('customer.cart.check-domain');
         Route::post('/my/cart/{key}/nameservers', [App\Http\Controllers\Customer\CartController::class, 'updateNameservers'])->name('customer.cart.nameservers');
         Route::post('/my/cart/{key}/cloudflare-dns', [App\Http\Controllers\Customer\CartController::class, 'updateCloudflareDns'])->name('customer.cart.cloudflare-dns');
+        Route::put('/my/cart/{key}/auto-renew', [App\Http\Controllers\Customer\CartController::class, 'updateAutoRenew'])->name('customer.cart.auto-renew');
         Route::get('/my/cart/attach-hosting', [App\Http\Controllers\Customer\CartController::class, 'attachHosting'])->name('customer.cart.attach-hosting');
 
         // Checkout (canonical /checkout registration is at the bottom of this file)

@@ -264,7 +264,7 @@ class CronJobSeeder extends Seeder
             ],
             [
                 'name' => 'Process Queued Domain Renewals',
-                'description' => 'Push queued domain renewals when resellers have sufficient wallet funds after customer payment.',
+                'description' => 'Push queued domain renewals when funds are available, and retry unpaid auto-renew invoices from credits or wallet.',
                 'command' => 'cron:process-queued-domain-renewals',
                 'schedule' => '*/30 * * * *',
                 'enabled' => true,

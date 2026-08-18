@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Exceptions\InsufficientFundsException;
 use App\Models\Domain;
+use App\Models\DomainExtension;
 use App\Models\DomainRenewalOrder;
 use App\Models\Invoice;
 use App\Models\User;
@@ -46,7 +47,12 @@ class DomainAutoRenewService
             return 0.0;
         }
 
-        $pricing = $domain->domainExtension->getPricingForUser($payer, $years);
+        return $this->renewalChargeForExtension($payer, $domain->domainExtension, $years);
+    }
+
+    public function renewalChargeForExtension(User $payer, DomainExtension $extension, int $years = 1): float
+    {
+        $pricing = $extension->getPricingForUser($payer, $years);
         if (! $pricing) {
             return 0.0;
         }
@@ -61,6 +67,26 @@ class DomainAutoRenewService
             : TaxService::calculateForUser($net, $payer);
 
         return round((float) $tax['total'], 2);
+    }
+
+    /**
+     * Enable auto-renew at purchase only when the customer opted in and prepaid
+     * cover already includes this domain's renewal plus every other auto-renew domain.
+     */
+    public function shouldEnableAtPurchase(User $payer, DomainExtension $extension, bool $requested, int $years = 1): bool
+    {
+        if (! $requested) {
+            return false;
+        }
+
+        $charge = $this->renewalChargeForExtension($payer, $extension, $years);
+        if ($charge <= 0) {
+            return false;
+        }
+
+        $required = round($this->committedRenewalCharge($payer) + $charge, 2);
+
+        return $this->prepaidBalance($payer) + 0.001 >= $required;
     }
 
     public function prepaidBalance(User $payer): float
@@ -235,6 +261,23 @@ class DomainAutoRenewService
         }
 
         return $paid;
+    }
+
+    /**
+     * Retry unpaid auto-renew invoices after a credit/wallet top-up.
+     * Failures must not roll back the completed top-up.
+     */
+    public function retryAfterPrepaidCredit(): int
+    {
+        try {
+            return $this->payOpenAutoRenewInvoices();
+        } catch (\Throwable $e) {
+            Log::error('Domain auto-renew retry after prepaid credit failed', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return 0;
+        }
     }
 
     public function prepaidLabel(User $payer): string

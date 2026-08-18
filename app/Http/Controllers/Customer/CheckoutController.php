@@ -26,6 +26,7 @@ use App\Services\Checkout\SharedHostingCheckoutService;
 use App\Services\CreditService;
 use App\Services\Customer\CustomerProjectService;
 use App\Services\Dns\DomainCloudflareDnsService;
+use App\Services\DomainAutoRenewService;
 use App\Services\DomainTransferService;
 use App\Services\EmailVerificationService;
 use App\Services\NotificationService;
@@ -597,6 +598,7 @@ class CheckoutController extends Controller
                             'nameserver_3' => $resolvedNs['ns3'],
                             'nameserver_4' => $resolvedNs['ns4'],
                             'cloudflare_dns_enabled' => $cloudflareDns,
+                            'auto_renew' => $this->autoRenewFromCartItem($user, $item, $extension),
                         ]);
 
                         $domainsCreatedByCartKey[$item['key']] = $domain->id;
@@ -1443,6 +1445,7 @@ class CheckoutController extends Controller
                             'nameserver_3' => $resolvedNs['ns3'],
                             'nameserver_4' => $resolvedNs['ns4'],
                             'cloudflare_dns_enabled' => $cloudflareDns,
+                            'auto_renew' => $this->autoRenewFromCartItem($user, $item, $extension),
                         ]);
 
                         $domainsCreatedByCartKey[$item['key']] = $domain->id;
@@ -1617,6 +1620,23 @@ class CheckoutController extends Controller
                 ]);
             }
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     */
+    private function autoRenewFromCartItem(User $user, array $item, ?DomainExtension $extension): bool
+    {
+        if (! $extension) {
+            return false;
+        }
+
+        return app(DomainAutoRenewService::class)->shouldEnableAtPurchase(
+            $user,
+            $extension,
+            ! empty($item['auto_renew']),
+            max(1, (int) ($item['years'] ?? 1)),
+        );
     }
 
     private function domainRegistrationPrice(?User $user, DomainExtension $extension, int $years): ?float

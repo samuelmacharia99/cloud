@@ -51,7 +51,7 @@ class CustomerCreditTopupService
 
     public function processTopupPayment(Payment $payment): Credit
     {
-        return DB::transaction(function () use ($payment) {
+        $credit = DB::transaction(function () use ($payment) {
             $existing = Credit::query()
                 ->where('payment_id', $payment->id)
                 ->where('source', 'purchase')
@@ -73,5 +73,9 @@ class CustomerCreditTopupService
 
             return $credit;
         });
+
+        app(DomainAutoRenewService::class)->retryAfterPrepaidCredit();
+
+        return $credit;
     }
 }

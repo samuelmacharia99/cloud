@@ -301,5 +301,7 @@ class ResellerWalletService
                 'error' => $e->getMessage(),
             ]);
         }
+
+        app(DomainAutoRenewService::class)->retryAfterPrepaidCredit();
     }
 }

@@ -10,6 +10,7 @@ use App\Mail\ContainerAutoRestartedMail;
 use App\Mail\ContainerBackupCompletedMail;
 use App\Mail\ContainerBackupFailedMail;
 use App\Mail\ContainerFailedMail;
+use App\Mail\DomainAutoRenewUnpaidMail;
 use App\Mail\DomainExpiryMail;
 use App\Mail\DomainRenewalCompletedMail;
 use App\Mail\DomainTransferInitiatedMail;
@@ -706,6 +707,60 @@ class NotificationService
                 $this->sendCustomerSms($invoice->user, $message, $event);
             } catch (\Exception $e) {
                 Log::error('Failed to send domain renewal invoice SMS', ['error' => $e->getMessage()]);
+            }
+        }
+    }
+
+    public function notifyDomainAutoRenewUnpaid(Invoice $invoice, Domain $domain): void
+    {
+        $invoice->loadMissing('user');
+        $domain->loadMissing('user');
+
+        $payer = $invoice->user;
+        if (! $payer) {
+            return;
+        }
+
+        $event = NotificationEvent::InvoiceGenerated;
+        $autoRenew = app(DomainAutoRenewService::class);
+        $prepaidLabel = $autoRenew->prepaidLabel($payer);
+        $amountDue = round($invoice->getAmountRemaining(), 2);
+        if ($amountDue <= 0) {
+            $amountDue = round((float) $invoice->total, 2);
+        }
+
+        $fqdn = $domain->fqdn();
+        $topupUrl = $payer->is_reseller
+            ? route('reseller.wallet.index')
+            : customer_portal_route($payer, 'customer.credits.index');
+        $invoiceUrl = $payer->is_reseller
+            ? route('reseller.invoices.show', $invoice)
+            : customer_portal_route($payer, 'customer.invoices.show', $invoice);
+
+        if ($this->emailDelivery->mailConfiguredFor($payer) && $this->preferences->isGloballyEnabled($event)) {
+            $subject = 'Auto-renew could not pay '.$fqdn.' — top up '.$prepaidLabel;
+            $this->sendCustomerEmail($payer, new DomainAutoRenewUnpaidMail(
+                $invoice,
+                $domain,
+                $amountDue,
+                $prepaidLabel,
+                $topupUrl,
+                $invoiceUrl,
+            ), $subject, $event, null, [
+                'customer_name' => $payer->name,
+                'invoice_number' => $invoice->invoice_number,
+                'amount' => 'Ksh '.number_format($amountDue, 2),
+                'due_date' => $invoice->due_date?->format('M d, Y') ?? 'TBD',
+                'domain_name' => $fqdn,
+            ]);
+        }
+
+        if ($this->smsService->isConfigured() && $payer->phone) {
+            try {
+                $message = 'Auto-renew for '.$fqdn.' needs Ksh '.number_format($amountDue, 0).' in '.$prepaidLabel.'. Invoice '.$invoice->invoice_number.'. Top up to keep the domain.';
+                $this->sendCustomerSms($payer, $message, $event);
+            } catch (\Exception $e) {
+                Log::error('Failed to send domain auto-renew unpaid SMS', ['error' => $e->getMessage()]);
             }
         }
     }

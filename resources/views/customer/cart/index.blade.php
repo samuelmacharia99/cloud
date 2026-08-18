@@ -209,6 +209,18 @@
                                                     </button>
                                                 </div>
                                             </div>
+                                            <form method="POST" action="{{ route('customer.cart.auto-renew', $item['key']) }}" class="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700">
+                                                @csrf
+                                                @method('PUT')
+                                                <label class="flex items-start gap-3 cursor-pointer">
+                                                    <input type="hidden" name="auto_renew" value="0">
+                                                    <input type="checkbox" name="auto_renew" value="1" class="mt-1 rounded border-slate-300 text-blue-600 focus:ring-blue-500" @checked($item['auto_renew'] ?? false) onchange="this.form.submit()">
+                                                    <span>
+                                                        <span class="block text-sm font-medium text-slate-800 dark:text-slate-200">Auto-renew when this domain expires</span>
+                                                        <span class="block text-xs text-slate-500 dark:text-slate-400 mt-0.5">Turns on at checkout only if your account credits already cover this renewal plus any other auto-renew domains. Credits are not reserved.</span>
+                                                    </span>
+                                                </label>
+                                            </form>
                                         </td>
                                     </tr>
                                     @endif

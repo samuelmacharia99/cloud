@@ -331,6 +331,7 @@ class CartController extends Controller
                 'years' => $request->years,
                 'nameservers' => $nameservers,
                 'cloudflare_dns' => $cloudflareDns,
+                'auto_renew' => $request->boolean('auto_renew'),
             ];
         } else {
             $response = [
@@ -557,5 +558,24 @@ class CartController extends Controller
             'success' => true,
             'message' => $enabled ? 'Managed DNS enabled for this domain.' : 'Managed DNS removed from this domain.',
         ]);
+    }
+
+    public function updateAutoRenew(string $key, Request $request)
+    {
+        $cart = SessionCart::portal();
+
+        if (! isset($cart[$key]) || $cart[$key]['type'] !== 'domain') {
+            return back()->with('error', 'Domain not found in cart');
+        }
+
+        $cart[$key]['auto_renew'] = $request->boolean('auto_renew');
+        SessionCart::putPortal($cart);
+
+        return back()->with(
+            'success',
+            $cart[$key]['auto_renew']
+                ? 'Auto-renew requested for this domain. It will turn on at checkout only if your account credits cover the renewal price.'
+                : 'Auto-renew will stay off for this domain.'
+        );
     }
 }

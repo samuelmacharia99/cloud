@@ -43,15 +43,21 @@
                             <div class="flex items-center gap-3">
                                 <p class="font-bold text-slate-900 dark:text-white" x-text="`KES ${result.price.toLocaleString()}`"></p>
                                 <template x-if="result.available">
-                                    <form action="{{ route('customer.cart.add') }}" method="POST" class="flex items-center gap-2">
+                                    <form action="{{ route('customer.cart.add') }}" method="POST" class="flex flex-col sm:items-end gap-2">
                                         @csrf
                                         <input type="hidden" name="type" value="domain">
                                         <input type="hidden" name="domain" :value="result.domain">
                                         <input type="hidden" name="extension" :value="result.extension">
-                                        <select name="years" class="text-sm rounded-lg border-slate-300 dark:border-slate-600 dark:bg-slate-800">
-                                            <option value="1">1 yr</option><option value="2">2 yr</option><option value="3">3 yr</option><option value="5">5 yr</option>
-                                        </select>
-                                        <button type="submit" class="btn-success btn-sm">Add to cart</button>
+                                        <div class="flex items-center gap-2">
+                                            <select name="years" class="text-sm rounded-lg border-slate-300 dark:border-slate-600 dark:bg-slate-800">
+                                                <option value="1">1 yr</option><option value="2">2 yr</option><option value="3">3 yr</option><option value="5">5 yr</option>
+                                            </select>
+                                            <button type="submit" class="btn-success btn-sm">Add to cart</button>
+                                        </div>
+                                        <label class="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
+                                            <input type="checkbox" name="auto_renew" value="1" class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                                            Auto-renew (needs credits for renewal)
+                                        </label>
                                     </form>
                                 </template>
                             </div>

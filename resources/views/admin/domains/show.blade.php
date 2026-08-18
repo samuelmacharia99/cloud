@@ -109,17 +109,36 @@
         <hr class="border-slate-200 dark:border-slate-700">
 
         <div>
-            <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-4">Nameservers</h2>
-            <div class="grid grid-cols-1 gap-4">
-                <div>
-                    <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Nameserver 1</p>
-                    <p class="text-slate-900 dark:text-white mt-1 font-mono">{{ $domain->nameserver_1 ?? '—' }}</p>
+            <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-1">Nameservers</h2>
+            <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                At least two unique nameservers are required. When this domain is linked at the registrar, saving pushes the change there (including Cosmotown). DNS can take up to 48 hours to propagate.
+            </p>
+            <form method="POST" action="{{ route('admin.domains.nameservers', $domain) }}" class="space-y-4">
+                @csrf
+                @method('PUT')
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    @foreach(['nameserver_1' => 'Nameserver 1', 'nameserver_2' => 'Nameserver 2', 'nameserver_3' => 'Nameserver 3', 'nameserver_4' => 'Nameserver 4'] as $field => $label)
+                        <div>
+                            <label for="{{ $field }}" class="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">{{ $label }}</label>
+                            <input
+                                id="{{ $field }}"
+                                type="text"
+                                name="{{ $field }}"
+                                value="{{ old($field, $domain->{$field}) }}"
+                                placeholder="ns1.example.com"
+                                class="w-full px-3 py-2 font-mono text-sm border rounded-lg bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 text-slate-900 dark:text-white @error($field) border-red-500 @enderror"
+                                @if(in_array($field, ['nameserver_1', 'nameserver_2'], true)) required @endif
+                            >
+                            @error($field)
+                                <p class="text-xs text-red-600 dark:text-red-400 mt-1">{{ $message }}</p>
+                            @enderror
+                        </div>
+                    @endforeach
                 </div>
-                <div>
-                    <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Nameserver 2</p>
-                    <p class="text-slate-900 dark:text-white mt-1 font-mono">{{ $domain->nameserver_2 ?? '—' }}</p>
-                </div>
-            </div>
+                <button type="submit" class="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition">
+                    Save nameservers
+                </button>
+            </form>
         </div>
 
         @if ($domain->notes)
