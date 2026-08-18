@@ -929,7 +929,7 @@
                         <!-- Auto Renew -->
                         <div class="flex items-center gap-2">
                             <input type="hidden" name="auto_renew" value="0">
-                            <input type="checkbox" name="auto_renew" value="1" id="auto_renew" {{ old('auto_renew', 1) ? 'checked' : '' }} class="w-4 h-4 border border-slate-300 rounded bg-white dark:bg-slate-800 focus:ring-2 focus:ring-blue-500 accent-blue-600 cursor-pointer">
+                            <input type="checkbox" name="auto_renew" value="1" id="auto_renew" {{ old('auto_renew') ? 'checked' : '' }} class="w-4 h-4 border border-slate-300 rounded bg-white dark:bg-slate-800 focus:ring-2 focus:ring-blue-500 accent-blue-600 cursor-pointer">
                             <label for="auto_renew" class="text-sm font-medium text-slate-700 dark:text-slate-300 cursor-pointer">Enable auto-renewal</label>
                         </div>
 

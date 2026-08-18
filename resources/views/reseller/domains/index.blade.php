@@ -261,9 +261,17 @@
                                         </span>
                                     </td>
                                     <td>
-                                        <span class="text-xs font-semibold {{ $domain->auto_renew ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-500 dark:text-slate-400' }}">
-                                            {{ $domain->auto_renew ? 'On' : 'Off' }}
-                                        </span>
+                                        @unless($domain->isDnsManaged())
+                                            <form method="POST" action="{{ route('reseller.domains.auto-renew', $domain) }}">
+                                                @csrf
+                                                <input type="hidden" name="auto_renew" value="{{ $domain->auto_renew ? 0 : 1 }}">
+                                                <button type="submit" class="text-xs font-semibold {{ $domain->auto_renew ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-500 dark:text-slate-400' }} hover:underline">
+                                                    {{ $domain->auto_renew ? 'On' : 'Off' }}
+                                                </button>
+                                            </form>
+                                        @else
+                                            <span class="text-xs text-slate-400">—</span>
+                                        @endunless
                                     </td>
                                     <td class="text-right overflow-visible">
                                         <div x-data="{ open: false, showRenewal: false, renewYears: '1', renewing: false }" class="relative inline-block text-left z-10">

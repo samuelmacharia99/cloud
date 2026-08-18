@@ -110,7 +110,7 @@
                 <input type="checkbox" name="auto_renew" @checked($domain->auto_renew) class="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-2 focus:ring-blue-500">
                 <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Auto Renewal Enabled</span>
             </label>
-            <span class="text-xs text-slate-500 dark:text-slate-400">Automatically renew before expiration</span>
+            <span class="text-xs text-slate-500 dark:text-slate-400">Requires enough customer credits or reseller wallet to pay the renewal when the invoice is generated.</span>
         </div>
 
         <hr class="border-slate-200 dark:border-slate-700">

@@ -3,7 +3,6 @@
 namespace App\Console\Commands;
 
 use App\Models\Domain;
-use App\Models\DomainRenewalOrder;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Service;
@@ -11,6 +10,7 @@ use App\Models\Setting;
 use App\Services\Billing\InvoiceNumberService;
 use App\Services\Billing\ServiceRenewalPricingService;
 use App\Services\ContainerOverageBillingService;
+use App\Services\DomainAutoRenewService;
 use App\Services\DomainRenewalService;
 use App\Services\InvoiceGenerationScheduleService;
 use App\Services\NotificationService;
@@ -162,7 +162,11 @@ class GenerateInvoicesByDateCommand extends Command
         $this->line('Generating domain renewal invoices...');
 
         $schedule = app(InvoiceGenerationScheduleService::class);
-        $domains = $schedule->domainsDueForRenewalInvoiceQuery($date)->get();
+        $autoRenew = app(DomainAutoRenewService::class);
+        $domains = $schedule->domainsDueForRenewalInvoiceQuery($date)
+            ->get()
+            ->merge($schedule->autoRenewResellerManagedDomainsDueQuery($date)->get())
+            ->unique('id');
 
         if ($domains->isEmpty()) {
             $this->line('  No domains due for renewal invoice generation on this date.');
@@ -180,39 +184,40 @@ class GenerateInvoicesByDateCommand extends Command
             }
 
             try {
-                DB::transaction(function () use ($domain, $renewalYears, $paymentDays, $sendNotifications, &$count) {
+                $payload = DB::transaction(function () use ($domain, $renewalYears, $paymentDays, $autoRenew) {
                     $renewalPrice = $this->getRenewalPrice($domain);
 
                     if ($renewalPrice <= 0) {
                         $this->error("  ✗ {$domain->name}{$domain->extension} - no pricing available");
 
-                        return;
+                        return null;
                     }
 
-                    $renewalOrder = DomainRenewalOrder::create([
-                        'domain_id' => $domain->id,
-                        'user_id' => $domain->user_id,
-                        'years' => $renewalYears,
-                        'amount' => $renewalPrice,
-                        'status' => 'pending',
-                        'expires_at' => now()->addDays($paymentDays),
-                    ]);
-
-                    $renewalService = app(DomainRenewalService::class);
-                    $invoice = $renewalService->createInvoice($renewalOrder);
-
-                    if ($sendNotifications) {
-                        app(NotificationService::class)->notifyDomainRenewalInvoice($invoice, $domain);
-                    }
+                    $renewalOrder = $autoRenew->startScheduledRenewal($domain, $renewalYears, $paymentDays);
+                    $invoice = app(DomainRenewalService::class)->createInvoice($renewalOrder);
 
                     $this->line("  ✓ Domain: {$domain->name}{$domain->extension} → Invoice {$invoice->invoice_number} (KES ".number_format($invoice->total, 2).')');
-                    $count++;
+
+                    return $invoice;
                 });
+
+                if (! $payload) {
+                    continue;
+                }
+
+                $count++;
+                $autoPaid = $autoRenew->attemptAutoPay($payload->fresh(), $domain->fresh());
+
+                if ($sendNotifications && ! $autoPaid) {
+                    app(NotificationService::class)->notifyDomainRenewalInvoice($payload, $domain);
+                }
             } catch (\Exception $e) {
                 $this->error("  ✗ Failed for {$domain->name}{$domain->extension}: {$e->getMessage()}");
                 Log::error("Failed to generate domain invoice for {$domain->name}{$domain->extension}: {$e->getMessage()}");
             }
         }
+
+        $autoRenew->payOpenAutoRenewInvoices();
 
         return $count;
     }
@@ -224,7 +229,16 @@ class GenerateInvoicesByDateCommand extends Command
             return 0;
         }
 
-        $pricing = $extension->getRetailPricing(1);
+        $domain->loadMissing('user');
+        $user = $domain->user;
+        if (! $user) {
+            return 0;
+        }
+
+        $pricing = $extension->getPricingForUser($user, 1);
+        if (! $pricing) {
+            return 0;
+        }
 
         return (float) ($pricing->renewal_price ?? $pricing->price ?? 0);
     }

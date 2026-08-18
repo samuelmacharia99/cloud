@@ -546,6 +546,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
             Route::put('reseller/domains/{domain}/nameservers', [App\Http\Controllers\Reseller\DomainController::class, 'updateNameservers'])->name('reseller.domains.nameservers');
             Route::post('reseller/domains/{domain}/transfer', [App\Http\Controllers\Reseller\DomainController::class, 'initiateTransfer'])->name('reseller.domains.transfer');
             Route::post('reseller/domains/{domain}/renew', [App\Http\Controllers\Reseller\DomainController::class, 'addRenewalToCart'])->name('reseller.domains.renew');
+            Route::post('reseller/domains/{domain}/auto-renew', [App\Http\Controllers\Reseller\DomainController::class, 'toggleAutoRenew'])->middleware('throttle:20,1')->name('reseller.domains.auto-renew');
             Route::delete('reseller/domains/{domain}', [App\Http\Controllers\Reseller\DomainController::class, 'destroy'])->name('reseller.domains.destroy');
             Route::get('reseller/domains-pricing', [DomainPricingController::class, 'index'])->name('reseller.domains.pricing');
             Route::post('reseller/domains-pricing', [DomainPricingController::class, 'update'])->name('reseller.domains.pricing.update');
@@ -691,6 +692,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
 
         // Domain renewal
         Route::post('/my/domains/{domain}/renew', [App\Http\Controllers\Customer\DomainController::class, 'initiateRenewal'])->name('customer.domains.initiate-renewal');
+        Route::post('/my/domains/{domain}/auto-renew', [App\Http\Controllers\Customer\DomainController::class, 'toggleAutoRenew'])->middleware('throttle:20,1')->name('customer.domains.auto-renew');
         Route::get('/my/domains/renewal/checkout', [App\Http\Controllers\Customer\DomainController::class, 'showRenewalCheckout'])->name('customer.domains.renewal-checkout');
         Route::post('/my/domains/renewal/checkout/confirm', [App\Http\Controllers\Customer\DomainController::class, 'confirmRenewalCheckout'])->name('customer.domains.renewal-checkout-confirm');
 

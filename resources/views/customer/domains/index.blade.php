@@ -110,6 +110,7 @@
                             <th>Domain</th>
                             <th>Registered</th>
                             <th>Expires</th>
+                            <th>Auto-renew</th>
                             <th>Status</th>
                             <th class="text-right">Actions</th>
                         </tr>
@@ -129,9 +130,18 @@
                                 </td>
                                 <td class="text-slate-600 dark:text-slate-400">{{ $domain->registered_at?->format('M d, Y') ?? '—' }}</td>
                                 <td>
-                                    <span class="{{ $domain->expires_at?->isPast() ? 'text-red-600 dark:text-red-400 font-medium' : '' }}">
+                                        <span class="{{ $domain->expires_at?->isPast() ? 'text-red-600 dark:text-red-400 font-medium' : '' }}">
                                         {{ $domain->expires_at?->format('M d, Y') ?? '—' }}
                                     </span>
+                                </td>
+                                <td>
+                                    @unless($domain->isDnsManaged())
+                                        <span class="text-xs font-semibold {{ $domain->auto_renew ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-500 dark:text-slate-400' }}">
+                                            {{ $domain->auto_renew ? 'On' : 'Off' }}
+                                        </span>
+                                    @else
+                                        <span class="text-slate-400">—</span>
+                                    @endunless
                                 </td>
                                 <td><x-domain-status-badge :status="$domain->status" /></td>
                                 <td class="text-right">
@@ -143,6 +153,16 @@
                                             class="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 z-50 overflow-hidden">
                                             <div x-show="!showRenewal">
                                                 @unless($domain->isDnsManaged())
+                                                    <form method="POST" action="{{ route('customer.domains.auto-renew', $domain) }}" class="border-b border-slate-100 dark:border-slate-800">
+                                                        @csrf
+                                                        <input type="hidden" name="auto_renew" value="{{ $domain->auto_renew ? 0 : 1 }}">
+                                                        <button type="submit" class="w-full text-left px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800 transition text-sm font-medium">
+                                                            {{ $domain->auto_renew ? 'Turn off auto-renew' : 'Turn on auto-renew' }}
+                                                        </button>
+                                                    </form>
+                                                    <p class="px-4 py-2 text-[11px] text-slate-500 dark:text-slate-400 border-b border-slate-100 dark:border-slate-800">
+                                                        {{ $domain->auto_renew ? 'On — keep enough account credits for the renewal price.' : 'Requires account credits covering this domain’s renewal price.' }}
+                                                    </p>
                                                     <button @click="showRenewal = true" type="button" class="w-full text-left px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800 transition flex items-center gap-3 border-b border-slate-100 dark:border-slate-800">
                                                         <span class="text-brand-600">↻</span>
                                                         <span class="font-medium text-sm">Renew domain</span>

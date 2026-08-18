@@ -669,7 +669,7 @@ class ResellerController extends Controller
                     'next_invoice_date' => $nextInvoiceDate,
                     'nameserver_1' => $validated['nameserver_1'],
                     'nameserver_2' => $validated['nameserver_2'],
-                    'auto_renew' => $validated['auto_renew'] ?? true,
+                    'auto_renew' => $validated['auto_renew'] ?? false,
                     'notes' => $validated['notes'],
                 ]);
 

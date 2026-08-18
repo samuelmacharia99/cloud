@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Customer;
 
+use App\Exceptions\InsufficientFundsException;
 use App\Http\Controllers\Controller;
 use App\Models\Domain;
 use App\Models\DomainExtension;
@@ -10,6 +11,7 @@ use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Service;
 use App\Services\Dns\DomainCloudflareDnsService;
+use App\Services\DomainAutoRenewService;
 use App\Services\DomainRenewalService;
 use App\Services\DomainTransferService;
 use App\Services\ResellerCustomerCatalogService;
@@ -118,6 +120,37 @@ class DomainController extends Controller
         return redirect()
             ->route('customer.domains.dns.index', $domain)
             ->with('success', 'Domain added. Point your registrar nameservers to the NS records shown below, then manage DNS here.');
+    }
+
+    public function toggleAutoRenew(Request $request, Domain $domain)
+    {
+        $this->authorize('update', $domain);
+
+        $validated = $request->validate([
+            'auto_renew' => 'required|boolean',
+        ]);
+
+        $enabled = (bool) $validated['auto_renew'];
+
+        try {
+            app(DomainAutoRenewService::class)->setEnabled($domain, $enabled, $request->user());
+        } catch (InsufficientFundsException $e) {
+            $label = app(DomainAutoRenewService::class)->prepaidLabel($request->user());
+
+            return back()->with(
+                'error',
+                "Auto-renew needs enough {$label} to cover this domain when it expires. {$e->getMessage()}. Top up first."
+            );
+        } catch (\InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with(
+            'success',
+            $enabled
+                ? 'Auto-renew is on. Keep enough account credits for this domain before expiry or renewal will wait on an invoice.'
+                : 'Auto-renew is off. You will need to renew this domain manually.'
+        );
     }
 
     /**

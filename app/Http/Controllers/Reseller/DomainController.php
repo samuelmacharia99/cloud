@@ -2,12 +2,14 @@
 
 namespace App\Http\Controllers\Reseller;
 
+use App\Exceptions\InsufficientFundsException;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Reseller\Concerns\ResellerDomainAccess;
 use App\Models\Domain;
 use App\Models\DomainExtension;
 use App\Models\Service;
 use App\Models\User;
+use App\Services\DomainAutoRenewService;
 use App\Services\DomainAvailabilityService;
 use App\Services\DomainRenewalService;
 use App\Services\Registrar\RegistrarFulfillmentService;
@@ -231,6 +233,39 @@ class DomainController extends Controller
         $dnsRecords = $zone?->records()->orderBy('type')->orderBy('name')->get() ?? collect();
 
         return view('reseller.domains.show', compact('domain', 'transferTargets', 'dnsRecords'));
+    }
+
+    public function toggleAutoRenew(Request $request, Domain $domain)
+    {
+        $this->assertResellerCanManageDomain($domain);
+
+        $validated = $request->validate([
+            'auto_renew' => 'required|boolean',
+        ]);
+
+        $enabled = (bool) $validated['auto_renew'];
+        $payer = $domain->user;
+        $autoRenew = app(DomainAutoRenewService::class);
+
+        try {
+            $autoRenew->setEnabled($domain, $enabled, $request->user());
+        } catch (InsufficientFundsException $e) {
+            $label = $payer ? $autoRenew->prepaidLabel($payer) : 'prepaid balance';
+
+            return back()->with(
+                'error',
+                "Auto-renew needs enough {$label} to cover this domain when it expires. {$e->getMessage()}. Top up first."
+            );
+        } catch (\InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with(
+            'success',
+            $enabled
+                ? 'Auto-renew is on. Keep enough prepaid balance for this domain before expiry.'
+                : 'Auto-renew is off.'
+        );
     }
 
     public function updateNameservers(Request $request, Domain $domain)

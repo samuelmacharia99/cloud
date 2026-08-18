@@ -265,6 +265,32 @@ class InvoiceGenerationScheduleService
     }
 
     /**
+     * Reseller-managed domains that opted into auto-renew and are inside the advance window.
+     */
+    public function autoRenewResellerManagedDomainsDueQuery(?Carbon $reference = null): Builder
+    {
+        $today = ($reference ?? now())->copy()->startOfDay();
+        $advanceDays = $this->domainAdvanceDays();
+        $lookbackDays = $advanceDays + 7;
+
+        return Domain::query()
+            ->where('status', 'active')
+            ->where('auto_renew', true)
+            ->whereNotNull('expires_at')
+            ->where(function (Builder $query) {
+                $query->whereNotNull('reseller_id')
+                    ->orWhereHas('user', fn (Builder $userQuery) => $userQuery->whereNotNull('reseller_id'));
+            })
+            ->whereDate('expires_at', '>', $today)
+            ->whereDate('expires_at', '<=', $today->copy()->addDays($advanceDays))
+            ->whereDoesntHave('renewalOrders', function (Builder $q) use ($lookbackDays) {
+                $q->whereIn('status', ['pending', 'invoiced', 'queued', 'paid', 'pushed'])
+                    ->where('created_at', '>=', now()->subDays($lookbackDays));
+            })
+            ->with(['user', 'domainExtension']);
+    }
+
+    /**
      * Exclude services that already have an open renewal invoice (via invoice_id or line items).
      */
     public function applyWithoutOpenRenewalInvoiceConstraint(Builder $query): Builder
