@@ -17,33 +17,40 @@ class ContainerNodeAnalyticsServiceTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_oversold_plan_cpu_is_informational_when_live_use_is_low(): void
+    public function test_low_live_use_reports_headroom_instead_of_plan_oversell(): void
     {
         $node = $this->makeHost([
-            'cpu_cores' => 4,
-            'ram_gb' => 16,
-            'storage_gb' => 200,
-            'cpu_used' => 16,
-            'ram_used_gb' => 2,
-            'storage_used_gb' => 20,
+            'cpu_cores' => 12,
+            'ram_gb' => 62,
+            'storage_gb' => 1800,
+            'cpu_used' => 5,
+            'ram_used_gb' => 10,
+            'storage_used_gb' => 144,
             'last_heartbeat_at' => now()->subMinute(),
         ]);
         $this->makeRunningService($node, [
-            'cpu' => 8,
-            'memory' => 1024,
-            'disk' => 20,
+            'cpu' => 16,
+            'memory' => 8192,
+            'disk' => 1070,
         ]);
 
         $analytics = app(ContainerNodeAnalyticsService::class)->forNode($node->fresh());
 
-        $this->assertSame(16, $analytics['capacity']['live']['cpu']);
+        $this->assertSame(5, $analytics['capacity']['live']['cpu']);
+        $this->assertSame(16, $analytics['capacity']['live']['ram']);
+        $this->assertSame(8, $analytics['capacity']['live']['storage']);
+        $this->assertSame(16, $analytics['live_pressure']);
+        $this->assertSame(59, $analytics['capacity']['reserved']['storage']);
         $this->assertGreaterThan(100, $analytics['capacity']['reserved']['cpu']);
+        $this->assertSame(59, $analytics['capacity']['pressure_percent']);
         $this->assertTrue(collect($analytics['insights'])->contains(
-            fn (array $insight) => $insight['severity'] === 'info'
-                && str_contains($insight['title'], 'Plan CPU is oversold')
+            fn (array $insight) => str_contains($insight['title'], 'Host has live headroom')
         ));
         $this->assertFalse(collect($analytics['insights'])->contains(
-            fn (array $insight) => str_contains($insight['title'], 'Scale-out pressure')
+            fn (array $insight) => str_contains($insight['title'], 'Plan CPU is oversold')
+                || str_contains($insight['title'], 'Sold disk')
+                || str_contains($insight['title'], 'Scale-out pressure')
+                || str_contains($insight['title'], 'Live usage is')
         ));
     }
 
@@ -62,7 +69,7 @@ class ContainerNodeAnalyticsServiceTest extends TestCase
         ));
     }
 
-    public function test_top_consumers_rank_by_average_cpu(): void
+    public function test_top_consumers_rank_by_latest_cpu(): void
     {
         $node = $this->makeHost(['last_heartbeat_at' => now()->subMinute()]);
         $hot = $this->makeRunningService($node, name: 'API gateway');
@@ -71,12 +78,22 @@ class ContainerNodeAnalyticsServiceTest extends TestCase
         ContainerMetric::query()->create([
             'container_deployment_id' => $hot->containerDeployment->id,
             'sample_type' => ContainerMetric::SAMPLE_USAGE,
+            'cpu_percentage' => 4.0,
+            'memory_used_mb' => 100,
+            'memory_limit_mb' => 1024,
+            'memory_percentage' => 10,
+            'disk_used_gb' => 1.0,
+            'recorded_at' => now()->subHours(6),
+        ]);
+        ContainerMetric::query()->create([
+            'container_deployment_id' => $hot->containerDeployment->id,
+            'sample_type' => ContainerMetric::SAMPLE_USAGE,
             'cpu_percentage' => 82.5,
             'memory_used_mb' => 700,
             'memory_limit_mb' => 1024,
             'memory_percentage' => 68,
             'disk_used_gb' => 3.25,
-            'recorded_at' => now()->subHour(),
+            'recorded_at' => now()->subMinute(),
         ]);
         ContainerMetric::query()->create([
             'container_deployment_id' => $quiet->containerDeployment->id,
@@ -92,7 +109,7 @@ class ContainerNodeAnalyticsServiceTest extends TestCase
         $analytics = app(ContainerNodeAnalyticsService::class)->forNode($node->fresh());
 
         $this->assertSame('API gateway', $analytics['top_consumers'][0]['service_name']);
-        $this->assertSame(82.5, $analytics['top_consumers'][0]['avg_cpu']);
+        $this->assertSame(82.5, $analytics['top_consumers'][0]['cpu']);
         $this->assertSame('Idle worker', $analytics['top_consumers'][1]['service_name']);
     }
 

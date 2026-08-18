@@ -5,33 +5,38 @@
     $topConsumers = $containerAnalytics['top_consumers'];
     $attention = $containerAnalytics['attention'];
     $chart = $containerAnalytics['chart'];
+    $livePressure = $containerAnalytics['live_pressure'];
     $threshold = $containerAnalytics['scale_out_threshold'];
-    $pressureColor = $capacity['pressure_percent'] >= $threshold
-        ? 'bg-amber-500'
-        : ($capacity['pressure_percent'] >= 50 ? 'bg-blue-500' : 'bg-emerald-500');
+    $barColor = function (int $percent) use ($threshold) {
+        if ($percent >= $threshold) {
+            return 'bg-amber-500';
+        }
+
+        return $percent >= 50 ? 'bg-blue-500' : 'bg-emerald-500';
+    };
 @endphp
 
 <div class="space-y-6">
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div class="ui-card p-5">
+            <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Live CPU</p>
+            <p class="text-2xl font-semibold text-slate-900 dark:text-white mt-1">{{ $capacity['live']['cpu'] }}%</p>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">{{ $node->cpu_cores }} cores on this host</p>
+        </div>
+        <div class="ui-card p-5">
+            <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Live RAM</p>
+            <p class="text-2xl font-semibold text-slate-900 dark:text-white mt-1">{{ $capacity['live']['ram'] }}%</p>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">{{ $node->ram_used_gb }} GB of {{ $node->ram_gb }} GB</p>
+        </div>
+        <div class="ui-card p-5">
+            <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Live disk</p>
+            <p class="text-2xl font-semibold text-slate-900 dark:text-white mt-1">{{ $capacity['live']['storage'] }}%</p>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">{{ $node->storage_used_gb }} GB of {{ $node->storage_gb }} GB</p>
+        </div>
+        <div class="ui-card p-5">
             <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Runtimes</p>
             <p class="text-2xl font-semibold text-slate-900 dark:text-white mt-1">{{ $fleet['running'] }}<span class="text-base font-medium text-slate-400"> / {{ $fleet['total'] }}</span></p>
-            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Running of non-terminated</p>
-        </div>
-        <div class="ui-card p-5">
-            <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Live pressure</p>
-            <p class="text-2xl font-semibold text-slate-900 dark:text-white mt-1">{{ $capacity['pressure_percent'] }}%</p>
-            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Alert at {{ $threshold }}% (live + sold disk)</p>
-        </div>
-        <div class="ui-card p-5">
-            <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Failed</p>
-            <p class="text-2xl font-semibold {{ $fleet['failed'] > 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-900 dark:text-white' }} mt-1">{{ $fleet['failed'] }}</p>
-            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">{{ $fleet['stopped'] }} stopped · {{ $fleet['deploying'] }} deploying</p>
-        </div>
-        <div class="ui-card p-5">
-            <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Sold disk</p>
-            <p class="text-2xl font-semibold text-slate-900 dark:text-white mt-1">{{ $capacity['reserved']['storage'] }}%</p>
-            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">{{ $capacity['reserved_absolute']['storage_gb'] }} GB of {{ $node->storage_gb }} GB</p>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">{{ $fleet['failed'] }} failed · {{ $fleet['stopped'] }} stopped</p>
         </div>
     </div>
 
@@ -56,46 +61,58 @@
     <div class="ui-card p-6 sm:p-8">
         <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-6">
             <div>
-                <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Live vs sold capacity</h2>
+                <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Live host usage</h2>
                 <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                    Placement uses <strong class="font-medium text-slate-800 dark:text-slate-200">live CPU and RAM</strong> plus <strong class="font-medium text-slate-800 dark:text-slate-200">sold disk</strong>.
-                    Plan CPU/RAM allowances are allowed to oversubscribe.
+                    What this machine is using right now from the last health poll — not plan CPU, RAM, or disk sold to customers.
                 </p>
             </div>
-            <p class="text-xs text-slate-500 dark:text-slate-400 shrink-0">Pressure {{ $capacity['pressure_percent'] }}%</p>
-        </div>
-
-        <div class="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2 mb-8">
-            <div class="{{ $pressureColor }} h-2 rounded-full" style="width: {{ min($capacity['pressure_percent'], 100) }}%"></div>
+            <p class="text-xs text-slate-500 dark:text-slate-400 shrink-0">Highest live metric {{ $livePressure }}%</p>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
             @foreach ([
-                'cpu' => ['label' => 'CPU', 'live' => $capacity['live']['cpu'], 'sold' => $capacity['reserved']['cpu'], 'sold_label' => $capacity['reserved_absolute']['cpu_cores'].' cores sold / '.$node->cpu_cores.' cores'],
-                'ram' => ['label' => 'RAM', 'live' => $capacity['live']['ram'], 'sold' => $capacity['reserved']['ram'], 'sold_label' => $capacity['reserved_absolute']['ram_gb'].' GB sold / '.$node->ram_gb.' GB'],
-                'storage' => ['label' => 'Disk', 'live' => $capacity['live']['storage'], 'sold' => $capacity['reserved']['storage'], 'sold_label' => $capacity['reserved_absolute']['storage_gb'].' GB sold / '.$node->storage_gb.' GB'],
+                ['label' => 'CPU', 'percent' => $capacity['live']['cpu'], 'detail' => $node->cpu_cores.' cores'],
+                ['label' => 'RAM', 'percent' => $capacity['live']['ram'], 'detail' => $node->ram_used_gb.' GB used of '.$node->ram_gb.' GB'],
+                ['label' => 'Disk', 'percent' => $capacity['live']['storage'], 'detail' => $node->storage_used_gb.' GB used of '.$node->storage_gb.' GB'],
             ] as $metric)
                 <div>
                     <div class="flex items-center justify-between mb-2">
                         <p class="text-sm font-medium text-slate-900 dark:text-white">{{ $metric['label'] }}</p>
-                        <p class="text-xs text-slate-500 dark:text-slate-400">Live {{ $metric['live'] }}%</p>
+                        <p class="text-sm font-semibold text-slate-900 dark:text-white">{{ $metric['percent'] }}%</p>
                     </div>
-                    <div class="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2 mb-2">
-                        <div class="bg-blue-500 h-2 rounded-full" style="width: {{ min($metric['live'], 100) }}%"></div>
+                    <div class="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2.5">
+                        <div class="{{ $barColor($metric['percent']) }} h-2.5 rounded-full" style="width: {{ min($metric['percent'], 100) }}%"></div>
                     </div>
-                    <p class="text-xs text-slate-500 dark:text-slate-400 mb-1">Sold {{ $metric['sold'] }}%{{ $metric['sold'] > 100 ? ' (oversubscribed)' : '' }}</p>
-                    <div class="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-1.5">
-                        <div class="{{ $metric['sold'] > 100 ? 'bg-violet-500' : 'bg-slate-400 dark:bg-slate-500' }} h-1.5 rounded-full" style="width: {{ min($metric['sold'], 100) }}%"></div>
-                    </div>
-                    <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">{{ $metric['sold_label'] }}</p>
+                    <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">{{ $metric['detail'] }}</p>
                 </div>
             @endforeach
         </div>
+
+        <details class="mt-8 pt-6 border-t border-slate-200 dark:border-slate-800">
+            <summary class="cursor-pointer text-sm font-medium text-slate-600 dark:text-slate-300">Plan allowances (not live use)</summary>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-2 mb-3">
+                What customers were sold on paper. Most of this is unused until apps grow. It does not change the live gauges above.
+            </p>
+            <dl class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+                <div class="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/80">
+                    <dt class="text-xs uppercase text-slate-500 dark:text-slate-400">CPU sold</dt>
+                    <dd class="mt-1 text-slate-900 dark:text-white">{{ $capacity['reserved_absolute']['cpu_cores'] }} cores ({{ $capacity['reserved']['cpu'] }}%)</dd>
+                </div>
+                <div class="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/80">
+                    <dt class="text-xs uppercase text-slate-500 dark:text-slate-400">RAM sold</dt>
+                    <dd class="mt-1 text-slate-900 dark:text-white">{{ $capacity['reserved_absolute']['ram_gb'] }} GB ({{ $capacity['reserved']['ram'] }}%)</dd>
+                </div>
+                <div class="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/80">
+                    <dt class="text-xs uppercase text-slate-500 dark:text-slate-400">Disk sold</dt>
+                    <dd class="mt-1 text-slate-900 dark:text-white">{{ $capacity['reserved_absolute']['storage_gb'] }} GB ({{ $capacity['reserved']['storage'] }}%)</dd>
+                </div>
+            </dl>
+        </details>
     </div>
 
     <div class="ui-card p-6 sm:p-8">
         <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-1">Host trend (last 24 hours)</h2>
-        <p class="text-sm text-slate-500 dark:text-slate-400 mb-6">From two-minute SSH health polls. CPU, RAM, and disk on this machine — not per-container docker stats.</p>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mb-6">Live CPU, RAM, and disk from two-minute SSH polls on this machine.</p>
         @if (count($chart['labels']) > 1)
             <div class="h-56">
                 <canvas id="nodeHostTrendChart"></canvas>
@@ -107,17 +124,17 @@
 
     <div class="grid grid-cols-1 {{ count($attention) > 0 ? 'lg:grid-cols-5' : '' }} gap-6">
         <div class="ui-card p-6 {{ count($attention) > 0 ? 'lg:col-span-3' : '' }}">
-            <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-1">Top consumers (24h)</h2>
-            <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Average CPU from docker stats. Peak RAM and disk are the highest sample in the window.</p>
-            @if (collect($topConsumers)->contains(fn ($row) => $row['avg_cpu'] !== null))
+            <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-1">Live usage by container</h2>
+            <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Latest docker stats sample per runtime on this host.</p>
+            @if (collect($topConsumers)->contains(fn ($row) => $row['cpu'] !== null))
                 <div class="overflow-x-auto">
                     <table class="w-full text-sm">
                         <thead>
                             <tr class="border-b border-slate-200 dark:border-slate-800">
                                 <th class="text-left py-2 font-semibold text-slate-600 dark:text-slate-400">Service</th>
-                                <th class="text-right py-2 font-semibold text-slate-600 dark:text-slate-400">Avg CPU</th>
-                                <th class="text-right py-2 font-semibold text-slate-600 dark:text-slate-400">Peak RAM</th>
-                                <th class="text-right py-2 font-semibold text-slate-600 dark:text-slate-400">Peak disk</th>
+                                <th class="text-right py-2 font-semibold text-slate-600 dark:text-slate-400">CPU</th>
+                                <th class="text-right py-2 font-semibold text-slate-600 dark:text-slate-400">RAM</th>
+                                <th class="text-right py-2 font-semibold text-slate-600 dark:text-slate-400">Disk</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-200 dark:border-slate-800">
@@ -131,9 +148,9 @@
                                         @endif
                                         <p class="text-xs text-slate-500 dark:text-slate-400">{{ $row['customer_name'] ?? '—' }} · {{ ucfirst($row['status']) }}</p>
                                     </td>
-                                    <td class="py-2.5 text-right font-mono text-slate-800 dark:text-slate-200">{{ $row['avg_cpu'] === null ? '—' : $row['avg_cpu'].'%' }}</td>
-                                    <td class="py-2.5 text-right font-mono text-slate-800 dark:text-slate-200">{{ $row['peak_memory_mb'] === null ? '—' : $row['peak_memory_mb'].' MB' }}</td>
-                                    <td class="py-2.5 text-right font-mono text-slate-800 dark:text-slate-200">{{ $row['peak_disk_gb'] === null ? '—' : $row['peak_disk_gb'].' GB' }}</td>
+                                    <td class="py-2.5 text-right font-mono text-slate-800 dark:text-slate-200">{{ $row['cpu'] === null ? '—' : $row['cpu'].'%' }}</td>
+                                    <td class="py-2.5 text-right font-mono text-slate-800 dark:text-slate-200">{{ $row['memory_mb'] === null ? '—' : $row['memory_mb'].' MB' }}</td>
+                                    <td class="py-2.5 text-right font-mono text-slate-800 dark:text-slate-200">{{ $row['disk_gb'] === null ? '—' : $row['disk_gb'].' GB' }}</td>
                                 </tr>
                             @endforeach
                         </tbody>

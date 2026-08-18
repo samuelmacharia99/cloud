@@ -8,7 +8,7 @@ use App\Models\NodeMonitoring;
 use Illuminate\Support\Collection;
 
 /**
- * Operator analytics for a container host: live vs sold capacity, fleet health,
+ * Operator analytics for a container host: live utilization, fleet health,
  * noisy neighbors, and 24h host trends from already-collected samples.
  */
 class ContainerNodeAnalyticsService
@@ -26,6 +26,7 @@ class ContainerNodeAnalyticsService
      *     attention: list<array<string, mixed>>,
      *     chart: array{labels: list<string>, cpu: list<int>, ram: list<int>, storage: list<int>},
      *     metrics_stale: bool,
+     *     live_pressure: int,
      *     scale_out_threshold: int
      * }
      */
@@ -38,11 +39,16 @@ class ContainerNodeAnalyticsService
             ->values();
 
         $fleet = $this->fleetCounts($deployments);
-        $aggregates = $this->metricAggregates($deployments->pluck('id')->all());
+        $aggregates = $this->latestMetrics($deployments->pluck('id')->all());
         $metricsStale = $fleet['total'] > 0 && ! $this->hasFreshMetrics($deployments->pluck('id')->all());
         $topConsumers = $this->topConsumers($deployments, $aggregates);
         $attention = $this->attentionList($deployments);
-        $insights = $this->insights($node, $capacity, $fleet, $metricsStale, $attention);
+        $livePressure = max(
+            $capacity['live']['cpu'],
+            $capacity['live']['ram'],
+            $capacity['live']['storage'],
+        );
+        $insights = $this->insights($node, $capacity, $fleet, $metricsStale, $attention, $livePressure);
         $threshold = max(1, min(99, (int) config(
             'containers.elastic_resources.scale_out_threshold_percent',
             70
@@ -56,6 +62,7 @@ class ContainerNodeAnalyticsService
             'attention' => $attention,
             'chart' => $this->chartSeries($node),
             'metrics_stale' => $metricsStale,
+            'live_pressure' => $livePressure,
             'scale_out_threshold' => $threshold,
         ];
     }
@@ -92,10 +99,12 @@ class ContainerNodeAnalyticsService
     }
 
     /**
+     * Latest docker-stats sample per runtime (live use, not 24h average).
+     *
      * @param  list<int>  $deploymentIds
-     * @return Collection<int, object>
+     * @return Collection<int, ContainerMetric>
      */
-    private function metricAggregates(array $deploymentIds): Collection
+    private function latestMetrics(array $deploymentIds): Collection
     {
         if ($deploymentIds === []) {
             return collect();
@@ -105,9 +114,10 @@ class ContainerNodeAnalyticsService
             ->usageSamples()
             ->whereIn('container_deployment_id', $deploymentIds)
             ->where('recorded_at', '>=', now()->subDay())
-            ->groupBy('container_deployment_id')
-            ->selectRaw('container_deployment_id, AVG(cpu_percentage) as avg_cpu, MAX(memory_used_mb) as peak_memory_mb, MAX(disk_used_gb) as peak_disk_gb')
+            ->orderByDesc('recorded_at')
+            ->orderByDesc('id')
             ->get()
+            ->unique('container_deployment_id')
             ->keyBy('container_deployment_id');
     }
 
@@ -129,14 +139,14 @@ class ContainerNodeAnalyticsService
 
     /**
      * @param  Collection<int, mixed>  $deployments
-     * @param  Collection<int, object>  $aggregates
+     * @param  Collection<int, ContainerMetric>  $latest
      * @return list<array<string, mixed>>
      */
-    private function topConsumers(Collection $deployments, Collection $aggregates): array
+    private function topConsumers(Collection $deployments, Collection $latest): array
     {
         return $deployments
-            ->map(function ($deployment) use ($aggregates) {
-                $row = $aggregates->get($deployment->id);
+            ->map(function ($deployment) use ($latest) {
+                $row = $latest->get($deployment->id);
                 $service = $deployment->service;
 
                 return [
@@ -145,13 +155,14 @@ class ContainerNodeAnalyticsService
                     'customer_name' => $service?->user?->name,
                     'container_name' => $deployment->container_name,
                     'status' => $deployment->status,
-                    'avg_cpu' => $row ? round((float) $row->avg_cpu, 1) : null,
-                    'peak_memory_mb' => $row ? (int) $row->peak_memory_mb : null,
-                    'peak_disk_gb' => $row ? round((float) $row->peak_disk_gb, 2) : null,
+                    'cpu' => $row ? round((float) $row->cpu_percentage, 1) : null,
+                    'memory_mb' => $row ? (int) $row->memory_used_mb : null,
+                    'disk_gb' => $row ? round((float) $row->disk_used_gb, 2) : null,
+                    'sampled_at' => $row?->recorded_at,
                 ];
             })
-            ->filter(fn (array $row) => $row['avg_cpu'] !== null)
-            ->sortByDesc(fn (array $row) => $row['avg_cpu'])
+            ->filter(fn (array $row) => $row['cpu'] !== null)
+            ->sortByDesc(fn (array $row) => $row['cpu'])
             ->take(8)
             ->values()
             ->all();
@@ -186,7 +197,7 @@ class ContainerNodeAnalyticsService
      * @param  list<array<string, mixed>>  $attention
      * @return list<array{severity: string, title: string, detail: string}>
      */
-    private function insights(Node $node, array $capacity, array $fleet, bool $metricsStale, array $attention): array
+    private function insights(Node $node, array $capacity, array $fleet, bool $metricsStale, array $attention, int $livePressure): array
     {
         $insights = [];
         $threshold = max(1, min(99, (int) config(
@@ -222,36 +233,17 @@ class ContainerNodeAnalyticsService
             ];
         }
 
-        if ($capacity['pressure_percent'] >= $threshold) {
-            $drivers = implode(', ', $capacity['drivers'] ?: ['capacity']);
+        if ($livePressure >= $threshold) {
+            $hot = [];
+            foreach (['CPU' => 'cpu', 'RAM' => 'ram', 'disk' => 'storage'] as $label => $key) {
+                if ($capacity['live'][$key] >= $threshold) {
+                    $hot[] = $label.' '.$capacity['live'][$key].'%';
+                }
+            }
             $insights[] = [
                 'severity' => 'warning',
-                'title' => 'Scale-out pressure at '.$capacity['pressure_percent'].'%',
-                'detail' => 'Driven by '.$drivers.'. Placement uses live CPU/RAM and sold disk — not plan CPU/RAM oversell.',
-            ];
-        }
-
-        if ($capacity['reserved']['cpu'] > 100 && $capacity['live']['cpu'] < $threshold) {
-            $insights[] = [
-                'severity' => 'info',
-                'title' => 'Plan CPU is oversold at '.$capacity['reserved']['cpu'].'%',
-                'detail' => 'Customers are sold '.$capacity['reserved_absolute']['cpu_cores'].' cores on a '.$node->cpu_cores.'-core host. Live CPU is '.$capacity['live']['cpu'].'%. This is expected for elastic plans and does not by itself require a new node.',
-            ];
-        }
-
-        if ($capacity['reserved']['ram'] > 100 && $capacity['live']['ram'] < $threshold) {
-            $insights[] = [
-                'severity' => 'info',
-                'title' => 'Plan RAM is oversold at '.$capacity['reserved']['ram'].'%',
-                'detail' => 'Sold '.$capacity['reserved_absolute']['ram_gb'].' GB on a '.$node->ram_gb.' GB host. Live RAM is '.$capacity['live']['ram'].'%.',
-            ];
-        }
-
-        if ($capacity['reserved']['storage'] >= $threshold) {
-            $insights[] = [
-                'severity' => 'warning',
-                'title' => 'Sold disk is '.$capacity['reserved']['storage'].'% of this host',
-                'detail' => $capacity['reserved_absolute']['storage_gb'].' GB sold of '.$node->storage_gb.' GB. Disk reservations are hard — add a host before placing more storage-heavy apps.',
+                'title' => 'Live usage is '.$livePressure.'%',
+                'detail' => 'Highest live metric: '.implode(', ', $hot ?: ['pressure']).'. This is actual host use, not plan allowances sold to customers.',
             ];
         }
 
@@ -268,15 +260,22 @@ class ContainerNodeAnalyticsService
             $insights[] = [
                 'severity' => 'warning',
                 'title' => 'Container stats are stale',
-                'detail' => 'No docker stats samples in the last two hours. Top consumers below may be empty until cron:collect-container-metrics succeeds.',
+                'detail' => 'No docker stats samples in the last two hours. Per-app live usage below may be empty until cron:collect-container-metrics succeeds.',
             ];
         }
 
-        if ($insights === [] && $fleet['total'] > 0) {
+        $heartbeatFresh = $node->last_heartbeat_at !== null
+            && $node->last_heartbeat_at->gte(now()->subMinutes(5));
+        if (
+            $node->status === 'online'
+            && $heartbeatFresh
+            && $livePressure < $threshold
+            && $fleet['total'] > 0
+        ) {
             $insights[] = [
                 'severity' => 'info',
-                'title' => 'Host has headroom',
-                'detail' => 'Live pressure is '.$capacity['pressure_percent'].'% (alert at '.$threshold.'%). '.$fleet['running'].' of '.$fleet['total'].' runtimes are running.',
+                'title' => 'Host has live headroom',
+                'detail' => 'Live use is CPU '.$capacity['live']['cpu'].'%, RAM '.$capacity['live']['ram'].'%, disk '.$capacity['live']['storage'].'% (alert at '.$threshold.'%). '.$fleet['running'].' of '.$fleet['total'].' runtimes are running.',
             ];
         }
 

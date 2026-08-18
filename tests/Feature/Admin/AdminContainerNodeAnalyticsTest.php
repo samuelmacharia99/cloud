@@ -15,7 +15,7 @@ class AdminContainerNodeAnalyticsTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_container_host_show_explains_live_versus_sold_capacity(): void
+    public function test_container_host_show_explains_live_host_usage(): void
     {
         $admin = User::factory()->create(['is_admin' => true]);
         $node = Node::factory()->containerHost()->create([
@@ -38,10 +38,12 @@ class AdminContainerNodeAnalyticsTest extends TestCase
         $this->actingAs($admin)
             ->get(route('admin.nodes.show', $node))
             ->assertOk()
-            ->assertSee('Live vs sold capacity')
-            ->assertSee('Placement uses')
-            ->assertSee('Plan CPU is oversold')
-            ->assertDontSee('Scale-out pressure');
+            ->assertSee('Live host usage')
+            ->assertSee('Live CPU')
+            ->assertSee('not plan CPU, RAM, or disk sold to customers')
+            ->assertDontSee('Plan CPU is oversold')
+            ->assertDontSee('Sold disk')
+            ->assertDontSee('Live vs sold capacity');
     }
 
     public function test_directadmin_node_show_does_not_render_container_analytics(): void
@@ -54,8 +56,8 @@ class AdminContainerNodeAnalyticsTest extends TestCase
         $this->actingAs($admin)
             ->get(route('admin.nodes.show', $node))
             ->assertOk()
-            ->assertDontSee('Live vs sold capacity')
-            ->assertDontSee('Top consumers (24h)');
+            ->assertDontSee('Live host usage')
+            ->assertDontSee('Live usage by container');
     }
 
     /**

@@ -87,7 +87,7 @@
         @include('admin.nodes.partials.container-analytics', ['containerAnalytics' => $containerAnalytics, 'node' => $node])
     @endif
 
-    <!-- Utilization (not for DirectAdmin control panel servers or container hosts — those use live vs sold analytics) -->
+    <!-- Utilization (not for DirectAdmin or container hosts — container hosts use live host usage above) -->
     @if($node->type !== 'directadmin' && $node->type !== 'container_host')
     <div class="ui-card p-8">
         <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-6">Resource Utilization</h2>
