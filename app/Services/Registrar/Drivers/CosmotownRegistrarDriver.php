@@ -287,6 +287,49 @@ class CosmotownRegistrarDriver implements RegistrarOperationsInterface
     }
 
     /**
+     * Live nameservers currently published at Cosmotown for this domain.
+     *
+     * @return list<string>
+     */
+    public function liveNameservers(Registrar $registrar, Domain $domain): array
+    {
+        $info = CosmotownClient::forRegistrar($registrar)->getDomainInfo($this->fqdn($domain));
+
+        return self::nameserversFromPayload($info);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return list<string>
+     */
+    public static function nameserversFromPayload(array $data): array
+    {
+        $raw = $data['nameservers'] ?? $data['name_servers'] ?? [];
+        if (! is_array($raw)) {
+            return [];
+        }
+
+        $hosts = [];
+        $seen = [];
+        foreach ($raw as $ns) {
+            $name = is_array($ns)
+                ? trim((string) ($ns['name'] ?? $ns['hostname'] ?? $ns['ns'] ?? ''))
+                : trim((string) $ns);
+            $name = strtolower(rtrim($name, '.'));
+            if ($name === '' || isset($seen[$name])) {
+                continue;
+            }
+            $seen[$name] = true;
+            $hosts[] = $name;
+            if (count($hosts) === 4) {
+                break;
+            }
+        }
+
+        return $hosts;
+    }
+
+    /**
      * @return array{success: bool, auth_code?: string, message: string}
      */
     public function getDomainAuthCode(Registrar $registrar, Domain|string $domain): array

@@ -201,6 +201,24 @@ class CosmotownRegistrarDriverTest extends TestCase
         $this->assertSame('ABC123', $result['auth_code']);
     }
 
+    public function test_live_nameservers_reads_domaininfo(): void
+    {
+        Http::fake([
+            'sandbox.cosmotown.com/v1/reseller/domaininfo*' => Http::response([
+                'nameservers' => ['ns1.live.example', 'ns2.live.example'],
+            ], 200),
+        ]);
+
+        $domain = new Domain([
+            'name' => 'shop',
+            'extension' => '.com',
+        ]);
+
+        $hosts = (new CosmotownRegistrarDriver)->liveNameservers($this->makeRegistrar(), $domain);
+
+        $this->assertSame(['ns1.live.example', 'ns2.live.example'], $hosts);
+    }
+
     public function test_sync_default_contacts_posts_contactinfo(): void
     {
         Http::fake([

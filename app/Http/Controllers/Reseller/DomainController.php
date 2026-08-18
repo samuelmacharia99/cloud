@@ -219,6 +219,8 @@ class DomainController extends Controller
     {
         $this->assertResellerCanManageDomain($domain);
 
+        $registry = $this->registrarFulfillment->refreshLiveRegistryDetails($domain);
+
         $domain->load(['user', 'dnsZones.records', 'pendingTransferRecipient']);
         $domain->concealUpstreamProviderDetails();
 
@@ -232,7 +234,17 @@ class DomainController extends Controller
         $zone = $domain->dnsZones->first();
         $dnsRecords = $zone?->records()->orderBy('type')->orderBy('name')->get() ?? collect();
 
-        return view('reseller.domains.show', compact('domain', 'transferTargets', 'dnsRecords'));
+        $nameservers = $registry['nameservers'];
+        $eppCode = $registry['epp_code'];
+
+        return view('reseller.domains.show', compact(
+            'domain',
+            'transferTargets',
+            'dnsRecords',
+            'nameservers',
+            'eppCode',
+            'registry',
+        ));
     }
 
     public function toggleAutoRenew(Request $request, Domain $domain)
@@ -289,7 +301,7 @@ class DomainController extends Controller
         $result = $this->registrarFulfillment->updateDomainNameservers($domain, $nameservers);
 
         if (! $result['success']) {
-            return back()->with('error', $result['message'])->withInput();
+            return back()->with('error', $this->registrarFulfillment->concealProviderMessage($result['message']))->withInput();
         }
 
         $domain->update([
@@ -301,7 +313,7 @@ class DomainController extends Controller
 
         $flashKey = $result['pushed'] ? 'success' : 'warning';
 
-        return back()->with($flashKey, $result['message']);
+        return back()->with($flashKey, $this->registrarFulfillment->concealProviderMessage($result['message']));
     }
 
     public function initiateTransfer(Request $request, Domain $domain)

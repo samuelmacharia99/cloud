@@ -15,6 +15,7 @@ use App\Services\DomainRenewalService;
 use App\Services\DomainTransferService;
 use App\Services\NodeNameserverService;
 use App\Services\Registrar\Cosmotown\CosmotownException;
+use App\Services\Registrar\Drivers\CosmotownRegistrarDriver;
 use App\Services\Registrar\Drivers\OpenproviderRegistrarDriver;
 use App\Services\Registrar\Openprovider\OpenproviderClient;
 use App\Services\Registrar\Openprovider\OpenproviderException;
@@ -402,6 +403,134 @@ class RegistrarFulfillmentService
                 'message' => 'Could not update nameservers at the registrar: '.$e->getMessage(),
             ];
         }
+    }
+
+    /**
+     * Load live nameservers and EPP/auth code from the registry, persist them locally,
+     * and return reseller-safe copy (never names Cosmotown or Openprovider).
+     *
+     * @return array{
+     *     nameservers: array{nameserver_1: ?string, nameserver_2: ?string, nameserver_3: ?string, nameserver_4: ?string},
+     *     epp_code: ?string,
+     *     nameservers_live: bool,
+     *     epp_live: bool,
+     *     message: ?string
+     * }
+     */
+    public function refreshLiveRegistryDetails(Domain $domain): array
+    {
+        $local = $this->localNameserverColumns($domain);
+        $localEpp = filled($domain->epp_code) ? (string) $domain->epp_code : null;
+
+        $fallback = [
+            'nameservers' => $local,
+            'epp_code' => $localEpp,
+            'nameservers_live' => false,
+            'epp_live' => false,
+            'message' => null,
+        ];
+
+        if ($domain->isDnsManaged()) {
+            return $fallback;
+        }
+
+        $registrar = $this->resolveRegistrar($domain);
+        $driver = $this->operationsDriver($registrar);
+
+        if (! $driver || ! $registrar) {
+            return $fallback;
+        }
+
+        $updates = [];
+        $liveNs = false;
+        $liveEpp = false;
+        $attempted = false;
+
+        if ($driver instanceof CosmotownRegistrarDriver) {
+            $attempted = true;
+
+            try {
+                $hosts = $driver->liveNameservers($registrar, $domain);
+                if ($hosts !== []) {
+                    $updates = array_merge($updates, $this->nameserverColumnsFromList($hosts));
+                    $liveNs = true;
+                }
+            } catch (\Throwable $e) {
+                Log::warning('Live registry nameservers failed', [
+                    'domain_id' => $domain->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            try {
+                $auth = $driver->getDomainAuthCode($registrar, $domain);
+                if (($auth['success'] ?? false) && filled($auth['auth_code'] ?? null)) {
+                    $updates['epp_code'] = (string) $auth['auth_code'];
+                    $liveEpp = true;
+                }
+            } catch (\Throwable $e) {
+                Log::warning('Live registry auth code failed', [
+                    'domain_id' => $domain->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        if ($updates !== []) {
+            $domain->update($updates);
+            $domain->refresh();
+        }
+
+        $message = null;
+        if ($attempted && ! $liveNs && ! $liveEpp) {
+            $message = 'Could not refresh this domain from the registry just now. Showing the last saved values.';
+        }
+
+        return [
+            'nameservers' => $this->localNameserverColumns($domain),
+            'epp_code' => filled($domain->epp_code) ? (string) $domain->epp_code : $localEpp,
+            'nameservers_live' => $liveNs,
+            'epp_live' => $liveEpp,
+            'message' => $message,
+        ];
+    }
+
+    public function concealProviderMessage(string $message): string
+    {
+        $cleaned = preg_replace('/https?:\/\/[^\s]*cosmotown[^\s]*/i', 'the registry', $message) ?? $message;
+        $cleaned = preg_replace('/\b(cosmotown|openprovider)\b/i', 'the registry', $cleaned) ?? $cleaned;
+        $cleaned = preg_replace('/\s{2,}/', ' ', $cleaned) ?? $cleaned;
+
+        return trim($cleaned);
+    }
+
+    /**
+     * @return array{nameserver_1: ?string, nameserver_2: ?string, nameserver_3: ?string, nameserver_4: ?string}
+     */
+    private function localNameserverColumns(Domain $domain): array
+    {
+        return [
+            'nameserver_1' => $domain->nameserver_1,
+            'nameserver_2' => $domain->nameserver_2,
+            'nameserver_3' => $domain->nameserver_3,
+            'nameserver_4' => $domain->nameserver_4,
+        ];
+    }
+
+    /**
+     * @param  list<string>  $hosts
+     * @return array{nameserver_1: ?string, nameserver_2: ?string, nameserver_3: ?string, nameserver_4: ?string}
+     */
+    private function nameserverColumnsFromList(array $hosts): array
+    {
+        $hosts = array_values($hosts);
+
+        return [
+            'nameserver_1' => $hosts[0] ?? null,
+            'nameserver_2' => $hosts[1] ?? null,
+            'nameserver_3' => $hosts[2] ?? null,
+            'nameserver_4' => $hosts[3] ?? null,
+        ];
     }
 
     /**

@@ -61,17 +61,31 @@
         </div>
     @endif
 
+    @if(! empty($registry['message']))
+        <div class="p-4 rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 text-sm text-amber-900 dark:text-amber-200">
+            {{ $registry['message'] }}
+        </div>
+    @endif
+
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div class="ui-card p-6">
-            <h2 class="font-semibold text-slate-900 dark:text-white mb-4">Nameservers</h2>
+            <div class="flex items-start justify-between gap-3 mb-2">
+                <h2 class="font-semibold text-slate-900 dark:text-white">Nameservers</h2>
+                @if(! empty($registry['nameservers_live']))
+                    <span class="shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200">Live from registry</span>
+                @endif
+            </div>
+            <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                Values below are the nameservers currently published at the registry. Saving updates the registry. DNS changes can take up to 48 hours.
+            </p>
             <form method="POST" action="{{ route('reseller.domains.nameservers', $domain) }}" class="space-y-3">
                 @csrf
                 @method('PUT')
                 @foreach(['nameserver_1' => 'Primary', 'nameserver_2' => 'Secondary', 'nameserver_3' => 'Tertiary', 'nameserver_4' => 'Quaternary'] as $field => $label)
                     <div>
                         <label class="block text-xs font-medium text-slate-500 mb-1">{{ $label }}</label>
-                        <input type="text" name="{{ $field }}" value="{{ old($field, $domain->{$field}) }}"
-                            class="w-full px-3 py-2 text-sm border rounded-lg bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600"
+                        <input type="text" name="{{ $field }}" value="{{ old($field, $nameservers[$field] ?? $domain->{$field}) }}"
+                            class="w-full px-3 py-2 text-sm font-mono border rounded-lg bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600"
                             @if($field === 'nameserver_1') required @endif>
                     </div>
                 @endforeach
@@ -79,8 +93,41 @@
             </form>
         </div>
 
-        <div class="ui-card p-6">
-            <h2 class="font-semibold text-slate-900 dark:text-white mb-4">Transfer to another customer</h2>
+        <div class="space-y-6">
+            <div class="ui-card p-6" x-data="{ revealed: false, copied: false }">
+                <h2 class="font-semibold text-slate-900 dark:text-white mb-2">EPP / auth code</h2>
+                <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                    Use this code to transfer the domain to another registrar. Anyone with it can start a transfer — keep it private.
+                </p>
+                @if(filled($eppCode))
+                    <div class="flex flex-col sm:flex-row sm:items-center gap-2">
+                        <p class="flex-1 px-3 py-2 font-mono text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white break-all">
+                            <span x-show="!revealed">••••••••••••</span>
+                            <span x-show="revealed" x-cloak>{{ $eppCode }}</span>
+                        </p>
+                        <div class="flex gap-2 shrink-0">
+                            <button type="button" @click="revealed = !revealed" class="px-3 py-2 text-sm font-medium rounded-lg border border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800">
+                                <span x-text="revealed ? 'Hide' : 'Reveal'"></span>
+                            </button>
+                            <button type="button"
+                                @click="navigator.clipboard.writeText(@js($eppCode)); copied = true; setTimeout(() => copied = false, 2000)"
+                                class="px-3 py-2 text-sm font-medium rounded-lg bg-purple-600 hover:bg-purple-700 text-white">
+                                <span x-text="copied ? 'Copied' : 'Copy'"></span>
+                            </button>
+                        </div>
+                    </div>
+                    @if(! empty($registry['epp_live']))
+                        <p class="text-xs text-emerald-700 dark:text-emerald-300 mt-2">Loaded live from the registry.</p>
+                    @else
+                        <p class="text-xs text-slate-500 mt-2">Last saved authorization code for this domain.</p>
+                    @endif
+                @else
+                    <p class="text-sm text-slate-500">An EPP / auth code appears here after the domain is registered at the registry.</p>
+                @endif
+            </div>
+
+            <div class="ui-card p-6">
+                <h2 class="font-semibold text-slate-900 dark:text-white mb-4">Transfer to another customer</h2>
             <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Immediately moves ownership to another customer you manage. No recipient approval required.</p>
             @if($transferTargets->isEmpty())
                 <p class="text-sm text-slate-500">Add another customer to enable transfers.</p>
@@ -98,6 +145,7 @@
                     </button>
                 </form>
             @endif
+        </div>
         </div>
     </div>
 
