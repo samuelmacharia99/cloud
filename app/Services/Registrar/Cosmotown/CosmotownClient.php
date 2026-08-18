@@ -128,13 +128,40 @@ class CosmotownClient
     public function getDomainAuthCode(string $domain): array
     {
         $payload = $this->get('reseller/domainepp', ['domain' => $this->normalizeDomain($domain)]);
-        $authCode = trim((string) ($payload['auth_code'] ?? ''));
+        $authCode = self::extractAuthCode($payload);
 
         if ($authCode === '') {
             throw new CosmotownException('Cosmotown returned no auth_code for this domain.', 200, $payload);
         }
 
         return ['auth_code' => $authCode];
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    public static function extractAuthCode(array $payload): string
+    {
+        $bags = [$payload];
+        foreach (['data', 'domain', 'result', 'response'] as $key) {
+            if (isset($payload[$key]) && is_array($payload[$key])) {
+                $bags[] = $payload[$key];
+            }
+        }
+
+        foreach ($bags as $bag) {
+            foreach (['auth_code', 'authCode', 'AuthCode', 'epp_code', 'eppCode', 'epp'] as $field) {
+                $value = $bag[$field] ?? null;
+                if (is_string($value) || is_numeric($value)) {
+                    $code = trim((string) $value);
+                    if ($code !== '') {
+                        return $code;
+                    }
+                }
+            }
+        }
+
+        return '';
     }
 
     /**

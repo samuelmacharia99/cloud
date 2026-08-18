@@ -219,6 +219,13 @@ class CosmotownRegistrarDriverTest extends TestCase
         $this->assertSame(['ns1.live.example', 'ns2.live.example'], $hosts);
     }
 
+    public function test_extract_auth_code_reads_nested_payloads(): void
+    {
+        $this->assertSame('NESTED-EPP', CosmotownClient::extractAuthCode([
+            'data' => ['auth_code' => 'NESTED-EPP'],
+        ]));
+    }
+
     public function test_sync_default_contacts_posts_contactinfo(): void
     {
         Http::fake([

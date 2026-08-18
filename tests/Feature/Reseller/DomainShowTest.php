@@ -104,6 +104,63 @@ class DomainShowTest extends TestCase
         ]);
     }
 
+    public function test_reseller_loads_epp_from_cosmotown_even_when_tld_is_mapped_elsewhere(): void
+    {
+        $reseller = $this->createReseller();
+
+        Registrar::query()->create([
+            'name' => 'Openprovider',
+            'slug' => 'openprovider-default',
+            'driver' => RegistrarDriver::Openprovider,
+            'environment' => 'production',
+            'is_active' => true,
+            'is_default' => true,
+            'config' => ['username' => 'op', 'password' => 'secret'],
+            'sort_order' => 0,
+        ]);
+
+        $this->attachCosmotown('.com', default: false, bindExtension: false);
+
+        $extension = DomainExtension::query()->firstOrCreate(
+            ['extension' => '.com'],
+            ['description' => 'COM', 'enabled' => true]
+        );
+        $extension->update(['enabled' => true, 'registrar_id' => Registrar::query()->where('slug', 'openprovider-default')->value('id')]);
+
+        $domain = Domain::create([
+            'user_id' => $reseller->id,
+            'reseller_id' => $reseller->id,
+            'name' => 'chiefdaking.services',
+            'extension' => '.com',
+            'status' => 'active',
+            'type' => 'registration',
+            'nameserver_1' => 'albert.ns.cloudflare.com',
+            'nameserver_2' => 'aliza.ns.cloudflare.com',
+        ]);
+
+        Http::fake([
+            'sandbox.cosmotown.com/v1/reseller/domaininfo*' => Http::response([
+                'domain' => 'chiefdaking.services.com',
+                'nameservers' => ['albert.ns.cloudflare.com', 'aliza.ns.cloudflare.com'],
+            ], 200),
+            'sandbox.cosmotown.com/v1/reseller/domainepp*' => Http::response([
+                'data' => ['auth_code' => 'EPP-CHIEF-DAKING'],
+            ], 200),
+        ]);
+
+        $this->actingAs($reseller)
+            ->get(route('reseller.domains.show', $domain))
+            ->assertOk()
+            ->assertSee('EPP-CHIEF-DAKING')
+            ->assertDontSee('Cosmotown')
+            ->assertDontSee('appears here after the domain is registered');
+
+        $this->assertDatabaseHas('domains', [
+            'id' => $domain->id,
+            'epp_code' => 'EPP-CHIEF-DAKING',
+        ]);
+    }
+
     public function test_reseller_can_update_nameservers(): void
     {
         $reseller = $this->createReseller();
@@ -167,23 +224,25 @@ class DomainShowTest extends TestCase
         $this->assertStringContainsString('registry', strtolower($message));
     }
 
-    private function attachCosmotown(string $extension): Registrar
+    private function attachCosmotown(string $extension, bool $default = true, bool $bindExtension = true): Registrar
     {
         $registrar = Registrar::query()->create([
             'name' => 'Cosmotown',
-            'slug' => 'cosmotown-reseller-show',
+            'slug' => 'cosmotown-reseller-show-'.uniqid(),
             'driver' => RegistrarDriver::Cosmotown,
             'environment' => 'sandbox',
             'is_active' => true,
-            'is_default' => true,
+            'is_default' => $default,
             'config' => ['api_token' => 'test-token'],
             'sort_order' => 0,
         ]);
 
-        DomainExtension::query()->firstOrCreate(
-            ['extension' => $extension],
-            ['description' => 'COM', 'enabled' => true]
-        )->update(['registrar_id' => $registrar->id, 'enabled' => true]);
+        if ($bindExtension) {
+            DomainExtension::query()->firstOrCreate(
+                ['extension' => $extension],
+                ['description' => 'COM', 'enabled' => true]
+            )->update(['registrar_id' => $registrar->id, 'enabled' => true]);
+        }
 
         return $registrar;
     }

@@ -122,7 +122,13 @@
                         <p class="text-xs text-slate-500 mt-2">Last saved authorization code for this domain.</p>
                     @endif
                 @else
-                    <p class="text-sm text-slate-500">An EPP / auth code appears here after the domain is registered at the registry.</p>
+                    <p class="text-sm text-slate-500">
+                        @if(! empty($registry['attempted']))
+                            The registry did not return an authorization code for this domain. If the domain is locked, unlock it and reload this page.
+                        @else
+                            An EPP / auth code appears here after the domain is registered at the registry.
+                        @endif
+                    </p>
                 @endif
             </div>
 

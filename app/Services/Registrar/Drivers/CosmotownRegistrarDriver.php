@@ -293,9 +293,31 @@ class CosmotownRegistrarDriver implements RegistrarOperationsInterface
      */
     public function liveNameservers(Registrar $registrar, Domain $domain): array
     {
-        $info = CosmotownClient::forRegistrar($registrar)->getDomainInfo($this->fqdn($domain));
+        return $this->liveRegistrySnapshot($registrar, $domain)['nameservers'];
+    }
 
-        return self::nameserversFromPayload($info);
+    /**
+     * @return array{nameservers: list<string>, auth_code: ?string}
+     */
+    public function liveRegistrySnapshot(Registrar $registrar, Domain $domain): array
+    {
+        $client = CosmotownClient::forRegistrar($registrar);
+        $fqdn = $this->fqdn($domain);
+        $info = $client->getDomainInfo($fqdn);
+        $auth = CosmotownClient::extractAuthCode($info);
+
+        if ($auth === '') {
+            try {
+                $auth = $client->getDomainAuthCode($fqdn)['auth_code'] ?? '';
+            } catch (CosmotownException) {
+                $auth = '';
+            }
+        }
+
+        return [
+            'nameservers' => self::nameserversFromPayload($info),
+            'auth_code' => $auth !== '' ? $auth : null,
+        ];
     }
 
     /**

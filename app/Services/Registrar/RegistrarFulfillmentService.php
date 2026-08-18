@@ -414,6 +414,7 @@ class RegistrarFulfillmentService
      *     epp_code: ?string,
      *     nameservers_live: bool,
      *     epp_live: bool,
+     *     attempted: bool,
      *     message: ?string
      * }
      */
@@ -427,6 +428,7 @@ class RegistrarFulfillmentService
             'epp_code' => $localEpp,
             'nameservers_live' => false,
             'epp_live' => false,
+            'attempted' => false,
             'message' => null,
         ];
 
@@ -434,7 +436,7 @@ class RegistrarFulfillmentService
             return $fallback;
         }
 
-        $registrar = $this->resolveRegistrar($domain);
+        $registrar = $this->resolveLiveRegistrar($domain);
         $driver = $this->operationsDriver($registrar);
 
         if (! $driver || ! $registrar) {
@@ -450,26 +452,17 @@ class RegistrarFulfillmentService
             $attempted = true;
 
             try {
-                $hosts = $driver->liveNameservers($registrar, $domain);
-                if ($hosts !== []) {
-                    $updates = array_merge($updates, $this->nameserverColumnsFromList($hosts));
+                $snapshot = $driver->liveRegistrySnapshot($registrar, $domain);
+                if ($snapshot['nameservers'] !== []) {
+                    $updates = array_merge($updates, $this->nameserverColumnsFromList($snapshot['nameservers']));
                     $liveNs = true;
                 }
-            } catch (\Throwable $e) {
-                Log::warning('Live registry nameservers failed', [
-                    'domain_id' => $domain->id,
-                    'error' => $e->getMessage(),
-                ]);
-            }
-
-            try {
-                $auth = $driver->getDomainAuthCode($registrar, $domain);
-                if (($auth['success'] ?? false) && filled($auth['auth_code'] ?? null)) {
-                    $updates['epp_code'] = (string) $auth['auth_code'];
+                if (filled($snapshot['auth_code'])) {
+                    $updates['epp_code'] = (string) $snapshot['auth_code'];
                     $liveEpp = true;
                 }
             } catch (\Throwable $e) {
-                Log::warning('Live registry auth code failed', [
+                Log::warning('Live registry details failed', [
                     'domain_id' => $domain->id,
                     'error' => $e->getMessage(),
                 ]);
@@ -491,8 +484,23 @@ class RegistrarFulfillmentService
             'epp_code' => filled($domain->epp_code) ? (string) $domain->epp_code : $localEpp,
             'nameservers_live' => $liveNs,
             'epp_live' => $liveEpp,
+            'attempted' => $attempted,
             'message' => $message,
         ];
+    }
+
+    /**
+     * Live NS/EPP for reseller pages come from Cosmotown when that account is active,
+     * even if the TLD is still mapped to another registrar in Admin.
+     */
+    private function resolveLiveRegistrar(Domain $domain): ?Registrar
+    {
+        $cosmotown = app(CosmotownInventorySyncService::class)->activeCosmotownRegistrar();
+        if ($cosmotown) {
+            return $cosmotown;
+        }
+
+        return $this->resolveRegistrar($domain);
     }
 
     public function concealProviderMessage(string $message): string
