@@ -18,6 +18,7 @@ class ContainerNodeCapacityService
      *     pressure_percent: int,
      *     live: array{cpu: int, ram: int, storage: int},
      *     reserved: array{cpu: int, ram: int, storage: int},
+     *     reserved_absolute: array{cpu_cores: float, ram_gb: float, storage_gb: float},
      *     drivers: list<string>,
      *     deployment_count: int
      * }
@@ -91,6 +92,11 @@ class ContainerNodeCapacityService
                 'cpu' => $reservedCpuPercent,
                 'ram' => $reservedRamPercent,
                 'storage' => $reservedStoragePercent,
+            ],
+            'reserved_absolute' => [
+                'cpu_cores' => round($reservedCpu, 2),
+                'ram_gb' => round($reservedRamGb, 2),
+                'storage_gb' => round($reservedStorageGb, 2),
             ],
             'drivers' => $drivers,
             'deployment_count' => $node->containerDeployments->count(),

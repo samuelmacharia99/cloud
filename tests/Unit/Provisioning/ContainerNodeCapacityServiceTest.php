@@ -59,6 +59,9 @@ class ContainerNodeCapacityServiceTest extends TestCase
         // Reserved storage 40% still informs disk pressure.
         $this->assertSame(40, $evaluation['pressure_percent']);
         $this->assertSame(200, $evaluation['reserved']['cpu']);
+        $this->assertSame(8.0, $evaluation['reserved_absolute']['cpu_cores']);
+        $this->assertSame(16.0, $evaluation['reserved_absolute']['ram_gb']);
+        $this->assertSame(40.0, $evaluation['reserved_absolute']['storage_gb']);
         $this->assertSame(200, $evaluation['reserved']['ram']);
         $this->assertSame(40, $evaluation['reserved']['storage']);
         $this->assertSame(25, $evaluation['live']['ram']);

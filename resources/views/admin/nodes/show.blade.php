@@ -83,8 +83,12 @@
         </div>
     </div>
 
-    <!-- Utilization (not for DirectAdmin control panel servers) -->
-    @if($node->type !== 'directadmin')
+    @if (! empty($containerAnalytics))
+        @include('admin.nodes.partials.container-analytics', ['containerAnalytics' => $containerAnalytics, 'node' => $node])
+    @endif
+
+    <!-- Utilization (not for DirectAdmin control panel servers or container hosts — those use live vs sold analytics) -->
+    @if($node->type !== 'directadmin' && $node->type !== 'container_host')
     <div class="ui-card p-8">
         <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-6">Resource Utilization</h2>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -133,8 +137,8 @@
     </div>
     @endif
 
-    <!-- Monitoring Dashboard (for container hosts and database servers) -->
-    @if($node->isMonitored())
+    <!-- Monitoring Dashboard (for database / DA / mailcow; container hosts use analytics above) -->
+    @if($node->isMonitored() && $node->type !== 'container_host')
         @php
             $monitoringAlert = $node->latestMonitoring?->getAlert();
             $monitoringExpandedDefault = filled($monitoringAlert) ? 'true' : 'false';

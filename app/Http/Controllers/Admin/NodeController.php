@@ -8,6 +8,7 @@ use App\Models\Node;
 use App\Models\NodeMonitoring;
 use App\Models\Service;
 use App\Models\User;
+use App\Services\Provisioning\ContainerNodeAnalyticsService;
 use App\Services\Provisioning\DirectAdminService;
 use App\Services\Provisioning\MailcowService;
 use App\Services\Provisioning\NodeServiceRelocationService;
@@ -221,6 +222,10 @@ class NodeController extends Controller
             ->paginate(10)
             ->withQueryString();
 
+        $containerAnalytics = $node->type === 'container_host'
+            ? app(ContainerNodeAnalyticsService::class)->forNode($node)
+            : null;
+
         // For DirectAdmin nodes, load the locally-cached package list and a
         // count of sibling DA nodes so the consistency link shows itself only
         // when there's something to compare against.
@@ -266,6 +271,7 @@ class NodeController extends Controller
             'resellerPackages',
             'resellerPackagesError',
             'nodeResellers',
+            'containerAnalytics',
         ));
     }
 
