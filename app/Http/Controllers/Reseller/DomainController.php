@@ -295,7 +295,7 @@ class DomainController extends Controller
 
         $validated = $request->validate([
             'nameserver_1' => 'required|string|min:3|max:253',
-            'nameserver_2' => 'nullable|string|min:3|max:253',
+            'nameserver_2' => 'required|string|min:3|max:253',
             'nameserver_3' => 'nullable|string|min:3|max:253',
             'nameserver_4' => 'nullable|string|min:3|max:253',
         ]);
@@ -322,7 +322,7 @@ class DomainController extends Controller
 
         $flashKey = $result['pushed'] ? 'success' : 'warning';
 
-        return back()->with($flashKey, $this->registrarFulfillment->concealProviderMessage($result['message']));
+        return $this->redirectToDomainTab($domain, 'registry', $flashKey, $this->registrarFulfillment->concealProviderMessage($result['message']));
     }
 
     public function updateRegistrant(Request $request, Domain $domain)
@@ -337,7 +337,9 @@ class DomainController extends Controller
             return back()->with('error', $this->registrarFulfillment->concealProviderMessage($result['message']))->withInput();
         }
 
-        return back()->with(
+        return $this->redirectToDomainTab(
+            $domain,
+            'whois',
             $result['pushed'] ? 'success' : 'warning',
             $this->registrarFulfillment->concealProviderMessage($result['message'])
         );
@@ -370,7 +372,12 @@ class DomainController extends Controller
             return back()->with('error', $this->registrarFulfillment->concealProviderMessage($result['message']));
         }
 
-        return back()->with('success', $this->registrarFulfillment->concealProviderMessage($result['message']));
+        return $this->redirectToDomainTab(
+            $domain,
+            'registry',
+            'success',
+            $this->registrarFulfillment->concealProviderMessage($result['message'])
+        );
     }
 
     public function initiateTransfer(Request $request, Domain $domain)
@@ -399,7 +406,7 @@ class DomainController extends Controller
         try {
             $this->domainTransfer->transferBetweenOwnedCustomers($domain, $fromCustomer, $toCustomer, $reseller);
 
-            return back()->with('success', "Domain transferred to {$toCustomer->name}.");
+            return $this->redirectToDomainTab($domain, 'ownership', 'success', "Domain transferred to {$toCustomer->name}.");
         } catch (\Throwable $e) {
             return back()->with('error', 'Could not transfer domain: '.$e->getMessage());
         }
@@ -519,6 +526,13 @@ class DomainController extends Controller
                 'message' => $e->getMessage(),
             ], 422);
         }
+    }
+
+    private function redirectToDomainTab(Domain $domain, string $tab, string $flashKey, string $message)
+    {
+        return redirect()
+            ->route('reseller.domains.show', ['domain' => $domain, 'tab' => $tab])
+            ->with($flashKey, $message);
     }
 
     private function resolveRenewalBillingCustomer(Domain $domain, User $reseller): ?User

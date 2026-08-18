@@ -4,17 +4,21 @@
     $registrantRoute = $registrantRoute ?? null;
     $optionsRoute = $optionsRoute ?? null;
     $cloudflareManaged = $cloudflareManaged ?? false;
+    $showRegistryAlerts = $showRegistryAlerts ?? true;
     $liveLabel = $audience === 'admin' ? 'Live from Cosmotown' : 'Live from registry';
     $registryNoun = $audience === 'admin' ? 'Cosmotown' : 'the registry';
+    $saveButtonClass = $saveButtonClass ?? 'px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg';
+    $isLocked = (bool) ($registry['locked'] ?? $domain->registry_locked);
+    $privacyOn = (bool) ($registry['whois_privacy'] ?? $domain->whois_privacy);
 @endphp
 
-@if(! empty($registry['message']))
+@if($showRegistryAlerts && ! empty($registry['message']))
     <div class="p-4 rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 text-sm text-amber-900 dark:text-amber-200">
         {{ $audience === 'admin' ? $registry['message'] : str_ireplace('Cosmotown', 'the registry', $registry['message']) }}
     </div>
 @endif
 
-@if($domain->isExpired() && ! $domain->isDnsManaged())
+@if($showRegistryAlerts && $domain->isExpired() && ! $domain->isDnsManaged())
     <div class="p-4 rounded-xl border border-red-200 bg-red-50 dark:bg-red-950/30 dark:border-red-800 text-sm text-red-900 dark:text-red-200">
         @if($audience === 'admin')
             This domain is expired at Cosmotown. There is no restore API — generate and pay a renewal to restore it. If Cosmotown charges a redemption fee the platform must cover, complete that in the Cosmotown dashboard.
@@ -71,9 +75,17 @@
     @if($optionsRoute)
         <div>
             <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-1">Registry lock &amp; WHOIS privacy</h2>
-            <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">
+            <p class="text-sm text-slate-600 dark:text-slate-400 mb-3">
                 Lock prevents transfers. WHOIS privacy hides the registrant from public WHOIS on TLDs that allow it (free at the registry when eligible).
             </p>
+            <div class="flex flex-wrap gap-2 mb-4">
+                <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold {{ $isLocked ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200' : 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-200' }}">
+                    {{ $isLocked ? 'Transfer lock on' : 'Unlocked — transfers can start' }}
+                </span>
+                <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold {{ $privacyOn ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' }}">
+                    {{ $privacyOn ? 'WHOIS privacy on' : 'WHOIS privacy off' }}
+                </span>
+            </div>
             <form method="POST" action="{{ $optionsRoute }}" class="space-y-3">
                 @csrf
                 @method('PUT')
@@ -112,7 +124,7 @@
                 @method('PUT')
                 @include('domains.partials.registrant-fields', ['contact' => $registrant ?? []])
                 <div class="md:col-span-2">
-                    <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg">Save registrant</button>
+                    <button type="submit" class="{{ $saveButtonClass }}">Save registrant</button>
                 </div>
             </form>
         </div>
