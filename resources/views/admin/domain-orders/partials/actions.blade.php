@@ -42,7 +42,7 @@
             method="POST"
             action="{{ route('admin.domain-orders.push-registrar', $order) }}"
             class="inline"
-            data-confirm="Retry {{ $order->fullDomainName() }} at the API registrar?@if($order->status === 'failed') This retries a failed automatic submission.@endif Ensure Cosmotown funds and default contacts are configured."
+            data-confirm="Retry {{ $order->fullDomainName() }} at the API registrar?@if($order->status === 'failed') This retries a failed automatic submission.@endif"
         >
             @csrf
             @foreach ($filterQuery as $key => $value)

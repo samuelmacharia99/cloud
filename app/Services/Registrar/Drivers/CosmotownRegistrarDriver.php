@@ -92,10 +92,8 @@ class CosmotownRegistrarDriver implements RegistrarOperationsInterface
     {
         try {
             $client = CosmotownClient::forRegistrar($registrar);
-            $fqdn = $this->fqdn($domain);
+            $fqdn = $this->requireFqdn($domain);
             $couponId = trim((string) (($registrar->config ?? [])['coupon_id'] ?? ''));
-
-            $this->ensureDefaultContacts($registrar, $client);
 
             $rows = $client->registerDomains([
                 ['name' => $fqdn, 'years' => max(1, $years)],
@@ -105,7 +103,7 @@ class CosmotownRegistrarDriver implements RegistrarOperationsInterface
 
             if ($mapped['success']) {
                 $this->pushNameserversQuietly($client, $fqdn, $nameServers);
-                $this->pushRegistrantQuietly($client, $domain, $fqdn);
+                $this->pushRegistrantQuietly($client, $registrar, $domain, $fqdn);
                 $mapped = $this->enrichFromDomainInfo($client, $fqdn, $mapped);
             }
 
@@ -123,14 +121,12 @@ class CosmotownRegistrarDriver implements RegistrarOperationsInterface
     {
         try {
             $client = CosmotownClient::forRegistrar($registrar);
-            $fqdn = $this->fqdn($domain);
+            $fqdn = $this->requireFqdn($domain);
             $code = trim($authCode);
 
             if ($code === '') {
                 return $this->failedLifecycle('EPP / auth code is required for transfer.');
             }
-
-            $this->ensureDefaultContacts($registrar, $client);
 
             $rows = $client->transferDomains([
                 [
@@ -143,7 +139,7 @@ class CosmotownRegistrarDriver implements RegistrarOperationsInterface
 
             if ($mapped['success']) {
                 $this->pushNameserversQuietly($client, $fqdn, $nameServers);
-                $this->pushRegistrantQuietly($client, $domain, $fqdn);
+                $this->pushRegistrantQuietly($client, $registrar, $domain, $fqdn);
             }
 
             $mapped['external_id'] = $fqdn;
@@ -474,13 +470,11 @@ class CosmotownRegistrarDriver implements RegistrarOperationsInterface
     public function syncDefaultContacts(Registrar $registrar): array
     {
         try {
-            $contacts = $this->defaultContactPayload($registrar);
-            $response = CosmotownClient::forRegistrar($registrar)->saveContactInfo($contacts);
+            $this->defaultContactPayload($registrar);
 
             return [
                 'success' => true,
-                'message' => 'Default contacts saved at Cosmotown.',
-                'response' => $response,
+                'message' => 'Cosmotown contactinfo is per-domain and cannot be saved without a domain name. These defaults will be applied after each registration or transfer.',
             ];
         } catch (CosmotownException $e) {
             return [
@@ -541,6 +535,19 @@ class CosmotownRegistrarDriver implements RegistrarOperationsInterface
         return strtolower(trim($domain->fqdn()));
     }
 
+    private function requireFqdn(Domain $domain): string
+    {
+        $name = strtolower(trim((string) $domain->name));
+        $extension = strtolower(trim((string) $domain->extension));
+        $fqdn = $this->fqdn($domain);
+
+        if ($name === '' || str_starts_with($name, '.') || $extension === '' || ! str_contains($fqdn, '.')) {
+            throw new CosmotownException('Domain name is missing on the local domain record.');
+        }
+
+        return $fqdn;
+    }
+
     private function isHtmlOrWrongHostError(CosmotownException $e): bool
     {
         return str_contains($e->getMessage(), 'web page instead of JSON');
@@ -568,16 +575,6 @@ class CosmotownRegistrarDriver implements RegistrarOperationsInterface
         return $hosts;
     }
 
-    private function ensureDefaultContacts(Registrar $registrar, CosmotownClient $client): void
-    {
-        $config = is_array($registrar->config) ? $registrar->config : [];
-        if (trim((string) ($config['contact_first_name'] ?? '')) === '') {
-            return;
-        }
-
-        $client->saveContactInfo($this->defaultContactPayload($registrar));
-    }
-
     /**
      * @param  list<array{name: string}>|list<string>  $nameServers
      */
@@ -595,7 +592,7 @@ class CosmotownRegistrarDriver implements RegistrarOperationsInterface
         }
     }
 
-    private function pushRegistrantQuietly(CosmotownClient $client, Domain $domain, string $fqdn): void
+    private function pushRegistrantQuietly(CosmotownClient $client, Registrar $registrar, Domain $domain, string $fqdn): void
     {
         $contacts = app(DomainRegistrantContactService::class);
         $payload = is_array($domain->registrant_contact) ? $domain->registrant_contact : [];
@@ -604,13 +601,17 @@ class CosmotownRegistrarDriver implements RegistrarOperationsInterface
             $payload = $contacts->fromUser($domain->user);
         }
 
-        if (! $contacts->isComplete($payload)) {
-            return;
-        }
-
         try {
-            $client->saveContactInfo($contacts->toCosmotownPayload($payload), $fqdn);
-            $domain->update(['registrant_contact' => $contacts->normalize($payload)]);
+            if ($contacts->isComplete($payload)) {
+                $client->saveContactInfo($contacts->toCosmotownPayload($payload), $fqdn);
+                if ($domain->exists) {
+                    $domain->update(['registrant_contact' => $contacts->normalize($payload)]);
+                }
+
+                return;
+            }
+
+            $client->saveContactInfo($this->defaultContactPayload($registrar), $fqdn);
         } catch (\Throwable) {
             // Registration/transfer was accepted; WHOIS can be retried from the domain page.
         }

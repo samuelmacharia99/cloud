@@ -223,17 +223,16 @@ class CosmotownClient
     }
 
     /**
+     * Cosmotown contactinfo is per-domain. The official client always sends ?domain=.
+     *
      * @param  array{registrant: array<string, string>, administrative: array<string, string>, technical: array<string, string>, billing: array<string, string>}  $contacts
      * @return array<string, mixed>
      */
-    public function saveContactInfo(array $contacts, ?string $domain = null): array
+    public function saveContactInfo(array $contacts, string $domain): array
     {
-        $query = [];
-        if ($domain !== null && trim($domain) !== '') {
-            $query['domain'] = $this->normalizeDomain($domain);
-        }
-
-        return $this->post('reseller/contactinfo', $contacts, $query);
+        return $this->post('reseller/contactinfo', $contacts, [
+            'domain' => $this->normalizeDomain($domain),
+        ]);
     }
 
     /**

@@ -288,6 +288,22 @@ class ResellerDomainOrder extends Model
         return $this->isPlatformOrder() ? 'Prepare for registrar' : 'Push to admin';
     }
 
+    public function adminRegistrarRetryHint(): string
+    {
+        $reason = strtolower((string) ($this->failure_reason ?? ''));
+
+        if ($reason !== '' && (
+            str_contains($reason, 'insufficient')
+            || str_contains($reason, 'fund')
+            || str_contains($reason, 'balance')
+            || str_contains($reason, 'credit')
+        )) {
+            return 'Top up Cosmotown funds if the registrar reported a balance error, then use Push to registrar to retry.';
+        }
+
+        return 'Use Push to registrar to retry.';
+    }
+
     public function adminPrepareConfirmMessage(): string
     {
         if ($this->isPlatformOrder()) {

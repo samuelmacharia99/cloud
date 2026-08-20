@@ -79,4 +79,33 @@ class PlatformDomainOrderAdminTest extends TestCase
             ->assertSee('Ready for registrar')
             ->assertDontSee('Push to admin', false);
     }
+
+    public function test_failed_order_does_not_blame_cosmotown_funds_for_missing_domain_name(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $customer = User::factory()->customer()->create(['reseller_id' => null]);
+
+        $order = ResellerDomainOrder::create([
+            'reseller_id' => null,
+            'customer_id' => $customer->id,
+            'domain_name' => '911kicks',
+            'extension' => '.shop',
+            'years' => 1,
+            'wholesale_amount' => 480,
+            'retail_amount' => 0,
+            'status' => 'failed',
+            'pushed_at' => now(),
+            'failed_at' => now(),
+            'failure_reason' => 'Domain name is required',
+        ]);
+
+        $this->assertSame('Use Push to registrar to retry.', $order->adminRegistrarRetryHint());
+
+        $this->actingAs($admin)
+            ->get(route('admin.domain-orders.show', $order))
+            ->assertOk()
+            ->assertSee('Domain name is required')
+            ->assertSee('Use Push to registrar to retry.')
+            ->assertDontSee('Top up Cosmotown funds', false);
+    }
 }

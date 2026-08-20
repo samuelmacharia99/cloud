@@ -95,6 +95,41 @@ class CosmotownRegistrarDriverTest extends TestCase
         CosmotownClient::forRegistrar($this->makeRegistrar())->getDomainAuthCode('example.com');
     }
 
+    public function test_save_contact_info_requires_domain_query(): void
+    {
+        Http::fake([
+            'sandbox.cosmotown.com/v1/reseller/contactinfo*' => Http::response(['status' => 'processed'], 200),
+        ]);
+
+        CosmotownClient::forRegistrar($this->makeRegistrar())->saveContactInfo([
+            'registrant' => ['FirstName' => 'Jane', 'LastName' => 'Doe', 'Email' => 'jane@example.com'],
+            'administrative' => ['FirstName' => 'Jane', 'LastName' => 'Doe', 'Email' => 'jane@example.com'],
+            'technical' => ['FirstName' => 'Jane', 'LastName' => 'Doe', 'Email' => 'jane@example.com'],
+            'billing' => ['FirstName' => 'Jane', 'LastName' => 'Doe', 'Email' => 'jane@example.com'],
+        ], '911kicks.shop');
+
+        Http::assertSent(function ($request) {
+            parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
+
+            return $request->method() === 'POST'
+                && str_contains($request->url(), 'reseller/contactinfo')
+                && ($query['domain'] ?? null) === '911kicks.shop';
+        });
+    }
+
+    public function test_save_contact_info_rejects_empty_domain(): void
+    {
+        $this->expectException(CosmotownException::class);
+        $this->expectExceptionMessage('Domain is required.');
+
+        CosmotownClient::forRegistrar($this->makeRegistrar())->saveContactInfo([
+            'registrant' => ['FirstName' => 'Jane'],
+            'administrative' => ['FirstName' => 'Jane'],
+            'technical' => ['FirstName' => 'Jane'],
+            'billing' => ['FirstName' => 'Jane'],
+        ], '   ');
+    }
+
     public function test_test_connection_lists_domains_without_ping(): void
     {
         Http::fake([
@@ -227,28 +262,104 @@ class CosmotownRegistrarDriverTest extends TestCase
         ]));
     }
 
-    public function test_sync_default_contacts_posts_contactinfo(): void
+    public function test_sync_default_contacts_validates_without_posting_account_wide_contactinfo(): void
     {
-        Http::fake([
-            'sandbox.cosmotown.com/v1/reseller/contactinfo' => Http::response([
-                'domain' => 'n/a',
-                'locked' => false,
-            ], 200),
-        ]);
+        Http::fake();
 
         $driver = new CosmotownRegistrarDriver;
         $result = $driver->syncDefaultContacts($this->makeRegistrar());
 
         $this->assertTrue($result['success']);
+        $this->assertStringContainsString('per-domain', $result['message']);
+        Http::assertNothingSent();
+    }
+
+    public function test_register_does_not_fail_when_contactinfo_requires_domain(): void
+    {
+        Http::fake(function ($request) {
+            if (str_contains($request->url(), 'reseller/contactinfo')) {
+                parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
+                if (trim((string) ($query['domain'] ?? '')) === '') {
+                    return Http::response(['error_message' => 'Domain name is required'], 400);
+                }
+
+                return Http::response(['status' => 'processed'], 200);
+            }
+
+            if (str_contains($request->url(), 'reseller/registerdomains')) {
+                return Http::response([
+                    ['domain' => '911kicks.shop', 'status' => 'processed'],
+                ], 200);
+            }
+
+            if (str_contains($request->url(), 'reseller/savedomainnameservers')) {
+                return Http::response(['status' => 'processed'], 200);
+            }
+
+            if (str_contains($request->url(), 'reseller/domaininfo')) {
+                return Http::response([
+                    'domain' => '911kicks.shop',
+                    'expiration_date' => '2027-08-20',
+                ], 200);
+            }
+
+            return Http::response(['error_message' => 'Unexpected Cosmotown path'], 500);
+        });
+
+        $domain = new Domain([
+            'name' => '911kicks',
+            'extension' => '.shop',
+        ]);
+
+        $result = (new CosmotownRegistrarDriver)->registerDomain(
+            $this->makeRegistrar(),
+            $domain,
+            1,
+            [['name' => 'ns1.talksasa.com'], ['name' => 'ns2.talksasa.com']]
+        );
+
+        $this->assertTrue($result['success'], $result['message'] ?? '');
+        $this->assertSame('911kicks.shop', $result['external_id']);
 
         Http::assertSent(function ($request) {
             $body = $request->data();
 
             return $request->method() === 'POST'
-                && str_contains($request->url(), 'reseller/contactinfo')
-                && ($body['registrant']['FirstName'] ?? null) === 'Jane'
-                && ($body['billing']['Email'] ?? null) === 'jane@example.com';
+                && str_contains($request->url(), 'reseller/registerdomains')
+                && ($body['items'][0]['name'] ?? null) === '911kicks.shop';
         });
+        Http::assertSent(function ($request) {
+            parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
+
+            return $request->method() === 'POST'
+                && str_contains($request->url(), 'reseller/contactinfo')
+                && ($query['domain'] ?? null) === '911kicks.shop';
+        });
+        Http::assertNotSent(function ($request) {
+            if (! str_contains($request->url(), 'reseller/contactinfo')) {
+                return false;
+            }
+
+            parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
+
+            return trim((string) ($query['domain'] ?? '')) === '';
+        });
+    }
+
+    public function test_register_rejects_empty_local_domain_name(): void
+    {
+        Http::fake();
+
+        $result = (new CosmotownRegistrarDriver)->registerDomain(
+            $this->makeRegistrar(),
+            new Domain(['name' => '', 'extension' => '.shop']),
+            1,
+            [['name' => 'ns1.talksasa.com'], ['name' => 'ns2.talksasa.com']]
+        );
+
+        $this->assertFalse($result['success']);
+        $this->assertStringContainsString('missing on the local domain record', $result['message']);
+        Http::assertNothingSent();
     }
 
     public function test_register_domain_submits_items_and_nameservers(): void

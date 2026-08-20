@@ -321,7 +321,7 @@
     @if($order->status === 'pushed' || $order->status === 'failed')
     <div class="bg-violet-50 dark:bg-violet-950/40 border border-violet-200 dark:border-violet-800 rounded-2xl p-4 text-sm text-violet-900 dark:text-violet-200">
         @if($order->status === 'failed')
-            <strong>Registrar submission failed</strong> — {{ $order->failure_reason ?? 'See logs for details.' }} Top up Cosmotown funds, verify default contacts and nameservers, then use <strong>Push to registrar</strong> to retry.
+            <strong>Registrar submission failed</strong> — {{ $order->failure_reason ?? 'See logs for details.' }} {{ $order->adminRegistrarRetryHint() }}
         @elseif($order->hasPendingRegistrarSubmission())
             <strong>Submitted to the registrar</strong> — awaiting registry activation. The order will complete automatically when the domain becomes active (sync cron). No admin action needed unless this stalls.
         @else

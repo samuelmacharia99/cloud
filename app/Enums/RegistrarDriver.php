@@ -51,7 +51,7 @@ enum RegistrarDriver: string
                 ['key' => 'api_secret', 'label' => 'API secret (optional)', 'type' => 'password', 'help' => 'Optional — Cosmotown docs mention a secret for production keys.'],
                 ['key' => 'api_base_url', 'label' => 'API base URL (optional)', 'type' => 'url', 'placeholder' => 'Leave blank for sandbox/production default', 'help' => 'Production default is https://www.cosmotown.com/v1/. Leave blank unless Cosmotown gave you a different host.'],
                 ['key' => 'coupon_id', 'label' => 'Coupon ID (optional)', 'type' => 'text', 'help' => 'Passed on register when Cosmotown issued you a reseller coupon.'],
-                ['key' => 'contact_first_name', 'label' => 'Contact first name', 'type' => 'text', 'help' => 'Default contact used for /v1/reseller/contactinfo (all roles).'],
+                ['key' => 'contact_first_name', 'label' => 'Contact first name', 'type' => 'text', 'help' => 'Fallback WHOIS contact pushed after registration (Cosmotown contactinfo requires the domain name).'],
                 ['key' => 'contact_last_name', 'label' => 'Contact last name', 'type' => 'text'],
                 ['key' => 'contact_email', 'label' => 'Contact email', 'type' => 'text'],
                 ['key' => 'contact_phone', 'label' => 'Contact phone', 'type' => 'text', 'placeholder' => '+2547…'],
