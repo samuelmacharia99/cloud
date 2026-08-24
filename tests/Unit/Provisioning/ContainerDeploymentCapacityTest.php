@@ -107,20 +107,20 @@ class ContainerDeploymentCapacityTest extends TestCase
     }
 
     #[Test]
-    public function sold_disk_reservations_use_disk_gb_and_block_when_the_volume_is_full(): void
+    public function oversold_plan_disk_does_not_block_when_live_disk_has_room(): void
     {
         $node = $this->containerHost([
             'cpu_cores' => 8,
             'ram_gb' => 32,
-            'storage_gb' => 50,
-            'cpu_used' => 10,
-            'ram_used_gb' => 4,
-            'storage_used_gb' => 5,
+            'storage_gb' => 1800,
+            'cpu_used' => 20,
+            'ram_used_gb' => 8,
+            'storage_used_gb' => 400,
         ]);
         $occupant = $this->containerService([
             'cpu' => 1,
             'memory' => 512,
-            'disk' => 40,
+            'disk' => 1670,
         ]);
         ContainerDeployment::factory()->create([
             'service_id' => $occupant->id,
@@ -129,12 +129,34 @@ class ContainerDeploymentCapacityTest extends TestCase
         ]);
         $service = $this->containerService([
             'cpu' => 1,
-            'memory' => 512,
-            'disk' => 20,
+            'memory' => 696,
+            'disk' => 40,
+        ], share: 0.16);
+
+        $selected = app(ContainerDeploymentService::class)->assertHostHasCapacity($service);
+
+        $this->assertSame($node->id, $selected->id);
+    }
+
+    #[Test]
+    public function live_disk_pressure_still_blocks_when_the_volume_is_actually_full(): void
+    {
+        $this->containerHost([
+            'cpu_cores' => 8,
+            'ram_gb' => 32,
+            'storage_gb' => 1800,
+            'cpu_used' => 20,
+            'ram_used_gb' => 8,
+            'storage_used_gb' => 1615,
         ]);
+        $service = $this->containerService([
+            'cpu' => 1,
+            'memory' => 696,
+            'disk' => 40,
+        ], share: 0.16);
 
         $this->expectException(\DomainException::class);
-        $this->expectExceptionMessage('disk');
+        $this->expectExceptionMessage('live disk');
 
         app(ContainerDeploymentService::class)->assertHostHasCapacity($service);
     }

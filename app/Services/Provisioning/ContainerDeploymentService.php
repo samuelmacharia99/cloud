@@ -924,7 +924,7 @@ class ContainerDeploymentService
 
     /**
      * Live host pressure plus the container that will actually start.
-     * Sold plan CPU/RAM are elastic (intentionally oversold) and must not block placement.
+     * Sold plan CPU/RAM/disk are elastic (intentionally oversold) and must not block placement.
      */
     private function nodeHasCapacity(Node $node, ?Service $service, object $template): bool
     {
@@ -1018,14 +1018,18 @@ class ContainerDeploymentService
             );
         }
 
-        $diskNeed = max($reservedStorageGb, $usedStorageGb) + (float) $requested['disk_gb'];
+        // Sold disk is oversubscribed the same way as CPU: it drives scale-out
+        // alerts, not placement. Extra DA sites on one package would never land
+        // if summed plan disks already exceed the volume.
+        $diskNeed = $usedStorageGb + (float) $requested['disk_gb'];
         if ($diskNeed > $storageCapacity) {
             return sprintf(
-                '%s: disk %.1f GB reserved/used + %.1f GB request exceeds %.1f GB with headroom.',
+                '%s: live disk %.1f GB + %.1f GB request exceeds %.1f GB with headroom (sold disk %.1f GB).',
                 $label,
-                max($reservedStorageGb, $usedStorageGb),
+                $usedStorageGb,
                 $requested['disk_gb'],
-                $storageCapacity
+                $storageCapacity,
+                $reservedStorageGb
             );
         }
 
