@@ -760,6 +760,8 @@ class ContainerDoctorService
         $liveFindings = $live['findings'] ?? [];
         $checks = $live['checks'] ?? [];
         $dbOk = ($checks['db_ok'] ?? null) === true;
+        $httpStatus = $checks['http_status'] ?? null;
+        $httpOk = is_int($httpStatus) && $httpStatus >= 200 && $httpStatus < 400;
 
         $resolvedLogIds = [
             'postgres_password_auth_failed',
@@ -768,8 +770,13 @@ class ContainerDoctorService
             'missing_pdo_pgsql',
         ];
 
-        $logFindings = array_values(array_filter($logFindings, function (array $f) use ($dbOk, $liveFindings, $resolvedLogIds) {
+        $logFindings = array_values(array_filter($logFindings, function (array $f) use ($dbOk, $liveFindings, $resolvedLogIds, $httpOk) {
             if (! empty($f['stale'])) {
+                return false;
+            }
+
+            // Live Blade compile succeeded — leftover "valid cache path" lines are historical.
+            if ($httpOk && ($f['id'] ?? '') === 'storage_permission_denied') {
                 return false;
             }
 

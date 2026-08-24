@@ -266,6 +266,25 @@ LOG;
     }
 
     #[Test]
+    public function it_drops_storage_permission_log_findings_when_the_site_returns_http_ok(): void
+    {
+        $merged = app(ContainerDoctorService::class)->mergeLogAndLiveFindings(
+            [[
+                'id' => 'storage_permission_denied',
+                'severity' => 'warning',
+                'title' => 'Storage / cache permission problem',
+                'evidence' => ['Please provide a valid cache path'],
+            ]],
+            [
+                'findings' => [],
+                'checks' => ['http_status' => 200, 'db_ok' => true, 'table_count' => 91],
+            ]
+        );
+
+        $this->assertNotContains('storage_permission_denied', array_column($merged, 'id'));
+    }
+
+    #[Test]
     public function it_drops_resolved_db_log_findings_when_live_db_is_ok(): void
     {
         $merged = app(ContainerDoctorService::class)->mergeLogAndLiveFindings(
