@@ -970,6 +970,13 @@ class DirectAdminToContainerMigrationService
                 900
             );
 
+            if (in_array($stack, ['laravel', 'php'], true)) {
+                $progress('Creating Laravel storage and view-cache directories');
+                $appDirectory = app(ContainerAppDirectoryService::class);
+                $appDirectory->ensureLaravelWritableLayoutOnHost($targetSsh, $hostAppPath);
+                $appDirectory->normalizeLaravelPermissions($targetSsh, $deployment);
+            }
+
             if (is_string($localDump) && is_file($localDump) && in_array($stack, ['laravel', 'php'], true)) {
                 $db = $this->resolveGenericImportCredentials($target, $targetSsh, $containerPath);
                 $dbService = $db['service'];

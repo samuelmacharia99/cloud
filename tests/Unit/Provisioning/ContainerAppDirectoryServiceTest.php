@@ -79,4 +79,17 @@ class ContainerAppDirectoryServiceTest extends TestCase
         $this->assertStringContainsString('chown -R $owner $root', $script);
         $this->assertStringContainsString('chmod -R ug+rwX $root', $script);
     }
+
+    #[Test]
+    public function it_creates_laravel_view_cache_directories_laravel_needs_at_boot(): void
+    {
+        $service = new ContainerAppDirectoryService;
+        $script = $service->laravelWritableLayoutScript('/app');
+
+        $this->assertStringContainsString('mkdir -p', $script);
+        $this->assertStringContainsString('/app/storage/framework/views', $script);
+        $this->assertStringContainsString('/app/storage/framework/cache/data', $script);
+        $this->assertStringContainsString('/app/bootstrap/cache', $script);
+        $this->assertStringContainsString('VIEW_COMPILED_PATH', $script);
+    }
 }

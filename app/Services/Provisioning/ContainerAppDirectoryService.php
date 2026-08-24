@@ -225,15 +225,73 @@ class ContainerAppDirectoryService
             .$this->nodeModulesBinPermissionRestoreScript($root === '/app' ? '/app' : $root);
     }
 
+    /**
+     * Directories Laravel requires at runtime. realpath(storage/framework/views)
+     * returns false when the folder is missing, which becomes
+     * "Please provide a valid cache path."
+     *
+     * @return list<string>
+     */
+    public function laravelFrameworkRelativeDirectories(): array
+    {
+        return [
+            'storage/app/public',
+            'storage/framework/cache/data',
+            'storage/framework/sessions',
+            'storage/framework/testing',
+            'storage/framework/views',
+            'storage/logs',
+            'bootstrap/cache',
+        ];
+    }
+
+    public function laravelWritableLayoutScript(string $projectRoot = '/app'): string
+    {
+        $root = rtrim($projectRoot, '/');
+        $dirs = array_map(
+            fn (string $relative) => escapeshellarg($root.'/'.$relative),
+            $this->laravelFrameworkRelativeDirectories()
+        );
+
+        return 'if id www-data >/dev/null 2>&1; then owner=www-data:www-data; else owner=33:33; fi; '
+            .'mkdir -p '.implode(' ', $dirs).'; '
+            .'if [ -f '.escapeshellarg($root.'/.env').' ]; then '
+            .'sed -i -E '.escapeshellarg('/^VIEW_COMPILED_PATH=(|""|\'\')[[:space:]]*$/d').' '.escapeshellarg($root.'/.env').'; '
+            .'fi; '
+            .'chown -R $owner '.escapeshellarg($root.'/storage').' '.escapeshellarg($root.'/bootstrap/cache').' 2>/dev/null || true; '
+            .'chmod -R ug+rwx '.escapeshellarg($root.'/storage').' '.escapeshellarg($root.'/bootstrap/cache').' 2>/dev/null || true; '
+            .'chmod 775 '.escapeshellarg($root.'/artisan').' 2>/dev/null || true';
+    }
+
+    public function ensureLaravelWritableLayoutOnHost(SSHService $ssh, string $hostAppPath): void
+    {
+        $root = rtrim($hostAppPath, '/');
+        $dirs = array_map(
+            fn (string $relative) => escapeshellarg($root.'/'.$relative),
+            $this->laravelFrameworkRelativeDirectories()
+        );
+        $ssh->exec('mkdir -p '.implode(' ', $dirs), 15);
+
+        $envPath = $root.'/.env';
+        try {
+            $exists = trim($ssh->exec('test -f '.escapeshellarg($envPath).' && echo yes || echo no', 10));
+            if ($exists === 'yes') {
+                $env = $ssh->downloadFile($envPath);
+                $cleaned = preg_replace('/^VIEW_COMPILED_PATH=(?:""|\'\')?\s*$/m', '', $env) ?? $env;
+                if ($cleaned !== $env) {
+                    $ssh->upload($cleaned, $envPath);
+                }
+            }
+        } catch (\Throwable) {
+        }
+    }
+
     public function normalizeLaravelPermissions(SSHService $ssh, ContainerDeployment $deployment, string $projectRoot = '/app'): void
     {
         $this->normalizePermissions($ssh, $deployment);
 
         $containerName = escapeshellarg($deployment->container_name);
-        $root = rtrim($projectRoot, '/');
-        $script = 'chmod -R ug+rwx '.escapeshellarg($root.'/storage').' 2>/dev/null || true; '
-            .'chmod -R ug+rwx '.escapeshellarg($root.'/bootstrap/cache').' 2>/dev/null || true; '
-            .'chmod 775 '.escapeshellarg($root.'/artisan').' 2>/dev/null || true';
+        $script = $this->laravelWritableLayoutScript($projectRoot);
 
         try {
             $ssh->exec('docker exec -u 0 -w / '.$containerName.' sh -lc '.escapeshellarg($script), 60);

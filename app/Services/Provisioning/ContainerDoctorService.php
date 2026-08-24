@@ -672,10 +672,16 @@ class ContainerDoctorService
                     $looksLikeMissingTable = collect($appErrors)->contains(
                         fn ($line) => (bool) preg_match('/relation .* does not exist|Base table or view not found|no such table/i', (string) $line)
                     );
+                    $looksLikeMissingViewCache = collect($appErrors)->contains(
+                        fn ($line) => (bool) preg_match('/Please provide a valid cache path/i', (string) $line)
+                    );
 
                     $hasTables = ($checks['table_count'] ?? null) !== null && (int) $checks['table_count'] > 0;
 
-                    if ($looksLikeMissingCacheLocks) {
+                    if ($looksLikeMissingViewCache) {
+                        $treatAction = 'fix_storage_permissions';
+                        $treatLabel = 'Create Laravel cache directories';
+                    } elseif ($looksLikeMissingCacheLocks) {
                         $treatAction = 'use_file_cache';
                         $treatLabel = 'Switch cache to file';
                     } elseif ($looksLikeMissingTable) {
@@ -692,13 +698,15 @@ class ContainerDoctorService
                         $treatLabel = 'Restart application';
                     }
 
-                    $summary = $looksLikeMissingCacheLocks
+                    $summary = $looksLikeMissingViewCache
+                        ? 'Laravel Blade compiled-view path is missing (storage/framework/views). DirectAdmin exports skip those cache dirs, so GET / 500s until they exist.'
+                        : ($looksLikeMissingCacheLocks
                         ? 'DB connects and has tables, but Laravel is using database cache without a cache_locks table — that commonly 500s GET /.'
                         : ($looksLikeMissingTable
                             ? 'DB connects, but the app error looks like missing tables/migrations.'
                             : 'The container is up and answering on its port, but the app itself returns HTTP '.$httpStatus
                                 .' (tables: '.((string) ($checks['table_count'] ?? '?')).'). '
-                                .'This is an application exception — clearing caches alone will not clear this card until the URL returns 2xx/3xx.');
+                                .'This is an application exception — clearing caches alone will not clear this card until the URL returns 2xx/3xx.'));
 
                     $findings[] = [
                         'id' => 'live_http_5xx',
@@ -2676,9 +2684,16 @@ PHP;
                 return $this->treatFixWordPressPermissions($service);
             }
 
-            app(ContainerAppDirectoryService::class)->normalizePermissions($ssh, $deployment);
+            $appDirectory = app(ContainerAppDirectoryService::class);
+            $hostAppPath = $appDirectory->hostAppPath($deployment);
+            $appDirectory->ensureLaravelWritableLayoutOnHost($ssh, $hostAppPath);
+            $appDirectory->normalizeLaravelPermissions($ssh, $deployment);
+            $this->clearLaravelCachesQuietly($service, $ssh);
 
-            return ['success' => true, 'message' => 'Storage permissions refreshed.'];
+            return [
+                'success' => true,
+                'message' => 'Created Laravel cache/storage directories, fixed permissions, and cleared config. Re-scan after a reload.',
+            ];
         } catch (\Throwable $e) {
             return ['success' => false, 'message' => 'Failed to fix permissions: '.$e->getMessage()];
         } finally {
