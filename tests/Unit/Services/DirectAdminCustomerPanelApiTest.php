@@ -126,6 +126,32 @@ class DirectAdminCustomerPanelApiTest extends TestCase
         $this->assertSame('sales@example.com', $result['data'][1]['email']);
     }
 
+    public function test_change_email_account_password_posts_modify_action(): void
+    {
+        Http::fake([
+            '*/CMD_API_POP' => Http::response('error=0', 200),
+        ]);
+
+        $node = Node::factory()->create([
+            'type' => 'directadmin',
+            'hostname' => 'da.example.com',
+            'api_url' => 'https://da.example.com:2222',
+            'da_login_key' => 'secret',
+        ]);
+
+        $api = DirectAdminCustomerPanelApi::forServiceNode($node);
+        $result = $api->changeEmailAccountPassword('siteuser', 'example.com', 'info', 'TempPullPass1');
+
+        $this->assertTrue($result['success']);
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), 'CMD_API_POP')
+                && ($request['action'] ?? null) === 'modify'
+                && ($request['domain'] ?? null) === 'example.com'
+                && ($request['user'] ?? null) === 'info'
+                && ($request['passwd'] ?? null) === 'TempPullPass1';
+        });
+    }
+
     public function test_normalize_subdomain_label_strips_domain_suffix(): void
     {
         $node = Node::factory()->create([

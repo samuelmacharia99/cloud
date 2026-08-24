@@ -2,10 +2,12 @@
 
 namespace App\Services\Provisioning;
 
+use App\Jobs\ConvertDirectAdminProjectSiteJob;
+use App\Models\ContainerTemplate;
+use App\Models\CustomerProject;
 use App\Models\Product;
 use App\Models\Service;
 use App\Services\Billing\ServiceRenewalPricingService;
-use App\Services\Hosting\DirectAdminCustomerPanelApi;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -14,14 +16,17 @@ use Illuminate\Support\Facades\Log;
 /**
  * Admin-only convert-in-place: DA shared hosting → Application Hosting on the same Service.
  * Keeps next_due_date / billing_cycle, switches product to container pricing, no invoice, no customer notify.
- * Email may remain on DirectAdmin temporarily, or be moved to Mailcow via the mail migration wizard.
+ * Email is pulled to Mailcow so the DirectAdmin account can be decommissioned.
  */
 class DirectAdminToContainerConvertService
 {
+    public const PROJECT_RECIPE_KEY = 'da_convert';
+
     public function __construct(
         private DirectAdminToContainerMigrationService $migrator,
         private ContainerDeploymentService $deployments,
         private ServiceRenewalPricingService $renewalPricing,
+        private DirectAdminToMailcowMigrationService $mailMigrator,
     ) {}
 
     /**
@@ -52,7 +57,7 @@ class DirectAdminToContainerConvertService
         }
 
         $inventory = $this->migrator->inventory($service);
-        $email = $this->emailPreflight($service);
+        $email = $this->emailPreflight($service, $inventory);
         $blockers = [];
 
         $stack = $this->normalizeConvertibleStack($inventory);
@@ -72,6 +77,25 @@ class DirectAdminToContainerConvertService
             $blockers[] = 'No active Application Hosting products are available. Create or activate a container product under Admin → Products.';
         }
 
+        $emailProducts = Product::query()
+            ->where('type', 'email_hosting')
+            ->where('is_active', true)
+            ->where('provisioning_driver_key', 'mailcow')
+            ->orderBy('order')
+            ->orderBy('name')
+            ->get();
+
+        $mailboxCount = count($email['all'] ?? []);
+        if ($mailboxCount > 0) {
+            if (! app(MailcowProvisioningService::class)->resolveNode()) {
+                $blockers[] = 'Mailboxes exist on DirectAdmin but no active Mailcow node is available. Add a Mailcow node before converting — we are not leaving mail on DirectAdmin.';
+            }
+            $hasBundle = $products->contains(fn (Product $product) => $product->hasEmailBundle());
+            if ($emailProducts->isEmpty() && ! $hasBundle) {
+                $blockers[] = 'Mailboxes exist on DirectAdmin but no Email Hosting product is available to pull them onto Mailcow.';
+            }
+        }
+
         $addonCount = (int) ($inventory['addon_site_count'] ?? 0);
 
         return [
@@ -83,9 +107,11 @@ class DirectAdminToContainerConvertService
             'has_addon_sites' => $addonCount > 0,
             'container_products' => $products->all(),
             'recommended_products' => $recommended->all(),
-            // Backward-compatible alias for older views/controllers.
             'wordpress_products' => $products->all(),
             'products_are_fallback' => $productsAreFallback,
+            'email_products' => $emailProducts->all(),
+            'mailbox_count' => $mailboxCount,
+            'must_pull_mail' => $mailboxCount > 0,
         ];
     }
 
@@ -100,7 +126,19 @@ class DirectAdminToContainerConvertService
 
         $stack = (string) ($inventory['stack'] ?? 'unknown');
 
-        return in_array($stack, ['laravel', 'php', 'static_or_php'], true) ? $stack : $stack;
+        return in_array($stack, ['laravel', 'nodejs', 'php', 'static_or_php'], true) ? $stack : $stack;
+    }
+
+    public static function stackLabel(string $stack): string
+    {
+        return match ($stack) {
+            'wordpress' => 'WordPress',
+            'laravel' => 'Laravel',
+            'nodejs' => 'Node.js',
+            'php' => 'PHP',
+            'static_or_php' => 'static or PHP',
+            default => str_replace('_', ' ', $stack) ?: 'unknown',
+        };
     }
 
     /**
@@ -191,6 +229,7 @@ class DirectAdminToContainerConvertService
         return match ($stack) {
             'wordpress' => ['wordpress'],
             'laravel' => ['laravel'],
+            'nodejs' => ['nodejs', 'node.js', 'node-js'],
             'php' => ['php'],
             'static_or_php' => ['static-site', 'static', 'php'],
             default => [],
@@ -238,23 +277,35 @@ class DirectAdminToContainerConvertService
     }
 
     /**
+     * @param  array{sites?: list<array{domain?: string}>, domain?: ?string}  $inventory
      * @return array{
      *     success: bool,
      *     message: string,
      *     has_extra_mailboxes: bool,
      *     default_mailboxes: list<array{account: string, email: string}>,
      *     extra_mailboxes: list<array{account: string, email: string}>,
-     *     all: list<array{account: string, email: string}>
+     *     all: list<array{account: string, email: string, domain?: string}>,
+     *     by_domain: array<string, list<array{account: string, email: string, domain: string}>>,
+     *     errors: list<string>
      * }
      */
-    public function emailPreflight(Service $service): array
+    public function emailPreflight(Service $service, array $inventory = []): array
     {
         $service->loadMissing('node');
-        $creds = $service->getHostingCredentials() ?? [];
-        $username = (string) ($creds['username'] ?? $service->external_reference ?? ($service->service_meta['username'] ?? ''));
-        $domain = $service->attachedDomainName() ?? ($creds['domain'] ?? null);
+        $domains = [];
+        foreach ($inventory['sites'] ?? [] as $site) {
+            $name = strtolower(trim((string) ($site['domain'] ?? '')));
+            if ($name !== '') {
+                $domains[] = $name;
+            }
+        }
+        $primary = strtolower(trim((string) ($inventory['domain'] ?? $service->attachedDomainName() ?? '')));
+        if ($primary !== '') {
+            $domains[] = $primary;
+        }
+        $domains = array_values(array_unique($domains));
 
-        if ($username === '' || ! is_string($domain) || $domain === '' || ! $service->node) {
+        if ($domains === [] || ! $service->node) {
             return [
                 'success' => false,
                 'message' => 'Missing DA username, domain, or node for mailbox inventory.',
@@ -262,44 +313,30 @@ class DirectAdminToContainerConvertService
                 'default_mailboxes' => [],
                 'extra_mailboxes' => [],
                 'all' => [],
+                'by_domain' => [],
+                'errors' => [],
             ];
         }
 
-        $api = DirectAdminCustomerPanelApi::forServiceNode($service->node);
-        $list = $api->listEmailAccounts($username, $domain);
-        if (! ($list['success'] ?? false)) {
-            return [
-                'success' => false,
-                'message' => (string) ($list['message'] ?? 'Failed to list mailboxes.'),
-                'has_extra_mailboxes' => false,
-                'default_mailboxes' => [],
-                'extra_mailboxes' => [],
-                'all' => [],
-            ];
-        }
-
-        $all = [];
-        foreach ($list['data'] ?? [] as $row) {
-            $account = (string) ($row['account'] ?? '');
-            $email = (string) ($row['email'] ?? $account);
-            if ($account === '' && $email === '') {
-                continue;
-            }
-            $all[] = [
-                'account' => $account !== '' ? $account : $email,
-                'email' => $email !== '' ? $email : $account,
-            ];
-        }
-
+        $listed = $this->mailMigrator->listMailboxesByDomains($service, $domains);
+        $all = $listed['all'];
+        $creds = $service->getHostingCredentials() ?? [];
+        $username = (string) ($creds['username'] ?? $service->external_reference ?? ($service->service_meta['username'] ?? ''));
         $classified = $this->classifyMailboxes($username, $all);
 
+        $fatal = $all === [] && $listed['errors'] !== [] && count($domains) === count($listed['errors']);
+
         return [
-            'success' => true,
-            'message' => 'OK',
+            'success' => ! $fatal,
+            'message' => $fatal
+                ? implode(' ', $listed['errors'])
+                : 'OK',
             'has_extra_mailboxes' => $classified['has_extra_mailboxes'],
             'default_mailboxes' => $classified['default_mailboxes'],
             'extra_mailboxes' => $classified['extra_mailboxes'],
             'all' => $all,
+            'by_domain' => $listed['by_domain'],
+            'errors' => $listed['errors'],
         ];
     }
 
@@ -349,6 +386,7 @@ class DirectAdminToContainerConvertService
         bool $acknowledgeExtraMailboxes = false,
         ?string $databaseName = null,
         bool $acknowledgeAddonSites = false,
+        ?Product $emailProduct = null,
     ): array {
         if (function_exists('set_time_limit')) {
             @set_time_limit(0);
@@ -360,15 +398,25 @@ class DirectAdminToContainerConvertService
             throw new \InvalidArgumentException(implode(' ', $preflight['blockers']));
         }
 
-        if ($preflight['email']['has_extra_mailboxes'] && ! $acknowledgeExtraMailboxes) {
+        $mustPullMail = (int) ($preflight['mailbox_count'] ?? count($preflight['email']['all'] ?? [])) > 0;
+        if ($mustPullMail && ! $acknowledgeExtraMailboxes) {
             throw new \InvalidArgumentException(
-                'This account has mailboxes beyond the default DA user mailbox. Acknowledge that email stays on DirectAdmin (or migrate mail to Mailcow first) before converting.'
+                'This account has mailboxes. Acknowledge that mail is pulled to Mailcow (IMAP sync). Update MX when sync has caught up, then DirectAdmin can be decommissioned.'
             );
+        }
+
+        if ($mustPullMail) {
+            $emailProduct = $this->resolveEmailProductForConvert($containerProduct, $emailProduct);
+            if (! $emailProduct) {
+                throw new \InvalidArgumentException(
+                    'Select an Email Hosting plan (or bundle email on the Application Hosting product) so mail can leave DirectAdmin.'
+                );
+            }
         }
 
         if (($preflight['has_addon_sites'] ?? false) && ! $acknowledgeAddonSites) {
             throw new \InvalidArgumentException(
-                'This DA user has additional domains/sites. Acknowledge that only the primary site converts on this service; other sites need separate Application Hosting services.'
+                'This DA user has additional live sites. Acknowledge that extra sites launch as sibling containers on the same Application Hosting package. Combined usage above that package is billed as overage.'
             );
         }
 
@@ -417,18 +465,63 @@ class DirectAdminToContainerConvertService
             $this->appendConvertStep($service, $steps);
             $export = $this->migrator->exportSiteFromDirectAdmin($service, $inventory, $databaseName);
 
+            $emailServiceId = null;
+            if ($mustPullMail && $emailProduct) {
+                $steps[] = 'Pulling mailboxes to Mailcow (IMAP sync from DirectAdmin)';
+                $this->appendConvertStep($service, $steps);
+                $byDomain = $preflight['email']['by_domain'] ?? [];
+                if ($byDomain === [] && ($preflight['email']['all'] ?? []) !== []) {
+                    foreach ($preflight['email']['all'] as $box) {
+                        $domain = strtolower((string) ($box['domain'] ?? ''));
+                        if ($domain === '' && str_contains((string) ($box['email'] ?? ''), '@')) {
+                            $domain = explode('@', (string) $box['email'], 2)[1] ?? '';
+                        }
+                        if ($domain === '') {
+                            continue;
+                        }
+                        $byDomain[$domain][] = $box;
+                    }
+                }
+                $mailResult = $this->mailMigrator->pullFromDirectAdminUser(
+                    $service,
+                    $emailProduct,
+                    $byDomain,
+                    [
+                        'pull_mail' => true,
+                        'da_imap_host' => (string) ($daNode->hostname ?? ''),
+                        'bundled' => $containerProduct->hasEmailBundle()
+                            && (int) $containerProduct->bundled_email_product_id === (int) $emailProduct->id,
+                        'project_id' => $service->project_id,
+                    ],
+                );
+                if (! ($mailResult['success'] ?? false)) {
+                    throw new \RuntimeException((string) ($mailResult['message'] ?? 'Mail pull to Mailcow failed.'));
+                }
+                $emailServiceId = isset($mailResult['email_service']) ? (int) $mailResult['email_service']->id : null;
+                $steps[] = (string) ($mailResult['message'] ?? 'Mail pull queued.');
+                $this->appendConvertStep($service, $steps);
+            }
+
             $creds = $service->getHostingCredentials() ?? [];
             $meta = is_array($service->service_meta) ? $service->service_meta : [];
+            $extraSites = $this->extraConvertibleSites($inventory);
+            $siteCount = 1 + count($extraSites);
+            $share = $siteCount > 1 ? round(1 / $siteCount, 4) : 1.0;
+            $templateSlug = $this->templateSlugForDetectedStack($stack, $containerProduct);
+            $daUsername = (string) ($creds['username'] ?? $meta['username'] ?? $service->external_reference ?? '');
+
             $meta['da_legacy'] = [
-                'username' => $creds['username'] ?? $meta['username'] ?? $service->external_reference,
+                'username' => $daUsername,
                 'domain' => $inventory['domain'],
                 'da_node_id' => $daNode->id,
                 'docroot' => $inventory['docroot'],
+                'app_root' => $inventory['app_root'] ?? $inventory['docroot'],
                 'stack' => $stack,
                 'addon_sites' => $inventory['sites'] ?? [],
                 'converted_at' => now()->toIso8601String(),
-                'keep_email_on_da' => true,
+                'keep_email_on_da' => false,
                 'had_extra_mailboxes' => $preflight['email']['has_extra_mailboxes'],
+                'email_service_id' => $emailServiceId,
             ];
             // Preserve panel password in meta if present (deploy overwrites credentials JSON)
             if (! empty($creds['password'])) {
@@ -437,10 +530,31 @@ class DirectAdminToContainerConvertService
                 $meta['da_legacy']['password'] = $meta['password'];
             }
 
+            if ($extraSites !== []) {
+                $meta['project_recipe'] = self::PROJECT_RECIPE_KEY;
+                $meta['project_role'] = 'primary';
+                $meta['project_role_label'] = (string) ($inventory['domain'] ?? $service->name);
+                $meta['project_billing_anchor'] = true;
+                $meta['provision_template_slug'] = $templateSlug;
+                $meta['language_slug'] = $templateSlug;
+                $meta['domain'] = $meta['domain'] ?? $inventory['domain'];
+                $meta['resource_share'] = [
+                    'cpu' => $share,
+                    'memory' => $share,
+                ];
+            } else {
+                $meta['provision_template_slug'] = $templateSlug;
+                $meta['language_slug'] = $templateSlug;
+            }
+            if ($emailServiceId) {
+                $meta['bundled_email_service_id'] = $emailServiceId;
+            }
+
             $steps[] = 'Switching service product to Application Hosting (keeping due date; clearing custom price)';
             $this->appendConvertStep($service, $steps);
 
-            DB::transaction(function () use ($service, $containerProduct, $meta) {
+            $siblingIds = [];
+            DB::transaction(function () use ($service, $containerProduct, $meta, $extraSites, $daNode, $daUsername, $share, &$siblingIds) {
                 $service->update([
                     'product_id' => $containerProduct->id,
                     'provisioning_driver_key' => 'container',
@@ -450,7 +564,28 @@ class DirectAdminToContainerConvertService
                     'service_meta' => $meta,
                     // next_due_date + billing_cycle unchanged
                 ]);
+
+                if ($extraSites === []) {
+                    return;
+                }
+
+                $attached = $this->attachConvertProject(
+                    $service->fresh(),
+                    $containerProduct,
+                    $extraSites,
+                    (int) $daNode->id,
+                    $daUsername,
+                    $share,
+                );
+                $siblingIds = $attached['sibling_ids'];
             });
+
+            if ($siblingIds !== []) {
+                $this->writeConvertMeta($service, [
+                    'sibling_service_ids' => $siblingIds,
+                    'project_id' => $service->fresh()->project_id,
+                ]);
+            }
 
             $service->refresh()->load('product.containerTemplate', 'user');
 
@@ -476,14 +611,32 @@ class DirectAdminToContainerConvertService
             );
 
             $renewalPreview = $this->renewalPricing->unitPrice($service->fresh());
-            $addonNote = ($preflight['has_addon_sites'] ?? false)
-                ? ' Addon domains on this DA user still need their own Application Hosting services.'
+            if ($siblingIds !== []) {
+                $steps[] = sprintf(
+                    'Queuing %d extra live site(s) as sibling containers on this same package (not separately billed)',
+                    count($siblingIds)
+                );
+                $this->appendConvertStep($service, $steps);
+                foreach ($siblingIds as $siblingId) {
+                    ConvertDirectAdminProjectSiteJob::dispatch((int) $siblingId);
+                }
+            }
+            $projectId = (int) ($service->fresh()->project_id ?? 0);
+            if ($emailServiceId && $projectId > 0) {
+                Service::query()->whereKey($emailServiceId)->update(['project_id' => $projectId]);
+            }
+            $addonNote = $siblingIds !== []
+                ? sprintf(' %d extra site(s) queued as sibling containers on this package. Combined usage above package specs bills as overage.', count($siblingIds))
+                : '';
+            $mailNote = $emailServiceId
+                ? ' Mail pulled to Mailcow — update MX when IMAP sync has caught up, then decommission DirectAdmin.'
                 : '';
             $steps[] = sprintf(
-                'Convert complete. Next due %s · renewal will bill Application Hosting (~%s). Email remains on DirectAdmin.%s',
+                'Convert complete. Next due %s · renewal will bill Application Hosting (~%s).%s%s',
                 optional($service->next_due_date)->toDateString() ?? 'n/a',
                 number_format($renewalPreview, 2),
-                $addonNote
+                $addonNote,
+                $mailNote
             );
 
             $this->writeConvertMeta($service, [
@@ -507,7 +660,7 @@ class DirectAdminToContainerConvertService
 
             return [
                 'ok' => true,
-                'message' => 'Service converted to Application Hosting. Billing date unchanged; container rates apply at next renewal. Email remains on DirectAdmin until migrated to Mailcow.',
+                'message' => 'Service converted to Application Hosting. Billing date unchanged. Mail is pulling into Mailcow — update MX when sync has caught up, then DirectAdmin can be decommissioned.',
                 'steps' => $steps,
             ];
         } catch (\Throwable $e) {
@@ -544,6 +697,15 @@ class DirectAdminToContainerConvertService
     {
         try {
             $service->refresh();
+            $siblingIds = $service->service_meta['da_convert']['sibling_service_ids'] ?? [];
+            if (is_array($siblingIds) && $siblingIds !== []) {
+                Service::query()
+                    ->whereIn('id', $siblingIds)
+                    ->whereIn('status', ['pending', 'provisioning'])
+                    ->whereDoesntHave('containerDeployment')
+                    ->delete();
+            }
+
             // Always restore the DA product so convert can be retried. A running
             // container from a failed import is cleaned up on the next deploy.
             $service->update([
@@ -552,6 +714,7 @@ class DirectAdminToContainerConvertService
                 'provisioning_driver_key' => $previous['provisioning_driver_key'],
                 'custom_price' => $previous['custom_price'],
                 'status' => $previous['status'] ?: 'active',
+                'project_id' => null,
             ]);
         } catch (\Throwable $rollbackError) {
             Log::warning('Convert-in-place rollback incomplete', [
@@ -678,5 +841,225 @@ class DirectAdminToContainerConvertService
         $service->update(['service_meta' => $meta]);
 
         return $service->fresh(['product', 'node', 'user']);
+    }
+
+    public function resolveEmailProductForConvert(Product $containerProduct, ?Product $selected = null): ?Product
+    {
+        if ($selected && $selected->type === 'email_hosting' && $selected->is_active) {
+            return $selected;
+        }
+
+        $containerProduct->loadMissing('bundledEmailProduct');
+        if ($containerProduct->hasEmailBundle() && $containerProduct->bundledEmailProduct?->is_active) {
+            return $containerProduct->bundledEmailProduct;
+        }
+
+        return Product::query()
+            ->where('type', 'email_hosting')
+            ->where('is_active', true)
+            ->where('provisioning_driver_key', 'mailcow')
+            ->orderBy('order')
+            ->orderBy('name')
+            ->first();
+    }
+
+    /**
+     * Extra live sites on the DA user (not the primary domain).
+     *
+     * @param  array{sites?: list<array<string, mixed>>}  $inventory
+     * @return list<array<string, mixed>>
+     */
+    public function extraConvertibleSites(array $inventory): array
+    {
+        $sites = is_array($inventory['sites'] ?? null) ? $inventory['sites'] : [];
+
+        return array_values(array_filter(
+            $sites,
+            fn ($site) => is_array($site) && empty($site['is_primary']) && filled($site['domain'] ?? null)
+        ));
+    }
+
+    public function templateSlugForDetectedStack(string $stack, Product $product): string
+    {
+        $product->loadMissing('containerTemplate');
+        $candidates = match ($stack) {
+            'wordpress' => ['wordpress'],
+            'laravel' => ['laravel'],
+            'nodejs' => ['nodejs'],
+            'php' => ['php'],
+            'static_or_php' => ['php', 'static-site'],
+            default => array_values(array_filter([$product->containerTemplate?->slug, 'php'])),
+        };
+
+        foreach ($candidates as $slug) {
+            if (ContainerTemplate::query()->where('slug', $slug)->exists()) {
+                return $slug;
+            }
+        }
+
+        return $product->containerTemplate?->slug ?? ($candidates[0] ?? 'php');
+    }
+
+    /**
+     * Group the converted primary with extra live sites on one billed package.
+     *
+     * @param  list<array<string, mixed>>  $extraSites
+     * @return array{project: CustomerProject, sibling_ids: list<int>}
+     */
+    public function attachConvertProject(
+        Service $anchor,
+        Product $product,
+        array $extraSites,
+        int $daNodeId,
+        string $daUsername,
+        float $share,
+    ): array {
+        $anchor->loadMissing('user');
+        $domain = (string) ($anchor->attachedDomainName() ?? $anchor->name);
+        $project = CustomerProject::create([
+            'user_id' => $anchor->user_id,
+            'name' => mb_substr($domain !== '' ? $domain : 'Project', 0, 100),
+            'recipe_key' => self::PROJECT_RECIPE_KEY,
+            'billing_service_id' => $anchor->id,
+            'resource_pool' => [
+                'product_id' => $product->id,
+                'product_name' => $product->name,
+                'site_count' => 1 + count($extraSites),
+                'cpu_share' => $share,
+                'memory_share' => $share,
+            ],
+        ]);
+
+        $anchor->update(['project_id' => $project->id]);
+
+        $siblingIds = [];
+        foreach ($extraSites as $site) {
+            $sibling = $this->createSiblingSiteService(
+                $anchor->fresh(),
+                $project,
+                $product,
+                $site,
+                $share,
+                $daNodeId,
+                $daUsername,
+            );
+            $siblingIds[] = (int) $sibling->id;
+        }
+
+        return [
+            'project' => $project->fresh(),
+            'sibling_ids' => $siblingIds,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $site
+     */
+    public function createSiblingSiteService(
+        Service $anchor,
+        CustomerProject $project,
+        Product $product,
+        array $site,
+        float $share,
+        int $daNodeId,
+        string $daUsername,
+    ): Service {
+        $domain = strtolower(trim((string) ($site['domain'] ?? '')));
+        $stack = $this->normalizeConvertibleStack([
+            'stack' => (string) ($site['stack'] ?? 'unknown'),
+            'has_wp_config' => (bool) ($site['has_wp_config'] ?? false),
+        ]);
+        $templateSlug = $this->templateSlugForDetectedStack($stack, $product);
+
+        return Service::query()->create([
+            'user_id' => $anchor->user_id,
+            'project_id' => $project->id,
+            'product_id' => $product->id,
+            'reseller_id' => $anchor->reseller_id,
+            'name' => mb_substr($domain !== '' ? $domain : 'site', 0, 100),
+            'status' => 'pending',
+            'billing_cycle' => $anchor->billing_cycle,
+            'custom_price' => 0,
+            'next_due_date' => $anchor->next_due_date,
+            'provisioning_driver_key' => 'container',
+            'node_id' => null,
+            'service_meta' => [
+                'domain' => $domain,
+                'project_recipe' => self::PROJECT_RECIPE_KEY,
+                'project_role' => 'site',
+                'project_role_label' => $domain,
+                'project_billing_anchor' => false,
+                'provision_template_slug' => $templateSlug,
+                'language_slug' => $templateSlug,
+                'resource_share' => [
+                    'cpu' => $share,
+                    'memory' => $share,
+                ],
+                'source_service_id' => $anchor->id,
+                'da_legacy' => [
+                    'username' => $daUsername,
+                    'domain' => $domain,
+                    'da_node_id' => $daNodeId,
+                    'docroot' => $site['docroot'] ?? null,
+                    'app_root' => $site['app_root'] ?? ($site['docroot'] ?? null),
+                    'stack' => $stack,
+                    'has_wp_config' => (bool) ($site['has_wp_config'] ?? false),
+                    'keep_email_on_da' => false,
+                ],
+            ],
+        ]);
+    }
+
+    /**
+     * Export one extra DA site into its already-created sibling Application Hosting service.
+     */
+    public function convertProjectSite(Service $sibling): void
+    {
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(0);
+        }
+        @ini_set('max_execution_time', '0');
+
+        $sibling->loadMissing('product.containerTemplate', 'user');
+        $meta = is_array($sibling->service_meta) ? $sibling->service_meta : [];
+        $legacy = is_array($meta['da_legacy'] ?? null) ? $meta['da_legacy'] : [];
+        $stack = $this->normalizeConvertibleStack([
+            'stack' => (string) ($legacy['stack'] ?? 'unknown'),
+            'has_wp_config' => (bool) ($legacy['has_wp_config'] ?? false),
+        ]);
+
+        $inventory = [
+            'domain' => $legacy['domain'] ?? $meta['domain'] ?? $sibling->name,
+            'docroot' => $legacy['docroot'] ?? null,
+            'app_root' => $legacy['app_root'] ?? ($legacy['docroot'] ?? null),
+            'stack' => $stack,
+            'has_wp_config' => (bool) ($legacy['has_wp_config'] ?? false),
+            'databases' => [],
+            'da_node_id' => $legacy['da_node_id'] ?? null,
+        ];
+
+        $daNode = $this->migrator->resolveDirectAdminNode($sibling, $inventory);
+
+        $export = $this->migrator->exportSiteFromDirectAdmin($sibling, $inventory);
+
+        try {
+            $this->deployments->deploy($sibling, ContainerDeployOptions::quietConvert());
+            $sibling->refresh()->load('containerDeployment.node', 'product.containerTemplate');
+            $this->migrator->importSiteIntoContainer(
+                $sibling,
+                $export['local_dump'] ?? null,
+                $export['local_tar'],
+                $export['remote_work'],
+                (string) ($export['stack'] ?? $stack),
+                $daNode,
+            );
+        } finally {
+            foreach (['local_dump', 'local_tar'] as $key) {
+                $path = $export[$key] ?? null;
+                if (is_string($path) && is_file($path)) {
+                    @unlink($path);
+                }
+            }
+        }
     }
 }

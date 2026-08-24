@@ -229,6 +229,22 @@ class DirectAdminCustomerPanelApi
     }
 
     /**
+     * Set a known IMAP password so Mailcow can pull the mailbox off DirectAdmin.
+     *
+     * @return array{success: bool, message: string}
+     */
+    public function changeEmailAccountPassword(string $username, string $domain, string $localPart, string $password): array
+    {
+        return $this->directAdmin->executeUserApiCall($username, 'CMD_API_POP', [
+            'action' => 'modify',
+            'domain' => $domain,
+            'user' => $localPart,
+            'passwd' => $password,
+            'passwd2' => $password,
+        ], 'POST');
+    }
+
+    /**
      * @return array{success: bool, message: string}
      */
     public function deleteEmailAccount(string $username, string $domain, string $localPart): array

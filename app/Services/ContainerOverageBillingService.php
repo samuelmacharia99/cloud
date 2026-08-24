@@ -2,28 +2,46 @@
 
 namespace App\Services;
 
+use App\Models\ContainerDeployment;
 use App\Models\ContainerMetric;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Product;
 use App\Models\Service;
+use App\Services\Billing\ProjectRecipeService;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 
 class ContainerOverageBillingService
 {
+    public function __construct(
+        private ProjectRecipeService $projectRecipes,
+    ) {}
+
     /**
      * Add CPU, RAM, and disk overage line items when usage exceeds the product's included limits.
+     * Project services are pooled against the package (billing anchor only).
      */
     public function addOverageItemsToInvoice(
         Invoice $invoice,
         Service $service,
     ): void {
-        $service->loadMissing(['product.containerTemplate', 'containerDeployment.node']);
+        $service->loadMissing(['product.containerTemplate', 'containerDeployment.node', 'project.services.containerDeployment']);
 
         $product = $service->product;
-        $deployment = $service->containerDeployment;
+        if (! $product?->overage_enabled) {
+            return;
+        }
 
-        if (! $product?->overage_enabled || ! $deployment) {
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        if ($this->projectRecipes->isProjectRecipeServiceMeta($meta)
+            && ! $this->projectRecipes->isBillingAnchor($meta)
+        ) {
+            return;
+        }
+
+        $deployments = $this->deploymentsForBilling($service);
+        if ($deployments->isEmpty()) {
             return;
         }
 
@@ -41,31 +59,48 @@ class ContainerOverageBillingService
 
         $included = $product->getIncludedContainerLimits(
             $product->containerTemplate,
-            $deployment
+            $deployments->first()
         );
-
-        $avgCpuPercent = ContainerMetric::averageCpuPercent($deployment, $from, $to);
-        $avgDiskGb = ContainerMetric::averageDiskUsedGb($deployment, $from, $to);
-
-        // Docker reports 100% per fully-used core. It is not a percentage of the
-        // configured plan limit, so multiplying by that limit over-bills multi-core plans.
-        $avgCpuCores = $avgCpuPercent / 100;
         $includedMemoryGb = $included['memory_mb'] / 1024;
-        $memoryOverage = ContainerMetric::memoryOverageGbHours(
-            $deployment,
-            $from,
-            $to,
-            $includedMemoryGb,
-        );
+        $containerCount = $deployments->count();
 
-        $cpuOverageHours = max(0, $avgCpuCores - $included['cpu']) * $billingHours;
-        $memoryOverageGbHours = $memoryOverage['gb_hours'];
-        $diskOverageGbHours = max(0, $avgDiskGb - $included['disk_gb']) * $billingHours;
+        if ($containerCount === 1) {
+            $deployment = $deployments->first();
+            $avgCpuCores = ContainerMetric::averageCpuPercent($deployment, $from, $to) / 100;
+            $avgDiskGb = ContainerMetric::averageDiskUsedGb($deployment, $from, $to);
+            $memoryOverage = ContainerMetric::memoryOverageGbHours(
+                $deployment,
+                $from,
+                $to,
+                $includedMemoryGb,
+            );
+            $cpuOverageHours = max(0, $avgCpuCores - $included['cpu']) * $billingHours;
+            $memoryOverageGbHours = $memoryOverage['gb_hours'];
+            $diskOverageGbHours = max(0, $avgDiskGb - $included['disk_gb']) * $billingHours;
+            $ramAvgUsageGb = $memoryOverage['avg_usage_gb'];
+            $ramPeakUsageGb = $memoryOverage['peak_usage_gb'];
+        } else {
+            $avgCpuCores = 0.0;
+            $avgDiskGb = 0.0;
+            $ramAvgUsageGb = 0.0;
+            $ramPeakUsageGb = 0.0;
+            foreach ($deployments as $deployment) {
+                $avgCpuCores += ContainerMetric::averageCpuPercent($deployment, $from, $to) / 100;
+                $avgDiskGb += ContainerMetric::averageDiskUsedGb($deployment, $from, $to);
+                $memory = ContainerMetric::memoryOverageGbHours($deployment, $from, $to, 0);
+                $ramAvgUsageGb += $memory['avg_usage_gb'];
+                $ramPeakUsageGb = max($ramPeakUsageGb, $memory['peak_usage_gb']);
+            }
+            $cpuOverageHours = max(0, $avgCpuCores - $included['cpu']) * $billingHours;
+            $memoryOverageGbHours = max(0, $ramAvgUsageGb - $includedMemoryGb) * $billingHours;
+            $diskOverageGbHours = max(0, $avgDiskGb - $included['disk_gb']) * $billingHours;
+        }
 
         $cpuRate = (float) $product->cpu_overage_rate;
         $ramRate = (float) $product->ram_overage_rate;
         $diskRate = (float) $product->disk_overage_rate;
         $activeTypes = [];
+        $scope = $containerCount > 1 ? 'package included' : 'included';
 
         if ($cpuOverageHours > 0 && $cpuRate > 0) {
             $activeTypes[] = 'container_cpu_overage';
@@ -74,8 +109,9 @@ class ContainerOverageBillingService
                 $service,
                 $product,
                 sprintf(
-                    'CPU Overage — %s core-hours (included: %s cores, avg usage: %s cores) @ KES %s/core-hour',
+                    'CPU Overage — %s core-hours (%s: %s cores, avg usage: %s cores) @ KES %s/core-hour',
                     $this->formatQuantity($cpuOverageHours),
+                    $scope,
                     $this->formatQuantity($included['cpu']),
                     $this->formatQuantity($avgCpuCores),
                     $this->formatRate($cpuRate)
@@ -95,11 +131,12 @@ class ContainerOverageBillingService
                 $service,
                 $product,
                 sprintf(
-                    'RAM Overage — %s GB-hours (included: %s GB, avg usage: %s GB, peak: %s GB) @ KES %s/GB-hour',
+                    'RAM Overage — %s GB-hours (%s: %s GB, avg usage: %s GB, peak: %s GB) @ KES %s/GB-hour',
                     $this->formatQuantity($memoryOverageGbHours),
+                    $scope,
                     $this->formatQuantity($includedMemoryGb),
-                    $this->formatQuantity($memoryOverage['avg_usage_gb']),
-                    $this->formatQuantity($memoryOverage['peak_usage_gb']),
+                    $this->formatQuantity($ramAvgUsageGb),
+                    $this->formatQuantity($ramPeakUsageGb),
                     $this->formatRate($ramRate)
                 ),
                 $memoryOverageGbHours,
@@ -117,8 +154,9 @@ class ContainerOverageBillingService
                 $service,
                 $product,
                 sprintf(
-                    'Disk Overage — %s GB-hours (included: %s GB, avg usage: %s GB) @ KES %s/GB-hour',
+                    'Disk Overage — %s GB-hours (%s: %s GB, avg usage: %s GB) @ KES %s/GB-hour',
                     $this->formatQuantity($diskOverageGbHours),
+                    $scope,
                     $this->formatQuantity($included['disk_gb']),
                     $this->formatQuantity($avgDiskGb),
                     $this->formatRate($diskRate)
@@ -132,6 +170,24 @@ class ContainerOverageBillingService
         }
 
         $this->removeStaleOverageItems($invoice, $service, $activeTypes);
+    }
+
+    /**
+     * @return Collection<int, ContainerDeployment>
+     */
+    private function deploymentsForBilling(Service $service): Collection
+    {
+        $project = $service->project;
+        if ($project) {
+            $project->loadMissing('services.containerDeployment');
+
+            return $project->services
+                ->map(fn (Service $member) => $member->containerDeployment)
+                ->filter()
+                ->values();
+        }
+
+        return collect([$service->containerDeployment])->filter()->values();
     }
 
     /**

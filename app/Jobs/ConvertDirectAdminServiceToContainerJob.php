@@ -24,6 +24,7 @@ class ConvertDirectAdminServiceToContainerJob implements ShouldQueue
         public bool $acknowledgeExtraMailboxes = false,
         public ?string $databaseName = null,
         public bool $acknowledgeAddonSites = false,
+        public ?int $emailProductId = null,
     ) {}
 
     public function handle(DirectAdminToContainerConvertService $convert): void
@@ -38,12 +39,17 @@ class ConvertDirectAdminServiceToContainerJob implements ShouldQueue
             $service = Service::with('node', 'product')->findOrFail($this->serviceId);
             $product = Product::with('containerTemplate')->findOrFail($this->productId);
 
+            $emailProduct = $this->emailProductId
+                ? Product::query()->find($this->emailProductId)
+                : null;
+
             $convert->convertInPlace(
                 $service,
                 $product,
                 $this->acknowledgeExtraMailboxes,
                 $this->databaseName,
                 $this->acknowledgeAddonSites,
+                $emailProduct,
             );
         } catch (\Throwable $e) {
             // convertInPlace already records da_convert=failed; keep sync drivers from 500'ing the admin UI.

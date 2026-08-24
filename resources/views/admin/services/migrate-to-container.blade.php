@@ -27,6 +27,9 @@
     $detectedStack = $preflight['detected_stack'] ?? ($inventory['stack'] ?? 'unknown');
     $sites = is_array($inventory['sites'] ?? null) ? $inventory['sites'] : [];
     $addonSiteCount = (int) ($inventory['addon_site_count'] ?? 0);
+    $emailProducts = collect($preflight['email_products'] ?? []);
+    $mustPullMail = (bool) ($preflight['must_pull_mail'] ?? false);
+    $mailboxByDomain = is_array($preflight['email']['by_domain'] ?? null) ? $preflight['email']['by_domain'] : [];
 @endphp
 <div class="space-y-6 max-w-4xl">
     <div>
@@ -34,8 +37,10 @@
         <p class="text-slate-600 dark:text-slate-400 mt-1">
             Admin-only, convert-in-place. Same service ID — no second service, no invoice today, no customer notification.
             You choose the Application Hosting plan. DirectAdmin due date is kept; when that term ends, cron generates a new invoice for the selected plan.
+            Extra live sites on this DA user become sibling containers on that same package — not extra billed plans. Combined usage above package specs is billed as overage.
+            Mailboxes are pulled to Mailcow so this account can leave DirectAdmin. Update MX when IMAP sync has caught up.
             Prefer migrating mail to <strong>Mailcow</strong> first (or leave MX on DA only as a temporary bridge).
-            Stacks are detected from DirectAdmin (WordPress, Laravel, PHP, or static), including Laravel apps whose <code class="font-mono text-xs">artisan</code> sits above <code class="font-mono text-xs">public_html</code>.
+            Stacks are detected per site (WordPress, Laravel, Node.js, PHP, or static), including apps whose <code class="font-mono text-xs">package.json</code> or <code class="font-mono text-xs">artisan</code> sits above <code class="font-mono text-xs">public_html</code>.
         </p>
     </div>
 
@@ -110,7 +115,7 @@
             </div>
             <div class="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-3">
                 <dt class="text-slate-500 text-xs uppercase tracking-wide">Detected stack</dt>
-                <dd class="font-medium mt-1 capitalize">{{ str_replace('_', ' ', $detectedStack) }}</dd>
+                <dd class="font-medium mt-1">{{ \App\Services\Provisioning\DirectAdminToContainerConvertService::stackLabel($detectedStack) }}</dd>
                 <dd class="text-xs text-slate-500">wp-config: {{ $inventory ? (($inventory['has_wp_config'] ?? false) ? 'yes' : 'no') : '—' }}</dd>
             </div>
             <div class="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-3">
@@ -127,7 +132,7 @@
             <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-3">
                 <div class="flex items-center justify-between gap-2 flex-wrap">
                     <h3 class="text-sm font-semibold text-slate-900 dark:text-white">Sites on this DA user</h3>
-                    <p class="text-xs text-slate-500">{{ count($sites) }} domain(s) · {{ $addonSiteCount }} addon(s) → separate containers</p>
+                    <p class="text-xs text-slate-500">{{ count($sites) }} domain(s) · {{ $addonSiteCount }} extra site(s) → sibling containers on this package</p>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="min-w-full text-sm">
@@ -144,7 +149,7 @@
                             @foreach ($sites as $site)
                                 <tr>
                                     <td class="py-2 pr-3 font-mono text-xs break-all">{{ $site['domain'] ?? '—' }}</td>
-                                    <td class="py-2 pr-3 capitalize">{{ str_replace('_', ' ', $site['stack'] ?? 'unknown') }}</td>
+                                    <td class="py-2 pr-3">{{ \App\Services\Provisioning\DirectAdminToContainerConvertService::stackLabel((string) ($site['stack'] ?? 'unknown')) }}</td>
                                     <td class="py-2 pr-3 font-mono text-xs break-all">{{ $site['app_root'] ?? $site['docroot'] ?? '—' }}</td>
                                     <td class="py-2 pr-3">
                                         @if ($site['is_primary'] ?? false)
@@ -161,8 +166,7 @@
                 </div>
                 @if ($addonSiteCount > 0)
                     <p class="text-xs text-amber-800 dark:text-amber-200">
-                        Policy: 1 live site = 1 app. This convert moves only the primary domain.
-                        Create additional Application Hosting services for each extra live site afterward. Parked/redirect domains can be bound later.
+                        Policy: one Application Hosting package for this project. Each live site becomes its own container on that package (detected stack). Combined CPU, RAM, disk, and bandwidth above the package specs is billed as overage. Email stays on DirectAdmin.
                     </p>
                 @endif
             </div>
@@ -256,20 +260,33 @@
                 <p class="text-sm text-red-600">{{ $preflight['email']['message'] ?? 'Failed' }}</p>
             @else
                 <p class="text-sm text-slate-600 dark:text-slate-300">
-                    Default (DA username) mailboxes: {{ count($preflight['email']['default_mailboxes']) }}
-                    · Extra mailboxes: {{ count($preflight['email']['extra_mailboxes']) }}
+                    {{ count($preflight['email']['all'] ?? []) }} mailbox(es) across {{ count($mailboxByDomain) }} domain(s)
+                    · default-style: {{ count($preflight['email']['default_mailboxes'] ?? []) }}
+                    · extra: {{ count($preflight['email']['extra_mailboxes'] ?? []) }}
                 </p>
-                @if ($preflight['email']['has_extra_mailboxes'])
-                    <ul class="text-xs font-mono text-amber-800 dark:text-amber-200 space-y-1">
-                        @foreach ($preflight['email']['extra_mailboxes'] as $box)
-                            <li>{{ $box['email'] }}</li>
+                @if ($mailboxByDomain !== [])
+                    <ul class="text-xs font-mono space-y-2 text-slate-600 dark:text-slate-300">
+                        @foreach ($mailboxByDomain as $mailDomain => $boxes)
+                            <li>
+                                <span class="font-semibold">{{ $mailDomain }}</span>
+                                — {{ collect($boxes)->pluck('email')->implode(', ') }}
+                            </li>
                         @endforeach
                     </ul>
-                    <p class="text-sm text-amber-800 dark:text-amber-200">
-                        Extra mailboxes detected — DirectAdmin must keep serving mail (MX unchanged). You must acknowledge below.
+                @endif
+                @if (!empty($preflight['email']['errors']))
+                    <ul class="text-xs text-amber-800 dark:text-amber-200 space-y-1">
+                        @foreach ($preflight['email']['errors'] as $mailError)
+                            <li>{{ $mailError }}</li>
+                        @endforeach
+                    </ul>
+                @endif
+                @if ($mustPullMail)
+                    <p class="text-sm text-emerald-700 dark:text-emerald-300">
+                        These mailboxes are pulled to Mailcow (IMAP sync). Update MX when sync has caught up, then DirectAdmin can be decommissioned.
                     </p>
                 @else
-                    <p class="text-sm text-emerald-700 dark:text-emerald-300">Only default-style mailbox(es) found. Email can remain on DA after web cutover.</p>
+                    <p class="text-sm text-slate-600 dark:text-slate-300">No mailboxes found on this DA user. Web convert does not need a Mailcow pull.</p>
                 @endif
             @endif
 
@@ -301,13 +318,13 @@
             @else
                 @if ($productsAreFallback ?? false)
                     <p class="text-xs text-amber-700 dark:text-amber-300 mb-2">
-                        No catalog item is tagged for {{ str_replace('_', ' ', $detectedStack) }} — showing every Application Hosting plan. Pick the plan this customer should renew onto.
+                        No catalog item is tagged for {{ \App\Services\Provisioning\DirectAdminToContainerConvertService::stackLabel($detectedStack) }} — showing every Application Hosting plan. Pick the plan this customer should renew onto.
                     </p>
                 @endif
                 <select name="product_id" required class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
                     <option value="">Select Application Hosting plan…</option>
                     @if ($activeRecommended->isNotEmpty())
-                        <optgroup label="Recommended for {{ str_replace('_', ' ', $detectedStack) }}">
+                        <optgroup label="Recommended for {{ \App\Services\Provisioning\DirectAdminToContainerConvertService::stackLabel($detectedStack) }}">
                             @foreach ($activeRecommended as $product)
                                 <option value="{{ $product->id }}" @selected((string) old('product_id') === (string) $product->id)>
                                     {{ $product->name }}
@@ -363,17 +380,39 @@
             </div>
         @endif
 
+        @if ($mustPullMail)
+            <div>
+                <label class="block text-sm font-medium mb-2">Email Hosting plan (Mailcow)</label>
+                <p class="text-sm text-slate-600 dark:text-slate-300 mb-3">
+                    Mailboxes are created on Mailcow and IMAP-synced from DirectAdmin. Same due date as this service.
+                    If the Application Hosting plan has a bundled email product, pick that plan (included / not a second billed package).
+                </p>
+                @if ($emailProducts->isEmpty())
+                    <p class="text-sm text-red-600">No active Email Hosting products. Create one before converting — mail will not stay on DirectAdmin.</p>
+                @else
+                    <select name="email_product_id" required class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+                        <option value="">Select Email Hosting plan…</option>
+                        @foreach ($emailProducts as $emailProduct)
+                            <option value="{{ $emailProduct->id }}" @selected((string) old('email_product_id') === (string) $emailProduct->id)>
+                                {{ $emailProduct->name }}
+                            </option>
+                        @endforeach
+                    </select>
+                @endif
+            </div>
+        @endif
+
         @if ($addonSiteCount > 0 || ($preflight['has_addon_sites'] ?? false))
             <label class="flex items-start gap-2 text-sm">
                 <input type="checkbox" name="acknowledge_addon_sites" value="1" class="mt-1 rounded border-slate-300" required>
-                <span>I acknowledge only the primary site converts on this service; each extra live domain needs its own Application Hosting service (1 site = 1 app). Email for all domains stays on DirectAdmin.</span>
+                <span>I acknowledge extra live sites launch as sibling containers on this same Application Hosting package (not separately billed plans). Combined usage above package specs is billed as overage.</span>
             </label>
         @endif
 
-        @if ($preflight['email']['has_extra_mailboxes'] ?? false)
+        @if ($mustPullMail)
             <label class="flex items-start gap-2 text-sm">
-                <input type="checkbox" name="acknowledge_extra_mailboxes" value="1" class="mt-1 rounded border-slate-300" required>
-                <span>I acknowledge extra mailboxes stay on DirectAdmin; only the website moves to Application Hosting.</span>
+                <input type="checkbox" name="acknowledge_mail_pull" value="1" class="mt-1 rounded border-slate-300" required>
+                <span>I acknowledge mail is pulled to Mailcow (IMAP sync from DirectAdmin). Update MX when sync has caught up, then DirectAdmin can be decommissioned. Customers must set Mailcow mailbox passwords (force password update).</span>
             </label>
         @endif
 

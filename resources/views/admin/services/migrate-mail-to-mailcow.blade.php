@@ -17,8 +17,8 @@
     <div>
         <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Migrate mail to Mailcow</h1>
         <p class="text-slate-600 dark:text-slate-400 mt-1">
-            Creates an Email Hosting service, provisions the domain on Mailcow, and recreates mailboxes.
-            Cut over MX after IMAP sync is healthy; keep DA mail until then.
+            Creates an Email Hosting service, provisions the domain on Mailcow, recreates mailboxes, and IMAP-pulls mail from DirectAdmin.
+            Cut over MX when sync is healthy, then decommission DirectAdmin mail.
         </p>
     </div>
 

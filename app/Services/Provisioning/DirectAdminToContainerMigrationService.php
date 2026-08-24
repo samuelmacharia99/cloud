@@ -12,7 +12,7 @@ use Illuminate\Support\Str;
 
 /**
  * ETL pipeline: DirectAdmin shared hosting → container application hosting.
- * Supports WordPress, Laravel, plain PHP, and static sites. Email stays on DirectAdmin.
+ * Supports WordPress, Laravel, Node.js, plain PHP, and static sites. Mail is pulled to Mailcow.
  */
 class DirectAdminToContainerMigrationService
 {
@@ -34,7 +34,7 @@ class DirectAdminToContainerMigrationService
      *     stack: string,
      *     docroot: ?string,
      *     has_wp_config: bool,
-     *     email_stays_on_da: true,
+     *     email_stays_on_da: false,
      *     warnings: list<string>
      * }
      */
@@ -91,9 +91,9 @@ class DirectAdminToContainerMigrationService
         }
 
         $warnings = [
-            'Email mailboxes stay on DirectAdmin — only site files and database are moved.',
             'DNS must be updated to the container host after cutover.',
-            'Each live website needs its own Application Hosting container — addon sites are listed below and must be converted as separate services after the primary.',
+            'Each live website becomes its own container on the same Application Hosting package. Combined CPU, RAM, disk, and bandwidth above that package is billed as overage.',
+            'Mailboxes are pulled to Mailcow (our email infra). Update MX when IMAP sync has caught up, then DirectAdmin can be decommissioned.',
         ];
 
         $apiDomains = [];
@@ -152,7 +152,7 @@ class DirectAdminToContainerMigrationService
             $warnings[] = 'Could not SSH-detect application stack: '.$stackError;
         }
         if (($detection['stack'] ?? 'unknown') === 'unknown' && $stackError === null) {
-            $warnings[] = 'Could not classify the primary site as WordPress, Laravel, PHP, or static from the DirectAdmin filesystem. You can still choose an Application Hosting plan; confirm the stack before convert.';
+            $warnings[] = 'Could not classify the primary site as WordPress, Laravel, Node.js, PHP, or static from the DirectAdmin filesystem. You can still choose an Application Hosting plan; confirm the stack before convert.';
         }
         if ($detection['stack'] === 'wordpress' && ! $detection['has_wp_config']) {
             $warnings[] = 'wp-config.php was not detected at the expected docroot. Migration may fail until the path is confirmed.';
@@ -169,7 +169,7 @@ class DirectAdminToContainerMigrationService
             'docroot' => $docroot,
             'app_root' => $detection['app_root'] ?? $docroot,
             'has_wp_config' => $detection['has_wp_config'],
-            'email_stays_on_da' => true,
+            'email_stays_on_da' => false,
             'sites' => $sites,
             'addon_site_count' => max(0, count(array_filter($sites, fn ($site) => ! ($site['is_primary'] ?? false)))),
             'warnings' => $warnings,
@@ -225,7 +225,9 @@ class DirectAdminToContainerMigrationService
         try {
             $domainsRoot = '/home/'.trim($username, '/').'/domains';
             $listing = trim($ssh->exec(
-                'if [ -d '.escapeshellarg($domainsRoot).' ]; then ls -1 '.escapeshellarg($domainsRoot).'; else echo ""; fi'
+                'if [ -d '.escapeshellarg($domainsRoot).' ]; then '
+                .'find '.escapeshellarg($domainsRoot).' -mindepth 1 -maxdepth 1 -type d -exec basename {} \; ; '
+                .'else echo ""; fi'
             ));
             $names = array_values(array_filter(array_map('trim', preg_split("/\r\n|\n|\r/", $listing) ?: [])));
 
@@ -243,7 +245,7 @@ class DirectAdminToContainerMigrationService
             $unique = [];
             foreach ($names as $name) {
                 $name = strtolower(trim((string) $name));
-                if ($name === '' || str_contains($name, '/') || in_array($name, ['.', '..', 'lost+found'], true)) {
+                if (! $this->isConvertibleDomainLabel($name)) {
                     continue;
                 }
                 $unique[$name] = $name;
@@ -272,8 +274,8 @@ class DirectAdminToContainerMigrationService
                     'has_wp_config' => (bool) ($detection['has_wp_config'] ?? false),
                     'is_primary' => $isPrimary,
                     'recommended_action' => $isPrimary
-                        ? 'Convert this service in-place to one Application Hosting container.'
-                        : 'Create a separate Application Hosting service for this site after primary convert (1 site = 1 container).',
+                        ? 'Billing-anchor container on the selected Application Hosting package (this service).'
+                        : 'Launch as a sibling container on the same package (not a second plan). Overage applies if the project exceeds package specs.',
                 ];
             }
 
@@ -326,12 +328,21 @@ class DirectAdminToContainerMigrationService
             .'[ -f "$d/wp-config.php" ] && echo "WP:$d"; '
             .'[ -f "$d/artisan" ] && echo "ART:$d"; '
             .'[ -f "$d/composer.json" ] && echo "CMP:$d"; '
+            .'[ -f "$d/package.json" ] && echo "PKG:$d"; '
+            .'[ -f "$d/package-lock.json" ] || [ -f "$d/yarn.lock" ] || [ -f "$d/pnpm-lock.yaml" ] && echo "PKG:$d"; '
+            .'{ [ -f "$d/app.js" ] || [ -f "$d/server.js" ] || [ -f "$d/ecosystem.config.js" ] || [ -f "$d/ecosystem.config.cjs" ]; } && echo "NJS:$d"; '
+            .'[ -d "$d/node_modules" ] && echo "NMD:$d"; '
+            .'{ [ -f "$d/next.config.js" ] || [ -f "$d/next.config.mjs" ] || [ -f "$d/next.config.ts" ] || [ -f "$d/nuxt.config.js" ] || [ -f "$d/nuxt.config.ts" ]; } && echo "NEXT:$d"; '
+            .'[ -f "$d/.htaccess" ] && grep -qiE "PassengerNodejs|PassengerAppRoot|PassengerEnabled" "$d/.htaccess" && echo "PASS:$d"; '
             .'{ [ -f "$d/index.php" ] || [ -f "$d/index.html" ] || [ -f "$d/index.htm" ]; } && echo "IDX:$d"; '
             .'}; '
             .'probe "$DOCROOT"; probe "$PARENT"; probe "$PARENT/private_html"; '
             .'probe "$DOCROOT/core"; probe "$PARENT/core"; probe "$DOCROOT/backend"; probe "$PARENT/backend"; '
             .'find "$DOCROOT" -maxdepth 2 -type f -name wp-config.php 2>/dev/null | head -5 | while read -r f; do echo "WP:$(dirname "$f")"; done; '
-            .'find "$PARENT" -maxdepth 2 -type f -name artisan 2>/dev/null | grep -v "/vendor/" | head -5 | while read -r f; do echo "ART:$(dirname "$f")"; done';
+            .'find "$PARENT" -maxdepth 2 -type f -name artisan 2>/dev/null | grep -v "/vendor/" | head -5 | while read -r f; do echo "ART:$(dirname "$f")"; done; '
+            .'find "$PARENT" -maxdepth 4 -type f \( -name package.json -o -name next.config.js -o -name next.config.mjs -o -name next.config.ts -o -name nuxt.config.js -o -name nuxt.config.ts -o -name app.js -o -name server.js \) ! -path "*/node_modules/*" ! -path "*/.git/*" 2>/dev/null | head -20 | while read -r f; do '
+            .'case "$(basename "$f")" in package.json) echo "PKG:$(dirname "$f")";; app.js|server.js) echo "NJS:$(dirname "$f")";; *) echo "NEXT:$(dirname "$f")";; esac; '
+            .'done';
     }
 
     /**
@@ -342,6 +353,11 @@ class DirectAdminToContainerMigrationService
         $wp = [];
         $art = [];
         $cmp = [];
+        $pkg = [];
+        $nmd = [];
+        $njs = [];
+        $next = [];
+        $pass = [];
         $idx = [];
         $dirs = [];
 
@@ -359,6 +375,11 @@ class DirectAdminToContainerMigrationService
                 'WP' => $wp[] = $path,
                 'ART' => $art[] = $path,
                 'CMP' => $cmp[] = $path,
+                'PKG' => $pkg[] = $path,
+                'NMD' => $nmd[] = $path,
+                'NJS' => $njs[] = $path,
+                'NEXT' => $next[] = $path,
+                'PASS' => $pass[] = $path,
                 'IDX' => $idx[] = $path,
                 'DIR' => $dirs[] = $path,
                 default => null,
@@ -394,6 +415,16 @@ class DirectAdminToContainerMigrationService
             ];
         }
 
+        $nodeRoots = array_values(array_unique([...$next, ...$pkg, ...$njs, ...$nmd, ...$pass]));
+        if ($nodeRoots !== []) {
+            return [
+                'stack' => 'nodejs',
+                'has_wp_config' => false,
+                'app_root' => $this->pickPreferredAppRoot($next !== [] ? $next : $nodeRoots, $docroot),
+                'docroot' => $docroot,
+            ];
+        }
+
         if ($idx !== [] || in_array($docroot, $dirs, true)) {
             return [
                 'stack' => 'static_or_php',
@@ -409,6 +440,83 @@ class DirectAdminToContainerMigrationService
             'app_root' => $docroot,
             'docroot' => $docroot,
         ];
+    }
+
+    /**
+     * Skip files dumped in /domains (download.svg, backup.zip) and DA system folders.
+     */
+    public function isConvertibleDomainLabel(string $name): bool
+    {
+        $name = strtolower(trim($name));
+        if ($name === '' || str_contains($name, '/') || in_array($name, ['.', '..', 'lost+found', 'default'], true)) {
+            return false;
+        }
+
+        if (! str_contains($name, '.')) {
+            return false;
+        }
+
+        $suffix = ltrim((string) strrchr($name, '.'), '.');
+        // Skip files dumped in /domains; do not treat real TLDs (.zip, .md) as junk.
+        $fileSuffixes = [
+            'svg', 'tar', 'gz', 'tgz', 'rar', '7z', 'sql', 'bak', 'txt', 'log',
+            'jpg', 'jpeg', 'png', 'gif', 'pdf', 'html', 'htm', 'js', 'css', 'json', 'xml',
+            'mp4', 'iso', 'war', 'jar', 'woff', 'woff2', 'ttf', 'map',
+        ];
+
+        return ! in_array($suffix, $fileSuffixes, true);
+    }
+
+    /**
+     * Prefer the app directory above public_html when package.json / next.config lives there.
+     *
+     * @param  list<string>  $paths
+     */
+    public function pickPreferredAppRoot(array $paths, string $docroot): string
+    {
+        $docroot = rtrim($docroot, '/');
+        $unique = [];
+        foreach ($paths as $path) {
+            $path = rtrim((string) $path, '/');
+            if ($path !== '') {
+                $unique[$path] = $path;
+            }
+        }
+        $paths = array_values($unique);
+        if ($paths === []) {
+            return $docroot;
+        }
+
+        foreach ($paths as $path) {
+            if ($path !== $docroot) {
+                return $path;
+            }
+        }
+
+        return $paths[0];
+    }
+
+    /**
+     * DirectAdmin SSH node for export: live DA service, or da_legacy after in-place convert.
+     *
+     * @param  array{da_node_id?: int|string|null}  $inventory
+     */
+    public function resolveDirectAdminNode(Service $source, array $inventory = []): Node
+    {
+        $source->loadMissing('node');
+        if ($source->node) {
+            return $source->node;
+        }
+
+        $meta = is_array($source->service_meta) ? $source->service_meta : [];
+        $legacy = is_array($meta['da_legacy'] ?? null) ? $meta['da_legacy'] : [];
+        $nodeId = (int) ($inventory['da_node_id'] ?? $legacy['da_node_id'] ?? 0);
+        $node = $nodeId > 0 ? Node::query()->find($nodeId) : null;
+        if (! $node) {
+            throw new \InvalidArgumentException('DirectAdmin node is missing.');
+        }
+
+        return $node;
     }
 
     public function assertCanMigrate(Service $source, Service $target): void
@@ -447,10 +555,7 @@ class DirectAdminToContainerMigrationService
      */
     public function exportWordPressFromDirectAdmin(Service $source, array $inventory, ?string $databaseName = null): array
     {
-        $source->loadMissing('node');
-        if (! $source->node) {
-            throw new \InvalidArgumentException('DirectAdmin node is missing.');
-        }
+        $daNode = $this->resolveDirectAdminNode($source, $inventory);
 
         $workId = 'wp-export-'.$source->id.'-'.Str::lower(Str::random(6));
         $remoteWork = self::WORK_BASE.'/'.$workId;
@@ -468,7 +573,7 @@ class DirectAdminToContainerMigrationService
             throw new \RuntimeException('Docroot is missing from inventory.');
         }
 
-        $daSsh = SSHService::forNode($source->node);
+        $daSsh = SSHService::forNode($daNode);
         try {
             $daSsh->exec('mkdir -p '.escapeshellarg($remoteWork));
 
@@ -709,7 +814,7 @@ class DirectAdminToContainerMigrationService
     }
 
     /**
-     * Stack-aware DA export used by convert-in-place (WordPress, Laravel, PHP, static).
+     * Stack-aware DA export used by convert-in-place (WordPress, Laravel, Node.js, PHP, static).
      *
      * @param  array{docroot: ?string, databases: list<array{name: string}>, domain: ?string, stack: string, has_wp_config: bool}  $inventory
      * @return array{local_dump: ?string, local_tar: string, remote_work: string, db_name: ?string, stack: string}
@@ -723,10 +828,7 @@ class DirectAdminToContainerMigrationService
             return array_merge($export, ['stack' => 'wordpress']);
         }
 
-        $source->loadMissing('node');
-        if (! $source->node) {
-            throw new \InvalidArgumentException('DirectAdmin node is missing.');
-        }
+        $daNode = $this->resolveDirectAdminNode($source, $inventory);
 
         $workId = 'site-export-'.$source->id.'-'.Str::lower(Str::random(6));
         $remoteWork = self::WORK_BASE.'/'.$workId;
@@ -743,7 +845,7 @@ class DirectAdminToContainerMigrationService
         $dbName = null;
         $localDumpPath = null;
 
-        $daSsh = SSHService::forNode($source->node);
+        $daSsh = SSHService::forNode($daNode);
         try {
             $daSsh->exec('mkdir -p '.escapeshellarg($remoteWork));
 

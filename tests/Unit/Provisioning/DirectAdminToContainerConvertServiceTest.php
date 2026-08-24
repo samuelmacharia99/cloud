@@ -6,8 +6,10 @@ use App\Models\ContainerTemplate;
 use App\Models\Product;
 use App\Models\Service;
 use App\Models\User;
+use App\Services\Billing\ProjectRecipeService;
 use App\Services\Provisioning\DirectAdminToContainerConvertService;
 use App\Services\Provisioning\DirectAdminToContainerMigrationService;
+use App\Services\Provisioning\DirectAdminToMailcowMigrationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -314,5 +316,279 @@ class DirectAdminToContainerConvertServiceTest extends TestCase
         $this->assertSame('wordpress', $classified['stack']);
         $this->assertTrue($classified['has_wp_config']);
         $this->assertSame($docroot, $classified['app_root']);
+    }
+
+    public function test_classifies_nodejs_from_package_json_in_public_html(): void
+    {
+        $migrator = app(DirectAdminToContainerMigrationService::class);
+        $docroot = '/home/sigtunaco/domains/sigtuna.org/public_html';
+
+        $classified = $migrator->classifyDetectedMarkers(
+            implode("\n", [
+                'DIR:'.$docroot,
+                'IDX:'.$docroot,
+                'PKG:'.$docroot,
+            ]),
+            $docroot
+        );
+
+        $this->assertSame('nodejs', $classified['stack']);
+        $this->assertSame($docroot, $classified['app_root']);
+        $this->assertFalse($classified['has_wp_config']);
+    }
+
+    public function test_classifies_nodejs_when_package_json_is_above_public_html(): void
+    {
+        $migrator = app(DirectAdminToContainerMigrationService::class);
+        $docroot = '/home/sigtunaco/domains/sigtuna.org/public_html';
+        $parent = '/home/sigtunaco/domains/sigtuna.org';
+
+        $classified = $migrator->classifyDetectedMarkers(
+            implode("\n", [
+                'DIR:'.$docroot,
+                'IDX:'.$docroot,
+                'PKG:'.$parent,
+                'NJS:'.$parent,
+            ]),
+            $docroot
+        );
+
+        $this->assertSame('nodejs', $classified['stack']);
+        $this->assertSame($parent, $classified['app_root']);
+    }
+
+    public function test_php_composer_wins_over_package_json(): void
+    {
+        $migrator = app(DirectAdminToContainerMigrationService::class);
+        $docroot = '/home/acme/domains/api.example/public_html';
+        $parent = '/home/acme/domains/api.example';
+
+        $classified = $migrator->classifyDetectedMarkers(
+            implode("\n", [
+                'DIR:'.$docroot,
+                'CMP:'.$parent,
+                'PKG:'.$parent,
+            ]),
+            $docroot
+        );
+
+        $this->assertSame('php', $classified['stack']);
+        $this->assertSame($parent, $classified['app_root']);
+    }
+
+    public function test_skips_junk_files_listed_as_domains(): void
+    {
+        $migrator = app(DirectAdminToContainerMigrationService::class);
+
+        $this->assertFalse($migrator->isConvertibleDomainLabel('download.svg'));
+        $this->assertFalse($migrator->isConvertibleDomainLabel('backup.sql'));
+        $this->assertFalse($migrator->isConvertibleDomainLabel('lost+found'));
+        $this->assertFalse($migrator->isConvertibleDomainLabel('default'));
+        $this->assertTrue($migrator->isConvertibleDomainLabel('sigtuna.org'));
+        $this->assertTrue($migrator->isConvertibleDomainLabel('selfie.ke'));
+        $this->assertTrue($migrator->isConvertibleDomainLabel('app.theharbor.co.ke'));
+        $this->assertTrue($migrator->isConvertibleDomainLabel('thnkdigtal.zip'));
+    }
+
+    public function test_application_hosting_catalog_recommends_nodejs_plans(): void
+    {
+        $nodeTemplate = ContainerTemplate::query()->create([
+            'name' => 'Node.js',
+            'slug' => 'nodejs',
+            'docker_image' => 'node:20-bookworm',
+            'is_active' => true,
+        ]);
+        $wpTemplate = ContainerTemplate::query()->create([
+            'name' => 'WordPress',
+            'slug' => 'wordpress-node-catalog-'.uniqid(),
+            'docker_image' => 'wordpress:latest',
+            'is_active' => true,
+        ]);
+
+        $nodeProduct = Product::query()->create([
+            'name' => 'Node Application Hosting',
+            'slug' => 'node-app-hosting-'.uniqid(),
+            'type' => 'container_hosting',
+            'monthly_price' => 2200,
+            'is_active' => true,
+            'container_template_id' => $nodeTemplate->id,
+            'provisioning_driver_key' => 'container',
+        ]);
+        $wpProduct = Product::query()->create([
+            'name' => 'WP Starter',
+            'slug' => 'wp-node-catalog-'.uniqid(),
+            'type' => 'container_hosting',
+            'monthly_price' => 1500,
+            'is_active' => true,
+            'container_template_id' => $wpTemplate->id,
+            'provisioning_driver_key' => 'container',
+        ]);
+
+        $convert = app(DirectAdminToContainerConvertService::class);
+        $catalog = $convert->applicationHostingCatalog('nodejs');
+
+        $this->assertTrue($convert->productMatchesStack($nodeProduct->fresh('containerTemplate'), 'nodejs'));
+        $this->assertFalse($convert->productMatchesStack($wpProduct->fresh('containerTemplate'), 'nodejs'));
+        $this->assertTrue($catalog['recommended']->contains('id', $nodeProduct->id));
+        $this->assertFalse($catalog['recommended']->contains('id', $wpProduct->id));
+        $this->assertFalse($catalog['fallback']);
+        $this->assertSame('Node.js', DirectAdminToContainerConvertService::stackLabel('nodejs'));
+        $this->assertSame('nodejs', $convert->normalizeConvertibleStack(['stack' => 'nodejs']));
+    }
+
+    public function test_extra_sites_become_unbilled_siblings_on_the_same_package(): void
+    {
+        $template = ContainerTemplate::query()->create([
+            'name' => 'Node.js',
+            'slug' => 'nodejs',
+            'docker_image' => 'node:20-bookworm',
+            'is_active' => true,
+        ]);
+        $product = Product::query()->create([
+            'name' => 'App Hosting Silver',
+            'slug' => 'app-hosting-silver-'.uniqid(),
+            'type' => 'container_hosting',
+            'monthly_price' => 2500,
+            'is_active' => true,
+            'container_template_id' => $template->id,
+            'provisioning_driver_key' => 'container',
+        ]);
+        $user = User::factory()->create();
+        $anchor = Service::query()->create([
+            'user_id' => $user->id,
+            'product_id' => $product->id,
+            'name' => 'sigtuna.org',
+            'status' => 'provisioning',
+            'billing_cycle' => 'annual',
+            'next_due_date' => now()->addYear(),
+            'provisioning_driver_key' => 'container',
+            'service_meta' => [
+                'domain' => 'sigtuna.org',
+                'da_legacy' => ['stack' => 'nodejs'],
+            ],
+        ]);
+
+        $convert = app(DirectAdminToContainerConvertService::class);
+        $attached = $convert->attachConvertProject(
+            $anchor,
+            $product,
+            [
+                [
+                    'domain' => 'app.sigtuna.org',
+                    'stack' => 'nodejs',
+                    'docroot' => '/home/sigtunaco/domains/app.sigtuna.org/public_html',
+                    'app_root' => '/home/sigtunaco/domains/app.sigtuna.org/public_html',
+                    'has_wp_config' => false,
+                    'is_primary' => false,
+                ],
+                [
+                    'domain' => 'blog.sigtuna.org',
+                    'stack' => 'wordpress',
+                    'docroot' => '/home/sigtunaco/domains/blog.sigtuna.org/public_html',
+                    'app_root' => '/home/sigtunaco/domains/blog.sigtuna.org/public_html',
+                    'has_wp_config' => true,
+                    'is_primary' => false,
+                ],
+            ],
+            99,
+            'sigtunaco',
+            0.3333,
+        );
+
+        $this->assertCount(2, $attached['sibling_ids']);
+        $anchor->refresh();
+        $this->assertNotNull($anchor->project_id);
+        $this->assertSame($anchor->id, $attached['project']->billing_service_id);
+
+        $sibling = Service::query()->find($attached['sibling_ids'][0]);
+        $this->assertSame($product->id, $sibling->product_id);
+        $this->assertSame(0.0, (float) $sibling->custom_price);
+        $this->assertFalse((bool) $sibling->service_meta['project_billing_anchor']);
+        $this->assertSame(DirectAdminToContainerConvertService::PROJECT_RECIPE_KEY, $sibling->service_meta['project_recipe']);
+        $this->assertTrue(app(ProjectRecipeService::class)->shouldSkipRenewalInvoice($sibling->service_meta));
+
+        $extras = $convert->extraConvertibleSites([
+            'sites' => [
+                ['domain' => 'sigtuna.org', 'is_primary' => true],
+                ['domain' => 'app.sigtuna.org', 'is_primary' => false],
+            ],
+        ]);
+        $this->assertCount(1, $extras);
+        $this->assertSame('app.sigtuna.org', $extras[0]['domain']);
+        $this->assertSame('nodejs', $convert->templateSlugForDetectedStack('nodejs', $product));
+    }
+
+    public function test_resolve_email_product_prefers_bundle_then_catalog(): void
+    {
+        $email = Product::query()->create([
+            'name' => 'Business Email',
+            'slug' => 'biz-email-'.uniqid(),
+            'type' => 'email_hosting',
+            'monthly_price' => 500,
+            'is_active' => true,
+            'provisioning_driver_key' => 'mailcow',
+        ]);
+        $template = ContainerTemplate::query()->create([
+            'name' => 'Node.js',
+            'slug' => 'nodejs-mail-'.uniqid(),
+            'docker_image' => 'node:20-bookworm',
+            'is_active' => true,
+        ]);
+        $container = Product::query()->create([
+            'name' => 'App plus mail',
+            'slug' => 'app-plus-mail-'.uniqid(),
+            'type' => 'container_hosting',
+            'monthly_price' => 2500,
+            'is_active' => true,
+            'container_template_id' => $template->id,
+            'provisioning_driver_key' => 'container',
+            'bundled_email_product_id' => $email->id,
+        ]);
+
+        $convert = app(DirectAdminToContainerConvertService::class);
+        $this->assertSame($email->id, $convert->resolveEmailProductForConvert($container->fresh('bundledEmailProduct'))?->id);
+
+        $override = Product::query()->create([
+            'name' => 'Other Email',
+            'slug' => 'other-email-'.uniqid(),
+            'type' => 'email_hosting',
+            'monthly_price' => 800,
+            'is_active' => true,
+            'provisioning_driver_key' => 'mailcow',
+        ]);
+        $this->assertSame($override->id, $convert->resolveEmailProductForConvert($container, $override)?->id);
+    }
+
+    public function test_mail_pull_with_no_mailboxes_is_a_noop(): void
+    {
+        $email = Product::query()->create([
+            'name' => 'Business Email',
+            'slug' => 'biz-email-empty-'.uniqid(),
+            'type' => 'email_hosting',
+            'monthly_price' => 500,
+            'is_active' => true,
+            'provisioning_driver_key' => 'mailcow',
+        ]);
+        $da = Service::query()->create([
+            'user_id' => User::factory()->create()->id,
+            'product_id' => Product::query()->create([
+                'name' => 'Silver DA',
+                'slug' => 'silver-da-mail-'.uniqid(),
+                'type' => 'shared_hosting',
+                'monthly_price' => 1000,
+                'is_active' => true,
+                'provisioning_driver_key' => 'directadmin',
+            ])->id,
+            'name' => 'empty-mail',
+            'status' => 'active',
+            'billing_cycle' => 'annual',
+        ]);
+
+        $result = app(DirectAdminToMailcowMigrationService::class)
+            ->pullFromDirectAdminUser($da, $email, []);
+
+        $this->assertTrue($result['success']);
+        $this->assertSame([], $result['created_mailboxes']);
+        $this->assertSame(0, Service::query()->where('provisioning_driver_key', 'mailcow')->count());
     }
 }

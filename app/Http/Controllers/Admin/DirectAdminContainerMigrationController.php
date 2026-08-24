@@ -89,14 +89,14 @@ class DirectAdminContainerMigrationController extends Controller
         $preflight = null;
         try {
             $preflight = $convert->preflight($service);
-            if ($preflight['email']['has_extra_mailboxes'] && ! $request->boolean('acknowledge_extra_mailboxes')) {
+            if (($preflight['must_pull_mail'] ?? false) && ! $request->acknowledgedMailPull()) {
                 return back()->withErrors([
-                    'acknowledge_extra_mailboxes' => 'Acknowledge that extra mailboxes stay on DirectAdmin.',
+                    'acknowledge_mail_pull' => 'Acknowledge that mail is pulled to Mailcow so DirectAdmin can be decommissioned.',
                 ])->withInput();
             }
             if (($preflight['has_addon_sites'] ?? false) && ! $request->boolean('acknowledge_addon_sites')) {
                 return back()->withErrors([
-                    'acknowledge_addon_sites' => 'Acknowledge that addon/extra domains need separate Application Hosting services.',
+                    'acknowledge_addon_sites' => 'Acknowledge that extra live sites launch as sibling containers on this same Application Hosting package.',
                 ])->withInput();
             }
         } catch (\InvalidArgumentException $e) {
@@ -120,9 +120,10 @@ class DirectAdminContainerMigrationController extends Controller
         ConvertDirectAdminServiceToContainerJob::dispatch(
             $service->id,
             $product->id,
-            $request->boolean('acknowledge_extra_mailboxes'),
+            $request->acknowledgedMailPull(),
             $validated['database_name'] ?? null,
             $request->boolean('acknowledge_addon_sites'),
+            $request->emailHostingProduct()?->id,
         )->afterResponse();
 
         return redirect()

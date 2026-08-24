@@ -5,6 +5,7 @@ namespace Tests\Unit\Services;
 use App\Models\ContainerDeployment;
 use App\Models\ContainerMetric;
 use App\Models\ContainerTemplate;
+use App\Models\CustomerProject;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Node;
@@ -354,6 +355,100 @@ class ContainerOverageBillingServiceTest extends TestCase
         $this->assertEqualsWithDelta(7.5, (float) $item->amount, 0.01);
         $this->assertStringContainsString('avg usage:', $item->description);
         $this->assertStringContainsString('peak: 2 GB', $item->description);
+
+        Carbon::setTestNow();
+    }
+
+    public function test_pools_cpu_overage_across_project_containers_against_package_specs(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-03-15 12:00:00'));
+
+        $user = User::factory()->create();
+        $node = Node::factory()->create(['cpu_cores' => 8]);
+        $product = Product::factory()->containerHosting()->create([
+            'resource_limits' => [
+                'cpu' => 1,
+                'memory' => 2048,
+                'disk' => 40,
+            ],
+            'overage_enabled' => true,
+            'cpu_overage_rate' => 10,
+            'ram_overage_rate' => 0,
+            'disk_overage_rate' => 0,
+        ]);
+        $project = CustomerProject::factory()->create(['user_id' => $user->id]);
+
+        $anchor = Service::factory()->create([
+            'user_id' => $user->id,
+            'product_id' => $product->id,
+            'project_id' => $project->id,
+            'node_id' => $node->id,
+            'billing_cycle' => 'monthly',
+            'next_due_date' => Carbon::parse('2026-04-01'),
+            'commenced_at' => Carbon::parse('2026-02-01'),
+            'status' => 'active',
+            'service_meta' => [
+                'project_recipe' => 'da_convert',
+                'project_role' => 'primary',
+                'project_billing_anchor' => true,
+            ],
+        ]);
+        $sibling = Service::factory()->create([
+            'user_id' => $user->id,
+            'product_id' => $product->id,
+            'project_id' => $project->id,
+            'node_id' => $node->id,
+            'billing_cycle' => 'monthly',
+            'next_due_date' => Carbon::parse('2026-04-01'),
+            'commenced_at' => Carbon::parse('2026-02-01'),
+            'status' => 'active',
+            'service_meta' => [
+                'project_recipe' => 'da_convert',
+                'project_role' => 'site',
+                'project_billing_anchor' => false,
+            ],
+        ]);
+        $project->update(['billing_service_id' => $anchor->id]);
+
+        $anchorDeployment = ContainerDeployment::factory()->create([
+            'service_id' => $anchor->id,
+            'node_id' => $node->id,
+            'status' => 'running',
+        ]);
+        $siblingDeployment = ContainerDeployment::factory()->create([
+            'service_id' => $sibling->id,
+            'node_id' => $node->id,
+            'status' => 'running',
+        ]);
+
+        foreach ([$anchorDeployment, $siblingDeployment] as $deployment) {
+            ContainerMetric::create([
+                'container_deployment_id' => $deployment->id,
+                'sample_type' => ContainerMetric::SAMPLE_USAGE,
+                'cpu_percentage' => 80,
+                'memory_used_mb' => 256,
+                'memory_limit_mb' => 1024,
+                'memory_percentage' => 25,
+                'disk_used_gb' => 2,
+                'recorded_at' => Carbon::parse('2026-03-10 10:00:00'),
+            ]);
+        }
+
+        $invoice = Invoice::factory()->create([
+            'user_id' => $user->id,
+            'status' => 'unpaid',
+            'subtotal' => 1000,
+            'tax' => 0,
+            'total' => 1000,
+        ]);
+
+        $this->billing->addOverageItemsToInvoice($invoice, $sibling);
+        $this->assertCount(0, $invoice->fresh()->items);
+
+        $this->billing->addOverageItemsToInvoice($invoice, $anchor->fresh(['product', 'project', 'containerDeployment']));
+        $item = $invoice->items()->where('product_type', 'container_cpu_overage')->first();
+        $this->assertNotNull($item);
+        $this->assertStringContainsString('package included', $item->description);
 
         Carbon::setTestNow();
     }

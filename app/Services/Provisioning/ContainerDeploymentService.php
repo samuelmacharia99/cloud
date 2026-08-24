@@ -4293,10 +4293,10 @@ class ContainerDeploymentService
         $cpuShare = (float) ($meta['resource_share']['cpu'] ?? 0);
         $memShare = (float) ($meta['resource_share']['memory'] ?? 0);
         if ($cpuShare > 0 && $cpuShare < 1 && isset($payload['cpu_limit'])) {
-            $payload['cpu_limit'] = max(0.25, round($payload['cpu_limit'] * $cpuShare, 2));
+            $payload['cpu_limit'] = max(0.05, round($payload['cpu_limit'] * $cpuShare, 2));
         }
         if ($memShare > 0 && $memShare < 1 && isset($payload['memory_limit_mb'])) {
-            $payload['memory_limit_mb'] = max(128, (int) round($payload['memory_limit_mb'] * $memShare));
+            $payload['memory_limit_mb'] = max(64, (int) round($payload['memory_limit_mb'] * $memShare));
         }
 
         return $payload;

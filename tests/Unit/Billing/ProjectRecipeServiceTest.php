@@ -108,5 +108,16 @@ class ProjectRecipeServiceTest extends TestCase
             'project_role' => 'backend',
             'project_billing_anchor' => true,
         ]));
+
+        $this->assertTrue($service->shouldSkipRenewalInvoice([
+            'project_recipe' => 'da_convert',
+            'project_role' => 'site',
+            'project_billing_anchor' => false,
+        ]));
+        $this->assertFalse($service->shouldSkipRenewalInvoice([
+            'project_recipe' => 'da_convert',
+            'project_role' => 'primary',
+            'project_billing_anchor' => true,
+        ]));
     }
 }

@@ -25,7 +25,13 @@ class ConvertDirectAdminServiceToContainerRequest extends FormRequest
                 Rule::exists('products', 'id')->where('type', 'container_hosting')->where('is_active', true),
             ],
             'database_name' => ['nullable', 'string', 'max:64'],
+            'email_product_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('products', 'id')->where('type', 'email_hosting')->where('is_active', true),
+            ],
             'acknowledge_extra_mailboxes' => ['nullable', 'boolean'],
+            'acknowledge_mail_pull' => ['nullable', 'boolean'],
             'acknowledge_addon_sites' => ['nullable', 'boolean'],
             'confirm_silent' => ['accepted'],
         ];
@@ -45,6 +51,21 @@ class ConvertDirectAdminServiceToContainerRequest extends FormRequest
 
     public function applicationHostingProduct(): Product
     {
-        return Product::with('containerTemplate')->findOrFail((int) $this->validated('product_id'));
+        return Product::with('containerTemplate', 'bundledEmailProduct')->findOrFail((int) $this->validated('product_id'));
+    }
+
+    public function emailHostingProduct(): ?Product
+    {
+        $id = (int) ($this->validated('email_product_id') ?? 0);
+        if ($id <= 0) {
+            return null;
+        }
+
+        return Product::query()->find($id);
+    }
+
+    public function acknowledgedMailPull(): bool
+    {
+        return $this->boolean('acknowledge_mail_pull') || $this->boolean('acknowledge_extra_mailboxes');
     }
 }
