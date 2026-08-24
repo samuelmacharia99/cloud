@@ -1018,9 +1018,9 @@ class ContainerDeploymentService
             );
         }
 
-        // Sold disk is oversubscribed the same way as CPU: it drives scale-out
-        // alerts, not placement. Extra DA sites on one package would never land
-        // if summed plan disks already exceed the volume.
+        // Sold disk is oversubscribed like CPU: extra Application Hosting sites
+        // on one package bill combined usage above the plan as metric overage.
+        // Placement only refuses when live disk is actually full.
         $diskNeed = $usedStorageGb + (float) $requested['disk_gb'];
         if ($diskNeed > $storageCapacity) {
             return sprintf(
