@@ -55,9 +55,8 @@ class ContainerNodeCapacityServiceTest extends TestCase
 
         $evaluation = app(ContainerNodeCapacityService::class)->evaluate($node->fresh());
 
-        // Live: CPU 20, RAM 25, storage 10. Reserved CPU/RAM >> 100% but soft.
-        // Reserved storage 40% still informs disk pressure.
-        $this->assertSame(40, $evaluation['pressure_percent']);
+        // Live: CPU 20, RAM 25, storage 10. Sold CPU/RAM/disk stay informational.
+        $this->assertSame(25, $evaluation['pressure_percent']);
         $this->assertSame(200, $evaluation['reserved']['cpu']);
         $this->assertSame(8.0, $evaluation['reserved_absolute']['cpu_cores']);
         $this->assertSame(16.0, $evaluation['reserved_absolute']['ram_gb']);
@@ -65,9 +64,10 @@ class ContainerNodeCapacityServiceTest extends TestCase
         $this->assertSame(200, $evaluation['reserved']['ram']);
         $this->assertSame(40, $evaluation['reserved']['storage']);
         $this->assertSame(25, $evaluation['live']['ram']);
-        $this->assertContains('reserved storage', $evaluation['drivers']);
+        $this->assertContains('live RAM', $evaluation['drivers']);
+        $this->assertNotContains('reserved storage', $evaluation['drivers']);
         $this->assertFalse(app(ContainerNodeCapacityService::class)->needsScaleOut($node->fresh(), 70));
-        $this->assertTrue(app(ContainerNodeCapacityService::class)->needsScaleOut($node->fresh(), 40));
+        $this->assertTrue(app(ContainerNodeCapacityService::class)->needsScaleOut($node->fresh(), 25));
     }
 
     public function test_live_pressure_alone_can_trigger_scale_out(): void
@@ -133,10 +133,11 @@ class ContainerNodeCapacityServiceTest extends TestCase
 
         $evaluation = app(ContainerNodeCapacityService::class)->evaluate($node->fresh());
 
-        // Live CPU 16%; sold disk ~49% (22 × 40GB / 1800). Soft sold CPU stays informational.
-        $this->assertSame(49, $evaluation['pressure_percent']);
+        // Live CPU 16%; sold disk ~49% is informational only.
+        $this->assertSame(16, $evaluation['pressure_percent']);
         $this->assertGreaterThan(100, $evaluation['reserved']['cpu']);
-        $this->assertContains('reserved storage', $evaluation['drivers']);
+        $this->assertContains('live CPU', $evaluation['drivers']);
+        $this->assertNotContains('reserved storage', $evaluation['drivers']);
         $this->assertFalse(app(ContainerNodeCapacityService::class)->needsScaleOut($node->fresh(), 70));
     }
 }

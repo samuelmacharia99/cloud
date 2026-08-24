@@ -7,9 +7,8 @@ use App\Models\Node;
 /**
  * Measures application-host pressure for elastic placement and scale-out alerts.
  *
- * Scale-out pressure follows live host utilization (what Admin → Nodes shows) plus
- * sold disk reservations. Plan CPU/RAM allowances are soft and intentionally
- * oversubscribe, so they are reported for operators but do not drive the alert.
+ * Scale-out pressure follows live host utilization (what Admin → Nodes shows).
+ * Sold CPU/RAM/disk are elastic (package overage) and stay informational only.
  */
 class ContainerNodeCapacityService
 {
@@ -68,12 +67,11 @@ class ContainerNodeCapacityService
             ? (int) round(($reservedStorageGb / $node->storage_gb) * 100)
             : 0;
 
-        // Soft CPU/RAM oversubscription is expected under elastic hosting.
+        // Sold plan disk can exceed the volume under metric overage. Alert on live use only.
         $scores = [
             'live CPU' => $liveCpu,
             'live RAM' => $liveRam,
             'live storage' => $liveStorage,
-            'reserved storage' => $reservedStoragePercent,
         ];
         $pressure = max(0, ...array_values($scores));
         $drivers = array_keys(array_filter(

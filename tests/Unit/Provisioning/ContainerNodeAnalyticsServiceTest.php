@@ -42,7 +42,7 @@ class ContainerNodeAnalyticsServiceTest extends TestCase
         $this->assertSame(16, $analytics['live_pressure']);
         $this->assertSame(59, $analytics['capacity']['reserved']['storage']);
         $this->assertGreaterThan(100, $analytics['capacity']['reserved']['cpu']);
-        $this->assertSame(59, $analytics['capacity']['pressure_percent']);
+        $this->assertSame(16, $analytics['capacity']['pressure_percent']);
         $this->assertTrue(collect($analytics['insights'])->contains(
             fn (array $insight) => str_contains($insight['title'], 'Host has live headroom')
         ));

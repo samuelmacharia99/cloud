@@ -142,7 +142,7 @@ class SettingSeeder extends Seeder
             ['key' => 'notify_admin_reseller_domain_push', 'value' => 'true', 'description' => 'Email admins on reseller domain push'],
             ['key' => 'notify_admin_manual_payment', 'value' => 'true', 'description' => 'Email admins on manual payment submission'],
             ['key' => 'notify_admin_node_offline', 'value' => 'true', 'description' => 'Email admins when container node goes offline'],
-            ['key' => 'notify_admin_node_scale_out', 'value' => 'true', 'description' => 'Email admins when an application host reaches ~70% live capacity (or sold disk)'],
+            ['key' => 'notify_admin_node_scale_out', 'value' => 'true', 'description' => 'Email admins when an application host reaches ~70% live CPU, RAM, or disk'],
             ['key' => 'notify_service_provision_failed', 'value' => 'true', 'description' => 'Notify customer and admins when service auto-provisioning fails'],
             ['key' => 'notify_payment_failed', 'value' => 'true', 'description' => 'Notify customer when an online payment fails'],
             ['key' => 'notify_reseller_suspended', 'value' => 'true', 'description' => 'Notify reseller when their account is suspended for overdue package billing'],
