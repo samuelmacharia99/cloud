@@ -880,19 +880,98 @@ class ContainerDeploymentService
         $node = $nodes->first(fn (Node $node) => $this->nodeHasCapacity($node, $service, $template));
 
         if (! $node) {
-            throw new \DomainException('No container host has enough available resources for this template');
+            $request = $this->placementRequest($service, $template);
+            $reasons = $nodes
+                ->map(fn (Node $candidate) => $this->capacityRejectionReason($candidate, $service, $template))
+                ->filter()
+                ->take(3)
+                ->implode(' ');
+
+            \Log::warning('Container placement rejected: no host has live capacity', [
+                'service_id' => $service?->id,
+                'template' => $template->slug ?? null,
+                'request' => $request,
+                'reasons' => $reasons,
+            ]);
+
+            throw new \DomainException(
+                'No container host has enough available resources for this template'
+                .($reasons !== '' ? '. '.$reasons : '')
+                .sprintf(
+                    ' Requested %.2f CPU, %d MB RAM, %.1f GB disk (container footprint, not sold plan).',
+                    $request['cpu'],
+                    $request['memory_mb'],
+                    $request['disk_gb']
+                )
+            );
         }
 
         return $node;
     }
 
+    /**
+     * Confirm a container host can take this service before a long export or deploy.
+     */
+    public function assertHostHasCapacity(Service $service): Node
+    {
+        $template = $this->resolveContainerTemplate($service);
+        if (! $template) {
+            throw new \DomainException('Service must have a container template before a host can be selected.');
+        }
+
+        return $this->selectNode($template, $service);
+    }
+
+    /**
+     * Live host pressure plus the container that will actually start.
+     * Sold plan CPU/RAM are elastic (intentionally oversold) and must not block placement.
+     */
     private function nodeHasCapacity(Node $node, ?Service $service, object $template): bool
     {
-        $requested = $service?->product?->getIncludedContainerLimits($template) ?? [
+        return $this->capacityRejectionReason($node, $service, $template) === null;
+    }
+
+    /**
+     * @return array{cpu: float, memory_mb: int, disk_gb: float}
+     */
+    private function placementRequest(?Service $service, object $template): array
+    {
+        $included = $service?->product?->getIncludedContainerLimits($template) ?? [
             'cpu' => (float) ($template->required_cpu_cores ?? 0),
             'memory_mb' => (int) ($template->required_ram_mb ?? 0),
             'disk_gb' => (float) ($template->required_storage_gb ?? 0),
         ];
+
+        $cpu = (float) ($included['cpu'] ?? 0);
+        $memoryMb = (int) ($included['memory_mb'] ?? 0);
+        $diskGb = (float) ($included['disk_gb'] ?? 0);
+
+        if ($service) {
+            $docker = $this->containerResourceLimitsForService($service);
+            if (isset($docker['cpu_limit'])) {
+                $cpu = (float) $docker['cpu_limit'];
+            }
+            if (isset($docker['memory_limit_mb'])) {
+                $memoryMb = (int) $docker['memory_limit_mb'];
+            }
+
+            $meta = is_array($service->service_meta) ? $service->service_meta : [];
+            $share = (float) ($meta['resource_share']['cpu'] ?? $meta['resource_share']['memory'] ?? 1);
+            if ($share > 0 && $share < 1) {
+                $diskGb = round($diskGb * $share, 2);
+            }
+        }
+
+        return [
+            'cpu' => $cpu,
+            'memory_mb' => $memoryMb,
+            'disk_gb' => $diskGb,
+        ];
+    }
+
+    private function capacityRejectionReason(Node $node, ?Service $service, object $template): ?string
+    {
+        $requested = $this->placementRequest($service, $template);
         $reservedStorageGb = 0.0;
 
         foreach ($node->containerDeployments as $deployment) {
@@ -909,25 +988,48 @@ class ContainerDeploymentService
                 'memory_mb' => (int) ($deployment->memory_limit_mb ?? 0),
                 'disk_gb' => 0,
             ];
-            $reservedStorageGb += (float) $limits['disk_gb'];
+            $reservedStorageGb += (float) ($limits['disk_gb'] ?? 0);
         }
 
         $ramHeadroom = max(0, min(50, (int) config('containers.elastic_resources.node_ram_headroom_percent', 20)));
         $cpuHeadroom = max(0, min(50, (int) config('containers.elastic_resources.node_cpu_headroom_percent', 10)));
         $storageHeadroom = max(0, min(50, (int) config('containers.elastic_resources.node_storage_headroom_percent', 10)));
-        $cpuCapacity = (float) $node->cpu_cores * (1 - $cpuHeadroom / 100);
         $ramCapacity = (float) $node->ram_gb * (1 - $ramHeadroom / 100);
         $storageCapacity = (float) $node->storage_gb * (1 - $storageHeadroom / 100);
 
-        // Elastic CPU/RAM are soft oversubscribed plan allowances. Gate placement on
-        // live host pressure plus the incoming request; keep sold disk hard.
-        $usedCpu = (float) $node->cpu_cores * ((float) $node->cpu_used / 100);
+        $liveCpuPercent = max(0.0, min(100.0, (float) $node->cpu_used));
         $usedRamGb = (float) $node->ram_used_gb;
         $usedStorageGb = (float) $node->storage_used_gb;
+        $label = $node->name ?: $node->hostname;
 
-        return ($usedCpu + (float) $requested['cpu']) <= $cpuCapacity
-            && ($usedRamGb + ((float) $requested['memory_mb'] / 1024)) <= $ramCapacity
-            && (max($reservedStorageGb, $usedStorageGb) + (float) $requested['disk_gb']) <= $storageCapacity;
+        // Sold CPU is oversubscribed. A host is ineligible only when it is already hot.
+        if ($liveCpuPercent > (100 - $cpuHeadroom)) {
+            return "{$label}: live CPU {$liveCpuPercent}% exceeds ".(100 - $cpuHeadroom).'% headroom.';
+        }
+
+        $requestedRamGb = (float) $requested['memory_mb'] / 1024;
+        if (($usedRamGb + $requestedRamGb) > $ramCapacity) {
+            return sprintf(
+                '%s: RAM %.1f GB used + %.1f GB request exceeds %.1f GB with headroom.',
+                $label,
+                $usedRamGb,
+                $requestedRamGb,
+                $ramCapacity
+            );
+        }
+
+        $diskNeed = max($reservedStorageGb, $usedStorageGb) + (float) $requested['disk_gb'];
+        if ($diskNeed > $storageCapacity) {
+            return sprintf(
+                '%s: disk %.1f GB reserved/used + %.1f GB request exceeds %.1f GB with headroom.',
+                $label,
+                max($reservedStorageGb, $usedStorageGb),
+                $requested['disk_gb'],
+                $storageCapacity
+            );
+        }
+
+        return null;
     }
 
     /**

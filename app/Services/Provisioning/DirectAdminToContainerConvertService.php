@@ -5,6 +5,7 @@ namespace App\Services\Provisioning;
 use App\Jobs\ConvertDirectAdminProjectSiteJob;
 use App\Models\ContainerTemplate;
 use App\Models\CustomerProject;
+use App\Models\Node;
 use App\Models\Product;
 use App\Models\Service;
 use App\Services\Billing\ServiceRenewalPricingService;
@@ -75,6 +76,15 @@ class DirectAdminToContainerConvertService
 
         if ($activeEligible->isEmpty()) {
             $blockers[] = 'No active Application Hosting products are available. Create or activate a container product under Admin → Products.';
+        }
+
+        $hasContainerHost = Node::query()
+            ->where('type', 'container_host')
+            ->where('is_active', true)
+            ->where('status', 'online')
+            ->exists();
+        if (! $hasContainerHost) {
+            $blockers[] = 'No online container host is available. Add or unsuspend a container node before converting.';
         }
 
         $emailProducts = Product::query()
@@ -459,8 +469,15 @@ class DirectAdminToContainerConvertService
         ]);
 
         $export = null;
+        $extraSites = $this->extraConvertibleSites($inventory);
+        $siteCount = 1 + count($extraSites);
+        $share = $siteCount > 1 ? round(1 / $siteCount, 4) : 1.0;
 
         try {
+            $this->assertContainerHostCapacity($service, $containerProduct, $stack, $share);
+            $steps[] = 'Container host capacity OK';
+            $this->appendConvertStep($service, $steps);
+
             $steps[] = 'Exporting site files'.(in_array($stack, ['wordpress', 'laravel', 'php'], true) ? ' and database' : '').' from DirectAdmin';
             $this->appendConvertStep($service, $steps);
             $export = $this->migrator->exportSiteFromDirectAdmin($service, $inventory, $databaseName);
@@ -504,9 +521,6 @@ class DirectAdminToContainerConvertService
 
             $creds = $service->getHostingCredentials() ?? [];
             $meta = is_array($service->service_meta) ? $service->service_meta : [];
-            $extraSites = $this->extraConvertibleSites($inventory);
-            $siteCount = 1 + count($extraSites);
-            $share = $siteCount > 1 ? round(1 / $siteCount, 4) : 1.0;
             $templateSlug = $this->templateSlugForDetectedStack($stack, $containerProduct);
             $daUsername = (string) ($creds['username'] ?? $meta['username'] ?? $service->external_reference ?? '');
 
@@ -864,6 +878,36 @@ class DirectAdminToContainerConvertService
     }
 
     /**
+     * Fail before the DA export if no container host can take this footprint.
+     */
+    private function assertContainerHostCapacity(
+        Service $service,
+        Product $product,
+        string $stack,
+        float $share,
+    ): void {
+        $product->loadMissing('containerTemplate');
+        $templateSlug = $this->templateSlugForDetectedStack($stack, $product);
+        $probe = $service->replicate();
+        $probe->id = $service->id;
+        $probe->exists = true;
+        $probe->product_id = $product->id;
+        $probe->node_id = null;
+        $probe->setRelation('product', $product);
+        $probe->unsetRelation('containerDeployment');
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        $meta['provision_template_slug'] = $templateSlug;
+        $meta['language_slug'] = $templateSlug;
+        $meta['resource_share'] = [
+            'cpu' => $share,
+            'memory' => $share,
+        ];
+        $probe->service_meta = $meta;
+
+        $this->deployments->assertHostHasCapacity($probe);
+    }
+
+    /**
      * Extra live sites on the DA user (not the primary domain).
      *
      * @param  array{sites?: list<array<string, mixed>>}  $inventory
@@ -1039,6 +1083,8 @@ class DirectAdminToContainerConvertService
         ];
 
         $daNode = $this->migrator->resolveDirectAdminNode($sibling, $inventory);
+
+        $this->deployments->assertHostHasCapacity($sibling);
 
         $export = $this->migrator->exportSiteFromDirectAdmin($sibling, $inventory);
 
