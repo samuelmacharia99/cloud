@@ -27,6 +27,12 @@ class ContainerDeploymentService
 {
     public const CONTAINER_BASE_PATH = '/opt/talksasa/containers';
 
+    /**
+     * One bridge per container host. Per-compose default networks each take a
+     * /16 from Docker IPAM and exhaust the host after a few dozen sites.
+     */
+    public const SHARED_DOCKER_NETWORK = 'talksasa-net';
+
     public const VITE_ALLOWED_HOSTS_ENV = '__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS';
 
     private RuntimeImageProvisioner $runtimeImages;
@@ -1209,7 +1215,8 @@ class ContainerDeploymentService
             ],
             'networks' => [
                 'default' => [
-                    'name' => "talksasa-{$containerName}",
+                    'name' => self::SHARED_DOCKER_NETWORK,
+                    'external' => true,
                 ],
             ],
         ];
@@ -2924,6 +2931,8 @@ class ContainerDeploymentService
         bool $localRuntimeImage,
         bool $useExplicitComposeFile = false
     ): void {
+        $this->ensureSharedDockerNetwork($ssh);
+
         $fileFlag = $useExplicitComposeFile ? ' -f docker-compose.yml' : '';
         $pullFlag = $localRuntimeImage ? ' --pull never' : '';
         $command = "cd {$containerPath} && docker compose{$fileFlag} up -d{$pullFlag}";
@@ -2931,6 +2940,13 @@ class ContainerDeploymentService
         try {
             $ssh->exec($command, self::DEPLOY_TIMEOUT);
         } catch (\Throwable $e) {
+            if ($this->isDockerAddressPoolExhausted($e->getMessage())) {
+                $this->ensureSharedDockerNetwork($ssh);
+                $ssh->exec($command, self::DEPLOY_TIMEOUT);
+
+                return;
+            }
+
             if (! $this->isDockerContainerNameConflict($e->getMessage())) {
                 throw $e;
             }
@@ -2953,6 +2969,43 @@ class ContainerDeploymentService
 
         return str_contains($message, 'conflict. the container name')
             || (str_contains($message, 'already in use by container') && str_contains($message, 'container name'));
+    }
+
+    public function isDockerAddressPoolExhausted(string $message): bool
+    {
+        $message = strtolower($message);
+
+        return str_contains($message, 'fully subnetted')
+            || str_contains($message, 'all predefined address pools');
+    }
+
+    /**
+     * Join the host-wide bridge instead of allocating a new subnet per site.
+     */
+    public function ensureSharedDockerNetwork(SSHService $ssh): void
+    {
+        $name = self::SHARED_DOCKER_NETWORK;
+        $quoted = escapeshellarg($name);
+
+        try {
+            $ssh->exec('docker network inspect '.$quoted, 15);
+
+            return;
+        } catch (\Throwable) {
+        }
+
+        try {
+            $ssh->exec('docker network create --driver bridge '.$quoted, 30);
+        } catch (\Throwable $e) {
+            if (! $this->isDockerAddressPoolExhausted($e->getMessage())) {
+                throw $e;
+            }
+
+            $ssh->exec(
+                'docker network create --driver bridge --subnet 10.201.0.0/16 '.$quoted,
+                30
+            );
+        }
     }
 
     /**

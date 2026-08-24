@@ -33,6 +33,16 @@ class DirectAdminToContainerConvertServiceTest extends TestCase
         $this->assertCount(2, $result['extra_mailboxes']);
     }
 
+    public function test_unowned_directadmin_domain_errors_are_not_fatal(): void
+    {
+        $mail = app(DirectAdminToMailcowMigrationService::class);
+
+        $this->assertTrue($mail->isUnownedDirectAdminDomain(
+            'DirectAdmin API HTTP 500: {"error":"Could not execute your request","result":"You do not own that domain"}'
+        ));
+        $this->assertFalse($mail->isUnownedDirectAdminDomain('CMD_API_POP failed'));
+    }
+
     public function test_classify_mailboxes_only_default(): void
     {
         $service = app(DirectAdminToContainerConvertService::class);

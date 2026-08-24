@@ -123,13 +123,20 @@ class DirectAdminToMailcowMigrationService
             try {
                 $listed = $api->listEmailAccounts($username, $domain);
             } catch (\Throwable $e) {
+                if ($this->isUnownedDirectAdminDomain($e->getMessage())) {
+                    continue;
+                }
                 $errors[] = $domain.': '.$e->getMessage();
 
                 continue;
             }
 
             if (! ($listed['success'] ?? false)) {
-                $errors[] = $domain.': '.($listed['message'] ?? 'Failed to list mailboxes.');
+                $message = (string) ($listed['message'] ?? 'Failed to list mailboxes.');
+                if ($this->isUnownedDirectAdminDomain($message)) {
+                    continue;
+                }
+                $errors[] = $domain.': '.$message;
 
                 continue;
             }
@@ -444,6 +451,14 @@ class DirectAdminToMailcowMigrationService
             'sync_jobs' => $syncJobs,
             'failed_mailboxes' => $failed,
         ];
+    }
+
+    public function isUnownedDirectAdminDomain(string $message): bool
+    {
+        $message = strtolower($message);
+
+        return str_contains($message, 'you do not own that domain')
+            || str_contains($message, 'you do not own this domain');
     }
 
     /**

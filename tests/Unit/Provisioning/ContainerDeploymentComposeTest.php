@@ -565,4 +565,46 @@ class ContainerDeploymentComposeTest extends TestCase
         $method->setAccessible(true);
         $method->invoke($deployer, $ssh, $service, $deployment);
     }
+
+    #[Test]
+    public function render_compose_joins_the_shared_host_network_instead_of_a_new_subnet(): void
+    {
+        $template = new ContainerTemplate([
+            'slug' => 'static-site',
+            'docker_image' => 'nginx:alpine',
+            'default_port' => 80,
+            'required_cpu_cores' => 0.25,
+            'required_ram_mb' => 128,
+        ]);
+
+        $runtimeImages = $this->createMock(RuntimeImageProvisioner::class);
+        $runtimeImages->method('usesRuntimeImage')->willReturn(false);
+
+        $deployer = new ContainerDeploymentService(
+            runtimeImages: $runtimeImages,
+            templateEnvironment: new ContainerTemplateEnvironmentService
+        );
+
+        $method = new ReflectionMethod(ContainerDeploymentService::class, 'renderCompose');
+        $method->setAccessible(true);
+        $yaml = $method->invoke(
+            $deployer,
+            $template,
+            'user-67-service-253-static-site',
+            30100,
+            [],
+            null,
+            null,
+            null,
+            null,
+            null
+        );
+
+        $this->assertStringContainsString('talksasa-net', $yaml);
+        $this->assertStringContainsString('external: true', $yaml);
+        $this->assertStringNotContainsString('talksasa-user-67-service-253-static-site', $yaml);
+        $this->assertTrue($deployer->isDockerAddressPoolExhausted(
+            'failed to create network talksasa-user-67-service-253-static-site: Error response from daemon: all predefined address pools have been fully subnetted'
+        ));
+    }
 }

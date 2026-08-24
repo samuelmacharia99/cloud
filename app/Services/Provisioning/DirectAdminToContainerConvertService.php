@@ -9,6 +9,7 @@ use App\Models\Node;
 use App\Models\Product;
 use App\Models\Service;
 use App\Services\Billing\ServiceRenewalPricingService;
+use App\Services\Hosting\DirectAdminCustomerPanelApi;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -303,6 +304,22 @@ class DirectAdminToContainerConvertService
     {
         $service->loadMissing('node');
         $domains = [];
+        $username = (string) (($service->getHostingCredentials()['username'] ?? null)
+            ?: ($service->service_meta['username'] ?? null)
+            ?: $service->external_reference
+            ?: '');
+        if ($username !== '' && $service->node) {
+            try {
+                $owned = DirectAdminCustomerPanelApi::forServiceNode($service->node)->listUserDomains($username);
+                foreach ($owned['data'] ?? [] as $row) {
+                    $name = strtolower(trim((string) ($row['name'] ?? '')));
+                    if ($name !== '') {
+                        $domains[] = $name;
+                    }
+                }
+            } catch (\Throwable) {
+            }
+        }
         foreach ($inventory['sites'] ?? [] as $site) {
             $name = strtolower(trim((string) ($site['domain'] ?? '')));
             if ($name !== '') {
