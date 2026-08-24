@@ -104,6 +104,12 @@
                     $primaryContainer = $isProject
                         ? $groupServices->first(fn ($s) => $s->isContainerHosting())
                         : null;
+                    $canRemoveProject = $isProject && $groupServices->contains(fn ($s) => $s->isContainerHosting())
+                        && ! $groupServices->contains(function ($s) {
+                            $status = $s->status->value ?? (string) $s->status;
+
+                            return ! $s->isContainerHosting() && ! in_array($status, ['terminated', 'cancelled'], true);
+                        });
                     $dropKey = $isProject ? (string) $project->id : 'none';
                 @endphp
 
@@ -119,7 +125,7 @@
                     @if($isProject)
                         <div
                             class="flex flex-wrap items-center justify-between gap-2 px-4 sm:px-5 py-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40"
-                            x-data="{ showRenameProject: false, renameProjectName: @js($project->name) }"
+                            x-data="{ showRenameProject: false, showRemoveProject: false, renameProjectName: @js($project->name), confirmName: '' }"
                         >
                             <div class="min-w-0">
                                 <h2 class="font-semibold text-slate-900 dark:text-white truncate">{{ $project->name }}</h2>
@@ -134,9 +140,16 @@
                                     · drop here
                                 </p>
                             </div>
-                            <button type="button" @click="showRenameProject = true" class="text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-400">
-                                Rename project
-                            </button>
+                            <div class="flex items-center gap-3 shrink-0">
+                                <button type="button" @click="showRenameProject = true" class="text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-400">
+                                    Rename project
+                                </button>
+                                @if($canRemoveProject)
+                                    <button type="button" @click="showRemoveProject = true" class="text-sm font-medium text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300">
+                                        Remove project
+                                    </button>
+                                @endif
+                            </div>
 
                             <div x-show="showRenameProject" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" @keydown.escape.window="showRenameProject = false">
                                 <div class="w-full max-w-md rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-xl p-6" @click.outside="showRenameProject = false">
@@ -152,6 +165,37 @@
                                     </form>
                                 </div>
                             </div>
+
+                            @if($canRemoveProject)
+                                <div x-show="showRemoveProject" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" @keydown.escape.window="showRemoveProject = false">
+                                    <div class="w-full max-w-md rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-xl p-6" @click.outside="showRemoveProject = false">
+                                        <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-1">Remove project</h3>
+                                        <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                                            This permanently deletes every Application Hosting site in <strong>{{ $project->name }}</strong>, including containers and files. This cannot be undone. Email Hosting is not deleted this way.
+                                        </p>
+                                        <form method="POST" action="{{ route('customer.projects.destroy', $project) }}" class="space-y-4">
+                                            @csrf
+                                            @method('DELETE')
+                                            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                                                Type <span class="font-mono">{{ $project->name }}</span> to confirm
+                                                <input type="text" name="confirm_name" x-model="confirmName" required autocomplete="off" class="mt-1.5 w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800">
+                                            </label>
+                                            <label class="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-300">
+                                                <input type="checkbox" name="confirm" value="1" required class="mt-1 rounded border-slate-300 dark:border-slate-600">
+                                                <span>I understand these Application Hosting sites and their files will be permanently deleted.</span>
+                                            </label>
+                                            <div class="flex gap-2">
+                                                <button type="button" @click="showRemoveProject = false" class="btn-secondary flex-1 btn-sm">Keep project</button>
+                                                <button
+                                                    type="submit"
+                                                    class="flex-1 btn-sm rounded-lg bg-red-600 hover:bg-red-700 text-white font-medium px-3 py-2 disabled:opacity-40"
+                                                    :disabled="confirmName !== @js($project->name)"
+                                                >Delete sites</button>
+                                            </div>
+                                        </form>
+                                    </div>
+                                </div>
+                            @endif
                         </div>
                     @else
                         <div class="px-4 sm:px-5 py-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40">

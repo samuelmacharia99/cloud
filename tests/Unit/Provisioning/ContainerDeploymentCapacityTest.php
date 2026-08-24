@@ -39,13 +39,13 @@ class ContainerDeploymentCapacityTest extends TestCase
     }
 
     #[Test]
-    public function a_cpu_hot_host_is_rejected(): void
+    public function a_cpu_hot_host_still_accepts_because_cpu_is_billed_as_overage(): void
     {
-        $this->containerHost([
+        $node = $this->containerHost([
             'cpu_cores' => 8,
             'ram_gb' => 32,
             'storage_gb' => 400,
-            'cpu_used' => 95,
+            'cpu_used' => 100,
             'ram_used_gb' => 4,
             'storage_used_gb' => 40,
         ]);
@@ -55,10 +55,9 @@ class ContainerDeploymentCapacityTest extends TestCase
             'disk' => 10,
         ]);
 
-        $this->expectException(\DomainException::class);
-        $this->expectExceptionMessage('live CPU');
+        $selected = app(ContainerDeploymentService::class)->assertHostHasCapacity($service);
 
-        app(ContainerDeploymentService::class)->assertHostHasCapacity($service);
+        $this->assertSame($node->id, $selected->id);
     }
 
     #[Test]

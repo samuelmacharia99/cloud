@@ -221,6 +221,107 @@ YAML,
         $this->assertDatabaseCount('customer_projects', 0);
     }
 
+    public function test_customer_can_remove_an_application_hosting_project_and_its_sites(): void
+    {
+        $customer = User::factory()->customer()->create();
+        $product = Product::factory()->containerHosting()->create();
+        $project = CustomerProject::factory()->create([
+            'user_id' => $customer->id,
+            'name' => 'sigtuna.org',
+        ]);
+        $primary = Service::factory()->create([
+            'user_id' => $customer->id,
+            'product_id' => $product->id,
+            'project_id' => $project->id,
+            'name' => 'sigtuna.org',
+            'status' => 'active',
+            'provisioning_driver_key' => 'container',
+        ]);
+        $sibling = Service::factory()->create([
+            'user_id' => $customer->id,
+            'product_id' => $product->id,
+            'project_id' => $project->id,
+            'name' => 'app.sigtuna.org',
+            'status' => 'active',
+            'provisioning_driver_key' => 'container',
+        ]);
+
+        $this->actingAs($customer)
+            ->get(route('customer.services.index'))
+            ->assertOk()
+            ->assertSee('Remove project');
+
+        $this->actingAs($customer)
+            ->delete(route('customer.projects.destroy', $project), [
+                'confirm_name' => 'sigtuna.org',
+                'confirm' => '1',
+            ])
+            ->assertRedirect(route('customer.services.index'))
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseMissing('customer_projects', ['id' => $project->id]);
+        $this->assertSame('terminated', $primary->fresh()->status->value ?? $primary->fresh()->status);
+        $this->assertSame('terminated', $sibling->fresh()->status->value ?? $sibling->fresh()->status);
+        $this->assertDatabaseHas('tickets', [
+            'user_id' => $customer->id,
+            'title' => 'Project removed: sigtuna.org',
+        ]);
+    }
+
+    public function test_customer_cannot_remove_project_when_it_also_has_email_hosting(): void
+    {
+        $customer = User::factory()->customer()->create();
+        $appProduct = Product::factory()->containerHosting()->create();
+        $emailProduct = Product::factory()->emailHosting()->create();
+        $project = CustomerProject::factory()->create([
+            'user_id' => $customer->id,
+            'name' => 'Washflow',
+        ]);
+        $app = Service::factory()->create([
+            'user_id' => $customer->id,
+            'product_id' => $appProduct->id,
+            'project_id' => $project->id,
+            'status' => 'active',
+            'provisioning_driver_key' => 'container',
+        ]);
+        Service::factory()->create([
+            'user_id' => $customer->id,
+            'product_id' => $emailProduct->id,
+            'project_id' => $project->id,
+            'name' => 'Washflow Mail',
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($customer)
+            ->delete(route('customer.projects.destroy', $project), [
+                'confirm_name' => 'Washflow',
+                'confirm' => '1',
+            ])
+            ->assertSessionHasErrors('confirm_name');
+
+        $this->assertDatabaseHas('customer_projects', ['id' => $project->id]);
+        $this->assertSame('active', $app->fresh()->status->value ?? $app->fresh()->status);
+    }
+
+    public function test_customer_cannot_remove_another_users_project(): void
+    {
+        $owner = User::factory()->customer()->create();
+        $other = User::factory()->customer()->create();
+        $project = CustomerProject::factory()->create([
+            'user_id' => $owner->id,
+            'name' => 'Owner Project',
+        ]);
+
+        $this->actingAs($other)
+            ->delete(route('customer.projects.destroy', $project), [
+                'confirm_name' => 'Owner Project',
+                'confirm' => '1',
+            ])
+            ->assertForbidden();
+
+        $this->assertDatabaseHas('customer_projects', ['id' => $project->id]);
+    }
+
     public function test_empty_projects_are_hidden_on_services_index(): void
     {
         $customer = User::factory()->customer()->create();

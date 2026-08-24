@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Customer;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\DestroyCustomerProjectRequest;
 use App\Http\Requests\MoveCustomerServiceProjectRequest;
 use App\Http\Requests\RenameCustomerProjectRequest;
 use App\Http\Requests\RenameCustomerServiceRequest;
@@ -10,6 +11,7 @@ use App\Http\Requests\StoreCustomerProjectRequest;
 use App\Models\CustomerProject;
 use App\Models\Service;
 use App\Services\Customer\CustomerHostingUpgradeService;
+use App\Services\Customer\CustomerProjectRemovalService;
 use App\Services\Customer\CustomerProjectService;
 use App\Services\Customer\CustomerServiceCancellationService;
 use App\Services\Customer\CustomerServiceRenewalService;
@@ -88,6 +90,21 @@ class ServiceController extends Controller
         ]);
 
         return back()->with('success', 'Project renamed.');
+    }
+
+    public function destroyProject(DestroyCustomerProjectRequest $request, CustomerProject $project, CustomerProjectRemovalService $removal)
+    {
+        $this->authorize('delete', $project);
+
+        try {
+            $result = $removal->remove($project, $request->user());
+        } catch (\InvalidArgumentException $e) {
+            return back()->withErrors(['confirm_name' => $e->getMessage()]);
+        } catch (\RuntimeException $e) {
+            return back()->withErrors(['confirm_name' => $e->getMessage()]);
+        }
+
+        return redirect()->route('customer.services.index')->with('success', $result['message']);
     }
 
     public function moveService(MoveCustomerServiceProjectRequest $request, Service $service, CustomerProjectService $projectService)

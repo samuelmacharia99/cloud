@@ -42,4 +42,25 @@ class CustomerProject extends Model
     {
         return $this->belongsTo(Service::class, 'billing_service_id');
     }
+
+    /**
+     * True when every live service in the project is Application Hosting
+     * (or the project only has already-ended container sites).
+     */
+    public function isApplicationHostingProject(): bool
+    {
+        $this->loadMissing('services.product');
+
+        $live = $this->services->filter(function (Service $service): bool {
+            $status = $service->status->value ?? (string) $service->status;
+
+            return ! in_array($status, ['terminated', 'cancelled'], true);
+        });
+
+        if ($live->isNotEmpty()) {
+            return $live->every(fn (Service $service) => $service->isContainerHosting());
+        }
+
+        return $this->services->contains(fn (Service $service) => $service->isContainerHosting());
+    }
 }

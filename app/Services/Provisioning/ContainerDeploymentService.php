@@ -685,7 +685,7 @@ class ContainerDeploymentService
     /**
      * Terminate and completely remove a container
      */
-    public function terminate(Service $service): void
+    public function terminate(Service $service, bool $notify = true): void
     {
         try {
             $deployment = $service->containerDeployment;
@@ -749,8 +749,9 @@ class ContainerDeploymentService
             ]);
             app(ContainerCronService::class)->deleteForService($service);
 
-            // Notify user of termination
-            app(NotificationService::class)->notifyServiceTerminated($service->fresh());
+            if ($notify) {
+                app(NotificationService::class)->notifyServiceTerminated($service->fresh());
+            }
         } catch (\Throwable $e) {
             \Log::error("Failed to terminate container for service {$service->id}: ".$e->getMessage());
 
@@ -1008,9 +1009,15 @@ class ContainerDeploymentService
         $usedStorageGb = (float) $node->storage_used_gb;
         $label = $node->name ?: $node->hostname;
 
-        // Sold CPU is oversubscribed. A host is ineligible only when it is already hot.
+        // Live CPU is elastic: extra DA sites share a package and bill overage.
+        // A 100% reading on the only host must not freeze converts. RAM/disk remain hard.
         if ($liveCpuPercent > (100 - $cpuHeadroom)) {
-            return "{$label}: live CPU {$liveCpuPercent}% exceeds ".(100 - $cpuHeadroom).'% headroom.';
+            \Log::warning('Placing a container on a CPU-hot host; usage above the package bills as overage', [
+                'node_id' => $node->id,
+                'node' => $label,
+                'live_cpu_percent' => $liveCpuPercent,
+                'service_id' => $service?->id,
+            ]);
         }
 
         $requestedRamGb = (float) $requested['memory_mb'] / 1024;

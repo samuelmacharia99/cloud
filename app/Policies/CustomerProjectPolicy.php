@@ -24,4 +24,11 @@ class CustomerProjectPolicy
     {
         return $this->rename($user, $customerProject);
     }
+
+    public function delete(User $user, CustomerProject $customerProject): Response
+    {
+        return $user->is_admin || $user->id === $customerProject->user_id
+            ? Response::allow()
+            : Response::deny('You can only remove your own projects.');
+    }
 }

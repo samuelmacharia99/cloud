@@ -187,7 +187,7 @@ class ProvisioningService
     /**
      * Terminate a service
      */
-    public function terminate(Service $service): void
+    public function terminate(Service $service, bool $notify = true): void
     {
         try {
             $driver = $service->provisioning_driver_key ?: $service->product->provisioning_driver_key;
@@ -215,7 +215,7 @@ class ProvisioningService
                 }
             } elseif ($driver === 'container' && ! $probe->containerWorkloadAbsent($service)) {
                 $containerService = new ContainerDeploymentService;
-                $containerService->terminate($service);
+                $containerService->terminate($service, $notify);
             } elseif ($driver === 'container') {
                 \Log::info("Container workload already absent for service {$service->id} — skipping terminate API call");
             } elseif ($driver === 'mailcow') {
@@ -230,8 +230,9 @@ class ProvisioningService
                 app(ContainerCronService::class)->deleteForService($service);
             }
 
-            // Send service terminated notification
-            app(NotificationService::class)->notifyServiceTerminated($service->fresh());
+            if ($notify) {
+                app(NotificationService::class)->notifyServiceTerminated($service->fresh());
+            }
         } catch (\Exception $e) {
             \Log::error("Failed to terminate service {$service->id}: {$e->getMessage()}");
 
