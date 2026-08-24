@@ -44,10 +44,18 @@ class ContainerGitPullErrorPresenter
             'http 403',
             'returned error: 401',
             'returned error: 403',
+            'terminal prompts disabled',
+            'requires authentication',
+            'no github access token',
         ]) || ($step === 'sync' && str_contains($message, 'permission denied'))) {
+            $guidance = str_contains($message, 'no github access token')
+                || str_contains($message, 'requires authentication, but no')
+                ? 'Add a GitHub personal access token with read access to this repository on the Git settings form, then retry the pull.'
+                : 'Update the personal access token and make sure it can read this repository, then try again.';
+
             return $this->result(
                 'Couldn’t authenticate with the Git host.',
-                'Update the personal access token and make sure it can read this repository, then try again.',
+                $guidance,
                 $details,
             );
         }
@@ -118,7 +126,22 @@ class ContainerGitPullErrorPresenter
         }
 
         if (in_array($step, ['frontend', 'post_pull'], true)
-            || $this->contains($message, ['npm run build', 'npm install', 'yarn build', 'pnpm'])) {
+            || $this->contains($message, ['npm run build', 'npm install', 'npm ci', 'yarn build', 'pnpm', 'post-pull step failed'])) {
+            if ($this->contains($message, [
+                'ebadengine',
+                'unsupported engine',
+                "required: { node: '>=22",
+                'required: { node: ">=22',
+                'node >= 22',
+                "node: '>=22",
+            ])) {
+                return $this->result(
+                    'The application needs a newer Node.js version.',
+                    'This service is running Node 20, but a dependency requires Node 22 or newer. Redeploy the app with Node 22 selected, then restart the pull.',
+                    $details,
+                );
+            }
+
             return $this->result(
                 'The application build failed.',
                 'Review the build output below, fix the dependency or build error, then restart the pull.',

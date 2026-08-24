@@ -39,5 +39,17 @@ class PullContainerGitRepositoryJobTest extends TestCase
             'This repository uses Yarn (yarn.lock) without package-lock.json.'
         ));
         $this->assertFalse($job->isTransientFailureMessage(''));
+        $this->assertFalse($job->isTransientFailureMessage(
+            "SSH command failed: sh -lc 'GIT_TERMINAL_PROMPT=0 git clone --depth=1 --branch 'main' 'https://github.com/acme/private' '/opt/app.talksasa-stage-206''\n"
+            ."Error: Command exited with status 128\n"
+            ."Output: fatal: could not read Username for 'https://github.com': terminal prompts disabled"
+        ));
+        $this->assertFalse($job->isTransientFailureMessage(
+            "SQLSTATE[22001]: String data, right truncated: 1406 Data too long for column 'error_message' at row 1"
+        ));
+        $this->assertTrue($job->isTransientFailureMessage(
+            "SSH command failed: git clone --depth=1 https://github.com/acme/app\n"
+            .'Error: could not resolve host github.com'
+        ));
     }
 }

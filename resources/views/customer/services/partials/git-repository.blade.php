@@ -153,6 +153,7 @@
                 autocomplete="off"
                 class="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900/80 px-3 py-2.5 text-sm font-mono focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500/50 transition"
             >
+            <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">Required for private GitHub repositories. Public repos can pull without a token.</p>
             @if ($hasRepoToken)
                 <label class="mt-2 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                     <input type="checkbox" name="remove_repo_token" value="1" class="rounded border-slate-300 dark:border-slate-600">

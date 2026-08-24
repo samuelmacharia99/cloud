@@ -50,6 +50,36 @@ class ContainerGitPullErrorPresenterTest extends TestCase
     }
 
     #[Test]
+    public function it_asks_for_a_token_when_the_clone_had_no_saved_credentials(): void
+    {
+        $pull = $this->failedPull(
+            'sync',
+            'Sync repository',
+            'Could not clone https://github.com/acme/private: This repository requires authentication, but no GitHub access token is saved. Add a personal access token with repo read access, then retry the pull.',
+        );
+
+        $error = $this->presenter->present($pull);
+
+        $this->assertSame('Couldn’t authenticate with the Git host.', $error['title']);
+        $this->assertStringContainsString('Add a GitHub personal access token', $error['guidance']);
+    }
+
+    #[Test]
+    public function it_explains_node_engine_mismatches(): void
+    {
+        $pull = $this->failedPull(
+            'post_pull',
+            'Run stack post-pull steps',
+            "Node post-pull step failed: npm warn EBADENGINE Unsupported engine {\n  package: '@capacitor/cli@8.3.1',\n  required: { node: '>=22.0.0' },\n  current: { node: 'v20.20.2' }\n}",
+        );
+
+        $error = $this->presenter->present($pull);
+
+        $this->assertSame('The application needs a newer Node.js version.', $error['title']);
+        $this->assertStringContainsString('Node 22', $error['guidance']);
+    }
+
+    #[Test]
     public function it_does_not_misclassify_build_permission_errors_as_git_authentication(): void
     {
         $pull = $this->failedPull(

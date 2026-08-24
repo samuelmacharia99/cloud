@@ -756,17 +756,34 @@ class ContainerGitRepositoryService
 
     private function failPull(ContainerGitPull $pull, string $message): void
     {
+        $message = ContainerGitPull::truncateErrorMessage($message);
         $pull->refresh();
         if ($pull->status === ContainerGitPull::STATUS_CANCELLED) {
             return;
         }
 
-        $pull->update([
-            'status' => ContainerGitPull::STATUS_FAILED,
-            'error_message' => $message,
-            'completed_at' => now(),
-        ]);
-        $pull->appendLog('Git pull failed: '.$message);
+        try {
+            $pull->update([
+                'status' => ContainerGitPull::STATUS_FAILED,
+                'error_message' => $message,
+                'completed_at' => now(),
+            ]);
+            $pull->appendLog('Git pull failed: '.$message);
+        } catch (\Throwable $e) {
+            try {
+                $pull->forceFill([
+                    'status' => ContainerGitPull::STATUS_FAILED,
+                    'error_message' => 'Git pull failed. The error details were too large to store.',
+                    'completed_at' => now(),
+                ])->save();
+            } catch (\Throwable) {
+            }
+
+            \Log::warning('Failed to persist git pull error message', [
+                'pull_id' => $pull->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**
@@ -798,7 +815,7 @@ class ContainerGitRepositoryService
         $pull->update([
             'status' => ContainerGitPull::STATUS_CANCELLED,
             'steps' => $steps,
-            'error_message' => $reason,
+            'error_message' => ContainerGitPull::truncateErrorMessage($reason),
             'completed_at' => now(),
         ]);
         $pull->appendLog('Git pull cancelled: '.$reason);
@@ -859,6 +876,66 @@ class ContainerGitRepositoryService
         return app(ContainerGitCredentialsService::class)->maskRepositoryUrl($url);
     }
 
+    private function rewriteGitCloneException(\Throwable $e, Service $service, string $cleanUrl): \RuntimeException
+    {
+        $raw = $e->getMessage();
+        $lower = strtolower($raw);
+        $masked = $this->maskRepositoryUrl($cleanUrl);
+
+        if ($this->isGitAuthenticationFailure($lower)) {
+            $hasToken = app(ContainerGitCredentialsService::class)->hasRepositoryToken($service);
+            $reason = $hasToken
+                ? 'GitHub rejected the saved access token. Update the token and confirm it can read this repository, then retry.'
+                : 'This repository requires authentication, but no GitHub access token is saved. Add a personal access token with repo read access, then retry the pull.';
+
+            return new \RuntimeException("Could not clone {$masked}: {$reason}", 0, $e);
+        }
+
+        if (str_contains($lower, 'repository not found')) {
+            return new \RuntimeException(
+                "Could not clone {$masked}: repository not found, or the saved token cannot see it.",
+                0,
+                $e
+            );
+        }
+
+        if (str_contains($lower, 'could not find remote ref')
+            || str_contains($lower, "couldn't find remote ref")
+        ) {
+            return new \RuntimeException(
+                "Could not clone {$masked}: the selected branch does not exist on the remote.",
+                0,
+                $e
+            );
+        }
+
+        return $e instanceof \RuntimeException
+            ? $e
+            : new \RuntimeException($raw, 0, $e);
+    }
+
+    private function isGitAuthenticationFailure(string $lowerMessage): bool
+    {
+        foreach ([
+            'could not read username',
+            'could not read password',
+            'terminal prompts disabled',
+            'authentication failed',
+            'invalid username or password',
+            'access denied',
+            'http 401',
+            'http 403',
+            'returned error: 401',
+            'returned error: 403',
+        ] as $needle) {
+            if (str_contains($lowerMessage, $needle)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /**
      * @return array{output: string, previous_path: ?string, activated: bool}
      */
@@ -897,14 +974,18 @@ class ContainerGitRepositoryService
 
             // Every pull is prepared outside the live bind mount. This removes
             // stale untracked files and makes rollback possible for normal pulls too.
-            $output = trim($ssh->exec(
-                'sh -lc '.escapeshellarg(
-                    'set -e; '
-                    ."{$authEnv} git clone --depth=1 --branch {$branchArg} {$repoArg} {$stageArg} 2>&1; "
-                    ."cd {$stageArg}; git remote set-url origin {$repoArg}"
-                ),
-                180
-            ));
+            try {
+                $output = trim($ssh->exec(
+                    'sh -lc '.escapeshellarg(
+                        'set -e; '
+                        ."{$authEnv} git clone --depth=1 --branch {$branchArg} {$repoArg} {$stageArg} 2>&1; "
+                        ."cd {$stageArg}; git remote set-url origin {$repoArg}"
+                    ),
+                    180
+                ));
+            } catch (\Throwable $e) {
+                throw $this->rewriteGitCloneException($e, $service, $cleanUrl);
+            }
 
             $hadPreviousContent = trim($ssh->exec(
                 "find {$pathArg} -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null",

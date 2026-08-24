@@ -112,4 +112,48 @@ class ContainerGitCredentialsServiceTest extends TestCase
         $this->assertStringContainsString('git clone --depth=1 --branch', $capturedCommand);
         $this->assertNotNull($result['previous_path']);
     }
+
+    #[Test]
+    public function clone_without_a_token_does_not_prompt_and_rewrites_auth_failures(): void
+    {
+        $model = new Service(['service_meta' => []]);
+        $ssh = Mockery::mock(SSHService::class);
+
+        $ssh->shouldReceive('upload')->never();
+        $ssh->shouldReceive('exec')->andReturnUsing(
+            function (string $command): string {
+                if (str_contains($command, 'git clone')) {
+                    $this->assertStringContainsString('GIT_TERMINAL_PROMPT=0', $command);
+                    $this->assertStringNotContainsString('GIT_ASKPASS=', $command);
+
+                    throw new \RuntimeException(
+                        "SSH command failed: {$command}\n"
+                        ."Error: Command exited with status 128\n"
+                        ."Output: fatal: could not read Username for 'https://github.com': terminal prompts disabled"
+                    );
+                }
+
+                return '';
+            }
+        );
+
+        $repository = new ContainerGitRepositoryService(new ContainerAppDirectoryService);
+        $method = new ReflectionMethod($repository, 'syncToHost');
+
+        try {
+            $method->invoke(
+                $repository,
+                $ssh,
+                $model,
+                '/opt/talksasa/containers/app',
+                'https://github.com/animated123/ErrandlyMain',
+                'main',
+            );
+            $this->fail('Expected an authentication failure.');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('no GitHub access token is saved', $e->getMessage());
+            $this->assertStringContainsString('https://github.com/animated123/ErrandlyMain', $e->getMessage());
+            $this->assertStringNotContainsString('GIT_TERMINAL_PROMPT', $e->getMessage());
+        }
+    }
 }

@@ -103,12 +103,32 @@ class PullContainerGitRepositoryJob implements ShouldQueue
             $pull->appendLog('Application recovery after worker failure failed: '.$recoveryError->getMessage());
         }
 
-        $pull->update([
-            'status' => ContainerGitPull::STATUS_FAILED,
-            'error_message' => $exception?->getMessage() ?: 'Git pull worker timed out or stopped unexpectedly.',
-            'completed_at' => now(),
-        ]);
-        $pull->appendLog('Git pull job failed: '.($pull->error_message ?? 'Worker stopped unexpectedly.'));
+        $message = ContainerGitPull::truncateErrorMessage(
+            $exception?->getMessage() ?: 'Git pull worker timed out or stopped unexpectedly.'
+        );
+
+        try {
+            $pull->update([
+                'status' => ContainerGitPull::STATUS_FAILED,
+                'error_message' => $message,
+                'completed_at' => now(),
+            ]);
+            $pull->appendLog('Git pull job failed: '.$message);
+        } catch (Throwable $persistError) {
+            try {
+                $pull->forceFill([
+                    'status' => ContainerGitPull::STATUS_FAILED,
+                    'error_message' => 'Git pull worker failed. The error details were too large to store.',
+                    'completed_at' => now(),
+                ])->save();
+            } catch (Throwable) {
+            }
+
+            \Log::warning('Failed to persist git pull worker failure', [
+                'pull_id' => $this->gitPullId,
+                'error' => $persistError->getMessage(),
+            ]);
+        }
     }
 
     private function shouldRetryFailedPull(ContainerGitPull $pull): bool
@@ -141,6 +161,23 @@ class PullContainerGitRepositoryJob implements ShouldQueue
         }
 
         foreach ([
+            'could not read username',
+            'could not read password',
+            'terminal prompts disabled',
+            'authentication failed',
+            'invalid username or password',
+            'repository not found',
+            'could not find remote ref',
+            "couldn't find remote ref",
+            'data too long for column',
+            'sqlstate[22001]',
+        ] as $permanent) {
+            if (str_contains($message, $permanent)) {
+                return false;
+            }
+        }
+
+        foreach ([
             'ssh connection',
             'ssh command failed',
             'connection timed out',
@@ -166,6 +203,19 @@ class PullContainerGitRepositoryJob implements ShouldQueue
                     || str_contains($message, 'lockfile')
                 ) {
                     return false;
+                }
+
+                // git clone wraps the same SSH exception. Auth and missing-repo
+                // failures are permanent; only retry obvious network faults.
+                if (str_contains($message, 'git clone')) {
+                    return str_contains($message, 'connection timed out')
+                        || str_contains($message, 'could not resolve host')
+                        || str_contains($message, 'connection reset')
+                        || str_contains($message, 'network is unreachable')
+                        || str_contains($message, 'temporarily unavailable')
+                        || str_contains($message, 'tls handshake timeout')
+                        || str_contains($message, 'i/o timeout')
+                        || str_contains($message, 'early eof');
                 }
 
                 return true;

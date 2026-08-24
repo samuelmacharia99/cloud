@@ -17,6 +17,12 @@ class ContainerGitPull extends Model
 
     public const STATUS_CANCELLED = 'cancelled';
 
+    /**
+     * MySQL TEXT is 64KiB; npm/git output can exceed that and then fail-to-save
+     * replaces the real error. Keep a head+tail so operators still see the cause.
+     */
+    public const ERROR_MESSAGE_MAX_BYTES = 8000;
+
     protected $fillable = [
         'service_id',
         'container_deployment_id',
@@ -95,10 +101,10 @@ class ContainerGitPull extends Model
 
             $step['status'] = $status;
             if ($message !== null) {
-                $step['message'] = $message;
+                $step['message'] = self::truncateErrorMessage($message);
             }
             if ($output !== null) {
-                $step['output'] = $this->truncateOutput($output);
+                $step['output'] = self::truncateErrorMessage($output);
             }
             if ($status === 'running' && empty($step['started_at'])) {
                 $step['started_at'] = $now;
@@ -129,13 +135,22 @@ class ContainerGitPull extends Model
         $this->save();
     }
 
-    private function truncateOutput(string $output): string
+    public function setErrorMessageAttribute(?string $value): void
     {
-        $output = trim($output);
-        if (strlen($output) <= 8000) {
-            return $output;
+        $this->attributes['error_message'] = $value === null
+            ? null
+            : self::truncateErrorMessage($value);
+    }
+
+    public static function truncateErrorMessage(string $message): string
+    {
+        $message = trim($message);
+        if (strlen($message) <= self::ERROR_MESSAGE_MAX_BYTES) {
+            return $message;
         }
 
-        return substr($output, 0, 4000)."\n...\n".substr($output, -4000);
+        $keep = (int) (self::ERROR_MESSAGE_MAX_BYTES / 2);
+
+        return substr($message, 0, $keep)."\n...\n".substr($message, -$keep);
     }
 }
