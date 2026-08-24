@@ -1205,58 +1205,49 @@ class DirectAdminToContainerMigrationService
     }
 
     /**
-     * @param  array<string, string>  $values
+     * Merge KEY=value pairs into a dotenv file. Keys are replaced in place; missing keys are appended.
+     *
+     * @param  array<string, scalar|null>  $values
+     */
+    public function mergeEnvAssignments(string $text, array $values): string
+    {
+        foreach ($values as $key => $value) {
+            $key = (string) $key;
+            if ($key === '' || preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $key) !== 1) {
+                continue;
+            }
+
+            $value = str_replace(["\r", "\n"], '', (string) $value);
+            $line = $key.'='.$this->encodeEnvAssignmentValue($value);
+            $pattern = '/^'.preg_quote($key, '/').'=.*$/m';
+            if (preg_match($pattern, $text) === 1) {
+                $text = (string) preg_replace($pattern, $line, $text, 1);
+            } else {
+                $text = rtrim($text)."\n".$line."\n";
+            }
+        }
+
+        return $text === '' || str_ends_with($text, "\n") ? $text : $text."\n";
+    }
+
+    /**
+     * @param  array<string, scalar|null>  $values
      */
     public function rewriteAppEnvDatabase(SSHService $ssh, string $hostAppPath, array $values): void
     {
         $envPath = rtrim($hostAppPath, '/').'/.env';
         $exists = trim($ssh->exec('test -f '.escapeshellarg($envPath).' && echo yes || echo no'));
+        $text = $exists === 'yes' ? $ssh->downloadFile($envPath) : '';
+        $ssh->upload($this->mergeEnvAssignments($text, $values), $envPath);
+    }
 
-        if ($exists !== 'yes') {
-            $lines = [];
-            foreach ($values as $key => $value) {
-                $lines[] = $key.'='.$value;
-            }
-            $ssh->exec('printf %s '.escapeshellarg(implode("\n", $lines)."\n").' > '.escapeshellarg($envPath));
-
-            return;
+    private function encodeEnvAssignmentValue(string $value): string
+    {
+        if ($value === '' || preg_match('/[\s#"\'\\\\$]/', $value) !== 1) {
+            return $value;
         }
 
-        $payload = base64_encode(json_encode($values, JSON_UNESCAPED_SLASHES));
-        $php = <<<'PHP'
-$envPath = $argv[1] ?? '';
-$json = base64_decode($argv[2] ?? '', true);
-$values = is_string($json) ? json_decode($json, true) : null;
-if (! is_file($envPath) || ! is_array($values)) {
-    fwrite(STDERR, "invalid env rewrite\n");
-    exit(1);
-}
-$text = file_get_contents($envPath);
-foreach ($values as $key => $value) {
-    $key = (string) $key;
-    $value = str_replace(["\r", "\n"], '', (string) $value);
-    $line = $key.'='.$value;
-    $pattern = '/^'.preg_quote($key, '/').'=.*$/m';
-    if (preg_match($pattern, $text)) {
-        $text = preg_replace($pattern, $line, $text, 1);
-    } else {
-        $text = rtrim($text)."\n".$line."\n";
-    }
-}
-file_put_contents($envPath, $text);
-PHP;
-
-        $ssh->exec(
-            'php -r '.escapeshellarg($php).' '.escapeshellarg($envPath).' '.escapeshellarg($payload).' 2>/dev/null'
-            .' || python3 -c '.escapeshellarg(
-                'import json,base64,re,sys; p=sys.argv[1]; vals=json.loads(base64.b64decode(sys.argv[2])); t=open(p).read();\n'
-                .'for k,v in vals.items():\n'
-                .' v=str(v).replace("\\r","").replace("\\n",""); line=f"{k}={v}";\n'
-                .' t=re.sub(rf"^{re.escape(k)}=.*$", line, t, count=1, flags=re.M) if re.search(rf"^{re.escape(k)}=.*$", t, flags=re.M) else t.rstrip()+"\\n"+line+"\\n";\n'
-                .'open(p,"w").write(t)'
-            ).' '.escapeshellarg($envPath).' '.escapeshellarg($payload),
-            60
-        );
+        return '"'.str_replace(['\\', '"'], ['\\\\', '\\"'], $value).'"';
     }
 
     /**
