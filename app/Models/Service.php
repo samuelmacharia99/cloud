@@ -242,15 +242,26 @@ class Service extends Model
     public function customerServiceName(): string
     {
         $name = trim((string) $this->name);
+        $meta = is_array($this->service_meta) ? $this->service_meta : [];
+        $legacy = is_array($meta['da_legacy'] ?? null) ? $meta['da_legacy'] : [];
+        $domain = trim((string) (
+            $meta['project_role_label']
+            ?? $meta['domain']
+            ?? $meta['primary_domain']
+            ?? $legacy['domain']
+            ?? ''
+        ));
+
+        // Converted DA sites keep a package-style name ("Silver") unless we surface the hostname.
+        if ($domain !== '' && str_contains($domain, '.') && ($name === '' || ! str_contains($name, '.'))) {
+            return $domain;
+        }
 
         if ($name !== ''
             && ! str_contains(strtolower($name), 'reseller directadmin hosting')
             && ! str_contains(strtolower($name), '(system)')) {
             return $name;
         }
-
-        $meta = is_array($this->service_meta) ? $this->service_meta : [];
-        $domain = trim((string) ($meta['domain'] ?? $meta['primary_domain'] ?? ''));
 
         return $domain !== '' ? $domain : $this->customerPlanName();
     }

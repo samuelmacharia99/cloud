@@ -518,6 +518,7 @@ class DirectAdminToContainerConvertServiceTest extends TestCase
         $this->assertTrue(app(ProjectRecipeService::class)->shouldSkipRenewalInvoice($sibling->service_meta));
 
         $extras = $convert->extraConvertibleSites([
+            'domain' => 'sigtuna.org',
             'sites' => [
                 ['domain' => 'sigtuna.org', 'is_primary' => true],
                 ['domain' => 'app.sigtuna.org', 'is_primary' => false],
@@ -525,7 +526,27 @@ class DirectAdminToContainerConvertServiceTest extends TestCase
         ]);
         $this->assertCount(1, $extras);
         $this->assertSame('app.sigtuna.org', $extras[0]['domain']);
+
+        $withoutFlag = $convert->extraConvertibleSites([
+            'domain' => 'sigtuna.org',
+            'sites' => [
+                ['domain' => 'sigtuna.org'],
+                ['domain' => 'theharbor.co.ke'],
+            ],
+        ]);
+        $this->assertCount(1, $withoutFlag);
+        $this->assertSame('theharbor.co.ke', $withoutFlag[0]['domain']);
         $this->assertSame('nodejs', $convert->templateSlugForDetectedStack('nodejs', $product));
+    }
+
+    public function test_customer_service_name_uses_converted_hostname_when_the_row_is_still_named_after_the_da_package(): void
+    {
+        $service = new Service([
+            'name' => 'Silver',
+            'service_meta' => ['domain' => 'sigtuna.org'],
+        ]);
+
+        $this->assertSame('sigtuna.org', $service->customerServiceName());
     }
 
     public function test_resolve_email_product_prefers_bundle_then_catalog(): void

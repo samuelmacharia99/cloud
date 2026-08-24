@@ -3,6 +3,7 @@
 namespace App\Services\Provisioning;
 
 use App\Jobs\ConvertDirectAdminProjectSiteJob;
+use App\Models\ContainerDomain;
 use App\Models\ContainerTemplate;
 use App\Models\CustomerProject;
 use App\Models\Node;
@@ -585,13 +586,19 @@ class DirectAdminToContainerConvertService
             $this->appendConvertStep($service, $steps);
 
             $siblingIds = [];
-            DB::transaction(function () use ($service, $containerProduct, $meta, $extraSites, $daNode, $daUsername, $share, &$siblingIds) {
+            $primaryHostname = strtolower(trim((string) ($inventory['domain'] ?? $meta['domain'] ?? '')));
+            if ($primaryHostname !== '') {
+                $meta['domain'] = $primaryHostname;
+                $meta['project_role_label'] = $meta['project_role_label'] ?? $primaryHostname;
+            }
+            DB::transaction(function () use ($service, $containerProduct, $meta, $extraSites, $daNode, $daUsername, $share, $primaryHostname, &$siblingIds) {
                 $service->update([
                     'product_id' => $containerProduct->id,
                     'provisioning_driver_key' => 'container',
                     'custom_price' => null,
                     'node_id' => null,
                     'status' => 'provisioning',
+                    'name' => $primaryHostname !== '' ? mb_substr($primaryHostname, 0, 100) : $service->name,
                     'service_meta' => $meta,
                     // next_due_date + billing_cycle unchanged
                 ]);
@@ -640,6 +647,12 @@ class DirectAdminToContainerConvertService
                     $this->appendConvertStep($service, $steps);
                 },
             );
+
+            if ($primaryHostname !== '') {
+                $this->attachConvertedHostname($service->fresh(), $primaryHostname);
+                $steps[] = 'Bound '.$primaryHostname.' to the Application Hosting container';
+                $this->appendConvertStep($service, $steps);
+            }
 
             $renewalPreview = $this->renewalPricing->unitPrice($service->fresh());
             if ($siblingIds !== []) {
@@ -933,10 +946,20 @@ class DirectAdminToContainerConvertService
     public function extraConvertibleSites(array $inventory): array
     {
         $sites = is_array($inventory['sites'] ?? null) ? $inventory['sites'] : [];
+        $primary = strtolower(trim((string) ($inventory['domain'] ?? '')));
 
         return array_values(array_filter(
             $sites,
-            fn ($site) => is_array($site) && empty($site['is_primary']) && filled($site['domain'] ?? null)
+            function ($site) use ($primary): bool {
+                if (! is_array($site) || blank($site['domain'] ?? null)) {
+                    return false;
+                }
+                if (! empty($site['is_primary'])) {
+                    return false;
+                }
+
+                return $primary === '' || strcasecmp((string) $site['domain'], $primary) !== 0;
+            }
         ));
     }
 
@@ -1116,6 +1139,7 @@ class DirectAdminToContainerConvertService
                 (string) ($export['stack'] ?? $stack),
                 $daNode,
             );
+            $this->attachConvertedHostname($sibling->fresh(), (string) ($inventory['domain'] ?? ''));
         } finally {
             foreach (['local_dump', 'local_tar'] as $key) {
                 $path = $export[$key] ?? null;
@@ -1123,6 +1147,51 @@ class DirectAdminToContainerConvertService
                     @unlink($path);
                 }
             }
+        }
+    }
+
+    /**
+     * Show the live hostname on the customer portal and point nginx at this container.
+     * DNS/SSL can follow after cutover; a bind failure must not undo the file import.
+     */
+    public function attachConvertedHostname(Service $service, string $hostname): void
+    {
+        $hostname = strtolower(trim($hostname));
+        if ($hostname === '' || ! str_contains($hostname, '.')) {
+            return;
+        }
+
+        $service->loadMissing('containerDeployment');
+        $deployment = $service->containerDeployment;
+        if (! $deployment) {
+            return;
+        }
+
+        $existing = ContainerDomain::query()->where('domain', $hostname)->first();
+        if ($existing && (int) $existing->container_deployment_id !== (int) $deployment->id) {
+            Log::warning('Convert hostname already bound to another container', [
+                'service_id' => $service->id,
+                'domain' => $hostname,
+                'other_deployment_id' => $existing->container_deployment_id,
+            ]);
+
+            return;
+        }
+
+        $domain = $existing ?? ContainerDomain::query()->create([
+            'container_deployment_id' => $deployment->id,
+            'domain' => $hostname,
+            'status' => 'pending',
+        ]);
+
+        try {
+            app(NginxProxyService::class)->bind($domain);
+        } catch (\Throwable $e) {
+            Log::warning('Convert hostname recorded but nginx bind failed', [
+                'service_id' => $service->id,
+                'domain' => $hostname,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 }
