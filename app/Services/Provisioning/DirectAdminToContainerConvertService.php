@@ -40,6 +40,7 @@ class DirectAdminToContainerConvertService
      *     detected_stack: string,
      *     has_addon_sites: bool,
      *     container_products: list<Product>,
+     *     recommended_products: list<Product>,
      *     wordpress_products: list<Product>,
      *     products_are_fallback: bool
      * }
@@ -55,29 +56,20 @@ class DirectAdminToContainerConvertService
         $blockers = [];
 
         $stack = $this->normalizeConvertibleStack($inventory);
-        $supported = in_array($stack, ['wordpress', 'laravel', 'php', 'static_or_php'], true);
-
-        if (! $supported) {
-            $blockers[] = 'Site stack could not be detected as WordPress, Laravel, PHP, or static. Confirm the primary docroot path.';
-        }
 
         if (! $email['success']) {
             $blockers[] = 'Could not list email accounts: '.$email['message'];
         }
 
-        $productPick = $this->availableProductsForStack($stack);
-        $products = $productPick['products'];
-        $productsAreFallback = $productPick['fallback'];
+        $catalog = $this->applicationHostingCatalog($stack);
+        $products = $catalog['products'];
+        $recommended = $catalog['recommended'];
+        $productsAreFallback = $recommended->isEmpty() && $products->isNotEmpty();
 
-        $activeEligible = $productsAreFallback
-            ? $products->filter(fn (Product $product) => $product->is_active && $this->productMatchesStack($product, $stack))
-            : $products->where('is_active', true);
+        $activeEligible = $products->where('is_active', true);
 
         if ($activeEligible->isEmpty()) {
-            $blockers[] = sprintf(
-                'No active Application Hosting products are available for detected stack (%s). Create or activate a matching container product under Admin → Products.',
-                str_replace('_', ' ', $stack)
-            );
+            $blockers[] = 'No active Application Hosting products are available. Create or activate a container product under Admin → Products.';
         }
 
         $addonCount = (int) ($inventory['addon_site_count'] ?? 0);
@@ -85,11 +77,12 @@ class DirectAdminToContainerConvertService
         return [
             'inventory' => $inventory,
             'email' => $email,
-            'can_convert' => $blockers === [] && $supported,
+            'can_convert' => $blockers === [],
             'blockers' => $blockers,
             'detected_stack' => $stack,
             'has_addon_sites' => $addonCount > 0,
             'container_products' => $products->all(),
+            'recommended_products' => $recommended->all(),
             // Backward-compatible alias for older views/controllers.
             'wordpress_products' => $products->all(),
             'products_are_fallback' => $productsAreFallback,
@@ -108,6 +101,36 @@ class DirectAdminToContainerConvertService
         $stack = (string) ($inventory['stack'] ?? 'unknown');
 
         return in_array($stack, ['laravel', 'php', 'static_or_php'], true) ? $stack : $stack;
+    }
+
+    /**
+     * Full Application Hosting catalog for convert — admin picks the plan that
+     * GenerateInvoicesCommand will bill when the current DirectAdmin term ends.
+     *
+     * @return array{products: Collection<int, Product>, recommended: Collection<int, Product>, fallback: bool}
+     */
+    public function applicationHostingCatalog(string $stack = ''): array
+    {
+        $products = Product::query()
+            ->where('type', 'container_hosting')
+            ->with('containerTemplate')
+            ->orderByDesc('is_active')
+            ->orderBy('order')
+            ->orderBy('monthly_price')
+            ->orderBy('yearly_price')
+            ->orderBy('name')
+            ->get();
+
+        $keywords = $this->stackKeywords($stack);
+        $recommended = $keywords === []
+            ? collect()
+            : $products->filter(fn (Product $product) => $this->productMatchesStack($product, $stack))->values();
+
+        return [
+            'products' => $products,
+            'recommended' => $recommended,
+            'fallback' => $recommended->isEmpty() && $products->isNotEmpty(),
+        ];
     }
 
     /**
@@ -350,10 +373,8 @@ class DirectAdminToContainerConvertService
         }
 
         $stack = (string) ($preflight['detected_stack'] ?? 'unknown');
-        if (! $this->productMatchesStack($containerProduct, $stack) && ! ($preflight['products_are_fallback'] ?? false)) {
-            throw new \InvalidArgumentException(
-                'Select an Application Hosting product that matches the detected stack ('.$stack.').'
-            );
+        if ($containerProduct->type !== 'container_hosting') {
+            throw new \InvalidArgumentException('Select an Application Hosting product. That plan is billed when the current DirectAdmin term ends.');
         }
 
         if (! $containerProduct->is_active) {
@@ -470,7 +491,9 @@ class DirectAdminToContainerConvertService
                 'completed_at' => now()->toIso8601String(),
                 'steps' => $steps,
                 'target_product_id' => $containerProduct->id,
+                'target_product_name' => $containerProduct->name,
                 'renewal_unit_price' => $renewalPreview,
+                'renewal_due_date' => optional($service->next_due_date)->toDateString(),
                 'stack' => $stack,
             ]);
 

@@ -7,6 +7,7 @@ use App\Models\Product;
 use App\Models\Service;
 use App\Models\User;
 use App\Services\Provisioning\DirectAdminToContainerConvertService;
+use App\Services\Provisioning\DirectAdminToContainerMigrationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -235,5 +236,83 @@ class DirectAdminToContainerConvertServiceTest extends TestCase
         $staticPick = $convert->availableProductsForStack('static_or_php');
         $this->assertTrue($staticPick['products']->contains('id', $staticProduct->id));
         $this->assertTrue($convert->productMatchesStack($staticProduct->fresh('containerTemplate'), 'static_or_php'));
+    }
+
+    public function test_application_hosting_catalog_lists_every_plan_and_recommends_stack_match(): void
+    {
+        $wpTemplate = ContainerTemplate::query()->create([
+            'name' => 'WordPress',
+            'slug' => 'wordpress-catalog-'.uniqid(),
+            'docker_image' => 'wordpress:latest',
+            'is_active' => true,
+        ]);
+        $laravelTemplate = ContainerTemplate::query()->create([
+            'name' => 'Laravel',
+            'slug' => 'laravel-catalog-'.uniqid(),
+            'docker_image' => 'talksasa/laravel-runtime:8.3',
+            'is_active' => true,
+        ]);
+
+        $wpProduct = Product::query()->create([
+            'name' => 'WP Starter',
+            'slug' => 'wp-catalog-'.uniqid(),
+            'type' => 'container_hosting',
+            'monthly_price' => 1500,
+            'is_active' => true,
+            'container_template_id' => $wpTemplate->id,
+            'provisioning_driver_key' => 'container',
+        ]);
+        $laravelProduct = Product::query()->create([
+            'name' => 'Laravel Pro',
+            'slug' => 'laravel-catalog-'.uniqid(),
+            'type' => 'container_hosting',
+            'monthly_price' => 3000,
+            'is_active' => true,
+            'container_template_id' => $laravelTemplate->id,
+            'provisioning_driver_key' => 'container',
+        ]);
+
+        $catalog = app(DirectAdminToContainerConvertService::class)->applicationHostingCatalog('laravel');
+
+        $this->assertTrue($catalog['products']->contains('id', $wpProduct->id));
+        $this->assertTrue($catalog['products']->contains('id', $laravelProduct->id));
+        $this->assertTrue($catalog['recommended']->contains('id', $laravelProduct->id));
+        $this->assertFalse($catalog['recommended']->contains('id', $wpProduct->id));
+        $this->assertFalse($catalog['fallback']);
+    }
+
+    public function test_classifies_laravel_when_artisan_is_above_public_html(): void
+    {
+        $migrator = app(DirectAdminToContainerMigrationService::class);
+        $docroot = '/home/acme/domains/shop.example/public_html';
+
+        $classified = $migrator->classifyDetectedMarkers(
+            implode("\n", [
+                'DIR:'.$docroot,
+                'IDX:'.$docroot,
+                'ART:/home/acme/domains/shop.example',
+                'CMP:/home/acme/domains/shop.example',
+            ]),
+            $docroot
+        );
+
+        $this->assertSame('laravel', $classified['stack']);
+        $this->assertSame('/home/acme/domains/shop.example', $classified['app_root']);
+        $this->assertFalse($classified['has_wp_config']);
+    }
+
+    public function test_classifies_wordpress_from_wp_config_in_public_html(): void
+    {
+        $migrator = app(DirectAdminToContainerMigrationService::class);
+        $docroot = '/home/acme/domains/blog.example/public_html';
+
+        $classified = $migrator->classifyDetectedMarkers(
+            "WP:{$docroot}\nDIR:{$docroot}",
+            $docroot
+        );
+
+        $this->assertSame('wordpress', $classified['stack']);
+        $this->assertTrue($classified['has_wp_config']);
+        $this->assertSame($docroot, $classified['app_root']);
     }
 }

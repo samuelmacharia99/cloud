@@ -17,7 +17,11 @@
     $inventory = $preflight['inventory'] ?? null;
     $account = is_array($inventory['account'] ?? null) ? $inventory['account'] : [];
     $products = collect($containerProducts ?? $wordpressProducts ?? ($preflight['container_products'] ?? $preflight['wordpress_products'] ?? []));
-    $activeProducts = $products->where('is_active', true);
+    $recommendedProducts = collect($recommendedProducts ?? ($preflight['recommended_products'] ?? []));
+    $recommendedIds = $recommendedProducts->pluck('id')->all();
+    $otherProducts = $products->reject(fn ($product) => in_array($product->id, $recommendedIds, true));
+    $activeRecommended = $recommendedProducts->where('is_active', true);
+    $activeOther = $otherProducts->where('is_active', true);
     $inactiveProducts = $products->where('is_active', false);
     $canConvert = (bool) ($preflight['can_convert'] ?? false);
     $detectedStack = $preflight['detected_stack'] ?? ($inventory['stack'] ?? 'unknown');
@@ -28,10 +32,10 @@
     <div>
         <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Convert to Application Hosting</h1>
         <p class="text-slate-600 dark:text-slate-400 mt-1">
-            Admin-only, convert-in-place. Same service ID — no second service, no invoice, no customer notification.
-            Keeps DirectAdmin due date; next renewal uses the Application Hosting price.
+            Admin-only, convert-in-place. Same service ID — no second service, no invoice today, no customer notification.
+            You choose the Application Hosting plan. DirectAdmin due date is kept; when that term ends, cron generates a new invoice for the selected plan.
             Prefer migrating mail to <strong>Mailcow</strong> first (or leave MX on DA only as a temporary bridge).
-            Detected stacks: WordPress, Laravel, PHP, or static.
+            Stacks are detected from DirectAdmin (WordPress, Laravel, PHP, or static), including Laravel apps whose <code class="font-mono text-xs">artisan</code> sits above <code class="font-mono text-xs">public_html</code>.
         </p>
     </div>
 
@@ -113,6 +117,10 @@
                 <dt class="text-slate-500 text-xs uppercase tracking-wide">Docroot</dt>
                 <dd class="font-mono text-xs mt-1 break-all">{{ $inventory['docroot'] ?? '—' }}</dd>
             </div>
+            <div class="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-3">
+                <dt class="text-slate-500 text-xs uppercase tracking-wide">App root (export)</dt>
+                <dd class="font-mono text-xs mt-1 break-all">{{ $inventory['app_root'] ?? $inventory['docroot'] ?? '—' }}</dd>
+            </div>
         </dl>
 
         @if ($sites !== [])
@@ -127,6 +135,7 @@
                             <tr class="text-left text-xs uppercase tracking-wide text-slate-500 border-b border-slate-200 dark:border-slate-700">
                                 <th class="py-2 pr-3">Domain</th>
                                 <th class="py-2 pr-3">Stack</th>
+                                <th class="py-2 pr-3">App root</th>
                                 <th class="py-2 pr-3">Role</th>
                                 <th class="py-2">Action</th>
                             </tr>
@@ -136,6 +145,7 @@
                                 <tr>
                                     <td class="py-2 pr-3 font-mono text-xs break-all">{{ $site['domain'] ?? '—' }}</td>
                                     <td class="py-2 pr-3 capitalize">{{ str_replace('_', ' ', $site['stack'] ?? 'unknown') }}</td>
+                                    <td class="py-2 pr-3 font-mono text-xs break-all">{{ $site['app_root'] ?? $site['docroot'] ?? '—' }}</td>
                                     <td class="py-2 pr-3">
                                         @if ($site['is_primary'] ?? false)
                                             <span class="text-emerald-700 dark:text-emerald-300 font-medium">Primary (this convert)</span>
@@ -276,30 +286,49 @@
     <form method="POST" action="{{ route('admin.services.migrate-to-container.store', $service) }}" class="ui-card p-6 space-y-4">
         @csrf
         <div>
-            <label class="block text-sm font-medium mb-2">Application Hosting product for {{ str_replace('_', ' ', $detectedStack) }} (billing at next renewal)</label>
+            <label class="block text-sm font-medium mb-2">Application Hosting plan (billed when the DirectAdmin term ends)</label>
+            <p class="text-sm text-slate-600 dark:text-slate-300 mb-3">
+                No charge today. Due date stays <strong>{{ $currentDue?->format('Y-m-d') ?? 'unchanged' }}</strong>
+                ({{ $currentCycle }}). On that date, invoice generation creates a new unpaid invoice for the plan you select here — Application Hosting price, not the old DirectAdmin package.
+                <code class="font-mono">custom_price</code> is cleared so the new product retail price is used.
+            </p>
             @if ($products->isEmpty())
                 <div class="rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-950/30 p-4 text-sm text-amber-900 dark:text-amber-100 space-y-2">
-                    <p>No matching Application Hosting products found in the catalog.</p>
-                    <p>Create an active product with type <strong>Application Hosting</strong> and a container template matching this stack.</p>
+                    <p>No Application Hosting products found in the catalog.</p>
+                    <p>Create an active product with type <strong>Application Hosting</strong> and a container template.</p>
                     <a href="{{ route('admin.products.create') }}" class="inline-flex text-indigo-700 dark:text-indigo-300 underline">Create product</a>
                 </div>
             @else
                 @if ($productsAreFallback ?? false)
                     <p class="text-xs text-amber-700 dark:text-amber-300 mb-2">
-                        No product is linked to a matching template — showing all Application Hosting products. Prefer assigning the correct template first.
+                        No catalog item is tagged for {{ str_replace('_', ' ', $detectedStack) }} — showing every Application Hosting plan. Pick the plan this customer should renew onto.
                     </p>
                 @endif
                 <select name="product_id" required class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
-                    <option value="">Select product for this client…</option>
-                    @if ($activeProducts->isNotEmpty())
-                        <optgroup label="Active Application Hosting">
-                            @foreach ($activeProducts as $product)
+                    <option value="">Select Application Hosting plan…</option>
+                    @if ($activeRecommended->isNotEmpty())
+                        <optgroup label="Recommended for {{ str_replace('_', ' ', $detectedStack) }}">
+                            @foreach ($activeRecommended as $product)
                                 <option value="{{ $product->id }}" @selected((string) old('product_id') === (string) $product->id)>
                                     {{ $product->name }}
                                     @if ($product->containerTemplate)
                                         · {{ $product->containerTemplate->name }}
                                     @endif
-                                    — next renewal ≈ KES {{ number_format($productEstimates[$product->id] ?? 0, 0) }}
+                                    — next invoice ≈ KES {{ number_format($productEstimates[$product->id] ?? 0, 0) }}
+                                    / {{ $currentCycle }}
+                                </option>
+                            @endforeach
+                        </optgroup>
+                    @endif
+                    @if ($activeOther->isNotEmpty())
+                        <optgroup label="All Application Hosting plans">
+                            @foreach ($activeOther as $product)
+                                <option value="{{ $product->id }}" @selected((string) old('product_id') === (string) $product->id)>
+                                    {{ $product->name }}
+                                    @if ($product->containerTemplate)
+                                        · {{ $product->containerTemplate->name }}
+                                    @endif
+                                    — next invoice ≈ KES {{ number_format($productEstimates[$product->id] ?? 0, 0) }}
                                     / {{ $currentCycle }}
                                 </option>
                             @endforeach
@@ -316,9 +345,8 @@
                     @endif
                 </select>
                 <p class="text-xs text-slate-500 mt-2">
-                    {{ $activeProducts->count() }} active product(s) listed.
-                    No charge today. <code class="font-mono">custom_price</code> is cleared so renewals use this product’s retail price.
-                    Due date stays {{ $currentDue?->format('Y-m-d') ?? 'unchanged' }}.
+                    {{ $products->where('is_active', true)->count() }} active plan(s) listed.
+                    Detected stack does not lock the plan — you dictate which product this service renews as.
                 </p>
             @endif
         </div>

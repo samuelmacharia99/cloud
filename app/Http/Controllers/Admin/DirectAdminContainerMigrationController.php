@@ -3,13 +3,12 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\ConvertDirectAdminServiceToContainerRequest;
 use App\Jobs\ConvertDirectAdminServiceToContainerJob;
-use App\Models\Product;
 use App\Models\Service;
 use App\Services\Billing\ServiceRenewalPricingService;
 use App\Services\Provisioning\DirectAdminToContainerConvertService;
 use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 class DirectAdminContainerMigrationController extends Controller
@@ -35,8 +34,19 @@ class DirectAdminContainerMigrationController extends Controller
         $currentDue = $service->next_due_date;
         $currentCycle = $service->billing_cycle ?? 'monthly';
 
+        $catalog = $convert->applicationHostingCatalog((string) ($preflight['detected_stack'] ?? ''));
+        $containerProductsStandalone = is_array($preflight)
+            ? ($preflight['container_products'] ?? $catalog['products']->all())
+            : $catalog['products']->all();
+        $recommendedProducts = is_array($preflight)
+            ? ($preflight['recommended_products'] ?? $catalog['recommended']->all())
+            : $catalog['recommended']->all();
+        $productsAreFallback = is_array($preflight)
+            ? (bool) ($preflight['products_are_fallback'] ?? $catalog['fallback'])
+            : (bool) $catalog['fallback'];
+
         $productEstimates = [];
-        foreach ($preflight['container_products'] ?? $preflight['wordpress_products'] ?? [] as $product) {
+        foreach ($containerProductsStandalone as $product) {
             $probe = Service::make([
                 'billing_cycle' => $service->billing_cycle,
                 'custom_price' => null,
@@ -49,28 +59,6 @@ class DirectAdminContainerMigrationController extends Controller
             $productEstimates[$product->id] = $renewalPricing->unitPrice($probe);
         }
 
-        // Always surface catalog even if inventory/preflight partially failed
-        if ($preflight === null) {
-            $pick = $convert->availableProductsForStack('wordpress');
-            $containerProductsStandalone = $pick['products'];
-            $productsAreFallback = $pick['fallback'];
-            foreach ($containerProductsStandalone as $product) {
-                $probe = Service::make([
-                    'billing_cycle' => $service->billing_cycle,
-                    'custom_price' => null,
-                    'product_id' => $product->id,
-                    'user_id' => $service->user_id,
-                    'reseller_id' => $service->reseller_id,
-                ]);
-                $probe->setRelation('product', $product);
-                $probe->setRelation('user', $service->user);
-                $productEstimates[$product->id] = $renewalPricing->unitPrice($probe);
-            }
-        } else {
-            $containerProductsStandalone = $preflight['container_products'] ?? $preflight['wordpress_products'] ?? [];
-            $productsAreFallback = (bool) ($preflight['products_are_fallback'] ?? false);
-        }
-
         return view('admin.services.migrate-to-container', [
             'service' => $service->load('product.directAdminPackage', 'node', 'user'),
             'preflight' => $preflight,
@@ -79,6 +67,7 @@ class DirectAdminContainerMigrationController extends Controller
             'currentCycle' => $currentCycle,
             'productEstimates' => $productEstimates,
             'containerProducts' => $containerProductsStandalone,
+            'recommendedProducts' => $recommendedProducts,
             'wordpressProducts' => $containerProductsStandalone,
             'productsAreFallback' => $productsAreFallback,
             'convertMeta' => $service->service_meta['da_convert'] ?? null,
@@ -86,7 +75,7 @@ class DirectAdminContainerMigrationController extends Controller
     }
 
     public function store(
-        Request $request,
+        ConvertDirectAdminServiceToContainerRequest $request,
         Service $service,
         DirectAdminToContainerConvertService $convert,
     ): RedirectResponse {
@@ -94,15 +83,8 @@ class DirectAdminContainerMigrationController extends Controller
             return back()->withErrors(['error' => 'Invalid source service.']);
         }
 
-        $validated = $request->validate([
-            'product_id' => 'required|exists:products,id',
-            'database_name' => 'nullable|string|max:64',
-            'acknowledge_extra_mailboxes' => 'nullable|boolean',
-            'acknowledge_addon_sites' => 'nullable|boolean',
-            'confirm_silent' => 'accepted',
-        ]);
-
-        $product = Product::with('containerTemplate')->findOrFail($validated['product_id']);
+        $validated = $request->validated();
+        $product = $request->applicationHostingProduct();
 
         $preflight = null;
         try {
@@ -127,6 +109,8 @@ class DirectAdminContainerMigrationController extends Controller
             'mode' => 'convert_in_place',
             'queued_at' => now()->toIso8601String(),
             'target_product_id' => $product->id,
+            'target_product_name' => $product->name,
+            'renewal_due_date' => optional($service->next_due_date)->toDateString(),
             'stack' => $preflight['detected_stack'] ?? null,
             'quiet' => true,
             'no_invoice' => true,

@@ -71,14 +71,6 @@ class DirectAdminToContainerMigrationService
             ? "/home/{$username}/domains/{$domain}/public_html"
             : "/home/{$username}/public_html";
 
-        $detection = ['stack' => 'unknown', 'has_wp_config' => false];
-        $stackError = null;
-        try {
-            $detection = $this->detectStackOnNode($source->node, $docroot);
-        } catch (\Throwable $e) {
-            $stackError = $e->getMessage();
-        }
-
         $dashboard = null;
         $dashboardError = null;
         try {
@@ -103,14 +95,68 @@ class DirectAdminToContainerMigrationService
             'DNS must be updated to the container host after cutover.',
             'Each live website needs its own Application Hosting container — addon sites are listed below and must be converted as separate services after the primary.',
         ];
+
+        $apiDomains = [];
+        try {
+            $listed = $api->listUserDomains($username);
+            if ($listed['success'] ?? false) {
+                $apiDomains = array_values(array_filter(array_map(
+                    fn ($row) => (string) ($row['name'] ?? ''),
+                    $listed['data'] ?? []
+                )));
+            } elseif (! empty($listed['message'])) {
+                $warnings[] = 'DirectAdmin domain list: '.$listed['message'];
+            }
+        } catch (\Throwable $e) {
+            $warnings[] = 'DirectAdmin domain list failed: '.$e->getMessage();
+        }
+
+        $sites = $this->listSitesOnDirectAdminUser(
+            $source->node,
+            $username,
+            is_string($domain) ? $domain : null,
+            $apiDomains,
+        );
+
+        $primarySite = null;
+        foreach ($sites as $site) {
+            if ($site['is_primary'] ?? false) {
+                $primarySite = $site;
+                break;
+            }
+        }
+        $primarySite ??= $sites[0] ?? null;
+
+        $detection = [
+            'stack' => 'unknown',
+            'has_wp_config' => false,
+            'app_root' => $docroot,
+        ];
+        $stackError = null;
+        if (is_array($primarySite)) {
+            $detection = [
+                'stack' => (string) ($primarySite['stack'] ?? 'unknown'),
+                'has_wp_config' => (bool) ($primarySite['has_wp_config'] ?? false),
+                'app_root' => (string) ($primarySite['app_root'] ?? $primarySite['docroot'] ?? $docroot),
+            ];
+            $docroot = (string) ($primarySite['docroot'] ?? $docroot);
+        } else {
+            try {
+                $detection = $this->detectStackOnNode($source->node, $docroot);
+            } catch (\Throwable $e) {
+                $stackError = $e->getMessage();
+            }
+        }
+
         if ($stackError) {
             $warnings[] = 'Could not SSH-detect application stack: '.$stackError;
+        }
+        if (($detection['stack'] ?? 'unknown') === 'unknown' && $stackError === null) {
+            $warnings[] = 'Could not classify the primary site as WordPress, Laravel, PHP, or static from the DirectAdmin filesystem. You can still choose an Application Hosting plan; confirm the stack before convert.';
         }
         if ($detection['stack'] === 'wordpress' && ! $detection['has_wp_config']) {
             $warnings[] = 'wp-config.php was not detected at the expected docroot. Migration may fail until the path is confirmed.';
         }
-
-        $sites = $this->listSitesOnDirectAdminUser($source->node, $username, is_string($domain) ? $domain : null);
 
         $daAccount = is_array($meta['directadmin_account'] ?? null) ? $meta['directadmin_account'] : [];
         $packageUsage = is_array($meta['package_usage'] ?? null) ? $meta['package_usage'] : [];
@@ -121,6 +167,7 @@ class DirectAdminToContainerMigrationService
             'databases' => $databases,
             'stack' => $detection['stack'],
             'docroot' => $docroot,
+            'app_root' => $detection['app_root'] ?? $docroot,
             'has_wp_config' => $detection['has_wp_config'],
             'email_stays_on_da' => true,
             'sites' => $sites,
@@ -157,18 +204,20 @@ class DirectAdminToContainerMigrationService
     }
 
     /**
-     * List domains under /home/{user}/domains with stack detection.
+     * List domains from DirectAdmin API + /home/{user}/domains with stack detection.
      *
+     * @param  list<string>  $extraDomains
      * @return list<array{
      *     domain: string,
      *     docroot: string,
+     *     app_root: string,
      *     stack: string,
      *     has_wp_config: bool,
      *     is_primary: bool,
      *     recommended_action: string
      * }>
      */
-    public function listSitesOnDirectAdminUser(Node $node, string $username, ?string $primaryDomain): array
+    public function listSitesOnDirectAdminUser(Node $node, string $username, ?string $primaryDomain, array $extraDomains = []): array
     {
         $ssh = SSHService::forNode($node);
         $sites = [];
@@ -180,27 +229,46 @@ class DirectAdminToContainerMigrationService
             ));
             $names = array_values(array_filter(array_map('trim', preg_split("/\r\n|\n|\r/", $listing) ?: [])));
 
-            if ($names === [] && filled($primaryDomain)) {
-                $names = [$primaryDomain];
+            foreach ($extraDomains as $extra) {
+                $extra = strtolower(trim((string) $extra));
+                if ($extra !== '') {
+                    $names[] = $extra;
+                }
             }
 
+            if (filled($primaryDomain)) {
+                $names[] = $primaryDomain;
+            }
+
+            $unique = [];
             foreach ($names as $name) {
-                if ($name === '' || str_contains($name, '/') || $name === '.' || $name === '..') {
+                $name = strtolower(trim((string) $name));
+                if ($name === '' || str_contains($name, '/') || in_array($name, ['.', '..', 'lost+found'], true)) {
                     continue;
                 }
+                $unique[$name] = $name;
+            }
+            $names = array_values($unique);
 
+            foreach ($names as $name) {
                 $docroot = $domainsRoot.'/'.$name.'/public_html';
                 try {
                     $detection = $this->detectStackViaSsh($ssh, $docroot);
                 } catch (\Throwable) {
-                    $detection = ['stack' => 'unknown', 'has_wp_config' => false];
+                    $detection = [
+                        'stack' => 'unknown',
+                        'has_wp_config' => false,
+                        'app_root' => $docroot,
+                        'docroot' => $docroot,
+                    ];
                 }
 
                 $isPrimary = filled($primaryDomain) && strcasecmp($name, $primaryDomain) === 0;
                 $sites[] = [
                     'domain' => $name,
                     'docroot' => $docroot,
-                    'stack' => $detection['stack'],
+                    'app_root' => (string) ($detection['app_root'] ?? $docroot),
+                    'stack' => (string) ($detection['stack'] ?? 'unknown'),
                     'has_wp_config' => (bool) ($detection['has_wp_config'] ?? false),
                     'is_primary' => $isPrimary,
                     'recommended_action' => $isPrimary
@@ -224,7 +292,7 @@ class DirectAdminToContainerMigrationService
     }
 
     /**
-     * @return array{stack: string, has_wp_config: bool}
+     * @return array{stack: string, has_wp_config: bool, app_root: string, docroot: string}
      */
     public function detectStackOnNode(Node $node, string $docroot): array
     {
@@ -237,40 +305,109 @@ class DirectAdminToContainerMigrationService
     }
 
     /**
-     * @return array{stack: string, has_wp_config: bool}
+     * Probe public_html, private_html, the domain root (Laravel artisan), and common subfolders.
+     *
+     * @return array{stack: string, has_wp_config: bool, app_root: string, docroot: string}
      */
     public function detectStackViaSsh(SSHService $ssh, string $docroot): array
     {
-        $escaped = escapeshellarg($docroot);
-        $checks = trim($ssh->exec(
-            'echo WP:$(test -f '.$escaped.'/wp-config.php && echo yes || echo no);'
-            .'echo ART:$(test -f '.$escaped.'/artisan && echo yes || echo no);'
-            .'echo CMP:$(test -f '.$escaped.'/composer.json && echo yes || echo no);'
-            .'echo IDX:$(test -f '.$escaped.'/index.php -o -f '.$escaped.'/index.html -o -f '.$escaped.'/index.htm && echo yes || echo no);'
-            .'echo DIR:$(test -d '.$escaped.' && echo yes || echo no)'
-        ));
-        $wp = str_contains($checks, 'WP:yes');
-        $artisan = str_contains($checks, 'ART:yes');
-        $composer = str_contains($checks, 'CMP:yes');
-        $index = str_contains($checks, 'IDX:yes');
-        $dir = str_contains($checks, 'DIR:yes');
+        $output = trim($ssh->exec($this->buildStackProbeCommand($docroot)));
 
-        $stack = 'unknown';
-        if ($wp) {
-            $stack = 'wordpress';
-        } elseif ($artisan) {
-            $stack = 'laravel';
-        } elseif ($composer) {
-            $stack = 'php';
-        } elseif ($dir && $index) {
-            $stack = 'static_or_php';
-        } elseif ($dir) {
-            $stack = 'static_or_php';
+        return $this->classifyDetectedMarkers($output, $docroot);
+    }
+
+    public function buildStackProbeCommand(string $docroot): string
+    {
+        $arg = escapeshellarg($docroot);
+
+        return 'DOCROOT='.$arg.'; PARENT=$(dirname "$DOCROOT"); '
+            .'probe() { d="$1"; [ -n "$d" ] && [ -d "$d" ] || return 0; '
+            .'echo "DIR:$d"; '
+            .'[ -f "$d/wp-config.php" ] && echo "WP:$d"; '
+            .'[ -f "$d/artisan" ] && echo "ART:$d"; '
+            .'[ -f "$d/composer.json" ] && echo "CMP:$d"; '
+            .'{ [ -f "$d/index.php" ] || [ -f "$d/index.html" ] || [ -f "$d/index.htm" ]; } && echo "IDX:$d"; '
+            .'}; '
+            .'probe "$DOCROOT"; probe "$PARENT"; probe "$PARENT/private_html"; '
+            .'probe "$DOCROOT/core"; probe "$PARENT/core"; probe "$DOCROOT/backend"; probe "$PARENT/backend"; '
+            .'find "$DOCROOT" -maxdepth 2 -type f -name wp-config.php 2>/dev/null | head -5 | while read -r f; do echo "WP:$(dirname "$f")"; done; '
+            .'find "$PARENT" -maxdepth 2 -type f -name artisan 2>/dev/null | grep -v "/vendor/" | head -5 | while read -r f; do echo "ART:$(dirname "$f")"; done';
+    }
+
+    /**
+     * @return array{stack: string, has_wp_config: bool, app_root: string, docroot: string}
+     */
+    public function classifyDetectedMarkers(string $output, string $docroot): array
+    {
+        $wp = [];
+        $art = [];
+        $cmp = [];
+        $idx = [];
+        $dirs = [];
+
+        foreach (preg_split("/\r\n|\n|\r/", $output) ?: [] as $line) {
+            $line = trim($line);
+            if ($line === '' || ! str_contains($line, ':')) {
+                continue;
+            }
+            [$key, $path] = explode(':', $line, 2);
+            $path = rtrim($path, '/');
+            if ($path === '') {
+                continue;
+            }
+            match ($key) {
+                'WP' => $wp[] = $path,
+                'ART' => $art[] = $path,
+                'CMP' => $cmp[] = $path,
+                'IDX' => $idx[] = $path,
+                'DIR' => $dirs[] = $path,
+                default => null,
+            };
+        }
+
+        $docroot = rtrim($docroot, '/');
+
+        if ($wp !== []) {
+            return [
+                'stack' => 'wordpress',
+                'has_wp_config' => true,
+                'app_root' => $wp[0],
+                'docroot' => $docroot,
+            ];
+        }
+
+        if ($art !== []) {
+            return [
+                'stack' => 'laravel',
+                'has_wp_config' => false,
+                'app_root' => $art[0],
+                'docroot' => $docroot,
+            ];
+        }
+
+        if ($cmp !== []) {
+            return [
+                'stack' => 'php',
+                'has_wp_config' => false,
+                'app_root' => $cmp[0],
+                'docroot' => $docroot,
+            ];
+        }
+
+        if ($idx !== [] || in_array($docroot, $dirs, true)) {
+            return [
+                'stack' => 'static_or_php',
+                'has_wp_config' => false,
+                'app_root' => $docroot,
+                'docroot' => $docroot,
+            ];
         }
 
         return [
-            'stack' => $stack,
-            'has_wp_config' => $wp,
+            'stack' => 'unknown',
+            'has_wp_config' => false,
+            'app_root' => $docroot,
+            'docroot' => $docroot,
         ];
     }
 
@@ -326,11 +463,16 @@ class DirectAdminToContainerMigrationService
             mkdir(dirname($localDump), 0755, true);
         }
 
+        $exportRoot = (string) ($inventory['app_root'] ?? $inventory['docroot'] ?? '');
+        if ($exportRoot === '') {
+            throw new \RuntimeException('Docroot is missing from inventory.');
+        }
+
         $daSsh = SSHService::forNode($source->node);
         try {
             $daSsh->exec('mkdir -p '.escapeshellarg($remoteWork));
 
-            $wpCreds = $this->parseWpDatabaseCredentials($daSsh, (string) $inventory['docroot']);
+            $wpCreds = $this->parseWpDatabaseCredentials($daSsh, $exportRoot);
             $dbName = $databaseName
                 ?: ($wpCreds['DB_NAME'] ?? null)
                 ?: ($inventory['databases'][0]['name'] ?? null);
@@ -357,7 +499,7 @@ class DirectAdminToContainerMigrationService
             }
 
             $daSsh->exec(
-                $this->buildWordPressFilesTarCommand((string) $inventory['docroot'], $filesTar),
+                $this->buildWordPressFilesTarCommand($exportRoot, $filesTar),
                 900
             );
 
@@ -605,7 +747,7 @@ class DirectAdminToContainerMigrationService
         try {
             $daSsh->exec('mkdir -p '.escapeshellarg($remoteWork));
 
-            $docroot = (string) ($inventory['docroot'] ?? '');
+            $docroot = (string) ($inventory['app_root'] ?? $inventory['docroot'] ?? '');
             if ($docroot === '') {
                 throw new \RuntimeException('Docroot is missing from inventory.');
             }

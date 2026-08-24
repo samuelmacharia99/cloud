@@ -140,4 +140,47 @@ class DirectAdminCustomerPanelApiTest extends TestCase
         $this->assertSame('blog', $api->normalizeSubdomainLabel('blog.example.com', 'example.com'));
         $this->assertSame('blog', $api->normalizeSubdomainLabel('blog', 'example.com'));
     }
+
+    public function test_parse_domain_names_from_list_and_json_array(): void
+    {
+        $node = Node::factory()->create([
+            'type' => 'directadmin',
+            'hostname' => 'da.example.com',
+            'api_url' => 'https://da.example.com:2222',
+            'da_login_key' => 'secret',
+        ]);
+
+        $api = DirectAdminCustomerPanelApi::forServiceNode($node);
+
+        $this->assertSame(
+            ['911kicks.shop', 'example.co.ke'],
+            $api->parseDomainNames(['list' => ['911kicks.shop', 'example.co.ke', '', 'notadomain']])
+        );
+        $this->assertSame(
+            ['primary.com', 'addon.com'],
+            $api->parseDomainNames(['primary.com', 'addon.com'])
+        );
+    }
+
+    public function test_list_user_domains_reads_show_domains(): void
+    {
+        Http::fake([
+            '*/CMD_API_SHOW_DOMAINS*' => Http::response(json_encode([
+                'error' => '0',
+                'list' => ['primary.com', 'shop.example'],
+            ]), 200),
+        ]);
+
+        $node = Node::factory()->create([
+            'type' => 'directadmin',
+            'hostname' => 'da.example.com',
+            'api_url' => 'https://da.example.com:2222',
+            'da_login_key' => 'secret',
+        ]);
+
+        $result = DirectAdminCustomerPanelApi::forServiceNode($node)->listUserDomains('siteuser');
+
+        $this->assertTrue($result['success']);
+        $this->assertSame(['primary.com', 'shop.example'], array_column($result['data'], 'name'));
+    }
 }

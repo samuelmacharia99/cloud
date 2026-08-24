@@ -241,6 +241,64 @@ class DirectAdminCustomerPanelApi
     }
 
     /**
+     * Domains on this DirectAdmin user (CMD_API_SHOW_DOMAINS), not a filesystem listing.
+     *
+     * @return array{success: bool, data: list<array{name: string}>, message: string}
+     */
+    public function listUserDomains(string $username): array
+    {
+        $response = $this->directAdmin->executeUserApiCall($username, 'CMD_API_SHOW_DOMAINS');
+        if (! ($response['success'] ?? false)) {
+            return [
+                'success' => false,
+                'message' => (string) ($response['message'] ?? 'Failed to list DirectAdmin domains.'),
+                'data' => [],
+            ];
+        }
+
+        $names = $this->parseDomainNames($response['data'] ?? []);
+
+        return [
+            'success' => true,
+            'message' => 'OK',
+            'data' => array_map(fn (string $name) => ['name' => $name], $names),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>|list<mixed>  $data
+     * @return list<string>
+     */
+    public function parseDomainNames(array $data): array
+    {
+        $raw = [];
+
+        if ($data !== [] && array_is_list($data)) {
+            $raw = $data;
+        } elseif (isset($data['list']) && is_array($data['list'])) {
+            $raw = $data['list'];
+        } else {
+            $normalized = $this->normalizeList($data, 'list', fn ($item) => (string) $item);
+            $raw = array_map(
+                fn ($row) => is_array($row) ? (string) ($row['name'] ?? $row['domain'] ?? '') : (string) $row,
+                $normalized
+            );
+        }
+
+        $names = [];
+        foreach ($raw as $item) {
+            $name = strtolower(trim((string) (is_array($item) ? ($item['name'] ?? $item['domain'] ?? '') : $item)));
+            $name = rtrim($name, '.');
+            if ($name === '' || str_contains($name, '/') || ! str_contains($name, '.')) {
+                continue;
+            }
+            $names[] = $name;
+        }
+
+        return array_values(array_unique($names));
+    }
+
+    /**
      * @return array{success: bool, data: array<int, array<string, mixed>>, message: string}
      */
     public function listDatabases(string $username): array
