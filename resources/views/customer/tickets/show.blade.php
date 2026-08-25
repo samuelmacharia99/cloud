@@ -80,10 +80,17 @@
             </div>
 
             <!-- Reply Form -->
-            @if($ticket->isOpen())
+            @can('reply', $ticket)
             <div class="ui-card p-6">
-                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Add Reply</h3>
-                <form action="{{ route('customer.tickets.reply', $ticket) }}" method="POST" class="space-y-4">
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                    {{ $ticket->isClosed() ? 'Reopen with a reply' : 'Add Reply' }}
+                </h3>
+                @if($ticket->isClosed())
+                <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                    This ticket is closed. Sending a reply will reopen it for the support team.
+                </p>
+                @endif
+                <form action="{{ route('customer.tickets.reply', $ticket) }}" method="POST" enctype="multipart/form-data" class="space-y-4">
                     @csrf
                     <div>
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Message</label>
@@ -93,18 +100,18 @@
                             rows="5"
                             class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500"
                             placeholder="Type your reply..."
-                        ></textarea>
+                        >{{ old('message') }}</textarea>
                         @error('message')
                         <p class="text-red-600 dark:text-red-400 text-sm mt-2">{{ $message }}</p>
                         @enderror
                     </div>
                     <x-ticket-attachment-input />
                     <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-colors">
-                        Send Reply
+                        {{ $ticket->isClosed() ? 'Send reply and reopen' : 'Send Reply' }}
                     </button>
                 </form>
             </div>
-            @endif
+            @endcan
 
             <!-- Close Ticket Form -->
             @can('close', $ticket)

@@ -56,7 +56,9 @@ class TicketPolicy
             return true;
         }
 
-        return $ticket->user_id === $user->id && $ticket->isOpen();
+        // Customers must be able to reply while staff is working (in_progress / on_hold).
+        // A reply on a closed ticket reopens it.
+        return $ticket->user_id === $user->id;
     }
 
     public function update(User $user, Ticket $ticket): bool
