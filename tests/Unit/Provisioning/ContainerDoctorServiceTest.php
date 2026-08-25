@@ -165,12 +165,26 @@ YAML;
         $this->assertStringContainsString('server.php', $script);
         $this->assertDoesNotMatchRegularExpression('/php -S .*index\.php/', $script);
         $this->assertStringContainsString('/usr/sbin', $dockerfile);
+        $this->assertStringNotContainsString("include fastcgi_params;", $script);
+        $this->assertStringContainsString('include $TMP/fastcgi_params;', $script);
     }
 
     #[Test]
     public function it_detects_php_fpm_fallback_log_line(): void
     {
         $logs = 'Talksasa: nginx/php-fpm unavailable (nginx=missing php-fpm=missing), falling back to php -S (single-threaded)';
+
+        $findings = app(ContainerDoctorService::class)->analyzeLogs($logs, 'laravel');
+        $finding = collect($findings)->firstWhere('id', 'php_builtin_dev_server');
+
+        $this->assertNotNull($finding);
+        $this->assertSame('switch_php_production_runtime', $finding['treat_action']);
+    }
+
+    #[Test]
+    public function it_detects_nginx_fastcgi_params_crash(): void
+    {
+        $logs = 'user-74-service-24-laravel: 2026/08/25 12:23:28 [emerg] 1#1: open() "/tmp/talksasa-php/fastcgi_params" failed (2: No such file or directory) in /tmp/talksasa-php/nginx.conf:37';
 
         $findings = app(ContainerDoctorService::class)->analyzeLogs($logs, 'laravel');
         $finding = collect($findings)->firstWhere('id', 'php_builtin_dev_server');

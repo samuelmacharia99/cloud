@@ -1655,6 +1655,7 @@ PHP;
                     '/PHP \S+ Development Server \(http:\/\//i',
                     '/php artisan serve --host=/i',
                     '/nginx\/php-fpm unavailable[^\n]*falling back to php -S/i',
+                    '/\[emerg\].*fastcgi_params/i',
                 ],
                 'title' => 'PHP development server is handling web traffic',
                 'summary' => 'This app is running PHP’s built-in server (`php -S` / `artisan serve`), which handles one request at a time. Dashboard pages that load CSS/JS plus several AJAX calls will feel slow even when MySQL is healthy. Restart will not fix this.',
