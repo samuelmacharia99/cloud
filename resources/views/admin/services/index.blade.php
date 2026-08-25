@@ -17,6 +17,19 @@
     editUsername: '',
     editPassword: '',
     showPassword: false,
+    selected: [],
+    pageTerminatedIds: @js($terminatedOnPage ?? []),
+    allPageSelected() {
+        return this.pageTerminatedIds.length > 0
+            && this.pageTerminatedIds.every(id => this.selected.includes(id));
+    },
+    togglePage(on) {
+        if (on) {
+            this.selected = [...new Set([...this.selected, ...this.pageTerminatedIds])];
+            return;
+        }
+        this.selected = this.selected.filter(id => ! this.pageTerminatedIds.includes(id));
+    },
     openEdit(id, status, billingCycle, nextDue, commencedAt, username, password) {
         this.editId = id;
         this.editStatus = status;
@@ -101,15 +114,43 @@
                     <span class="text-amber-600 dark:text-amber-400">· drift filter on</span>
                 @endif
             </p>
-            <p class="text-xs text-slate-500 dark:text-slate-400 hidden sm:block">
-                Platform = billing record · Live = DirectAdmin / Application Hosting
-            </p>
+            <div class="flex flex-wrap items-center gap-3">
+                <p class="text-xs text-slate-500 dark:text-slate-400 hidden lg:block">
+                    Platform = billing record · Live = DirectAdmin / Application Hosting
+                </p>
+                <form method="POST" action="{{ route('admin.services.bulk-destroy') }}"
+                    class="inline"
+                    x-bind:data-confirm="'Permanently delete ' + selected.length + ' terminated service record(s)? Invoices are kept. This cannot be undone.'"
+                    data-confirm-title="Delete terminated services"
+                    data-confirm-label="Delete records"
+                    @submit="if (selected.length === 0) { $event.preventDefault() }">
+                    @csrf
+                    <template x-for="id in selected" :key="id">
+                        <input type="hidden" name="ids[]" :value="id">
+                    </template>
+                    <button type="submit"
+                        class="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-40 disabled:pointer-events-none text-white text-sm font-medium rounded-lg transition"
+                        :disabled="selected.length === 0"
+                        x-text="selected.length ? ('Delete ' + selected.length + ' selected') : 'Delete selected'">
+                        Delete selected
+                    </button>
+                </form>
+            </div>
         </div>
 
         <div class="ui-table-wrap">
             <table class="ui-table min-w-[880px]">
                 <thead>
                     <tr>
+                        <th class="w-10">
+                            <input type="checkbox"
+                                class="rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500"
+                                :checked="allPageSelected()"
+                                :disabled="pageTerminatedIds.length === 0"
+                                :indeterminate="selected.length > 0 && !allPageSelected() && pageTerminatedIds.some(id => selected.includes(id))"
+                                @change="togglePage($event.target.checked)"
+                                aria-label="Select all terminated services on this page">
+                        </th>
                         <th class="min-w-[200px]">Service</th>
                         <th class="min-w-[180px]">Customer</th>
                         <th class="whitespace-nowrap">Billing</th>
@@ -120,6 +161,15 @@
                 <tbody>
                     @forelse ($services as $service)
                         <tr class="{{ $service->live_status_mismatch ? 'bg-amber-50/40 dark:bg-amber-950/10' : '' }}">
+                            <td>
+                                @if ($service->status->value === 'terminated')
+                                    <input type="checkbox"
+                                        value="{{ $service->id }}"
+                                        x-model.number="selected"
+                                        class="rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500"
+                                        aria-label="Select service #{{ $service->id }}">
+                                @endif
+                            </td>
                             <td>
                                 <div class="min-w-0">
                                     <div class="flex items-center gap-2">
@@ -163,7 +213,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="5" class="py-16 text-center">
+                            <td colspan="6" class="py-16 text-center">
                                 <p class="text-slate-600 dark:text-slate-400">No services found.</p>
                             </td>
                         </tr>
@@ -171,13 +221,13 @@
                 </tbody>
             </table>
         </div>
-
-        @if ($services->hasPages())
-            <div class="px-5 py-4 border-t border-slate-200 dark:border-slate-800">
-                {{ $services->links() }}
-            </div>
-        @endif
     </div>
+
+    @if ($services->hasPages())
+        <div class="ui-card px-5 py-4">
+            {{ $services->links() }}
+        </div>
+    @endif
 
     <!-- Edit Service Modal -->
     <div x-show="editOpen" x-transition class="fixed inset-0 bg-black/50 dark:bg-black/70 z-40" @click="editOpen = false" style="display: none;"></div>

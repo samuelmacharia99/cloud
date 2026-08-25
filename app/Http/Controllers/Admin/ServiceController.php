@@ -6,6 +6,7 @@ use App\Enums\InvoiceStatus;
 use App\Enums\NotificationEvent;
 use App\Enums\ServiceStatus;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\BulkDestroyTerminatedServicesRequest;
 use App\Mail\AdminServerOrderMail;
 use App\Models\Domain;
 use App\Models\Invoice;
@@ -44,12 +45,17 @@ class ServiceController extends Controller
             ->paginate(15)
             ->withQueryString();
 
+        $terminatedOnPage = $services->getCollection()
+            ->filter(fn (Service $service) => $service->status === ServiceStatus::Terminated)
+            ->pluck('id')
+            ->values();
+
         $mismatchCount = Service::query()
             ->where('live_status_mismatch', true)
             ->whereHas('product', fn ($q) => $q->where('type', '!=', 'domain'))
             ->count();
 
-        return view('admin.services.index', compact('services', 'mismatchCount'));
+        return view('admin.services.index', compact('services', 'mismatchCount', 'terminatedOnPage'));
     }
 
     public function refreshLiveStatusBulk(Request $request, ServiceStatusSyncService $syncService)
@@ -784,6 +790,72 @@ class ServiceController extends Controller
 
         return redirect()->route('admin.services.index')
             ->with('success', "Service #{$service->id} deleted.");
+    }
+
+    public function bulkDestroy(BulkDestroyTerminatedServicesRequest $request, ServiceDeletionService $deletion)
+    {
+        $ids = collect($request->validated('ids'))
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+
+        $services = Service::query()->whereIn('id', $ids)->get();
+
+        if ($services->count() !== $ids->count()) {
+            return back()->with('error', 'One or more selected services were not found. Refresh the list and try again.');
+        }
+
+        $notTerminated = $services->filter(
+            fn (Service $service) => $service->status !== ServiceStatus::Terminated
+        );
+
+        if ($notTerminated->isNotEmpty()) {
+            $labels = $notTerminated->map(fn (Service $service) => '#'.$service->id)->implode(', ');
+
+            return back()->with(
+                'error',
+                'Bulk delete is only for terminated services. Uncheck '.$labels.' and try again. Nothing was deleted.'
+            );
+        }
+
+        foreach ($services as $service) {
+            $this->authorize('delete', $service);
+        }
+
+        $deleted = [];
+        $failed = [];
+
+        foreach ($services as $service) {
+            try {
+                $deletion->delete($service);
+                $deleted[] = $service->id;
+            } catch (\RuntimeException $e) {
+                $failed[] = '#'.$service->id.': '.$e->getMessage();
+            }
+        }
+
+        AdminActivityService::log(
+            'service.bulk_destroy',
+            'Deleted '.count($deleted).' terminated service(s)',
+            null,
+            [
+                'deleted_ids' => $deleted,
+                'failed' => $failed,
+            ],
+        );
+
+        if ($deleted === []) {
+            return back()->with('error', $failed === []
+                ? 'No services were deleted.'
+                : 'Could not delete the selected services: '.implode(' ', $failed));
+        }
+
+        $message = count($deleted).' terminated service(s) deleted.';
+        if ($failed !== []) {
+            return back()->with('warning', $message.' Some could not be deleted: '.implode(' ', $failed));
+        }
+
+        return back()->with('success', $message);
     }
 
     public function refreshStatus(Service $service, ServiceStatusSyncService $syncService)
