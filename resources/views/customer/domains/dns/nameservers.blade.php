@@ -37,8 +37,9 @@
             <div class="ui-card p-6">
                 <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-6">Update Nameservers</h2>
 
-                <form action="{{ route('customer.domains.dns.update-nameservers', $domain) }}" method="POST" class="space-y-4">
+                <form action="{{ route('customer.domains.nameservers', $domain) }}" method="POST" class="space-y-4">
                     @csrf
+                    @method('PUT')
 
                     <div>
                         <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Primary Nameserver</label>

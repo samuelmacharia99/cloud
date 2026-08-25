@@ -78,8 +78,8 @@ class DnsController extends Controller
     {
         $this->authorize('manageDns', $domain);
 
-        if ($this->dns->usesCloudflareDns($domain)) {
-            return back()->with('error', 'Nameservers are managed automatically for Cloudflare DNS zones. Update branded nameservers in admin settings if needed.');
+        if ($domain->isDnsManaged()) {
+            return back()->with('error', 'DNS-only domains do not have registry nameservers to change.');
         }
 
         $validated = $request->validate([

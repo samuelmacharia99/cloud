@@ -271,7 +271,14 @@
     @endif
 
     <div class="ui-card p-6">
-        <h3 class="font-bold text-slate-900 dark:text-white mb-3">Nameservers</h3>
+        <h3 class="font-bold text-slate-900 dark:text-white mb-1">Registry nameservers</h3>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mb-3">
+            Published at the domain registry. To change them, use the
+            <a href="{{ route('customer.domains.show', $domain) }}" class="text-blue-600 dark:text-blue-400 hover:underline">domain overview page</a>.
+            @if($domain->cloudflare_dns_enabled)
+                DNS records on this page are managed separately in Cloudflare.
+            @endif
+        </p>
         <div class="text-sm text-slate-600 dark:text-slate-400 space-y-1 font-mono">
             <p>NS1: {{ $domain->nameserver_1 ?? '—' }}</p>
             <p>NS2: {{ $domain->nameserver_2 ?? '—' }}</p>

@@ -7,7 +7,13 @@
     <div class="flex flex-wrap items-start justify-between gap-4">
         <div>
             <h1 class="text-3xl font-bold text-slate-900 dark:text-white font-mono">{{ $domain->name }}{{ $domain->extension }}</h1>
-            <p class="text-slate-600 dark:text-slate-400 mt-1">Registration, nameservers, EPP, and WHOIS</p>
+            <p class="text-slate-600 dark:text-slate-400 mt-1">
+                @if($cloudflareManaged ?? false)
+                    Registry nameservers, EPP, and WHOIS — DNS records are on the DNS page (Cloudflare).
+                @else
+                    Registration, nameservers, EPP, and WHOIS
+                @endif
+            </p>
         </div>
         <div class="flex flex-wrap gap-2">
             <a href="{{ route('customer.domains.index') }}" class="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm font-medium">← Domains</a>
@@ -31,32 +37,24 @@
     </div>
 
     <div class="ui-card p-6 space-y-8">
-        @unless($domain->isDnsManaged() || $cloudflareManaged)
-            <div>
-                <div class="flex items-start justify-between gap-3 mb-1">
-                    <h2 class="text-lg font-bold text-slate-900 dark:text-white">Nameservers</h2>
-                    @if(! empty($registry['nameservers_live']))
-                        <span class="shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200">Live from registry</span>
-                    @endif
-                </div>
-                <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">At least two unique nameservers are required. Saving pushes the change to the registry.</p>
-                <form method="POST" action="{{ route('customer.domains.nameservers', $domain) }}" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    @csrf
-                    @method('PUT')
-                    @foreach(['nameserver_1' => 'Nameserver 1', 'nameserver_2' => 'Nameserver 2', 'nameserver_3' => 'Nameserver 3', 'nameserver_4' => 'Nameserver 4'] as $field => $label)
-                        <div>
-                            <label class="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">{{ $label }}</label>
-                            <input type="text" name="{{ $field }}" value="{{ old($field, $nameservers[$field] ?? $domain->{$field}) }}"
-                                class="w-full px-3 py-2 font-mono text-sm border rounded-lg bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600"
-                                @if(in_array($field, ['nameserver_1', 'nameserver_2'], true)) required @endif>
-                            @error($field)<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
-                        </div>
-                    @endforeach
-                    <div class="md:col-span-2">
-                        <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg">Save nameservers</button>
-                    </div>
-                </form>
-            </div>
+        @if(session('success'))
+            <div class="rounded-lg border border-emerald-200 bg-emerald-50 dark:bg-emerald-950/30 dark:border-emerald-800 px-4 py-3 text-sm text-emerald-800 dark:text-emerald-200">{{ session('success') }}</div>
+        @endif
+        @if(session('warning'))
+            <div class="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 px-4 py-3 text-sm text-amber-900 dark:text-amber-200">{{ session('warning') }}</div>
+        @endif
+        @if(session('error'))
+            <div class="rounded-lg border border-red-200 bg-red-50 dark:bg-red-950/30 dark:border-red-800 px-4 py-3 text-sm text-red-800 dark:text-red-200">{{ session('error') }}</div>
+        @endif
+
+        @unless($domain->isDnsManaged())
+            @include('customer.domains.partials.nameserver-form', [
+                'domain' => $domain,
+                'nameservers' => $nameservers,
+                'registry' => $registry,
+                'cloudflareManaged' => $cloudflareManaged,
+                'usesDirectAdmin' => $usesDirectAdmin ?? false,
+            ])
             <hr class="border-slate-200 dark:border-slate-700">
         @endunless
 

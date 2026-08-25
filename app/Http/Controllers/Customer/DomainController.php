@@ -73,6 +73,7 @@ class DomainController extends Controller
             'registry' => $registry,
             'registrant' => $registrant,
             'cloudflareManaged' => app(DomainCloudflareDnsService::class)->usesCloudflareDns($domain),
+            'usesDirectAdmin' => app(DomainCloudflareDnsService::class)->hasDirectAdminDns($domain),
         ]);
     }
 
@@ -80,8 +81,8 @@ class DomainController extends Controller
     {
         $this->authorize('update', $domain);
 
-        if ($domain->isDnsManaged() || app(DomainCloudflareDnsService::class)->usesCloudflareDns($domain)) {
-            return back()->with('error', 'Nameservers for this domain are managed with DNS. Change them from DNS management.');
+        if ($domain->isDnsManaged()) {
+            return back()->with('error', 'DNS-only domains do not have registry nameservers to change.');
         }
 
         $validated = $request->validate([

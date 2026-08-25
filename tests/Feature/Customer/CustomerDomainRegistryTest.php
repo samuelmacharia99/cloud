@@ -249,6 +249,76 @@ class CustomerDomainRegistryTest extends TestCase
         return $extension;
     }
 
+    public function test_customer_with_cloudflare_dns_can_update_nameservers_from_show_page(): void
+    {
+        $customer = User::factory()->customer()->create();
+        $this->attachCosmotown('.org');
+        $domain = Domain::create([
+            'user_id' => $customer->id,
+            'name' => 'christosummit',
+            'extension' => '.org',
+            'status' => 'active',
+            'type' => 'registration',
+            'registrar_handle' => 'christosummit.org',
+            'cloudflare_dns_enabled' => true,
+            'cloudflare_zone_id' => 'zone-123',
+            'nameserver_1' => 'ns1.cloudflare.com',
+            'nameserver_2' => 'ns2.cloudflare.com',
+        ]);
+
+        Http::fake([
+            'sandbox.cosmotown.com/v1/reseller/savedomainnameservers' => Http::response(['status' => 'processed'], 200),
+        ]);
+
+        $this->actingAs($customer)
+            ->get(route('customer.domains.show', $domain))
+            ->assertOk()
+            ->assertSee('Save nameservers')
+            ->assertSee('DNS records')
+            ->assertSee('Nameservers');
+
+        $this->actingAs($customer)
+            ->put(route('customer.domains.nameservers', $domain), [
+                'nameserver_1' => 'ns1.talksasa.com',
+                'nameserver_2' => 'ns2.talksasa.com',
+            ])
+            ->assertRedirect(route('customer.domains.show', $domain))
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseHas('domains', [
+            'id' => $domain->id,
+            'nameserver_1' => 'ns1.talksasa.com',
+            'nameserver_2' => 'ns2.talksasa.com',
+        ]);
+    }
+
+    public function test_dns_only_domain_cannot_update_registry_nameservers(): void
+    {
+        $customer = User::factory()->customer()->create();
+        $domain = Domain::create([
+            'user_id' => $customer->id,
+            'name' => 'internal',
+            'extension' => '.test',
+            'status' => 'active',
+            'type' => 'dns',
+            'nameserver_1' => 'ns1.example.com',
+            'nameserver_2' => 'ns2.example.com',
+        ]);
+
+        $this->actingAs($customer)
+            ->get(route('customer.domains.show', $domain))
+            ->assertOk()
+            ->assertDontSee('Save nameservers');
+
+        $this->actingAs($customer)
+            ->put(route('customer.domains.nameservers', $domain), [
+                'nameserver_1' => 'ns1.new.com',
+                'nameserver_2' => 'ns2.new.com',
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('error');
+    }
+
     private function domain(User $owner): Domain
     {
         return Domain::create([
