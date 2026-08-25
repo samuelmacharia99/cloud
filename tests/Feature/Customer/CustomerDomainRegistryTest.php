@@ -319,6 +319,78 @@ class CustomerDomainRegistryTest extends TestCase
             ->assertSessionHas('error');
     }
 
+    public function test_customer_nameserver_save_pushes_when_domain_has_no_registrar_handle(): void
+    {
+        $customer = User::factory()->customer()->create();
+        $this->attachCosmotown('.org');
+        $domain = Domain::create([
+            'user_id' => $customer->id,
+            'name' => 'christosummit',
+            'extension' => '.org',
+            'status' => 'active',
+            'type' => 'registration',
+            'nameserver_1' => 'megatron2.c-orbit.com',
+            'nameserver_2' => 'megatron1.c-orbit.com',
+        ]);
+
+        Http::fake([
+            'sandbox.cosmotown.com/v1/reseller/savedomainnameservers' => Http::response(['status' => 'processed'], 200),
+        ]);
+
+        $this->actingAs($customer)
+            ->put(route('customer.domains.nameservers', $domain), [
+                'nameserver_1' => 'ns1.talksasa.com',
+                'nameserver_2' => 'ns2.talksasa.com',
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        Http::assertSent(fn ($request) => $request->method() === 'POST'
+            && str_contains($request->url(), 'reseller/savedomainnameservers')
+            && ($request->data()['domain'] ?? null) === 'christosummit.org');
+
+        $this->assertDatabaseHas('domains', [
+            'id' => $domain->id,
+            'nameserver_1' => 'ns1.talksasa.com',
+            'nameserver_2' => 'ns2.talksasa.com',
+            'registrar_handle' => 'christosummit.org',
+        ]);
+    }
+
+    public function test_live_registry_refresh_links_registrar_handle_when_missing(): void
+    {
+        $customer = User::factory()->customer()->create();
+        $this->attachCosmotown('.org');
+        $domain = Domain::create([
+            'user_id' => $customer->id,
+            'name' => 'christosummit',
+            'extension' => '.org',
+            'status' => 'active',
+            'type' => 'registration',
+            'nameserver_1' => 'megatron2.c-orbit.com',
+            'nameserver_2' => 'megatron1.c-orbit.com',
+        ]);
+
+        Http::fake([
+            'sandbox.cosmotown.com/v1/reseller/domaininfo*' => Http::response([
+                'domain' => 'christosummit.org',
+                'nameservers' => ['megatron2.c-orbit.com', 'megatron1.c-orbit.com'],
+                'auth_code' => 'EPP-LINK-TEST',
+            ], 200),
+        ]);
+
+        $this->actingAs($customer)
+            ->get(route('customer.domains.show', $domain))
+            ->assertOk()
+            ->assertSee('Live from registry');
+
+        $this->assertDatabaseHas('domains', [
+            'id' => $domain->id,
+            'registrar_handle' => 'christosummit.org',
+            'epp_code' => 'EPP-LINK-TEST',
+        ]);
+    }
+
     private function domain(User $owner): Domain
     {
         return Domain::create([

@@ -368,7 +368,7 @@ class RegistrarFulfillmentService
         $registrar = $this->resolveLiveRegistrar($domain);
         $driver = $this->operationsDriver($registrar);
 
-        if (! $driver || ! $domain->isLinkedToRegistrarApi()) {
+        if (! $driver || ! $this->canPushRegistryOperations($domain, $registrar, $driver)) {
             return [
                 'success' => true,
                 'pushed' => false,
@@ -386,6 +386,8 @@ class RegistrarFulfillmentService
                     'message' => $result['message'] ?? 'Registrar rejected the nameserver update.',
                 ];
             }
+
+            $this->ensureRegistrarHandleLinked($domain, $registrar, $driver);
 
             return [
                 'success' => true,
@@ -479,6 +481,9 @@ class RegistrarFulfillmentService
                 if (! empty($snapshot['contacts']) && is_array($snapshot['contacts']) && $contacts->isComplete($snapshot['contacts'])) {
                     $updates['registrant_contact'] = $contacts->normalize($snapshot['contacts']);
                 }
+                if ($liveNs || $liveEpp) {
+                    $this->mergeRegistrarHandleLink($domain, $updates);
+                }
             } catch (\Throwable $e) {
                 Log::warning('Live registry details failed', [
                     'domain_id' => $domain->id,
@@ -526,7 +531,7 @@ class RegistrarFulfillmentService
         $registrar = $this->resolveLiveRegistrar($domain);
         $driver = $this->operationsDriver($registrar);
 
-        if (! $driver instanceof CosmotownRegistrarDriver || ! $domain->isLinkedToRegistrarApi()) {
+        if (! $driver instanceof CosmotownRegistrarDriver || ! $this->canPushRegistryOperations($domain, $registrar, $driver)) {
             return [
                 'success' => false,
                 'pushed' => false,
@@ -562,6 +567,8 @@ class RegistrarFulfillmentService
             if ($updates !== []) {
                 $domain->update($updates);
             }
+
+            $this->ensureRegistrarHandleLinked($domain->fresh(), $registrar, $driver);
 
             return [
                 'success' => true,
@@ -602,7 +609,7 @@ class RegistrarFulfillmentService
         $registrar = $this->resolveLiveRegistrar($domain);
         $driver = $this->operationsDriver($registrar);
 
-        if (! $driver instanceof CosmotownRegistrarDriver || ! $domain->isLinkedToRegistrarApi()) {
+        if (! $driver instanceof CosmotownRegistrarDriver || ! $this->canPushRegistryOperations($domain, $registrar, $driver)) {
             $domain->update(['registrant_contact' => $normalized]);
 
             return [
@@ -623,6 +630,8 @@ class RegistrarFulfillmentService
             }
 
             $domain->update(['registrant_contact' => $normalized]);
+
+            $this->ensureRegistrarHandleLinked($domain->fresh(), $registrar, $driver);
 
             return [
                 'success' => true,
@@ -655,6 +664,48 @@ class RegistrarFulfillmentService
         }
 
         return $this->resolveRegistrar($domain);
+    }
+
+    /**
+     * Cosmotown resolves domains by FQDN, so registry writes can proceed when live reads work
+     * even if registrar_handle was never persisted on import.
+     */
+    private function canPushRegistryOperations(Domain $domain, ?Registrar $registrar, ?RegistrarOperationsInterface $driver): bool
+    {
+        if ($domain->isLinkedToRegistrarApi()) {
+            return true;
+        }
+
+        return $driver instanceof CosmotownRegistrarDriver && $registrar !== null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $updates
+     */
+    private function mergeRegistrarHandleLink(Domain $domain, array &$updates): void
+    {
+        if ($domain->isLinkedToRegistrarApi()) {
+            return;
+        }
+
+        $handle = strtolower($domain->fqdn());
+        if ($handle !== '') {
+            $updates['registrar_handle'] = $handle;
+        }
+    }
+
+    private function ensureRegistrarHandleLinked(Domain $domain, Registrar $registrar, RegistrarOperationsInterface $driver): void
+    {
+        if ($domain->isLinkedToRegistrarApi() || ! $driver instanceof CosmotownRegistrarDriver) {
+            return;
+        }
+
+        $updates = ['registrar_handle' => strtolower($domain->fqdn())];
+        if (blank($domain->registrar)) {
+            $updates['registrar'] = $registrar->name;
+        }
+
+        $domain->update($updates);
     }
 
     public function concealProviderMessage(string $message): string
