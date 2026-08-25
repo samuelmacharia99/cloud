@@ -35,6 +35,16 @@
         $preflight['email']['warnings'] ?? [],
         $preflight['database_warnings'] ?? [],
     )));
+    $bundledEmailByProduct = $products
+        ->where('is_active', true)
+        ->filter(fn ($product) => $product->hasEmailBundle() && $product->bundledEmailProduct?->is_active)
+        ->mapWithKeys(fn ($product) => [
+            (string) $product->id => [
+                'id' => (int) $product->bundled_email_product_id,
+                'name' => (string) $product->bundledEmailProduct->name,
+            ],
+        ])
+        ->all();
 @endphp
 <div class="space-y-6 max-w-4xl">
     <div>
@@ -330,7 +340,24 @@
         </div>
     @endif
 
-    <form method="POST" action="{{ route('admin.services.migrate-to-container.store', $service) }}" class="ui-card p-6 space-y-4">
+    <form
+        method="POST"
+        action="{{ route('admin.services.migrate-to-container.store', $service) }}"
+        class="ui-card p-6 space-y-4"
+        x-data="{
+            productId: @js((string) old('product_id', '')),
+            bundledByProduct: @js($bundledEmailByProduct),
+            mustPullMail: @js($mustPullMail),
+            bundledEmail() {
+                return this.productId && this.bundledByProduct[this.productId]
+                    ? this.bundledByProduct[this.productId]
+                    : null;
+            },
+            needsEmailPicker() {
+                return this.mustPullMail && ! this.bundledEmail();
+            },
+        }"
+    >
         @csrf
         <div>
             <label class="block text-sm font-medium mb-2">Application Hosting plan (billed when the DirectAdmin term ends)</label>
@@ -351,7 +378,7 @@
                         No catalog item is tagged for {{ \App\Services\Provisioning\DirectAdminToContainerConvertService::stackLabel($detectedStack) }} — showing every Application Hosting plan. Pick the plan this customer should renew onto.
                     </p>
                 @endif
-                <select name="product_id" required class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+                <select name="product_id" required x-model="productId" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
                     <option value="">Select Application Hosting plan…</option>
                     @if ($activeRecommended->isNotEmpty())
                         <optgroup label="Recommended for {{ \App\Services\Provisioning\DirectAdminToContainerConvertService::stackLabel($detectedStack) }}">
@@ -363,6 +390,9 @@
                                     @endif
                                     — next invoice ≈ KES {{ number_format($productEstimates[$product->id] ?? 0, 0) }}
                                     / {{ $currentCycle }}
+                                    @if ($product->hasEmailBundle() && $product->bundledEmailProduct?->is_active)
+                                        · includes {{ $product->bundledEmailProduct->name }}
+                                    @endif
                                 </option>
                             @endforeach
                         </optgroup>
@@ -377,6 +407,9 @@
                                     @endif
                                     — next invoice ≈ KES {{ number_format($productEstimates[$product->id] ?? 0, 0) }}
                                     / {{ $currentCycle }}
+                                    @if ($product->hasEmailBundle() && $product->bundledEmailProduct?->is_active)
+                                        · includes {{ $product->bundledEmailProduct->name }}
+                                    @endif
                                 </option>
                             @endforeach
                         </optgroup>
@@ -414,24 +447,46 @@
         @endif
 
         @if ($mustPullMail)
-            <div>
-                <label class="block text-sm font-medium mb-2">Email Hosting plan (Mailcow)</label>
-                <p class="text-sm text-slate-600 dark:text-slate-300 mb-3">
-                    Mailboxes are created on Mailcow and IMAP-synced from DirectAdmin. Same due date as this service.
-                    If the Application Hosting plan has a bundled email product, pick that plan (included / not a second billed package).
+            <div class="space-y-3">
+                <label class="block text-sm font-medium">Email Hosting (Mailcow)</label>
+
+                <template x-if="bundledEmail()">
+                    <div class="rounded-xl border border-emerald-200 bg-emerald-50 dark:bg-emerald-950/30 dark:border-emerald-800 p-4 text-sm text-emerald-900 dark:text-emerald-100 space-y-2">
+                        <p>
+                            The selected Application Hosting tier includes
+                            <strong x-text="bundledEmail()?.name"></strong>.
+                            Mailboxes are pulled to that bundled plan — not billed as a second package at renewal.
+                        </p>
+                        <p class="text-xs text-emerald-800 dark:text-emerald-200">
+                            IMAP sync from DirectAdmin. Update MX when sync has caught up, then DirectAdmin can be decommissioned.
+                        </p>
+                        <input type="hidden" name="email_product_id" :value="bundledEmail()?.id">
+                    </div>
+                </template>
+
+                <template x-if="needsEmailPicker()">
+                    <div>
+                        <p class="text-sm text-slate-600 dark:text-slate-300 mb-3">
+                            This Application Hosting tier does not include email. Pick an Email Hosting plan for the Mailcow pull.
+                        </p>
+                        @if ($emailProducts->isEmpty())
+                            <p class="text-sm text-red-600">No active Email Hosting products. Create one before converting — mail will not stay on DirectAdmin.</p>
+                        @else
+                            <select name="email_product_id" required class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+                                <option value="">Select Email Hosting plan…</option>
+                                @foreach ($emailProducts as $emailProduct)
+                                    <option value="{{ $emailProduct->id }}" @selected((string) old('email_product_id') === (string) $emailProduct->id)>
+                                        {{ $emailProduct->name }}
+                                    </option>
+                                @endforeach
+                            </select>
+                        @endif
+                    </div>
+                </template>
+
+                <p x-show="!productId" class="text-xs text-slate-500">
+                    Select an Application Hosting plan first. Tiers with bundled email skip the separate email picker.
                 </p>
-                @if ($emailProducts->isEmpty())
-                    <p class="text-sm text-red-600">No active Email Hosting products. Create one before converting — mail will not stay on DirectAdmin.</p>
-                @else
-                    <select name="email_product_id" required class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
-                        <option value="">Select Email Hosting plan…</option>
-                        @foreach ($emailProducts as $emailProduct)
-                            <option value="{{ $emailProduct->id }}" @selected((string) old('email_product_id') === (string) $emailProduct->id)>
-                                {{ $emailProduct->name }}
-                            </option>
-                        @endforeach
-                    </select>
-                @endif
             </div>
         @endif
 

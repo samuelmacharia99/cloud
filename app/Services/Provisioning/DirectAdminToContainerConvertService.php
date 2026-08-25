@@ -213,7 +213,7 @@ class DirectAdminToContainerConvertService
     {
         $products = Product::query()
             ->where('type', 'container_hosting')
-            ->with('containerTemplate')
+            ->with(['containerTemplate', 'bundledEmailProduct'])
             ->orderByDesc('is_active')
             ->orderBy('order')
             ->orderBy('monthly_price')

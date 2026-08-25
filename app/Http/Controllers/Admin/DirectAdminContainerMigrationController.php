@@ -117,13 +117,24 @@ class DirectAdminContainerMigrationController extends Controller
         ];
         $service->update(['service_meta' => $meta]);
 
+        $emailProductId = $request->emailHostingProduct()?->id;
+        if (! $emailProductId && ($preflight['must_pull_mail'] ?? false)) {
+            $resolvedEmail = $convert->resolveEmailProductForConvert($product, null);
+            if (! $resolvedEmail) {
+                return back()->withErrors([
+                    'email_product_id' => 'Select an Email Hosting plan, or pick an Application Hosting tier that includes bundled email.',
+                ])->withInput();
+            }
+            $emailProductId = $resolvedEmail->id;
+        }
+
         ConvertDirectAdminServiceToContainerJob::dispatch(
             $service->id,
             $product->id,
             $request->acknowledgedMailPull(),
             $validated['database_name'] ?? null,
             $request->boolean('acknowledge_addon_sites'),
-            $request->emailHostingProduct()?->id,
+            $emailProductId,
         )->afterResponse();
 
         return redirect()
