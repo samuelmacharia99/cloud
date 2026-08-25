@@ -115,37 +115,59 @@
 
                 <section
                     class="rounded-xl border bg-white dark:bg-slate-900 transition-colors"
+                    @if($isProject)
+                    x-data="{
+                        expanded: @js($groupServices->count() <= 6),
+                        showRenameProject: false,
+                        showRemoveProject: false,
+                        renameProjectName: @js($project->name),
+                        confirmName: '',
+                    }"
+                    @else
+                    x-data="{ expanded: @js($groupServices->count() <= 6) }"
+                    @endif
                     :class="dropTarget === @js($dropKey) && draggingId
                         ? 'border-brand-400 dark:border-brand-500 ring-2 ring-brand-300/60 dark:ring-brand-700/60 bg-brand-50/40 dark:bg-brand-950/20'
                         : 'border-slate-200 dark:border-slate-700'"
-                    @dragover.prevent="onDragOver($event, @js($dropKey))"
+                    @dragover.prevent="onDragOver($event, @js($dropKey)); if (draggingId) expanded = true;"
                     @dragleave="onDragLeave($event, @js($dropKey))"
                     @drop.prevent="onDrop($event, @js($isProject ? $project->id : null))"
                 >
                     @if($isProject)
-                        <div
-                            class="flex flex-wrap items-center justify-between gap-2 px-4 sm:px-5 py-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40"
-                            x-data="{ showRenameProject: false, showRemoveProject: false, renameProjectName: @js($project->name), confirmName: '' }"
-                        >
-                            <div class="min-w-0">
-                                <h2 class="font-semibold text-slate-900 dark:text-white truncate">{{ $project->name }}</h2>
-                                <p class="text-xs text-slate-500 dark:text-slate-400">
-                                    {{ $groupServices->count() }} {{ Str::plural('service', $groupServices->count()) }}
-                                    @if(count($containers) >= 2)
-                                        · {{ implode(', ', $containers) }}
-                                    @endif
-                                    @if(!empty($project->recipe_key))
-                                        · billed as one project
-                                    @endif
-                                    · drop here
-                                </p>
-                            </div>
+                        <div class="flex flex-wrap items-center justify-between gap-2 px-4 sm:px-5 py-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40">
+                            <button
+                                type="button"
+                                class="min-w-0 flex-1 flex items-start gap-2 text-left rounded-lg -m-1 p-1 hover:bg-slate-100/80 dark:hover:bg-slate-800/60 transition-colors"
+                                @click="expanded = !expanded"
+                                :aria-expanded="expanded.toString()"
+                                aria-controls="project-services-{{ $project->id }}"
+                            >
+                                <span class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 dark:text-slate-500 mt-0.5">
+                                    <svg class="w-4 h-4 transition-transform duration-200" :class="expanded ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                                    </svg>
+                                </span>
+                                <span class="min-w-0">
+                                    <h2 class="font-semibold text-slate-900 dark:text-white truncate">{{ $project->name }}</h2>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400">
+                                        {{ $groupServices->count() }} {{ Str::plural('service', $groupServices->count()) }}
+                                        @if(count($containers) >= 2)
+                                            · {{ implode(', ', $containers) }}
+                                        @endif
+                                        @if(!empty($project->recipe_key))
+                                            · billed as one project
+                                        @endif
+                                        · drop here
+                                        <span x-show="!expanded" x-cloak class="text-slate-400 dark:text-slate-500"> · collapsed</span>
+                                    </p>
+                                </span>
+                            </button>
                             <div class="flex items-center gap-3 shrink-0">
-                                <button type="button" @click="showRenameProject = true" class="text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-400">
+                                <button type="button" @click.stop="showRenameProject = true" class="text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-400">
                                     Rename project
                                 </button>
                                 @if($canRemoveProject)
-                                    <button type="button" @click="showRemoveProject = true" class="text-sm font-medium text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300">
+                                    <button type="button" @click.stop="showRemoveProject = true" class="text-sm font-medium text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300">
                                         Remove project
                                     </button>
                                 @endif
@@ -198,13 +220,40 @@
                             @endif
                         </div>
                     @else
-                        <div class="px-4 sm:px-5 py-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40">
-                            <h2 class="font-semibold text-slate-900 dark:text-white">No project</h2>
-                            <p class="text-xs text-slate-500 dark:text-slate-400">Drag cards here to ungroup, or onto a project above.</p>
-                        </div>
+                        <button
+                            type="button"
+                            class="w-full flex items-center gap-2 px-4 sm:px-5 py-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 text-left hover:bg-slate-100/80 dark:hover:bg-slate-800/60 transition-colors"
+                            @click="expanded = !expanded"
+                            :aria-expanded="expanded.toString()"
+                            aria-controls="project-services-none"
+                        >
+                            <span class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 dark:text-slate-500">
+                                <svg class="w-4 h-4 transition-transform duration-200" :class="expanded ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                                </svg>
+                            </span>
+                            <span class="min-w-0">
+                                <h2 class="font-semibold text-slate-900 dark:text-white">No project</h2>
+                                <p class="text-xs text-slate-500 dark:text-slate-400">
+                                    Drag cards here to ungroup, or onto a project above.
+                                    <span x-show="!expanded" x-cloak class="text-slate-400 dark:text-slate-500"> · collapsed</span>
+                                </p>
+                            </span>
+                        </button>
                     @endif
 
-                    <div class="p-4 sm:p-5">
+                    <div
+                        id="{{ $isProject ? 'project-services-'.$project->id : 'project-services-none' }}"
+                        x-show="expanded"
+                        x-cloak
+                        x-transition:enter="transition ease-out duration-150"
+                        x-transition:enter-start="opacity-0 -translate-y-1"
+                        x-transition:enter-end="opacity-100 translate-y-0"
+                        x-transition:leave="transition ease-in duration-100"
+                        x-transition:leave-start="opacity-100"
+                        x-transition:leave-end="opacity-0"
+                        class="p-4 sm:p-5"
+                    >
                         <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-5 min-h-[6rem]">
                             @foreach ($groupServices as $service)
                                 @include('customer.services.partials.service-card', [
