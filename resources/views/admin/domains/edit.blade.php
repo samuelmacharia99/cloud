@@ -44,22 +44,62 @@
         @csrf
         @method('PATCH')
 
-        <!-- Domain Name (Read-only) -->
+        <!-- Domain name -->
         <div>
-            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Domain Name</label>
-            <input type="text" value="{{ $domain->name }}" disabled class="w-full px-4 py-2 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-600 dark:text-slate-400 text-sm cursor-not-allowed">
-            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Domain name cannot be changed</p>
+            <label for="name" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Domain label</label>
+            <input
+                type="text"
+                id="name"
+                name="name"
+                value="{{ old('name', $domain->name) }}"
+                required
+                autocomplete="off"
+                spellcheck="false"
+                class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-sm"
+            >
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Second-level name only (e.g. <code class="font-mono">christosummit</code> for christosummit.org).</p>
+            @error('name')
+                <p class="text-xs text-red-600 dark:text-red-400 mt-1">{{ $message }}</p>
+            @enderror
         </div>
 
         <hr class="border-slate-200 dark:border-slate-700">
 
-        <!-- Extension (Read-only) -->
+        <!-- Extension -->
         <div>
-            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Extension</label>
-            <input type="text" value="{{ $domain->extension }}" disabled class="w-full px-4 py-2 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-600 dark:text-slate-400 text-sm cursor-not-allowed">
-            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Extension cannot be changed</p>
+            <label for="extension" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Extension</label>
+            <select
+                id="extension"
+                name="extension"
+                required
+                class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-sm"
+            >
+                @foreach ($extensions as $extension)
+                    <option value="{{ $extension }}" @selected(old('extension', $domain->extension) === $extension)>{{ $extension }}</option>
+                @endforeach
+            </select>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Full domain: <span class="font-mono">{{ format_domain_name(old('name', $domain->name), old('extension', $domain->extension)) }}</span></p>
+            @error('extension')
+                <p class="text-xs text-red-600 dark:text-red-400 mt-1">{{ $message }}</p>
+            @enderror
         </div>
 
+        @if ($domain->isLinkedToRegistrarApi())
+            <div class="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 p-4 space-y-3">
+                <p class="text-sm text-amber-900 dark:text-amber-200">
+                    This domain is linked to the registrar API. Renaming here updates Talksasa records only — it does not rename the domain at {{ $domain->registrar ?: 'the registrar' }}.
+                </p>
+                <label class="flex items-start gap-2 cursor-pointer">
+                    <input type="checkbox" name="confirm_local_rename" value="1" @checked(old('confirm_local_rename')) class="mt-1 w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-2 focus:ring-blue-500">
+                    <span class="text-sm text-amber-900 dark:text-amber-100">I confirm this is a local record correction in Talksasa.</span>
+                </label>
+                @error('confirm_local_rename')
+                    <p class="text-xs text-red-600 dark:text-red-400">{{ $message }}</p>
+                @enderror
+            </div>
+        @endif
+
+        <hr class="border-slate-200 dark:border-slate-700">
         <!-- Registrar -->
         <div>
             <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Registrar</label>

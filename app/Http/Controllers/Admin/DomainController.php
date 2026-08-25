@@ -3,18 +3,20 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\UpdateAdminDomainRequest;
 use App\Models\Domain;
 use App\Models\DomainExtension;
 use App\Models\DomainPricing;
 use App\Models\DomainRenewalOrder;
 use App\Models\User;
-use App\Services\DomainActivationService;
+use App\Services\Admin\AdminDomainUpdateService;
 use App\Services\DomainRegistrantContactService;
 use App\Services\DomainRenewalService;
 use App\Services\NotificationService;
 use App\Services\Registrar\CosmotownInventorySyncService;
 use App\Services\Registrar\RegistrarFulfillmentService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class DomainController extends Controller
 {
@@ -378,52 +380,34 @@ class DomainController extends Controller
 
     public function edit(Domain $domain)
     {
-        return view('admin.domains.edit', compact('domain'));
+        $extensions = DomainExtension::query()
+            ->orderBy('extension')
+            ->pluck('extension')
+            ->all();
+
+        if ($domain->extension && ! in_array($domain->extension, $extensions, true)) {
+            $extensions[] = $domain->extension;
+            sort($extensions);
+        }
+
+        return view('admin.domains.edit', compact('domain', 'extensions'));
     }
 
-    public function update(Request $request, Domain $domain)
+    public function update(UpdateAdminDomainRequest $request, Domain $domain, AdminDomainUpdateService $updates)
     {
-        \Log::info('Domain update request', [
-            'domain_id' => $domain->id,
-            'fields' => array_keys($request->except(['_token', '_method'])),
-        ]);
+        $validated = $request->validated();
+        $validated['auto_renew'] = $request->boolean('auto_renew');
 
         try {
-            $validated = $request->validate([
-                'registrar' => 'nullable|string',
-                'status' => 'required|in:pending,active,expired,suspended',
-                'registered_at' => 'nullable|date',
-                'expires_at' => 'nullable|date',
-                'nameserver_1' => 'nullable|string',
-                'nameserver_2' => 'nullable|string',
-                'notes' => 'nullable|string',
-            ]);
-
-            \Log::info('Validation passed', ['validated' => $validated]);
-
-            $validated['auto_renew'] = (bool) $request->has('auto_renew');
-
-            $domain->update($validated);
-
-            if ($validated['status'] === 'active') {
-                app(DomainActivationService::class)->applyAdminActivation($domain->fresh(), $validated);
-            }
-
-            \Log::info('Domain updated successfully', ['domain_id' => $domain->id]);
-
-            return redirect()->route('admin.domains.show', $domain)
-                ->with('success', 'Domain updated successfully.');
-        } catch (\Exception $e) {
-            \Log::error('Domain update failed', [
-                'domain_id' => $domain->id,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-            ]);
-
+            $updates->update($domain, $validated);
+        } catch (\Throwable $e) {
             return redirect()->back()
                 ->withInput()
                 ->with('error', 'Failed to update domain: '.$e->getMessage());
         }
+
+        return redirect()->route('admin.domains.show', $domain)
+            ->with('success', 'Domain updated successfully.');
     }
 
     public function destroy(Domain $domain)
@@ -487,7 +471,7 @@ class DomainController extends Controller
             return redirect()->route('admin.domains.show', $domain)
                 ->with('success', "Invoice {$invoice->invoice_number} generated successfully. Customer notified via email and SMS.");
         } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error('Failed to generate domain invoice', [
+            Log::error('Failed to generate domain invoice', [
                 'domain_id' => $domain->id,
                 'error' => $e->getMessage(),
             ]);
