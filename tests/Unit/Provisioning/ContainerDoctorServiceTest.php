@@ -165,7 +165,7 @@ YAML;
         $this->assertStringContainsString('server.php', $script);
         $this->assertDoesNotMatchRegularExpression('/php -S .*index\.php/', $script);
         $this->assertStringContainsString('/usr/sbin', $dockerfile);
-        $this->assertStringNotContainsString("include fastcgi_params;", $script);
+        $this->assertStringNotContainsString('include fastcgi_params;', $script);
         $this->assertStringContainsString('include $TMP/fastcgi_params;', $script);
     }
 
@@ -187,10 +187,63 @@ YAML;
         $logs = 'user-74-service-24-laravel: 2026/08/25 12:23:28 [emerg] 1#1: open() "/tmp/talksasa-php/fastcgi_params" failed (2: No such file or directory) in /tmp/talksasa-php/nginx.conf:37';
 
         $findings = app(ContainerDoctorService::class)->analyzeLogs($logs, 'laravel');
-        $finding = collect($findings)->firstWhere('id', 'php_builtin_dev_server');
+        $finding = collect($findings)->firstWhere('id', 'nginx_boot_failed');
 
         $this->assertNotNull($finding);
         $this->assertSame('switch_php_production_runtime', $finding['treat_action']);
+        $this->assertSame('critical', $finding['severity']);
+        $this->assertNotContains('php_builtin_dev_server', array_column($findings, 'id'));
+    }
+
+    #[Test]
+    public function it_prefers_nginx_boot_failure_over_generic_upstream_and_php_dash_s(): void
+    {
+        $merged = app(ContainerDoctorService::class)->mergeLogAndLiveFindings(
+            [[
+                'id' => 'php_builtin_dev_server',
+                'severity' => 'warning',
+                'title' => 'PHP development server',
+                'summary' => 'old logs',
+                'evidence' => ['PHP 8.3.33 Development Server (http://0.0.0.0:80) started'],
+                'treat_action' => 'switch_php_production_runtime',
+                'treat_label' => 'Switch to PHP-FPM',
+                'manual_steps' => [],
+            ]],
+            [
+                'findings' => [
+                    [
+                        'id' => 'nginx_boot_failed',
+                        'severity' => 'critical',
+                        'title' => 'nginx failed to start',
+                        'summary' => 'fastcgi_params',
+                        'evidence' => ['[emerg] open() "/tmp/talksasa-php/fastcgi_params" failed'],
+                        'treat_action' => 'switch_php_production_runtime',
+                        'treat_label' => 'Rebuild PHP-FPM runtime',
+                        'manual_steps' => [],
+                    ],
+                    [
+                        'id' => 'live_upstream_unreachable',
+                        'severity' => 'critical',
+                        'title' => 'proxy cannot reach the app',
+                        'summary' => '502',
+                        'evidence' => ['HTTP 502'],
+                        'treat_action' => 'recreate_application',
+                        'treat_label' => 'Recreate containers',
+                        'manual_steps' => [],
+                    ],
+                ],
+                'checks' => [
+                    'http_status' => 502,
+                    'restarting' => true,
+                    'php_production_runtime' => false,
+                ],
+            ]
+        );
+
+        $ids = array_column($merged, 'id');
+        $this->assertContains('nginx_boot_failed', $ids);
+        $this->assertNotContains('php_builtin_dev_server', $ids);
+        $this->assertNotContains('live_upstream_unreachable', $ids);
     }
 
     #[Test]

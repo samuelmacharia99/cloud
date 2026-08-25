@@ -14,7 +14,7 @@
                 <span class="text-[10px] uppercase tracking-wide font-semibold px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">Beta</span>
             </div>
             <p class="text-sm text-slate-600 dark:text-slate-400 mt-1 max-w-2xl">
-                Scans the latest <span x-text="logLines"></span> log lines plus live checks for common stack problems (including a single-threaded PHP development server) and offers one-click repairs.
+                Scans the latest <span x-text="logLines"></span> log lines plus live Docker/node checks (crash-loops, nginx/php-fpm, ports, disk, images) and offers one-click repairs.
             </p>
         </div>
         <button
@@ -56,7 +56,7 @@
 
         <template x-if="!hasResult && !diagnosing && !error && !treatMessage">
             <p class="text-sm text-slate-500 dark:text-slate-400">
-                Click <span class="font-medium text-slate-700 dark:text-slate-200">Run doctor</span> to check for a PHP development server, Postgres auth mismatches, missing drivers, Node/GD issues, permission errors, and more.
+                Click <span class="font-medium text-slate-700 dark:text-slate-200">Run doctor</span> to check crash-loops, nginx/php-fpm, a PHP development server, database credentials, missing drivers, Node/GD issues, permission errors, and more.
             </p>
         </template>
 
@@ -68,7 +68,7 @@
             </div>
         </template>
 
-        <template x-if="hasResult && liveChecks && (liveChecks.http_status || liveChecks.db_ok !== null)">
+        <template x-if="hasResult && liveChecks && (liveChecks.http_status || liveChecks.db_ok !== null || liveChecks.restarting || liveChecks.container_image || liveChecks.php_production_runtime !== null || liveChecks.publishes_port === false || liveChecks.disk_percent != null)">
             <div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 px-4 py-3 text-xs text-slate-600 dark:text-slate-300 flex flex-wrap gap-x-4 gap-y-1">
                 <span>Live checks:</span>
                 <span x-show="liveChecks.http_status" x-text="'HTTP ' + liveChecks.http_status"></span>
@@ -77,6 +77,10 @@
                 <span x-show="liveChecks.env_source" x-text="'Env: ' + liveChecks.env_source"></span>
                 <span x-show="liveChecks.upstream_reachable !== null && liveChecks.upstream_reachable !== undefined"
                       x-text="liveChecks.upstream_reachable ? 'App port: answering' : (liveChecks.bootstrap_in_progress ? 'App port: build in progress' : 'App port: not answering')"></span>
+                <span x-show="liveChecks.restarting" class="text-amber-700 dark:text-amber-300 font-semibold">Container: restarting</span>
+                <span x-show="liveChecks.publishes_port === false">Port: unpublished</span>
+                <span x-show="liveChecks.container_image" x-text="'Image: ' + liveChecks.container_image"></span>
+                <span x-show="liveChecks.disk_percent !== null && liveChecks.disk_percent !== undefined" x-text="'Node disk: ' + liveChecks.disk_percent + '%'"></span>
                 <span x-show="liveChecks.wordpress_image_editor !== null && liveChecks.wordpress_image_editor !== undefined"
                       x-text="liveChecks.wordpress_image_editor ? 'Images: processing ok' : 'Images: no editor'"></span>
                 <span x-show="liveChecks.wordpress_missing_thumbnails"
@@ -119,7 +123,7 @@
                         <div class="px-4 py-3 space-y-2" x-show="finding.evidence?.length || finding.manual_steps?.length">
                             <template x-if="finding.evidence?.length">
                                 <div>
-                                    <p class="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Evidence from logs</p>
+                                    <p class="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Evidence</p>
                                     <pre class="text-xs font-mono bg-slate-900 text-slate-300 p-2 rounded overflow-x-auto whitespace-pre-wrap max-h-28" x-text="finding.evidence.join('\n')"></pre>
                                 </div>
                             </template>

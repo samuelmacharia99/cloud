@@ -47,7 +47,7 @@ class ContainerDoctorService
         $findings = $this->analyzeLogs($logs, $stack, $service);
         $findings = $this->annotateFindingsWithLiveStatus($service, $findings);
 
-        $live = $this->collectLiveFindings($service);
+        $live = $this->collectLiveFindings($service, $logs);
         $findings = $this->mergeLogAndLiveFindings($findings, $live);
 
         return [
@@ -74,9 +74,14 @@ class ContainerDoctorService
             return ['success' => false, 'message' => 'Application is not deployed.'];
         }
 
-        // Recreating / Vite runtime repair can revive a crash-looping stack.
+        // Recreate / runtime rebuild / restart can revive a crash-looping stack.
         if (! $deployment->isRunning()
-            && ! in_array($action, ['recreate_application', 'fix_vite_production_runtime', 'switch_php_production_runtime'], true)) {
+            && ! in_array($action, [
+                'recreate_application',
+                'fix_vite_production_runtime',
+                'switch_php_production_runtime',
+                'restart_application',
+            ], true)) {
             return ['success' => false, 'message' => 'Application must be running before applying a fix.'];
         }
 
@@ -160,6 +165,13 @@ class ContainerDoctorService
                 'treat_label' => $rule['treat_label'],
                 'manual_steps' => $rule['manual_steps'],
             ];
+        }
+
+        if ($this->findingsContain($findings, ['nginx_boot_failed'])) {
+            $findings = array_values(array_filter(
+                $findings,
+                fn (array $f) => ($f['id'] ?? '') !== 'php_builtin_dev_server'
+            ));
         }
 
         if ($findings === [] && trim($logs) !== '' && ! str_starts_with(trim($logs), 'Error fetching logs:')) {
@@ -266,11 +278,13 @@ class ContainerDoctorService
     }
 
     /**
-     * Live probes against on-disk .env, PDO connectivity, HTTP status, and empty schema.
+     * Live probes against Docker state, on-disk .env, PDO connectivity, HTTP status, and empty schema.
+     * Crash-looping stacks still get infrastructure inspection — docker exec probes are skipped
+     * until the app container stays up.
      *
      * @return array{findings: list<array<string, mixed>>, checks: array<string, mixed>}
      */
-    public function collectLiveFindings(Service $service): array
+    public function collectLiveFindings(Service $service, string $logs = ''): array
     {
         $service->loadMissing('product.containerTemplate', 'containerDeployment.node');
         $deployment = $service->containerDeployment;
@@ -289,10 +303,15 @@ class ContainerDoctorService
             'spa_runtime_api_mismatch' => null,
             'php_production_runtime' => null,
             'php_start_command' => null,
+            'restarting' => null,
+            'container_image' => null,
+            'expected_image' => null,
+            'disk_percent' => null,
+            'publishes_port' => null,
         ];
         $findings = [];
 
-        if (! $deployment?->node || ! $deployment->isRunning()) {
+        if (! $deployment?->node) {
             return ['findings' => $findings, 'checks' => $checks];
         }
 
@@ -304,9 +323,23 @@ class ContainerDoctorService
             ?? ''
         ));
         $ssh = SSHService::forNode($deployment->node);
+        $containerReady = $deployment->isRunning();
 
         try {
-            if ($stack === 'wordpress') {
+            $upstream = $this->withBootstrapState($ssh, $deployment, $this->probeUpstream($ssh, $deployment));
+            $snapshot = $this->inspectInfrastructureSnapshot($ssh, $service, $deployment, $upstream);
+            $this->mergeInfrastructureSnapshotIntoChecks($checks, $snapshot, $upstream);
+            $checks['upstream_reachable'] = $upstream['reachable'];
+            $checks['upstream_local_status'] = $upstream['local_status'];
+            $checks['containers_stopped'] = $upstream['stopped'];
+            $checks['bootstrap_in_progress'] = is_string($upstream['bootstrapping'] ?? null);
+
+            $findings = app(ContainerDoctorInfrastructureAnalyzer::class)->findings($logs, $stack, $snapshot);
+
+            $containerReady = ($snapshot['running'] ?? false) === true
+                && ($snapshot['restarting'] ?? false) !== true;
+
+            if ($containerReady && $stack === 'wordpress') {
                 try {
                     $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
                     $writeProbe = trim($ssh->exec(
@@ -433,167 +466,170 @@ class ContainerDoctorService
                 }
             }
 
-            if (in_array($stack, ['laravel', 'php'], true)) {
+            if ($containerReady && in_array($stack, ['laravel', 'php'], true)
+                && ! $this->findingsContain($findings, ['nginx_boot_failed'])) {
                 $phpFinding = $this->phpBuiltinDevServerFinding($ssh, $deployment, $stack, $checks);
                 if ($phpFinding !== null) {
                     $findings[] = $phpFinding;
                 }
             }
 
-            $platformEnv = is_array($deployment->env_values) ? $deployment->env_values : [];
-            $liveEnv = $this->readLiveAppEnvironment($ssh, $deployment);
-            $checks['env_source'] = $liveEnv === [] ? 'platform' : 'app_dotenv';
-            $mergedEnv = $liveEnv === [] ? $platformEnv : array_merge($platformEnv, $liveEnv);
+            if ($containerReady) {
+                $platformEnv = is_array($deployment->env_values) ? $deployment->env_values : [];
+                $liveEnv = $this->readLiveAppEnvironment($ssh, $deployment);
+                $checks['env_source'] = $liveEnv === [] ? 'platform' : 'app_dotenv';
+                $mergedEnv = $liveEnv === [] ? $platformEnv : array_merge($platformEnv, $liveEnv);
 
-            if ($databaseTemplate) {
-                $probeEnv = $this->envForRuntimeDatabaseProbe($mergedEnv, (string) $databaseTemplate->type);
-                $probe = $deploymentService->probeApplicationDatabaseAccess(
-                    $ssh,
-                    $deployment->container_name,
-                    (string) $databaseTemplate->type,
-                    $probeEnv
-                );
-                $checks['db_ok'] = $probe['ok'];
-                $checks['db_error'] = $probe['error'];
-
-                if (! $probe['ok']) {
-                    $normalized = $deploymentService->normalizeDatabaseEnvironment(
-                        $service,
-                        $mergedEnv,
-                        (string) $databaseTemplate->type
-                    );
-
-                    $details = [];
-                    if ($normalized['corrected'] && $normalized['previous_database'] !== $normalized['database']) {
-                        $details[] = 'DB_DATABASE is "'.($normalized['previous_database'] ?? '').'" but should be "'.$normalized['database'].'"';
-                    }
-                    if (! empty($normalized['password_aligned'])) {
-                        $details[] = 'DB_PASSWORD, POSTGRES_PASSWORD/MYSQL_PASSWORD, and DATABASE_URL are not the same password';
-                    }
-
-                    if ($details !== []) {
-                        $findings[] = [
-                            'id' => 'live_env_credential_drift',
-                            'severity' => 'critical',
-                            'title' => 'Live .env database credentials are inconsistent',
-                            'summary' => 'The running app config still has drifted DB settings that commonly cause HTTP 500s. '
-                                .implode('. ', $details).'.',
-                            'evidence' => $details,
-                            'treat_action' => 'sync_database_credentials',
-                            'treat_label' => 'Repair DB credentials',
-                            'manual_steps' => [
-                                'Click Repair DB credentials to align passwords and rewrite .env.',
-                                'Then reload the site.',
-                            ],
-                            'source' => 'live',
-                        ];
-                    }
-
-                    if (! empty($probe['driver_missing'])) {
-                        $findings[] = [
-                            'id' => 'live_missing_pdo',
-                            'severity' => 'critical',
-                            'title' => 'Live check: database PDO driver missing',
-                            'summary' => 'The app container cannot open a database connection because the PDO driver is missing.',
-                            'evidence' => array_filter([(string) $probe['error']]),
-                            'treat_action' => $databaseTemplate->type === 'postgresql' ? 'ensure_pdo_pgsql' : null,
-                            'treat_label' => $databaseTemplate->type === 'postgresql' ? 'Install pdo_pgsql' : null,
-                            'manual_steps' => ['Install the missing PDO driver, then retry.'],
-                            'source' => 'live',
-                        ];
-                    } else {
-                        $error = (string) ($probe['error'] ?? 'Connection failed');
-                        $isAuth = (bool) preg_match('/password authentication failed|access denied/i', $error);
-                        $isMissingDb = (bool) preg_match('/database ".*" does not exist|unknown database/i', $error);
-
-                        $findings[] = [
-                            'id' => 'live_db_connection_failed',
-                            'severity' => 'critical',
-                            'title' => $isMissingDb
-                                ? 'Live check: database does not exist'
-                                : ($isAuth ? 'Live check: database authentication failed' : 'Live check: database connection failed'),
-                            'summary' => 'A real connection from the app container to the database sidecar failed right now. '
-                                .'This is why the site can still return HTTP 500 even when older log lines look stale.',
-                            'evidence' => [mb_substr($error, 0, 300)],
-                            'treat_action' => 'sync_database_credentials',
-                            'treat_label' => 'Repair DB credentials',
-                            'manual_steps' => [
-                                'Repair DB credentials (creates missing DB, resets role password, rewrites .env).',
-                                'If it still fails, Redeploy with Reset database.',
-                            ],
-                            'source' => 'live',
-                        ];
-                    }
-                } else {
-                    $pdoTableCount = $deploymentService->countApplicationDatabaseTables(
+                if ($databaseTemplate) {
+                    $probeEnv = $this->envForRuntimeDatabaseProbe($mergedEnv, (string) $databaseTemplate->type);
+                    $probe = $deploymentService->probeApplicationDatabaseAccess(
                         $ssh,
                         $deployment->container_name,
                         (string) $databaseTemplate->type,
                         $probeEnv
                     );
-                    $artisanTableCount = $this->countTablesViaArtisan($ssh, $deployment);
-                    // Prefer artisan (same connection Laravel uses, including config cache).
-                    $tableCount = $artisanTableCount ?? $pdoTableCount;
-                    $checks['table_count'] = $tableCount;
-                    $checks['table_count_pdo'] = $pdoTableCount;
-                    $checks['table_count_artisan'] = $artisanTableCount;
-                    $checks['db_name'] = $probeEnv['DB_DATABASE'] ?? null;
+                    $checks['db_ok'] = $probe['ok'];
+                    $checks['db_error'] = $probe['error'];
 
-                    $hasArtisan = $this->containerHasArtisan($ssh, $deployment);
+                    if (! $probe['ok']) {
+                        $normalized = $deploymentService->normalizeDatabaseEnvironment(
+                            $service,
+                            $mergedEnv,
+                            (string) $databaseTemplate->type
+                        );
 
-                    if (
-                        $pdoTableCount === 0
-                        && $artisanTableCount !== null
-                        && $artisanTableCount > 0
-                    ) {
-                        $findings[] = [
-                            'id' => 'live_db_config_drift',
-                            'severity' => 'critical',
-                            'title' => 'Live check: .env DB differs from artisan connection',
-                            'summary' => 'On-disk .env database "'.($probeEnv['DB_DATABASE'] ?? '').'" has 0 tables, '
-                                .'but artisan sees '.$artisanTableCount.' tables. Config cache is likely pointing at a different database than .env.',
-                            'evidence' => [
-                                'pdo_tables=0',
-                                'artisan_tables='.$artisanTableCount,
-                                'DB_DATABASE='.($probeEnv['DB_DATABASE'] ?? ''),
-                            ],
-                            'treat_action' => 'clear_laravel_caches',
-                            'treat_label' => 'Clear Laravel caches',
-                            'manual_steps' => [
-                                'Click Clear Laravel caches (runs config:clear / optimize:clear).',
-                                'Then: php artisan migrate:fresh --force && php artisan db:seed --force against the .env database, or align .env with the DB that already has tables.',
-                            ],
-                            'source' => 'live',
-                        ];
-                    } elseif ($tableCount === 0 && $hasArtisan && in_array($stack, ['laravel', 'php'], true)) {
-                        $findings[] = [
-                            'id' => 'live_empty_database',
-                            'severity' => 'critical',
-                            'title' => 'Live check: database has no tables',
-                            'summary' => 'DB credentials work for "'.($probeEnv['DB_DATABASE'] ?? '').'", but the schema is empty. '
-                                .'HTTP 500 will continue until migrations (or a SQL import) create tables.',
-                            'evidence' => [
-                                'table_count=0',
-                                'DB_DATABASE='.($probeEnv['DB_DATABASE'] ?? ''),
-                                $artisanTableCount === null ? 'artisan_count=unavailable' : 'artisan_tables=0',
-                            ],
-                            'treat_action' => 'migrate_fresh',
-                            'treat_label' => 'Rebuild schema (migrate:fresh)',
-                            'manual_steps' => [
-                                'Click Rebuild schema — runs php artisan migrate:fresh --force (safe while tables=0).',
-                                'Or in Terminal: php artisan config:clear && php artisan migrate:fresh --force',
-                                'Then: php artisan db:seed --force',
-                            ],
-                            'source' => 'live',
-                        ];
+                        $details = [];
+                        if ($normalized['corrected'] && $normalized['previous_database'] !== $normalized['database']) {
+                            $details[] = 'DB_DATABASE is "'.($normalized['previous_database'] ?? '').'" but should be "'.$normalized['database'].'"';
+                        }
+                        if (! empty($normalized['password_aligned'])) {
+                            $details[] = 'DB_PASSWORD, POSTGRES_PASSWORD/MYSQL_PASSWORD, and DATABASE_URL are not the same password';
+                        }
+
+                        if ($details !== []) {
+                            $findings[] = [
+                                'id' => 'live_env_credential_drift',
+                                'severity' => 'critical',
+                                'title' => 'Live .env database credentials are inconsistent',
+                                'summary' => 'The running app config still has drifted DB settings that commonly cause HTTP 500s. '
+                                    .implode('. ', $details).'.',
+                                'evidence' => $details,
+                                'treat_action' => 'sync_database_credentials',
+                                'treat_label' => 'Repair DB credentials',
+                                'manual_steps' => [
+                                    'Click Repair DB credentials to align passwords and rewrite .env.',
+                                    'Then reload the site.',
+                                ],
+                                'source' => 'live',
+                            ];
+                        }
+
+                        if (! empty($probe['driver_missing'])) {
+                            $findings[] = [
+                                'id' => 'live_missing_pdo',
+                                'severity' => 'critical',
+                                'title' => 'Live check: database PDO driver missing',
+                                'summary' => 'The app container cannot open a database connection because the PDO driver is missing.',
+                                'evidence' => array_filter([(string) $probe['error']]),
+                                'treat_action' => $databaseTemplate->type === 'postgresql' ? 'ensure_pdo_pgsql' : null,
+                                'treat_label' => $databaseTemplate->type === 'postgresql' ? 'Install pdo_pgsql' : null,
+                                'manual_steps' => ['Install the missing PDO driver, then retry.'],
+                                'source' => 'live',
+                            ];
+                        } else {
+                            $error = (string) ($probe['error'] ?? 'Connection failed');
+                            $isAuth = (bool) preg_match('/password authentication failed|access denied/i', $error);
+                            $isMissingDb = (bool) preg_match('/database ".*" does not exist|unknown database/i', $error);
+
+                            $findings[] = [
+                                'id' => 'live_db_connection_failed',
+                                'severity' => 'critical',
+                                'title' => $isMissingDb
+                                    ? 'Live check: database does not exist'
+                                    : ($isAuth ? 'Live check: database authentication failed' : 'Live check: database connection failed'),
+                                'summary' => 'A real connection from the app container to the database sidecar failed right now. '
+                                    .'This is why the site can still return HTTP 500 even when older log lines look stale.',
+                                'evidence' => [mb_substr($error, 0, 300)],
+                                'treat_action' => 'sync_database_credentials',
+                                'treat_label' => 'Repair DB credentials',
+                                'manual_steps' => [
+                                    'Repair DB credentials (creates missing DB, resets role password, rewrites .env).',
+                                    'If it still fails, Redeploy with Reset database.',
+                                ],
+                                'source' => 'live',
+                            ];
+                        }
+                    } else {
+                        $pdoTableCount = $deploymentService->countApplicationDatabaseTables(
+                            $ssh,
+                            $deployment->container_name,
+                            (string) $databaseTemplate->type,
+                            $probeEnv
+                        );
+                        $artisanTableCount = $this->countTablesViaArtisan($ssh, $deployment);
+                        // Prefer artisan (same connection Laravel uses, including config cache).
+                        $tableCount = $artisanTableCount ?? $pdoTableCount;
+                        $checks['table_count'] = $tableCount;
+                        $checks['table_count_pdo'] = $pdoTableCount;
+                        $checks['table_count_artisan'] = $artisanTableCount;
+                        $checks['db_name'] = $probeEnv['DB_DATABASE'] ?? null;
+
+                        $hasArtisan = $this->containerHasArtisan($ssh, $deployment);
+
+                        if (
+                            $pdoTableCount === 0
+                            && $artisanTableCount !== null
+                            && $artisanTableCount > 0
+                        ) {
+                            $findings[] = [
+                                'id' => 'live_db_config_drift',
+                                'severity' => 'critical',
+                                'title' => 'Live check: .env DB differs from artisan connection',
+                                'summary' => 'On-disk .env database "'.($probeEnv['DB_DATABASE'] ?? '').'" has 0 tables, '
+                                    .'but artisan sees '.$artisanTableCount.' tables. Config cache is likely pointing at a different database than .env.',
+                                'evidence' => [
+                                    'pdo_tables=0',
+                                    'artisan_tables='.$artisanTableCount,
+                                    'DB_DATABASE='.($probeEnv['DB_DATABASE'] ?? ''),
+                                ],
+                                'treat_action' => 'clear_laravel_caches',
+                                'treat_label' => 'Clear Laravel caches',
+                                'manual_steps' => [
+                                    'Click Clear Laravel caches (runs config:clear / optimize:clear).',
+                                    'Then: php artisan migrate:fresh --force && php artisan db:seed --force against the .env database, or align .env with the DB that already has tables.',
+                                ],
+                                'source' => 'live',
+                            ];
+                        } elseif ($tableCount === 0 && $hasArtisan && in_array($stack, ['laravel', 'php'], true)) {
+                            $findings[] = [
+                                'id' => 'live_empty_database',
+                                'severity' => 'critical',
+                                'title' => 'Live check: database has no tables',
+                                'summary' => 'DB credentials work for "'.($probeEnv['DB_DATABASE'] ?? '').'", but the schema is empty. '
+                                    .'HTTP 500 will continue until migrations (or a SQL import) create tables.',
+                                'evidence' => [
+                                    'table_count=0',
+                                    'DB_DATABASE='.($probeEnv['DB_DATABASE'] ?? ''),
+                                    $artisanTableCount === null ? 'artisan_count=unavailable' : 'artisan_tables=0',
+                                ],
+                                'treat_action' => 'migrate_fresh',
+                                'treat_label' => 'Rebuild schema (migrate:fresh)',
+                                'manual_steps' => [
+                                    'Click Rebuild schema — runs php artisan migrate:fresh --force (safe while tables=0).',
+                                    'Or in Terminal: php artisan config:clear && php artisan migrate:fresh --force',
+                                    'Then: php artisan db:seed --force',
+                                ],
+                                'source' => 'live',
+                            ];
+                        }
                     }
                 }
-            }
 
-            if ($stack === 'nodejs') {
-                $apiMismatch = $this->spaRuntimeApiMismatchFinding($ssh, $deployment, $checks);
-                if ($apiMismatch !== null) {
-                    $findings[] = $apiMismatch;
+                if ($stack === 'nodejs') {
+                    $apiMismatch = $this->spaRuntimeApiMismatchFinding($ssh, $deployment, $checks);
+                    if ($apiMismatch !== null) {
+                        $findings[] = $apiMismatch;
+                    }
                 }
             }
 
@@ -607,21 +643,32 @@ class ContainerDoctorService
                 $hasCredentialDbIssue = collect($findings)->contains(
                     fn ($f) => in_array($f['id'] ?? '', ['live_db_connection_failed', 'live_env_credential_drift', 'live_missing_pdo'], true)
                 );
+                $hasSpecificInfra = $this->findingsContain($findings, [
+                    'nginx_boot_failed',
+                    'php_fpm_sock_missing',
+                    'php_builtin_dev_server',
+                    'container_crash_loop',
+                    'oom_killed',
+                    'node_disk_exhausted',
+                    'port_already_allocated',
+                    'docker_network_missing',
+                    'missing_vendor_autoload',
+                    'stale_php_runtime_image',
+                ]);
 
-                $appErrors = $this->readRecentApplicationErrors($ssh, $deployment);
+                $appErrors = $containerReady ? $this->readRecentApplicationErrors($ssh, $deployment) : [];
                 $evidence = array_values(array_filter([
                     'HTTP '.$httpStatus,
                     (string) ($deployment->getAccessUrl() ?? ''),
                     ...$appErrors,
                 ]));
 
-                $upstream = $this->withBootstrapState($ssh, $deployment, $this->probeUpstream($ssh, $deployment));
                 $checks['upstream_reachable'] = $upstream['reachable'];
                 $checks['upstream_local_status'] = $upstream['local_status'];
                 $checks['containers_stopped'] = $upstream['stopped'];
-                $checks['bootstrap_in_progress'] = is_string($upstream['bootstrapping']);
+                $checks['bootstrap_in_progress'] = is_string($upstream['bootstrapping'] ?? null);
 
-                if (! $upstream['reachable'] && $upstream['assigned_port'] !== null && is_string($upstream['bootstrapping'])) {
+                if (! $upstream['reachable'] && $upstream['assigned_port'] !== null && is_string($upstream['bootstrapping'] ?? null)) {
                     $findings[] = [
                         'id' => 'live_bootstrap_in_progress',
                         'severity' => 'warning',
@@ -638,7 +685,7 @@ class ContainerDoctorService
                         ],
                         'source' => 'live',
                     ];
-                } elseif (! $upstream['reachable'] && $upstream['assigned_port'] !== null) {
+                } elseif (! $upstream['reachable'] && $upstream['assigned_port'] !== null && ! $hasSpecificInfra) {
                     $findings[] = [
                         'id' => 'live_upstream_unreachable',
                         'severity' => 'critical',
@@ -675,7 +722,7 @@ class ContainerDoctorService
                         ],
                         'source' => 'live',
                     ];
-                } else {
+                } elseif ($containerReady && ! $hasSpecificInfra) {
                     $looksLikeMissingCacheLocks = collect($appErrors)->contains(
                         fn ($line) => (bool) preg_match('/cache_locks/i', (string) $line)
                     );
@@ -736,17 +783,19 @@ class ContainerDoctorService
                 }
             }
         } catch (\Throwable $e) {
-            $findings[] = [
-                'id' => 'live_probe_failed',
-                'severity' => 'warning',
-                'title' => 'Live checks could not finish',
-                'summary' => 'Doctor could not complete live probes: '.$e->getMessage(),
-                'evidence' => [mb_substr($e->getMessage(), 0, 240)],
-                'treat_action' => null,
-                'treat_label' => null,
-                'manual_steps' => ['Retry Run doctor in a minute.'],
-                'source' => 'live',
-            ];
+            if ($findings === []) {
+                $findings[] = [
+                    'id' => 'live_probe_failed',
+                    'severity' => 'warning',
+                    'title' => 'Live checks could not finish',
+                    'summary' => 'Doctor could not complete live probes: '.$e->getMessage(),
+                    'evidence' => [mb_substr($e->getMessage(), 0, 240)],
+                    'treat_action' => null,
+                    'treat_label' => null,
+                    'manual_steps' => ['Retry Run doctor in a minute.'],
+                    'source' => 'live',
+                ];
+            }
         } finally {
             $ssh->disconnect();
         }
@@ -828,6 +877,30 @@ class ContainerDoctorService
         }
 
         $merged = array_values($byId);
+        $ids = array_column($merged, 'id');
+        $drop = [];
+        if (in_array('nginx_boot_failed', $ids, true)) {
+            $drop = ['php_builtin_dev_server', 'container_crash_loop', 'live_upstream_unreachable', 'stale_php_runtime_image'];
+        } elseif (array_intersect($ids, [
+            'php_builtin_dev_server',
+            'php_fpm_sock_missing',
+            'oom_killed',
+            'node_disk_exhausted',
+            'port_already_allocated',
+            'docker_network_missing',
+            'missing_vendor_autoload',
+            'container_crash_loop',
+        ]) !== []) {
+            $drop = ['live_upstream_unreachable'];
+        }
+
+        if ($drop !== []) {
+            $merged = array_values(array_filter(
+                $merged,
+                fn (array $f) => ! in_array($f['id'] ?? '', $drop, true)
+            ));
+        }
+
         usort($merged, function (array $a, array $b): int {
             $order = ['critical' => 0, 'warning' => 1, 'info' => 2];
 
@@ -1073,6 +1146,130 @@ PHP;
             return 'HTTP body: '.mb_substr(trim(preg_replace('/\s+/', ' ', strip_tags($body))), 0, 200);
         } catch (\Throwable) {
             return null;
+        }
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $findings
+     * @param  list<string>  $ids
+     */
+    private function findingsContain(array $findings, array $ids): bool
+    {
+        return collect($findings)->contains(
+            fn ($finding) => in_array($finding['id'] ?? '', $ids, true)
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $upstream
+     * @return array<string, mixed>
+     */
+    private function inspectInfrastructureSnapshot(SSHService $ssh, Service $service, $deployment, array $upstream): array
+    {
+        $name = (string) $deployment->container_name;
+        $raw = trim($ssh->exec(
+            'docker inspect --format '
+            .escapeshellarg('{{.State.Status}}|||{{.State.Running}}|||{{.State.Restarting}}|||{{.State.OOMKilled}}|||{{.RestartCount}}|||{{.Config.Image}}|||{{json .Config.Cmd}}|||{{.State.Error}}')
+            .' '.escapeshellarg($name).' 2>/dev/null || true',
+            15
+        ));
+
+        $parts = $raw === '' ? [] : explode('|||', $raw, 8);
+        $status = trim((string) ($parts[0] ?? ''));
+        $running = strtolower((string) ($parts[1] ?? '')) === 'true';
+        $restarting = strtolower((string) ($parts[2] ?? '')) === 'true'
+            || str_contains(strtolower($status), 'restart');
+        $oom = strtolower((string) ($parts[3] ?? '')) === 'true';
+        $restartCount = is_numeric($parts[4] ?? null) ? (int) $parts[4] : 0;
+        $image = trim((string) ($parts[5] ?? ''));
+        $cmd = trim((string) ($parts[6] ?? ''), " \t\n\r\0\x0B\"[]");
+        $stateError = trim((string) ($parts[7] ?? ''));
+
+        foreach ($upstream['containers'] ?? [] as $container) {
+            $containerStatus = strtolower((string) ($container['status'] ?? ''));
+            if (str_contains($containerStatus, 'restarting')
+                || strtolower((string) ($container['state'] ?? '')) === 'restarting') {
+                $restarting = true;
+            }
+        }
+
+        $processList = '';
+        if ($running && ! $restarting) {
+            $processList = trim($ssh->exec(
+                'docker top '.escapeshellarg($name).' -eo args 2>/dev/null || true',
+                15
+            ));
+        }
+
+        $diskPercent = null;
+        $df = trim($ssh->exec(
+            "df -P /opt/talksasa 2>/dev/null | awk 'NR==2 {gsub(\"%\",\"\",\$5); print \$5}'"
+            ." || df -P / 2>/dev/null | awk 'NR==2 {gsub(\"%\",\"\",\$5); print \$5}'",
+            15
+        ));
+        if ($df !== '' && ctype_digit($df)) {
+            $diskPercent = (int) $df;
+        }
+
+        $expectedImage = '';
+        $template = $service->effectiveContainerTemplate() ?? $service->product?->containerTemplate;
+        if ($template) {
+            $provisioner = app(RuntimeImageProvisioner::class);
+            if ($provisioner->usesRuntimeImage($template)) {
+                $expectedImage = (string) ($provisioner->resolveImageReference(
+                    $template,
+                    $deployment->selected_version ?? null
+                )['image'] ?? '');
+            }
+        }
+
+        $dbSidecarRunning = null;
+        foreach ($upstream['containers'] ?? [] as $container) {
+            $cname = (string) ($container['name'] ?? '');
+            if ($cname !== '' && (str_ends_with($cname, '-db') || str_contains($cname, '-db-'))) {
+                $dbSidecarRunning = strtolower((string) ($container['state'] ?? '')) === 'running';
+            }
+        }
+
+        return [
+            'status' => $status !== '' ? $status : implode('; ', $upstream['stopped'] ?? []),
+            'running' => $running,
+            'restarting' => $restarting,
+            'oom' => $oom,
+            'restart_count' => $restartCount,
+            'image' => $image,
+            'expected_image' => $expectedImage,
+            'cmd' => $cmd,
+            'state_error' => $stateError,
+            'process_list' => $processList,
+            'disk_percent' => $diskPercent,
+            'crash_logs' => $upstream['crash_logs'] ?? [],
+            'stopped' => $upstream['stopped'] ?? [],
+            'publishes_port' => $upstream['publishes_port'] ?? null,
+            'assigned_port' => $upstream['assigned_port'] ?? $deployment->assigned_port,
+            'db_sidecar_running' => $dbSidecarRunning,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $checks
+     * @param  array<string, mixed>  $snapshot
+     * @param  array<string, mixed>  $upstream
+     */
+    private function mergeInfrastructureSnapshotIntoChecks(array &$checks, array $snapshot, array $upstream): void
+    {
+        $checks['restarting'] = ($snapshot['restarting'] ?? false) === true;
+        $checks['container_image'] = $snapshot['image'] ?? null;
+        $checks['expected_image'] = $snapshot['expected_image'] ?? null;
+        $checks['disk_percent'] = $snapshot['disk_percent'] ?? null;
+        $checks['publishes_port'] = $snapshot['publishes_port'] ?? $upstream['publishes_port'] ?? null;
+        $checks['php_start_command'] = ($snapshot['cmd'] ?? '') !== '' ? $snapshot['cmd'] : ($checks['php_start_command'] ?? null);
+
+        $processes = (string) ($snapshot['process_list'] ?? '');
+        if ($processes !== '') {
+            $phpDashS = $this->processListUsesPhpBuiltinDevServer($processes);
+            $nginxUp = $this->processListUsesPhpFpm($processes);
+            $checks['php_production_runtime'] = $nginxUp && ! $phpDashS;
         }
     }
 
@@ -1648,6 +1845,42 @@ PHP;
     {
         return [
             [
+                'id' => 'nginx_boot_failed',
+                'severity' => 'critical',
+                'stacks' => ['laravel', 'php'],
+                'patterns' => [
+                    '/\[emerg\].*fastcgi_params/i',
+                    '/nginx: \[emerg\]/i',
+                    '/open\(\) "\/tmp\/talksasa-php\/fastcgi_params" failed/i',
+                    '/bind\(\) to 0\.0\.0\.0:\d+ failed/i',
+                ],
+                'title' => 'nginx failed to start (container crash-loop)',
+                'summary' => 'The PHP runtime’s nginx process exited on boot, so Compose keeps restarting the container and the published port never stays up. This is a Talksasa runtime config problem, not an application code bug. Rebuild onto the current PHP-FPM image.',
+                'treat_action' => 'switch_php_production_runtime',
+                'treat_label' => 'Rebuild PHP-FPM runtime',
+                'manual_steps' => [
+                    'Click Rebuild PHP-FPM runtime — rebuilds the node image and recreates the app container (database is kept).',
+                    'The first rebuild on a host can take several minutes.',
+                ],
+            ],
+            [
+                'id' => 'php_fpm_sock_missing',
+                'severity' => 'critical',
+                'stacks' => ['laravel', 'php'],
+                'patterns' => [
+                    '/connect\(\) failed[^\n]*php-fpm/i',
+                    '/No such file or directory[^\n]*php-fpm\.sock/i',
+                    '/php-fpm\.sock failed/i',
+                ],
+                'title' => 'nginx cannot reach PHP-FPM',
+                'summary' => 'nginx started but the FastCGI socket is missing, so every request 502s. Rebuild the PHP-FPM runtime so php-fpm and nginx share the same socket path.',
+                'treat_action' => 'switch_php_production_runtime',
+                'treat_label' => 'Rebuild PHP-FPM runtime',
+                'manual_steps' => [
+                    'Rebuild PHP-FPM runtime, then re-scan Doctor.',
+                ],
+            ],
+            [
                 'id' => 'php_builtin_dev_server',
                 'severity' => 'warning',
                 'stacks' => ['laravel', 'php'],
@@ -1655,7 +1888,6 @@ PHP;
                     '/PHP \S+ Development Server \(http:\/\//i',
                     '/php artisan serve --host=/i',
                     '/nginx\/php-fpm unavailable[^\n]*falling back to php -S/i',
-                    '/\[emerg\].*fastcgi_params/i',
                 ],
                 'title' => 'PHP development server is handling web traffic',
                 'summary' => 'This app is running PHP’s built-in server (`php -S` / `artisan serve`), which handles one request at a time. Dashboard pages that load CSS/JS plus several AJAX calls will feel slow even when MySQL is healthy. Restart will not fix this.',
@@ -1972,6 +2204,144 @@ PHP;
                 'manual_steps' => [
                     'Install missing extensions from the PHP Extensions tab.',
                     'Retry Git pull / composer install.',
+                ],
+            ],
+            [
+                'id' => 'mysql_connection_refused',
+                'severity' => 'critical',
+                'stacks' => ['laravel', 'php', 'wordpress', 'nodejs', '*'],
+                'patterns' => [
+                    '/SQLSTATE\[HY000\]\s*\[2002\]/i',
+                    '/Connection refused.*3306/i',
+                    '/php_network_getaddresses: getaddrinfo failed.*db/i',
+                    '/SQLSTATE\[HY000\] \[1049\]/i',
+                    '/Unknown database/i',
+                ],
+                'title' => 'Application cannot reach the database sidecar',
+                'summary' => 'PHP connected to host "db" but MySQL refused the connection, the hostname did not resolve, or the schema is missing. Often the sidecar is still booting or credentials drifted after a redeploy.',
+                'treat_action' => 'sync_database_credentials',
+                'treat_label' => 'Repair DB credentials',
+                'manual_steps' => [
+                    'Wait a few seconds if MySQL just restarted, then Repair DB credentials.',
+                    'If the sidecar is crash-looping, Recreate containers (keep database).',
+                ],
+            ],
+            [
+                'id' => 'redis_connection_refused',
+                'severity' => 'warning',
+                'stacks' => ['laravel', 'php', 'nodejs', '*'],
+                'patterns' => [
+                    '/Connection refused[^\n]*6379/i',
+                    '/RedisException/i',
+                    '/php_network_getaddresses[^\n]*redis/i',
+                ],
+                'title' => 'Redis is configured but not reachable',
+                'summary' => 'The app SESSION/CACHE/QUEUE driver points at Redis, but this stack has no Redis sidecar. Switch those drivers to file/database, or the site will 500.',
+                'treat_action' => 'use_file_cache',
+                'treat_label' => 'Switch cache to file',
+                'manual_steps' => [
+                    'Switch cache to file from Doctor, then set SESSION_DRIVER=file in Environment if sessions still fail.',
+                ],
+            ],
+            [
+                'id' => 'missing_vendor_autoload',
+                'severity' => 'critical',
+                'stacks' => ['laravel', 'php'],
+                'patterns' => [
+                    '/Failed opening required[^\n]*vendor/i',
+                    '/vendor\/autoload\.php[^\n]*failed to open stream/i',
+                ],
+                'title' => 'Composer dependencies are missing',
+                'summary' => 'PHP cannot boot because vendor/ is incomplete. Git pull without composer install, or a killed composer run, causes this.',
+                'treat_action' => null,
+                'treat_label' => null,
+                'manual_steps' => [
+                    'On the Git tab: Pull latest (runs composer install).',
+                    'Or in Terminal: composer install --no-dev --optimize-autoloader',
+                ],
+            ],
+            [
+                'id' => 'php_fatal_memory',
+                'severity' => 'critical',
+                'stacks' => ['laravel', 'php', 'wordpress', '*'],
+                'patterns' => [
+                    '/Allowed memory size of \d+ bytes exhausted/i',
+                ],
+                'title' => 'PHP ran out of memory',
+                'summary' => 'A request or artisan command hit the PHP memory_limit. Restart clears the crash; a larger plan or a cheaper query is the real fix.',
+                'treat_action' => 'restart_application',
+                'treat_label' => 'Restart application',
+                'manual_steps' => [
+                    'Restart to recover, then raise the plan if this repeats on normal traffic.',
+                ],
+            ],
+            [
+                'id' => 'mix_manifest_missing',
+                'severity' => 'warning',
+                'stacks' => ['laravel', 'php'],
+                'patterns' => [
+                    '/Mix manifest not found/i',
+                    '/Vite manifest not found/i',
+                    '/Unable to locate file in Vite manifest/i',
+                ],
+                'title' => 'Frontend assets were not built',
+                'summary' => 'Laravel cannot find public/mix-manifest.json or the Vite manifest. The HTML loads but CSS/JS 404. Build assets in the container or deploy compiled public/build.',
+                'treat_action' => null,
+                'treat_label' => null,
+                'manual_steps' => [
+                    'In Terminal: npm ci && npm run build (from the app root).',
+                    'Or commit public/build and pull again.',
+                ],
+            ],
+            [
+                'id' => 'docker_network_missing',
+                'severity' => 'critical',
+                'stacks' => ['*'],
+                'patterns' => [
+                    '/network .*talksasa-net.* not found/i',
+                    '/network [^\n]*not found/i',
+                ],
+                'title' => 'Docker network is missing on this host',
+                'summary' => 'Compose cannot attach the app to talksasa-net. Recreate the stack after the shared bridge exists on the node.',
+                'treat_action' => 'recreate_application',
+                'treat_label' => 'Recreate containers',
+                'manual_steps' => [
+                    'Recreate containers. If it still fails, the container host needs the talksasa-net bridge (node bootstrap).',
+                ],
+            ],
+            [
+                'id' => 'port_already_allocated',
+                'severity' => 'critical',
+                'stacks' => ['*'],
+                'patterns' => [
+                    '/port is already allocated/i',
+                    '/Bind for 0\.0\.0\.0:\d+ failed/i',
+                    '/EADDRINUSE/i',
+                    '/address already in use/i',
+                ],
+                'title' => 'Host port is already in use',
+                'summary' => 'Another container (or a stale copy of this one) still holds the published port, so Compose cannot start this stack.',
+                'treat_action' => 'recreate_application',
+                'treat_label' => 'Recreate containers',
+                'manual_steps' => [
+                    'Recreate containers to drop stale port bindings. If it still fails, an operator must free the host port.',
+                ],
+            ],
+            [
+                'id' => 'node_disk_exhausted',
+                'severity' => 'critical',
+                'stacks' => ['*'],
+                'patterns' => [
+                    '/No space left on device/i',
+                    '/ENOSPC/i',
+                ],
+                'title' => 'Container host is out of disk',
+                'summary' => 'The node has little or no free disk. New containers crash, MySQL cannot write, and image rebuilds fail until space is freed.',
+                'treat_action' => null,
+                'treat_label' => null,
+                'manual_steps' => [
+                    'Free space on the container host (old images, logs, backups under /opt/talksasa).',
+                    'Then recreate the application. Doctor cannot free host disk from the customer console.',
                 ],
             ],
             [
