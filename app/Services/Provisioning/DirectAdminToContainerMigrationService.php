@@ -845,6 +845,7 @@ class DirectAdminToContainerMigrationService
         $needsDatabase = $this->stackMayExportDatabase($stack);
         $dbName = null;
         $localDumpPath = null;
+        $daUsername = $this->directAdminUsername($source);
 
         $daSsh = SSHService::forNode($daNode);
         try {
@@ -858,15 +859,28 @@ class DirectAdminToContainerMigrationService
             if ($needsDatabase) {
                 $dbCreds = match ($stack) {
                     'laravel' => $this->parseEnvDatabaseCredentials($daSsh, $docroot),
-                    'nodejs' => $this->parseEnvDatabaseCredentials($daSsh, $docroot),
+                    'nodejs' => $this->parseEnvDatabaseCredentials($daSsh, $docroot, true),
                     default => $this->parseGenericPhpDatabaseCredentials($daSsh, $docroot, $inventory),
                 };
 
-                $dbName = $databaseName
-                    ?: ($dbCreds['DB_NAME'] ?? null)
-                    ?: ($inventory['databases'][0]['name'] ?? null);
+                $dbName = $databaseName ?: ($dbCreds['DB_NAME'] ?? null);
+                if ($dbName === null && $stack !== 'nodejs') {
+                    $dbName = $inventory['databases'][0]['name'] ?? null;
+                }
 
-                if ($dbName && ! blank($dbCreds['DB_USER'] ?? null)) {
+                if ($dbName !== null && $dbName !== '') {
+                    $dbCreds = $this->enrichDatabaseCredentialsFromDirectAdmin(
+                        $daSsh,
+                        $daUsername,
+                        (string) $dbName,
+                        $dbCreds,
+                    );
+                    $dbCreds['DB_NAME'] = (string) $dbName;
+                }
+
+                $shouldDump = $this->shouldDumpDatabaseForExport($stack, $dbCreds, $databaseName);
+
+                if ($shouldDump && $dbName && ! blank($dbCreds['DB_USER'] ?? null)) {
                     $defaultsFile = $remoteWork.'/mysqldump.cnf';
                     $this->writeRemoteMysqlDefaultsFile($daSsh, $defaultsFile, $dbCreds);
                     try {
@@ -879,9 +893,13 @@ class DirectAdminToContainerMigrationService
                     } finally {
                         @$daSsh->exec('rm -f '.escapeshellarg($defaultsFile));
                     }
-                } elseif ($needsDatabase && in_array($stack, ['laravel', 'nodejs'], true)) {
+                } elseif ($stack === 'laravel' && $shouldDump) {
                     throw new \RuntimeException(
-                        'Could not determine database credentials from .env / inventory. Pass database_name or fix .env DB_* / MYSQL_* values.'
+                        'Could not determine Laravel database credentials from .env / DirectAdmin. Pass database_name or fix .env DB_* / MYSQL_* values.'
+                    );
+                } elseif ($stack === 'nodejs' && $databaseName !== null && $databaseName !== '' && blank($dbCreds['DB_USER'] ?? null)) {
+                    throw new \RuntimeException(
+                        'Could not resolve MySQL credentials for database '.$databaseName.'. Fix .env DB_* / MYSQL_* values on DirectAdmin or verify the DA mysql config for this user.'
                     );
                 }
             }
@@ -1133,11 +1151,64 @@ class DirectAdminToContainerMigrationService
      *
      * @return array{DB_NAME: ?string, DB_USER: ?string, DB_PASSWORD: ?string, DB_HOST: string}
      */
-    public function parseEnvDatabaseCredentials(SSHService $ssh, string $docroot): array
+    public function parseEnvDatabaseCredentials(SSHService $ssh, string $docroot, bool $searchNearbyEnvFiles = false): array
     {
-        $envPath = rtrim($docroot, '/').'/.env';
+        $paths = [rtrim($docroot, '/').'/.env'];
+        if ($searchNearbyEnvFiles) {
+            $root = rtrim($docroot, '/');
+            $paths = array_values(array_unique(array_filter([
+                $root.'/.env',
+                $root.'/.env.production',
+                $root.'/.env.local',
+                dirname($root).'/.env',
+                dirname($root).'/.env.production',
+                dirname($root, 2).'/.env',
+            ])));
+        }
+
+        $creds = [
+            'DB_NAME' => null,
+            'DB_USER' => null,
+            'DB_PASSWORD' => null,
+            'DB_HOST' => 'localhost',
+        ];
+
+        foreach ($paths as $envPath) {
+            $creds = $this->mergeDatabaseCredentialArrays(
+                $creds,
+                $this->parseEnvFileAtPath($ssh, $envPath),
+            );
+        }
+
+        return $creds;
+    }
+
+    /**
+     * @param  array{DB_NAME: ?string, DB_USER: ?string, DB_PASSWORD: ?string, DB_HOST: string}  $base
+     * @param  array{DB_NAME: ?string, DB_USER: ?string, DB_PASSWORD: ?string, DB_HOST: string}  $overlay
+     * @return array{DB_NAME: ?string, DB_USER: ?string, DB_PASSWORD: ?string, DB_HOST: string}
+     */
+    public function mergeDatabaseCredentialArrays(array $base, array $overlay): array
+    {
+        foreach (['DB_NAME', 'DB_USER', 'DB_PASSWORD'] as $key) {
+            if (! blank($overlay[$key] ?? null)) {
+                $base[$key] = $overlay[$key];
+            }
+        }
+        if (! blank($overlay['DB_HOST'] ?? null) && ($overlay['DB_HOST'] ?? '') !== 'localhost') {
+            $base['DB_HOST'] = $overlay['DB_HOST'];
+        }
+
+        return $base;
+    }
+
+    /**
+     * @return array{DB_NAME: ?string, DB_USER: ?string, DB_PASSWORD: ?string, DB_HOST: string}
+     */
+    public function parseEnvFileAtPath(SSHService $ssh, string $envPath): array
+    {
         $raw = $ssh->exec(
-            'grep -E "^(DB_HOST|DB_PORT|DB_DATABASE|DB_USERNAME|DB_PASSWORD|MYSQL_HOST|MYSQL_DATABASE|MYSQL_USER|MYSQL_PASSWORD|DATABASE_URL)=" '
+            'grep -E "^(DB_HOST|DB_PORT|DB_DATABASE|DB_USERNAME|DB_PASSWORD|DB_USER|DB_PASS|DB_NAME|MYSQL_HOST|MYSQL_DATABASE|MYSQL_USER|MYSQL_PASSWORD|DATABASE_URL)=" '
             .escapeshellarg($envPath).' 2>/dev/null || true'
         );
 
@@ -1158,15 +1229,189 @@ class DirectAdminToContainerMigrationService
             $value = trim($value, " \t\"'");
             match ($key) {
                 'DB_HOST', 'MYSQL_HOST' => $creds['DB_HOST'] = $value !== '' ? $value : 'localhost',
-                'DB_DATABASE', 'MYSQL_DATABASE' => $creds['DB_NAME'] = $value !== '' ? $value : null,
-                'DB_USERNAME', 'MYSQL_USER' => $creds['DB_USER'] = $value !== '' ? $value : null,
-                'DB_PASSWORD', 'MYSQL_PASSWORD' => $creds['DB_PASSWORD'] = $value,
+                'DB_DATABASE', 'MYSQL_DATABASE', 'DB_NAME' => $creds['DB_NAME'] = $value !== '' ? $value : null,
+                'DB_USERNAME', 'MYSQL_USER', 'DB_USER' => $creds['DB_USER'] = $value !== '' ? $value : null,
+                'DB_PASSWORD', 'MYSQL_PASSWORD', 'DB_PASS' => $creds['DB_PASSWORD'] = $value,
                 'DATABASE_URL' => $this->mergeDatabaseUrlIntoCredentials($creds, $value),
                 default => null,
             };
         }
 
         return $creds;
+    }
+
+    /**
+     * @param  array{DB_NAME: ?string, DB_USER: ?string, DB_PASSWORD: ?string, DB_HOST: string}  $creds
+     * @return array{DB_NAME: ?string, DB_USER: ?string, DB_PASSWORD: ?string, DB_HOST: string}
+     */
+    public function enrichDatabaseCredentialsFromDirectAdmin(
+        SSHService $ssh,
+        string $daUsername,
+        string $databaseName,
+        array $creds,
+    ): array {
+        if (! blank($creds['DB_USER'] ?? null) && ! blank($creds['DB_PASSWORD'] ?? null)) {
+            return $creds;
+        }
+
+        $fromUser = $this->parseDirectAdminUserDatabaseCredentials($ssh, $daUsername, $databaseName);
+        if (! blank($fromUser['DB_USER'] ?? null)) {
+            return $this->mergeDatabaseCredentialArrays($creds, $fromUser);
+        }
+
+        $fromAdmin = $this->parseDirectAdminAdminMysqlCredentials($ssh);
+        if (! blank($fromAdmin['DB_USER'] ?? null)) {
+            return $this->mergeDatabaseCredentialArrays($creds, array_merge($fromAdmin, [
+                'DB_NAME' => $databaseName,
+            ]));
+        }
+
+        return $creds;
+    }
+
+    /**
+     * @return array{DB_NAME: ?string, DB_USER: ?string, DB_PASSWORD: ?string, DB_HOST: string}
+     */
+    public function parseDirectAdminUserDatabaseCredentials(SSHService $ssh, string $daUsername, string $databaseName): array
+    {
+        $daUsername = preg_replace('/[^a-zA-Z0-9_]/', '', $daUsername) ?: '';
+        $databaseName = trim($databaseName);
+        if ($daUsername === '' || $databaseName === '') {
+            return [
+                'DB_NAME' => null,
+                'DB_USER' => null,
+                'DB_PASSWORD' => null,
+                'DB_HOST' => 'localhost',
+            ];
+        }
+
+        $safeDb = preg_replace('/[^a-zA-Z0-9_]/', '', $databaseName) ?: $databaseName;
+        $paths = [
+            '/usr/local/directadmin/data/users/'.$daUsername.'/mysql/'.$safeDb.'.conf',
+            '/usr/local/directadmin/data/users/'.$daUsername.'/mysql/'.$databaseName.'.conf',
+        ];
+
+        foreach ($paths as $path) {
+            $raw = trim($ssh->exec(
+                'if [ -f '.escapeshellarg($path).' ]; then grep -E "^(passwd|password|user|host)=" '
+                .escapeshellarg($path).'; fi 2>/dev/null || true'
+            ));
+            if ($raw === '') {
+                continue;
+            }
+
+            $parsed = $this->parseDirectAdminMysqlConfLines($raw);
+            if (blank($parsed['DB_PASSWORD'] ?? null)) {
+                continue;
+            }
+
+            return [
+                'DB_NAME' => $databaseName,
+                'DB_USER' => (string) ($parsed['DB_USER'] ?: $databaseName),
+                'DB_PASSWORD' => (string) $parsed['DB_PASSWORD'],
+                'DB_HOST' => (string) ($parsed['DB_HOST'] ?: 'localhost'),
+            ];
+        }
+
+        return [
+            'DB_NAME' => null,
+            'DB_USER' => null,
+            'DB_PASSWORD' => null,
+            'DB_HOST' => 'localhost',
+        ];
+    }
+
+    /**
+     * @return array{DB_NAME: ?string, DB_USER: ?string, DB_PASSWORD: ?string, DB_HOST: string}
+     */
+    public function parseDirectAdminAdminMysqlCredentials(SSHService $ssh): array
+    {
+        $raw = trim($ssh->exec(
+            'grep -E "^(user|passwd|host)=" /usr/local/directadmin/conf/mysql.conf 2>/dev/null || true'
+        ));
+
+        if ($raw === '') {
+            return [
+                'DB_NAME' => null,
+                'DB_USER' => null,
+                'DB_PASSWORD' => null,
+                'DB_HOST' => 'localhost',
+            ];
+        }
+
+        $parsed = $this->parseDirectAdminMysqlConfLines($raw);
+
+        return [
+            'DB_NAME' => null,
+            'DB_USER' => $parsed['DB_USER'],
+            'DB_PASSWORD' => $parsed['DB_PASSWORD'],
+            'DB_HOST' => $parsed['DB_HOST'] ?: 'localhost',
+        ];
+    }
+
+    /**
+     * @return array{DB_USER: ?string, DB_PASSWORD: ?string, DB_HOST: ?string}
+     */
+    public function parseDirectAdminMysqlConfLines(string $raw): array
+    {
+        $user = null;
+        $password = null;
+        $host = null;
+
+        foreach (preg_split("/\r\n|\n|\r/", $raw) ?: [] as $line) {
+            $line = trim($line);
+            if ($line === '' || ! str_contains($line, '=')) {
+                continue;
+            }
+            [$key, $value] = explode('=', $line, 2);
+            $key = strtolower(trim($key));
+            $value = trim($value, " \t\"'");
+            match ($key) {
+                'user' => $user = $value !== '' ? $value : $user,
+                'passwd', 'password' => $password = $value,
+                'host' => $host = $value !== '' ? $value : $host,
+                default => null,
+            };
+        }
+
+        return [
+            'DB_USER' => $user,
+            'DB_PASSWORD' => $password,
+            'DB_HOST' => $host,
+        ];
+    }
+
+    /**
+     * @param  array{DB_NAME: ?string, DB_USER: ?string, DB_PASSWORD: ?string, DB_HOST: string}  $dbCreds
+     */
+    public function shouldDumpDatabaseForExport(string $stack, array $dbCreds, ?string $databaseName): bool
+    {
+        if (! $this->stackMayExportDatabase($stack)) {
+            return false;
+        }
+
+        if ($stack === 'laravel') {
+            return true;
+        }
+
+        if ($databaseName !== null && $databaseName !== '') {
+            return true;
+        }
+
+        if (! blank($dbCreds['DB_USER'] ?? null)) {
+            return true;
+        }
+
+        return ! blank($dbCreds['DB_NAME'] ?? null) && in_array($stack, ['php', 'nodejs'], true);
+    }
+
+    public function directAdminUsername(Service $source): string
+    {
+        $source->loadMissing('user');
+        $creds = $source->getHostingCredentials() ?? [];
+        $meta = is_array($source->service_meta) ? $source->service_meta : [];
+
+        return (string) ($creds['username'] ?? $source->external_reference ?? ($meta['username'] ?? ''));
     }
 
     /**

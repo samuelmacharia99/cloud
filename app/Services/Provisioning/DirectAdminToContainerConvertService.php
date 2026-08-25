@@ -167,7 +167,7 @@ class DirectAdminToContainerConvertService
         }
 
         if ($stack === 'nodejs' && $dbCount > 0) {
-            $warnings[] = 'Node.js convert exports MySQL only when .env (or DATABASE_URL) on the DA host contains DB credentials. Pick a source database below if auto-detection fails.';
+            $warnings[] = 'Node.js convert exports MySQL when .env lists DB credentials, you pick a source database below, or DATABASE_URL is set. Without that, only files are migrated.';
         }
 
         if ($stack === 'static_or_php' && $dbCount > 0) {
