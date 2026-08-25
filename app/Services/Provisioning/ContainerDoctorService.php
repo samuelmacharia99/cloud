@@ -1654,6 +1654,7 @@ PHP;
                 'patterns' => [
                     '/PHP \S+ Development Server \(http:\/\//i',
                     '/php artisan serve --host=/i',
+                    '/nginx\/php-fpm unavailable[^\n]*falling back to php -S/i',
                 ],
                 'title' => 'PHP development server is handling web traffic',
                 'summary' => 'This app is running PHP’s built-in server (`php -S` / `artisan serve`), which handles one request at a time. Dashboard pages that load CSS/JS plus several AJAX calls will feel slow even when MySQL is healthy. Restart will not fix this.',
@@ -2028,11 +2029,23 @@ PHP;
             return false;
         }
 
-        if (str_contains($command, 'talksasa-php-server') || preg_match('/\bphp-fpm\b|\bnginx\b/', $command) === 1) {
+        if (preg_match('/\bphp-fpm\b|\bnginx\b/', $command) === 1
+            && preg_match('/php\s+-S\b|artisan serve|Development Server/i', $command) !== 1) {
             return false;
         }
 
-        return preg_match('/php\s+-S\b|artisan serve|Development Server/i', $command) === 1;
+        return preg_match('/php\s+-S\b|artisan serve|Development Server|falling back to php -S/i', $command) === 1;
+    }
+
+    public function processListUsesPhpBuiltinDevServer(string $processList): bool
+    {
+        return preg_match('/php\s+-S\b|artisan serve/i', $processList) === 1;
+    }
+
+    public function processListUsesPhpFpm(string $processList): bool
+    {
+        return preg_match('/\bphp-fpm\b|\bnginx:/i', $processList) === 1
+            || preg_match('/nginx: master process/i', $processList) === 1;
     }
 
     /**
@@ -2046,16 +2059,21 @@ PHP;
             .' '.escapeshellarg($deployment->container_name).' 2>/dev/null || true',
             15
         ));
+        $processList = trim($ssh->exec(
+            'docker top '.escapeshellarg($deployment->container_name).' -eo args 2>/dev/null || true',
+            15
+        ));
         $checks['php_start_command'] = $liveCmd !== '' ? $liveCmd : null;
 
-        $usingBuiltin = $this->commandLooksLikePhpBuiltinDevServer($liveCmd)
-            || ($liveCmd === '' && $this->composeUsesPhpBuiltinDevServer((string) $deployment->docker_compose_content));
+        $phpDashS = $this->processListUsesPhpBuiltinDevServer($processList)
+            || $this->commandLooksLikePhpBuiltinDevServer($liveCmd);
+        $nginxUp = $this->processListUsesPhpFpm($processList);
 
-        $onProduction = str_contains($liveCmd, 'talksasa-php-server')
-            || preg_match('/\bphp-fpm\b|\bnginx\b/', $liveCmd) === 1
-            || str_contains((string) $deployment->docker_compose_content, 'talksasa-php-server');
+        $usingBuiltin = $phpDashS
+            || ($liveCmd === '' && $processList === '' && $this->composeUsesPhpBuiltinDevServer((string) $deployment->docker_compose_content));
 
-        $checks['php_production_runtime'] = $onProduction && ! $usingBuiltin;
+        // talksasa-php-server in Cmd is not enough: the wrapper may have fallen back to php -S.
+        $checks['php_production_runtime'] = $nginxUp && ! $phpDashS;
 
         if (! $usingBuiltin) {
             return null;
@@ -2066,10 +2084,13 @@ PHP;
             'severity' => 'warning',
             'title' => 'PHP development server is handling web traffic',
             'summary' => 'This '.$stack.' app is running PHP’s built-in server (`php -S` / `artisan serve`), which handles one request at a time. '
-                .'Dashboard pages that load CSS/JS plus several AJAX calls will feel slow even when MySQL is healthy. Restart will not fix this.',
+                .'CSS/JS may also break if index.php was used as the php -S router. Restart will not fix this.',
             'evidence' => array_values(array_filter([
                 $liveCmd !== '' ? 'cmd: '.mb_substr($liveCmd, 0, 220) : null,
-                'PHP Development Server is single-threaded',
+                $phpDashS && str_contains($liveCmd, 'talksasa-php-server')
+                    ? 'wrapper fell back to php -S (nginx/php-fpm not on PATH)'
+                    : 'PHP Development Server is single-threaded',
+                $processList !== '' ? 'ps: '.mb_substr(preg_replace('/\s+/', ' ', $processList) ?? $processList, 0, 220) : null,
             ])),
             'treat_action' => 'switch_php_production_runtime',
             'treat_label' => 'Switch to PHP-FPM',

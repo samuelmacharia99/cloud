@@ -149,7 +149,34 @@ YAML;
             "command:\n      - talksasa-php-server\n      - '8000'\n      - /app/public\n"
         ));
         $this->assertTrue($doctor->commandLooksLikePhpBuiltinDevServer('php -S 0.0.0.0:80 -t /app/public'));
-        $this->assertFalse($doctor->commandLooksLikePhpBuiltinDevServer('talksasa-php-server 80 /app/public'));
+        $this->assertFalse($doctor->commandLooksLikePhpBuiltinDevServer('nginx: master process nginx -c /tmp/talksasa-php/nginx.conf'));
+        $this->assertTrue($doctor->processListUsesPhpBuiltinDevServer("php-fpm: master\nphp -S 0.0.0.0:80 -t /app/public /app/public/index.php"));
+        $this->assertTrue($doctor->processListUsesPhpFpm('nginx: master process nginx -c /tmp/talksasa-php/nginx.conf'));
+    }
+
+    #[Test]
+    public function production_php_server_does_not_route_static_files_through_index_php(): void
+    {
+        $script = (string) file_get_contents(base_path('deploy/docker/runtimes/common/php-production-server.sh'));
+        $dockerfile = (string) file_get_contents(base_path('deploy/docker/runtimes/laravel/Dockerfile'));
+
+        $this->assertStringContainsString('/usr/sbin/nginx', $script);
+        $this->assertStringContainsString('/usr/local/sbin/php-fpm', $script);
+        $this->assertStringContainsString('server.php', $script);
+        $this->assertDoesNotMatchRegularExpression('/php -S .*index\.php/', $script);
+        $this->assertStringContainsString('/usr/sbin', $dockerfile);
+    }
+
+    #[Test]
+    public function it_detects_php_fpm_fallback_log_line(): void
+    {
+        $logs = 'Talksasa: nginx/php-fpm unavailable (nginx=missing php-fpm=missing), falling back to php -S (single-threaded)';
+
+        $findings = app(ContainerDoctorService::class)->analyzeLogs($logs, 'laravel');
+        $finding = collect($findings)->firstWhere('id', 'php_builtin_dev_server');
+
+        $this->assertNotNull($finding);
+        $this->assertSame('switch_php_production_runtime', $finding['treat_action']);
     }
 
     #[Test]

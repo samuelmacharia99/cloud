@@ -3,6 +3,10 @@
 # Falls back to php -S only when this image was built without nginx/php-fpm.
 set -e
 
+# Dockerfiles previously omitted sbin; nginx lives in /usr/sbin, php-fpm in /usr/local/sbin.
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH:-}"
+export PATH
+
 PORT="${1:-${PORT:-8000}}"
 DOCROOT="${2:-${DOCUMENT_ROOT:-}}"
 
@@ -16,12 +20,38 @@ if [ -z "$DOCROOT" ]; then
     fi
 fi
 
-if ! command -v nginx >/dev/null 2>&1 || ! command -v php-fpm >/dev/null 2>&1; then
-    echo "Talksasa: nginx/php-fpm unavailable, falling back to php -S (single-threaded)"
-    if [ -f "${DOCROOT}/index.php" ]; then
-        exec php -S "0.0.0.0:${PORT}" -t "$DOCROOT" "${DOCROOT}/index.php"
+resolve_bin() {
+    name="$1"
+    shift
+    if command -v "$name" >/dev/null 2>&1; then
+        command -v "$name"
+        return 0
+    fi
+    for candidate in "$@"; do
+        if [ -x "$candidate" ]; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+NGINX="$(resolve_bin nginx /usr/sbin/nginx /usr/local/sbin/nginx)" || NGINX=""
+PHPFPM="$(resolve_bin php-fpm /usr/local/sbin/php-fpm /usr/sbin/php-fpm)" || PHPFPM=""
+
+start_builtin() {
+    # Never pass public/index.php as the php -S router: that sends CSS/JS through Laravel
+    # and "loads fast" with a broken UI. server.php returns false for real files.
+    echo "Talksasa: nginx/php-fpm unavailable (nginx=${NGINX:-missing} php-fpm=${PHPFPM:-missing}), falling back to php -S (single-threaded)"
+    backend="$(dirname "$DOCROOT")"
+    if [ -f "${backend}/server.php" ]; then
+        exec php -S "0.0.0.0:${PORT}" -t "$DOCROOT" "${backend}/server.php"
     fi
     exec php -S "0.0.0.0:${PORT}" -t "$DOCROOT"
+}
+
+if [ -z "$NGINX" ] || [ -z "$PHPFPM" ]; then
+    start_builtin
 fi
 
 TMP=/tmp/talksasa-php
@@ -139,6 +169,6 @@ http {
 }
 EOF
 
-echo "Talksasa: starting nginx + php-fpm on :${PORT} (docroot ${DOCROOT}, ${children} PHP workers)"
-php-fpm -y "$TMP/php-fpm.conf" &
-exec nginx -c "$TMP/nginx.conf"
+echo "Talksasa: starting nginx + php-fpm on :${PORT} (docroot ${DOCROOT}, ${children} PHP workers) nginx=${NGINX} php-fpm=${PHPFPM}"
+"$PHPFPM" -y "$TMP/php-fpm.conf" &
+exec "$NGINX" -c "$TMP/nginx.conf"

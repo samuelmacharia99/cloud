@@ -11,7 +11,7 @@ LABEL org.talksasa.php.version="${PHP_VERSION}"
 ENV DEBIAN_FRONTEND=noninteractive \
     COMPOSER_ALLOW_SUPERUSER=1 \
     COMPOSER_HOME=/tmp/composer \
-    PATH="/usr/local/bin:/usr/bin:/bin"
+    PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 # Node for Vite / Next.js frontend builds (copy binaries only — do not overwrite PHP in /usr/local).
 COPY --from=node:20-bookworm /usr/local/bin/node /usr/local/bin/node
