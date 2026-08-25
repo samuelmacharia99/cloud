@@ -751,4 +751,17 @@ class DirectAdminToContainerConvertServiceTest extends TestCase
 
         $this->assertSame('static_or_php', $classified['stack']);
     }
+
+    public function test_generic_tar_command_creates_empty_archive_when_docroot_is_missing(): void
+    {
+        $migrator = app(DirectAdminToContainerMigrationService::class);
+        $docroot = '/home/christos/domains/christsummit.org/public_html';
+        $filesTar = '/opt/talksasa/da-migrations/site-export/files.tar.gz';
+
+        $cmd = $migrator->buildGenericDocrootTarCommand($docroot, $filesTar, 'static_or_php');
+
+        $this->assertStringContainsString('[ ! -d ', $cmd);
+        $this->assertStringContainsString('mktemp -d', $cmd);
+        $this->assertStringContainsString($filesTar, $cmd);
+    }
 }

@@ -550,6 +550,11 @@ class DirectAdminToContainerConvertService
             $this->appendConvertStep($service, $steps);
             $export = $this->migrator->exportSiteFromDirectAdmin($service, $inventory, $databaseName);
 
+            if (! empty($export['files_export_empty'])) {
+                $steps[] = 'Primary docroot missing on DirectAdmin — exported an empty site archive (addon containers carry live files)';
+                $this->appendConvertStep($service, $steps);
+            }
+
             if (! empty($export['local_dump'])) {
                 $this->migrator->ensureMysqlSidecarForImport($service->fresh());
                 $service->refresh();

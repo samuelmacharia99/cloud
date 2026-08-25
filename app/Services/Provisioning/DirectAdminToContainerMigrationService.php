@@ -916,6 +916,7 @@ class DirectAdminToContainerMigrationService
         $dbName = null;
         $localDumpPath = null;
         $daUsername = $this->directAdminUsername($source);
+        $exportPathExists = true;
 
         $daSsh = SSHService::forNode($daNode);
         try {
@@ -925,6 +926,10 @@ class DirectAdminToContainerMigrationService
             if ($docroot === '') {
                 throw new \RuntimeException('Docroot is missing from inventory.');
             }
+
+            $exportPathExists = trim($daSsh->exec(
+                '[ -d '.escapeshellarg($docroot).' ] && echo yes || echo no'
+            )) === 'yes';
 
             if ($needsDatabase) {
                 $dbCreds = match ($stack) {
@@ -989,6 +994,7 @@ class DirectAdminToContainerMigrationService
             'remote_work' => $remoteWork,
             'db_name' => $dbName,
             'stack' => $stack === 'unknown' ? 'static_or_php' : $stack,
+            'files_export_empty' => ! $exportPathExists,
         ];
     }
 
@@ -1589,12 +1595,32 @@ class DirectAdminToContainerMigrationService
             .' -C '.escapeshellarg($docroot)
             .' .';
 
-        return $tar
+        $tarWithStatus = $tar
             .' ; status=$?'
             .' ; if [ "$status" -eq 0 ] || [ "$status" -eq 1 ]; then'
             .'   if [ -s '.escapeshellarg($filesTar).' ]; then exit 0; fi'
             .' ; fi'
             .' ; exit "$status"';
+
+        return $this->wrapDocrootTarWhenDirectoryMissing($docroot, $filesTar, $tarWithStatus);
+    }
+
+    /**
+     * Billing-anchor primaries sometimes have no public_html; sibling containers carry the live site.
+     */
+    public function wrapDocrootTarWhenDirectoryMissing(string $docroot, string $filesTar, string $tarCommand): string
+    {
+        $docArg = escapeshellarg($docroot);
+        $tarArg = escapeshellarg($filesTar);
+
+        return 'if [ ! -d '.$docArg.' ]; then '
+            .'mkdir -p "$(dirname '.$tarArg.')" && '
+            .'EMPTY="$(mktemp -d)" && '
+            .'tar -czf '.$tarArg.' -C "$EMPTY" . && '
+            .'rmdir "$EMPTY" && '
+            .'exit 0; '
+            .'fi; '
+            .$tarCommand;
     }
 
     public function buildGenericHostExtractCommand(string $filesTar, string $hostAppPath): string
@@ -2233,12 +2259,14 @@ PHP;
             .' .';
 
         // Remap exit status 1 → 0 when archive was written (files changed while reading).
-        return $tar
+        $tarWithStatus = $tar
             .' ; status=$?'
             .' ; if [ "$status" -eq 0 ] || [ "$status" -eq 1 ]; then'
             .'   if [ -s '.escapeshellarg($filesTar).' ]; then exit 0; fi'
             .' ; fi'
             .' ; exit "$status"';
+
+        return $this->wrapDocrootTarWhenDirectoryMissing($docroot, $filesTar, $tarWithStatus);
     }
 
     /**
