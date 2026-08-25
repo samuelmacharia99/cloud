@@ -98,6 +98,22 @@ class DirectAdminToContainerConvertService
             ->get();
 
         $mailboxCount = count($email['all'] ?? []);
+        $daEmailCount = (int) ($inventory['account']['counts']['email'] ?? 0);
+        $emailWarnings = $email['warnings'] ?? [];
+
+        if ($daEmailCount > 0 && $mailboxCount === 0) {
+            $blockers[] = sprintf(
+                'DirectAdmin reports %d email account(s) but mailbox inventory found none. Mail would be left on DirectAdmin if you convert now. Check POP API access on the DA node or verify maildirs under /home/{username}/imap before converting.',
+                $daEmailCount
+            );
+        } elseif ($daEmailCount > $mailboxCount && $mailboxCount > 0) {
+            $emailWarnings[] = sprintf(
+                'DirectAdmin usage shows %d email account(s) but only %d mailbox(es) were inventoried. Confirm all mail domains are listed before decommissioning DirectAdmin.',
+                $daEmailCount,
+                $mailboxCount
+            );
+        }
+
         if ($mailboxCount > 0) {
             if (! app(MailcowProvisioningService::class)->resolveNode()) {
                 $blockers[] = 'Mailboxes exist on DirectAdmin but no active Mailcow node is available. Add a Mailcow node before converting — we are not leaving mail on DirectAdmin.';
@@ -109,10 +125,14 @@ class DirectAdminToContainerConvertService
         }
 
         $addonCount = (int) ($inventory['addon_site_count'] ?? 0);
+        $databaseWarnings = $this->databaseExportWarnings($stack, $inventory);
 
         return [
             'inventory' => $inventory,
-            'email' => $email,
+            'email' => array_merge($email, [
+                'da_email_count' => $daEmailCount,
+                'warnings' => $emailWarnings,
+            ]),
             'can_convert' => $blockers === [],
             'blockers' => $blockers,
             'detected_stack' => $stack,
@@ -124,7 +144,37 @@ class DirectAdminToContainerConvertService
             'email_products' => $emailProducts->all(),
             'mailbox_count' => $mailboxCount,
             'must_pull_mail' => $mailboxCount > 0,
+            'da_email_count' => $daEmailCount,
+            'database_warnings' => $databaseWarnings,
         ];
+    }
+
+    /**
+     * @param  array{databases?: list<array{name: string}>, account?: array{counts?: array{database?: int}}}  $inventory
+     * @return list<string>
+     */
+    public function databaseExportWarnings(string $stack, array $inventory): array
+    {
+        $warnings = [];
+        $dbCount = count($inventory['databases'] ?? []);
+        $daDbCount = (int) ($inventory['account']['counts']['database'] ?? $dbCount);
+
+        if ($daDbCount > 0 && $dbCount === 0) {
+            $warnings[] = sprintf(
+                'DirectAdmin reports %d MySQL database(s) but CMD_API_DATABASES returned none. Database export may fail — verify API access on the DA node.',
+                $daDbCount
+            );
+        }
+
+        if ($stack === 'nodejs' && $dbCount > 0) {
+            $warnings[] = 'Node.js convert exports MySQL only when .env (or DATABASE_URL) on the DA host contains DB credentials. Pick a source database below if auto-detection fails.';
+        }
+
+        if ($stack === 'static_or_php' && $dbCount > 0) {
+            $warnings[] = 'Static/PHP sites export MySQL only when wp-config, .env, or similar config on the DA host resolves database credentials.';
+        }
+
+        return $warnings;
     }
 
     /**
@@ -353,6 +403,14 @@ class DirectAdminToContainerConvertService
         $classified = $this->classifyMailboxes($username, $all);
 
         $fatal = $all === [] && $listed['errors'] !== [] && count($domains) === count($listed['errors']);
+        $daEmailCount = (int) ($inventory['account']['counts']['email'] ?? 0);
+        $warnings = [];
+        if ($daEmailCount > 0 && $all === [] && ! $fatal) {
+            $warnings[] = sprintf(
+                'DirectAdmin usage shows %d email account(s) but POP/SSH inventory found none on the domains scanned.',
+                $daEmailCount
+            );
+        }
 
         return [
             'success' => ! $fatal,
@@ -365,19 +423,11 @@ class DirectAdminToContainerConvertService
             'all' => $all,
             'by_domain' => $listed['by_domain'],
             'errors' => $listed['errors'],
+            'da_email_count' => $daEmailCount,
+            'warnings' => $warnings,
         ];
     }
 
-    /**
-     * Default DA mailbox = local-part matching the DA username (ignores extra accounts).
-     *
-     * @param  list<array{account: string, email: string}>  $all
-     * @return array{
-     *     has_extra_mailboxes: bool,
-     *     default_mailboxes: list<array{account: string, email: string}>,
-     *     extra_mailboxes: list<array{account: string, email: string}>
-     * }
-     */
     public function classifyMailboxes(string $username, array $all): array
     {
         $defaultLocal = strtolower($username);
@@ -496,9 +546,14 @@ class DirectAdminToContainerConvertService
             $steps[] = 'Container host capacity OK';
             $this->appendConvertStep($service, $steps);
 
-            $steps[] = 'Exporting site files'.(in_array($stack, ['wordpress', 'laravel', 'php'], true) ? ' and database' : '').' from DirectAdmin';
+            $steps[] = 'Exporting site files'.$this->exportIncludesDatabaseMessage($stack).' from DirectAdmin';
             $this->appendConvertStep($service, $steps);
             $export = $this->migrator->exportSiteFromDirectAdmin($service, $inventory, $databaseName);
+
+            if (! empty($export['local_dump'])) {
+                $this->migrator->ensureMysqlSidecarForImport($service->fresh());
+                $service->refresh();
+            }
 
             $emailServiceId = null;
             if ($mustPullMail && $emailProduct) {
@@ -550,6 +605,7 @@ class DirectAdminToContainerConvertService
                 'app_root' => $inventory['app_root'] ?? $inventory['docroot'],
                 'stack' => $stack,
                 'addon_sites' => $inventory['sites'] ?? [],
+                'databases' => $inventory['databases'] ?? [],
                 'converted_at' => now()->toIso8601String(),
                 'keep_email_on_da' => false,
                 'had_extra_mailboxes' => $preflight['email']['has_extra_mailboxes'],
@@ -591,7 +647,7 @@ class DirectAdminToContainerConvertService
                 $meta['domain'] = $primaryHostname;
                 $meta['project_role_label'] = $meta['project_role_label'] ?? $primaryHostname;
             }
-            DB::transaction(function () use ($service, $containerProduct, $meta, $extraSites, $daNode, $daUsername, $share, $primaryHostname, &$siblingIds) {
+            DB::transaction(function () use ($service, $containerProduct, $meta, $extraSites, $daNode, $daUsername, $share, $primaryHostname, $inventory, &$siblingIds) {
                 $service->update([
                     'product_id' => $containerProduct->id,
                     'provisioning_driver_key' => 'container',
@@ -614,6 +670,7 @@ class DirectAdminToContainerConvertService
                     (int) $daNode->id,
                     $daUsername,
                     $share,
+                    $inventory['databases'] ?? [],
                 );
                 $siblingIds = $attached['sibling_ids'];
             });
@@ -997,6 +1054,7 @@ class DirectAdminToContainerConvertService
         int $daNodeId,
         string $daUsername,
         float $share,
+        array $databases = [],
     ): array {
         $anchor->loadMissing('user');
         $domain = (string) ($anchor->attachedDomainName() ?? $anchor->name);
@@ -1026,6 +1084,7 @@ class DirectAdminToContainerConvertService
                 $share,
                 $daNodeId,
                 $daUsername,
+                $databases,
             );
             $siblingIds[] = (int) $sibling->id;
         }
@@ -1047,6 +1106,7 @@ class DirectAdminToContainerConvertService
         float $share,
         int $daNodeId,
         string $daUsername,
+        array $databases = [],
     ): Service {
         $domain = strtolower(trim((string) ($site['domain'] ?? '')));
         $stack = $this->normalizeConvertibleStack([
@@ -1088,6 +1148,10 @@ class DirectAdminToContainerConvertService
                     'app_root' => $site['app_root'] ?? ($site['docroot'] ?? null),
                     'stack' => $stack,
                     'has_wp_config' => (bool) ($site['has_wp_config'] ?? false),
+                    'databases' => array_values(array_map(
+                        fn ($row) => ['name' => (string) ($row['name'] ?? $row)],
+                        $databases,
+                    )),
                     'keep_email_on_da' => false,
                 ],
             ],
@@ -1118,7 +1182,7 @@ class DirectAdminToContainerConvertService
             'app_root' => $legacy['app_root'] ?? ($legacy['docroot'] ?? null),
             'stack' => $stack,
             'has_wp_config' => (bool) ($legacy['has_wp_config'] ?? false),
-            'databases' => [],
+            'databases' => $this->resolveSiblingDatabaseInventory($sibling, $legacy),
             'da_node_id' => $legacy['da_node_id'] ?? null,
         ];
 
@@ -1127,6 +1191,11 @@ class DirectAdminToContainerConvertService
         $this->deployments->assertHostHasCapacity($sibling);
 
         $export = $this->migrator->exportSiteFromDirectAdmin($sibling, $inventory);
+
+        if (! empty($export['local_dump'])) {
+            $this->migrator->ensureMysqlSidecarForImport($sibling->fresh());
+            $sibling->refresh();
+        }
 
         try {
             $this->deployments->deploy($sibling, ContainerDeployOptions::quietConvert());
@@ -1193,5 +1262,47 @@ class DirectAdminToContainerConvertService
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    public function exportIncludesDatabaseMessage(string $stack): string
+    {
+        return match ($stack) {
+            'wordpress', 'laravel', 'php', 'nodejs' => ' and database (when credentials resolve)',
+            default => '',
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>  $legacy
+     * @return list<array{name: string}>
+     */
+    public function resolveSiblingDatabaseInventory(Service $sibling, array $legacy): array
+    {
+        $fromLegacy = $legacy['databases'] ?? [];
+        if (is_array($fromLegacy) && $fromLegacy !== []) {
+            return array_values(array_filter(array_map(function ($row) {
+                $name = is_array($row) ? (string) ($row['name'] ?? '') : (string) $row;
+
+                return $name !== '' ? ['name' => $name] : null;
+            }, $fromLegacy)));
+        }
+
+        $sourceId = (int) ($sibling->service_meta['source_service_id'] ?? 0);
+        if ($sourceId > 0) {
+            $anchor = Service::query()->find($sourceId);
+            $anchorLegacy = is_array($anchor?->service_meta['da_legacy'] ?? null)
+                ? $anchor->service_meta['da_legacy']
+                : [];
+            $fromAnchor = $anchorLegacy['databases'] ?? [];
+            if (is_array($fromAnchor) && $fromAnchor !== []) {
+                return array_values(array_filter(array_map(function ($row) {
+                    $name = is_array($row) ? (string) ($row['name'] ?? '') : (string) $row;
+
+                    return $name !== '' ? ['name' => $name] : null;
+                }, $fromAnchor)));
+            }
+        }
+
+        return [];
     }
 }

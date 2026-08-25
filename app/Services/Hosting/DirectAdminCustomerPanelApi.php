@@ -206,11 +206,106 @@ class DirectAdminCustomerPanelApi
         return [
             'success' => true,
             'message' => 'OK',
-            'data' => $this->normalizeList($response['data'], 'list', fn ($item) => [
-                'account' => (string) $item,
-                'email' => str_contains((string) $item, '@') ? (string) $item : $item.'@'.$domain,
-            ]),
+            'data' => $this->parseEmailAccountRows($response['data'] ?? [], $domain),
         ];
+    }
+
+    /**
+     * DirectAdmin POP list responses vary: indexed list0 keys, numeric lists, or associative
+     * maps of local-part => quota (legacy JSON). Keys are mailbox names — values are quotas.
+     *
+     * @param  array<string, mixed>  $data
+     * @return list<array{account: string, email: string}>
+     */
+    public function parseEmailAccountRows(array $data, string $domain): array
+    {
+        $domain = strtolower(trim($domain));
+        $names = $this->parseEmailAccountNames($data);
+        $rows = [];
+
+        foreach ($names as $name) {
+            $local = str_contains($name, '@') ? explode('@', $name, 2)[0] : $name;
+            $local = trim($local);
+            if ($local === '' || in_array(strtolower($local), ['error', 'text', 'domain', 'action'], true)) {
+                continue;
+            }
+            $email = str_contains($name, '@') ? $name : $local.'@'.$domain;
+            $rows[] = [
+                'account' => $local,
+                'email' => strtolower($email),
+            ];
+        }
+
+        return array_values($rows);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return list<string>
+     */
+    public function parseEmailAccountNames(array $data): array
+    {
+        $skipKeys = ['error', 'text', 'domain', 'action', 'json'];
+
+        if (isset($data['list']) && is_array($data['list'])) {
+            if (! array_is_list($data['list'])) {
+                $names = [];
+                foreach (array_keys($data['list']) as $key) {
+                    $key = trim((string) $key);
+                    if ($key === '' || in_array(strtolower($key), $skipKeys, true)) {
+                        continue;
+                    }
+                    $names[] = $key;
+                }
+
+                return array_values(array_unique($names));
+            }
+
+            $names = [];
+            foreach ($data['list'] as $item) {
+                $candidate = trim(is_array($item)
+                    ? (string) ($item['user'] ?? $item['account'] ?? $item['email'] ?? '')
+                    : (string) $item);
+                if ($candidate !== '') {
+                    $names[] = $candidate;
+                }
+            }
+
+            return array_values(array_unique($names));
+        }
+
+        $names = [];
+        foreach ($data as $key => $value) {
+            if (preg_match('/^list(\d+)$/i', (string) $key)) {
+                $candidate = trim(is_array($value) ? (string) ($value['user'] ?? $value['account'] ?? '') : (string) $value);
+                if ($candidate !== '') {
+                    $names[] = $candidate;
+                }
+            }
+        }
+        if ($names !== []) {
+            return array_values(array_unique($names));
+        }
+
+        foreach ($data as $key => $value) {
+            $key = trim((string) $key);
+            if ($key === '' || in_array(strtolower($key), $skipKeys, true)) {
+                continue;
+            }
+            if (preg_match('/^(list|user)(\d+)$/i', $key)) {
+                $candidate = trim(is_array($value) ? (string) ($value['user'] ?? $value['account'] ?? '') : (string) $value);
+                if ($candidate !== '' && ! is_numeric($candidate)) {
+                    $names[] = $candidate;
+                }
+
+                continue;
+            }
+            if (is_scalar($value) && ! is_numeric($key) && ! str_contains($key, '.')) {
+                $names[] = $key;
+            }
+        }
+
+        return array_values(array_unique(array_filter($names)));
     }
 
     /**
@@ -346,15 +441,52 @@ class DirectAdminCustomerPanelApi
     private function parseDatabaseNames(array $data): array
     {
         if (isset($data['list']) && is_array($data['list'])) {
+            if (! array_is_list($data['list'])) {
+                $names = [];
+                foreach (array_keys($data['list']) as $key) {
+                    $key = trim((string) $key);
+                    if ($key !== '') {
+                        $names[] = $key;
+                    }
+                }
+
+                return array_values(array_unique($names));
+            }
+
             return array_values(array_filter(array_map('strval', $data['list'])));
         }
 
         $normalized = $this->normalizeList($data, 'list', fn ($item) => (string) $item);
 
-        return array_values(array_filter(array_map(
-            fn (array $row) => (string) ($row['name'] ?? ''),
+        $fromIndexed = array_values(array_filter(array_map(
+            fn (array $row) => (string) ($row['name'] ?? $row['account'] ?? ''),
             $normalized,
         )));
+
+        if ($fromIndexed !== []) {
+            return $fromIndexed;
+        }
+
+        $names = [];
+        foreach ($data as $key => $value) {
+            $key = trim((string) $key);
+            if ($key === '' || in_array(strtolower($key), ['error', 'text', 'action', 'json'], true)) {
+                continue;
+            }
+            if (preg_match('/^(list|name|db)(\d+)$/i', $key)) {
+                $candidate = trim((string) $value);
+                if ($candidate !== '') {
+                    $names[] = $candidate;
+                }
+
+                continue;
+            }
+            if (is_scalar($value) && ! is_numeric($key)) {
+                $names[] = $key;
+            }
+        }
+
+        return array_values(array_unique(array_filter($names)));
     }
 
     /**

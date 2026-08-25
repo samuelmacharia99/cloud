@@ -2,6 +2,7 @@
 
 namespace App\Services\Provisioning;
 
+use App\Models\DatabaseTemplate;
 use App\Models\Node;
 use App\Models\Service;
 use App\Services\Hosting\DirectAdminCustomerPanelApi;
@@ -841,7 +842,7 @@ class DirectAdminToContainerMigrationService
             mkdir(dirname($localDump), 0755, true);
         }
 
-        $needsDatabase = in_array($stack, ['laravel', 'php'], true);
+        $needsDatabase = $this->stackMayExportDatabase($stack);
         $dbName = null;
         $localDumpPath = null;
 
@@ -855,9 +856,11 @@ class DirectAdminToContainerMigrationService
             }
 
             if ($needsDatabase) {
-                $dbCreds = $stack === 'laravel'
-                    ? $this->parseLaravelEnvDatabaseCredentials($daSsh, $docroot)
-                    : $this->parseGenericPhpDatabaseCredentials($daSsh, $docroot, $inventory);
+                $dbCreds = match ($stack) {
+                    'laravel' => $this->parseEnvDatabaseCredentials($daSsh, $docroot),
+                    'nodejs' => $this->parseEnvDatabaseCredentials($daSsh, $docroot),
+                    default => $this->parseGenericPhpDatabaseCredentials($daSsh, $docroot, $inventory),
+                };
 
                 $dbName = $databaseName
                     ?: ($dbCreds['DB_NAME'] ?? null)
@@ -876,9 +879,9 @@ class DirectAdminToContainerMigrationService
                     } finally {
                         @$daSsh->exec('rm -f '.escapeshellarg($defaultsFile));
                     }
-                } elseif ($needsDatabase && $stack === 'laravel') {
+                } elseif ($needsDatabase && in_array($stack, ['laravel', 'nodejs'], true)) {
                     throw new \RuntimeException(
-                        'Could not determine Laravel database credentials from .env / inventory. Pass database_name or fix .env DB_* values.'
+                        'Could not determine database credentials from .env / inventory. Pass database_name or fix .env DB_* / MYSQL_* values.'
                     );
                 }
             }
@@ -970,14 +973,16 @@ class DirectAdminToContainerMigrationService
                 900
             );
 
-            if (in_array($stack, ['laravel', 'php'], true)) {
+            if (in_array($stack, ['laravel', 'php', 'nodejs'], true)) {
                 $progress('Creating Laravel storage and view-cache directories');
                 $appDirectory = app(ContainerAppDirectoryService::class);
-                $appDirectory->ensureLaravelWritableLayoutOnHost($targetSsh, $hostAppPath);
-                $appDirectory->normalizeLaravelPermissions($targetSsh, $deployment);
+                if (in_array($stack, ['laravel', 'php'], true)) {
+                    $appDirectory->ensureLaravelWritableLayoutOnHost($targetSsh, $hostAppPath);
+                    $appDirectory->normalizeLaravelPermissions($targetSsh, $deployment);
+                }
             }
 
-            if (is_string($localDump) && is_file($localDump) && in_array($stack, ['laravel', 'php'], true)) {
+            if (is_string($localDump) && is_file($localDump) && in_array($stack, ['laravel', 'php', 'nodejs'], true)) {
                 $db = $this->resolveGenericImportCredentials($target, $targetSsh, $containerPath);
                 $dbService = $db['service'];
 
@@ -1120,8 +1125,21 @@ class DirectAdminToContainerMigrationService
      */
     public function parseLaravelEnvDatabaseCredentials(SSHService $ssh, string $docroot): array
     {
+        return $this->parseEnvDatabaseCredentials($ssh, $docroot);
+    }
+
+    /**
+     * Read DB_* and MYSQL_* keys from .env on the DA host (Laravel, Node.js, etc.).
+     *
+     * @return array{DB_NAME: ?string, DB_USER: ?string, DB_PASSWORD: ?string, DB_HOST: string}
+     */
+    public function parseEnvDatabaseCredentials(SSHService $ssh, string $docroot): array
+    {
         $envPath = rtrim($docroot, '/').'/.env';
-        $raw = $ssh->exec('grep -E "^(DB_HOST|DB_PORT|DB_DATABASE|DB_USERNAME|DB_PASSWORD)=" '.escapeshellarg($envPath).' 2>/dev/null || true');
+        $raw = $ssh->exec(
+            'grep -E "^(DB_HOST|DB_PORT|DB_DATABASE|DB_USERNAME|DB_PASSWORD|MYSQL_HOST|MYSQL_DATABASE|MYSQL_USER|MYSQL_PASSWORD|DATABASE_URL)=" '
+            .escapeshellarg($envPath).' 2>/dev/null || true'
+        );
 
         $creds = [
             'DB_NAME' => null,
@@ -1139,10 +1157,11 @@ class DirectAdminToContainerMigrationService
             $key = trim($key);
             $value = trim($value, " \t\"'");
             match ($key) {
-                'DB_HOST' => $creds['DB_HOST'] = $value !== '' ? $value : 'localhost',
-                'DB_DATABASE' => $creds['DB_NAME'] = $value !== '' ? $value : null,
-                'DB_USERNAME' => $creds['DB_USER'] = $value !== '' ? $value : null,
-                'DB_PASSWORD' => $creds['DB_PASSWORD'] = $value,
+                'DB_HOST', 'MYSQL_HOST' => $creds['DB_HOST'] = $value !== '' ? $value : 'localhost',
+                'DB_DATABASE', 'MYSQL_DATABASE' => $creds['DB_NAME'] = $value !== '' ? $value : null,
+                'DB_USERNAME', 'MYSQL_USER' => $creds['DB_USER'] = $value !== '' ? $value : null,
+                'DB_PASSWORD', 'MYSQL_PASSWORD' => $creds['DB_PASSWORD'] = $value,
+                'DATABASE_URL' => $this->mergeDatabaseUrlIntoCredentials($creds, $value),
                 default => null,
             };
         }
@@ -1151,12 +1170,75 @@ class DirectAdminToContainerMigrationService
     }
 
     /**
+     * @param  array{DB_NAME: ?string, DB_USER: ?string, DB_PASSWORD: ?string, DB_HOST: string}  $creds
+     */
+    public function mergeDatabaseUrlIntoCredentials(array &$creds, string $url): void
+    {
+        if ($url === '' || ! str_contains($url, '://')) {
+            return;
+        }
+
+        $parts = parse_url($url);
+        if (! is_array($parts)) {
+            return;
+        }
+
+        if (! empty($parts['host'])) {
+            $creds['DB_HOST'] = (string) $parts['host'];
+        }
+        if (! empty($parts['user'])) {
+            $creds['DB_USER'] = rawurldecode((string) $parts['user']);
+        }
+        if (array_key_exists('pass', $parts)) {
+            $creds['DB_PASSWORD'] = rawurldecode((string) $parts['pass']);
+        }
+        $path = trim((string) ($parts['path'] ?? ''), '/');
+        if ($path !== '') {
+            $creds['DB_NAME'] = $path;
+        }
+    }
+
+    public function stackMayExportDatabase(string $stack): bool
+    {
+        return in_array($stack, ['laravel', 'php', 'nodejs'], true);
+    }
+
+    /**
+     * Provision a MySQL sidecar on the next container deploy when a DA export includes a SQL dump.
+     */
+    public function ensureMysqlSidecarForImport(Service $service): void
+    {
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        if (! empty($meta['database_id'])) {
+            return;
+        }
+
+        $template = DatabaseTemplate::query()
+            ->where('is_active', true)
+            ->where('hosting_type', 'container')
+            ->where('type', 'mysql')
+            ->orderBy('order')
+            ->first();
+
+        if (! $template) {
+            throw new \RuntimeException(
+                'Export includes a MySQL dump but no active container MySQL database template is configured.'
+            );
+        }
+
+        $meta['database_id'] = $template->id;
+        $meta['database_template_name'] = $template->name;
+        $service->update(['service_meta' => $meta]);
+        $service->service_meta = $meta;
+    }
+
+    /**
      * @param  array{databases?: list<array{name: string}>}  $inventory
      * @return array{DB_NAME: ?string, DB_USER: ?string, DB_PASSWORD: ?string, DB_HOST: string}
      */
     public function parseGenericPhpDatabaseCredentials(SSHService $ssh, string $docroot, array $inventory = []): array
     {
-        $laravelStyle = $this->parseLaravelEnvDatabaseCredentials($ssh, $docroot);
+        $laravelStyle = $this->parseEnvDatabaseCredentials($ssh, $docroot);
         if (! blank($laravelStyle['DB_USER'] ?? null)) {
             return $laravelStyle;
         }

@@ -503,6 +503,10 @@ class DirectAdminToContainerConvertServiceTest extends TestCase
             99,
             'sigtunaco',
             0.3333,
+            [
+                ['name' => 'sigtunaco_db1'],
+                ['name' => 'sigtunaco_db2'],
+            ],
         );
 
         $this->assertCount(2, $attached['sibling_ids']);
@@ -512,6 +516,7 @@ class DirectAdminToContainerConvertServiceTest extends TestCase
 
         $sibling = Service::query()->find($attached['sibling_ids'][0]);
         $this->assertSame($product->id, $sibling->product_id);
+        $this->assertSame(['sigtunaco_db1', 'sigtunaco_db2'], array_column($sibling->service_meta['da_legacy']['databases'] ?? [], 'name'));
         $this->assertSame(0.0, (float) $sibling->custom_price);
         $this->assertFalse((bool) $sibling->service_meta['project_billing_anchor']);
         $this->assertSame(DirectAdminToContainerConvertService::PROJECT_RECIPE_KEY, $sibling->service_meta['project_recipe']);
@@ -537,6 +542,68 @@ class DirectAdminToContainerConvertServiceTest extends TestCase
         $this->assertCount(1, $withoutFlag);
         $this->assertSame('theharbor.co.ke', $withoutFlag[0]['domain']);
         $this->assertSame('nodejs', $convert->templateSlugForDetectedStack('nodejs', $product));
+    }
+
+    public function test_database_export_warnings_surface_nodejs_and_missing_api_inventory(): void
+    {
+        $convert = app(DirectAdminToContainerConvertService::class);
+
+        $warnings = $convert->databaseExportWarnings('nodejs', [
+            'databases' => [['name' => 'sigtunaco_db1']],
+            'account' => ['counts' => ['database' => 4]],
+        ]);
+
+        $this->assertNotEmpty($warnings);
+        $this->assertStringContainsString('Node.js', implode(' ', $warnings));
+
+        $missing = $convert->databaseExportWarnings('laravel', [
+            'databases' => [],
+            'account' => ['counts' => ['database' => 3]],
+        ]);
+
+        $this->assertStringContainsString('CMD_API_DATABASES', implode(' ', $missing));
+    }
+
+    public function test_resolve_sibling_database_inventory_falls_back_to_anchor_legacy(): void
+    {
+        $anchor = Service::query()->create([
+            'user_id' => User::factory()->create()->id,
+            'product_id' => Product::query()->create([
+                'name' => 'App',
+                'slug' => 'app-'.uniqid(),
+                'type' => 'container_hosting',
+                'monthly_price' => 1000,
+                'is_active' => true,
+                'provisioning_driver_key' => 'container',
+            ])->id,
+            'name' => 'sigtuna.org',
+            'status' => 'provisioning',
+            'billing_cycle' => 'annual',
+            'provisioning_driver_key' => 'container',
+            'service_meta' => [
+                'da_legacy' => [
+                    'databases' => [['name' => 'sigtunaco_db1']],
+                ],
+            ],
+        ]);
+
+        $sibling = Service::query()->create([
+            'user_id' => $anchor->user_id,
+            'product_id' => $anchor->product_id,
+            'name' => 'app.sigtuna.org',
+            'status' => 'pending',
+            'billing_cycle' => 'annual',
+            'provisioning_driver_key' => 'container',
+            'service_meta' => [
+                'source_service_id' => $anchor->id,
+                'da_legacy' => ['stack' => 'nodejs'],
+            ],
+        ]);
+
+        $convert = app(DirectAdminToContainerConvertService::class);
+        $inventory = $convert->resolveSiblingDatabaseInventory($sibling, $sibling->service_meta['da_legacy']);
+
+        $this->assertSame(['sigtunaco_db1'], array_column($inventory, 'name'));
     }
 
     public function test_customer_service_name_uses_converted_hostname_when_the_row_is_still_named_after_the_da_package(): void

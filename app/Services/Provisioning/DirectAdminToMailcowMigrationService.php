@@ -4,9 +4,11 @@ namespace App\Services\Provisioning;
 
 use App\Enums\ServiceStatus;
 use App\Models\CustomerProject;
+use App\Models\Node;
 use App\Models\Product;
 use App\Models\Service;
 use App\Services\Hosting\DirectAdminCustomerPanelApi;
+use App\Services\SSH\SSHService;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -164,6 +166,100 @@ class DirectAdminToMailcowMigrationService
             if ($rows !== []) {
                 $byDomain[$domain] = $rows;
             }
+        }
+
+        if ($all === [] && $daService->node) {
+            $sshListed = $this->listMailboxesViaSsh($daService->node, $username, $domains);
+            foreach ($sshListed['errors'] as $error) {
+                $errors[] = $error;
+            }
+            if ($sshListed['all'] !== []) {
+                $byDomain = $sshListed['by_domain'];
+                $all = $sshListed['all'];
+            }
+        }
+
+        return [
+            'by_domain' => $byDomain,
+            'all' => $all,
+            'errors' => $errors,
+        ];
+    }
+
+    /**
+     * Fallback when CMD_API_POP returns empty: read /home/{user}/imap/{domain}/{account} on the DA node.
+     *
+     * @param  list<string>  $domains
+     * @return array{
+     *     by_domain: array<string, list<array{account: string, email: string, domain: string}>>,
+     *     all: list<array{account: string, email: string, domain: string}>,
+     *     errors: list<string>
+     * }
+     */
+    public function listMailboxesViaSsh(Node $node, string $username, array $domains = []): array
+    {
+        $username = trim($username);
+        $byDomain = [];
+        $all = [];
+        $errors = [];
+
+        if ($username === '') {
+            return ['by_domain' => [], 'all' => [], 'errors' => ['Missing DirectAdmin username for SSH mailbox scan.']];
+        }
+
+        $home = '/home/'.trim($username, '/');
+        $domainsFilter = array_values(array_unique(array_filter(array_map(
+            fn ($domain) => strtolower(trim((string) $domain)),
+            $domains,
+        ))));
+
+        try {
+            $ssh = SSHService::forNode($node);
+            $command = 'for base in '.escapeshellarg($home.'/imap').' '.escapeshellarg($home.'/Maildir').'; do '
+                .'if [ -d "$base" ]; then '
+                .'find "$base" -mindepth 2 -maxdepth 2 -type d 2>/dev/null; '
+                .'fi; '
+                .'done';
+            $raw = trim($ssh->exec($command));
+            $ssh->disconnect();
+        } catch (\Throwable $e) {
+            return ['by_domain' => [], 'all' => [], 'errors' => ['SSH mailbox scan: '.$e->getMessage()]];
+        }
+
+        foreach (preg_split("/\r\n|\n|\r/", $raw) ?: [] as $line) {
+            $line = trim($line);
+            if ($line === '' || ! str_starts_with($line, $home.'/')) {
+                continue;
+            }
+            $relative = substr($line, strlen($home) + 1);
+            $parts = explode('/', $relative);
+            if (count($parts) < 3) {
+                continue;
+            }
+            $domain = strtolower(trim($parts[1] ?? ''));
+            $account = trim($parts[2] ?? '');
+            if ($domain === '' || $account === '' || ! str_contains($domain, '.')) {
+                continue;
+            }
+            if ($domainsFilter !== [] && ! in_array($domain, $domainsFilter, true)) {
+                continue;
+            }
+            $item = [
+                'account' => $account,
+                'email' => strtolower($account.'@'.$domain),
+                'domain' => $domain,
+            ];
+            $byDomain[$domain] ??= [];
+            $existing = array_column($byDomain[$domain], 'account');
+            if (in_array($account, $existing, true)) {
+                continue;
+            }
+            $byDomain[$domain][] = $item;
+            $all[] = $item;
+        }
+
+        if ($all === [] && $domainsFilter !== []) {
+            $errors[] = 'SSH mailbox scan found no maildirs under '.$home.'/imap or '.$home.'/Maildir.';
         }
 
         return [

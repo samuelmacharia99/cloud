@@ -126,6 +126,60 @@ class DirectAdminCustomerPanelApiTest extends TestCase
         $this->assertSame('sales@example.com', $result['data'][1]['email']);
     }
 
+    public function test_list_email_accounts_handles_associative_list_keys(): void
+    {
+        Http::fake([
+            '*/CMD_API_POP*' => Http::response(json_encode([
+                'error' => '0',
+                'list' => [
+                    'info' => '250',
+                    'sales' => 'unlimited',
+                ],
+            ]), 200),
+        ]);
+
+        $node = Node::factory()->create([
+            'type' => 'directadmin',
+            'hostname' => 'da.example.com',
+            'api_url' => 'https://da.example.com:2222',
+            'da_login_key' => 'secret',
+        ]);
+
+        $api = DirectAdminCustomerPanelApi::forServiceNode($node);
+        $result = $api->listEmailAccounts('siteuser', 'example.com');
+
+        $this->assertTrue($result['success']);
+        $this->assertCount(2, $result['data']);
+        $this->assertSame('info@example.com', $result['data'][0]['email']);
+        $this->assertSame('sales@example.com', $result['data'][1]['email']);
+    }
+
+    public function test_list_databases_handles_associative_list_keys(): void
+    {
+        Http::fake([
+            '*/CMD_API_DATABASES*' => Http::response(json_encode([
+                'error' => '0',
+                'list' => [
+                    'siteuser_db1' => 'siteuser_u1',
+                    'siteuser_db2' => 'siteuser_u2',
+                ],
+            ]), 200),
+        ]);
+
+        $node = Node::factory()->create([
+            'type' => 'directadmin',
+            'hostname' => 'da.example.com',
+            'api_url' => 'https://da.example.com:2222',
+            'da_login_key' => 'secret',
+        ]);
+
+        $api = DirectAdminCustomerPanelApi::forServiceNode($node);
+        $result = $api->listDatabases('siteuser');
+
+        $this->assertTrue($result['success']);
+        $this->assertSame(['siteuser_db1', 'siteuser_db2'], array_column($result['data'], 'name'));
+    }
+
     public function test_change_email_account_password_posts_modify_action(): void
     {
         Http::fake([

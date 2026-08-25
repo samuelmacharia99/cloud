@@ -29,7 +29,12 @@
     $addonSiteCount = (int) ($inventory['addon_site_count'] ?? 0);
     $emailProducts = collect($preflight['email_products'] ?? []);
     $mustPullMail = (bool) ($preflight['must_pull_mail'] ?? false);
+    $daEmailCount = (int) ($preflight['da_email_count'] ?? ($account['counts']['email'] ?? 0));
     $mailboxByDomain = is_array($preflight['email']['by_domain'] ?? null) ? $preflight['email']['by_domain'] : [];
+    $emailInventoryWarnings = array_values(array_filter(array_merge(
+        $preflight['email']['warnings'] ?? [],
+        $preflight['database_warnings'] ?? [],
+    )));
 @endphp
 <div class="space-y-6 max-w-4xl">
     <div>
@@ -256,6 +261,17 @@
     @if ($preflight)
         <div class="ui-card p-6 space-y-4">
             <h2 class="font-semibold text-lg">Email inventory</h2>
+            @if ($daEmailCount > 0 && count($preflight['email']['all'] ?? []) === 0)
+                <div class="rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 p-3 text-sm text-amber-900 dark:text-amber-100">
+                    DirectAdmin usage reports <strong>{{ $daEmailCount }}</strong> email account(s), but POP/SSH inventory found <strong>0</strong> mailboxes.
+                    Convert is blocked until mail is inventoried — mail would otherwise stay on DirectAdmin unnoticed.
+                </div>
+            @elseif ($daEmailCount > count($preflight['email']['all'] ?? []))
+                <div class="rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 p-3 text-sm text-amber-900 dark:text-amber-100">
+                    DirectAdmin usage shows <strong>{{ $daEmailCount }}</strong> email account(s); inventory found <strong>{{ count($preflight['email']['all'] ?? []) }}</strong>.
+                    Confirm all mail domains before decommissioning DirectAdmin.
+                </div>
+            @endif
             @if (!($preflight['email']['success'] ?? false))
                 <p class="text-sm text-red-600">{{ $preflight['email']['message'] ?? 'Failed' }}</p>
             @else
@@ -286,8 +302,22 @@
                         These mailboxes are pulled to Mailcow (IMAP sync). Update MX when sync has caught up, then DirectAdmin can be decommissioned.
                     </p>
                 @else
-                    <p class="text-sm text-slate-600 dark:text-slate-300">No mailboxes found on this DA user. Web convert does not need a Mailcow pull.</p>
+                    <p class="text-sm text-slate-600 dark:text-slate-300">
+                        @if ($daEmailCount > 0)
+                            No mailboxes found via POP/SSH on the domains scanned (DA usage still shows {{ $daEmailCount }}).
+                        @else
+                            No mailboxes found on this DA user. Web convert does not need a Mailcow pull.
+                        @endif
+                    </p>
                 @endif
+            @endif
+
+            @if ($emailInventoryWarnings !== [])
+                <ul class="text-xs text-amber-800 dark:text-amber-200 space-y-1 list-disc list-inside">
+                    @foreach ($emailInventoryWarnings as $inventoryWarning)
+                        <li>{{ $inventoryWarning }}</li>
+                    @endforeach
+                </ul>
             @endif
 
             @if (!empty($preflight['blockers']))
@@ -371,6 +401,9 @@
         @if (!empty($inventory['databases']))
             <div>
                 <label class="block text-sm font-medium mb-2">Source database (optional)</label>
+                <p class="text-xs text-slate-500 mb-2">
+                    Used when wp-config / .env auto-detection fails, or for Node.js sites with MySQL on DirectAdmin.
+                </p>
                 <select name="database_name" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 font-mono text-sm">
                     <option value="">Auto from wp-config / .env / inventory</option>
                     @foreach ($inventory['databases'] as $db)
