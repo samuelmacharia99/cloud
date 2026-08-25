@@ -76,7 +76,7 @@ class ContainerDoctorService
 
         // Recreating / Vite runtime repair can revive a crash-looping stack.
         if (! $deployment->isRunning()
-            && ! in_array($action, ['recreate_application', 'fix_vite_production_runtime'], true)) {
+            && ! in_array($action, ['recreate_application', 'fix_vite_production_runtime', 'switch_php_production_runtime'], true)) {
             return ['success' => false, 'message' => 'Application must be running before applying a fix.'];
         }
 
@@ -96,6 +96,7 @@ class ContainerDoctorService
             'restart_application' => $this->treatRestartApplication($service),
             'recreate_application' => $this->treatRecreateApplication($service),
             'fix_vite_production_runtime' => $this->treatFixViteProductionRuntime($service),
+            'switch_php_production_runtime' => $this->treatSwitchPhpProductionRuntime($service),
             'run_migrations' => $this->treatRunMigrations($service),
             'migrate_fresh' => $this->treatMigrateFresh($service),
             'use_file_cache' => $this->treatUseFileCache($service),
@@ -286,6 +287,8 @@ class ContainerDoctorService
             'upstream_local_status' => null,
             'containers_stopped' => null,
             'spa_runtime_api_mismatch' => null,
+            'php_production_runtime' => null,
+            'php_start_command' => null,
         ];
         $findings = [];
 
@@ -427,6 +430,13 @@ class ContainerDoctorService
                             }
                         }
                     }
+                }
+            }
+
+            if (in_array($stack, ['laravel', 'php'], true)) {
+                $phpFinding = $this->phpBuiltinDevServerFinding($ssh, $deployment, $stack, $checks);
+                if ($phpFinding !== null) {
+                    $findings[] = $phpFinding;
                 }
             }
 
@@ -770,13 +780,18 @@ class ContainerDoctorService
             'missing_pdo_pgsql',
         ];
 
-        $logFindings = array_values(array_filter($logFindings, function (array $f) use ($dbOk, $liveFindings, $resolvedLogIds, $httpOk) {
+        $logFindings = array_values(array_filter($logFindings, function (array $f) use ($dbOk, $liveFindings, $resolvedLogIds, $httpOk, $checks) {
             if (! empty($f['stale'])) {
                 return false;
             }
 
             // Live Blade compile succeeded — leftover "valid cache path" lines are historical.
             if ($httpOk && ($f['id'] ?? '') === 'storage_permission_denied') {
+                return false;
+            }
+
+            if (($checks['php_production_runtime'] ?? null) === true
+                && ($f['id'] ?? '') === 'php_builtin_dev_server') {
                 return false;
             }
 
@@ -1633,6 +1648,24 @@ PHP;
     {
         return [
             [
+                'id' => 'php_builtin_dev_server',
+                'severity' => 'warning',
+                'stacks' => ['laravel', 'php'],
+                'patterns' => [
+                    '/PHP \S+ Development Server \(http:\/\//i',
+                    '/php artisan serve --host=/i',
+                ],
+                'title' => 'PHP development server is handling web traffic',
+                'summary' => 'This app is running PHP’s built-in server (`php -S` / `artisan serve`), which handles one request at a time. Dashboard pages that load CSS/JS plus several AJAX calls will feel slow even when MySQL is healthy. Restart will not fix this.',
+                'treat_action' => 'switch_php_production_runtime',
+                'treat_label' => 'Switch to PHP-FPM',
+                'manual_steps' => [
+                    'Click Switch to PHP-FPM — rebuilds the Laravel/PHP runtime with nginx + php-fpm and recreates the app container (database is kept).',
+                    'The first time on a host this rebuilds the image and can take several minutes.',
+                    'Re-scan Doctor after it finishes; logs should show nginx + php-fpm instead of “Development Server”.',
+                ],
+            ],
+            [
                 'id' => 'postgres_password_auth_failed',
                 'severity' => 'critical',
                 'stacks' => ['laravel', 'php', 'nodejs', 'python', 'ruby', '*'],
@@ -1957,6 +1990,94 @@ PHP;
                     'Avoid heavy builds (npm/composer) concurrent with traffic on small plans.',
                 ],
             ],
+        ];
+    }
+
+    /**
+     * True when compose still starts PHP with php -S / artisan serve.
+     */
+    public function composeUsesPhpBuiltinDevServer(?string $compose): bool
+    {
+        $compose = (string) $compose;
+        if ($compose === '') {
+            return false;
+        }
+
+        if (str_contains($compose, 'talksasa-php-server')) {
+            return false;
+        }
+
+        if (preg_match('/artisan serve|php artisan serve/i', $compose) === 1) {
+            return true;
+        }
+
+        if (preg_match('/php\s+-S\b/', $compose) === 1) {
+            return true;
+        }
+
+        $hasPhp = preg_match('/^\s*-\s*[\'"]?php[\'"]?\s*$/m', $compose) === 1;
+        $hasDashS = preg_match('/^\s*-\s*[\'"]?-S[\'"]?\s*$/m', $compose) === 1;
+
+        return $hasPhp && $hasDashS;
+    }
+
+    public function commandLooksLikePhpBuiltinDevServer(string $command): bool
+    {
+        $command = trim($command);
+        if ($command === '') {
+            return false;
+        }
+
+        if (str_contains($command, 'talksasa-php-server') || preg_match('/\bphp-fpm\b|\bnginx\b/', $command) === 1) {
+            return false;
+        }
+
+        return preg_match('/php\s+-S\b|artisan serve|Development Server/i', $command) === 1;
+    }
+
+    /**
+     * @param  array<string, mixed>  $checks
+     * @return array<string, mixed>|null
+     */
+    private function phpBuiltinDevServerFinding($ssh, $deployment, string $stack, array &$checks): ?array
+    {
+        $liveCmd = trim($ssh->exec(
+            'docker inspect -f '.escapeshellarg('{{range .Config.Cmd}}{{.}} {{end}}')
+            .' '.escapeshellarg($deployment->container_name).' 2>/dev/null || true',
+            15
+        ));
+        $checks['php_start_command'] = $liveCmd !== '' ? $liveCmd : null;
+
+        $usingBuiltin = $this->commandLooksLikePhpBuiltinDevServer($liveCmd)
+            || ($liveCmd === '' && $this->composeUsesPhpBuiltinDevServer((string) $deployment->docker_compose_content));
+
+        $onProduction = str_contains($liveCmd, 'talksasa-php-server')
+            || preg_match('/\bphp-fpm\b|\bnginx\b/', $liveCmd) === 1
+            || str_contains((string) $deployment->docker_compose_content, 'talksasa-php-server');
+
+        $checks['php_production_runtime'] = $onProduction && ! $usingBuiltin;
+
+        if (! $usingBuiltin) {
+            return null;
+        }
+
+        return [
+            'id' => 'php_builtin_dev_server',
+            'severity' => 'warning',
+            'title' => 'PHP development server is handling web traffic',
+            'summary' => 'This '.$stack.' app is running PHP’s built-in server (`php -S` / `artisan serve`), which handles one request at a time. '
+                .'Dashboard pages that load CSS/JS plus several AJAX calls will feel slow even when MySQL is healthy. Restart will not fix this.',
+            'evidence' => array_values(array_filter([
+                $liveCmd !== '' ? 'cmd: '.mb_substr($liveCmd, 0, 220) : null,
+                'PHP Development Server is single-threaded',
+            ])),
+            'treat_action' => 'switch_php_production_runtime',
+            'treat_label' => 'Switch to PHP-FPM',
+            'manual_steps' => [
+                'Click Switch to PHP-FPM — rebuilds the runtime with nginx + php-fpm and recreates the app container (database is kept).',
+                'The first time on a host this rebuilds the image and can take several minutes.',
+            ],
+            'source' => 'live',
         ];
     }
 
@@ -2895,6 +3016,50 @@ PHP;
             ];
         } catch (\Throwable $e) {
             return ['success' => false, 'message' => 'Failed to fix site URLs: '.$e->getMessage()];
+        } finally {
+            $ssh->disconnect();
+        }
+    }
+
+    /**
+     * Rebuild the PHP runtime with nginx + php-fpm and recreate the app container.
+     *
+     * @return array{success: bool, message: string}
+     */
+    private function treatSwitchPhpProductionRuntime(Service $service): array
+    {
+        $deployment = $service->containerDeployment;
+        if (! $deployment?->node) {
+            return ['success' => false, 'message' => 'Application is not deployed.'];
+        }
+
+        $ssh = SSHService::forNode($deployment->node);
+
+        try {
+            $message = app(ContainerDeploymentService::class)
+                ->refreshPhpProductionRuntime($service, $deployment, $ssh);
+
+            if ($message === '') {
+                return ['success' => false, 'message' => 'Could not rewrite the PHP start command for this stack.'];
+            }
+
+            $deployment->refresh();
+            if ((int) ($deployment->assigned_port ?? 0) > 0) {
+                $probe = $this->waitForUpstream($ssh, $deployment, 12);
+                if (! $probe['reachable']) {
+                    return [
+                        'success' => is_string($probe['bootstrapping']),
+                        'message' => $message.' '.$this->upstreamFailureMessage($probe),
+                    ];
+                }
+            }
+
+            return [
+                'success' => true,
+                'message' => $message.' Concurrent requests no longer queue behind PHP’s development server.',
+            ];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'message' => 'PHP-FPM switch failed: '.$e->getMessage()];
         } finally {
             $ssh->disconnect();
         }

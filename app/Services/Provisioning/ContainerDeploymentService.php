@@ -1165,6 +1165,16 @@ class ContainerDeploymentService
     }
 
     /**
+     * nginx + php-fpm start command (replaces php -S / artisan serve).
+     *
+     * @return list<string>
+     */
+    public static function phpProductionServerCommand(int $port, string $documentRoot): array
+    {
+        return ['talksasa-php-server', (string) $port, $documentRoot];
+    }
+
+    /**
      * Render docker-compose.yml from template with optional database sidecar
      */
     private function renderCompose(
@@ -1245,22 +1255,16 @@ class ContainerDeploymentService
                         LaravelNextGatewayProxy::BACKEND_PORT
                     );
                 } else {
-                    $compose['services'][$containerName]['command'] = [
-                        'php',
-                        '-S',
-                        "0.0.0.0:{$internalPort}",
-                        '-t',
-                        $documentRoot,
-                    ];
+                    $compose['services'][$containerName]['command'] = $this->phpProductionServerCommand(
+                        $internalPort,
+                        $documentRoot
+                    );
                 }
             } else {
-                $compose['services'][$containerName]['command'] = [
-                    'php',
-                    '-S',
-                    "0.0.0.0:{$internalPort}",
-                    '-t',
-                    '/app',
-                ];
+                $compose['services'][$containerName]['command'] = $this->phpProductionServerCommand(
+                    $internalPort,
+                    '/app'
+                );
             }
         }
 
@@ -3788,10 +3792,16 @@ class ContainerDeploymentService
 
     public function refreshLaravelServeCompose(Service $service, ContainerDeployment $deployment, SSHService $ssh): string
     {
+        return $this->refreshPhpProductionRuntime($service, $deployment, $ssh);
+    }
+
+    public function refreshPhpProductionRuntime(Service $service, ContainerDeployment $deployment, SSHService $ssh): string
+    {
         $service->loadMissing('product.containerTemplate');
         $template = $this->resolveContainerTemplate($service);
+        $slug = $template->slug ?? null;
 
-        if (($template->slug ?? null) !== 'laravel') {
+        if (! in_array($slug, ['laravel', 'php'], true)) {
             return '';
         }
 
@@ -3800,13 +3810,30 @@ class ContainerDeploymentService
             return '';
         }
 
-        $resolver = app(LaravelProjectPathResolver::class);
-        if (! $resolver->hasProject($ssh, $hostAppPath)) {
-            return '';
-        }
+        $documentRoot = $slug === 'php' ? '/app' : '/app/public';
+        $serveNextFrontend = false;
+        $nextFrontendRelativeDir = 'frontend';
 
-        $resolved = $resolver->persistResolvedPaths($service, $ssh, $deployment);
-        $documentRoot = $resolved['document_root'] ?? $resolver->resolveDocumentRoot($ssh, $hostAppPath);
+        if ($slug === 'laravel') {
+            $resolver = app(LaravelProjectPathResolver::class);
+            if ($resolver->hasProject($ssh, $hostAppPath)) {
+                $resolved = $resolver->persistResolvedPaths($service, $ssh, $deployment);
+                $documentRoot = $resolved['document_root'] ?? $resolver->resolveDocumentRoot($ssh, $hostAppPath) ?? $documentRoot;
+            }
+
+            $serveNextFrontend = $this->usesLaravelNextSidecarStack($deployment);
+            if ($serveNextFrontend) {
+                $nextFrontendRelativeDir = $this->stackCommands->resolveLaravelFrontendRelativeDir($ssh, $hostAppPath) ?? 'frontend';
+                $ssh->upload(
+                    LaravelNextGatewayProxy::scriptContents(
+                        LaravelNextGatewayProxy::EDGE_INTERNAL_PORT,
+                        LaravelNextGatewayProxy::BACKEND_PORT,
+                        LaravelNextGatewayProxy::FRONTEND_PORT,
+                    ),
+                    LaravelNextGatewayProxy::hostScriptPath($hostAppPath)
+                );
+            }
+        }
 
         $databaseTemplate = $this->resolveDatabaseTemplate($service, $template);
         $envVars = is_array($deployment->env_values) ? $deployment->env_values : [];
@@ -3820,7 +3847,9 @@ class ContainerDeploymentService
             $deployment->selected_version,
             $hostAppPath,
             null,
-            $documentRoot
+            $documentRoot,
+            serveNextFrontend: $serveNextFrontend,
+            nextFrontendRelativeDir: $nextFrontendRelativeDir,
         );
 
         $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
@@ -3834,7 +3863,7 @@ class ContainerDeploymentService
         $this->composeUp($ssh, $containerPath, $this->runtimeImages->usesRuntimeImage($template));
         $this->waitForContainerRunning($ssh, $deployment->container_name);
 
-        return 'Laravel document root updated ('.$documentRoot.').';
+        return 'Switched to nginx + PHP-FPM (document root '.$documentRoot.').';
     }
 
     private function syncApplicationSource(SSHService $ssh, Service $service, $template, string $hostAppPath): void

@@ -104,6 +104,82 @@ LOG;
     }
 
     #[Test]
+    public function it_detects_php_builtin_development_server_from_logs(): void
+    {
+        $logs = <<<'LOG'
+user-74-service-24-laravel  | PHP 8.3.33 Development Server (http://0.0.0.0:80) started
+user-74-service-24-laravel  | [Tue Aug 25 11:29:35 2026] 10.201.0.1:53570 [200]: GET /login
+LOG;
+
+        $findings = app(ContainerDoctorService::class)->analyzeLogs($logs, 'laravel');
+        $finding = collect($findings)->firstWhere('id', 'php_builtin_dev_server');
+
+        $this->assertNotNull($finding);
+        $this->assertSame('switch_php_production_runtime', $finding['treat_action']);
+        $this->assertSame('warning', $finding['severity']);
+    }
+
+    #[Test]
+    public function it_does_not_flag_php_dev_server_on_unrelated_stacks(): void
+    {
+        $logs = 'PHP 8.3.33 Development Server (http://0.0.0.0:80) started';
+
+        $findings = app(ContainerDoctorService::class)->analyzeLogs($logs, 'nodejs');
+
+        $this->assertNotContains('php_builtin_dev_server', array_column($findings, 'id'));
+    }
+
+    #[Test]
+    public function it_detects_php_minus_s_in_compose_yaml(): void
+    {
+        $doctor = app(ContainerDoctorService::class);
+        $compose = <<<'YAML'
+services:
+  app:
+    command:
+      - php
+      - '-S'
+      - 0.0.0.0:8000
+      - '-t'
+      - /app/public
+YAML;
+
+        $this->assertTrue($doctor->composeUsesPhpBuiltinDevServer($compose));
+        $this->assertFalse($doctor->composeUsesPhpBuiltinDevServer(
+            "command:\n      - talksasa-php-server\n      - '8000'\n      - /app/public\n"
+        ));
+        $this->assertTrue($doctor->commandLooksLikePhpBuiltinDevServer('php -S 0.0.0.0:80 -t /app/public'));
+        $this->assertFalse($doctor->commandLooksLikePhpBuiltinDevServer('talksasa-php-server 80 /app/public'));
+    }
+
+    #[Test]
+    public function it_drops_stale_php_dev_server_logs_when_live_runtime_is_php_fpm(): void
+    {
+        $merged = app(ContainerDoctorService::class)->mergeLogAndLiveFindings(
+            [[
+                'id' => 'php_builtin_dev_server',
+                'severity' => 'warning',
+                'title' => 'PHP development server',
+                'summary' => 'old logs',
+                'evidence' => ['PHP 8.3.33 Development Server (http://0.0.0.0:80) started'],
+                'treat_action' => 'switch_php_production_runtime',
+                'treat_label' => 'Switch to PHP-FPM',
+                'manual_steps' => [],
+            ]],
+            [
+                'findings' => [],
+                'checks' => [
+                    'php_production_runtime' => true,
+                    'http_status' => 200,
+                    'db_ok' => true,
+                ],
+            ]
+        );
+
+        $this->assertNotContains('php_builtin_dev_server', array_column($merged, 'id'));
+    }
+
+    #[Test]
     public function it_detects_postgres_password_authentication_failures(): void
     {
         $logs = <<<'LOG'

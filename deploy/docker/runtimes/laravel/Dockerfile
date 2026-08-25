@@ -1,6 +1,6 @@
 ARG PHP_VERSION=8.3
 
-FROM php:${PHP_VERSION}-cli-bookworm
+FROM php:${PHP_VERSION}-fpm-bookworm
 
 ARG PHP_VERSION
 
@@ -36,6 +36,7 @@ RUN apt-get update \
         libicu-dev \
         libgmp-dev \
         libpq-dev \
+        nginx \
     && docker-php-ext-configure intl \
     && docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp \
     && docker-php-ext-install -j"$(nproc)" \
@@ -56,9 +57,19 @@ RUN apt-get update \
 COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
 
 COPY entrypoint.sh /usr/local/bin/talksasa-entrypoint
-RUN chmod +x /usr/local/bin/talksasa-entrypoint
+COPY php-production-server.sh /usr/local/bin/talksasa-php-server
+RUN chmod +x /usr/local/bin/talksasa-entrypoint /usr/local/bin/talksasa-php-server \
+    && printf '%s\n' \
+        'opcache.enable=1' \
+        'opcache.enable_cli=1' \
+        'opcache.memory_consumption=128' \
+        'opcache.interned_strings_buffer=16' \
+        'opcache.max_accelerated_files=10000' \
+        'opcache.validate_timestamps=1' \
+        'opcache.revalidate_freq=2' \
+        > /usr/local/etc/php/conf.d/talksasa-opcache.ini
 
 WORKDIR /app
 
 ENTRYPOINT ["/usr/local/bin/talksasa-entrypoint"]
-CMD ["php", "-S", "0.0.0.0:8000", "-t", "/app/public"]
+CMD ["talksasa-php-server", "8000", "/app/public"]

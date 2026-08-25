@@ -454,9 +454,9 @@ class ContainerDeploymentComposeTest extends TestCase
             '/app'
         );
 
-        $this->assertStringContainsString("- /app\n", $yaml);
+        $this->assertStringContainsString('talksasa-php-server', $yaml);
         $this->assertStringContainsString('pull_policy: never', $yaml);
-        $this->assertStringContainsString("- '-t'\n", $yaml);
+        $this->assertStringNotContainsString("- '-S'\n", $yaml);
     }
 
     #[Test]

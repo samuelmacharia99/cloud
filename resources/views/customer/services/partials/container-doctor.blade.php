@@ -14,7 +14,7 @@
                 <span class="text-[10px] uppercase tracking-wide font-semibold px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">Beta</span>
             </div>
             <p class="text-sm text-slate-600 dark:text-slate-400 mt-1 max-w-2xl">
-                Scans the latest <span x-text="logLines"></span> log lines for common stack problems and offers one-click repairs. AI assist comes later.
+                Scans the latest <span x-text="logLines"></span> log lines plus live checks for common stack problems (including a single-threaded PHP development server) and offers one-click repairs.
             </p>
         </div>
         <button
@@ -36,7 +36,7 @@
             x-cloak
             class="text-sm rounded-lg px-3 py-2 bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200 border border-blue-200 dark:border-blue-800"
         >
-            Applying fix… this can take up to a minute (database sync + .env rewrite).
+            Applying fix… this can take several minutes if the runtime image needs to rebuild.
         </div>
 
         <div
@@ -56,7 +56,7 @@
 
         <template x-if="!hasResult && !diagnosing && !error && !treatMessage">
             <p class="text-sm text-slate-500 dark:text-slate-400">
-                Click <span class="font-medium text-slate-700 dark:text-slate-200">Run doctor</span> to check for Postgres auth mismatches, missing drivers, Node/GD issues, permission errors, and more.
+                Click <span class="font-medium text-slate-700 dark:text-slate-200">Run doctor</span> to check for a PHP development server, Postgres auth mismatches, missing drivers, Node/GD issues, permission errors, and more.
             </p>
         </template>
 
@@ -81,7 +81,8 @@
                       x-text="liveChecks.wordpress_image_editor ? 'Images: processing ok' : 'Images: no editor'"></span>
                 <span x-show="liveChecks.wordpress_missing_thumbnails"
                       x-text="'Thumbnails missing: ' + liveChecks.wordpress_missing_thumbnails"></span>
-                <span x-show="liveChecks.spa_runtime_api_mismatch === true">API routes: not served</span>
+                <span x-show="liveChecks.php_production_runtime === false">PHP: development server</span>
+                <span x-show="liveChecks.php_production_runtime === true">PHP: PHP-FPM</span>
             </div>
         </template>
 

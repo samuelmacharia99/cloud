@@ -149,6 +149,9 @@ JS;
     {
         // $$ escapes for Docker Compose variable interpolation.
         $start = 'set -e; '
+            .'if [ -x /usr/local/bin/talksasa-php-server ]; then '
+            .'  exec talksasa-php-server '.$port.' '.escapeshellarg($documentRoot).'; '
+            .'fi; '
             .'BACKEND_DIR=$$(dirname '.escapeshellarg($documentRoot).'); '
             .'if [ -f "$$BACKEND_DIR/artisan" ]; then '
             .'  cd "$$BACKEND_DIR" && exec php artisan serve --host=0.0.0.0 --port='.$port.'; '
@@ -176,7 +179,9 @@ JS;
             .'export HOME=/tmp NPM_CONFIG_CACHE=/tmp/.npm npm_config_cache=/tmp/.npm; '
             .'mkdir -p /tmp/.npm; '
             .'BACKEND_DIR=$$(dirname '.escapeshellarg($documentRoot).'); '
-            .'if [ -f "$$BACKEND_DIR/artisan" ]; then '
+            .'if [ -x /usr/local/bin/talksasa-php-server ]; then '
+            .'  talksasa-php-server '.$laravelApiPort.' '.escapeshellarg($documentRoot).' >/tmp/laravel-api.log 2>&1 & '
+            .'elif [ -f "$$BACKEND_DIR/artisan" ]; then '
             .'  (cd "$$BACKEND_DIR" && php artisan serve --host=127.0.0.1 --port='.$laravelApiPort.') >/tmp/laravel-api.log 2>&1 & '
             .'else '
             .'  php -S 127.0.0.1:'.$laravelApiPort.' -t '.escapeshellarg($documentRoot)

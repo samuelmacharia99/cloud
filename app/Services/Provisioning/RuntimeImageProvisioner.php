@@ -101,14 +101,23 @@ class RuntimeImageProvisioner
         $buildDir = "{$buildRoot}/{$reference['runtime']}/{$reference['tag']}";
         $dockerfilePath = base_path("deploy/docker/runtimes/{$reference['runtime']}/Dockerfile");
         $entrypointPath = base_path('deploy/docker/runtimes/common/entrypoint.sh');
+        $phpServerPath = base_path('deploy/docker/runtimes/common/php-production-server.sh');
+        $needsPhpServer = in_array($reference['runtime'], ['laravel', 'php'], true);
 
         if (! is_file($dockerfilePath) || ! is_file($entrypointPath)) {
             throw new \RuntimeException("Runtime build assets missing for {$reference['runtime']}");
         }
 
+        if ($needsPhpServer && ! is_file($phpServerPath)) {
+            throw new \RuntimeException("Runtime build assets missing for {$reference['runtime']} (php-production-server.sh)");
+        }
+
         $ssh->mkdirp($buildDir);
         $ssh->upload(file_get_contents($dockerfilePath), "{$buildDir}/Dockerfile");
         $ssh->upload(file_get_contents($entrypointPath), "{$buildDir}/entrypoint.sh");
+        if ($needsPhpServer) {
+            $ssh->upload(file_get_contents($phpServerPath), "{$buildDir}/php-production-server.sh");
+        }
 
         $buildCmd = sprintf(
             'cd %s && docker build --pull --build-arg PHP_VERSION=%s -t %s .',

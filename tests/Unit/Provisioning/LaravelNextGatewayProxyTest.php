@@ -13,7 +13,7 @@ class LaravelNextGatewayProxyTest extends TestCase
     {
         $backend = LaravelNextGatewayProxy::backendComposeCommand('/app/backend/public', 8000);
         $this->assertSame('sh', $backend[0]);
-        $this->assertStringContainsString('artisan serve', $backend[2]);
+        $this->assertStringContainsString('talksasa-php-server', $backend[2]);
         $this->assertStringContainsString('0.0.0.0', $backend[2]);
         // Docker Compose treats $VAR as host interpolation — shell vars must be $$.
         $this->assertStringContainsString('$$BACKEND_DIR', $backend[2]);
@@ -44,7 +44,7 @@ class LaravelNextGatewayProxyTest extends TestCase
         );
 
         $this->assertSame('sh', $command[0]);
-        $this->assertStringContainsString('artisan serve', $command[2]);
+        $this->assertStringContainsString('talksasa-php-server', $command[2]);
         $this->assertStringContainsString('.talksasa-next-gateway.js', $command[2]);
     }
 }
