@@ -34,6 +34,7 @@ class AdminAccountWelcomeEmailTest extends TestCase
             'email' => 'jane@example.com',
             'password' => 'SecurePass1!',
             'password_confirmation' => 'SecurePass1!',
+            'country' => 'KE',
             'status' => 'active',
             'send_welcome_email' => '1',
         ]);
@@ -48,6 +49,62 @@ class AdminAccountWelcomeEmailTest extends TestCase
         });
     }
 
+    public function test_admin_can_send_login_credentials_when_resetting_customer_password(): void
+    {
+        Mail::fake();
+
+        $admin = User::factory()->create();
+        $admin->forceFill(['is_admin' => true, 'is_reseller' => false])->save();
+
+        $customer = User::factory()->create([
+            'email' => 'reset-me@example.com',
+            'status' => 'active',
+        ]);
+
+        $response = $this->actingAs($admin)->put(route('admin.customers.update', $customer), [
+            'name' => $customer->name,
+            'email' => $customer->email,
+            'country' => 'KE',
+            'password' => 'NewSecure1!',
+            'password_confirmation' => 'NewSecure1!',
+            'status' => 'active',
+            'send_welcome_email' => '1',
+        ]);
+
+        $response->assertRedirect(route('admin.customers.show', $customer));
+        $response->assertSessionHas('success');
+
+        Mail::assertSent(AccountWelcomeMail::class, function (AccountWelcomeMail $mail) {
+            return $mail->hasTo('reset-me@example.com')
+                && $mail->plainPassword === 'NewSecure1!'
+                && $mail->accountType === 'customer';
+        });
+    }
+
+    public function test_admin_does_not_send_login_credentials_on_update_without_new_password(): void
+    {
+        Mail::fake();
+
+        $admin = User::factory()->create();
+        $admin->forceFill(['is_admin' => true, 'is_reseller' => false])->save();
+
+        $customer = User::factory()->create([
+            'email' => 'no-reset@example.com',
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($admin)->put(route('admin.customers.update', $customer), [
+            'name' => 'Updated Name',
+            'email' => $customer->email,
+            'country' => 'KE',
+            'status' => 'active',
+            'send_welcome_email' => '1',
+        ])->assertRedirect(route('admin.customers.show', $customer));
+
+        Mail::assertNothingSent();
+        $this->assertSame('Updated Name', $customer->fresh()->name);
+    }
+
     public function test_admin_does_not_send_welcome_email_when_checkbox_unchecked(): void
     {
         Mail::fake();
@@ -60,6 +117,7 @@ class AdminAccountWelcomeEmailTest extends TestCase
             'email' => 'john@example.com',
             'password' => 'SecurePass1!',
             'password_confirmation' => 'SecurePass1!',
+            'country' => 'KE',
             'status' => 'active',
         ])->assertRedirect(route('admin.customers.index'));
 

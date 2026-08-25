@@ -1,4 +1,16 @@
-<div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-4">
+@props([
+    'label' => 'Send login credentials',
+    'description' => 'Email the login URL, email address, and password to the customer using platform SMTP settings.',
+    'onlyWhenPasswordSet' => false,
+])
+
+<div
+    @if ($onlyWhenPasswordSet)
+        x-show="passwordSet"
+        x-cloak
+    @endif
+    class="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-4"
+>
     <label class="flex items-start gap-3 cursor-pointer">
         <input
             type="checkbox"
@@ -9,9 +21,9 @@
             @checked(old('send_welcome_email'))
         >
         <span>
-            <span class="block text-sm font-medium text-slate-900 dark:text-white">Send welcome email</span>
+            <span class="block text-sm font-medium text-slate-900 dark:text-white">{{ $label }}</span>
             <span class="block text-xs text-slate-500 dark:text-slate-400 mt-1">
-                Email login details to the address above using the platform SMTP settings after the account is created.
+                {{ $description }}
             </span>
         </span>
     </label>

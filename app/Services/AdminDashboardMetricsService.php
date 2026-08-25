@@ -66,6 +66,14 @@ class AdminDashboardMetricsService
             ->whereEffectivePaidBetween($todayStart, $todayEnd)
             ->sumAmountKes();
 
+        $monthStart = now()->startOfMonth();
+        $monthEnd = now()->endOfMonth();
+        $collectedThisMonth = Payment::query()
+            ->platformRevenue()
+            ->where('status', PaymentStatus::Completed)
+            ->whereEffectivePaidBetween($monthStart, $monthEnd)
+            ->sumAmountKes();
+
         $openTickets = Ticket::visibleToAdmin()->where('status', '!=', 'closed')->count();
         $urgentTickets = Ticket::visibleToAdmin()->where('status', '!=', 'closed')->where('priority', 'urgent')->count();
 
@@ -130,11 +138,11 @@ class AdminDashboardMetricsService
             'totalResellers' => $totalResellers,
             'activeServices' => (int) ($serviceStatusCounts['active'] ?? 0),
             'totalServices' => (int) $serviceStatusCounts->sum(),
-            'suspendedServices' => (int) ($serviceStatusCounts['suspended'] ?? 0),
             'unpaidInvoiceTotal' => $arByStatus['unpaid'],
             'overdueInvoiceTotal' => $arByStatus['overdue'],
             'totalRevenue' => $totalRevenue,
             'collectedToday' => $collectedToday,
+            'collectedThisMonth' => $collectedThisMonth,
             'openTickets' => $openTickets,
             'urgentTickets' => $urgentTickets,
             'recentCustomers' => $recentCustomers,
@@ -152,6 +160,9 @@ class AdminDashboardMetricsService
             'currency' => $currency,
             'currencyCode' => $currencyCode,
             'collectedTodayDate' => now()->toDateString(),
+            'collectedThisMonthStart' => $monthStart->toDateString(),
+            'collectedThisMonthEnd' => $monthEnd->toDateString(),
+            'collectedThisMonthLabel' => now()->format('F Y'),
         ];
     }
 

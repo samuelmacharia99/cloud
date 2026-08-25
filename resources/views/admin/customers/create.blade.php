@@ -213,7 +213,9 @@
                         @enderror
                     </div>
 
-                    @include('admin.partials.send-welcome-email-checkbox')
+                    @include('admin.partials.send-welcome-email-checkbox', [
+                        'description' => 'Email login details to the address above using platform SMTP settings after the account is created.',
+                    ])
                 </div>
             </div>
 

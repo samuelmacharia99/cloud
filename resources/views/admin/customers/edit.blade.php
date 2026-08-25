@@ -101,7 +101,7 @@
                 </div>
 
                 <!-- Right Column -->
-                <div class="space-y-6">
+                <div class="space-y-6" x-data="{ passwordSet: @js(filled(old('password'))) }">
                     <!-- Account Status -->
                     <div>
                         <label for="status" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Account Status</label>
@@ -127,6 +127,7 @@
                                 }
                                 document.getElementById('password').value = password;
                                 document.getElementById('password_confirmation').value = password;
+                                document.getElementById('password').dispatchEvent(new Event('input', { bubbles: true }));
 
                                 // Calculate password strength
                                 let strength = 0;
@@ -147,6 +148,7 @@
                                 id="password"
                                 name="password"
                                 placeholder="Enter a new password (optional)"
+                                @input="passwordSet = $el.value.trim() !== ''"
                                 class="w-full px-4 py-2 pr-10 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('password') border-red-500 @enderror">
                             <button type="button" @click="showPassword = !showPassword" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
                                 <svg x-show="!showPassword" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -199,6 +201,11 @@
                             </button>
                         </div>
                     </div>
+
+                    @include('admin.partials.send-welcome-email-checkbox', [
+                        'description' => 'Email the new login URL, email address, and password after you save a new password.',
+                        'onlyWhenPasswordSet' => true,
+                    ])
 
                     <!-- VAT Number -->
                     <div>

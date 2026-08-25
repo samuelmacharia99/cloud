@@ -105,9 +105,9 @@ class CustomerController extends Controller
         if ($sendWelcomeEmail) {
             try {
                 app(AdminAccountWelcomeService::class)->send($user, $plainPassword, 'customer');
-                $flash .= ' Welcome email sent.';
+                $flash .= ' Login credentials emailed to the customer.';
             } catch (\Throwable $e) {
-                $flash .= ' Welcome email could not be sent: '.$e->getMessage();
+                $flash .= ' Login credentials could not be emailed: '.$e->getMessage();
             }
         }
 
@@ -385,7 +385,12 @@ class CustomerController extends Controller
             'vat_number' => 'nullable|string',
             'notes' => 'nullable|string',
             'status' => 'required|in:active,suspended,inactive',
+            'send_welcome_email' => 'sometimes|boolean',
         ]);
+
+        $plainPassword = $validated['password'] ?? null;
+        $sendLoginCredentials = $request->boolean('send_welcome_email') && filled($plainPassword);
+        unset($validated['send_welcome_email']);
 
         // Only hash password if provided
         if (empty($validated['password'])) {
@@ -398,8 +403,19 @@ class CustomerController extends Controller
             app(UserCurrencyService::class)->syncFromCountry($customer->fresh(), true);
         }
 
+        $flash = 'Customer updated successfully.';
+
+        if ($sendLoginCredentials) {
+            try {
+                app(AdminAccountWelcomeService::class)->send($customer->fresh(), (string) $plainPassword, 'customer');
+                $flash .= ' Login credentials emailed to the customer.';
+            } catch (\Throwable $e) {
+                $flash .= ' Login credentials could not be emailed: '.$e->getMessage();
+            }
+        }
+
         return redirect()->route('admin.customers.show', $customer)
-            ->with('success', 'Customer updated successfully.');
+            ->with('success', $flash);
     }
 
     public function impersonate(User $customer)

@@ -227,6 +227,55 @@ class AdminDashboardMetricsServiceTest extends TestCase
         $this->assertEqualsWithDelta(1800.0, $metrics['totalRevenue'], 0.01);
     }
 
+    public function test_collected_this_month_uses_effective_paid_date_and_platform_revenue_scope(): void
+    {
+        $customer = $this->platformCustomer();
+        $invoice = Invoice::factory()->create([
+            'user_id' => $customer->id,
+            'status' => InvoiceStatus::Paid,
+            'currency' => 'KES',
+            'total_base_kes' => 500,
+        ]);
+
+        Payment::factory()->create([
+            'user_id' => $customer->id,
+            'invoice_id' => $invoice->id,
+            'amount' => 500,
+            'currency' => 'KES',
+            'status' => PaymentStatus::Completed,
+            'created_at' => now(),
+            'paid_at' => now(),
+        ]);
+
+        Payment::factory()->create([
+            'user_id' => $customer->id,
+            'invoice_id' => $invoice->id,
+            'amount' => 150,
+            'currency' => 'KES',
+            'status' => PaymentStatus::Completed,
+            'created_at' => now(),
+            'paid_at' => now()->subMonth(),
+        ]);
+
+        $reseller = User::factory()->reseller()->create(['preferred_currency' => 'KES']);
+        $managed = $this->platformCustomer(['reseller_id' => $reseller->id]);
+        $retailInvoice = Invoice::factory()->create(['user_id' => $managed->id, 'currency' => 'KES', 'total_base_kes' => 900]);
+        Payment::factory()->create([
+            'user_id' => $managed->id,
+            'invoice_id' => $retailInvoice->id,
+            'amount' => 900,
+            'currency' => 'KES',
+            'status' => PaymentStatus::Completed,
+            'paid_at' => now(),
+        ]);
+
+        $metrics = app(AdminDashboardMetricsService::class)->metrics();
+
+        $this->assertEqualsWithDelta(500.0, $metrics['collectedThisMonth'], 0.01);
+        $this->assertSame(now()->startOfMonth()->toDateString(), $metrics['collectedThisMonthStart']);
+        $this->assertSame(now()->endOfMonth()->toDateString(), $metrics['collectedThisMonthEnd']);
+    }
+
     public function test_top_products_count_only_active_services(): void
     {
         $product = Product::factory()->create(['monthly_price' => 500]);
