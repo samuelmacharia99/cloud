@@ -991,6 +991,13 @@ class DirectAdminToContainerConvertService
         ];
         $probe->service_meta = $meta;
 
+        if ($probe->effectiveContainerTemplate() === null) {
+            throw new \DomainException(
+                'Could not resolve a container template for stack "'.$stack.'". '
+                .'Ensure container templates exist (static-site, php, etc.) under Admin → Container templates.'
+            );
+        }
+
         $this->deployments->assertHostHasCapacity($probe);
     }
 
@@ -1028,17 +1035,38 @@ class DirectAdminToContainerConvertService
             'laravel' => ['laravel'],
             'nodejs' => ['nodejs'],
             'php' => ['php'],
-            'static_or_php' => ['php', 'static-site'],
-            default => array_values(array_filter([$product->containerTemplate?->slug, 'php'])),
+            'static_or_php' => ['static-site', 'php'],
+            'unknown' => array_values(array_unique(array_filter([
+                $product->containerTemplate?->slug,
+                'static-site',
+                'php',
+            ]))),
+            default => array_values(array_unique(array_filter([
+                $product->containerTemplate?->slug,
+                'static-site',
+                'php',
+            ]))),
         };
 
         foreach ($candidates as $slug) {
-            if (ContainerTemplate::query()->where('slug', $slug)->exists()) {
+            if (is_string($slug) && $slug !== '' && ContainerTemplate::query()->where('slug', $slug)->exists()) {
                 return $slug;
             }
         }
 
-        return $product->containerTemplate?->slug ?? ($candidates[0] ?? 'php');
+        $fallback = ContainerTemplate::query()
+            ->where('is_active', true)
+            ->orderBy('order')
+            ->orderBy('id')
+            ->value('slug');
+
+        if (is_string($fallback) && $fallback !== '') {
+            return $fallback;
+        }
+
+        throw new \DomainException(
+            'No container templates are configured. Add templates under Admin → Container templates before converting.'
+        );
     }
 
     /**

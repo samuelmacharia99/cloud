@@ -141,6 +141,20 @@ class DirectAdminToContainerMigrationService
                 'app_root' => (string) ($primarySite['app_root'] ?? $primarySite['docroot'] ?? $docroot),
             ];
             $docroot = (string) ($primarySite['docroot'] ?? $docroot);
+            if (($detection['stack'] ?? '') === 'unknown') {
+                $inferred = $this->inferPrimaryStackFromAddonSites($sites, is_string($domain) ? $domain : '');
+                if ($inferred !== null) {
+                    $detection['stack'] = $inferred['stack'];
+                    $detection['has_wp_config'] = $inferred['has_wp_config'];
+                    if (filled($inferred['inferred_from'] ?? null)) {
+                        $warnings[] = sprintf(
+                            'Primary domain docroot is empty or unclassified; treating stack as %s based on addon site %s.',
+                            DirectAdminToContainerConvertService::stackLabel($inferred['stack']),
+                            $inferred['inferred_from']
+                        );
+                    }
+                }
+            }
         } else {
             try {
                 $detection = $this->detectStackOnNode($source->node, $docroot);
@@ -335,7 +349,8 @@ class DirectAdminToContainerMigrationService
             .'[ -d "$d/node_modules" ] && echo "NMD:$d"; '
             .'{ [ -f "$d/next.config.js" ] || [ -f "$d/next.config.mjs" ] || [ -f "$d/next.config.ts" ] || [ -f "$d/nuxt.config.js" ] || [ -f "$d/nuxt.config.ts" ]; } && echo "NEXT:$d"; '
             .'[ -f "$d/.htaccess" ] && grep -qiE "PassengerNodejs|PassengerAppRoot|PassengerEnabled" "$d/.htaccess" && echo "PASS:$d"; '
-            .'{ [ -f "$d/index.php" ] || [ -f "$d/index.html" ] || [ -f "$d/index.htm" ]; } && echo "IDX:$d"; '
+            .'{ [ -f "$d/index.php" ] || [ -f "$d/index.html" ] || [ -f "$d/index.htm" ] || [ -f "$d/script.js" ] || [ -f "$d/style.css" ]; } && echo "IDX:$d"; '
+            .'find "$d" -maxdepth 1 -type f \( -iname "*.html" -o -iname "*.htm" \) 2>/dev/null | head -1 | grep -q . && echo "IDX:$d"; '
             .'}; '
             .'probe "$DOCROOT"; probe "$PARENT"; probe "$PARENT/private_html"; '
             .'probe "$DOCROOT/core"; probe "$PARENT/core"; probe "$DOCROOT/backend"; probe "$PARENT/backend"; '
@@ -441,6 +456,61 @@ class DirectAdminToContainerMigrationService
             'app_root' => $docroot,
             'docroot' => $docroot,
         ];
+    }
+
+    /**
+     * When the billing primary has an empty or missing docroot, infer stack from addon sites.
+     *
+     * @param  list<array<string, mixed>>  $sites
+     * @return array{stack: string, has_wp_config: bool, inferred_from: ?string}|null
+     */
+    public function inferPrimaryStackFromAddonSites(array $sites, string $primaryDomain): ?array
+    {
+        $primaryDomain = strtolower(trim($primaryDomain));
+        $primaryStack = null;
+        /** @var array<string, list<string>> $addonStacks */
+        $addonStacks = [];
+
+        foreach ($sites as $site) {
+            if (! is_array($site)) {
+                continue;
+            }
+
+            $stack = (string) ($site['stack'] ?? 'unknown');
+            $domain = strtolower(trim((string) ($site['domain'] ?? '')));
+            $isPrimary = (bool) ($site['is_primary'] ?? false)
+                || ($primaryDomain !== '' && strcasecmp($domain, $primaryDomain) === 0);
+
+            if ($isPrimary) {
+                $primaryStack = $stack;
+
+                continue;
+            }
+
+            if ($stack !== '' && $stack !== 'unknown') {
+                $addonStacks[$stack][] = $domain;
+            }
+        }
+
+        if ($primaryStack !== null && $primaryStack !== 'unknown') {
+            return null;
+        }
+
+        if ($addonStacks === []) {
+            return null;
+        }
+
+        foreach (['wordpress', 'laravel', 'nodejs', 'php', 'static_or_php'] as $stack) {
+            if (! empty($addonStacks[$stack])) {
+                return [
+                    'stack' => $stack,
+                    'has_wp_config' => $stack === 'wordpress',
+                    'inferred_from' => $addonStacks[$stack][0] ?? null,
+                ];
+            }
+        }
+
+        return null;
     }
 
     /**

@@ -689,4 +689,66 @@ class DirectAdminToContainerConvertServiceTest extends TestCase
         $this->assertSame([], $result['created_mailboxes']);
         $this->assertSame(0, Service::query()->where('provisioning_driver_key', 'mailcow')->count());
     }
+
+    public function test_template_slug_for_unknown_stack_prefers_static_site_and_must_exist(): void
+    {
+        $convert = app(DirectAdminToContainerConvertService::class);
+
+        ContainerTemplate::query()->create([
+            'name' => 'Static Website',
+            'slug' => 'static-site',
+            'docker_image' => 'nginx:alpine',
+            'is_active' => true,
+        ]);
+
+        $product = Product::query()->create([
+            'name' => 'Shared App Hosting',
+            'slug' => 'shared-app-'.uniqid(),
+            'type' => 'container_hosting',
+            'monthly_price' => 2000,
+            'is_active' => true,
+            'provisioning_driver_key' => 'container',
+        ]);
+
+        $this->assertSame('static-site', $convert->templateSlugForDetectedStack('unknown', $product));
+        $this->assertSame('static-site', $convert->templateSlugForDetectedStack('static_or_php', $product));
+    }
+
+    public function test_infers_primary_stack_from_addon_site_when_primary_docroot_is_empty(): void
+    {
+        $migrator = app(DirectAdminToContainerMigrationService::class);
+
+        $inferred = $migrator->inferPrimaryStackFromAddonSites([
+            [
+                'domain' => 'christsummit.org',
+                'stack' => 'unknown',
+                'is_primary' => true,
+            ],
+            [
+                'domain' => 'christosummit.org',
+                'stack' => 'static_or_php',
+                'is_primary' => false,
+            ],
+        ], 'christsummit.org');
+
+        $this->assertNotNull($inferred);
+        $this->assertSame('static_or_php', $inferred['stack']);
+        $this->assertSame('christosummit.org', $inferred['inferred_from']);
+    }
+
+    public function test_classifies_static_site_from_script_and_style_assets(): void
+    {
+        $migrator = app(DirectAdminToContainerMigrationService::class);
+        $docroot = '/home/christos/domains/christosummit.org/public_html';
+
+        $classified = $migrator->classifyDetectedMarkers(
+            implode("\n", [
+                'DIR:'.$docroot,
+                'IDX:'.$docroot,
+            ]),
+            $docroot
+        );
+
+        $this->assertSame('static_or_php', $classified['stack']);
+    }
 }
