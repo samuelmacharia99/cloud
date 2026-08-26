@@ -92,7 +92,7 @@ class TicketNotificationService
 
         try {
             $this->emailDelivery->sendToAdmins(
-                new GenericNotificationMail($subject, $body),
+                new GenericNotificationMail($subject, 'Ticket escalated to platform support', $body),
                 $subject,
                 NotificationEvent::TicketEscalated,
             );
@@ -156,7 +156,7 @@ class TicketNotificationService
 
         try {
             $this->emailDelivery->sendToAdmins(
-                new GenericNotificationMail($subject, $body),
+                new GenericNotificationMail($subject, 'New support ticket', $body),
                 $subject,
                 NotificationEvent::TicketCreated,
             );
@@ -192,7 +192,7 @@ class TicketNotificationService
         try {
             $this->emailDelivery->sendPlatformMailable(
                 $reseller->email,
-                new GenericNotificationMail($subject, $body),
+                new GenericNotificationMail($subject, 'New customer support ticket', $body),
                 $subject,
                 NotificationEvent::TicketCreated,
                 $reseller,
@@ -276,7 +276,7 @@ class TicketNotificationService
         try {
             $this->emailDelivery->sendPlatformMailable(
                 $reseller->email,
-                new GenericNotificationMail($subject, $body),
+                new GenericNotificationMail($subject, 'Customer replied to ticket', $body),
                 $subject,
                 NotificationEvent::TicketReplied,
                 $reseller,
