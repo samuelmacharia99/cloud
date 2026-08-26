@@ -63,11 +63,13 @@ class AdminReportsTest extends TestCase
             ->assertSee('August 2026')
             ->assertSee('Cash in')
             ->assertSee('2,500.00')
-            ->assertSee('Outstanding AR')
+            ->assertDontSee('Outstanding AR')
             ->assertSee('Cash in vs spend')
+            ->assertDontSee('Where cash came from')
             ->assertSee('Profit by node')
             ->assertSee('Domain profit by registrar')
-            ->assertDontSee('Coin trail');
+            ->assertDontSee('Coin trail')
+            ->assertDontSee('Payments by method');
     }
 
     public function test_year_and_month_filters_change_the_period(): void

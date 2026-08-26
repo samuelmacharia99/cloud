@@ -26,14 +26,6 @@
     $nextQuery = $month
         ? ['year' => $nextPeriod->year, 'month' => $nextPeriod->month]
         : ['year' => $nextPeriod->year, 'month' => 'all'];
-    $incomeColors = [
-        'hosting' => 'bg-blue-500',
-        'reseller_subscription' => 'bg-violet-500',
-        'domain' => 'bg-teal-500',
-        'wallet_topup' => 'bg-amber-500',
-        'other' => 'bg-slate-400',
-    ];
-    $maxMethodTotal = max(1, (float) collect($paymentMethods)->max('total'));
     $maxNodeAbs = max(1, (float) collect($nodes)->max(fn ($row) => abs((float) ($row['profit'] ?? $row['revenue'] ?? 0))));
     $maxRegistrarAbs = max(1, (float) collect($domains['registrars'] ?? [])->max(fn ($row) => abs((float) ($row['profit'] ?? 0))));
 @endphp
@@ -98,7 +90,7 @@
         <a href="#domain-profit" class="rounded-full border border-slate-200 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:border-brand-400 hover:text-brand-700 dark:hover:text-brand-300">Domains</a>
     </nav>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
         <x-metric-card
             title="Cash in"
             currency="KES"
@@ -123,15 +115,6 @@
             :color="$profit >= 0 ? 'emerald' : 'red'"
             :subtitle="$marginPercent === null ? 'No cash in this period' : $marginPercent.'% of cash in'"
             icon='<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>'
-        />
-        <x-metric-card
-            title="Outstanding AR"
-            currency="KES"
-            :value="number_format($outstandingKes, 2)"
-            color="amber"
-            subtitle="Unpaid platform invoices — not this period’s cash"
-            :href="route('admin.invoices.index', ['status' => 'unpaid'])"
-            icon='<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z"/></svg>'
         />
     </div>
 
@@ -160,44 +143,14 @@
         </div>
     @endif
 
-    <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        <div id="bookkeeping-trend-card" class="ui-card overflow-hidden xl:col-span-2">
-            <div class="ui-card-header">
-                <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Cash in vs spend</h2>
-                <p class="text-sm text-slate-500 dark:text-slate-400 mt-0.5">{{ $periodLabel }} · spend is provider cost plus registrar fulfillments</p>
-            </div>
-            <div class="p-5 sm:p-6">
-                <div class="relative h-72">
-                    <canvas id="bookkeeping-trend"></canvas>
-                </div>
-            </div>
+    <div id="bookkeeping-trend-card" class="ui-card overflow-hidden">
+        <div class="ui-card-header">
+            <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Cash in vs spend</h2>
+            <p class="text-sm text-slate-500 dark:text-slate-400 mt-0.5">{{ $periodLabel }} · spend is provider cost plus registrar fulfillments</p>
         </div>
-        <div class="ui-card overflow-hidden">
-            <div class="ui-card-header">
-                <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Where cash came from</h2>
-                <p class="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Wallet top-ups are cash. Later wallet spends are allocations, not extra income.</p>
-            </div>
-            <div class="p-5 sm:p-6">
-                <div class="relative h-44 mb-5">
-                    <canvas id="bookkeeping-mix"></canvas>
-                </div>
-                <dl class="space-y-3 text-sm">
-                    @foreach($categoryLabels as $key => $label)
-                        @php $share = $cashIn > 0 ? round(($income[$key] / $cashIn) * 100, 1) : 0; @endphp
-                        <div>
-                            <div class="flex justify-between gap-3 mb-1">
-                                <dt class="flex items-center gap-2 text-slate-600 dark:text-slate-400">
-                                    <span class="h-2 w-2 rounded-full {{ $incomeColors[$key] ?? 'bg-slate-400' }}"></span>
-                                    {{ $label }}
-                                </dt>
-                                <dd class="tabular-nums font-medium text-slate-900 dark:text-white">KES {{ number_format($income[$key], 2) }}</dd>
-                            </div>
-                            <div class="h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                                <div class="h-full rounded-full {{ $incomeColors[$key] ?? 'bg-slate-400' }}" style="width: {{ min(100, $share) }}%"></div>
-                            </div>
-                        </div>
-                    @endforeach
-                </dl>
+        <div class="p-5 sm:p-6">
+            <div class="relative h-80 md:h-96">
+                <canvas id="bookkeeping-trend"></canvas>
             </div>
         </div>
     </div>
@@ -348,31 +301,6 @@
             </table>
         </div>
     </div>
-
-    <div class="ui-card overflow-hidden lg:max-w-xl">
-        <div class="ui-card-header">
-            <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Payments by method</h2>
-        </div>
-        <div class="p-5 sm:p-6 space-y-4">
-            @forelse($paymentMethods as $row)
-                @php $pct = min(100, ($row['total'] / $maxMethodTotal) * 100); @endphp
-                <div>
-                    <div class="flex justify-between gap-3 text-sm mb-1.5">
-                        <div>
-                            <p class="font-medium text-slate-900 dark:text-white">{{ $row['label'] }}</p>
-                            <p class="text-xs text-slate-500">{{ $row['count'] }} {{ \Illuminate\Support\Str::plural('payment', $row['count']) }}</p>
-                        </div>
-                        <p class="tabular-nums font-semibold text-slate-900 dark:text-white">{{ number_format($row['total'], 2) }}</p>
-                    </div>
-                    <div class="h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                        <div class="h-full rounded-full bg-brand-500" style="width: {{ $pct }}%"></div>
-                    </div>
-                </div>
-            @empty
-                <p class="py-6 text-center text-slate-500 text-sm">No completed platform payments in this period.</p>
-            @endforelse
-        </div>
-    </div>
 </div>
 @endsection
 
@@ -386,7 +314,6 @@
     const revenueData = @json($chart['revenue']);
     const spendData = @json($chart['spend']);
     const profitData = @json($chart['profit']);
-    const income = @json($income);
     const kesTick = (value) => 'KES ' + Number(value).toLocaleString();
 
     const trend = document.getElementById('bookkeeping-trend');
@@ -459,28 +386,6 @@
                         border: { display: false },
                     },
                 },
-            },
-        });
-    }
-
-    const mix = document.getElementById('bookkeeping-mix');
-    if (mix) {
-        new Chart(mix, {
-            type: 'doughnut',
-            data: {
-                labels: ['Hosting & services', 'Reseller packages', 'Domain invoices', 'Wallet top-ups', 'Other'],
-                datasets: [{
-                    data: [income.hosting, income.reseller_subscription, income.domain, income.wallet_topup, income.other],
-                    backgroundColor: ['#3b82f6', '#8b5cf6', '#14b8a6', '#f59e0b', '#94a3b8'],
-                    borderWidth: 0,
-                    hoverOffset: 4,
-                }],
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                cutout: '68%',
-                plugins: { legend: { display: false } },
             },
         });
     }

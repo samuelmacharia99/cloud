@@ -2,19 +2,15 @@
 
 namespace App\Services;
 
-use App\Enums\InvoiceStatus;
-use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
 use App\Models\DomainExtension;
 use App\Models\DomainRenewalOrder;
-use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Node;
 use App\Models\Payment;
 use App\Models\ResellerDomainOrder;
 use App\Models\Service;
 use App\Models\WalletTransaction;
-use App\Services\Billing\InvoiceCurrencyService;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
@@ -31,10 +27,6 @@ class AdminBookkeepingService
     public const CATEGORY_WALLET_TOPUP = 'wallet_topup';
 
     public const CATEGORY_OTHER = 'other';
-
-    public function __construct(
-        private InvoiceCurrencyService $invoiceCurrency,
-    ) {}
 
     /**
      * @return array<string, mixed>
@@ -114,13 +106,10 @@ class AdminBookkeepingService
                     ->count(),
                 'domains_missing_cost' => $domainReport['missing_cost_count'],
             ],
-            'outstandingKes' => $this->platformOutstandingKes(),
             'chart' => $this->chartSeries($from, $to, $month === null, $payments, $domainReport['rows'], $nodes, $costMonths),
-            'paymentMethods' => $this->paymentMethodBreakdown($from, $to),
             'paymentCount' => $payments->count(),
             'nodes' => $nodes,
             'domains' => $domainReport,
-            'categoryLabels' => $this->categoryLabels(),
         ];
     }
 
@@ -153,20 +142,6 @@ class AdminBookkeepingService
         }
 
         return $count;
-    }
-
-    /**
-     * @return array<string, string>
-     */
-    public function categoryLabels(): array
-    {
-        return [
-            self::CATEGORY_HOSTING => 'Hosting & services',
-            self::CATEGORY_SUBSCRIPTION => 'Reseller packages',
-            self::CATEGORY_DOMAIN => 'Domain invoices',
-            self::CATEGORY_WALLET_TOPUP => 'Wallet top-ups',
-            self::CATEGORY_OTHER => 'Other',
-        ];
     }
 
     private function completedPlatformPayments(CarbonInterface $from, CarbonInterface $to)
@@ -849,54 +824,6 @@ class AdminBookkeepingService
 
         $last = array_key_last($buckets);
         $buckets[$last] = round($buckets[$last] + $delta, 2);
-    }
-
-    /**
-     * @return list<array{method: string, label: string, count: int, total: float}>
-     */
-    private function paymentMethodBreakdown(CarbonInterface $from, CarbonInterface $to): array
-    {
-        $rows = $this->completedPlatformPayments($from, $to)
-            ->select('payment_method')
-            ->selectRaw('COUNT(*) as payment_count')
-            ->selectRaw(Payment::amountKesSumSql().' as total')
-            ->groupBy('payment_method')
-            ->orderByDesc('total')
-            ->get();
-
-        return $rows->map(function ($row) {
-            $method = $row->payment_method;
-            $value = $method instanceof \BackedEnum ? $method->value : (string) $method;
-            $label = $method instanceof PaymentMethod ? $method->label() : ucfirst(str_replace('_', ' ', $value));
-
-            return [
-                'method' => $value,
-                'label' => $label,
-                'count' => (int) $row->payment_count,
-                'total' => round((float) $row->total, 2),
-            ];
-        })->all();
-    }
-
-    private function platformOutstandingKes(): float
-    {
-        $total = 0.0;
-
-        Invoice::query()
-            ->platformBilling()
-            ->whereIn('status', [InvoiceStatus::Unpaid, InvoiceStatus::Overdue])
-            ->with([
-                'payments' => fn ($q) => $q->where('status', PaymentStatus::Completed),
-                'credits',
-            ])
-            ->orderBy('id')
-            ->chunkById(100, function ($invoices) use (&$total) {
-                foreach ($invoices as $invoice) {
-                    $total += $this->invoiceCurrency->remainingBaseKes($invoice, false);
-                }
-            });
-
-        return round($total, 2);
     }
 
     /**
