@@ -282,4 +282,51 @@ YAML;
         $this->assertStringNotContainsString("DB_HOST: db\n", $patched);
         $this->assertStringNotContainsString('@db:', $patched);
     }
+
+    #[Test]
+    public function compose_document_root_patch_moves_php_server_to_public(): void
+    {
+        $yaml = <<<'YAML'
+services:
+  user-85-service-27-laravel:
+    container_name: user-85-service-27-laravel
+    command:
+      - talksasa-php-server
+      - '80'
+      - /app
+  db:
+    image: mysql:8.0
+YAML;
+
+        $patched = app(ContainerDeploymentService::class)->patchComposePhpDocumentRoot(
+            $yaml,
+            'user-85-service-27-laravel',
+            '/app/public'
+        );
+
+        $this->assertStringContainsString('/app/public', $patched);
+        $this->assertStringNotContainsString("- /app\n", $patched);
+    }
+
+    #[Test]
+    public function compose_document_root_patch_handles_string_command(): void
+    {
+        $yaml = <<<'YAML'
+services:
+  user-85-service-27-laravel:
+    container_name: user-85-service-27-laravel
+    command: talksasa-php-server 80 /app
+  db:
+    image: mysql:8.0
+YAML;
+
+        $patched = app(ContainerDeploymentService::class)->patchComposePhpDocumentRoot(
+            $yaml,
+            'user-85-service-27-laravel',
+            '/app/public_html'
+        );
+
+        $this->assertStringContainsString('/app/public_html', $patched);
+        $this->assertStringNotContainsString('talksasa-php-server 80 /app', $patched);
+    }
 }

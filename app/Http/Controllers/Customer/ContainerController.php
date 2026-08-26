@@ -452,41 +452,70 @@ class ContainerController extends Controller
         Service $service,
         UpdateContainerPhpExtensionsRequest $request,
         ContainerPhpExtensionsService $phpExtensionsService
-    ): RedirectResponse {
+    ): RedirectResponse|JsonResponse {
         abort_if($service->user_id !== auth()->id(), 403);
 
+        $wantsJson = $request->expectsJson();
         $templateSlug = $service->effectiveContainerTemplate()?->slug;
         if (! $phpExtensionsService->supportsTemplate($templateSlug)) {
-            return back()->withErrors(['error' => 'PHP extensions are not supported for this container type.']);
+            $message = 'PHP extensions are not supported for this container type.';
+
+            return $wantsJson
+                ? response()->json(['error' => $message], 400)
+                : back()->withErrors(['error' => $message]);
         }
 
         $deployment = $service->containerDeployment;
         if (! $deployment || $deployment->status !== 'running' || ! $deployment->node) {
-            return back()->withErrors(['error' => 'Start the app before enabling PHP extensions.']);
+            $message = 'Start the app before enabling PHP extensions.';
+
+            return $wantsJson
+                ? response()->json(['error' => $message], 400)
+                : back()->withErrors(['error' => $message]);
         }
 
         try {
-            $ssh = SSHService::forNode($deployment->node);
-            try {
-                $message = $phpExtensionsService->sync(
-                    $service,
-                    $deployment,
-                    $ssh,
-                    $request->input('extensions', [])
-                );
-            } finally {
-                $ssh->disconnect();
+            $result = $phpExtensionsService->toggle(
+                $service,
+                $deployment,
+                (string) $request->input('extension'),
+                $request->boolean('enabled')
+            );
+
+            if ($wantsJson) {
+                return response()->json($result);
             }
 
             return redirect()
                 ->route('customer.services.container.show', ['service' => $service, 'tab' => 'php-extensions'])
-                ->with('success', $message);
+                ->with('success', $result['message']);
         } catch (\DomainException|\InvalidArgumentException $e) {
-            return back()->withErrors(['error' => $e->getMessage()]);
+            return $wantsJson
+                ? response()->json(['error' => $e->getMessage()], 422)
+                : back()->withErrors(['error' => $e->getMessage()]);
+        } catch (\RuntimeException $e) {
+            \Log::error("Failed to update PHP extensions for service {$service->id}: ".$e->getMessage());
+
+            $payload = [
+                'error' => 'Failed to update PHP extensions: '.$e->getMessage(),
+                'extension' => [
+                    'key' => (string) $request->input('extension'),
+                    'enabled' => $request->boolean('enabled'),
+                    'installed' => false,
+                ],
+            ];
+
+            return $wantsJson
+                ? response()->json($payload, 500)
+                : back()->withErrors(['error' => $payload['error']]);
         } catch (\Exception $e) {
             \Log::error("Failed to update PHP extensions for service {$service->id}: ".$e->getMessage());
 
-            return back()->withErrors(['error' => 'Failed to update PHP extensions: '.$e->getMessage()]);
+            $message = 'Failed to update PHP extensions: '.$e->getMessage();
+
+            return $wantsJson
+                ? response()->json(['error' => $message], 500)
+                : back()->withErrors(['error' => $message]);
         }
     }
 
@@ -1482,12 +1511,7 @@ class ContainerController extends Controller
             return 'mysql';
         }
 
-        $host = (string) ($env['DB_HOST'] ?? $env['WORDPRESS_DB_HOST'] ?? 'db');
-        if (str_contains($host, ':')) {
-            $host = explode(':', $host, 2)[0];
-        }
-
-        return $host !== '' ? $host : 'db';
+        return app(ContainerDeploymentService::class)->resolveMysqlComposeServiceName($env);
     }
 
     private function inferDatabaseTypeFromEnv(array $env): ?string

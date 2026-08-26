@@ -784,6 +784,7 @@ class ContainerDeploymentService
                 $slug = strtolower((string) ($this->resolveContainerTemplate($service)?->slug ?? ''));
                 if (in_array($slug, ['laravel', 'php'], true)) {
                     $this->persistLaravelRuntimeDriversOnCompose($ssh, $deployment);
+                    $this->alignLaravelDocumentRootOnCompose($ssh, $service, $deployment);
                 }
                 // Recreate the app service only. `docker compose restart` does not
                 // reload compose `environment` (SESSION_DRIVER=database stays in
@@ -959,6 +960,93 @@ class ContainerDeploymentService
         );
 
         return Yaml::dump($compose, 10, 2);
+    }
+
+    /**
+     * DirectAdmin Laravel imports often leave talksasa-php-server on /app while
+     * public/index.php lives in /app/public — nginx then 403s directory index.
+     */
+    public function patchComposePhpDocumentRoot(string $yaml, string $containerName, string $documentRoot): string
+    {
+        $compose = Yaml::parse($yaml);
+        if (! is_array($compose) || ! is_array($compose['services'] ?? null)) {
+            return $yaml;
+        }
+
+        $key = $this->resolveComposeAppServiceKey($compose, $containerName);
+        if ($key === null || ! is_array($compose['services'][$key] ?? null)) {
+            return $yaml;
+        }
+
+        $command = $compose['services'][$key]['command'] ?? null;
+        if (is_string($command)) {
+            $parts = preg_split('/\s+/', trim($command)) ?: [];
+            if (($parts[0] ?? null) === 'talksasa-php-server' && isset($parts[2])) {
+                $parts[2] = $documentRoot;
+                $compose['services'][$key]['command'] = $parts;
+
+                return Yaml::dump($compose, 10, 2);
+            }
+
+            return $yaml;
+        }
+
+        if (is_array($command)
+            && ($command[0] ?? null) === 'talksasa-php-server'
+            && isset($command[2])) {
+            $command[2] = $documentRoot;
+            $compose['services'][$key]['command'] = $command;
+
+            return Yaml::dump($compose, 10, 2);
+        }
+
+        return $yaml;
+    }
+
+    public function alignLaravelDocumentRootOnCompose(SSHService $ssh, Service $service, ContainerDeployment $deployment): void
+    {
+        $slug = strtolower((string) ($this->resolveContainerTemplate($service)?->slug ?? ''));
+        if ($slug !== 'laravel') {
+            return;
+        }
+
+        $hostAppPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name.'/app';
+        $resolver = app(LaravelProjectPathResolver::class);
+        $documentRoot = $resolver->resolveDocumentRoot($ssh, $hostAppPath);
+        if ($documentRoot === '' || $documentRoot === '/app') {
+            $found = null;
+            foreach ($resolver->webRootRelativeCandidates() as $web) {
+                try {
+                    $ssh->exec('sh -lc '.escapeshellarg('test -f '.escapeshellarg($hostAppPath.'/'.$web.'/index.php')), 15);
+                    $found = '/app/'.$web;
+                    break;
+                } catch (\Throwable) {
+                }
+            }
+            if ($found === null) {
+                return;
+            }
+            $documentRoot = $found;
+        }
+
+        $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+        try {
+            $yaml = trim((string) $ssh->exec('cat '.escapeshellarg($containerPath.'/docker-compose.yml'), 15));
+        } catch (\Throwable) {
+            return;
+        }
+        if ($yaml === '') {
+            return;
+        }
+
+        $patched = $this->patchComposePhpDocumentRoot($yaml, $deployment->container_name, $documentRoot);
+        if ($patched === $yaml) {
+            return;
+        }
+
+        $deployment->update(['docker_compose_content' => $patched]);
+        $ssh->upload($patched, $containerPath.'/docker-compose.yml');
+        app(LaravelProjectPathResolver::class)->persistResolvedPaths($service, $ssh, $deployment);
     }
 
     /**

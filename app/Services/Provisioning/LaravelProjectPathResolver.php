@@ -64,22 +64,30 @@ class LaravelProjectPathResolver
         return $relativeRoot === '' ? $hostAppPath : $hostAppPath.'/'.$relativeRoot;
     }
 
+    /**
+     * Web-root folders under the Laravel project (DirectAdmin uses public_html).
+     *
+     * @return list<string>
+     */
+    public function webRootRelativeCandidates(): array
+    {
+        return ['public', 'public_html'];
+    }
+
     public function resolveDocumentRoot(SSHService $ssh, string $hostAppPath, ?string $relativeRoot = null): string
     {
         $relativeRoot ??= $this->findRelativeRoot($ssh, $hostAppPath);
         $projectHostPath = $this->hostProjectRoot($hostAppPath, $relativeRoot ?? '');
         $projectContainerPath = $this->containerProjectRoot($relativeRoot ?? '');
 
-        if ($this->hostFileExists($ssh, $projectHostPath.'/public/index.php')) {
-            return $projectContainerPath.'/public';
+        foreach ($this->webRootRelativeCandidates() as $web) {
+            if ($this->hostFileExists($ssh, $projectHostPath.'/'.$web.'/index.php')) {
+                return $projectContainerPath.'/'.$web;
+            }
         }
 
         if ($this->hostFileExists($ssh, $hostAppPath.'/index.php')) {
             return '/app';
-        }
-
-        if ($this->hostFileExists($ssh, $projectHostPath.'/public')) {
-            return $projectContainerPath.'/public';
         }
 
         return $projectContainerPath;

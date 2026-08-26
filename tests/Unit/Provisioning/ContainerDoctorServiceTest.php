@@ -155,6 +155,22 @@ YAML;
     }
 
     #[Test]
+    public function it_detects_nginx_directory_index_forbidden_on_app_root(): void
+    {
+        $logs = <<<'LOG'
+user-85-service-27-laravel  | Talksasa: starting nginx + php-fpm on :80 (docroot /app, 6 PHP workers)
+user-85-service-27-laravel  | 2026/08/26 14:41:47 [error] 18#18: *1 directory index of "/app/" is forbidden, client: 10.201.0.1, server: , request: "GET / HTTP/1.1", host: "tajmaal.co.ke"
+LOG;
+
+        $finding = collect(app(ContainerDoctorService::class)->analyzeLogs($logs, 'laravel'))
+            ->firstWhere('id', 'laravel_docroot_not_public');
+
+        $this->assertNotNull($finding);
+        $this->assertSame('restart_application', $finding['treat_action']);
+        $this->assertSame('Point nginx at public/', $finding['treat_label']);
+    }
+
+    #[Test]
     public function production_php_server_does_not_route_static_files_through_index_php(): void
     {
         $script = (string) file_get_contents(base_path('deploy/docker/runtimes/common/php-production-server.sh'));

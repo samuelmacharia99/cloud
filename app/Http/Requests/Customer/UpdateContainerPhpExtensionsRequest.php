@@ -18,11 +18,24 @@ class UpdateContainerPhpExtensionsRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'extensions' => ['nullable', 'array'],
-            'extensions.*' => [
+            'extension' => [
+                'required',
                 'string',
                 Rule::in(array_keys(config('php_extensions.extensions', []))),
             ],
+            'enabled' => ['required', 'boolean'],
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'extension.required' => 'Choose a PHP extension to update.',
+            'extension.in' => 'That PHP extension is not available on this runtime.',
+            'enabled.required' => 'Specify whether the extension should be enabled.',
         ];
     }
 }

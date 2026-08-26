@@ -747,6 +747,33 @@ class ContainerDoctorService
             $checks['http_status'] = $httpStatus;
 
             if (in_array($stack, ['laravel', 'php'], true)
+                && $httpStatus === 403
+                && ! $this->findingsContain($findings, ['laravel_docroot_not_public'])) {
+                $cmd = (string) ($checks['php_start_command'] ?? '');
+                $wrongRoot = (bool) preg_match('/talksasa-php-server[^\n]*\/app(?:["\s]|$)/', $cmd)
+                    || (bool) preg_match('/directory index of "\/app\/" is forbidden/i', $logs);
+                if ($wrongRoot) {
+                    $findings[] = [
+                        'id' => 'laravel_docroot_not_public',
+                        'severity' => 'critical',
+                        'title' => 'nginx is serving /app instead of /app/public',
+                        'summary' => 'GET / returns HTTP 403 because talksasa-php-server’s document root is /app. DirectAdmin Laravel sites keep index.php in public/, so nginx refuses the directory listing and PHP never runs. Point nginx at /app/public — MySQL stays up.',
+                        'evidence' => array_values(array_filter([
+                            'HTTP 403',
+                            $cmd !== '' ? 'start: '.$cmd : null,
+                        ])),
+                        'treat_action' => 'restart_application',
+                        'treat_label' => 'Point nginx at public/',
+                        'manual_steps' => [
+                            'Click Point nginx at public/ — rewrites talksasa-php-server to public/ or public_html and recreates only the app (MySQL stays up).',
+                            'Reload the site. Do not Reset database.',
+                        ],
+                        'source' => 'live',
+                    ];
+                }
+            }
+
+            if (in_array($stack, ['laravel', 'php'], true)
                 && $httpStatus !== null
                 && $httpStatus < 500) {
                 $loginUrl = $this->laravelLoginProbeUrl($deployment);
@@ -806,6 +833,7 @@ class ContainerDoctorService
                     'stale_laravel_config_cache',
                     'login_proxy_header_too_big',
                     'live_stale_proxy_vhost',
+                    'laravel_docroot_not_public',
                 ]);
 
                 $appErrors = $containerReady ? $this->readRecentApplicationErrors($ssh, $deployment) : [];
@@ -2504,6 +2532,22 @@ PHP;
                     'Click Switch to PHP-FPM — rebuilds the Laravel/PHP runtime with nginx + php-fpm and recreates the app container (database is kept).',
                     'The first time on a host this rebuilds the image and can take several minutes.',
                     'Re-scan Doctor after it finishes; logs should show nginx + php-fpm instead of “Development Server”.',
+                ],
+            ],
+            [
+                'id' => 'laravel_docroot_not_public',
+                'severity' => 'critical',
+                'stacks' => ['laravel', 'php'],
+                'patterns' => [
+                    '/directory index of "\/app\/" is forbidden/i',
+                ],
+                'title' => 'nginx is serving /app instead of /app/public',
+                'summary' => 'DirectAdmin Laravel sites keep index.php under public/. This stack started talksasa-php-server with docroot /app, so GET / 403s (directory index forbidden) and /home is a 404 — PHP never runs. Point nginx at /app/public; MySQL stays up.',
+                'treat_action' => 'restart_application',
+                'treat_label' => 'Point nginx at public/',
+                'manual_steps' => [
+                    'Click Point nginx at public/ — rewrites talksasa-php-server to public/ or public_html and recreates only the app (MySQL stays up).',
+                    'Reload the site. Do not Reset database.',
                 ],
             ],
             [

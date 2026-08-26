@@ -164,4 +164,15 @@ LOG;
         $this->assertNotNull($finding);
         $this->assertSame('tune_request_concurrency', $finding['treat_action']);
     }
+
+    #[Test]
+    public function it_flags_nginx_directory_index_on_app_root(): void
+    {
+        $logs = '2026/08/26 14:41:47 [error] 18#18: *1 directory index of "/app/" is forbidden, client: 10.201.0.1, request: "GET / HTTP/1.1"';
+        $finding = collect($this->analyzer()->findings($logs, 'laravel'))->firstWhere('id', 'laravel_docroot_not_public');
+
+        $this->assertNotNull($finding);
+        $this->assertSame('restart_application', $finding['treat_action']);
+        $this->assertSame('Point nginx at public/', $finding['treat_label']);
+    }
 }

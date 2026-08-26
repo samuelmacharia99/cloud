@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\Provisioning;
 
+use App\Models\Service;
 use App\Services\Provisioning\LaravelProjectPathResolver;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -26,7 +27,7 @@ class LaravelProjectPathResolverTest extends TestCase
     public function it_reads_document_root_from_service_meta(): void
     {
         $resolver = new LaravelProjectPathResolver;
-        $service = new \App\Models\Service([
+        $service = new Service([
             'service_meta' => [
                 'laravel_project_root' => 'core',
                 'laravel_document_root' => '/app',
@@ -35,5 +36,13 @@ class LaravelProjectPathResolverTest extends TestCase
 
         $this->assertSame('/app/core', $resolver->projectRootFromServiceMeta($service));
         $this->assertSame('/app', $resolver->documentRootFromServiceMeta($service));
+    }
+
+    #[Test]
+    public function it_prefers_laravel_public_then_directadmin_public_html(): void
+    {
+        $resolver = new LaravelProjectPathResolver;
+
+        $this->assertSame(['public', 'public_html'], $resolver->webRootRelativeCandidates());
     }
 }

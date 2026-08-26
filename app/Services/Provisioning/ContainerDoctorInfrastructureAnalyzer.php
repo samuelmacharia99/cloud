@@ -184,6 +184,24 @@ class ContainerDoctorInfrastructureAnalyzer
                 ],
             ],
             [
+                'id' => 'laravel_docroot_not_public',
+                'severity' => 'critical',
+                'stacks' => ['laravel', 'php'],
+                'patterns' => [
+                    '/directory index of "\/app\/" is forbidden/i',
+                ],
+                'match' => function (string $haystack): bool {
+                    return preg_match('/directory index of "\/app\/" is forbidden/i', $haystack) === 1;
+                },
+                'title' => 'nginx is serving /app instead of /app/public',
+                'summary' => 'DirectAdmin Laravel sites keep index.php under public/ or public_html. nginx is serving /app, so GET / 403s and PHP never runs.',
+                'treat_action' => 'restart_application',
+                'treat_label' => 'Point nginx at public/',
+                'manual_steps' => [
+                    'Click Point nginx at public/ — rewrites talksasa-php-server to public/ or public_html and recreates only the app (MySQL stays up).',
+                ],
+            ],
+            [
                 'id' => 'stale_php_runtime_image',
                 'severity' => 'warning',
                 'stacks' => ['laravel', 'php'],

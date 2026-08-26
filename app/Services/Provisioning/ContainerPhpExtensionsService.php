@@ -155,10 +155,7 @@ class ContainerPhpExtensionsService
             fn ($key) => is_string($key) && array_key_exists($key, $catalog)
         )));
 
-        $meta = is_array($service->service_meta) ? $service->service_meta : [];
-        $meta['php_extensions'] = $keys;
-        $meta['php_extensions_synced_at'] = now()->toIso8601String();
-        $service->update(['service_meta' => $meta]);
+        $this->persistEnabledKeys($service, $keys);
 
         $installed = [];
         foreach ($keys as $key) {
@@ -172,6 +169,86 @@ class ContainerPhpExtensionsService
         }
 
         return 'PHP extensions enabled: '.implode(', ', $installed).'. Restart the container if your app still reports a missing extension.';
+    }
+
+    /**
+     * Enable or disable a single optional extension and install it when turned on.
+     *
+     * @return array{
+     *     message: string,
+     *     extension: array{key: string, enabled: bool, installed?: bool}
+     * }
+     */
+    public function toggle(Service $service, ContainerDeployment $deployment, string $extensionKey, bool $enabled): array
+    {
+        if ($deployment->status !== 'running' || ! $deployment->node) {
+            throw new \DomainException('Start the app before enabling PHP extensions.');
+        }
+
+        $catalog = $this->optionalExtensionCatalog();
+        if (! array_key_exists($extensionKey, $catalog)) {
+            throw new \InvalidArgumentException("Unknown PHP extension [{$extensionKey}].");
+        }
+
+        $this->applyExtensionPreference($service, $extensionKey, $enabled);
+
+        $label = (string) ($catalog[$extensionKey]['label'] ?? $extensionKey);
+
+        if (! $enabled) {
+            return [
+                'message' => "{$label} was removed from your saved extensions. It remains in the runtime until the container is rebuilt.",
+                'extension' => [
+                    'key' => $extensionKey,
+                    'enabled' => false,
+                ],
+            ];
+        }
+
+        $ssh = SSHService::forNode($deployment->node);
+        try {
+            $didInstall = $this->ensureExtensionInstalled($ssh, $deployment, $extensionKey);
+            $installed = true;
+            $message = $didInstall
+                ? "PHP extension enabled: {$label}. Restart the container if your app still reports a missing extension."
+                : "{$label} is already loaded on this container.";
+        } finally {
+            $ssh->disconnect();
+        }
+
+        return [
+            'message' => $message,
+            'extension' => [
+                'key' => $extensionKey,
+                'enabled' => true,
+                'installed' => $installed,
+            ],
+        ];
+    }
+
+    /**
+     * Persist whether an optional extension should be installed on this service.
+     *
+     * @return list<string>
+     */
+    public function applyExtensionPreference(Service $service, string $extensionKey, bool $enabled): array
+    {
+        $catalog = $this->optionalExtensionCatalog();
+        if (! array_key_exists($extensionKey, $catalog)) {
+            throw new \InvalidArgumentException("Unknown PHP extension [{$extensionKey}].");
+        }
+
+        $keys = $this->enabledExtensionKeys($service);
+        if ($enabled) {
+            if (! in_array($extensionKey, $keys, true)) {
+                $keys[] = $extensionKey;
+            }
+        } else {
+            $keys = array_values(array_filter($keys, fn ($key) => $key !== $extensionKey));
+        }
+
+        $this->persistEnabledKeys($service, $keys);
+
+        return $keys;
     }
 
     public function syncEnabledExtensions(Service $service, ContainerDeployment $deployment, SSHService $ssh): void
@@ -252,6 +329,17 @@ class ContainerPhpExtensionsService
         }
 
         return implode(' && ', $parts);
+    }
+
+    /**
+     * @param  list<string>  $keys
+     */
+    private function persistEnabledKeys(Service $service, array $keys): void
+    {
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        $meta['php_extensions'] = array_values($keys);
+        $meta['php_extensions_synced_at'] = now()->toIso8601String();
+        $service->update(['service_meta' => $meta]);
     }
 
     private function moduleIsInstalled(SSHService $ssh, ContainerDeployment $deployment, string $moduleName): bool
