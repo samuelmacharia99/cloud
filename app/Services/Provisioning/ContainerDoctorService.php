@@ -324,6 +324,13 @@ class ContainerDoctorService
             $containerReady = ($snapshot['running'] ?? false) === true
                 && ($snapshot['restarting'] ?? false) !== true;
 
+            if ($containerReady) {
+                $proxyFinding = $this->staleProxyVhostFinding($ssh, $service, $deployment, $checks);
+                if ($proxyFinding !== null) {
+                    $findings[] = $this->withLaravelProxyBufferContext($proxyFinding, $stack);
+                }
+            }
+
             if ($containerReady && $stack === 'wordpress') {
                 try {
                     $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
@@ -370,11 +377,6 @@ class ContainerDoctorService
                         ],
                         'source' => 'live',
                     ];
-                }
-
-                $proxyFinding = $this->staleProxyVhostFinding($ssh, $service, $deployment, $checks);
-                if ($proxyFinding !== null) {
-                    $findings[] = $proxyFinding;
                 }
 
                 $media = $this->probeWordPressMedia($ssh, $deployment);
@@ -752,7 +754,8 @@ class ContainerDoctorService
                 if ($loginStatus !== null) {
                     $checks['http_status_home'] = $loginStatus;
                 }
-                if ($this->loginPathLooksLikeHeaderBufferFailure($httpStatus, $loginStatus)) {
+                if ($this->loginPathLooksLikeHeaderBufferFailure($httpStatus, $loginStatus)
+                    && ! $this->findingsContain($findings, ['live_stale_proxy_vhost'])) {
                     $findings[] = [
                         'id' => 'login_proxy_header_too_big',
                         'severity' => 'critical',
@@ -796,6 +799,7 @@ class ContainerDoctorService
                     'stale_laravel_db_host',
                     'stale_laravel_config_cache',
                     'login_proxy_header_too_big',
+                    'live_stale_proxy_vhost',
                 ]);
 
                 $appErrors = $containerReady ? $this->readRecentApplicationErrors($ssh, $deployment) : [];
@@ -2060,6 +2064,7 @@ PHP;
                 'vhost: '.$domain->nginx_config_path,
                 str_contains($config, 'proxy_http_version 1.1') ? null : 'missing proxy_http_version 1.1',
                 str_contains($config, 'proxy_request_buffering off') ? 'proxy_request_buffering off' : null,
+                str_contains($config, 'proxy_buffer_size 32k') ? null : 'missing proxy_buffer_size 32k',
             ])),
             'treat_action' => 'refresh_domain_proxy',
             'treat_label' => 'Refresh web proxy',
@@ -2069,6 +2074,31 @@ PHP;
             ],
             'source' => 'live',
         ];
+    }
+
+    /**
+     * Cookie-session Laravel logins 502 on the old 4k/8k vhost even when GET / is 200.
+     *
+     * @param  array<string, mixed>  $finding
+     * @return array<string, mixed>
+     */
+    public function withLaravelProxyBufferContext(array $finding, string $stack): array
+    {
+        if (! in_array($stack, ['laravel', 'php'], true)) {
+            return $finding;
+        }
+
+        $finding['severity'] = 'critical';
+        $finding['title'] = 'Web proxy header buffer is too small for login';
+        $finding['summary'] = 'GET / can be 200 while /home 502s. Ultimate POS starts a cookie session on login; '
+            .'the encrypted Set-Cookie is larger than this vhost’s default 4k/8k nginx buffer. '
+            .'Doctor’s homepage check stays green. Refresh web proxy rewrites 32k buffers — MySQL stays up.';
+        $finding['manual_steps'] = [
+            'Click Refresh web proxy — rewrites the nginx vhost and reloads nginx.',
+            'Reload /home. Do not Reset database.',
+        ];
+
+        return $finding;
     }
 
     /**

@@ -72,6 +72,7 @@
             <div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 px-4 py-3 text-xs text-slate-600 dark:text-slate-300 flex flex-wrap gap-x-4 gap-y-1">
                 <span>Live checks:</span>
                 <span x-show="liveChecks.http_status" x-text="'HTTP ' + liveChecks.http_status"></span>
+                <span x-show="liveChecks.http_status_home" x-text="'HTTP /home ' + liveChecks.http_status_home"></span>
                 <span x-text="liveChecks.db_ok === true ? 'DB: connected' : (liveChecks.db_ok === false ? 'DB: failed' : 'DB: n/a')"></span>
                 <span x-show="liveChecks.table_count !== null && liveChecks.table_count !== undefined" x-text="'Tables: ' + liveChecks.table_count"></span>
                 <span x-show="liveChecks.env_source" x-text="'Env: ' + liveChecks.env_source"></span>

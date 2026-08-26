@@ -1077,6 +1077,24 @@ LOG;
     }
 
     #[Test]
+    public function laravel_stale_vhost_is_a_critical_login_buffer_card(): void
+    {
+        $finding = app(ContainerDoctorService::class)->withLaravelProxyBufferContext(
+            [
+                'id' => 'live_stale_proxy_vhost',
+                'severity' => 'warning',
+                'treat_action' => 'refresh_domain_proxy',
+                'treat_label' => 'Refresh web proxy',
+            ],
+            'laravel'
+        );
+
+        $this->assertSame('critical', $finding['severity']);
+        $this->assertSame('refresh_domain_proxy', $finding['treat_action']);
+        $this->assertStringContainsString('/home', $finding['summary']);
+    }
+
+    #[Test]
     public function http_500_with_live_pdo_and_host_db_pins_unique_sidecar_dns(): void
     {
         $treat = app(ContainerDoctorService::class)->resolveHttp500Treatment(
