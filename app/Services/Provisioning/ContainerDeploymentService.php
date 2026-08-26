@@ -2510,31 +2510,50 @@ class ContainerDeploymentService
             ?? ''
         );
 
-        $sql = $this->mysqlPrivilegeRepairSql($database, $username, $password);
+        $extraHosts = $this->detectComposeAppIps($ssh, $containerPath);
+        $sql = $this->mysqlPrivilegeRepairSql($database, $username, $password, $extraHosts);
 
         $sqlArg = escapeshellarg($sql);
         $rootPwArg = escapeshellarg($rootPassword);
+        // --force: CREATE USER IF NOT EXISTS "already exist" must not abort ALTER/GRANT.
+        $mysql = 'mysql --force -u root -e';
+
+        $applied = false;
 
         // Attempt 1: use the env root password
         try {
             $ssh->exec(
-                "cd {$pathArg} && docker compose exec -T -e MYSQL_PWD={$rootPwArg} {$dbServiceArg} mysql -u root -e {$sqlArg}",
+                "cd {$pathArg} && docker compose exec -T -e MYSQL_PWD={$rootPwArg} {$dbServiceArg} {$mysql} {$sqlArg}",
                 20
             );
-
-            return;
+            $applied = true;
         } catch (\Throwable) {
         }
 
         // Attempt 2: try passwordless root (some images allow socket auth)
-        try {
-            $ssh->exec(
-                "cd {$pathArg} && docker compose exec -T {$dbServiceArg} mysql -u root -e {$sqlArg}",
-                20
+        if (! $applied) {
+            try {
+                $ssh->exec(
+                    "cd {$pathArg} && docker compose exec -T {$dbServiceArg} {$mysql} {$sqlArg}",
+                    20
+                );
+                $applied = true;
+            } catch (\Throwable) {
+            }
+        }
+
+        if ($applied) {
+            $this->mysqlAlignPasswordOnExistingHosts(
+                $ssh,
+                $containerPath,
+                $dbService,
+                $rootPassword,
+                $database,
+                $username,
+                $password
             );
 
             return;
-        } catch (\Throwable) {
         }
 
         // Attempt 3: use --skip-grant-tables to reset both root and user passwords.
@@ -2557,7 +2576,7 @@ class ContainerDeploymentService
             "docker compose stop {$dbServiceArg} 2>/dev/null || true",
             "docker compose run --rm -d --name db_credential_repair --entrypoint \"\" {$dbServiceArg} sh -c \"exec mysqld --skip-grant-tables --skip-networking=false --user=mysql\"",
             'for i in $(seq 1 25); do if docker exec db_credential_repair mysqladmin ping --silent 2>/dev/null; then break; fi; sleep 1; done',
-            "REPAIR_RESULT=0; docker exec db_credential_repair mysql -u root -e {$skipGrantSqlArg} || REPAIR_RESULT=1",
+            "REPAIR_RESULT=0; docker exec db_credential_repair mysql --force -u root -e {$skipGrantSqlArg} || REPAIR_RESULT=1",
             'docker stop db_credential_repair 2>/dev/null || true',
             'docker rm -f db_credential_repair 2>/dev/null || true',
             "docker compose start {$dbServiceArg}",
@@ -2572,32 +2591,138 @@ class ContainerDeploymentService
      * Grant the app user from Docker overlay IPs (`user`@`10.201.x.x`) and localhost.
      * DirectAdmin dumps often create `user`@`localhost` only, which MySQL reports as
      * "Access denied for user 'u74_s24'@'10.201.0.26'" even with the right password.
+     *
+     * Run with `mysql --force` so CREATE USER IF NOT EXISTS "already exist" cannot
+     * abort ALTER USER / GRANT.
+     *
+     * @param  list<string>  $extraHosts
      */
-    public function mysqlPrivilegeRepairSql(string $database, string $username, string $password): string
+    public function mysqlPrivilegeRepairSql(string $database, string $username, string $password, array $extraHosts = []): string
+    {
+        return implode('; ', $this->mysqlPrivilegeRepairStatements($database, $username, $password, $extraHosts)).';';
+    }
+
+    /**
+     * @param  list<string>  $extraHosts
+     * @return list<string>
+     */
+    public function mysqlPrivilegeRepairStatements(string $database, string $username, string $password, array $extraHosts = []): array
     {
         $dbIdent = $this->mysqlQuoteIdentifier($database);
         $user = addslashes($username);
         $pass = addslashes($password);
 
-        return sprintf(
-            'CREATE DATABASE IF NOT EXISTS %s; '
-            ."CREATE USER IF NOT EXISTS '%s'@'%%' IDENTIFIED BY '%s'; "
-            ."ALTER USER '%s'@'%%' IDENTIFIED BY '%s'; "
-            ."CREATE USER IF NOT EXISTS '%s'@'localhost' IDENTIFIED BY '%s'; "
-            ."ALTER USER '%s'@'localhost' IDENTIFIED BY '%s'; "
-            ."GRANT ALL PRIVILEGES ON %s.* TO '%s'@'%%'; "
-            ."GRANT ALL PRIVILEGES ON %s.* TO '%s'@'localhost'; "
-            ."DROP USER IF EXISTS ''@'%%'; "
-            ."DROP USER IF EXISTS ''@'localhost'; "
-            .'FLUSH PRIVILEGES;',
-            $dbIdent,
-            $user, $pass,
-            $user, $pass,
-            $user, $pass,
-            $user, $pass,
-            $dbIdent, $user,
-            $dbIdent, $user
-        );
+        $hosts = ['%', 'localhost', '127.0.0.1', '10.%', '172.%'];
+        foreach ($extraHosts as $host) {
+            $host = trim((string) $host);
+            if ($host !== '' && ! in_array($host, $hosts, true)) {
+                $hosts[] = $host;
+            }
+        }
+
+        $statements = ["CREATE DATABASE IF NOT EXISTS {$dbIdent}"];
+        foreach ($hosts as $host) {
+            $h = addslashes($host);
+            $statements[] = "CREATE USER IF NOT EXISTS '{$user}'@'{$h}' IDENTIFIED BY '{$pass}'";
+            $statements[] = "ALTER USER '{$user}'@'{$h}' IDENTIFIED BY '{$pass}'";
+            $statements[] = "GRANT ALL PRIVILEGES ON {$dbIdent}.* TO '{$user}'@'{$h}'";
+        }
+        $statements[] = "DROP USER IF EXISTS ''@'%'";
+        $statements[] = "DROP USER IF EXISTS ''@'localhost'";
+        $statements[] = "DROP USER IF EXISTS ''@'127.0.0.1'";
+        $statements[] = 'FLUSH PRIVILEGES';
+
+        return $statements;
+    }
+
+    /**
+     * DirectAdmin / leftover accounts may exist as user@10.201.0.26 (more specific
+     * than user@%) with a different password. ALTER every existing host for this user.
+     */
+    private function mysqlAlignPasswordOnExistingHosts(
+        SSHService $ssh,
+        string $containerPath,
+        string $dbService,
+        string $rootPassword,
+        string $database,
+        string $username,
+        string $password
+    ): void {
+        $pathArg = escapeshellarg($containerPath);
+        $dbServiceArg = escapeshellarg($dbService);
+        $rootPwArg = escapeshellarg($rootPassword);
+        $user = addslashes($username);
+        $listSql = escapeshellarg("SELECT host FROM mysql.user WHERE user='{$user}'");
+
+        try {
+            $hosts = trim($ssh->exec(
+                "cd {$pathArg} && docker compose exec -T -e MYSQL_PWD={$rootPwArg} {$dbServiceArg} "
+                ."mysql -N -B -u root -e {$listSql} 2>/dev/null || true",
+                15
+            ));
+        } catch (\Throwable) {
+            return;
+        }
+
+        $extra = [];
+        foreach (preg_split("/\r\n|\n|\r/", $hosts) ?: [] as $host) {
+            $host = trim($host);
+            if ($host !== '') {
+                $extra[] = $host;
+            }
+        }
+
+        if ($extra === []) {
+            return;
+        }
+
+        $sql = $this->mysqlPrivilegeRepairSql($database, $username, $password, $extra);
+        $sqlArg = escapeshellarg($sql);
+
+        try {
+            $ssh->exec(
+                "cd {$pathArg} && docker compose exec -T -e MYSQL_PWD={$rootPwArg} {$dbServiceArg} "
+                ."mysql --force -u root -e {$sqlArg}",
+                20
+            );
+        } catch (\Throwable) {
+        }
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function detectComposeAppIps(SSHService $ssh, string $containerPath): array
+    {
+        $pathArg = escapeshellarg($containerPath);
+
+        try {
+            $id = trim($ssh->exec(
+                "cd {$pathArg} && (docker compose ps -q app 2>/dev/null || true) | head -1",
+                15
+            ));
+            if ($id === '') {
+                $id = basename($containerPath);
+            }
+
+            $ips = trim($ssh->exec(
+                'docker inspect -f "{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}" '
+                .escapeshellarg($id).' 2>/dev/null || true',
+                15
+            ));
+        } catch (\Throwable) {
+            return [];
+        }
+
+        $found = [];
+        foreach (preg_split('/\s+/', $ips) ?: [] as $ip) {
+            $ip = trim($ip);
+            if (filter_var($ip, FILTER_VALIDATE_IP)) {
+                $found[] = $ip;
+            }
+        }
+
+        return $found;
     }
 
     private function mysqlQuoteIdentifier(string $name): string

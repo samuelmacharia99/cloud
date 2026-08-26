@@ -15,14 +15,18 @@ class MysqlSidecarCredentialsTest extends TestCase
             's24_db',
             'u74_s24',
             'secret',
+            ['10.201.0.26'],
         );
 
         $this->assertStringContainsString('CREATE DATABASE IF NOT EXISTS `s24_db`', $sql);
         $this->assertStringContainsString("CREATE USER IF NOT EXISTS 'u74_s24'@'%' IDENTIFIED BY 'secret'", $sql);
         $this->assertStringContainsString("ALTER USER 'u74_s24'@'%' IDENTIFIED BY 'secret'", $sql);
         $this->assertStringContainsString("CREATE USER IF NOT EXISTS 'u74_s24'@'localhost' IDENTIFIED BY 'secret'", $sql);
+        $this->assertStringContainsString("CREATE USER IF NOT EXISTS 'u74_s24'@'10.%' IDENTIFIED BY 'secret'", $sql);
+        $this->assertStringContainsString("CREATE USER IF NOT EXISTS 'u74_s24'@'172.%' IDENTIFIED BY 'secret'", $sql);
         $this->assertStringContainsString("GRANT ALL PRIVILEGES ON `s24_db`.* TO 'u74_s24'@'%'", $sql);
         $this->assertStringContainsString("GRANT ALL PRIVILEGES ON `s24_db`.* TO 'u74_s24'@'localhost'", $sql);
+        $this->assertStringContainsString("GRANT ALL PRIVILEGES ON `s24_db`.* TO 'u74_s24'@'10.201.0.26'", $sql);
         $this->assertStringContainsString("DROP USER IF EXISTS ''@'%'", $sql);
         $this->assertStringContainsString('FLUSH PRIVILEGES', $sql);
     }

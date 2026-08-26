@@ -396,7 +396,13 @@ LOG;
         $this->assertStringContainsString('get-total-unread', $finding['summary']);
 
         $fromLogs = app(ContainerDoctorService::class)->analyzeLogs($logs, 'laravel');
-        $this->assertContains('intermittent_http_5xx', array_column($fromLogs, 'id'));
+        $this->assertNotContains('intermittent_http_5xx', array_column($fromLogs, 'id'));
+
+        $relaxed = app(ContainerDoctorService::class)->intermittentAccessLogFinding($logs, [
+            'SESSION_DRIVER' => 'cookie',
+            'CACHE_STORE' => 'file',
+        ]);
+        $this->assertNull($relaxed);
     }
 
     #[Test]
@@ -443,6 +449,55 @@ LOG;
         );
 
         $this->assertContains('intermittent_http_5xx', array_column($merged, 'id'));
+    }
+
+    #[Test]
+    public function it_drops_intermittent_500s_once_session_locking_is_already_relaxed(): void
+    {
+        $merged = app(ContainerDoctorService::class)->mergeLogAndLiveFindings(
+            [[
+                'id' => 'intermittent_http_5xx',
+                'severity' => 'warning',
+                'title' => 'Intermittent HTTP 500s',
+                'treat_action' => 'tune_request_concurrency',
+            ]],
+            [
+                'findings' => [],
+                'checks' => [
+                    'http_status' => 500,
+                    'db_ok' => false,
+                    'session_driver' => 'cookie',
+                    'cache_store' => 'file',
+                ],
+            ]
+        );
+
+        $this->assertNotContains('intermittent_http_5xx', array_column($merged, 'id'));
+    }
+
+    #[Test]
+    public function it_drops_intermittent_500s_when_live_database_auth_failed(): void
+    {
+        $merged = app(ContainerDoctorService::class)->mergeLogAndLiveFindings(
+            [[
+                'id' => 'intermittent_http_5xx',
+                'severity' => 'warning',
+                'title' => 'Intermittent HTTP 500s',
+                'treat_action' => 'tune_request_concurrency',
+            ]],
+            [
+                'findings' => [[
+                    'id' => 'live_db_connection_failed',
+                    'severity' => 'critical',
+                    'title' => 'Live check: database authentication failed',
+                    'treat_action' => 'sync_database_credentials',
+                ]],
+                'checks' => ['http_status' => 500, 'db_ok' => false],
+            ]
+        );
+
+        $this->assertNotContains('intermittent_http_5xx', array_column($merged, 'id'));
+        $this->assertContains('live_db_connection_failed', array_column($merged, 'id'));
     }
 
     #[Test]

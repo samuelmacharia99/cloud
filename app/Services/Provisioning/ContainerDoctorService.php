@@ -176,13 +176,6 @@ class ContainerDoctorService
             ));
         }
 
-        if (in_array($stack, ['laravel', 'php'], true)) {
-            $accessFinding = $this->intermittentAccessLogFinding($normalized);
-            if ($accessFinding !== null) {
-                $findings[] = $accessFinding;
-            }
-        }
-
         if ($findings === [] && trim($logs) !== '' && ! str_starts_with(trim($logs), 'Error fetching logs:')) {
             $hasHttp500 = preg_match('/\[500\]:\s*GET\s+\//i', $logs) === 1;
             if ($hasHttp500) {
@@ -704,20 +697,9 @@ class ContainerDoctorService
                     // Empty-schema finding already exposes migrate:fresh — avoid a second
                     // card that wrongly suggests Repair DB credentials.
                 } elseif ($hasCredentialDbIssue) {
-                    $findings[] = [
-                        'id' => 'live_http_5xx',
-                        'severity' => 'critical',
-                        'title' => 'Live check: site returns HTTP '.$httpStatus,
-                        'summary' => 'The public URL is returning HTTP '.$httpStatus.'. Fix the database credential findings above first, then re-scan.',
-                        'evidence' => $evidence,
-                        'treat_action' => 'sync_database_credentials',
-                        'treat_label' => 'Repair DB credentials',
-                        'manual_steps' => [
-                            'Re-scan after applying the suggested fix.',
-                            'In Terminal check: tail -n 80 storage/logs/laravel.log',
-                        ],
-                        'source' => 'live',
-                    ];
+                    // live_db_connection_failed already tells the operator to repair credentials.
+                    // A second HTTP 500 card with leftover laravel.log lines (cache path,
+                    // connection refused, sessions table) looks like the treat did nothing.
                 } elseif ($containerReady && ! $hasSpecificInfra) {
                     $looksLikeMissingCacheLocks = collect($appErrors)->contains(
                         fn ($line) => (bool) preg_match('/cache_locks/i', (string) $line)
@@ -794,7 +776,11 @@ class ContainerDoctorService
             $accessSummary = $this->summarizeAccessLogs($logs);
             $checks['http_2xx_count'] = $accessSummary['status_2xx'];
             $checks['http_5xx_count'] = $accessSummary['status_5xx'];
-            if ($accessFinding !== null && ! $this->findingsContain($findings, ['live_http_5xx', 'live_db_connection_failed'])) {
+            if ($accessFinding !== null && ! $this->findingsContain($findings, [
+                'live_http_5xx',
+                'live_db_connection_failed',
+                'live_env_credential_drift',
+            ])) {
                 $findings[] = $accessFinding;
             }
         } catch (\Throwable $e) {
@@ -880,6 +866,19 @@ class ContainerDoctorService
 
             if ($hasLiveDbSignal && in_array($f['id'] ?? '', $resolvedLogIds, true)) {
                 return false;
+            }
+
+            $session = strtolower((string) ($checks['session_driver'] ?? ''));
+            $cache = strtolower((string) ($checks['cache_store'] ?? ''));
+            $lockingRelaxed = $session === 'cookie' && ($cache === '' || $cache === 'file');
+
+            if (($f['id'] ?? '') === 'intermittent_http_5xx') {
+                if ($lockingRelaxed || $hasLiveDbSignal) {
+                    return false;
+                }
+                if (collect($liveFindings)->contains(fn ($live) => ($live['id'] ?? '') === 'live_http_5xx')) {
+                    return false;
+                }
             }
 
             return true;
@@ -1020,9 +1019,14 @@ class ContainerDoctorService
         );
 
         $session = strtolower(trim((string) ($env['SESSION_DRIVER'] ?? '')));
-        $cache = strtolower(trim((string) ($env['CACHE_STORE'] ?? '')));
+        $cache = strtolower(trim((string) ($env['CACHE_STORE'] ?? $env['CACHE_DRIVER'] ?? '')));
         $locking = $session === '' || in_array($session, ['file', 'database', 'redis'], true)
             || in_array($cache, ['database', 'redis'], true);
+
+        $relaxed = $session === 'cookie' && ($cache === '' || $cache === 'file');
+        if ($relaxed) {
+            return null;
+        }
 
         $treatAction = $locking ? 'tune_request_concurrency' : 'restart_application';
         $treatLabel = $locking ? 'Relax session/cache locking' : 'Restart application';
@@ -3465,6 +3469,22 @@ PHP;
                 .$this->laravelCacheClearScript($projectRoot);
 
             $init->dockerExecPublic($ssh, $deployment->container_name, $script, 120, asRoot: true);
+
+            $env = is_array($deployment->env_values) ? $deployment->env_values : [];
+            $env['SESSION_DRIVER'] = 'cookie';
+            $env['CACHE_STORE'] = 'file';
+            $env['CACHE_DRIVER'] = 'file';
+            $deployment->update(['env_values' => $env]);
+            $meta = is_array($service->service_meta) ? $service->service_meta : [];
+            $metaEnv = is_array($meta['env_values'] ?? null) ? $meta['env_values'] : [];
+            $meta['env_values'] = array_merge($metaEnv, [
+                'SESSION_DRIVER' => 'cookie',
+                'CACHE_STORE' => 'file',
+                'CACHE_DRIVER' => 'file',
+            ]);
+            $service->update(['service_meta' => $meta]);
+            app(ContainerEnvironmentService::class)
+                ->syncDotEnvFile($ssh, $service, $deployment->fresh(), $env);
 
             return [
                 'success' => true,
