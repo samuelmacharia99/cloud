@@ -146,16 +146,27 @@
         />
     </div>
 
-    @if($costs['nodes_untracked'] > 0 || $costs['domains_missing_cost'] > 0)
-        <div class="rounded-2xl border border-amber-200/80 dark:border-amber-900/60 bg-amber-50/90 dark:bg-amber-950/40 px-4 py-3 text-sm text-amber-900 dark:text-amber-200">
+    @if($costs['nodes_untracked'] > 0 || ($costs['nodes_missing_rate'] ?? 0) > 0 || $costs['domains_missing_cost'] > 0)
+        <div class="rounded-2xl border border-amber-200/80 dark:border-amber-900/60 bg-amber-50/90 dark:bg-amber-950/40 px-4 py-3 text-sm text-amber-900 dark:text-amber-200 space-y-1">
             @if($costs['nodes_untracked'] > 0)
-                {{ $costs['nodes_untracked'] }} {{ \Illuminate\Support\Str::plural('node', $costs['nodes_untracked']) }} {{ $costs['nodes_untracked'] === 1 ? 'has' : 'have' }} no monthly provider cost —
-                <a href="{{ route('admin.nodes.index') }}" class="font-semibold underline underline-offset-2">set spend on the node</a>.
+                <p>
+                    {{ $costs['nodes_untracked'] }} {{ \Illuminate\Support\Str::plural('node', $costs['nodes_untracked']) }} {{ $costs['nodes_untracked'] === 1 ? 'has' : 'have' }} no monthly provider cost —
+                    <a href="{{ route('admin.nodes.index') }}" class="font-semibold underline underline-offset-2">set spend on the node</a>.
+                </p>
+            @endif
+            @if(($costs['nodes_missing_rate'] ?? 0) > 0)
+                <p>
+                    {{ $costs['nodes_missing_rate'] }} {{ \Illuminate\Support\Str::plural('node', $costs['nodes_missing_rate']) }} {{ $costs['nodes_missing_rate'] === 1 ? 'has' : 'have' }} USD spend saved, but KES conversion needs a USD rate —
+                    <a href="{{ route('admin.currencies.index') }}" class="font-semibold underline underline-offset-2">set it in Currencies</a>.
+                    That spend is excluded from KES totals until the rate is available.
+                </p>
             @endif
             @if($costs['domains_missing_cost'] > 0)
-                {{ $costs['nodes_untracked'] > 0 ? ' ' : '' }}{{ $costs['domains_missing_cost'] }} Cosmotown {{ \Illuminate\Support\Str::plural('domain', $costs['domains_missing_cost']) }} {{ $costs['domains_missing_cost'] === 1 ? 'has' : 'have' }} no registrar cost —
-                <a href="{{ route('admin.domains.pricing') }}" class="font-semibold underline underline-offset-2">sync Cosmotown prices</a>.
-                Those rows are excluded from domain profit and spend.
+                <p>
+                    {{ $costs['domains_missing_cost'] }} Cosmotown {{ \Illuminate\Support\Str::plural('domain', $costs['domains_missing_cost']) }} {{ $costs['domains_missing_cost'] === 1 ? 'has' : 'have' }} no registrar cost —
+                    <a href="{{ route('admin.domains.pricing') }}" class="font-semibold underline underline-offset-2">sync Cosmotown prices</a>.
+                    Those rows are excluded from domain profit and spend.
+                </p>
             @endif
         </div>
     @endif
@@ -243,8 +254,11 @@
                             <td class="px-6 py-3.5 text-right tabular-nums text-slate-700 dark:text-slate-300">{{ number_format($row['subscription_revenue'], 2) }}</td>
                             <td class="px-6 py-3.5 text-right tabular-nums font-medium text-slate-900 dark:text-white">{{ number_format($row['revenue'], 2) }}</td>
                             <td class="px-6 py-3.5 text-right tabular-nums">
-                                @if($row['cost_kes'] === null)
-                                    <span class="text-amber-600 dark:text-amber-400 font-medium">Not set</span>
+                                @if(($row['cost_status'] ?? null) === 'missing_spend')
+                                    <a href="{{ route('admin.nodes.edit', $row['id']) }}" class="text-amber-600 dark:text-amber-400 font-medium hover:underline">Not set</a>
+                                @elseif(($row['cost_status'] ?? null) === 'missing_rate')
+                                    <span class="text-amber-600 dark:text-amber-400 font-medium">${{ number_format((float) $row['monthly_cost_usd'], 2) }}/mo</span>
+                                    <p class="text-xs font-normal text-amber-700 dark:text-amber-300">KES rate missing</p>
                                 @else
                                     <span class="text-slate-700 dark:text-slate-300">{{ number_format($row['cost_kes'], 2) }}</span>
                                 @endif

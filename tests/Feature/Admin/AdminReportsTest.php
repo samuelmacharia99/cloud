@@ -149,6 +149,31 @@ class AdminReportsTest extends TestCase
             ->assertSee('759.00');
     }
 
+    public function test_saved_node_usd_spend_is_shown_when_kes_rate_is_missing(): void
+    {
+        Currency::query()->where('code', 'USD')->delete();
+
+        $admin = User::factory()->admin()->create();
+        Node::factory()->create([
+            'name' => 'Westlands Mail',
+            'monthly_cost_usd' => 85.5,
+        ]);
+        Node::factory()->create([
+            'name' => 'Spare box',
+            'monthly_cost_usd' => null,
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('admin.reports.index'))
+            ->assertOk()
+            ->assertSee('Westlands Mail')
+            ->assertSee('$85.50/mo')
+            ->assertSee('KES rate missing')
+            ->assertSee('set it in Currencies')
+            ->assertDontSee('2 nodes have no monthly provider cost')
+            ->assertSee('1 node has no monthly provider cost');
+    }
+
     private function seedPlatformPayment(User $user, float $amount, string $paidAt): void
     {
         $invoice = Invoice::factory()->create([

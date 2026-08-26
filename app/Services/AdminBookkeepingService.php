@@ -109,7 +109,12 @@ class AdminBookkeepingService
             'costs' => [
                 'nodes' => $nodeSpend,
                 'domains' => $domainSpend,
-                'nodes_untracked' => collect($nodes)->where('cost_kes', null)->count(),
+                'nodes_untracked' => collect($nodes)
+                    ->filter(fn (array $row) => ($row['id'] ?? 0) > 0 && $row['monthly_cost_usd'] === null)
+                    ->count(),
+                'nodes_missing_rate' => collect($nodes)
+                    ->filter(fn (array $row) => ($row['id'] ?? 0) > 0 && $row['monthly_cost_usd'] !== null && $row['cost_kes'] === null)
+                    ->count(),
                 'domains_missing_cost' => $domainReport['missing_cost_count'],
             ],
             'outstandingKes' => $this->platformOutstandingKes(),
@@ -393,15 +398,18 @@ class AdminBookkeepingService
             $subscription = round($nodeSubscriptions[$node->id] ?? 0, 2);
             $revenue = round($hosting + $subscription, 2);
 
+            $monthlyUsd = $node->monthly_cost_usd !== null ? (float) $node->monthly_cost_usd : null;
+
             $rows[] = [
                 'id' => $node->id,
                 'name' => $node->name,
                 'type' => $node->type,
                 'type_label' => $node->getTypeLabel(),
                 'status' => $node->status,
-                'monthly_cost_usd' => $node->monthly_cost_usd !== null ? (float) $node->monthly_cost_usd : null,
+                'monthly_cost_usd' => $monthlyUsd,
                 'monthly_cost_kes' => $monthlyKes,
                 'cost_kes' => $cost,
+                'cost_status' => $monthlyUsd === null ? 'missing_spend' : ($cost === null ? 'missing_rate' : 'ok'),
                 'hosting_revenue' => $hosting,
                 'subscription_revenue' => $subscription,
                 'revenue' => $revenue,
@@ -420,6 +428,7 @@ class AdminBookkeepingService
                 'monthly_cost_usd' => null,
                 'monthly_cost_kes' => null,
                 'cost_kes' => 0.0,
+                'cost_status' => 'unassigned',
                 'hosting_revenue' => $unassignedHosting,
                 'subscription_revenue' => 0.0,
                 'revenue' => $unassignedHosting,

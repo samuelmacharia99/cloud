@@ -121,6 +121,76 @@ class AdminBookkeepingServiceTest extends TestCase
         $this->assertEqualsWithDelta(20000.0, $row['hosting_revenue'], 0.01);
         $this->assertEqualsWithDelta(20000.0 - $monthlyKes, $row['profit'], 0.05);
         $this->assertEqualsWithDelta($monthlyKes, $report['costs']['nodes'], 0.05);
+        $this->assertSame(0, $report['costs']['nodes_untracked']);
+        $this->assertSame(0, $report['costs']['nodes_missing_rate']);
+        $this->assertSame('ok', $row['cost_status']);
+    }
+
+    public function test_saved_usd_spend_is_not_counted_as_missing_when_kes_rate_is_unavailable(): void
+    {
+        Currency::query()->where('code', 'USD')->delete();
+
+        $tracked = Node::factory()->create([
+            'name' => 'Paid box',
+            'monthly_cost_usd' => 120,
+        ]);
+        Node::factory()->create([
+            'name' => 'Empty box',
+            'monthly_cost_usd' => null,
+        ]);
+
+        $report = app(AdminBookkeepingService::class)->build(2026, 8);
+        $paid = collect($report['nodes'])->firstWhere('id', $tracked->id);
+
+        $this->assertSame(120.0, $paid['monthly_cost_usd']);
+        $this->assertNull($paid['cost_kes']);
+        $this->assertSame('missing_rate', $paid['cost_status']);
+        $this->assertSame(1, $report['costs']['nodes_untracked']);
+        $this->assertSame(1, $report['costs']['nodes_missing_rate']);
+        $this->assertSame(0.0, $report['costs']['nodes']);
+    }
+
+    public function test_unassigned_hosting_with_zero_cost_is_not_counted_as_an_untracked_node(): void
+    {
+        Node::factory()->create(['monthly_cost_usd' => 100]);
+        $customer = User::factory()->customer()->create(['reseller_id' => null]);
+        $invoice = Invoice::factory()->create([
+            'user_id' => $customer->id,
+            'status' => 'paid',
+            'total' => 3000,
+            'subtotal' => 3000,
+            'tax' => 0,
+            'currency' => 'KES',
+        ]);
+        $service = Service::factory()->create([
+            'user_id' => $customer->id,
+            'node_id' => null,
+        ]);
+        InvoiceItem::create([
+            'invoice_id' => $invoice->id,
+            'service_id' => $service->id,
+            'product_id' => $service->product_id,
+            'description' => 'Orphan hosting',
+            'quantity' => 1,
+            'unit_price' => 3000,
+            'amount' => 3000,
+        ]);
+        Payment::factory()->create([
+            'user_id' => $customer->id,
+            'invoice_id' => $invoice->id,
+            'amount' => 3000,
+            'currency' => 'KES',
+            'status' => PaymentStatus::Completed,
+            'paid_at' => Carbon::parse('2026-08-08 08:00:00'),
+            'payment_method' => 'mpesa',
+        ]);
+
+        $report = app(AdminBookkeepingService::class)->build(2026, 8);
+        $unassigned = collect($report['nodes'])->firstWhere('id', 0);
+
+        $this->assertNotNull($unassigned);
+        $this->assertSame(0.0, $unassigned['cost_kes']);
+        $this->assertSame(0, $report['costs']['nodes_untracked']);
     }
 
     public function test_reseller_package_fee_is_counted_on_the_assigned_node(): void
