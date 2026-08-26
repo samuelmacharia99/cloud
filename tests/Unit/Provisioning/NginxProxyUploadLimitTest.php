@@ -34,6 +34,8 @@ class NginxProxyUploadLimitTest extends TestCase
         $https = $nginx->generateConfig($domain, true);
         $this->assertStringContainsString('listen 443 ssl', $https);
         $this->assertStringContainsString('client_max_body_size 100M;', $https);
+        $this->assertStringContainsString('proxy_buffer_size 32k;', $https);
+        $this->assertTrue($nginx->vhostIsCurrent($https));
     }
 
     #[Test]
@@ -53,6 +55,9 @@ class NginxProxyUploadLimitTest extends TestCase
         $this->assertStringContainsString('proxy_http_version 1.1;', $http);
         $this->assertStringNotContainsString('proxy_request_buffering off', $http);
         $this->assertTrue($nginx->vhostIsCurrent($http));
+        $this->assertStringContainsString('proxy_buffer_size 32k;', $http);
+        $this->assertStringContainsString('proxy_buffers 8 32k;', $http);
+        $this->assertStringContainsString('proxy_busy_buffers_size 64k;', $http);
     }
 
     #[Test]
@@ -74,5 +79,27 @@ server {
 CONF;
 
         $this->assertFalse((new NginxProxyService)->vhostIsCurrent($legacy));
+    }
+
+    #[Test]
+    public function v2_vhosts_without_header_buffers_are_not_current(): void
+    {
+        config(['security.container_file_upload.max_size_mb' => 100]);
+
+        $v2 = <<<'CONF'
+# talksasa-vhost v2
+server {
+    listen 80;
+    server_name example.test;
+    client_max_body_size 100M;
+
+    location / {
+        proxy_pass http://127.0.0.1:30001;
+        proxy_http_version 1.1;
+    }
+}
+CONF;
+
+        $this->assertFalse((new NginxProxyService)->vhostIsCurrent($v2));
     }
 }

@@ -790,6 +790,15 @@ class ContainerDeploymentService
                 // PHP-FPM). Recreating the whole stack also bounces MySQL → HTTP 2002.
                 $this->restartAppService($ssh, $deployment);
 
+                try {
+                    app(NginxProxyService::class)->refreshBoundDomainVhosts($service);
+                } catch (\Throwable $e) {
+                    \Log::warning('Could not refresh nginx vhost after app restart', [
+                        'service_id' => $service->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+
                 $deployment->update([
                     'last_status_check_at' => now(),
                     'last_restart_at' => now(),

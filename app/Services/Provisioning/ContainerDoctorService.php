@@ -744,6 +744,37 @@ class ContainerDoctorService
             $httpStatus = $this->probeHttpStatus($ssh, $deployment);
             $checks['http_status'] = $httpStatus;
 
+            if (in_array($stack, ['laravel', 'php'], true)
+                && $httpStatus !== null
+                && $httpStatus < 500) {
+                $loginUrl = $this->laravelLoginProbeUrl($deployment);
+                $loginStatus = $loginUrl !== null ? $this->probeHttpStatusAt($ssh, $loginUrl) : null;
+                if ($loginStatus !== null) {
+                    $checks['http_status_home'] = $loginStatus;
+                }
+                if ($this->loginPathLooksLikeHeaderBufferFailure($httpStatus, $loginStatus)) {
+                    $findings[] = [
+                        'id' => 'login_proxy_header_too_big',
+                        'severity' => 'critical',
+                        'title' => 'Login URL 502s while the homepage works',
+                        'summary' => 'GET / returns HTTP '.$httpStatus.', but '.$loginUrl
+                            .' returns HTTP '.$loginStatus.'. Ultimate POS /home starts a cookie session; the encrypted Set-Cookie is larger than the node nginx header buffer (default 4k/8k), so nginx 502s that route only. Refresh web proxy rewrites the vhost with 32k buffers — MySQL stays up.',
+                        'evidence' => [
+                            'GET / → HTTP '.$httpStatus,
+                            'GET /home → HTTP '.$loginStatus,
+                            'SESSION_DRIVER='.(string) ($checks['session_driver_runtime'] ?? $checks['session_driver'] ?? 'unknown'),
+                        ],
+                        'treat_action' => 'refresh_domain_proxy',
+                        'treat_label' => 'Refresh web proxy',
+                        'manual_steps' => [
+                            'Click Refresh web proxy — rewrites the nginx vhost with larger proxy buffers and reloads nginx.',
+                            'Reload https://…/home. Do not Reset database.',
+                        ],
+                        'source' => 'live',
+                    ];
+                }
+            }
+
             if ($httpStatus !== null && $httpStatus >= 500) {
                 $hasEmptyDb = collect($findings)->contains(
                     fn ($f) => in_array($f['id'] ?? '', ['live_empty_database', 'live_db_config_drift'], true)
@@ -764,6 +795,7 @@ class ContainerDoctorService
                     'stale_php_runtime_image',
                     'stale_laravel_db_host',
                     'stale_laravel_config_cache',
+                    'login_proxy_header_too_big',
                 ]);
 
                 $appErrors = $containerReady ? $this->readRecentApplicationErrors($ssh, $deployment) : [];
@@ -1753,6 +1785,30 @@ PHP;
             return null;
         }
 
+        return $this->probeHttpStatusAt($ssh, $url);
+    }
+
+    public function laravelLoginProbeUrl($deployment): ?string
+    {
+        $url = $deployment->getAccessUrl();
+        if (! is_string($url) || $url === '') {
+            return null;
+        }
+
+        return rtrim($url, '/').'/home';
+    }
+
+    public function loginPathLooksLikeHeaderBufferFailure(?int $rootStatus, ?int $loginStatus): bool
+    {
+        return $rootStatus !== null
+            && $rootStatus < 500
+            && $rootStatus >= 200
+            && $loginStatus !== null
+            && in_array($loginStatus, [502, 503], true);
+    }
+
+    private function probeHttpStatusAt(SSHService $ssh, string $url): ?int
+    {
         try {
             $code = trim($ssh->exec(
                 'curl -s -o /dev/null -w "%{http_code}" --max-time 12 '.escapeshellarg($url).' || true',
@@ -4337,7 +4393,7 @@ PHP;
 
             return [
                 'success' => true,
-                'message' => 'Web proxy refreshed for every bound domain. Retry the upload.',
+                'message' => 'Web proxy refreshed for every bound domain (32k header buffers). Retry /home — the homepage can work while login 502s on the old 4k/8k buffer.',
             ];
         } catch (\Throwable $e) {
             return ['success' => false, 'message' => 'Failed to refresh the web proxy: '.$e->getMessage()];

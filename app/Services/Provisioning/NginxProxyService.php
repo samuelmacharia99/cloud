@@ -4,6 +4,7 @@ namespace App\Services\Provisioning;
 
 use App\Models\ContainerDomain;
 use App\Models\Node;
+use App\Models\Service;
 use App\Services\SSH\SSHService;
 use Exception;
 
@@ -12,7 +13,7 @@ class NginxProxyService
     /**
      * Bump when the generated vhost changes so existing sites are rewritten.
      */
-    public const VHOST_REVISION = 'v2';
+    public const VHOST_REVISION = 'v3';
 
     /**
      * Bind a domain to a container via nginx reverse proxy
@@ -295,6 +296,8 @@ class NginxProxyService
         $uploadLimit = $this->clientMaxBodySize();
         $revision = self::VHOST_REVISION;
 
+        $location = $this->proxyPassLocation((int) $port);
+
         $httpBlock = <<<EOL
 # talksasa-vhost {$revision}
 server {
@@ -303,18 +306,7 @@ server {
     client_max_body_size {$uploadLimit};
     client_body_timeout 300s;
 
-    location / {
-        proxy_pass http://127.0.0.1:{$port};
-        proxy_http_version 1.1;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_set_header Connection "";
-        proxy_redirect off;
-        proxy_read_timeout 300s;
-        proxy_send_timeout 300s;
-    }
+{$location}
 }
 EOL;
 
@@ -345,6 +337,18 @@ server {
     ssl_ciphers HIGH:!aNULL:!MD5;
     ssl_prefer_server_ciphers on;
 
+{$location}
+}
+EOL;
+    }
+
+    /**
+     * Cookie sessions (Ultimate POS /home login) send a large encrypted Set-Cookie.
+     * Default proxy_buffer_size is 4k/8k, which 502s that route while GET / still works.
+     */
+    public function proxyPassLocation(int $port): string
+    {
+        return <<<EOL
     location / {
         proxy_pass http://127.0.0.1:{$port};
         proxy_http_version 1.1;
@@ -356,15 +360,17 @@ server {
         proxy_redirect off;
         proxy_read_timeout 300s;
         proxy_send_timeout 300s;
+        proxy_buffer_size 32k;
+        proxy_buffers 8 32k;
+        proxy_busy_buffers_size 64k;
     }
-}
 EOL;
     }
 
     /**
      * Rewrite nginx vhosts generated before the current template. Older files kept the
-     * 1m body default (WordPress 413) or proxied over HTTP/1.0 with request buffering
-     * disabled, which stalls large uploads before they ever reach PHP.
+     * 1m body default (WordPress 413), proxied over HTTP/1.0 with request buffering
+     * disabled, or used 4k/8k header buffers that 502 cookie-session login pages.
      *
      * @return bool true when the config was rewritten
      */
@@ -439,13 +445,44 @@ EOL;
     }
 
     /**
+     * Rewrite this service's bound vhosts when the template revision moved.
+     */
+    public function refreshBoundDomainVhosts(Service $service): int
+    {
+        $service->loadMissing('containerDeployment.domains');
+
+        $domains = $service->containerDeployment?->domains;
+        if (! $domains || $domains->isEmpty()) {
+            return 0;
+        }
+
+        $updated = 0;
+        foreach ($domains as $domain) {
+            try {
+                if ($this->ensureUploadLimit($domain)) {
+                    $updated++;
+                }
+            } catch (\Throwable $e) {
+                \Log::warning('Failed to refresh nginx vhost for domain', [
+                    'service_id' => $service->id,
+                    'domain' => $domain->domain,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return $updated;
+    }
+
+    /**
      * A vhost is current when it carries this revision marker and the configured body
      * limit. Anything older is regenerated so long-lived sites pick up proxy fixes.
      */
     public function vhostIsCurrent(string $config): bool
     {
         return str_contains($config, '# talksasa-vhost '.self::VHOST_REVISION)
-            && str_contains($config, 'client_max_body_size '.$this->clientMaxBodySize());
+            && str_contains($config, 'client_max_body_size '.$this->clientMaxBodySize())
+            && str_contains($config, 'proxy_buffer_size 32k');
     }
 
     /**

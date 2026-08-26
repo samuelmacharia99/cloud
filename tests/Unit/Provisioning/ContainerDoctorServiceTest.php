@@ -1065,6 +1065,18 @@ LOG;
     }
 
     #[Test]
+    public function login_502_with_working_homepage_is_nginx_header_buffers(): void
+    {
+        $doctor = app(ContainerDoctorService::class);
+
+        $this->assertTrue($doctor->loginPathLooksLikeHeaderBufferFailure(200, 502));
+        $this->assertTrue($doctor->loginPathLooksLikeHeaderBufferFailure(302, 502));
+        $this->assertFalse($doctor->loginPathLooksLikeHeaderBufferFailure(200, 200));
+        $this->assertFalse($doctor->loginPathLooksLikeHeaderBufferFailure(500, 502));
+        $this->assertFalse($doctor->loginPathLooksLikeHeaderBufferFailure(200, 500));
+    }
+
+    #[Test]
     public function http_500_with_live_pdo_and_host_db_pins_unique_sidecar_dns(): void
     {
         $treat = app(ContainerDoctorService::class)->resolveHttp500Treatment(
