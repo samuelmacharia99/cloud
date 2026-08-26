@@ -284,7 +284,7 @@ class ContainerEnvironmentService
     {
         $slug = $service->effectiveContainerTemplate()?->slug
             ?? $service->product?->containerTemplate?->slug;
-        if (! in_array($slug, ['laravel', 'php'], true)) {
+        if (! in_array($slug, ['laravel', 'php', 'nodejs'], true)) {
             return;
         }
 
@@ -304,6 +304,10 @@ class ContainerEnvironmentService
 
                 $content = $ssh->exec('cat '.escapeshellarg($envPath));
                 $updated = $this->mergeEnvFileContent($content, $envValues);
+                $updated = $this->removeEnvFileKeys(
+                    $updated,
+                    app(ContainerDeploymentService::class)->mysqlUnixSocketEnvKeys()
+                );
                 $ssh->upload($updated, $envPath);
             } catch (\Throwable $e) {
                 Log::warning('Failed to sync container .env file after environment update', [
@@ -348,6 +352,32 @@ class ContainerEnvironmentService
             if (! isset($seen[$key])) {
                 $result[] = $key.'='.$this->quoteEnvValue($value);
             }
+        }
+
+        return implode("\n", $result)."\n";
+    }
+
+    /**
+     * @param  list<string>  $keys
+     */
+    public function removeEnvFileKeys(string $content, array $keys): string
+    {
+        if ($keys === []) {
+            return $content;
+        }
+
+        $remove = array_fill_keys($keys, true);
+        $lines = preg_split("/\r\n|\n|\r/", $content) ?: [];
+        $result = [];
+
+        foreach ($lines as $line) {
+            if (str_contains($line, '=') && ! str_starts_with(ltrim($line), '#')) {
+                [$key] = explode('=', $line, 2);
+                if (isset($remove[trim($key)])) {
+                    continue;
+                }
+            }
+            $result[] = $line;
         }
 
         return implode("\n", $result)."\n";

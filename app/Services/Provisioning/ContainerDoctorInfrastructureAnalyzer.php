@@ -256,6 +256,32 @@ class ContainerDoctorInfrastructureAnalyzer
                 ],
             ],
             [
+                'id' => 'mysql_unix_socket_missing',
+                'severity' => 'critical',
+                'stacks' => ['laravel', 'php', 'wordpress', 'nodejs', '*'],
+                'patterns' => [
+                    '/ENOENT[^\n]*mysql\.sock/i',
+                    '/mysql\.sock[^\n]*ENOENT/i',
+                    '/Can\'t connect to local MySQL server through socket/i',
+                    '/SQLSTATE\[HY000\]\s*\[2002\][^\n]*mysql\.sock/i',
+                ],
+                'match' => function (string $haystack): bool {
+                    return preg_match('/ENOENT[^\n]*mysql\.sock|mysql\.sock[^\n]*ENOENT|Can\'t connect to local MySQL server through socket|SQLSTATE\[HY000\]\s*\[2002\][^\n]*mysql\.sock/i', $haystack) === 1;
+                },
+                'title' => 'App is using a MySQL unix socket that does not exist in Docker',
+                'summary' => 'The app is connecting via `/var/lib/mysql/mysql.sock` (DirectAdmin localhost socket). '
+                    .'That file does not exist in Docker — the sidecar is TCP at this stack’s unique hostname (`{app}-db`). '
+                    .'Restart pins DB_HOST to that DNS, clears DB_SOCKET, and recreates the app only. '
+                    .'Do not Repair DB credentials (GRANT is fine) and do not Reset database.',
+                'treat_action' => 'restart_application',
+                'treat_label' => 'Restart application',
+                'manual_steps' => [
+                    'Click Restart application — writes unique DB_HOST, removes the unix socket, recreates the app, and leaves MySQL running.',
+                    'Re-scan. Logs should no longer show ENOENT /var/lib/mysql/mysql.sock.',
+                    'Do not Reset database. If ENOENT remains, the app hardcodes the socket in source — point host at process.env.DB_HOST.',
+                ],
+            ],
+            [
                 'id' => 'mysql_connection_refused',
                 'severity' => 'critical',
                 'stacks' => ['laravel', 'php', 'wordpress', 'nodejs', '*'],
@@ -267,6 +293,10 @@ class ContainerDoctorInfrastructureAnalyzer
                     '/Unknown database/i',
                 ],
                 'match' => function (string $haystack): bool {
+                    if (preg_match('/ENOENT[^\n]*mysql\.sock|mysql\.sock[^\n]*ENOENT|Can\'t connect to local MySQL server through socket/i', $haystack) === 1) {
+                        return false;
+                    }
+
                     return preg_match('/SQLSTATE\[HY000\]\s*\[2002\]|SQLSTATE\[HY000\]\s*\[1049\]|Unknown database|Connection refused[^\n]*3306|getaddrinfo failed[^\n]*\bdb\b/i', $haystack) === 1;
                 },
                 'title' => 'Application cannot reach the database sidecar',

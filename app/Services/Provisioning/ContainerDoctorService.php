@@ -178,6 +178,13 @@ class ContainerDoctorService
             ));
         }
 
+        if ($this->findingsContain($findings, ['mysql_unix_socket_missing'])) {
+            $findings = array_values(array_filter(
+                $findings,
+                fn (array $f) => ($f['id'] ?? '') !== 'mysql_connection_refused'
+            ));
+        }
+
         if ($findings === [] && trim($logs) !== '' && ! str_starts_with(trim($logs), 'Error fetching logs:')) {
             $hasHttp500 = preg_match('/\[500\]:\s*GET\s+\//i', $logs) === 1;
             if ($hasHttp500) {
@@ -474,6 +481,32 @@ class ContainerDoctorService
                 $checks['cache_store'] = strtolower(trim((string) (
                     $mergedEnv['CACHE_STORE'] ?? $mergedEnv['CACHE_DRIVER'] ?? ''
                 )));
+                if ($deploymentService->envUsesMysqlUnixSocket($mergedEnv)
+                    && ! $this->findingsContain($findings, ['mysql_unix_socket_missing'])) {
+                    $unique = $deploymentService->sidecarDnsHost((string) $deployment->container_name);
+                    $findings[] = [
+                        'id' => 'mysql_unix_socket_missing',
+                        'severity' => 'critical',
+                        'title' => 'App is using a MySQL unix socket that does not exist in Docker',
+                        'summary' => 'Environment still points at a DirectAdmin unix socket (`/var/lib/mysql/mysql.sock`). '
+                            .'That file is not in this container — MySQL is TCP at '.$unique
+                            .'. Restart writes DB_HOST='.$unique.', clears DB_SOCKET, and recreates the app (MySQL stays up). '
+                            .'Do not Repair DB credentials or Reset database.',
+                        'evidence' => array_values(array_filter([
+                            trim((string) ($mergedEnv['DB_HOST'] ?? '')) !== '' ? 'DB_HOST='.(string) $mergedEnv['DB_HOST'] : null,
+                            trim((string) ($mergedEnv['DB_SOCKET'] ?? '')) !== '' ? 'DB_SOCKET='.(string) $mergedEnv['DB_SOCKET'] : null,
+                            'sidecar DNS='.$unique,
+                        ])),
+                        'treat_action' => 'restart_application',
+                        'treat_label' => 'Restart application',
+                        'manual_steps' => [
+                            'Click Restart application — pins DB_HOST to '.$unique.', removes the unix socket, recreates the app, and leaves MySQL running.',
+                            'Re-scan. Logs should show a TCP connection, not ENOENT /var/lib/mysql/mysql.sock.',
+                            'Do not Reset database.',
+                        ],
+                        'source' => 'live',
+                    ];
+                }
                 $runtimeSession = $this->probeLaravelSessionDriver($ssh, $deployment);
                 if ($runtimeSession !== null) {
                     $checks['session_driver_runtime'] = $runtimeSession;
@@ -859,6 +892,7 @@ class ContainerDoctorService
                     'login_proxy_header_too_big',
                     'live_stale_proxy_vhost',
                     'laravel_docroot_not_public',
+                    'mysql_unix_socket_missing',
                 ]);
 
                 $appErrors = $containerReady ? $this->readRecentApplicationErrors($ssh, $deployment) : [];
@@ -1068,6 +1102,8 @@ class ContainerDoctorService
         $drop = [];
         if (in_array('nginx_boot_failed', $ids, true)) {
             $drop = ['php_builtin_dev_server', 'container_crash_loop', 'live_upstream_unreachable', 'stale_php_runtime_image'];
+        } elseif (in_array('mysql_unix_socket_missing', $ids, true)) {
+            $drop = ['mysql_connection_refused', 'live_db_connection_failed'];
         } elseif (array_intersect($ids, [
             'php_builtin_dev_server',
             'php_fpm_sock_missing',
@@ -1423,6 +1459,12 @@ PHP;
     public function isAmbiguousLaravelDatabaseHost(?string $host): bool
     {
         $host = strtolower(trim((string) $host));
+        if ($host === '') {
+            return false;
+        }
+        if (app(ContainerDeploymentService::class)->hostLooksLikeMysqlUnixSocket($host)) {
+            return true;
+        }
         if (str_contains($host, ':')) {
             $host = explode(':', $host, 2)[0];
         }
@@ -2903,6 +2945,29 @@ PHP;
                     'Click Create/sync database — Doctor will rename DB_DATABASE to s{id}_db if it was set to the username, create the database, and rewrite .env.',
                     'Then run: php artisan migrate --force',
                     'Do not Reset database if tables already exist — that wipes data. Re-scan and Repair again if the database name is still wrong.',
+                ],
+            ],
+            [
+                'id' => 'mysql_unix_socket_missing',
+                'severity' => 'critical',
+                'stacks' => ['laravel', 'php', 'nodejs', 'wordpress', '*'],
+                'patterns' => [
+                    '/ENOENT[^\n]*mysql\.sock/i',
+                    '/mysql\.sock[^\n]*ENOENT/i',
+                    '/Can\'t connect to local MySQL server through socket/i',
+                    '/SQLSTATE\[HY000\]\s*\[2002\][^\n]*mysql\.sock/i',
+                ],
+                'title' => 'App is using a MySQL unix socket that does not exist in Docker',
+                'summary' => 'The app is connecting via `/var/lib/mysql/mysql.sock` (DirectAdmin localhost socket). '
+                    .'That file does not exist in Docker — the sidecar is TCP at this stack’s unique hostname (`{app}-db`). '
+                    .'Restart pins DB_HOST to that DNS, clears DB_SOCKET, and recreates the app only. '
+                    .'Do not Repair DB credentials (GRANT is fine) and do not Reset database.',
+                'treat_action' => 'restart_application',
+                'treat_label' => 'Restart application',
+                'manual_steps' => [
+                    'Click Restart application — writes unique DB_HOST, removes the unix socket, recreates the app, and leaves MySQL running.',
+                    'Re-scan. Logs should no longer show ENOENT /var/lib/mysql/mysql.sock.',
+                    'Do not Reset database. If ENOENT remains, the app hardcodes the socket in source — point host at process.env.DB_HOST.',
                 ],
             ],
             [

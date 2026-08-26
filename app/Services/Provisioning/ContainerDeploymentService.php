@@ -782,8 +782,13 @@ class ContainerDeploymentService
 
                 $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
                 $slug = strtolower((string) ($this->resolveContainerTemplate($service)?->slug ?? ''));
+                $hasDatabase = $this->resolveDatabaseTemplateForService($service) !== null;
+                // Node/DirectAdmin apps often keep DB_HOST=localhost:/var/lib/mysql/mysql.sock.
+                // Recreate the app with unique sidecar DNS so mysql2 uses TCP, not a missing unix socket.
+                if ($hasDatabase || in_array($slug, ['laravel', 'php', 'nodejs', 'wordpress'], true)) {
+                    $this->persistLaravelRuntimeDriversOnCompose($ssh, $deployment, [], $service);
+                }
                 if (in_array($slug, ['laravel', 'php'], true)) {
-                    $this->persistLaravelRuntimeDriversOnCompose($ssh, $deployment);
                     $this->alignLaravelDocumentRootOnCompose($ssh, $service, $deployment);
                 }
                 // Recreate the app service only. `docker compose restart` does not
@@ -859,10 +864,13 @@ class ContainerDeploymentService
     public function persistLaravelRuntimeDriversOnCompose(
         SSHService $ssh,
         ContainerDeployment $deployment,
-        array $drivers = []
+        array $drivers = [],
+        ?Service $service = null
     ): void {
         $drivers = $this->composeRuntimeEnvironmentOverrides($deployment, $drivers);
-        $fromEnv = array_merge(is_array($deployment->env_values) ? $deployment->env_values : [], $drivers);
+        $fromEnv = $this->stripMysqlUnixSocketEnv(
+            array_merge(is_array($deployment->env_values) ? $deployment->env_values : [], $drivers)
+        );
         $deployment->update(['env_values' => $fromEnv]);
 
         $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
@@ -884,6 +892,11 @@ class ContainerDeploymentService
 
         try {
             $patched = $this->patchComposeServiceEnvironment($yaml, $deployment->container_name, $drivers);
+            $patched = $this->removeComposeEnvironmentKeys(
+                $patched,
+                $deployment->container_name,
+                $this->mysqlUnixSocketEnvKeys()
+            );
         } catch (\Throwable $e) {
             Log::warning('Could not patch compose runtime drivers', [
                 'container' => $deployment->container_name,
@@ -899,6 +912,23 @@ class ContainerDeploymentService
             $ssh,
             $this->appDirectory->hostAppPath($deployment)
         );
+
+        $dotenvService = $service ?? $deployment->service;
+        if ($dotenvService instanceof Service) {
+            try {
+                app(ContainerEnvironmentService::class)->syncDotEnvFile(
+                    $ssh,
+                    $dotenvService,
+                    $deployment,
+                    $drivers
+                );
+            } catch (\Throwable $e) {
+                Log::warning('Could not sync .env after pinning database host', [
+                    'container' => $deployment->container_name,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
     }
 
     /**
@@ -937,7 +967,7 @@ class ContainerDeploymentService
         $fromDb = [];
         foreach ([
             'DB_CONNECTION', 'DB_HOST', 'DB_PORT', 'DB_DATABASE', 'DB_USERNAME', 'DB_PASSWORD',
-            'MYSQL_DATABASE', 'MYSQL_USER', 'MYSQL_PASSWORD', 'DATABASE_URL',
+            'MYSQL_DATABASE', 'MYSQL_USER', 'MYSQL_PASSWORD', 'MYSQL_HOST', 'DATABASE_URL',
             'POSTGRES_DB', 'POSTGRES_USER', 'POSTGRES_PASSWORD', 'TALKSASA_DB_DNS',
             'SESSION_DRIVER', 'CACHE_STORE', 'CACHE_DRIVER', 'APP_URL', 'ASSET_URL',
         ] as $key) {
@@ -1131,6 +1161,67 @@ class ContainerDeploymentService
         }
 
         return array_merge($environment, $overrides);
+    }
+
+    /**
+     * Drop DirectAdmin unix-socket keys so mysql2/mysqli cannot keep using /var/lib/mysql/mysql.sock.
+     *
+     * @param  list<string>  $keys
+     */
+    public function removeComposeEnvironmentKeys(string $yaml, string $serviceName, array $keys): string
+    {
+        if ($keys === []) {
+            return $yaml;
+        }
+
+        $compose = Yaml::parse($yaml);
+        if (! is_array($compose) || ! is_array($compose['services'] ?? null)) {
+            return $yaml;
+        }
+
+        $key = $this->resolveComposeAppServiceKey($compose, $serviceName);
+        if ($key === null || ! is_array($compose['services'][$key] ?? null)) {
+            return $yaml;
+        }
+
+        $environment = $compose['services'][$key]['environment'] ?? [];
+        $compose['services'][$key]['environment'] = $this->stripComposeEnvironmentKeys(
+            is_array($environment) ? $environment : [],
+            $keys
+        );
+
+        return Yaml::dump($compose, 10, 2);
+    }
+
+    /**
+     * @param  array<int|string, mixed>  $environment
+     * @param  list<string>  $keys
+     * @return array<int|string, mixed>
+     */
+    public function stripComposeEnvironmentKeys(array $environment, array $keys): array
+    {
+        $remove = array_fill_keys($keys, true);
+        if ($environment === [] || $remove === []) {
+            return $environment;
+        }
+
+        if (array_is_list($environment)) {
+            return array_values(array_filter($environment, function ($item) use ($remove) {
+                if (! is_string($item)) {
+                    return true;
+                }
+                $eq = strpos($item, '=');
+                $name = $eq === false ? $item : substr($item, 0, $eq);
+
+                return ! isset($remove[$name]);
+            }));
+        }
+
+        foreach ($keys as $key) {
+            unset($environment[$key]);
+        }
+
+        return $environment;
     }
 
     public function restartAppService(SSHService $ssh, ContainerDeployment $deployment): void
@@ -3398,11 +3489,76 @@ class ContainerDeploymentService
     public function isAmbiguousSharedNetworkDatabaseHost(?string $host): bool
     {
         $host = strtolower(trim((string) $host));
+        if ($host === '') {
+            return true;
+        }
+        if ($this->hostLooksLikeMysqlUnixSocket($host)) {
+            return true;
+        }
         if (str_contains($host, ':')) {
             $host = explode(':', $host, 2)[0];
         }
 
-        return $host === '' || in_array($host, ['db', 'localhost', '127.0.0.1'], true);
+        return in_array($host, ['db', 'localhost', '127.0.0.1'], true);
+    }
+
+    /**
+     * DirectAdmin stores `localhost:/var/lib/mysql/mysql.sock`. Docker has no such socket —
+     * the sidecar is TCP on this stack's unique DNS name.
+     */
+    public function hostLooksLikeMysqlUnixSocket(?string $host): bool
+    {
+        $host = strtolower(trim((string) $host));
+        if ($host === '') {
+            return false;
+        }
+
+        return str_contains($host, 'mysql.sock')
+            || str_contains($host, '/var/lib/mysql')
+            || str_starts_with($host, '/');
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function mysqlUnixSocketEnvKeys(): array
+    {
+        return ['DB_SOCKET', 'MYSQL_UNIX_SOCKET', 'MYSQL_SOCKET', 'SOCKET'];
+    }
+
+    /**
+     * @param  array<string, mixed>  $env
+     */
+    public function envUsesMysqlUnixSocket(array $env): bool
+    {
+        foreach ($this->mysqlUnixSocketEnvKeys() as $key) {
+            if (trim((string) ($env[$key] ?? '')) !== '') {
+                return true;
+            }
+        }
+
+        foreach (['DB_HOST', 'MYSQL_HOST', 'WORDPRESS_DB_HOST'] as $key) {
+            if ($this->hostLooksLikeMysqlUnixSocket((string) ($env[$key] ?? ''))) {
+                return true;
+            }
+        }
+
+        $url = strtolower((string) ($env['DATABASE_URL'] ?? ''));
+
+        return str_contains($url, 'mysql.sock') || str_contains($url, '/var/lib/mysql');
+    }
+
+    /**
+     * @param  array<string, mixed>  $env
+     * @return array<string, mixed>
+     */
+    public function stripMysqlUnixSocketEnv(array $env): array
+    {
+        foreach ($this->mysqlUnixSocketEnvKeys() as $key) {
+            unset($env[$key]);
+        }
+
+        return $env;
     }
 
     /**
@@ -3412,10 +3568,7 @@ class ContainerDeploymentService
      */
     public function applicationDatabaseHost(array $envVars, ?string $appContainerName = null): string
     {
-        $host = trim((string) ($envVars['DB_HOST'] ?? ''));
-        if (str_contains($host, ':')) {
-            $host = explode(':', $host, 2)[0];
-        }
+        $host = trim((string) ($envVars['DB_HOST'] ?? $envVars['MYSQL_HOST'] ?? ''));
 
         if ($appContainerName && $this->isAmbiguousSharedNetworkDatabaseHost($host)) {
             return $this->sidecarDnsHost($appContainerName);
@@ -3426,6 +3579,10 @@ class ContainerDeploymentService
             if ($fromEnv !== '') {
                 return $fromEnv;
             }
+        }
+
+        if ($this->hostLooksLikeMysqlUnixSocket($host)) {
+            return 'db';
         }
 
         return $host !== '' ? $host : 'db';
@@ -3495,6 +3652,7 @@ class ContainerDeploymentService
      */
     public function pinApplicationDatabaseHost(array $env, string $appContainerName, string $databaseType): array
     {
+        $env = $this->stripMysqlUnixSocketEnv($env);
         $host = $this->applicationDatabaseHost($env, $appContainerName);
         $env['DB_HOST'] = $host;
         $env['TALKSASA_DB_DNS'] = $host;
@@ -3505,6 +3663,7 @@ class ContainerDeploymentService
         if (in_array($databaseType, ['mysql', 'mariadb'], true)) {
             $port = (string) (($env['DB_PORT'] ?? '') !== '' ? $env['DB_PORT'] : '3306');
             $env['DB_PORT'] = $port;
+            $env['MYSQL_HOST'] = $host;
             $env['DATABASE_URL'] = sprintf(
                 'mysql://%s:%s@%s:%s/%s',
                 rawurlencode($username),

@@ -30,6 +30,18 @@ class ContainerEnvironmentServiceTest extends TestCase
         $this->assertStringContainsString('# comment', $merged);
     }
 
+    public function test_remove_env_file_keys_drops_mysql_unix_socket(): void
+    {
+        $service = new ContainerEnvironmentService;
+        $content = "DB_HOST=localhost:/var/lib/mysql/mysql.sock\nDB_SOCKET=/var/lib/mysql/mysql.sock\nAPP_NAME=sigtuna\n";
+
+        $updated = $service->removeEnvFileKeys($content, ['DB_SOCKET', 'MYSQL_UNIX_SOCKET']);
+
+        $this->assertStringNotContainsString('DB_SOCKET', $updated);
+        $this->assertStringContainsString('DB_HOST=localhost:/var/lib/mysql/mysql.sock', $updated);
+        $this->assertStringContainsString('APP_NAME=sigtuna', $updated);
+    }
+
     public function test_merge_env_file_single_quotes_dollar_in_passwords(): void
     {
         $service = new ContainerEnvironmentService;

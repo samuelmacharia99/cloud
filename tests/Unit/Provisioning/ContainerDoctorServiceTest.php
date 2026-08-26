@@ -47,6 +47,67 @@ LOG;
     }
 
     #[Test]
+    public function it_detects_directadmin_mysql_unix_socket_from_nodejs_logs(): void
+    {
+        $logs = <<<'LOG'
+user-67-service-179-nodejs  | npm warn config production Use `--omit=dev` instead.
+user-67-service-179-nodejs  | 12 vulnerabilities (2 moderate, 9 high, 1 critical)
+user-67-service-179-nodejs  | To address all issues (including breaking changes), run:
+user-67-service-179-nodejs  |   npm audit fix --force
+user-67-service-179-nodejs  | > sigtuna@1.0.0 start
+user-67-service-179-nodejs  | > node app.js
+user-67-service-179-nodejs  | 🚀 Server running on http://localhost:3000
+user-67-service-179-nodejs  | ❌ Database connection failed:  Error: connect ENOENT /var/lib/mysql/mysql.sock
+user-67-service-179-nodejs  |     at PipeConnectWrap.afterConnect [as oncomplete] (node:net:1611:16)
+LOG;
+
+        $findings = app(ContainerDoctorService::class)->analyzeLogs($logs, 'nodejs');
+        $ids = array_column($findings, 'id');
+        $finding = collect($findings)->firstWhere('id', 'mysql_unix_socket_missing');
+
+        $this->assertNotNull($finding);
+        $this->assertSame('restart_application', $finding['treat_action']);
+        $this->assertSame('critical', $finding['severity']);
+        $this->assertNotContains('mysql_connection_refused', $ids);
+        $this->assertNotContains('mysql_access_denied', $ids);
+        $this->assertNotContains('vite_missing_in_production', $ids);
+    }
+
+    #[Test]
+    public function npm_audit_and_localhost_console_log_are_not_findings(): void
+    {
+        $logs = <<<'LOG'
+npm warn config production Use `--omit=dev` instead.
+12 vulnerabilities (2 moderate, 9 high, 1 critical)
+npm notice New major version of npm available! 10.8.2 -> 12.0.2
+> sigtuna@1.0.0 start
+> node app.js
+🚀 Server running on http://localhost:3000
+LOG;
+
+        $this->assertSame([], app(ContainerDoctorService::class)->analyzeLogs($logs, 'nodejs'));
+    }
+
+    #[Test]
+    public function mysql_unix_socket_finding_stays_when_doctor_pdo_is_ok(): void
+    {
+        $merged = app(ContainerDoctorService::class)->mergeLogAndLiveFindings(
+            [[
+                'id' => 'mysql_unix_socket_missing',
+                'severity' => 'critical',
+                'title' => 'App is using a MySQL unix socket that does not exist in Docker',
+                'treat_action' => 'restart_application',
+            ]],
+            [
+                'findings' => [],
+                'checks' => ['http_status' => 200, 'db_ok' => true, 'table_count' => 12],
+            ]
+        );
+
+        $this->assertContains('mysql_unix_socket_missing', array_column($merged, 'id'));
+    }
+
+    #[Test]
     public function it_flags_preview_runtime_that_hides_custom_api_routes(): void
     {
         $compose = "services:\n  app:\n    command:\n    - sh\n    - -lc\n"
@@ -1078,6 +1139,8 @@ LOG;
         $this->assertTrue($doctor->isAmbiguousLaravelDatabaseHost('db'));
         $this->assertTrue($doctor->isAmbiguousLaravelDatabaseHost('localhost'));
         $this->assertTrue($doctor->isAmbiguousLaravelDatabaseHost('127.0.0.1'));
+        $this->assertTrue($doctor->isAmbiguousLaravelDatabaseHost('localhost:/var/lib/mysql/mysql.sock'));
+        $this->assertTrue($doctor->isAmbiguousLaravelDatabaseHost('/var/lib/mysql/mysql.sock'));
         $this->assertFalse($doctor->isAmbiguousLaravelDatabaseHost('user-74-service-24-laravel-db'));
         $this->assertFalse($doctor->isAmbiguousLaravelDatabaseHost(null));
     }

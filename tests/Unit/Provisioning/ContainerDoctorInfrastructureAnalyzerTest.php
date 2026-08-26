@@ -113,6 +113,24 @@ LOG;
     }
 
     #[Test]
+    public function it_flags_mysql_unix_socket_not_repair_credentials(): void
+    {
+        $logs = <<<'LOG'
+🚀 Server running on http://localhost:3000
+❌ Database connection failed:  Error: connect ENOENT /var/lib/mysql/mysql.sock
+    at PipeConnectWrap.afterConnect [as oncomplete] (node:net:1611:16)
+LOG;
+
+        $findings = $this->analyzer()->findings($logs, 'nodejs');
+        $ids = array_column($findings, 'id');
+        $finding = collect($findings)->firstWhere('id', 'mysql_unix_socket_missing');
+
+        $this->assertNotNull($finding);
+        $this->assertSame('restart_application', $finding['treat_action']);
+        $this->assertNotContains('mysql_connection_refused', $ids);
+    }
+
+    #[Test]
     public function it_flags_missing_vendor_autoload(): void
     {
         $logs = 'Fatal error: Failed opening required \'/app/vendor/autoload.php\' (include_path=\'.:/usr/local/lib/php\')';

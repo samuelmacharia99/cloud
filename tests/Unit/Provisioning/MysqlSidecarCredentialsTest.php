@@ -226,6 +226,85 @@ YAML;
     }
 
     #[Test]
+    public function directadmin_mysql_unix_socket_is_pinned_to_unique_sidecar_tcp(): void
+    {
+        $service = app(ContainerDeploymentService::class);
+
+        $this->assertTrue($service->isAmbiguousSharedNetworkDatabaseHost('localhost:/var/lib/mysql/mysql.sock'));
+        $this->assertTrue($service->hostLooksLikeMysqlUnixSocket('/var/lib/mysql/mysql.sock'));
+        $this->assertTrue($service->envUsesMysqlUnixSocket([
+            'DB_HOST' => 'localhost:/var/lib/mysql/mysql.sock',
+            'DB_SOCKET' => '/var/lib/mysql/mysql.sock',
+        ]));
+        $this->assertFalse($service->envUsesMysqlUnixSocket([
+            'DB_HOST' => 'user-67-service-179-nodejs-db',
+        ]));
+
+        $pinned = $service->pinApplicationDatabaseHost([
+            'DB_USERNAME' => 'u67_s179',
+            'DB_PASSWORD' => 'secret',
+            'DB_DATABASE' => 's179_db',
+            'DB_HOST' => 'localhost:/var/lib/mysql/mysql.sock',
+            'DB_SOCKET' => '/var/lib/mysql/mysql.sock',
+            'MYSQL_UNIX_SOCKET' => '/var/lib/mysql/mysql.sock',
+        ], 'user-67-service-179-nodejs', 'mysql');
+
+        $this->assertSame('user-67-service-179-nodejs-db', $pinned['DB_HOST']);
+        $this->assertSame('user-67-service-179-nodejs-db', $pinned['MYSQL_HOST']);
+        $this->assertSame('3306', $pinned['DB_PORT']);
+        $this->assertArrayNotHasKey('DB_SOCKET', $pinned);
+        $this->assertArrayNotHasKey('MYSQL_UNIX_SOCKET', $pinned);
+        $this->assertStringContainsString('@user-67-service-179-nodejs-db:3306/', $pinned['DATABASE_URL']);
+        $this->assertStringNotContainsString('mysql.sock', $pinned['DATABASE_URL']);
+    }
+
+    #[Test]
+    public function compose_overrides_strip_mysql_unix_socket_and_pin_node_db_host(): void
+    {
+        $deployment = new ContainerDeployment([
+            'container_name' => 'user-67-service-179-nodejs',
+            'env_values' => [
+                'DB_HOST' => 'localhost:/var/lib/mysql/mysql.sock',
+                'DB_SOCKET' => '/var/lib/mysql/mysql.sock',
+                'DB_USERNAME' => 'u67_s179',
+                'DB_PASSWORD' => 'secret',
+                'DB_DATABASE' => 's179_db',
+            ],
+        ]);
+
+        $overrides = app(ContainerDeploymentService::class)->composeRuntimeEnvironmentOverrides($deployment);
+
+        $this->assertSame('user-67-service-179-nodejs-db', $overrides['DB_HOST']);
+        $this->assertArrayNotHasKey('DB_SOCKET', $overrides);
+
+        $yaml = <<<'YAML'
+services:
+  user-67-service-179-nodejs:
+    container_name: user-67-service-179-nodejs
+    environment:
+      DB_HOST: 'localhost:/var/lib/mysql/mysql.sock'
+      DB_SOCKET: /var/lib/mysql/mysql.sock
+  db:
+    image: mysql:8.0
+YAML;
+
+        $patched = app(ContainerDeploymentService::class)->patchComposeServiceEnvironment(
+            $yaml,
+            'user-67-service-179-nodejs',
+            $overrides
+        );
+        $patched = app(ContainerDeploymentService::class)->removeComposeEnvironmentKeys(
+            $patched,
+            'user-67-service-179-nodejs',
+            app(ContainerDeploymentService::class)->mysqlUnixSocketEnvKeys()
+        );
+
+        $this->assertStringContainsString('DB_HOST: user-67-service-179-nodejs-db', $patched);
+        $this->assertStringNotContainsString('mysql.sock', $patched);
+        $this->assertStringNotContainsString('DB_SOCKET', $patched);
+    }
+
+    #[Test]
     public function compose_exec_stays_on_the_db_service_when_app_dns_host_is_unique(): void
     {
         $this->assertSame('db', app(ContainerDeploymentService::class)->resolveMysqlComposeServiceName([
