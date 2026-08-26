@@ -199,4 +199,41 @@ YAML;
         $this->assertStringNotContainsString("ALTER USER 'u74_s24'@'%'", $sql);
         $this->assertSame('KILL 12; KILL 15;', app(ContainerDeploymentService::class)->mysqlKillIdsSql([12, '15', 0, 'x']));
     }
+
+    #[Test]
+    public function shared_network_db_alias_is_replaced_with_unique_sidecar_dns_name(): void
+    {
+        $service = app(ContainerDeploymentService::class);
+
+        $this->assertSame(
+            'user-74-service-24-laravel-db',
+            $service->applicationDatabaseHost(['DB_HOST' => 'db'], 'user-74-service-24-laravel')
+        );
+        $this->assertTrue($service->isAmbiguousSharedNetworkDatabaseHost('db'));
+        $this->assertFalse($service->isAmbiguousSharedNetworkDatabaseHost('user-74-service-24-laravel-db'));
+
+        $pinned = $service->pinApplicationDatabaseHost([
+            'DB_USERNAME' => 'u74_s24',
+            'DB_PASSWORD' => 'secret',
+            'DB_DATABASE' => 's24_db',
+            'DB_HOST' => 'db',
+        ], 'user-74-service-24-laravel', 'mysql');
+
+        $this->assertSame('user-74-service-24-laravel-db', $pinned['DB_HOST']);
+        $this->assertStringContainsString('@user-74-service-24-laravel-db:3306/', $pinned['DATABASE_URL']);
+        $this->assertStringNotContainsString('@db:', $pinned['DATABASE_URL']);
+    }
+
+    #[Test]
+    public function compose_exec_stays_on_the_db_service_when_app_dns_host_is_unique(): void
+    {
+        $this->assertSame('db', app(ContainerDeploymentService::class)->resolveMysqlComposeServiceName([
+            'DB_HOST' => 'user-74-service-24-laravel-db',
+            'DB_DATABASE' => 's24_db',
+        ]));
+        $this->assertSame('mysql', app(ContainerDeploymentService::class)->resolveMysqlComposeServiceName([
+            'WORDPRESS_DB_NAME' => 'wordpress',
+            'DB_HOST' => 'user-74-service-24-wordpress-db',
+        ]));
+    }
 }

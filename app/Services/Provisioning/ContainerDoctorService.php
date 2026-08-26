@@ -556,6 +556,10 @@ class ContainerDoctorService
                         $this->overlayPanelDatabaseCredentials($platformEnv, $mergedEnv),
                         (string) $databaseTemplate->type
                     );
+                    $probeEnv['DB_HOST'] = $deploymentService->applicationDatabaseHost(
+                        $probeEnv,
+                        (string) $deployment->container_name
+                    );
                     $probe = $deploymentService->probeApplicationDatabaseAccess(
                         $ssh,
                         $deployment->container_name,
@@ -1346,7 +1350,7 @@ PHP;
         foreach ([
             'DB_CONNECTION', 'DB_HOST', 'DB_PORT', 'DB_DATABASE', 'DB_USERNAME', 'DB_PASSWORD',
             'MYSQL_DATABASE', 'MYSQL_USER', 'MYSQL_PASSWORD', 'MYSQL_ROOT_PASSWORD',
-            'POSTGRES_DB', 'POSTGRES_USER', 'POSTGRES_PASSWORD', 'DATABASE_URL',
+            'POSTGRES_DB', 'POSTGRES_USER', 'POSTGRES_PASSWORD', 'DATABASE_URL', 'TALKSASA_DB_DNS',
         ] as $key) {
             if (isset($panelEnv[$key]) && (string) $panelEnv[$key] !== '') {
                 $overlay[$key] = (string) $panelEnv[$key];
@@ -3019,6 +3023,11 @@ PHP;
                 (string) $databaseTemplate->type
             );
             $envVars = $normalized['env'];
+            $envVars = $deploymentService->pinApplicationDatabaseHost(
+                $envVars,
+                (string) $deployment->container_name,
+                (string) $databaseTemplate->type
+            );
             $platformAdminUser = (string) ($rawEnv['TALKSASA_PLATFORM_DB_USERNAME'] ?? '');
             $platformAdminPassword = (string) ($rawEnv['TALKSASA_PLATFORM_DB_PASSWORD'] ?? '');
             unset(
@@ -3140,6 +3149,8 @@ PHP;
                     'message' => $message.' Live connection still fails: '.($probe['error'] ?? 'unknown error')
                         .'. Host-specific MySQL accounts (user@overlay-ip) were dropped and user@% recreated.'
                         .$hostHint
+                        .' App DB_HOST is now '.($envVars['DB_HOST'] ?? 'db')
+                        .' (not the shared-network alias `db`).'
                         .' Do not Reset database — that wipes existing tables. Re-scan Doctor and click Repair again if 1045 persists.',
                 ];
             }

@@ -853,9 +853,14 @@ class LaravelAppInitializationService
         $username = (string) ($envValues['DB_USERNAME'] ?? $envValues['MYSQL_USER'] ?? 'appuser');
         $password = (string) ($envValues['DB_PASSWORD'] ?? $envValues['MYSQL_PASSWORD'] ?? '');
 
+        $host = (string) ($envValues['DB_HOST'] ?? 'db');
+        if ($host === '' || $host === 'localhost' || $host === '127.0.0.1') {
+            $host = $deployment->container_name.'-db';
+        }
+
         $script = 'try { '
             .'$pdo = new PDO('
-            .'"mysql:host=db;port=3306;dbname='.addslashes($database).'", '
+            .'"mysql:host='.addslashes($host).';port=3306;dbname='.addslashes($database).'", '
             .'"'.addslashes($username).'", '
             .'"'.addslashes($password).'", '
             .'[PDO::ATTR_TIMEOUT => 5]'

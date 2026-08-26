@@ -181,7 +181,7 @@ class ContainerDeploymentService
                         }
 
                         $port = $this->assignPort($node);
-                        $envVars = $this->buildEnvironmentVariables($template, $envValues, $service, $databaseTemplate, $port);
+                        $envVars = $this->buildEnvironmentVariables($template, $envValues, $service, $databaseTemplate, $port, $containerName);
 
                         // Always reuse the most recent deployment row for this service.
                         // Using an older row can violate unique(container_name) during redeploy.
@@ -858,7 +858,7 @@ class ContainerDeploymentService
         foreach ([
             'DB_CONNECTION', 'DB_HOST', 'DB_PORT', 'DB_DATABASE', 'DB_USERNAME', 'DB_PASSWORD',
             'MYSQL_DATABASE', 'MYSQL_USER', 'MYSQL_PASSWORD', 'DATABASE_URL',
-            'POSTGRES_DB', 'POSTGRES_USER', 'POSTGRES_PASSWORD',
+            'POSTGRES_DB', 'POSTGRES_USER', 'POSTGRES_PASSWORD', 'TALKSASA_DB_DNS',
         ] as $key) {
             if (isset($fromEnv[$key]) && (string) $fromEnv[$key] !== '') {
                 $fromDb[$key] = (string) $fromEnv[$key];
@@ -1267,7 +1267,7 @@ class ContainerDeploymentService
     /**
      * Build complete environment variables including system vars and database connection
      */
-    private function buildEnvironmentVariables($template, array $userValues, Service $service, ?DatabaseTemplate $databaseTemplate = null, ?int $port = null): array
+    private function buildEnvironmentVariables($template, array $userValues, Service $service, ?DatabaseTemplate $databaseTemplate = null, ?int $port = null, ?string $appContainerName = null): array
     {
         $env = [];
 
@@ -1302,7 +1302,7 @@ class ContainerDeploymentService
 
         // Add database connection env vars if database is selected
         if ($databaseTemplate) {
-            $env = array_merge($env, $this->databaseEnvironmentVariables($databaseTemplate, $env, $service));
+            $env = array_merge($env, $this->databaseEnvironmentVariables($databaseTemplate, $env, $service, $appContainerName));
         }
 
         return $this->templateEnvironment->prepare($template, $env, $service, $port);
@@ -1353,6 +1353,11 @@ class ContainerDeploymentService
             'mem_limit' => '512M',
             'environment' => $dbEnv ?: null,
             'volumes' => ["db_data:{$mountPath}"],
+            'networks' => [
+                'default' => [
+                    'aliases' => [$appServiceName.'-db'],
+                ],
+            ],
         ]);
 
         $compose['volumes']['db_data'] = null;
@@ -2484,9 +2489,10 @@ class ContainerDeploymentService
         $database = (string) ($envVars['DB_DATABASE'] ?? $envVars['MYSQL_DATABASE'] ?? 'appdb');
         $username = (string) ($envVars['DB_USERNAME'] ?? $envVars['MYSQL_USER'] ?? 'appuser');
         $password = (string) ($envVars['DB_PASSWORD'] ?? $envVars['MYSQL_PASSWORD'] ?? '');
+        $host = $this->applicationDatabaseHost($envVars);
 
         $script = $this->phpPdoEvalScript(
-            'mysql:host=db;port=3306;dbname='.$database,
+            'mysql:host='.$host.';port=3306;dbname='.$database,
             $username,
             $password,
             '$pdo->query("SELECT 1"); exit(0);',
@@ -2543,8 +2549,10 @@ class ContainerDeploymentService
         $username = (string) ($envVars['DB_USERNAME'] ?? $envVars['MYSQL_USER'] ?? 'appuser');
         $password = (string) ($envVars['DB_PASSWORD'] ?? $envVars['MYSQL_PASSWORD'] ?? '');
 
+        $host = $this->applicationDatabaseHost($envVars);
+
         $script = $this->phpPdoEvalScript(
-            'mysql:host=db;port=3306;dbname='.$database,
+            'mysql:host='.$host.';port=3306;dbname='.$database,
             $username,
             $password,
             '$pdo->query("SELECT 1"); fwrite(STDOUT, "ok"); exit(0);'
@@ -2563,7 +2571,7 @@ class ContainerDeploymentService
         $username = (string) ($envVars['DB_USERNAME'] ?? $envVars['POSTGRES_USER'] ?? 'appuser');
         $password = (string) ($envVars['DB_PASSWORD'] ?? $envVars['POSTGRES_PASSWORD'] ?? '');
         $port = (string) ($envVars['DB_PORT'] ?? '5432');
-        $host = (string) ($envVars['DB_HOST'] ?? 'db');
+        $host = $this->applicationDatabaseHost($envVars);
         if ($host === '' || $host === 'localhost' || $host === '127.0.0.1') {
             $host = 'db';
         }
@@ -2644,9 +2652,8 @@ class ContainerDeploymentService
         array $envVars
     ): ?int {
         $containerArg = escapeshellarg($containerName);
-        $host = (string) ($envVars['DB_HOST'] ?? 'db');
+        $host = $this->applicationDatabaseHost($envVars);
         if ($host === '' || $host === 'localhost' || $host === '127.0.0.1') {
-            // Inside the app container, the sidecar is reached as "db", not localhost.
             $host = 'db';
         }
         $database = (string) ($envVars['DB_DATABASE'] ?? $envVars['POSTGRES_DB'] ?? $envVars['MYSQL_DATABASE'] ?? 'appdb');
@@ -3218,6 +3225,98 @@ class ContainerDeploymentService
     }
 
     /**
+     * Unique Docker DNS name for this stack's database sidecar.
+     * Service name `db` is not unique on the shared talksasa-net overlay.
+     */
+    public function sidecarDnsHost(string $appContainerName): string
+    {
+        $appContainerName = trim($appContainerName);
+
+        return $appContainerName === '' ? 'db' : $appContainerName.'-db';
+    }
+
+    public function isAmbiguousSharedNetworkDatabaseHost(?string $host): bool
+    {
+        $host = strtolower(trim((string) $host));
+        if (str_contains($host, ':')) {
+            $host = explode(':', $host, 2)[0];
+        }
+
+        return $host === '' || in_array($host, ['db', 'localhost', '127.0.0.1'], true);
+    }
+
+    /**
+     * Hostname the app container should use for PDO / Laravel.
+     *
+     * @param  array<string, mixed>  $envVars
+     */
+    public function applicationDatabaseHost(array $envVars, ?string $appContainerName = null): string
+    {
+        $host = trim((string) ($envVars['DB_HOST'] ?? ''));
+        if (str_contains($host, ':')) {
+            $host = explode(':', $host, 2)[0];
+        }
+
+        if ($appContainerName && $this->isAmbiguousSharedNetworkDatabaseHost($host)) {
+            return $this->sidecarDnsHost($appContainerName);
+        }
+
+        if ($this->isAmbiguousSharedNetworkDatabaseHost($host)) {
+            $fromEnv = trim((string) ($envVars['TALKSASA_DB_DNS'] ?? ''));
+            if ($fromEnv !== '') {
+                return $fromEnv;
+            }
+        }
+
+        return $host !== '' ? $host : 'db';
+    }
+
+    /**
+     * Point DB_HOST / DATABASE_URL at this stack's sidecar container name.
+     *
+     * @param  array<string, string>  $env
+     * @return array<string, string>
+     */
+    public function pinApplicationDatabaseHost(array $env, string $appContainerName, string $databaseType): array
+    {
+        $host = $this->applicationDatabaseHost($env, $appContainerName);
+        $env['DB_HOST'] = $host;
+        $env['TALKSASA_DB_DNS'] = $host;
+        $username = (string) ($env['DB_USERNAME'] ?? $env['MYSQL_USER'] ?? $env['POSTGRES_USER'] ?? '');
+        $password = (string) ($env['DB_PASSWORD'] ?? $env['MYSQL_PASSWORD'] ?? $env['POSTGRES_PASSWORD'] ?? '');
+        $database = (string) ($env['DB_DATABASE'] ?? $env['MYSQL_DATABASE'] ?? $env['POSTGRES_DB'] ?? '');
+
+        if (in_array($databaseType, ['mysql', 'mariadb'], true)) {
+            $port = (string) (($env['DB_PORT'] ?? '') !== '' ? $env['DB_PORT'] : '3306');
+            $env['DB_PORT'] = $port;
+            $env['DATABASE_URL'] = sprintf(
+                'mysql://%s:%s@%s:%s/%s',
+                rawurlencode($username),
+                rawurlencode($password),
+                $host,
+                $port,
+                rawurlencode($database)
+            );
+        } elseif ($databaseType === 'postgresql') {
+            $port = (string) (($env['DB_PORT'] ?? '') !== '' ? $env['DB_PORT'] : '5432');
+            $env['DB_PORT'] = $port;
+            $env['DATABASE_URL'] = sprintf(
+                'postgresql://%s:%s@%s:%s/%s',
+                rawurlencode($username),
+                rawurlencode($password),
+                $host,
+                $port,
+                rawurlencode($database)
+            );
+        }
+
+        return $env;
+    }
+
+    /**
+     * Compose service name for `docker compose exec` (project-scoped).
+     * Never use the unique *-db DNS hostname here — that is only for PDO.
+     *
      * @param  array<string, mixed>  $envVars
      */
     public function resolveMysqlComposeServiceName(array $envVars): string
@@ -3232,8 +3331,12 @@ class ContainerDeploymentService
         if (str_contains($host, ':')) {
             $host = explode(':', $host, 2)[0];
         }
+        $host = strtolower(trim($host));
+        if (in_array($host, ['mysql', 'mariadb'], true)) {
+            return $host;
+        }
 
-        return $host !== '' ? $host : 'db';
+        return 'db';
     }
 
     /**
@@ -4674,11 +4777,11 @@ class ContainerDeploymentService
     /**
      * @return array<string, string>
      */
-    private function databaseEnvironmentVariables(DatabaseTemplate $databaseTemplate, array $env, Service $service): array
+    private function databaseEnvironmentVariables(DatabaseTemplate $databaseTemplate, array $env, Service $service, ?string $appContainerName = null): array
     {
         return match ($databaseTemplate->type) {
-            'mysql', 'mariadb' => $this->mysqlEnvironmentVariables($env, $service),
-            'postgresql' => $this->postgresqlEnvironmentVariables($env, $service),
+            'mysql', 'mariadb' => $this->mysqlEnvironmentVariables($env, $service, $appContainerName),
+            'postgresql' => $this->postgresqlEnvironmentVariables($env, $service, $appContainerName),
             'mongodb' => $this->mongodbEnvironmentVariables($env, $service),
             'redis' => [
                 'REDIS_HOST' => 'db',
@@ -4692,28 +4795,31 @@ class ContainerDeploymentService
     /**
      * @return array<string, string>
      */
-    private function mysqlEnvironmentVariables(array $env, Service $service): array
+    private function mysqlEnvironmentVariables(array $env, Service $service, ?string $appContainerName = null): array
     {
         $dbName = $this->resolveDatabaseName($env, $service, ['MYSQL_DATABASE', 'DB_DATABASE']);
         $dbUser = $this->resolveDatabaseUsername($env, $service, ['MYSQL_USER', 'DB_USERNAME']);
         $dbPassword = (string) ($env['DB_PASSWORD'] ?? $env['MYSQL_PASSWORD'] ?? Str::random(32));
         $rootPassword = (string) ($env['MYSQL_ROOT_PASSWORD'] ?? $dbPassword);
+        $host = $appContainerName ? $this->sidecarDnsHost($appContainerName) : 'db';
 
         return [
             'MYSQL_ROOT_PASSWORD' => $rootPassword,
             'MYSQL_DATABASE' => $dbName,
             'MYSQL_USER' => $dbUser,
             'MYSQL_PASSWORD' => $dbPassword,
-            'DB_HOST' => 'db',
+            'DB_HOST' => $host,
             'DB_PORT' => '3306',
             'DB_DATABASE' => $dbName,
             'DB_USERNAME' => $dbUser,
             'DB_PASSWORD' => $dbPassword,
             'DB_CONNECTION' => 'mysql',
+            'TALKSASA_DB_DNS' => $host,
             'DATABASE_URL' => sprintf(
-                'mysql://%s:%s@db:3306/%s',
+                'mysql://%s:%s@%s:3306/%s',
                 rawurlencode($dbUser),
                 rawurlencode($dbPassword),
+                $host,
                 rawurlencode($dbName)
             ),
         ];
@@ -4722,26 +4828,29 @@ class ContainerDeploymentService
     /**
      * @return array<string, string>
      */
-    private function postgresqlEnvironmentVariables(array $env, Service $service): array
+    private function postgresqlEnvironmentVariables(array $env, Service $service, ?string $appContainerName = null): array
     {
         $dbName = $this->resolveDatabaseName($env, $service, ['POSTGRES_DB', 'DB_DATABASE']);
         $dbUser = $this->resolveDatabaseUsername($env, $service, ['POSTGRES_USER', 'DB_USERNAME']);
         $dbPassword = (string) ($env['POSTGRES_PASSWORD'] ?? $env['DB_PASSWORD'] ?? Str::random(32));
+        $host = $appContainerName ? $this->sidecarDnsHost($appContainerName) : 'db';
 
         return [
             'POSTGRES_PASSWORD' => $dbPassword,
             'POSTGRES_DB' => $dbName,
             'POSTGRES_USER' => $dbUser,
-            'DB_HOST' => 'db',
+            'DB_HOST' => $host,
             'DB_PORT' => '5432',
             'DB_DATABASE' => $dbName,
             'DB_USERNAME' => $dbUser,
             'DB_PASSWORD' => $dbPassword,
             'DB_CONNECTION' => 'pgsql',
+            'TALKSASA_DB_DNS' => $host,
             'DATABASE_URL' => sprintf(
-                'postgresql://%s:%s@db:5432/%s',
+                'postgresql://%s:%s@%s:5432/%s',
                 rawurlencode($dbUser),
                 rawurlencode($dbPassword),
+                $host,
                 rawurlencode($dbName)
             ),
         ];
