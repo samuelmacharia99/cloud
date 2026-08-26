@@ -281,28 +281,36 @@ class ContainerEnvironmentService
      */
     public function syncDotEnvFile(SSHService $ssh, Service $service, ContainerDeployment $deployment, array $envValues): void
     {
-        $slug = $service->product?->containerTemplate?->slug;
+        $slug = $service->effectiveContainerTemplate()?->slug
+            ?? $service->product?->containerTemplate?->slug;
         if (! in_array($slug, ['laravel', 'php'], true)) {
             return;
         }
 
         $hostAppPath = '/opt/talksasa/containers/'.$deployment->container_name.'/app';
-        $envPath = $hostAppPath.'/.env';
+        $relative = trim((string) (is_array($service->service_meta) ? ($service->service_meta['laravel_project_root'] ?? '') : ''), '/');
+        $paths = [$hostAppPath.'/.env', $hostAppPath.'/backend/.env'];
+        if ($relative !== '') {
+            array_unshift($paths, $hostAppPath.'/'.$relative.'/.env');
+        }
 
-        try {
-            $exists = trim($ssh->exec('test -f '.escapeshellarg($envPath).' && echo yes || echo no'));
-            if ($exists !== 'yes') {
-                return;
+        foreach (array_values(array_unique($paths)) as $envPath) {
+            try {
+                $exists = trim($ssh->exec('test -f '.escapeshellarg($envPath).' && echo yes || echo no'));
+                if ($exists !== 'yes') {
+                    continue;
+                }
+
+                $content = $ssh->exec('cat '.escapeshellarg($envPath));
+                $updated = $this->mergeEnvFileContent($content, $envValues);
+                $ssh->upload($updated, $envPath);
+            } catch (\Throwable $e) {
+                Log::warning('Failed to sync container .env file after environment update', [
+                    'service_id' => $service->id,
+                    'env_path' => $envPath,
+                    'error' => $e->getMessage(),
+                ]);
             }
-
-            $content = $ssh->exec('cat '.escapeshellarg($envPath));
-            $updated = $this->mergeEnvFileContent($content, $envValues);
-            $ssh->upload($updated, $envPath);
-        } catch (\Throwable $e) {
-            Log::warning('Failed to sync container .env file after environment update', [
-                'service_id' => $service->id,
-                'error' => $e->getMessage(),
-            ]);
         }
     }
 
@@ -346,7 +354,11 @@ class ContainerEnvironmentService
 
     private function quoteEnvValue(string $value): string
     {
-        if ($value === '' || preg_match('/[\s#"\'\\\\]/', $value)) {
+        if ($value === '' || preg_match('/[\s#$"\'\\\\]/', $value)) {
+            if (str_contains($value, '$')) {
+                return "'".str_replace(['\\', "'"], ['\\\\', "\\'"], $value)."'";
+            }
+
             return '"'.str_replace(['\\', '"'], ['\\\\', '\\"'], $value).'"';
         }
 

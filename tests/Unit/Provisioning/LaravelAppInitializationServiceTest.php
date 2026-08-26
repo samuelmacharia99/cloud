@@ -26,6 +26,7 @@ class LaravelAppInitializationServiceTest extends TestCase
         $this->assertSame('simple', $method->invoke($service, 'simple'));
         $this->assertSame('""', $method->invoke($service, ''));
         $this->assertSame('"pa ss"', $method->invoke($service, 'pa ss'));
+        $this->assertSame("'p\$ass'", $method->invoke($service, 'p$ass'));
     }
 
     #[Test]

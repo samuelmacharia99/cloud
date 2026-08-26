@@ -837,22 +837,35 @@ class ContainerDeploymentService
     }
 
     /**
-     * Write cookie/file drivers into compose `environment` so PHP-FPM actually
-     * sees them after recreate. `.env` alone is ignored when the variable is
-     * already set in the container env.
+     * Write cookie/file drivers and current DB credentials into compose
+     * `environment` so PHP-FPM actually sees them after recreate. `.env` alone
+     * is ignored when the variable is already set in the container env.
      *
      * @param  array<string, string>  $drivers
      */
     public function persistLaravelRuntimeDriversOnCompose(
         SSHService $ssh,
         ContainerDeployment $deployment,
-        array $drivers = [
+        array $drivers = []
+    ): void {
+        $fromEnv = is_array($deployment->env_values) ? $deployment->env_values : [];
+        $defaults = [
             'SESSION_DRIVER' => 'cookie',
             'CACHE_STORE' => 'file',
             'CACHE_DRIVER' => 'file',
-        ]
-    ): void {
-        $env = array_merge(is_array($deployment->env_values) ? $deployment->env_values : [], $drivers);
+        ];
+        $fromDb = [];
+        foreach ([
+            'DB_CONNECTION', 'DB_HOST', 'DB_PORT', 'DB_DATABASE', 'DB_USERNAME', 'DB_PASSWORD',
+            'MYSQL_DATABASE', 'MYSQL_USER', 'MYSQL_PASSWORD', 'DATABASE_URL',
+            'POSTGRES_DB', 'POSTGRES_USER', 'POSTGRES_PASSWORD',
+        ] as $key) {
+            if (isset($fromEnv[$key]) && (string) $fromEnv[$key] !== '') {
+                $fromDb[$key] = (string) $fromEnv[$key];
+            }
+        }
+        $drivers = array_merge($defaults, $fromDb, $drivers);
+        $env = array_merge($fromEnv, $drivers);
         $deployment->update(['env_values' => $env]);
 
         $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;

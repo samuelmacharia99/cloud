@@ -656,7 +656,7 @@ LOG;
     }
 
     #[Test]
-    public function it_prefers_database_url_credentials_for_runtime_probe(): void
+    public function it_keeps_panel_password_when_database_url_disagrees(): void
     {
         $probe = app(ContainerDoctorService::class)->envForRuntimeDatabaseProbe([
             'DB_DATABASE' => 's163_db',
@@ -665,8 +665,40 @@ LOG;
             'DATABASE_URL' => 'postgresql://u193_s163:url-password@db:5432/s163_db',
         ], 'postgresql');
 
+        $this->assertSame('panel-password', $probe['DB_PASSWORD']);
+        $this->assertSame('s163_db', $probe['DB_DATABASE']);
+    }
+
+    #[Test]
+    public function it_fills_empty_password_from_database_url(): void
+    {
+        $probe = app(ContainerDoctorService::class)->envForRuntimeDatabaseProbe([
+            'DB_DATABASE' => 's163_db',
+            'DB_USERNAME' => 'u193_s163',
+            'DATABASE_URL' => 'postgresql://u193_s163:url-password@db:5432/s163_db',
+        ], 'postgresql');
+
         $this->assertSame('url-password', $probe['DB_PASSWORD']);
         $this->assertSame('s163_db', $probe['DB_DATABASE']);
+    }
+
+    #[Test]
+    public function it_overlays_panel_database_credentials_over_stale_live_url(): void
+    {
+        $overlay = app(ContainerDoctorService::class)->overlayPanelDatabaseCredentials(
+            [
+                'DB_PASSWORD' => 'grant-password',
+                'DATABASE_URL' => 'mysql://u74_s24:grant-password@db:3306/s24_db',
+            ],
+            [
+                'DB_PASSWORD' => 'grant-password',
+                'DATABASE_URL' => 'mysql://u74_s24:stale-url-password@db:3306/s24_db',
+            ]
+        );
+
+        $this->assertSame('grant-password', $overlay['DB_PASSWORD']);
+        $this->assertStringContainsString('grant-password', $overlay['DATABASE_URL']);
+        $this->assertStringNotContainsString('stale-url-password', $overlay['DATABASE_URL']);
     }
 
     #[Test]

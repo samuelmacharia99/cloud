@@ -30,6 +30,16 @@ class ContainerEnvironmentServiceTest extends TestCase
         $this->assertStringContainsString('# comment', $merged);
     }
 
+    public function test_merge_env_file_single_quotes_dollar_in_passwords(): void
+    {
+        $service = new ContainerEnvironmentService;
+        $merged = $service->mergeEnvFileContent("DB_PASSWORD=old\n", [
+            'DB_PASSWORD' => 'p$ass',
+        ]);
+
+        $this->assertStringContainsString("DB_PASSWORD='p\$ass'", $merged);
+    }
+
     public function test_sensitive_and_platform_key_detection(): void
     {
         $service = new ContainerEnvironmentService;

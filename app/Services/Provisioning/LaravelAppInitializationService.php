@@ -1208,7 +1208,11 @@ class LaravelAppInitializationService
             return '""';
         }
 
-        if (preg_match('/[\s#="\'\\\\]/', $value) === 1) {
+        if (preg_match('/[\s#$="\'\\\\]/', $value) === 1) {
+            if (str_contains($value, '$')) {
+                return "'".str_replace(['\\', "'"], ['\\\\', "\\'"], $value)."'";
+            }
+
             return '"'.str_replace('"', '\\"', $value).'"';
         }
 

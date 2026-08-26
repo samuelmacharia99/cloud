@@ -128,6 +128,8 @@ YAML;
                 'SESSION_DRIVER' => 'cookie',
                 'CACHE_STORE' => 'file',
                 'CACHE_DRIVER' => 'file',
+                'DB_PASSWORD' => 'grant-password',
+                'DATABASE_URL' => 'mysql://u74_s24:grant-password@db:3306/s24_db',
             ]
         );
 
@@ -136,6 +138,8 @@ YAML;
         $this->assertStringContainsString('CACHE_DRIVER: file', $patched);
         $this->assertStringNotContainsString('SESSION_DRIVER: database', $patched);
         $this->assertStringContainsString('DB_DATABASE: s24_db', $patched);
+        $this->assertStringContainsString('DB_PASSWORD: grant-password', $patched);
+        $this->assertMatchesRegularExpression("/DATABASE_URL: '?mysql:\\/\\/u74_s24:grant-password@db:3306\\/s24_db'?/", $patched);
     }
 
     #[Test]

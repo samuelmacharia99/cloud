@@ -461,7 +461,7 @@ class ContainerDoctorService
 
             if ($containerReady) {
                 $platformEnv = is_array($deployment->env_values) ? $deployment->env_values : [];
-                $liveEnv = $this->readLiveAppEnvironment($ssh, $deployment);
+                $liveEnv = $this->readLiveAppEnvironment($ssh, $deployment, $service);
                 $checks['env_source'] = $liveEnv === [] ? 'platform' : 'app_dotenv';
                 $mergedEnv = $liveEnv === [] ? $platformEnv : array_merge($platformEnv, $liveEnv);
                 $checks['session_driver'] = strtolower(trim((string) ($mergedEnv['SESSION_DRIVER'] ?? '')));
@@ -552,7 +552,10 @@ class ContainerDoctorService
                 }
 
                 if ($databaseTemplate) {
-                    $probeEnv = $this->envForRuntimeDatabaseProbe($mergedEnv, (string) $databaseTemplate->type);
+                    $probeEnv = $this->envForRuntimeDatabaseProbe(
+                        $this->overlayPanelDatabaseCredentials($platformEnv, $mergedEnv),
+                        (string) $databaseTemplate->type
+                    );
                     $probe = $deploymentService->probeApplicationDatabaseAccess(
                         $ssh,
                         $deployment->container_name,
@@ -624,8 +627,8 @@ class ContainerDoctorService
                                 'treat_action' => 'sync_database_credentials',
                                 'treat_label' => 'Repair DB credentials',
                                 'manual_steps' => [
-                                    'Repair DB credentials (creates missing DB, resets role password, rewrites .env).',
-                                    'If it still fails, Redeploy with Reset database.',
+                                    'Click Repair DB credentials — creates the missing DB, resets the role password, rewrites .env, and writes DB_* into compose so PHP-FPM matches GRANT.',
+                                    'Do not Reset database — that wipes existing tables. Re-scan and Repair again if 1045 persists.',
                                 ],
                                 'source' => 'live',
                             ];
@@ -1128,10 +1131,22 @@ class ContainerDoctorService
     /**
      * @return array<string, string>
      */
-    private function readLiveAppEnvironment(SSHService $ssh, $deployment): array
+    private function readLiveAppEnvironment(SSHService $ssh, $deployment, ?Service $service = null): array
     {
         $base = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name.'/app';
-        foreach ([$base.'/.env', $base.'/backend/.env'] as $path) {
+        $relative = trim((string) (
+            is_array(($service ?? $deployment->service)?->service_meta)
+                ? (($service ?? $deployment->service)->service_meta['laravel_project_root'] ?? '')
+                : ''
+        ), '/');
+        $paths = [];
+        if ($relative !== '') {
+            $paths[] = $base.'/'.$relative.'/.env';
+        }
+        $paths[] = $base.'/.env';
+        $paths[] = $base.'/backend/.env';
+
+        foreach (array_values(array_unique($paths)) as $path) {
             try {
                 $exists = trim($ssh->exec('test -f '.escapeshellarg($path).' && echo yes || echo no', 10));
                 if ($exists !== 'yes') {
@@ -1261,7 +1276,8 @@ PHP;
     }
 
     /**
-     * Prefer DATABASE_URL credentials when present (Laravel does the same).
+     * Fill host/user/database from DATABASE_URL when those DB_* keys are empty.
+     * GRANT / panel DB_PASSWORD wins when it disagrees with a stale URL password.
      *
      * @param  array<string, string>  $env
      * @return array<string, string>
@@ -1283,12 +1299,18 @@ PHP;
                     $probe['DB_USERNAME'] = rawurldecode((string) $parts['user']);
                 }
                 if (isset($parts['pass'])) {
-                    $probe['DB_PASSWORD'] = rawurldecode((string) $parts['pass']);
-                    if ($databaseType === 'postgresql') {
-                        $probe['POSTGRES_PASSWORD'] = $probe['DB_PASSWORD'];
-                    }
-                    if (in_array($databaseType, ['mysql', 'mariadb'], true)) {
-                        $probe['MYSQL_PASSWORD'] = $probe['DB_PASSWORD'];
+                    $urlPassword = rawurldecode((string) $parts['pass']);
+                    $existing = trim((string) ($probe['DB_PASSWORD'] ?? ''));
+                    // GRANT / panel DB_PASSWORD wins when it disagrees with a stale DATABASE_URL.
+                    // Repair can succeed on in-memory env while diagnose re-reads .env and 1045s.
+                    if ($existing === '' || $existing === $urlPassword) {
+                        $probe['DB_PASSWORD'] = $urlPassword;
+                        if ($databaseType === 'postgresql') {
+                            $probe['POSTGRES_PASSWORD'] = $urlPassword;
+                        }
+                        if (in_array($databaseType, ['mysql', 'mariadb'], true)) {
+                            $probe['MYSQL_PASSWORD'] = $urlPassword;
+                        }
                     }
                 }
                 if (! empty($parts['path']) && $parts['path'] !== '/') {
@@ -1307,6 +1329,31 @@ PHP;
         }
 
         return $probe;
+    }
+
+    /**
+     * Panel env_values are what GRANT used. Live .env can keep a stale DATABASE_URL
+     * that previously overrode the aligned password, so Repair's in-memory probe
+     * succeeded and the immediate re-diagnose 1045d.
+     *
+     * @param  array<string, mixed>  $panelEnv
+     * @param  array<string, mixed>  $liveMerged
+     * @return array<string, mixed>
+     */
+    public function overlayPanelDatabaseCredentials(array $panelEnv, array $liveMerged): array
+    {
+        $overlay = $liveMerged;
+        foreach ([
+            'DB_CONNECTION', 'DB_HOST', 'DB_PORT', 'DB_DATABASE', 'DB_USERNAME', 'DB_PASSWORD',
+            'MYSQL_DATABASE', 'MYSQL_USER', 'MYSQL_PASSWORD', 'MYSQL_ROOT_PASSWORD',
+            'POSTGRES_DB', 'POSTGRES_USER', 'POSTGRES_PASSWORD', 'DATABASE_URL',
+        ] as $key) {
+            if (isset($panelEnv[$key]) && (string) $panelEnv[$key] !== '') {
+                $overlay[$key] = (string) $panelEnv[$key];
+            }
+        }
+
+        return $overlay;
     }
 
     private function containerHasArtisan(SSHService $ssh, $deployment): bool
@@ -2235,7 +2282,7 @@ PHP;
                 'treat_label' => 'Repair DB credentials',
                 'manual_steps' => [
                     'Click Repair DB credentials to reset the database user password to match Environment.',
-                    'If it still fails, Redeploy stack with Reset database (wipes DB data).',
+                    'Do not Reset database — that wipes existing tables. Re-scan and Repair again if auth still fails.',
                     'Confirm DB_DATABASE is s{service}_db (not the username).',
                 ],
             ],
@@ -2254,7 +2301,7 @@ PHP;
                 'manual_steps' => [
                     'Click Create/sync database — Doctor will rename DB_DATABASE to s{id}_db if it was set to the username, create the database, and rewrite .env.',
                     'Then run: php artisan migrate --force',
-                    'If it still fails, Redeploy stack with Reset database (wipes DB data).',
+                    'Do not Reset database if tables already exist — that wipes data. Re-scan and Repair again if the database name is still wrong.',
                 ],
             ],
             [
@@ -2270,9 +2317,9 @@ PHP;
                 'treat_action' => 'sync_database_credentials',
                 'treat_label' => 'Repair DB credentials',
                 'manual_steps' => [
-                    'Click Repair DB credentials (grants the app user from %, resets the password, rewrites .env).',
+                    'Click Repair DB credentials (grants the app user from %, resets the password, rewrites .env, and writes DB_* into compose).',
                     'If artisan cache:clear failed with `delete from cache`, click Switch cache to file — that is not a filesystem permission.',
-                    'If unresolved, Redeploy with Reset database.',
+                    'Do not Reset database — that wipes existing tables. Re-scan and Repair again if 1045 persists.',
                 ],
             ],
             [
@@ -2909,7 +2956,7 @@ PHP;
 
         try {
             $platformEnv = is_array($deployment->env_values) ? $deployment->env_values : [];
-            $liveEnv = $this->readLiveAppEnvironment($ssh, $deployment);
+            $liveEnv = $this->readLiveAppEnvironment($ssh, $deployment, $service);
             $rawEnv = $liveEnv === [] ? $platformEnv : array_merge($platformEnv, $liveEnv);
 
             // Keep a handle on the volume's original platform role for admin bootstrap.
@@ -3249,7 +3296,7 @@ PHP;
 
         try {
             $env = is_array($deployment->env_values) ? $deployment->env_values : [];
-            $liveEnv = $this->readLiveAppEnvironment($ssh, $deployment);
+            $liveEnv = $this->readLiveAppEnvironment($ssh, $deployment, $service);
             if ($liveEnv !== []) {
                 $env = array_merge($env, $liveEnv);
             }
@@ -3582,7 +3629,7 @@ PHP;
         }
 
         $env = is_array($deployment->env_values) ? $deployment->env_values : [];
-        $live = $this->readLiveAppEnvironment($ssh, $deployment);
+        $live = $this->readLiveAppEnvironment($ssh, $deployment, $service);
         if ($live !== []) {
             $env = array_merge($env, $live);
         }
@@ -4006,7 +4053,7 @@ PHP;
             }
 
             $parsed = $this->parseEnvFileContent($existing);
-            $appEnv = $this->readLiveAppEnvironment($ssh, $deployment);
+            $appEnv = $this->readLiveAppEnvironment($ssh, $deployment, $service);
             $lines = $existing === '' || str_ends_with($existing, "\n") ? $existing : $existing."\n";
             $added = [];
             foreach ($keys as $key) {
