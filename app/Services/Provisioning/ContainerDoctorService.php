@@ -473,6 +473,11 @@ class ContainerDoctorService
                     $checks['session_driver_runtime'] = $runtimeSession;
                 }
 
+                $runtimeCache = $this->probeLaravelCacheStore($ssh, $deployment);
+                if ($runtimeCache !== null) {
+                    $checks['cache_store_runtime'] = $runtimeCache;
+                }
+
                 if (in_array($stack, ['laravel', 'php'], true)
                     && $runtimeSession === 'database'
                     && ($checks['session_driver'] ?? '') === 'cookie') {
@@ -480,9 +485,9 @@ class ContainerDoctorService
                         'id' => 'stale_laravel_config_cache',
                         'severity' => 'critical',
                         'title' => 'Laravel is still using database sessions',
-                        'summary' => '`.env` says SESSION_DRIVER=cookie, but the running app (config cache / PHP-FPM) still uses database sessions. '
-                            .'That is why `/get-total-unread` 500s with `select * from sessions` while Doctor shows Session: cookie. '
-                            .'Restart recycles the app container only — MySQL is left running.',
+                        'summary' => '`.env` says SESSION_DRIVER=cookie, but PHP-FPM still has SESSION_DRIVER=database from the compose environment created with the container. '
+                            .'Dotenv does not override existing env, so `/get-total-unread` 500s with `select * from sessions` while Doctor shows Session: cookie. '
+                            .'Restart recreates the app container only (picks up cookie/file drivers) — MySQL is left running.',
                         'evidence' => [
                             'env SESSION_DRIVER=cookie',
                             'runtime session.driver=database',
@@ -490,11 +495,60 @@ class ContainerDoctorService
                         'treat_action' => 'restart_application',
                         'treat_label' => 'Restart application',
                         'manual_steps' => [
-                            'Click Restart application — deletes bootstrap/cache/config.php and restarts PHP, not MySQL.',
+                            'Click Restart application — writes SESSION_DRIVER=cookie into compose, recreates the app container, and leaves MySQL running.',
                             'Re-scan. Live checks should show Session: cookie and runtime session.driver=cookie.',
                         ],
                         'source' => 'live',
                     ];
+                }
+
+                if (in_array($stack, ['laravel', 'php'], true)
+                    && $runtimeCache === 'database') {
+                    $envCache = (string) ($checks['cache_store'] ?? '');
+                    $findings[] = [
+                        'id' => 'stale_laravel_database_cache',
+                        'severity' => 'critical',
+                        'title' => 'Laravel is still using the database cache',
+                        'summary' => 'php artisan cache:clear / optimize:clear run `delete from cache` and 1045 when MySQL rejects the overlay IP. '
+                            .($envCache === 'file'
+                                ? '`.env` already says CACHE_STORE=file, but PHP-FPM / docker exec still have CACHE_STORE=database from compose.'
+                                : 'CACHE_STORE is still database. Switch to file so artisan and HTTP do not need the cache table.')
+                            .' Terminal `cd logs` also fails until storage/logs exists and is owned by www-data.',
+                        'evidence' => [
+                            'env CACHE_STORE='.($envCache !== '' ? $envCache : '(unset)'),
+                            'runtime cache.default=database',
+                        ],
+                        'treat_action' => 'use_file_cache',
+                        'treat_label' => 'Switch cache to file',
+                        'manual_steps' => [
+                            'Click Switch cache to file — writes CACHE_STORE=file into compose, creates storage/logs, and recreates the app (MySQL stays up).',
+                            'Then artisan cache:clear will use the file driver instead of DELETE FROM cache.',
+                        ],
+                        'source' => 'live',
+                    ];
+                }
+
+                if (in_array($stack, ['laravel', 'php'], true)) {
+                    $layout = $this->probeLaravelWritableLayout($ssh, $deployment);
+                    $checks['storage_ok'] = $layout['ok'];
+                    if (! $layout['ok']) {
+                        $findings[] = [
+                            'id' => 'live_storage_not_writable',
+                            'severity' => 'warning',
+                            'title' => 'www-data cannot write storage / logs',
+                            'summary' => 'Laravel storage/logs or bootstrap/cache is missing or not writable by www-data. '
+                                .'`cd logs` from /app fails until Doctor creates storage/logs and a logs symlink. '
+                                .'This is separate from MySQL 1045 — Fix storage permissions does not need a working DB.',
+                            'evidence' => $layout['evidence'],
+                            'treat_action' => 'fix_storage_permissions',
+                            'treat_label' => 'Fix storage permissions',
+                            'manual_steps' => [
+                                'Click Fix storage permissions — creates storage/logs, chowns www-data, and links /app/logs → storage/logs.',
+                                'If artisan cache:clear still 1045s, click Switch cache to file (database cache is not a filesystem permission).',
+                            ],
+                            'source' => 'live',
+                        ];
+                    }
                 }
 
                 if ($databaseTemplate) {
@@ -1016,8 +1070,8 @@ class ContainerDoctorService
 
         if ($relaxed) {
             $summaryText = '`.env` already has SESSION_DRIVER=cookie and file cache, but live traffic is still mixed 200/500. '
-                .'PHP-FPM workers or `bootstrap/cache/config.php` are still using database sessions (`select * from sessions`). '
-                .'Restart recycles the app container only (MySQL stays up).';
+                .'PHP-FPM still has SESSION_DRIVER=database from compose (Dotenv will not override it), so `bootstrap/cache/config.php` and runtime both use database sessions (`select * from sessions`). '
+                .'Restart recreates the app container only (MySQL stays up).';
         }
 
         if ($session !== '') {
@@ -1127,6 +1181,83 @@ PHP;
         }
 
         return $driver;
+    }
+
+    /**
+     * What Laravel actually uses for cache (config cache / compose env), not just .env.
+     */
+    public function probeLaravelCacheStore(SSHService $ssh, $deployment): ?string
+    {
+        $php = <<<'PHP'
+require "vendor/autoload.php";
+$app = require "bootstrap/app.php";
+$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+echo (string) config("cache.default");
+PHP;
+        $script = 'if [ -f /app/backend/artisan ]; then cd /app/backend; '
+            .'elif [ -f /app/artisan ]; then cd /app; '
+            .'else exit 1; fi; '
+            .'php -r '.escapeshellarg($php);
+
+        try {
+            $driver = strtolower(trim($ssh->exec(
+                'docker exec -u www-data '.escapeshellarg($deployment->container_name)
+                .' sh -lc '.escapeshellarg($script),
+                25
+            )));
+        } catch (\Throwable) {
+            return null;
+        }
+
+        if ($driver === '' || ! preg_match('/^[a-z0-9_-]+$/', $driver)) {
+            return null;
+        }
+
+        return $driver;
+    }
+
+    /**
+     * @return array{ok: bool, evidence: list<string>}
+     */
+    public function probeLaravelWritableLayout(SSHService $ssh, $deployment): array
+    {
+        $script = app(ContainerAppDirectoryService::class)->laravelWritableLayoutProbeScript('/app');
+
+        try {
+            $output = trim($ssh->exec(
+                'docker exec -u www-data '.escapeshellarg($deployment->container_name)
+                .' sh -lc '.escapeshellarg($script),
+                20
+            ));
+        } catch (\Throwable $e) {
+            return [
+                'ok' => false,
+                'evidence' => ['probe failed: '.mb_substr($e->getMessage(), 0, 180)],
+            ];
+        }
+
+        if ($output === 'ok' || str_ends_with($output, "\nok")) {
+            return ['ok' => true, 'evidence' => []];
+        }
+
+        $evidence = [];
+        if (preg_match('/missing:(.*?)(?:denied:|$)/s', $output, $m) === 1) {
+            $missing = trim($m[1]);
+            if ($missing !== '') {
+                $evidence[] = 'missing'.$missing;
+            }
+        }
+        if (preg_match('/denied:(.*)$/s', $output, $m) === 1) {
+            $denied = trim($m[1]);
+            if ($denied !== '') {
+                $evidence[] = 'not writable by www-data'.$denied;
+            }
+        }
+        if ($evidence === [] && $output !== '') {
+            $evidence[] = mb_substr($output, 0, 240);
+        }
+
+        return ['ok' => false, 'evidence' => $evidence !== [] ? $evidence : ['storage/logs not writable']];
     }
 
     /**
@@ -2140,7 +2271,7 @@ PHP;
                 'treat_label' => 'Repair DB credentials',
                 'manual_steps' => [
                     'Click Repair DB credentials (grants the app user from %, resets the password, rewrites .env).',
-                    'Do not use Fix storage permissions for this — artisan cache:clear needs a working DB.',
+                    'If artisan cache:clear failed with `delete from cache`, click Switch cache to file — that is not a filesystem permission.',
                     'If unresolved, Redeploy with Reset database.',
                 ],
             ],
@@ -2253,6 +2384,26 @@ PHP;
                     'Click Allow bound domains — the container restarts with your domains on the Vite allowlist.',
                     'If you added the domain seconds ago, bind it in the Domains tab first, then re-run this fix.',
                     'Repo-level alternative: set preview.allowedHosts in vite.config.',
+                ],
+            ],
+            [
+                'id' => 'artisan_cache_uses_database',
+                'severity' => 'critical',
+                'stacks' => ['laravel', 'php'],
+                'patterns' => [
+                    '/SQL:\s*delete from [`\']cache[`\']/i',
+                    '/cache:clear[\s\S]{0,1200}Access denied for user/i',
+                    '/optimize:clear[\s\S]{0,1200}Access denied for user/i',
+                ],
+                'title' => 'Artisan cache:clear is using the database driver',
+                'summary' => 'php artisan cache:clear / optimize:clear ran `delete from cache` and MySQL rejected the overlay IP. '
+                    .'That is CACHE_STORE=database in the container env — not a missing storage/logs directory. '
+                    .'Switch cache to file so artisan does not need MySQL. Then Fix storage permissions if `cd logs` still fails.',
+                'treat_action' => 'use_file_cache',
+                'treat_label' => 'Switch cache to file',
+                'manual_steps' => [
+                    'Click Switch cache to file — writes CACHE_STORE=file into compose, creates storage/logs, recreates the app (MySQL stays up).',
+                    'Do not Reset database. Repair DB credentials if HTTP still 1045s on real tables.',
                 ],
             ],
             [
@@ -3382,6 +3533,16 @@ PHP;
         }
 
         try {
+            app(ContainerDeploymentService::class)
+                ->persistLaravelRuntimeDriversOnCompose($ssh, $deployment);
+        } catch (\Throwable $e) {
+            \Log::warning('Doctor could not patch compose session/cache drivers', [
+                'service_id' => $service->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        try {
             $this->clearLaravelCachesQuietly($service, $ssh);
         } catch (\Throwable) {
         }
@@ -3659,9 +3820,27 @@ PHP;
 
             $init->dockerExecPublic($ssh, $deployment->container_name, $script, 120, asRoot: true);
 
+            $deploymentService = app(ContainerDeploymentService::class);
+            try {
+                $appDirectory = app(ContainerAppDirectoryService::class);
+                $appDirectory->ensureLaravelWritableLayoutOnHost($ssh, $appDirectory->hostAppPath($deployment));
+                $appDirectory->normalizeLaravelPermissions($ssh, $deployment);
+            } catch (\Throwable) {
+            }
+            $deploymentService->persistLaravelRuntimeDriversOnCompose($ssh, $deployment);
+            try {
+                $deploymentService->restartAppService($ssh, $deployment);
+            } catch (\Throwable $e) {
+                \Log::warning('Doctor could not recreate app after switching cache to file', [
+                    'service_id' => $service->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
             return [
                 'success' => true,
-                'message' => 'Switched CACHE_STORE/CACHE_DRIVER to file and cleared config. Reload the site.',
+                'message' => 'Switched CACHE_STORE to file in .env and compose, created storage/logs, and recreated the app (MySQL left running). '
+                    .'artisan cache:clear will no longer run DELETE FROM cache. Reload the site.',
             ];
         } catch (\Throwable $e) {
             return ['success' => false, 'message' => 'Failed to switch cache driver: '.$e->getMessage()];
@@ -3861,6 +4040,13 @@ PHP;
             $appDirectory->normalizeLaravelPermissions($ssh, $deployment);
 
             try {
+                app(ContainerDeploymentService::class)
+                    ->persistLaravelRuntimeDriversOnCompose($ssh, $deployment);
+                app(ContainerDeploymentService::class)->restartAppService($ssh, $deployment);
+            } catch (\Throwable) {
+            }
+
+            try {
                 $this->clearLaravelCachesQuietly($service, $ssh);
             } catch (\Throwable $e) {
                 if (! $this->looksLikeDatabaseAuthFailure($e->getMessage())) {
@@ -3886,7 +4072,7 @@ PHP;
 
             return [
                 'success' => true,
-                'message' => 'Created Laravel cache/storage directories, fixed permissions, and cleared config. Re-scan after a reload.',
+                'message' => 'Created Laravel cache/storage directories, linked /app/logs → storage/logs, fixed www-data ownership, and cleared config. Re-scan after a reload.',
             ];
         } catch (\Throwable $e) {
             if ($this->looksLikeDatabaseAuthFailure($e->getMessage())) {
@@ -4236,15 +4422,15 @@ PHP;
             $probe = $this->waitForUpstream($ssh, $deployment);
 
             if ($probe['reachable']) {
-                return ['success' => true, 'message' => 'Application container restarted (database sidecar left running). Reload the site.'];
+                return ['success' => true, 'message' => 'Application container recreated with cookie/file drivers (database sidecar left running). Reload the site.'];
             }
 
             if (is_string($probe['bootstrapping'])) {
                 return ['success' => true, 'message' => $this->bootstrapProgressMessage($probe)];
             }
 
-            // `docker compose restart` cannot create a missing container or apply a changed
-            // port mapping, so report the real state instead of a misleading success.
+            // `docker compose restart` cannot apply a changed compose environment or
+            // port mapping. Recreate (`up --no-deps --force-recreate`) is what Restart uses.
             return [
                 'success' => false,
                 'message' => $this->upstreamFailureMessage($probe).' Try Recreate containers.',

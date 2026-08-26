@@ -205,7 +205,9 @@ class ContainerTerminalService
         // Legacy HTTP command mode (fallback when PTY WebSocket server is unavailable).
         $dockerCmd = $this->buildDockerExecCommand(
             $session,
-            $this->resolveComposerCommand(self::applyArtisanProductionFlags($sanitized))
+            $this->resolveComposerCommand(
+                self::applyArtisanFileCacheEnv(self::applyArtisanProductionFlags($sanitized))
+            )
         );
 
         try {
@@ -426,6 +428,34 @@ class ContainerTerminalService
         }
 
         return $trimmed;
+    }
+
+    /**
+     * cache:clear / optimize:clear hit `delete from cache` when CACHE_STORE=database
+     * is injected by compose. Prefix file/cookie drivers so the HTTP terminal does
+     * not 1045 while MySQL overlay grants are still wrong.
+     */
+    public static function applyArtisanFileCacheEnv(string $command): string
+    {
+        $trimmed = trim($command);
+        if ($trimmed === '' || preg_match('/^(?:php\s+)?artisan(\s+|$)/i', $trimmed) !== 1) {
+            return $command;
+        }
+
+        if (preg_match('/\bCACHE_STORE=/', $trimmed) === 1) {
+            return $trimmed;
+        }
+
+        $needsFileCache = preg_match(
+            '/\bartisan\s+(optimize|optimize:\w+|cache:\w+|config:\w+|view:clear|route:clear|event:clear|storage:link)\b/i',
+            $trimmed
+        ) === 1;
+
+        if (! $needsFileCache) {
+            return $trimmed;
+        }
+
+        return 'CACHE_STORE=file CACHE_DRIVER=file SESSION_DRIVER=cookie '.$trimmed;
     }
 
     /**

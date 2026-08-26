@@ -435,6 +435,28 @@ LOG;
     }
 
     #[Test]
+    public function it_treats_artisan_cache_clear_1045_as_file_cache_not_storage_permissions(): void
+    {
+        $logs = <<<'LOG'
+www-data@user-74-service-24-laravel:/app$ php artisan cache:clear
+Illuminate\Database\QueryException
+  SQLSTATE[HY000] [1045] Access denied for user 'u74_s24'@'10.201.0.11' (using password: YES) (SQL: delete from `cache`)
+www-data@user-74-service-24-laravel:/app$ php artisan optimize:clear
+  cache ............................................................. 9ms FAIL
+   Illuminate\Database\QueryException
+  SQLSTATE[HY000] [1045] Access denied for user 'u74_s24'@'10.201.0.11' (using password: YES) (SQL: delete from `cache`)
+LOG;
+
+        $findings = app(ContainerDoctorService::class)->analyzeLogs($logs, 'laravel');
+        $cache = collect($findings)->firstWhere('id', 'artisan_cache_uses_database');
+
+        $this->assertNotNull($cache);
+        $this->assertSame('use_file_cache', $cache['treat_action']);
+        $this->assertSame('critical', $cache['severity']);
+        $this->assertContains('mysql_access_denied', array_column($findings, 'id'));
+    }
+
+    #[Test]
     public function it_keeps_intermittent_500s_when_the_homepage_is_ok(): void
     {
         $merged = app(ContainerDoctorService::class)->mergeLogAndLiveFindings(

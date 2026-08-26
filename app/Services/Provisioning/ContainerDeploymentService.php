@@ -781,9 +781,13 @@ class ContainerDeploymentService
                 $this->ensureComposeFileExists($ssh, $deployment);
 
                 $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
-                // Restart the app service only. `docker compose restart` with no
-                // service name also bounces the MySQL sidecar → HTTP 2002 and a new
-                // overlay IP that then 1045s against leftover user@10.% accounts.
+                $slug = strtolower((string) ($this->resolveContainerTemplate($service)?->slug ?? ''));
+                if (in_array($slug, ['laravel', 'php'], true)) {
+                    $this->persistLaravelRuntimeDriversOnCompose($ssh, $deployment);
+                }
+                // Recreate the app service only. `docker compose restart` does not
+                // reload compose `environment` (SESSION_DRIVER=database stays in
+                // PHP-FPM). Recreating the whole stack also bounces MySQL → HTTP 2002.
                 $ssh->exec($this->composeRestartAppCommand($containerPath, $deployment->container_name), self::DEPLOY_TIMEOUT);
 
                 $deployment->update([
@@ -806,12 +810,172 @@ class ContainerDeploymentService
     }
 
     /**
-     * Restart only the PHP/app compose service — never the database sidecar.
+     * Recreate only the PHP/app compose service — never the database sidecar.
+     *
+     * `docker compose restart` sends SIGTERM and keeps the old container env.
+     * Laravel dotenv will not override SESSION_DRIVER already set from compose,
+     * so .env cookie never takes effect until the app container is recreated.
      */
     public function composeRestartAppCommand(string $containerPath, string $appServiceName): string
     {
         return 'cd '.escapeshellarg($containerPath)
-            .' && docker compose -f docker-compose.yml restart '.escapeshellarg($appServiceName);
+            .' && docker compose -f docker-compose.yml up -d --no-deps --pull never --force-recreate '
+            .escapeshellarg($appServiceName);
+    }
+
+    /**
+     * Prefer recent app + sidecar output. `docker compose logs --tail=N` is
+     * per-container, so a MySQL volume that has been initializing since day one
+     * fills the UI with stale entrypoint lines and hides today's 500s.
+     */
+    public function composeLogsCommand(string $containerPath, int $lines): string
+    {
+        $tail = max(1, $lines);
+
+        return 'cd '.escapeshellarg($containerPath)
+            .' && docker compose -f docker-compose.yml logs --no-color --since 6h --tail='.$tail;
+    }
+
+    /**
+     * Write cookie/file drivers into compose `environment` so PHP-FPM actually
+     * sees them after recreate. `.env` alone is ignored when the variable is
+     * already set in the container env.
+     *
+     * @param  array<string, string>  $drivers
+     */
+    public function persistLaravelRuntimeDriversOnCompose(
+        SSHService $ssh,
+        ContainerDeployment $deployment,
+        array $drivers = [
+            'SESSION_DRIVER' => 'cookie',
+            'CACHE_STORE' => 'file',
+            'CACHE_DRIVER' => 'file',
+        ]
+    ): void {
+        $env = array_merge(is_array($deployment->env_values) ? $deployment->env_values : [], $drivers);
+        $deployment->update(['env_values' => $env]);
+
+        $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+        $yaml = trim((string) ($deployment->docker_compose_content ?? ''));
+        if ($yaml === '') {
+            try {
+                $yaml = trim((string) $ssh->exec(
+                    'cat '.escapeshellarg($containerPath.'/docker-compose.yml'),
+                    15
+                ));
+            } catch (\Throwable) {
+                return;
+            }
+        }
+        if ($yaml === '') {
+            return;
+        }
+
+        try {
+            $patched = $this->patchComposeServiceEnvironment($yaml, $deployment->container_name, $drivers);
+        } catch (\Throwable) {
+            return;
+        }
+
+        $deployment->update(['docker_compose_content' => $patched]);
+        $ssh->upload($patched, $containerPath.'/docker-compose.yml');
+    }
+
+    /**
+     * @param  array<string, string>  $overrides
+     */
+    public function patchComposeServiceEnvironment(string $yaml, string $serviceName, array $overrides): string
+    {
+        $compose = Yaml::parse($yaml);
+        if (! is_array($compose) || ! is_array($compose['services'] ?? null)) {
+            return $yaml;
+        }
+
+        $key = $this->resolveComposeAppServiceKey($compose, $serviceName);
+        if ($key === null || ! is_array($compose['services'][$key] ?? null)) {
+            return $yaml;
+        }
+
+        $environment = $compose['services'][$key]['environment'] ?? [];
+        $compose['services'][$key]['environment'] = $this->mergeComposeEnvironment(
+            is_array($environment) ? $environment : [],
+            $overrides
+        );
+
+        return Yaml::dump($compose, 10, 2);
+    }
+
+    /**
+     * @param  array<string, mixed>  $compose
+     */
+    public function resolveComposeAppServiceKey(array $compose, string $containerName): ?string
+    {
+        $services = is_array($compose['services'] ?? null) ? $compose['services'] : [];
+        foreach ($services as $name => $service) {
+            if (! is_array($service)) {
+                continue;
+            }
+            $cname = (string) ($service['container_name'] ?? $name);
+            if ($cname === $containerName || (string) $name === $containerName) {
+                return (string) $name;
+            }
+        }
+
+        foreach (array_keys($services) as $name) {
+            $name = (string) $name;
+            if (in_array($name, ['db', 'mysql', 'mariadb', 'postgres', 'postgresql', 'redis', 'cache', 'mail'], true)) {
+                continue;
+            }
+            if (str_ends_with($name, '-db') || str_ends_with($name, '_db')) {
+                continue;
+            }
+
+            return $name;
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<int|string, mixed>  $environment
+     * @param  array<string, string>  $overrides
+     * @return array<int|string, mixed>
+     */
+    public function mergeComposeEnvironment(array $environment, array $overrides): array
+    {
+        if ($environment === []) {
+            return $overrides;
+        }
+
+        $isList = array_is_list($environment);
+        if ($isList) {
+            $seen = [];
+            $out = [];
+            foreach ($environment as $item) {
+                if (! is_string($item)) {
+                    $out[] = $item;
+
+                    continue;
+                }
+                $eq = strpos($item, '=');
+                $key = $eq === false ? $item : substr($item, 0, $eq);
+                if (array_key_exists($key, $overrides)) {
+                    $out[] = $key.'='.$overrides[$key];
+                    $seen[$key] = true;
+                } else {
+                    $out[] = $item;
+                }
+            }
+            foreach ($overrides as $key => $value) {
+                if (! isset($seen[$key])) {
+                    $out[] = $key.'='.$value;
+                }
+            }
+
+            return $out;
+        }
+
+        return array_merge($environment, $overrides);
     }
 
     public function restartAppService(SSHService $ssh, ContainerDeployment $deployment): void
@@ -837,7 +1001,7 @@ class ContainerDeploymentService
             try {
                 $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
                 $output = $ssh->exec(
-                    "cd {$containerPath} && docker compose -f docker-compose.yml logs --no-color --tail={$lines}",
+                    $this->composeLogsCommand($containerPath, $lines),
                     30
                 );
 
@@ -2531,7 +2695,7 @@ class ContainerDeploymentService
         $this->mysqlDropShadowHosts($ssh, $containerPath, $dbService, $rootPassword, $username);
 
         $shadowHosts = array_values(array_unique(array_merge(
-            $this->detectComposeAppIps($ssh, $containerPath),
+            $this->detectComposeAppIps($ssh, $containerPath, basename($containerPath)),
             $this->mysqlListUserHosts($ssh, $containerPath, $dbService, $rootPassword, $username)
         )));
         $sql = $this->mysqlPrivilegeRepairSql($database, $username, $password, $shadowHosts);
@@ -2579,6 +2743,8 @@ class ContainerDeploymentService
         }
 
         if ($applied) {
+            $this->mysqlDropShadowHosts($ssh, $containerPath, $dbService, $rootPassword, $username);
+
             return;
         }
 
@@ -2663,10 +2829,12 @@ class ContainerDeploymentService
         foreach (['%', 'localhost'] as $host) {
             $h = $this->mysqlQuoteString($host);
             $statements[] = "DROP USER IF EXISTS '{$user}'@'{$h}'";
-            $statements[] = "CREATE USER '{$user}'@'{$h}' IDENTIFIED BY '{$pass}'";
+            // mysql_native_password matches DirectAdmin-imported Laravel and
+            // avoids caching_sha2 RSA handshake failures from overlay IPs.
+            $statements[] = "CREATE USER '{$user}'@'{$h}' IDENTIFIED WITH mysql_native_password BY '{$pass}'";
             // ALTER still runs under mysql --force when DROP is skipped because
             // the account is connected — that is what actually sets the hash.
-            $statements[] = "ALTER USER '{$user}'@'{$h}' IDENTIFIED BY '{$pass}'";
+            $statements[] = "ALTER USER '{$user}'@'{$h}' IDENTIFIED WITH mysql_native_password BY '{$pass}'";
             $statements[] = "GRANT ALL PRIVILEGES ON {$dbIdent}.* TO '{$user}'@'{$h}'";
         }
 
@@ -2727,17 +2895,29 @@ class ContainerDeploymentService
      * DROP every mysql.user host for this username except `%` and `localhost`.
      * `user`@`10.%` is more specific than `@%`, so a new overlay IP like
      * 10.201.0.11 still 1045s after `user`@`10.201.0.26` was dropped.
+     *
+     * Built in PHP — a nested mysql|mysql pipe inside `sh -lc` + escapeshellarg
+     * produced SQL that never ran, which is why overlay accounts survived Repair.
+     *
+     * @param  list<string>  $hosts
      */
-    public function mysqlDropShadowHostsPipeCommand(string $username): string
+    public function mysqlDropShadowHostsSql(string $username, array $hosts): string
     {
         $user = $this->mysqlQuoteString($username);
+        $statements = [];
+        foreach ($hosts as $host) {
+            $host = trim((string) $host);
+            if ($host === '' || $host === '%' || strtolower($host) === 'localhost') {
+                continue;
+            }
+            $statements[] = "DROP USER IF EXISTS '{$user}'@'".$this->mysqlQuoteString($host)."'";
+        }
+        if ($statements === []) {
+            return '';
+        }
+        $statements[] = 'FLUSH PRIVILEGES';
 
-        return 'mysql --force -N -B -u root -e '
-            .escapeshellarg(
-                "SELECT CONCAT('DROP USER IF EXISTS ', QUOTE('{$user}'), '@', QUOTE(Host), ';') "
-                ."FROM mysql.user WHERE User='{$user}' AND Host NOT IN ('%', 'localhost')"
-            )
-            .' | mysql --force -u root; mysql --force -u root -e '.escapeshellarg('FLUSH PRIVILEGES');
+        return implode('; ', $statements).';';
     }
 
     public function mysqlDropShadowHosts(
@@ -2747,13 +2927,24 @@ class ContainerDeploymentService
         string $rootPassword,
         string $username
     ): void {
+        $hosts = array_values(array_unique(array_merge(
+            ['10.%', '172.%', '127.0.0.1'],
+            $this->detectComposeAppIps($ssh, $containerPath, basename($containerPath)),
+            $this->mysqlListUserHosts($ssh, $containerPath, $dbService, $rootPassword, $username)
+        )));
+        $sql = $this->mysqlDropShadowHostsSql($username, $hosts);
+        if ($sql === '') {
+            return;
+        }
+
         $pathArg = escapeshellarg($containerPath);
         $dbServiceArg = escapeshellarg($dbService);
         $rootPwArg = escapeshellarg($rootPassword);
-        $inner = $this->mysqlDropShadowHostsPipeCommand($username);
+        $sqlArg = escapeshellarg($sql);
+        $mysql = 'mysql --force -u root -e';
         $commands = [
-            "cd {$pathArg} && docker compose exec -T -e MYSQL_PWD={$rootPwArg} {$dbServiceArg} sh -lc ".escapeshellarg($inner),
-            "cd {$pathArg} && docker compose exec -T {$dbServiceArg} sh -lc ".escapeshellarg($inner),
+            "cd {$pathArg} && docker compose exec -T -e MYSQL_PWD={$rootPwArg} {$dbServiceArg} {$mysql} {$sqlArg}",
+            "cd {$pathArg} && docker compose exec -T {$dbServiceArg} {$mysql} {$sqlArg}",
         ];
 
         foreach ($commands as $command) {
@@ -2779,7 +2970,7 @@ class ContainerDeploymentService
     private function isMysqlRootLoginFailure(string $message): bool
     {
         return (bool) preg_match(
-            '/access denied for user [\'"]root[\'"]|can\'t connect to (local )?mysql|unknown mysql server host|plugin .+ not loaded/i',
+            '/access denied for user [\'"]root[\'"]|can\'t connect to (local )?mysql|unknown mysql server host/i',
             $message
         );
     }
@@ -2792,17 +2983,18 @@ class ContainerDeploymentService
     /**
      * @return list<string>
      */
-    private function detectComposeAppIps(SSHService $ssh, string $containerPath): array
+    private function detectComposeAppIps(SSHService $ssh, string $containerPath, ?string $appService = null): array
     {
         $pathArg = escapeshellarg($containerPath);
+        $service = $appService ?: basename($containerPath);
 
         try {
             $id = trim($ssh->exec(
-                "cd {$pathArg} && (docker compose ps -q app 2>/dev/null || true) | head -1",
+                "cd {$pathArg} && (docker compose ps -q ".escapeshellarg($service).' 2>/dev/null || true) | head -1',
                 15
             ));
             if ($id === '') {
-                $id = basename($containerPath);
+                $id = $service;
             }
 
             $ips = trim($ssh->exec(

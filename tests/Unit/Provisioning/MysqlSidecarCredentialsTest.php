@@ -24,9 +24,9 @@ class MysqlSidecarCredentialsTest extends TestCase
         $this->assertStringContainsString("DROP USER IF EXISTS 'u74_s24'@'172.%'", $sql);
         $this->assertStringContainsString("DROP USER IF EXISTS 'u74_s24'@'%'", $sql);
         $this->assertStringContainsString("DROP USER IF EXISTS 'u74_s24'@'localhost'", $sql);
-        $this->assertStringContainsString("CREATE USER 'u74_s24'@'%' IDENTIFIED BY 'secret'", $sql);
-        $this->assertStringContainsString("CREATE USER 'u74_s24'@'localhost' IDENTIFIED BY 'secret'", $sql);
-        $this->assertStringContainsString("ALTER USER 'u74_s24'@'%' IDENTIFIED BY 'secret'", $sql);
+        $this->assertStringContainsString("CREATE USER 'u74_s24'@'%' IDENTIFIED WITH mysql_native_password BY 'secret'", $sql);
+        $this->assertStringContainsString("CREATE USER 'u74_s24'@'localhost' IDENTIFIED WITH mysql_native_password BY 'secret'", $sql);
+        $this->assertStringContainsString("ALTER USER 'u74_s24'@'%' IDENTIFIED WITH mysql_native_password BY 'secret'", $sql);
         $this->assertStringContainsString("GRANT ALL PRIVILEGES ON `s24_db`.* TO 'u74_s24'@'%'", $sql);
         $this->assertStringContainsString("GRANT ALL PRIVILEGES ON `s24_db`.* TO 'u74_s24'@'localhost'", $sql);
         $this->assertStringContainsString("DROP USER IF EXISTS ''@'%'", $sql);
@@ -52,29 +52,110 @@ class MysqlSidecarCredentialsTest extends TestCase
         $this->assertTrue($service->mysqlSidecarGrantShouldStopDatabase(
             "ERROR 1045 (28000): Access denied for user 'root'@'localhost' (using password: YES)"
         ));
+        $this->assertFalse($service->mysqlSidecarGrantShouldStopDatabase(
+            "ERROR 1524 (HY000): Plugin 'mysql_native_password' is not loaded"
+        ));
     }
 
     #[Test]
-    public function shadow_host_drop_pipe_targets_every_account_except_percent_and_localhost(): void
+    public function shadow_host_drop_sql_targets_every_account_except_percent_and_localhost(): void
     {
-        $command = app(ContainerDeploymentService::class)->mysqlDropShadowHostsPipeCommand('u74_s24');
+        $sql = app(ContainerDeploymentService::class)->mysqlDropShadowHostsSql('u74_s24', [
+            '%',
+            'localhost',
+            '10.%',
+            '172.%',
+            '10.201.0.11',
+            '127.0.0.1',
+        ]);
 
-        $this->assertStringContainsString('Host NOT IN', $command);
-        $this->assertStringContainsString('DROP USER IF EXISTS', $command);
-        $this->assertStringContainsString('FLUSH PRIVILEGES', $command);
-        $this->assertStringContainsString('u74_s24', $command);
+        $this->assertStringContainsString("DROP USER IF EXISTS 'u74_s24'@'10.%'", $sql);
+        $this->assertStringContainsString("DROP USER IF EXISTS 'u74_s24'@'172.%'", $sql);
+        $this->assertStringContainsString("DROP USER IF EXISTS 'u74_s24'@'10.201.0.11'", $sql);
+        $this->assertStringContainsString("DROP USER IF EXISTS 'u74_s24'@'127.0.0.1'", $sql);
+        $this->assertStringContainsString('FLUSH PRIVILEGES', $sql);
+        $this->assertStringNotContainsString("DROP USER IF EXISTS 'u74_s24'@'%'", $sql);
+        $this->assertStringNotContainsString("DROP USER IF EXISTS 'u74_s24'@'localhost'", $sql);
+        $this->assertStringNotContainsString('| mysql', $sql);
     }
 
     #[Test]
-    public function compose_restart_targets_the_app_service_not_the_database_sidecar(): void
+    public function compose_restart_recreates_the_app_service_not_the_database_sidecar(): void
     {
         $command = app(ContainerDeploymentService::class)->composeRestartAppCommand(
             '/opt/talksasa/containers/user-74-service-24-laravel',
             'user-74-service-24-laravel'
         );
 
-        $this->assertStringContainsString('docker compose -f docker-compose.yml restart', $command);
+        $this->assertStringContainsString('docker compose -f docker-compose.yml up -d --no-deps --pull never --force-recreate', $command);
         $this->assertStringContainsString('user-74-service-24-laravel', $command);
-        $this->assertDoesNotMatchRegularExpression('/restart["\']?\s*$/', $command);
+        $this->assertStringNotContainsString(' restart ', $command);
+        $this->assertDoesNotMatchRegularExpression('/up -d["\']?\s*$/', $command);
+    }
+
+    #[Test]
+    public function compose_logs_window_skips_stale_mysql_init(): void
+    {
+        $command = app(ContainerDeploymentService::class)->composeLogsCommand(
+            '/opt/talksasa/containers/user-74-service-24-laravel',
+            200
+        );
+
+        $this->assertStringContainsString('--since 6h', $command);
+        $this->assertStringContainsString('--tail=200', $command);
+    }
+
+    #[Test]
+    public function compose_environment_patch_sets_cookie_session_on_the_app_service(): void
+    {
+        $yaml = <<<'YAML'
+services:
+  user-74-service-24-laravel:
+    container_name: user-74-service-24-laravel
+    environment:
+      SESSION_DRIVER: database
+      CACHE_STORE: database
+      DB_DATABASE: s24_db
+  db:
+    image: mysql:8.0
+YAML;
+
+        $patched = app(ContainerDeploymentService::class)->patchComposeServiceEnvironment(
+            $yaml,
+            'user-74-service-24-laravel',
+            [
+                'SESSION_DRIVER' => 'cookie',
+                'CACHE_STORE' => 'file',
+                'CACHE_DRIVER' => 'file',
+            ]
+        );
+
+        $this->assertStringContainsString('SESSION_DRIVER: cookie', $patched);
+        $this->assertStringContainsString('CACHE_STORE: file', $patched);
+        $this->assertStringContainsString('CACHE_DRIVER: file', $patched);
+        $this->assertStringNotContainsString('SESSION_DRIVER: database', $patched);
+        $this->assertStringContainsString('DB_DATABASE: s24_db', $patched);
+    }
+
+    #[Test]
+    public function compose_environment_list_form_is_patched_in_place(): void
+    {
+        $yaml = <<<'YAML'
+services:
+  user-74-service-24-laravel:
+    environment:
+      - SESSION_DRIVER=database
+      - DB_HOST=db
+YAML;
+
+        $patched = app(ContainerDeploymentService::class)->patchComposeServiceEnvironment(
+            $yaml,
+            'user-74-service-24-laravel',
+            ['SESSION_DRIVER' => 'cookie']
+        );
+
+        $this->assertStringContainsString('SESSION_DRIVER=cookie', $patched);
+        $this->assertStringNotContainsString('SESSION_DRIVER=database', $patched);
+        $this->assertStringContainsString('DB_HOST=db', $patched);
     }
 }

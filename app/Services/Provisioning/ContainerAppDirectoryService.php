@@ -245,6 +245,25 @@ class ContainerAppDirectoryService
         ];
     }
 
+    /**
+     * Probe as www-data: missing dirs vs permission denied.
+     */
+    public function laravelWritableLayoutProbeScript(string $projectRoot = '/app'): string
+    {
+        $root = escapeshellarg(rtrim($projectRoot, '/'));
+
+        return 'root='.$root.'; '
+            .'if [ -f /app/backend/artisan ]; then root=/app/backend; fi; '
+            .'missing=""; denied=""; '
+            .'for d in storage storage/logs storage/framework/cache/data storage/framework/views bootstrap/cache; do '
+            .'p="$root/$d"; '
+            .'if [ ! -d "$p" ]; then missing="$missing $p"; continue; fi; '
+            .'if ! touch "$p/.talksasa-w" 2>/dev/null; then denied="$denied $p"; else rm -f "$p/.talksasa-w"; fi; '
+            .'done; '
+            .'if [ -n "$missing$denied" ]; then echo "fail missing:${missing} denied:${denied}"; exit 0; fi; '
+            .'echo ok';
+    }
+
     public function laravelWritableLayoutScript(string $projectRoot = '/app'): string
     {
         $root = rtrim($projectRoot, '/');
@@ -260,7 +279,11 @@ class ContainerAppDirectoryService
             .'fi; '
             .'chown -R $owner '.escapeshellarg($root.'/storage').' '.escapeshellarg($root.'/bootstrap/cache').' 2>/dev/null || true; '
             .'chmod -R ug+rwx '.escapeshellarg($root.'/storage').' '.escapeshellarg($root.'/bootstrap/cache').' 2>/dev/null || true; '
-            .'chmod 775 '.escapeshellarg($root.'/artisan').' 2>/dev/null || true';
+            .'chmod 775 '.escapeshellarg($root.'/artisan').' 2>/dev/null || true; '
+            // DirectAdmin operators type `cd logs`; Laravel keeps logs under storage/logs.
+            .'if [ ! -e '.escapeshellarg($root.'/logs').' ] || [ -L '.escapeshellarg($root.'/logs').' ]; then '
+            .'ln -sfn storage/logs '.escapeshellarg($root.'/logs').'; '
+            .'fi';
     }
 
     public function ensureLaravelWritableLayoutOnHost(SSHService $ssh, string $hostAppPath): void

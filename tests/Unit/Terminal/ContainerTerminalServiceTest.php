@@ -84,6 +84,24 @@ class ContainerTerminalServiceTest extends TestCase
             ContainerTerminalService::applyArtisanProductionFlags('php artisan cache:clear')
         );
         $this->assertSame(
+            'CACHE_STORE=file CACHE_DRIVER=file SESSION_DRIVER=cookie php artisan cache:clear --no-interaction',
+            ContainerTerminalService::applyArtisanFileCacheEnv(
+                ContainerTerminalService::applyArtisanProductionFlags('php artisan cache:clear')
+            )
+        );
+        $this->assertSame(
+            'CACHE_STORE=file CACHE_DRIVER=file SESSION_DRIVER=cookie php artisan optimize:clear --no-interaction',
+            ContainerTerminalService::applyArtisanFileCacheEnv(
+                ContainerTerminalService::applyArtisanProductionFlags('php artisan optimize:clear')
+            )
+        );
+        $this->assertSame(
+            'php artisan migrate --no-interaction --force',
+            ContainerTerminalService::applyArtisanFileCacheEnv(
+                ContainerTerminalService::applyArtisanProductionFlags('php artisan migrate')
+            )
+        );
+        $this->assertSame(
             'php artisan migrate --force --no-interaction',
             ContainerTerminalService::applyArtisanProductionFlags('php artisan migrate --force')
         );

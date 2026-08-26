@@ -91,5 +91,17 @@ class ContainerAppDirectoryServiceTest extends TestCase
         $this->assertStringContainsString('/app/storage/framework/cache/data', $script);
         $this->assertStringContainsString('/app/bootstrap/cache', $script);
         $this->assertStringContainsString('VIEW_COMPILED_PATH', $script);
+        $this->assertStringContainsString('ln -sfn storage/logs', $script);
+        $this->assertStringContainsString('/app/storage/logs', $script);
+    }
+
+    #[Test]
+    public function writable_layout_probe_checks_www_data_can_write_logs(): void
+    {
+        $script = (new ContainerAppDirectoryService)->laravelWritableLayoutProbeScript('/app');
+
+        $this->assertStringContainsString('storage/logs', $script);
+        $this->assertStringContainsString('.talksasa-w', $script);
+        $this->assertStringContainsString('fail missing:', $script);
     }
 }
