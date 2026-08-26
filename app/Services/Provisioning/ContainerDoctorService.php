@@ -468,6 +468,34 @@ class ContainerDoctorService
                 $checks['cache_store'] = strtolower(trim((string) (
                     $mergedEnv['CACHE_STORE'] ?? $mergedEnv['CACHE_DRIVER'] ?? ''
                 )));
+                $runtimeSession = $this->probeLaravelSessionDriver($ssh, $deployment);
+                if ($runtimeSession !== null) {
+                    $checks['session_driver_runtime'] = $runtimeSession;
+                }
+
+                if (in_array($stack, ['laravel', 'php'], true)
+                    && $runtimeSession === 'database'
+                    && ($checks['session_driver'] ?? '') === 'cookie') {
+                    $findings[] = [
+                        'id' => 'stale_laravel_config_cache',
+                        'severity' => 'critical',
+                        'title' => 'Laravel is still using database sessions',
+                        'summary' => '`.env` says SESSION_DRIVER=cookie, but the running app (config cache / PHP-FPM) still uses database sessions. '
+                            .'That is why `/get-total-unread` 500s with `select * from sessions` while Doctor shows Session: cookie. '
+                            .'Restart recycles the app container only — MySQL is left running.',
+                        'evidence' => [
+                            'env SESSION_DRIVER=cookie',
+                            'runtime session.driver=database',
+                        ],
+                        'treat_action' => 'restart_application',
+                        'treat_label' => 'Restart application',
+                        'manual_steps' => [
+                            'Click Restart application — deletes bootstrap/cache/config.php and restarts PHP, not MySQL.',
+                            'Re-scan. Live checks should show Session: cookie and runtime session.driver=cookie.',
+                        ],
+                        'source' => 'live',
+                    ];
+                }
 
                 if ($databaseTemplate) {
                     $probeEnv = $this->envForRuntimeDatabaseProbe($mergedEnv, (string) $databaseTemplate->type);
@@ -819,12 +847,8 @@ class ContainerDoctorService
                 return false;
             }
 
-            $session = strtolower((string) ($checks['session_driver'] ?? ''));
-            $cache = strtolower((string) ($checks['cache_store'] ?? ''));
-            $lockingRelaxed = $session === 'cookie' && ($cache === '' || $cache === 'file');
-
             if (($f['id'] ?? '') === 'intermittent_http_5xx') {
-                if ($lockingRelaxed || $hasLiveDbSignal) {
+                if ($hasLiveDbSignal) {
                     return false;
                 }
                 if (collect($liveFindings)->contains(fn ($live) => ($live['id'] ?? '') === 'live_http_5xx')) {
@@ -975,17 +999,26 @@ class ContainerDoctorService
             || in_array($cache, ['database', 'redis'], true);
 
         $relaxed = $session === 'cookie' && ($cache === '' || $cache === 'file');
-        if ($relaxed) {
+        $stillFailing = $summary['status_5xx'] >= 10 || count($paths) >= 1;
+        if ($relaxed && ! $stillFailing) {
             return null;
         }
 
-        $treatAction = $locking ? 'tune_request_concurrency' : 'restart_application';
-        $treatLabel = $locking ? 'Relax session/cache locking' : 'Restart application';
+        $treatAction = ($relaxed || ! $locking) ? 'restart_application' : 'tune_request_concurrency';
+        $treatLabel = $treatAction === 'tune_request_concurrency'
+            ? 'Relax session/cache locking'
+            : 'Restart application';
 
         $summaryText = $pollish
             ? 'The same routes return both HTTP 200 and HTTP 500 (often /get-total-unread while other tabs are open). '
                 .'File or database sessions lock the worker, so Ultimate POS polling 500s while a DataTables query runs.'
-            : 'Access logs show the same path succeeding and 500ing. That is worker exhaustion or session/cache locking, not a down database.';
+            : 'Access logs show the same path succeeding and 500ing. That is worker exhaustion, a stale config cache, or session/cache locking — not a down database.';
+
+        if ($relaxed) {
+            $summaryText = '`.env` already has SESSION_DRIVER=cookie and file cache, but live traffic is still mixed 200/500. '
+                .'PHP-FPM workers or `bootstrap/cache/config.php` are still using database sessions (`select * from sessions`). '
+                .'Restart recycles the app container only (MySQL stays up).';
+        }
 
         if ($session !== '') {
             $summaryText .= ' SESSION_DRIVER='.$session
@@ -994,7 +1027,7 @@ class ContainerDoctorService
 
         return [
             'id' => 'intermittent_http_5xx',
-            'severity' => 'warning',
+            'severity' => $summary['status_5xx'] >= 20 ? 'critical' : 'warning',
             'title' => 'Intermittent HTTP 500s on live traffic',
             'summary' => $summaryText,
             'evidence' => $evidence,
@@ -1061,6 +1094,39 @@ class ContainerDoctorService
         }
 
         return [];
+    }
+
+    /**
+     * What Laravel actually uses after bootstrap (config cache), not just .env.
+     */
+    public function probeLaravelSessionDriver(SSHService $ssh, $deployment): ?string
+    {
+        $php = <<<'PHP'
+require "vendor/autoload.php";
+$app = require "bootstrap/app.php";
+$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+echo (string) config("session.driver");
+PHP;
+        $script = 'if [ -f /app/backend/artisan ]; then cd /app/backend; '
+            .'elif [ -f /app/artisan ]; then cd /app; '
+            .'else exit 1; fi; '
+            .'php -r '.escapeshellarg($php);
+
+        try {
+            $driver = strtolower(trim($ssh->exec(
+                'docker exec -u www-data '.escapeshellarg($deployment->container_name)
+                .' sh -lc '.escapeshellarg($script),
+                25
+            )));
+        } catch (\Throwable) {
+            return null;
+        }
+
+        if ($driver === '' || ! preg_match('/^[a-z0-9_-]+$/', $driver)) {
+            return null;
+        }
+
+        return $driver;
     }
 
     /**
@@ -2817,6 +2883,14 @@ PHP;
                     ->syncDotEnvFile($ssh, $service, $deployment, $envVars);
 
                 $this->healLaravelRuntimeAfterDatabaseRepair($service, $ssh);
+                try {
+                    $deploymentService->restartAppService($ssh, $deployment);
+                } catch (\Throwable $e) {
+                    \Log::warning('Doctor could not recycle app container after DB repair', [
+                        'service_id' => $service->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
             } else {
                 app(ContainerEnvironmentService::class)
                     ->syncDotEnvFile($ssh, $service, $deployment, $envVars);
@@ -3223,13 +3297,19 @@ PHP;
         }
 
         if (in_array($stack, ['laravel', 'php'], true) && $hasTables && $dbOk) {
+            $staleSessions = (bool) preg_match('/select \* from [`\']sessions[`\']/i', $haystack)
+                || (($checks['session_driver_runtime'] ?? '') === 'database');
+
             return [
                 'treat_action' => 'restart_application',
                 'treat_label' => 'Restart application',
-                'summary' => 'Live PDO works (tables: '.(string) ($checks['table_count'] ?? '?')
-                    .') but the public URL still returns HTTP '.$httpStatus
-                    .'. PHP-FPM workers may still be using a cached config or database sessions. '
-                    .'Restart reloads workers. Leftover 1045 lines in laravel.log are historical.',
+                'summary' => $staleSessions
+                    ? 'Live PDO works (tables: '.(string) ($checks['table_count'] ?? '?')
+                        .') but PHP-FPM is still querying `sessions` (cached SESSION_DRIVER=database) or leftover `user`@`10.%` accounts. '
+                        .'Restart recycles the app container only — it will not bounce MySQL (that 2002s the site).'
+                    : 'Live PDO works (tables: '.(string) ($checks['table_count'] ?? '?')
+                        .') but the public URL still returns HTTP '.$httpStatus
+                        .'. Restart recycles PHP-FPM only; MySQL stays up. Leftover 2002 lines are from the previous full-stack restart.',
             ];
         }
 
@@ -3252,8 +3332,7 @@ PHP;
     }
 
     /**
-     * After GRANT + .env rewrite: create cache dirs, force cookie/file drivers,
-     * and reload PHP-FPM so workers stop querying `sessions` with a stale password.
+     * After GRANT + .env rewrite: create cache dirs and force cookie/file drivers.
      */
     private function healLaravelRuntimeAfterDatabaseRepair(Service $service, SSHService $ssh): void
     {
@@ -3306,17 +3385,35 @@ PHP;
             $this->clearLaravelCachesQuietly($service, $ssh);
         } catch (\Throwable) {
         }
+    }
 
-        try {
-            $init->dockerExecPublic(
-                $ssh,
-                $deployment->container_name,
-                $this->phpFpmReloadScript(),
-                20,
-                asRoot: true
-            );
-        } catch (\Throwable) {
+    private function dropMysqlShadowHostsForService(Service $service, SSHService $ssh): void
+    {
+        $deployment = $service->containerDeployment;
+        $databaseTemplate = app(ContainerDeploymentService::class)->resolveDatabaseTemplateForService($service);
+        if (! $databaseTemplate || ! in_array((string) $databaseTemplate->type, ['mysql', 'mariadb'], true)) {
+            return;
         }
+
+        $env = is_array($deployment->env_values) ? $deployment->env_values : [];
+        $live = $this->readLiveAppEnvironment($ssh, $deployment);
+        if ($live !== []) {
+            $env = array_merge($env, $live);
+        }
+
+        $username = (string) ($env['DB_USERNAME'] ?? $env['MYSQL_USER'] ?? '');
+        if ($username === '') {
+            return;
+        }
+
+        $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+        app(ContainerDeploymentService::class)->mysqlDropShadowHosts(
+            $ssh,
+            $containerPath,
+            app(ContainerDeploymentService::class)->resolveMysqlComposeServiceName($env),
+            (string) ($env['MYSQL_ROOT_PASSWORD'] ?? $env['DB_PASSWORD'] ?? ''),
+            $username
+        );
     }
 
     public function phpFpmReloadScript(): string
@@ -4108,8 +4205,23 @@ PHP;
             return ['success' => false, 'message' => 'Application is not deployed.'];
         }
 
+        $ssh = SSHService::forNode($deployment->node);
+        $deploymentService = app(ContainerDeploymentService::class);
+
         try {
-            app(ContainerDeploymentService::class)->restart($service);
+            $this->healLaravelRuntimeAfterDatabaseRepair($service, $ssh);
+            $this->dropMysqlShadowHostsForService($service, $ssh);
+        } catch (\Throwable $e) {
+            \Log::warning('Doctor pre-restart heal failed', [
+                'service_id' => $service->id,
+                'error' => $e->getMessage(),
+            ]);
+        } finally {
+            $ssh->disconnect();
+        }
+
+        try {
+            $deploymentService->restart($service);
         } catch (\Throwable $e) {
             return ['success' => false, 'message' => 'Restart failed: '.$e->getMessage()];
         }
@@ -4124,7 +4236,7 @@ PHP;
             $probe = $this->waitForUpstream($ssh, $deployment);
 
             if ($probe['reachable']) {
-                return ['success' => true, 'message' => 'Application restarted and is answering on its port again.'];
+                return ['success' => true, 'message' => 'Application container restarted (database sidecar left running). Reload the site.'];
             }
 
             if (is_string($probe['bootstrapping'])) {

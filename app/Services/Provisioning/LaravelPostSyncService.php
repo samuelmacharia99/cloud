@@ -112,10 +112,10 @@ class LaravelPostSyncService
             $this->initialization->dockerExecPublic(
                 $ssh,
                 $deployment->container_name,
-                'set -e; cd '.$root.'; php artisan config:cache --no-interaction',
+                'set -e; cd '.$root.'; php artisan config:clear --no-interaction',
                 $timeout
             );
-            $parts[] = 'config cached';
+            $parts[] = 'config cache cleared';
         } catch (\Throwable) {
             $parts[] = 'config cache skipped';
         }

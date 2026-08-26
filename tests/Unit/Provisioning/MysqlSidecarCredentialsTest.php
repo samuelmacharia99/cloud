@@ -53,4 +53,28 @@ class MysqlSidecarCredentialsTest extends TestCase
             "ERROR 1045 (28000): Access denied for user 'root'@'localhost' (using password: YES)"
         ));
     }
+
+    #[Test]
+    public function shadow_host_drop_pipe_targets_every_account_except_percent_and_localhost(): void
+    {
+        $command = app(ContainerDeploymentService::class)->mysqlDropShadowHostsPipeCommand('u74_s24');
+
+        $this->assertStringContainsString('Host NOT IN', $command);
+        $this->assertStringContainsString('DROP USER IF EXISTS', $command);
+        $this->assertStringContainsString('FLUSH PRIVILEGES', $command);
+        $this->assertStringContainsString('u74_s24', $command);
+    }
+
+    #[Test]
+    public function compose_restart_targets_the_app_service_not_the_database_sidecar(): void
+    {
+        $command = app(ContainerDeploymentService::class)->composeRestartAppCommand(
+            '/opt/talksasa/containers/user-74-service-24-laravel',
+            'user-74-service-24-laravel'
+        );
+
+        $this->assertStringContainsString('docker compose -f docker-compose.yml restart', $command);
+        $this->assertStringContainsString('user-74-service-24-laravel', $command);
+        $this->assertDoesNotMatchRegularExpression('/restart["\']?\s*$/', $command);
+    }
 }

@@ -781,7 +781,10 @@ class ContainerDeploymentService
                 $this->ensureComposeFileExists($ssh, $deployment);
 
                 $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
-                $ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml restart", self::DEPLOY_TIMEOUT);
+                // Restart the app service only. `docker compose restart` with no
+                // service name also bounces the MySQL sidecar → HTTP 2002 and a new
+                // overlay IP that then 1045s against leftover user@10.% accounts.
+                $ssh->exec($this->composeRestartAppCommand($containerPath, $deployment->container_name), self::DEPLOY_TIMEOUT);
 
                 $deployment->update([
                     'last_status_check_at' => now(),
@@ -800,6 +803,21 @@ class ContainerDeploymentService
 
             throw $e;
         }
+    }
+
+    /**
+     * Restart only the PHP/app compose service — never the database sidecar.
+     */
+    public function composeRestartAppCommand(string $containerPath, string $appServiceName): string
+    {
+        return 'cd '.escapeshellarg($containerPath)
+            .' && docker compose -f docker-compose.yml restart '.escapeshellarg($appServiceName);
+    }
+
+    public function restartAppService(SSHService $ssh, ContainerDeployment $deployment): void
+    {
+        $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+        $ssh->exec($this->composeRestartAppCommand($containerPath, $deployment->container_name), self::DEPLOY_TIMEOUT);
     }
 
     /**
@@ -2510,6 +2528,8 @@ class ContainerDeploymentService
             ?? ''
         );
 
+        $this->mysqlDropShadowHosts($ssh, $containerPath, $dbService, $rootPassword, $username);
+
         $shadowHosts = array_values(array_unique(array_merge(
             $this->detectComposeAppIps($ssh, $containerPath),
             $this->mysqlListUserHosts($ssh, $containerPath, $dbService, $rootPassword, $username)
@@ -2703,6 +2723,54 @@ class ContainerDeploymentService
         return $found;
     }
 
+    /**
+     * DROP every mysql.user host for this username except `%` and `localhost`.
+     * `user`@`10.%` is more specific than `@%`, so a new overlay IP like
+     * 10.201.0.11 still 1045s after `user`@`10.201.0.26` was dropped.
+     */
+    public function mysqlDropShadowHostsPipeCommand(string $username): string
+    {
+        $user = $this->mysqlQuoteString($username);
+
+        return 'mysql --force -N -B -u root -e '
+            .escapeshellarg(
+                "SELECT CONCAT('DROP USER IF EXISTS ', QUOTE('{$user}'), '@', QUOTE(Host), ';') "
+                ."FROM mysql.user WHERE User='{$user}' AND Host NOT IN ('%', 'localhost')"
+            )
+            .' | mysql --force -u root; mysql --force -u root -e '.escapeshellarg('FLUSH PRIVILEGES');
+    }
+
+    public function mysqlDropShadowHosts(
+        SSHService $ssh,
+        string $containerPath,
+        string $dbService,
+        string $rootPassword,
+        string $username
+    ): void {
+        $pathArg = escapeshellarg($containerPath);
+        $dbServiceArg = escapeshellarg($dbService);
+        $rootPwArg = escapeshellarg($rootPassword);
+        $inner = $this->mysqlDropShadowHostsPipeCommand($username);
+        $commands = [
+            "cd {$pathArg} && docker compose exec -T -e MYSQL_PWD={$rootPwArg} {$dbServiceArg} sh -lc ".escapeshellarg($inner),
+            "cd {$pathArg} && docker compose exec -T {$dbServiceArg} sh -lc ".escapeshellarg($inner),
+        ];
+
+        foreach ($commands as $command) {
+            try {
+                $ssh->exec($command, 30);
+
+                return;
+            } catch (\Throwable $e) {
+                if ($this->mysqlSidecarGrantShouldStopDatabase($e->getMessage())) {
+                    continue;
+                }
+
+                return;
+            }
+        }
+    }
+
     public function mysqlSidecarGrantShouldStopDatabase(string $message): bool
     {
         return $this->isMysqlRootLoginFailure($message);
@@ -2765,7 +2833,7 @@ class ContainerDeploymentService
     /**
      * @param  array<string, mixed>  $envVars
      */
-    private function resolveMysqlComposeServiceName(array $envVars): string
+    public function resolveMysqlComposeServiceName(array $envVars): string
     {
         if (! empty($envVars['WORDPRESS_DB_NAME'])
             || ! empty($envVars['WORDPRESS_DB_HOST'])

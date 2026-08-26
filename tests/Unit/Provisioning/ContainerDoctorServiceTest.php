@@ -402,7 +402,9 @@ LOG;
             'SESSION_DRIVER' => 'cookie',
             'CACHE_STORE' => 'file',
         ]);
-        $this->assertNull($relaxed);
+        $this->assertNotNull($relaxed);
+        $this->assertSame('restart_application', $relaxed['treat_action']);
+        $this->assertStringContainsString('config.php', $relaxed['summary']);
     }
 
     #[Test]
@@ -452,27 +454,28 @@ LOG;
     }
 
     #[Test]
-    public function it_drops_intermittent_500s_once_session_locking_is_already_relaxed(): void
+    public function it_keeps_intermittent_500s_when_env_says_cookie_because_workers_may_be_stale(): void
     {
         $merged = app(ContainerDoctorService::class)->mergeLogAndLiveFindings(
             [[
                 'id' => 'intermittent_http_5xx',
-                'severity' => 'warning',
+                'severity' => 'critical',
                 'title' => 'Intermittent HTTP 500s',
-                'treat_action' => 'tune_request_concurrency',
+                'treat_action' => 'restart_application',
             ]],
             [
                 'findings' => [],
                 'checks' => [
-                    'http_status' => 500,
-                    'db_ok' => false,
+                    'http_status' => 200,
+                    'db_ok' => true,
                     'session_driver' => 'cookie',
                     'cache_store' => 'file',
+                    'http_5xx_count' => 345,
                 ],
             ]
         );
 
-        $this->assertNotContains('intermittent_http_5xx', array_column($merged, 'id'));
+        $this->assertContains('intermittent_http_5xx', array_column($merged, 'id'));
     }
 
     #[Test]
@@ -958,7 +961,8 @@ LOG;
         );
 
         $this->assertSame('restart_application', $treat['treat_action']);
-        $this->assertStringContainsString('historical', $treat['summary']);
+        $this->assertStringContainsString('sessions', $treat['summary']);
+        $this->assertStringContainsString('MySQL', $treat['summary']);
     }
 
     #[Test]
