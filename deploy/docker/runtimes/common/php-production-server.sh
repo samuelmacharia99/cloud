@@ -182,8 +182,8 @@ http {
             fastcgi_param DOCUMENT_ROOT \$document_root;
             fastcgi_pass 127.0.0.1:9000;
             fastcgi_read_timeout 300;
-            fastcgi_buffers 16 16k;
-            fastcgi_buffer_size 32k;
+            fastcgi_buffers 4 128k;
+            fastcgi_buffer_size 128k;
         }
 
         location ~ /\.(?!well-known).* {

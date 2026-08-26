@@ -13,7 +13,7 @@ class NginxProxyService
     /**
      * Bump when the generated vhost changes so existing sites are rewritten.
      */
-    public const VHOST_REVISION = 'v3';
+    public const VHOST_REVISION = 'v4';
 
     /**
      * Bind a domain to a container via nginx reverse proxy
@@ -360,9 +360,9 @@ EOL;
         proxy_redirect off;
         proxy_read_timeout 300s;
         proxy_send_timeout 300s;
-        proxy_buffer_size 32k;
-        proxy_buffers 8 32k;
-        proxy_busy_buffers_size 64k;
+        proxy_buffer_size 128k;
+        proxy_buffers 4 256k;
+        proxy_busy_buffers_size 256k;
     }
 EOL;
     }
@@ -374,7 +374,7 @@ EOL;
      *
      * @return bool true when the config was rewritten
      */
-    public function ensureUploadLimit(ContainerDomain $domain): bool
+    public function ensureUploadLimit(ContainerDomain $domain, bool $force = false): bool
     {
         $domain->loadMissing('deployment.node');
 
@@ -390,8 +390,7 @@ EOL;
                 return false;
             }
 
-            $configPath = $domain->nginx_config_path
-                ?: $this->resolveNginxConfigDir($ssh).'/'.$domain->domain.'.conf';
+            $configPath = $this->vhostConfigPath($ssh, $domain);
 
             $existing = '';
             try {
@@ -400,7 +399,7 @@ EOL;
                 // Missing file — full bind will recreate it.
             }
 
-            if ($existing !== '' && $this->vhostIsCurrent($existing)) {
+            if (! $force && $existing !== '' && $this->vhostIsCurrent($existing)) {
                 return false;
             }
 
@@ -445,9 +444,10 @@ EOL;
     }
 
     /**
-     * Rewrite this service's bound vhosts when the template revision moved.
+     * Rewrite this service's bound vhosts. `$force` rewrites even when the revision
+     * marker already matches, so login 502s are not stuck on a silently skipped vhost.
      */
-    public function refreshBoundDomainVhosts(Service $service): int
+    public function refreshBoundDomainVhosts(Service $service, bool $force = false): int
     {
         $service->loadMissing('containerDeployment.domains');
 
@@ -459,7 +459,7 @@ EOL;
         $updated = 0;
         foreach ($domains as $domain) {
             try {
-                if ($this->ensureUploadLimit($domain)) {
+                if ($this->ensureUploadLimit($domain, $force)) {
                     $updated++;
                 }
             } catch (\Throwable $e) {
@@ -474,6 +474,15 @@ EOL;
         return $updated;
     }
 
+    public function vhostConfigPath($ssh, ContainerDomain $domain): string
+    {
+        if (filled($domain->nginx_config_path)) {
+            return (string) $domain->nginx_config_path;
+        }
+
+        return $this->resolveNginxConfigDir($ssh).'/'.$domain->domain.'.conf';
+    }
+
     /**
      * A vhost is current when it carries this revision marker and the configured body
      * limit. Anything older is regenerated so long-lived sites pick up proxy fixes.
@@ -482,7 +491,7 @@ EOL;
     {
         return str_contains($config, '# talksasa-vhost '.self::VHOST_REVISION)
             && str_contains($config, 'client_max_body_size '.$this->clientMaxBodySize())
-            && str_contains($config, 'proxy_buffer_size 32k');
+            && str_contains($config, 'proxy_buffer_size 128k');
     }
 
     /**

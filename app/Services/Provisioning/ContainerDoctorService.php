@@ -527,7 +527,7 @@ class ContainerDoctorService
                         'treat_action' => 'restart_application',
                         'treat_label' => 'Restart application',
                         'manual_steps' => [
-                            'Click Restart application — writes SESSION_DRIVER=cookie into compose, recreates the app container, and leaves MySQL running.',
+                            'Click Restart application — writes SESSION_DRIVER=file into compose, recreates the app container, and leaves MySQL running.',
                             'Re-scan. Live checks should show Session: cookie and runtime session.driver=cookie.',
                         ],
                         'source' => 'live',
@@ -754,17 +754,23 @@ class ContainerDoctorService
                 if ($loginStatus !== null) {
                     $checks['http_status_home'] = $loginStatus;
                 }
-                if ($this->loginPathLooksLikeHeaderBufferFailure($httpStatus, $loginStatus)
+                $originStatus = $this->probeOriginLoginStatus($ssh, $deployment);
+                if ($originStatus !== null) {
+                    $checks['http_status_home_origin'] = $originStatus;
+                }
+                $homeStatus = in_array($originStatus, [502, 503], true) ? $originStatus : $loginStatus;
+                if ($this->loginPathLooksLikeHeaderBufferFailure($httpStatus, $homeStatus)
                     && ! $this->findingsContain($findings, ['live_stale_proxy_vhost'])) {
                     $findings[] = [
                         'id' => 'login_proxy_header_too_big',
                         'severity' => 'critical',
                         'title' => 'Login URL 502s while the homepage works',
-                        'summary' => 'GET / returns HTTP '.$httpStatus.', but '.$loginUrl
-                            .' returns HTTP '.$loginStatus.'. Ultimate POS /home starts a cookie session; the encrypted Set-Cookie is larger than the node nginx header buffer (default 4k/8k), so nginx 502s that route only. Refresh web proxy rewrites the vhost with 32k buffers — MySQL stays up.',
+                        'summary' => 'GET / returns HTTP '.$httpStatus.', but /home returns HTTP '.$homeStatus
+                            .' on the node nginx vhost. Ultimate POS login starts a session cookie larger than the default 4k/8k header buffer, so only that route 502s. Refresh web proxy rewrites 128k buffers and Restart switches sessions to file — MySQL stays up.',
                         'evidence' => [
                             'GET / → HTTP '.$httpStatus,
-                            'GET /home → HTTP '.$loginStatus,
+                            'GET /home (public) → HTTP '.($loginStatus ?? 'n/a'),
+                            'GET /home (origin 127.0.0.1) → HTTP '.($originStatus ?? 'n/a'),
                             'SESSION_DRIVER='.(string) ($checks['session_driver_runtime'] ?? $checks['session_driver'] ?? 'unknown'),
                         ],
                         'treat_action' => 'refresh_domain_proxy',
@@ -1173,8 +1179,8 @@ class ContainerDoctorService
 
         $manualSteps = $treatAction === 'restart_application'
             ? [
-                'Click Restart application — writes SESSION_DRIVER=cookie into compose, deletes config cache, recreates the app, and leaves MySQL running.',
-                'Re-scan. Live checks should show runtime session.driver=cookie. Older /login 500s in the 6h log window are leftover from the DB outage.',
+                'Click Restart application — writes SESSION_DRIVER=file into compose, deletes config cache, recreates the app, and leaves MySQL running.',
+                'Re-scan. Live checks should show runtime session.driver=file. Older /login 500s in the 6h log window are leftover from the DB outage.',
             ]
             : [
                 'Click Relax session/cache locking — writes cookie sessions + file cache into compose and recreates the app (MySQL stays up).',
@@ -1802,6 +1808,20 @@ PHP;
         return rtrim($url, '/').'/home';
     }
 
+    public function originLoginProbeCommand(string $domain, bool $ssl): string
+    {
+        $host = strtolower(ltrim($domain, '/'));
+        if ($ssl) {
+            return 'curl -sk -o /dev/null -w "%{http_code}" --max-time 12 --resolve '
+                .escapeshellarg($host.':443:127.0.0.1').' '
+                .escapeshellarg('https://'.$host.'/home').' || true';
+        }
+
+        return 'curl -s -o /dev/null -w "%{http_code}" --max-time 12 -H '
+            .escapeshellarg('Host: '.$host).' '
+            .escapeshellarg('http://127.0.0.1/home').' || true';
+    }
+
     public function loginPathLooksLikeHeaderBufferFailure(?int $rootStatus, ?int $loginStatus): bool
     {
         return $rootStatus !== null
@@ -1816,6 +1836,31 @@ PHP;
         try {
             $code = trim($ssh->exec(
                 'curl -s -o /dev/null -w "%{http_code}" --max-time 12 '.escapeshellarg($url).' || true',
+                20
+            ));
+            if (preg_match('/^\d{3}$/', $code) === 1) {
+                return (int) $code;
+            }
+        } catch (\Throwable) {
+            return null;
+        }
+
+        return null;
+    }
+
+    private function probeOriginLoginStatus(SSHService $ssh, $deployment): ?int
+    {
+        $domain = $deployment->relationLoaded('domains')
+            ? $deployment->domains->first(fn ($d) => in_array($d->status, ['active', 'pending'], true))
+            : $deployment->domains()->whereIn('status', ['active', 'pending'])->first();
+
+        if (! $domain || ! filled($domain->domain)) {
+            return null;
+        }
+
+        try {
+            $code = trim($ssh->exec(
+                $this->originLoginProbeCommand((string) $domain->domain, (bool) $domain->ssl_enabled),
                 20
             ));
             if (preg_match('/^\d{3}$/', $code) === 1) {
@@ -2031,12 +2076,15 @@ PHP;
             ? $deployment->domains->first(fn ($d) => in_array($d->status, ['active', 'pending'], true))
             : $deployment->domains()->whereIn('status', ['active', 'pending'])->first();
 
-        if (! $domain || ! $domain->nginx_config_path) {
+        if (! $domain) {
             return null;
         }
 
+        $nginx = app(NginxProxyService::class);
+        $configPath = $nginx->vhostConfigPath($ssh, $domain);
+
         try {
-            $config = $ssh->exec('cat '.escapeshellarg($domain->nginx_config_path).' 2>/dev/null || true', 20);
+            $config = $ssh->exec('cat '.escapeshellarg($configPath).' 2>/dev/null || true', 20);
         } catch (\Throwable) {
             return null;
         }
@@ -2061,10 +2109,10 @@ PHP;
                 .'before they reach the application, and nothing is written to the container log because the '
                 .'request never arrives. Refreshing rewrites the vhost and reloads nginx.',
             'evidence' => array_values(array_filter([
-                'vhost: '.$domain->nginx_config_path,
+                'vhost: '.$configPath,
                 str_contains($config, 'proxy_http_version 1.1') ? null : 'missing proxy_http_version 1.1',
                 str_contains($config, 'proxy_request_buffering off') ? 'proxy_request_buffering off' : null,
-                str_contains($config, 'proxy_buffer_size 32k') ? null : 'missing proxy_buffer_size 32k',
+                str_contains($config, 'proxy_buffer_size 128k') ? null : 'missing proxy_buffer_size 128k',
             ])),
             'treat_action' => 'refresh_domain_proxy',
             'treat_label' => 'Refresh web proxy',
@@ -3248,7 +3296,7 @@ PHP;
 
             $stack = strtolower((string) ($service->effectiveContainerTemplate()?->slug ?? ''));
             if (in_array($stack, ['laravel', 'php'], true)) {
-                $envVars['SESSION_DRIVER'] = 'cookie';
+                $envVars['SESSION_DRIVER'] = 'file';
                 $envVars['CACHE_STORE'] = 'file';
                 $envVars['CACHE_DRIVER'] = 'file';
                 $deployment->update(['env_values' => array_merge(
@@ -3798,7 +3846,7 @@ $set = function (string $c, string $k, string $v): string {
 };
 $c = $set($c, 'CACHE_STORE', 'file');
 $c = $set($c, 'CACHE_DRIVER', 'file');
-$c = $set($c, 'SESSION_DRIVER', 'cookie');
+$c = $set($c, 'SESSION_DRIVER', 'file');
 if (file_put_contents($envPath, $c) === false) { echo "write-failed"; exit(0); }
 echo "ok";
 PHP;
@@ -4090,7 +4138,7 @@ $set = function (string $c, string $k, string $v): string {
 };
 $c = $set($c, 'CACHE_STORE', 'file');
 $c = $set($c, 'CACHE_DRIVER', 'file');
-$c = $set($c, 'SESSION_DRIVER', 'cookie');
+$c = $set($c, 'SESSION_DRIVER', 'file');
 if (file_put_contents($envPath, $c) === false) { fwrite(STDERR, "write failed\n"); exit(1); }
 echo "ok";
 PHP;
@@ -4159,7 +4207,7 @@ $set = function (string $c, string $k, string $v): string {
 };
 $c = $set($c, 'CACHE_STORE', 'file');
 $c = $set($c, 'CACHE_DRIVER', 'file');
-$c = $set($c, 'SESSION_DRIVER', 'cookie');
+$c = $set($c, 'SESSION_DRIVER', 'file');
 if (preg_match('/^QUEUE_CONNECTION=(redis|database)/mi', $c)) {
     $c = $set($c, 'QUEUE_CONNECTION', 'sync');
 }
@@ -4179,14 +4227,14 @@ PHP;
 
             $deploymentService = app(ContainerDeploymentService::class);
             $env = is_array($deployment->env_values) ? $deployment->env_values : [];
-            $env['SESSION_DRIVER'] = 'cookie';
+            $env['SESSION_DRIVER'] = 'file';
             $env['CACHE_STORE'] = 'file';
             $env['CACHE_DRIVER'] = 'file';
             $deployment->update(['env_values' => $env]);
             $meta = is_array($service->service_meta) ? $service->service_meta : [];
             $metaEnv = is_array($meta['env_values'] ?? null) ? $meta['env_values'] : [];
             $meta['env_values'] = array_merge($metaEnv, [
-                'SESSION_DRIVER' => 'cookie',
+                'SESSION_DRIVER' => 'file',
                 'CACHE_STORE' => 'file',
                 'CACHE_DRIVER' => 'file',
             ]);
@@ -4213,7 +4261,7 @@ PHP;
 
             return [
                 'success' => true,
-                'message' => 'Set SESSION_DRIVER=cookie and CACHE_STORE=file in .env and compose, deleted config cache, and recreated the app (MySQL left running). '
+                'message' => 'Set SESSION_DRIVER=file and CACHE_STORE=file in .env and compose, deleted config cache, and recreated the app (MySQL left running). '
                     .'PHP-FPM will now see cookie/file — dotenv cannot override compose. Reload the site.',
             ];
         } catch (\Throwable $e) {
@@ -4419,11 +4467,11 @@ PHP;
     private function treatRefreshDomainProxy(Service $service): array
     {
         try {
-            app(WordPressContainerHardeningService::class)->ensureNginxUploadLimits($service);
+            app(NginxProxyService::class)->refreshBoundDomainVhosts($service, force: true);
 
             return [
                 'success' => true,
-                'message' => 'Web proxy refreshed for every bound domain (32k header buffers). Retry /home — the homepage can work while login 502s on the old 4k/8k buffer.',
+                'message' => 'Web proxy rewritten with 128k header buffers. Retry /home — Restart also switches sessions to file so login no longer depends on cookie size.',
             ];
         } catch (\Throwable $e) {
             return ['success' => false, 'message' => 'Failed to refresh the web proxy: '.$e->getMessage()];

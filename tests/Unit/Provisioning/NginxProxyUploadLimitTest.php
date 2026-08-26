@@ -34,7 +34,7 @@ class NginxProxyUploadLimitTest extends TestCase
         $https = $nginx->generateConfig($domain, true);
         $this->assertStringContainsString('listen 443 ssl', $https);
         $this->assertStringContainsString('client_max_body_size 100M;', $https);
-        $this->assertStringContainsString('proxy_buffer_size 32k;', $https);
+        $this->assertStringContainsString('proxy_buffer_size 128k;', $https);
         $this->assertTrue($nginx->vhostIsCurrent($https));
     }
 
@@ -55,9 +55,9 @@ class NginxProxyUploadLimitTest extends TestCase
         $this->assertStringContainsString('proxy_http_version 1.1;', $http);
         $this->assertStringNotContainsString('proxy_request_buffering off', $http);
         $this->assertTrue($nginx->vhostIsCurrent($http));
-        $this->assertStringContainsString('proxy_buffer_size 32k;', $http);
-        $this->assertStringContainsString('proxy_buffers 8 32k;', $http);
-        $this->assertStringContainsString('proxy_busy_buffers_size 64k;', $http);
+        $this->assertStringContainsString('proxy_buffer_size 128k;', $http);
+        $this->assertStringContainsString('proxy_buffers 4 256k;', $http);
+        $this->assertStringContainsString('proxy_busy_buffers_size 256k;', $http);
     }
 
     #[Test]

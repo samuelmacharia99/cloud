@@ -1095,6 +1095,16 @@ LOG;
     }
 
     #[Test]
+    public function origin_login_probe_hits_node_nginx_not_cloudflare(): void
+    {
+        $cmd = app(ContainerDoctorService::class)->originLoginProbeCommand('racegroup.co.ke', true);
+
+        $this->assertStringContainsString('--resolve', $cmd);
+        $this->assertStringContainsString('127.0.0.1', $cmd);
+        $this->assertStringContainsString('https://racegroup.co.ke/home', $cmd);
+    }
+
+    #[Test]
     public function http_500_with_live_pdo_and_host_db_pins_unique_sidecar_dns(): void
     {
         $treat = app(ContainerDoctorService::class)->resolveHttp500Treatment(

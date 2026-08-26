@@ -791,7 +791,7 @@ class ContainerDeploymentService
                 $this->restartAppService($ssh, $deployment);
 
                 try {
-                    app(NginxProxyService::class)->refreshBoundDomainVhosts($service);
+                    app(NginxProxyService::class)->refreshBoundDomainVhosts($service, force: true);
                 } catch (\Throwable $e) {
                     \Log::warning('Could not refresh nginx vhost after app restart', [
                         'service_id' => $service->id,
@@ -910,7 +910,7 @@ class ContainerDeploymentService
     {
         $fromEnv = is_array($deployment->env_values) ? $deployment->env_values : [];
         $defaults = [
-            'SESSION_DRIVER' => 'cookie',
+            'SESSION_DRIVER' => 'file',
             'CACHE_STORE' => 'file',
             'CACHE_DRIVER' => 'file',
         ];

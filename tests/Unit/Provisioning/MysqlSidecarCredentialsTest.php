@@ -255,7 +255,7 @@ YAML;
 
         $overrides = app(ContainerDeploymentService::class)->composeRuntimeEnvironmentOverrides($deployment);
 
-        $this->assertSame('cookie', $overrides['SESSION_DRIVER']);
+        $this->assertSame('file', $overrides['SESSION_DRIVER']);
         $this->assertSame('file', $overrides['CACHE_STORE']);
         $this->assertSame('user-74-service-24-laravel-db', $overrides['DB_HOST']);
         $this->assertStringContainsString('@user-74-service-24-laravel-db:3306/', $overrides['DATABASE_URL']);

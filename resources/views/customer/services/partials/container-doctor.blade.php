@@ -73,6 +73,7 @@
                 <span>Live checks:</span>
                 <span x-show="liveChecks.http_status" x-text="'HTTP ' + liveChecks.http_status"></span>
                 <span x-show="liveChecks.http_status_home" x-text="'HTTP /home ' + liveChecks.http_status_home"></span>
+                <span x-show="liveChecks.http_status_home_origin" x-text="'HTTP /home origin ' + liveChecks.http_status_home_origin"></span>
                 <span x-text="liveChecks.db_ok === true ? 'DB: connected' : (liveChecks.db_ok === false ? 'DB: failed' : 'DB: n/a')"></span>
                 <span x-show="liveChecks.table_count !== null && liveChecks.table_count !== undefined" x-text="'Tables: ' + liveChecks.table_count"></span>
                 <span x-show="liveChecks.env_source" x-text="'Env: ' + liveChecks.env_source"></span>
