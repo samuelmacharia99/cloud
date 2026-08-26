@@ -701,68 +701,19 @@ class ContainerDoctorService
                     // A second HTTP 500 card with leftover laravel.log lines (cache path,
                     // connection refused, sessions table) looks like the treat did nothing.
                 } elseif ($containerReady && ! $hasSpecificInfra) {
-                    $looksLikeMissingCacheLocks = collect($appErrors)->contains(
-                        fn ($line) => (bool) preg_match('/cache_locks/i', (string) $line)
-                    );
-                    $looksLikeMissingTable = collect($appErrors)->contains(
-                        fn ($line) => (bool) preg_match('/relation .* does not exist|Base table or view not found|no such table/i', (string) $line)
-                    );
-                    $looksLikeMissingViewCache = collect($appErrors)->contains(
-                        fn ($line) => (bool) preg_match('/Please provide a valid cache path/i', (string) $line)
-                    );
-
-                    $hasTables = ($checks['table_count'] ?? null) !== null && (int) $checks['table_count'] > 0;
-                    $looksLikeDbAuth = collect($appErrors)->contains(
-                        fn ($line) => (bool) preg_match('/Access denied for user|SQLSTATE\[HY000\]\s*\[1045\]|password authentication failed/i', (string) $line)
-                    );
-
-                    if ($looksLikeDbAuth) {
-                        $treatAction = 'sync_database_credentials';
-                        $treatLabel = 'Repair DB credentials';
-                    } elseif ($looksLikeMissingViewCache) {
-                        $treatAction = 'fix_storage_permissions';
-                        $treatLabel = 'Create Laravel cache directories';
-                    } elseif ($looksLikeMissingCacheLocks) {
-                        $treatAction = 'use_file_cache';
-                        $treatLabel = 'Switch cache to file';
-                    } elseif ($looksLikeMissingTable) {
-                        $treatAction = $hasTables ? 'run_migrations' : 'migrate_fresh';
-                        $treatLabel = $hasTables ? 'Run migrations' : 'Rebuild schema (migrate:fresh)';
-                    } elseif (in_array($stack, ['laravel', 'php'], true) && $hasTables) {
-                        $treatAction = 'restart_application';
-                        $treatLabel = 'Restart application';
-                    } elseif (in_array($stack, ['laravel', 'php'], true)) {
-                        $treatAction = 'clear_laravel_caches';
-                        $treatLabel = 'Clear Laravel caches';
-                    } else {
-                        $treatAction = 'restart_application';
-                        $treatLabel = 'Restart application';
-                    }
-
-                    $summary = $looksLikeDbAuth
-                        ? 'The app log shows MySQL/Postgres rejected the username or password (often `user`@`localhost` after a DirectAdmin import — the app container connects from a Docker overlay IP). Repair grants `user`@`%` and rewrites .env.'
-                        : ($looksLikeMissingViewCache
-                        ? 'Laravel Blade compiled-view path is missing (storage/framework/views). DirectAdmin exports skip those cache dirs, so GET / 500s until they exist.'
-                        : ($looksLikeMissingCacheLocks
-                        ? 'DB connects and has tables, but Laravel is using database cache without a cache_locks table — that commonly 500s GET /.'
-                        : ($looksLikeMissingTable
-                            ? 'DB connects, but the app error looks like missing tables/migrations.'
-                            : 'The container is up and answering on its port, but the app itself returns HTTP '.$httpStatus
-                                .' (tables: '.((string) ($checks['table_count'] ?? '?')).'). '
-                                .'This is an application exception — clearing caches alone will not clear this card until the URL returns 2xx/3xx.')));
-
+                    $treat = $this->resolveHttp500Treatment($checks, $appErrors, $stack);
                     $findings[] = [
                         'id' => 'live_http_5xx',
                         'severity' => 'critical',
                         'title' => 'Live check: site returns HTTP '.$httpStatus,
-                        'summary' => $summary,
+                        'summary' => $treat['summary'],
                         'evidence' => $evidence,
-                        'treat_action' => $treatAction,
-                        'treat_label' => $treatLabel,
+                        'treat_action' => $treat['treat_action'],
+                        'treat_label' => $treat['treat_label'],
                         'manual_steps' => [
-                            'In Terminal: tail -n 120 storage/logs/laravel.log',
-                            'If you see cache_locks missing: set CACHE_STORE=file && php artisan config:clear',
-                            'Fix the exception shown there, then re-scan — this card stays until the public URL stops returning HTTP 5xx.',
+                            'In Terminal: tail -n 40 storage/logs/laravel.log',
+                            'Re-scan after treating — leftover 1045/2002 lines in an old log tail are not the live cause when DB: connected.',
+                            'This card stays until the public URL stops returning HTTP 5xx.',
                         ],
                         'source' => 'live',
                     ];
@@ -1268,7 +1219,33 @@ PHP;
             }
         }
 
-        return array_slice(array_values(array_unique($lines)), -8);
+        return $this->newestUniqueLines($lines, 6);
+    }
+
+    /**
+     * Prefer the newest log hits. Unique-then-tail kept a days-old
+     * "valid cache path" / 2002 next to a live 1045 and misdiagnosed Repair DB.
+     *
+     * @param  list<string>  $lines
+     * @return list<string>
+     */
+    public function newestUniqueLines(array $lines, int $limit = 6): array
+    {
+        $out = [];
+        $seen = [];
+        foreach (array_reverse($lines) as $line) {
+            $line = trim((string) $line);
+            if ($line === '' || isset($seen[$line])) {
+                continue;
+            }
+            $seen[$line] = true;
+            $out[] = $line;
+            if (count($out) >= $limit) {
+                break;
+            }
+        }
+
+        return array_reverse($out);
     }
 
     private function probeHttpErrorSnippet(SSHService $ssh, $deployment): ?string
@@ -2812,6 +2789,19 @@ PHP;
 
             $stack = strtolower((string) ($service->effectiveContainerTemplate()?->slug ?? ''));
             if (in_array($stack, ['laravel', 'php'], true)) {
+                $envVars['SESSION_DRIVER'] = 'cookie';
+                $envVars['CACHE_STORE'] = 'file';
+                $envVars['CACHE_DRIVER'] = 'file';
+                $deployment->update(['env_values' => array_merge(
+                    is_array($deployment->env_values) ? $deployment->env_values : [],
+                    $envVars
+                )]);
+                $meta = is_array($service->service_meta) ? $service->service_meta : [];
+                $metaEnv = is_array($meta['env_values'] ?? null) ? $meta['env_values'] : [];
+                $meta['env_values'] = array_merge($metaEnv, $envVars);
+                $service->update(['service_meta' => $meta]);
+                $deployment->refresh();
+
                 try {
                     app(LaravelAppInitializationService::class)
                         ->writeApplicationEnvironment($service, $deployment, $ssh, preserveExisting: true);
@@ -2826,11 +2816,7 @@ PHP;
                 app(ContainerEnvironmentService::class)
                     ->syncDotEnvFile($ssh, $service, $deployment, $envVars);
 
-                try {
-                    $this->clearLaravelCachesQuietly($service, $ssh);
-                } catch (\Throwable) {
-                    // Cache clear is best-effort after credential repair.
-                }
+                $this->healLaravelRuntimeAfterDatabaseRepair($service, $ssh);
             } else {
                 app(ContainerEnvironmentService::class)
                     ->syncDotEnvFile($ssh, $service, $deployment, $envVars);
@@ -2856,7 +2842,8 @@ PHP;
                 return [
                     'success' => false,
                     'message' => $message.' Live connection still fails: '.($probe['error'] ?? 'unknown error')
-                        .'. Try Redeploy with Reset database.',
+                        .'. Host-specific MySQL accounts (user@overlay-ip) were dropped and user@% recreated. '
+                        .'Do not Reset database — that wipes existing tables. Re-scan Doctor and click Repair again if 1045 persists.',
                 ];
             }
 
@@ -3177,6 +3164,169 @@ PHP;
     }
 
     /**
+     * Choose the HTTP 500 treat from live PDO + the newest app-log lines.
+     *
+     * Leftover 1045/2002 lines must not win when `db_ok` is already true — that
+     * is what kept offering Repair DB after GRANT succeeded and then crashed
+     * the sidecar.
+     *
+     * @param  array<string, mixed>  $checks
+     * @param  list<string>  $appErrors
+     * @return array{treat_action: string, treat_label: string, summary: string}
+     */
+    public function resolveHttp500Treatment(array $checks, array $appErrors, string $stack = 'laravel'): array
+    {
+        $dbOk = ($checks['db_ok'] ?? null) === true;
+        $hasTables = ($checks['table_count'] ?? null) !== null && (int) $checks['table_count'] > 0;
+        $httpStatus = $checks['http_status'] ?? 500;
+        $haystack = implode("\n", $appErrors);
+
+        $looksLikeMissingCacheLocks = (bool) preg_match('/cache_locks/i', $haystack);
+        $looksLikeMissingTable = (bool) preg_match('/relation .* does not exist|Base table or view not found|no such table/i', $haystack);
+        $looksLikeMissingViewCache = (bool) preg_match('/Please provide a valid cache path/i', $haystack);
+        $looksLikeDbAuth = ! $dbOk && $this->looksLikeDatabaseAuthFailure($haystack);
+
+        if ($looksLikeDbAuth) {
+            return [
+                'treat_action' => 'sync_database_credentials',
+                'treat_label' => 'Repair DB credentials',
+                'summary' => 'The live database probe failed and the app log shows MySQL/Postgres rejected the username or password '
+                    .'(often leftover `user`@`<overlay-ip>` after a DirectAdmin import). Repair drops those shadow accounts, '
+                    .'recreates `user`@`%`, and reloads PHP-FPM so workers pick up .env.',
+            ];
+        }
+
+        if ($looksLikeMissingViewCache) {
+            return [
+                'treat_action' => 'fix_storage_permissions',
+                'treat_label' => 'Create Laravel cache directories',
+                'summary' => 'Laravel Blade compiled-view path is missing (storage/framework/views). DirectAdmin exports skip those '
+                    .'cache dirs, so GET / 500s until they exist. Live DB is '.($dbOk ? 'connected' : 'not confirmed')
+                    .' — leftover 1045 lines in laravel.log are not the current cause.',
+            ];
+        }
+
+        if ($looksLikeMissingCacheLocks) {
+            return [
+                'treat_action' => 'use_file_cache',
+                'treat_label' => 'Switch cache to file',
+                'summary' => 'DB connects and has tables, but Laravel is using database cache without a cache_locks table — that commonly 500s GET /.',
+            ];
+        }
+
+        if ($looksLikeMissingTable) {
+            return [
+                'treat_action' => $hasTables ? 'run_migrations' : 'migrate_fresh',
+                'treat_label' => $hasTables ? 'Run migrations' : 'Rebuild schema (migrate:fresh)',
+                'summary' => 'DB connects, but the app error looks like missing tables/migrations.',
+            ];
+        }
+
+        if (in_array($stack, ['laravel', 'php'], true) && $hasTables && $dbOk) {
+            return [
+                'treat_action' => 'restart_application',
+                'treat_label' => 'Restart application',
+                'summary' => 'Live PDO works (tables: '.(string) ($checks['table_count'] ?? '?')
+                    .') but the public URL still returns HTTP '.$httpStatus
+                    .'. PHP-FPM workers may still be using a cached config or database sessions. '
+                    .'Restart reloads workers. Leftover 1045 lines in laravel.log are historical.',
+            ];
+        }
+
+        if (in_array($stack, ['laravel', 'php'], true)) {
+            return [
+                'treat_action' => 'clear_laravel_caches',
+                'treat_label' => 'Clear Laravel caches',
+                'summary' => 'The container is up and answering on its port, but the app itself returns HTTP '.$httpStatus
+                    .' (tables: '.((string) ($checks['table_count'] ?? '?')).').',
+            ];
+        }
+
+        return [
+            'treat_action' => 'restart_application',
+            'treat_label' => 'Restart application',
+            'summary' => 'The container is up and answering on its port, but the app itself returns HTTP '.$httpStatus
+                .' (tables: '.((string) ($checks['table_count'] ?? '?')).'). '
+                .'This is an application exception — this card stays until the URL returns 2xx/3xx.',
+        ];
+    }
+
+    /**
+     * After GRANT + .env rewrite: create cache dirs, force cookie/file drivers,
+     * and reload PHP-FPM so workers stop querying `sessions` with a stale password.
+     */
+    private function healLaravelRuntimeAfterDatabaseRepair(Service $service, SSHService $ssh): void
+    {
+        $deployment = $service->containerDeployment;
+        $appDirectory = app(ContainerAppDirectoryService::class);
+
+        try {
+            $appDirectory->ensureLaravelWritableLayoutOnHost($ssh, $appDirectory->hostAppPath($deployment));
+            $appDirectory->normalizeLaravelPermissions($ssh, $deployment);
+        } catch (\Throwable $e) {
+            \Log::warning('Doctor storage layout repair failed after DB sync', [
+                'service_id' => $service->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        $projectRoot = $this->resolveArtisanProjectRoot($ssh, $deployment);
+        $php = <<<'PHP'
+$root = getenv('PROJECT_ROOT') ?: '/app';
+$envPath = rtrim($root, '/').'/.env';
+if (!is_file($envPath)) { echo "missing-env"; exit(0); }
+$c = file_get_contents($envPath);
+if ($c === false) { echo "read-failed"; exit(0); }
+$set = function (string $c, string $k, string $v): string {
+    if (preg_match('/^'.preg_quote($k, '/').'=/m', $c)) {
+        return preg_replace('/^'.preg_quote($k, '/').'=.*$/m', $k.'='.$v, $c, 1);
+    }
+    return rtrim($c)."\n".$k.'='.$v."\n";
+};
+$c = $set($c, 'CACHE_STORE', 'file');
+$c = $set($c, 'CACHE_DRIVER', 'file');
+$c = $set($c, 'SESSION_DRIVER', 'cookie');
+if (file_put_contents($envPath, $c) === false) { echo "write-failed"; exit(0); }
+echo "ok";
+PHP;
+
+        $init = app(LaravelAppInitializationService::class);
+        try {
+            $init->dockerExecPublic(
+                $ssh,
+                $deployment->container_name,
+                'export PROJECT_ROOT='.escapeshellarg($projectRoot).'; php -r '.escapeshellarg($php),
+                30,
+                asRoot: true
+            );
+        } catch (\Throwable) {
+        }
+
+        try {
+            $this->clearLaravelCachesQuietly($service, $ssh);
+        } catch (\Throwable) {
+        }
+
+        try {
+            $init->dockerExecPublic(
+                $ssh,
+                $deployment->container_name,
+                $this->phpFpmReloadScript(),
+                20,
+                asRoot: true
+            );
+        } catch (\Throwable) {
+        }
+    }
+
+    public function phpFpmReloadScript(): string
+    {
+        return 'master=$(pgrep -o php-fpm 2>/dev/null || true); '
+            .'if [ -n "$master" ]; then kill -USR2 "$master"; echo php-fpm-reloaded; '
+            .'else echo no-php-fpm; fi';
+    }
+
+    /**
      * Clear compiled/config/view/route caches without querying MySQL.
      *
      * `php artisan optimize:clear` / `cache:clear` run DELETE FROM `cache` when
@@ -3469,6 +3619,17 @@ PHP;
                 .$this->laravelCacheClearScript($projectRoot);
 
             $init->dockerExecPublic($ssh, $deployment->container_name, $script, 120, asRoot: true);
+
+            try {
+                $init->dockerExecPublic(
+                    $ssh,
+                    $deployment->container_name,
+                    $this->phpFpmReloadScript(),
+                    20,
+                    asRoot: true
+                );
+            } catch (\Throwable) {
+            }
 
             $env = is_array($deployment->env_values) ? $deployment->env_values : [];
             $env['SESSION_DRIVER'] = 'cookie';

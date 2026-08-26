@@ -922,6 +922,90 @@ LOG;
     }
 
     #[Test]
+    public function http_500_does_not_recommend_repair_db_when_live_pdo_already_works(): void
+    {
+        $treat = app(ContainerDoctorService::class)->resolveHttp500Treatment(
+            [
+                'db_ok' => true,
+                'table_count' => 91,
+                'http_status' => 500,
+            ],
+            [
+                'Please provide a valid cache path.',
+                'SQLSTATE[HY000] [2002] Connection refused at /app/vendor/laravel/framework',
+                "SQLSTATE[HY000] [1045] Access denied for user 'u74_s24'@'10.201.0.26' (using password: YES)",
+            ],
+            'laravel'
+        );
+
+        $this->assertSame('fix_storage_permissions', $treat['treat_action']);
+        $this->assertStringNotContainsString('Repair grants', $treat['summary']);
+    }
+
+    #[Test]
+    public function http_500_with_live_db_and_no_cache_path_restarts_workers_instead_of_repairing_mysql(): void
+    {
+        $treat = app(ContainerDoctorService::class)->resolveHttp500Treatment(
+            [
+                'db_ok' => true,
+                'table_count' => 91,
+                'http_status' => 500,
+            ],
+            [
+                "SQLSTATE[HY000] [1045] Access denied for user 'u74_s24'@'10.201.0.26' (using password: YES) (SQL: select * from `sessions`)",
+            ],
+            'laravel'
+        );
+
+        $this->assertSame('restart_application', $treat['treat_action']);
+        $this->assertStringContainsString('historical', $treat['summary']);
+    }
+
+    #[Test]
+    public function http_500_still_repairs_credentials_when_live_pdo_failed(): void
+    {
+        $treat = app(ContainerDoctorService::class)->resolveHttp500Treatment(
+            [
+                'db_ok' => false,
+                'table_count' => null,
+                'http_status' => 500,
+            ],
+            [
+                "SQLSTATE[HY000] [1045] Access denied for user 'u74_s24'@'10.201.0.26' (using password: YES)",
+            ],
+            'laravel'
+        );
+
+        $this->assertSame('sync_database_credentials', $treat['treat_action']);
+    }
+
+    #[Test]
+    public function newest_unique_lines_keep_the_latest_error_not_the_oldest_unique_mix(): void
+    {
+        $lines = app(ContainerDoctorService::class)->newestUniqueLines([
+            'Please provide a valid cache path.',
+            'SQLSTATE[HY000] [2002] Connection refused',
+            'Please provide a valid cache path.',
+            "SQLSTATE[HY000] [1045] Access denied for user 'u74_s24'@'10.201.0.26'",
+        ], 2);
+
+        $this->assertSame([
+            'Please provide a valid cache path.',
+            "SQLSTATE[HY000] [1045] Access denied for user 'u74_s24'@'10.201.0.26'",
+        ], $lines);
+        $this->assertNotContains('SQLSTATE[HY000] [2002] Connection refused', $lines);
+    }
+
+    #[Test]
+    public function php_fpm_reload_targets_the_oldest_master_pid(): void
+    {
+        $script = app(ContainerDoctorService::class)->phpFpmReloadScript();
+
+        $this->assertStringContainsString('pgrep -o php-fpm', $script);
+        $this->assertStringContainsString('kill -USR2', $script);
+    }
+
+    #[Test]
     public function it_parses_dotenv_content(): void
     {
         $env = app(ContainerDoctorService::class)->parseEnvFileContent(
