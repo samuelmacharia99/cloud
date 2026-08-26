@@ -5,7 +5,6 @@ namespace App\Services;
 use App\Enums\InvoiceStatus;
 use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
-use App\Enums\RegistrarDriver;
 use App\Models\DomainExtension;
 use App\Models\DomainRenewalOrder;
 use App\Models\Invoice;
@@ -18,8 +17,6 @@ use App\Models\WalletTransaction;
 use App\Services\Billing\InvoiceCurrencyService;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
-use Illuminate\Contracts\Pagination\LengthAwarePaginator;
-use Illuminate\Pagination\LengthAwarePaginator as Paginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -42,7 +39,7 @@ class AdminBookkeepingService
     /**
      * @return array<string, mixed>
      */
-    public function build(int $year, ?int $month, ?string $category = null, int $page = 1): array
+    public function build(int $year, ?int $month): array
     {
         $from = $this->periodStart($year, $month);
         $to = $this->periodEnd($year, $month);
@@ -123,8 +120,6 @@ class AdminBookkeepingService
             'paymentCount' => $payments->count(),
             'nodes' => $nodes,
             'domains' => $domainReport,
-            'ledger' => $this->ledger($from, $to, $category, $page),
-            'category' => $category,
             'categoryLabels' => $this->categoryLabels(),
         ];
     }
@@ -271,21 +266,6 @@ class AdminBookkeepingService
         }
 
         return round((float) $payment->amount, 2);
-    }
-
-    public function paymentCategory(Payment $payment): string
-    {
-        $allocation = $this->allocatePayment($payment);
-        $maxKey = self::CATEGORY_OTHER;
-        $maxVal = -1;
-        foreach ($allocation['categories'] as $key => $amount) {
-            if ($amount > $maxVal) {
-                $maxVal = $amount;
-                $maxKey = $key;
-            }
-        }
-
-        return $maxKey;
     }
 
     private function itemCategory(InvoiceItem $item): string
@@ -450,13 +430,21 @@ class AdminBookkeepingService
     }
 
     /**
-     * Fulfillment-based Cosmotown P&L for the period.
+     * Fulfillment-based domain P&L for the period, rolled up by registrar.
      *
-     * @return array{collected: float, cost: float, profit: float, count: int, missing_cost_count: int, rows: list<array<string, mixed>>}
+     * @return array{
+     *     collected: float,
+     *     cost: float,
+     *     profit: float,
+     *     count: int,
+     *     missing_cost_count: int,
+     *     registrars: list<array<string, mixed>>,
+     *     rows: list<array<string, mixed>>
+     * }
      */
     public function domainReport(CarbonInterface $from, CarbonInterface $to): array
     {
-        $extensions = $this->cosmotownExtensions();
+        $extensions = $this->domainExtensionsByTld();
         $rows = [];
 
         $orders = ResellerDomainOrder::query()
@@ -476,7 +464,7 @@ class AdminBookkeepingService
             $cost = $this->registrarCostFor($extension, $kind, (int) $order->years);
             $collected = round((float) $order->wholesale_amount, 2);
 
-            $rows[] = [
+            $this->appendDomainFulfillment($rows, $extension, [
                 'kind' => $kind,
                 'domain' => $order->domain_name.$this->normalizeExtension((string) $order->extension),
                 'years' => (int) $order->years,
@@ -487,7 +475,7 @@ class AdminBookkeepingService
                 'profit' => $cost === null ? null : round($collected - $cost, 2),
                 'source' => 'order',
                 'source_id' => $order->id,
-            ];
+            ]);
         }
 
         $renewals = DomainRenewalOrder::query()
@@ -507,7 +495,7 @@ class AdminBookkeepingService
             $cost = $this->registrarCostFor($extension, 'renewal', (int) $renewal->years);
             $collected = round($renewal->effectiveWholesaleAmount(), 2);
 
-            $rows[] = [
+            $this->appendDomainFulfillment($rows, $extension, [
                 'kind' => 'renewal',
                 'domain' => $renewal->domain?->fqdn() ?? '—',
                 'years' => (int) $renewal->years,
@@ -518,7 +506,7 @@ class AdminBookkeepingService
                 'profit' => $cost === null ? null : round($collected - $cost, 2),
                 'source' => 'renewal',
                 'source_id' => $renewal->id,
-            ];
+            ]);
         }
 
         usort($rows, fn (array $a, array $b) => ($b['completed_at']?->timestamp ?? 0) <=> ($a['completed_at']?->timestamp ?? 0));
@@ -532,23 +520,144 @@ class AdminBookkeepingService
             'cost' => $cost,
             'profit' => round($collectedWithCost - $cost, 2),
             'count' => count($rows),
-            'missing_cost_count' => collect($rows)->where('cost', null)->count(),
+            'missing_cost_count' => collect($rows)->filter(fn (array $row) => $row['cost'] === null)->count(),
+            'registrars' => $this->registrarSummaries($rows),
             'rows' => $rows,
         ];
     }
 
     /**
+     * @param  list<array<string, mixed>>  $rows
+     */
+    private function appendDomainFulfillment(array &$rows, DomainExtension $extension, array $payload): void
+    {
+        $bucket = $this->registrarBucket($extension);
+
+        $rows[] = array_merge($payload, [
+            'registrar_key' => $bucket['key'],
+            'registrar_id' => $bucket['id'],
+            'registrar_name' => $bucket['name'],
+            'registrar_driver' => $bucket['driver'],
+            'registrar_driver_label' => $bucket['driver_label'],
+        ]);
+    }
+
+    /**
+     * @return array{key: string, id: ?int, name: string, driver: ?string, driver_label: ?string}
+     */
+    private function registrarBucket(DomainExtension $extension): array
+    {
+        $model = $extension->registrarModel;
+        if ($model) {
+            return [
+                'key' => 'id:'.$model->id,
+                'id' => $model->id,
+                'name' => $model->name,
+                'driver' => $model->driver?->value,
+                'driver_label' => $model->driver?->label(),
+            ];
+        }
+
+        $name = trim((string) $extension->registrar);
+        if ($name !== '') {
+            return [
+                'key' => 'name:'.strtolower($name),
+                'id' => null,
+                'name' => $name,
+                'driver' => null,
+                'driver_label' => null,
+            ];
+        }
+
+        return [
+            'key' => 'unassigned',
+            'id' => null,
+            'name' => 'Unassigned',
+            'driver' => null,
+            'driver_label' => null,
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $rows
+     * @return list<array<string, mixed>>
+     */
+    private function registrarSummaries(array $rows): array
+    {
+        $groups = [];
+
+        foreach ($rows as $row) {
+            $key = (string) $row['registrar_key'];
+            if (! isset($groups[$key])) {
+                $groups[$key] = [
+                    'id' => $row['registrar_id'],
+                    'name' => $row['registrar_name'],
+                    'driver' => $row['registrar_driver'],
+                    'driver_label' => $row['registrar_driver_label'],
+                    'count' => 0,
+                    'registrations' => 0,
+                    'transfers' => 0,
+                    'renewals' => 0,
+                    'collected' => 0.0,
+                    'costed_collected' => 0.0,
+                    'cost' => 0.0,
+                    'missing_cost_count' => 0,
+                ];
+            }
+
+            $groups[$key]['count']++;
+            $groups[$key]['collected'] += (float) $row['collected'];
+
+            match ($row['kind']) {
+                'transfer' => $groups[$key]['transfers']++,
+                'renewal' => $groups[$key]['renewals']++,
+                default => $groups[$key]['registrations']++,
+            };
+
+            if ($row['cost'] === null) {
+                $groups[$key]['missing_cost_count']++;
+            } else {
+                $groups[$key]['cost'] += (float) $row['cost'];
+                $groups[$key]['costed_collected'] += (float) $row['collected'];
+            }
+        }
+
+        $summaries = [];
+        foreach ($groups as $group) {
+            $summaries[] = [
+                'id' => $group['id'],
+                'name' => $group['name'],
+                'driver' => $group['driver'],
+                'driver_label' => $group['driver_label'],
+                'count' => $group['count'],
+                'registrations' => $group['registrations'],
+                'transfers' => $group['transfers'],
+                'renewals' => $group['renewals'],
+                'collected' => round($group['collected'], 2),
+                'cost' => round($group['cost'], 2),
+                'profit' => round($group['costed_collected'] - $group['cost'], 2),
+                'missing_cost_count' => $group['missing_cost_count'],
+            ];
+        }
+
+        usort($summaries, function (array $a, array $b) {
+            if ($a['profit'] === $b['profit']) {
+                return strcmp($a['name'], $b['name']);
+            }
+
+            return $b['profit'] <=> $a['profit'];
+        });
+
+        return $summaries;
+    }
+
+    /**
      * @return Collection<string, DomainExtension>
      */
-    private function cosmotownExtensions(): Collection
+    private function domainExtensionsByTld(): Collection
     {
         return DomainExtension::query()
             ->with('registrarModel')
-            ->where(function ($query) {
-                $query->whereHas('registrarModel', function ($registrar) {
-                    $registrar->where('driver', RegistrarDriver::Cosmotown->value);
-                })->orWhere('registrar', 'like', '%Cosmotown%');
-            })
             ->get()
             ->keyBy(fn (DomainExtension $extension) => $this->normalizeExtension($extension->extension));
     }
@@ -767,58 +876,6 @@ class AdminBookkeepingService
                 'total' => round((float) $row->total, 2),
             ];
         })->all();
-    }
-
-    private function ledger(CarbonInterface $from, CarbonInterface $to, ?string $category, int $page = 1): LengthAwarePaginator
-    {
-        $query = $this->completedPlatformPayments($from, $to)
-            ->with([
-                'user:id,name,email,is_reseller,reseller_node_id',
-                'invoice:id,invoice_number,type,user_id,total,currency',
-                'invoice.user:id,name,is_reseller,reseller_node_id',
-                'invoice.items.service.containerDeployment',
-            ])
-            ->orderByRaw('COALESCE(payments.paid_at, payments.created_at) desc');
-
-        $payments = $query->get();
-
-        if ($category) {
-            $payments = $payments->filter(fn (Payment $payment) => $this->paymentCategory($payment) === $category)->values();
-        }
-
-        $page = max(1, $page);
-        $perPage = 25;
-        $slice = $payments->forPage($page, $perPage)->values();
-
-        $mapped = $slice->map(function (Payment $payment) {
-            $method = $payment->payment_method;
-
-            return [
-                'id' => $payment->id,
-                'occurred_at' => $payment->paid_at ?? $payment->created_at,
-                'category' => $this->paymentCategory($payment),
-                'amount_kes' => $this->paymentKes($payment),
-                'amount' => (float) $payment->amount,
-                'currency' => $payment->currency ?: 'KES',
-                'method' => $method instanceof PaymentMethod ? $method->label() : (string) $method,
-                'reference' => $payment->transaction_reference,
-                'payer' => $payment->user?->name ?? '—',
-                'invoice_number' => $payment->invoice?->invoice_number,
-                'invoice_id' => $payment->invoice_id,
-                'purpose' => $payment->payment_purpose,
-            ];
-        });
-
-        return new Paginator(
-            $mapped,
-            $payments->count(),
-            $perPage,
-            $page,
-            [
-                'path' => request()->url(),
-                'query' => request()->query(),
-            ]
-        );
     }
 
     private function platformOutstandingKes(): float

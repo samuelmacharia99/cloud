@@ -8,8 +8,6 @@
 
 @section('content')
 @php
-    $monthParam = $month ?? 'all';
-    $filterBase = ['year' => $year, 'month' => $monthParam];
     $periodCursor = $month
         ? \Carbon\Carbon::create($year, $month, 1)
         : \Carbon\Carbon::create($year, 1, 1);
@@ -23,11 +21,11 @@
         ? $nextPeriod->copy()->startOfMonth()->gt(now()->copy()->startOfMonth())
         : $nextPeriod->year > now()->year;
     $prevQuery = $month
-        ? ['year' => $prevPeriod->year, 'month' => $prevPeriod->month, 'category' => $category]
-        : ['year' => $prevPeriod->year, 'month' => 'all', 'category' => $category];
+        ? ['year' => $prevPeriod->year, 'month' => $prevPeriod->month]
+        : ['year' => $prevPeriod->year, 'month' => 'all'];
     $nextQuery = $month
-        ? ['year' => $nextPeriod->year, 'month' => $nextPeriod->month, 'category' => $category]
-        : ['year' => $nextPeriod->year, 'month' => 'all', 'category' => $category];
+        ? ['year' => $nextPeriod->year, 'month' => $nextPeriod->month]
+        : ['year' => $nextPeriod->year, 'month' => 'all'];
     $incomeColors = [
         'hosting' => 'bg-blue-500',
         'reseller_subscription' => 'bg-violet-500',
@@ -35,20 +33,9 @@
         'wallet_topup' => 'bg-amber-500',
         'other' => 'bg-slate-400',
     ];
-    $categoryPills = [
-        'hosting' => 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-200',
-        'reseller_subscription' => 'bg-violet-100 dark:bg-violet-950/60 text-violet-700 dark:text-violet-200',
-        'domain' => 'bg-teal-100 dark:bg-teal-950/60 text-teal-700 dark:text-teal-200',
-        'wallet_topup' => 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-200',
-        'other' => 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300',
-    ];
-    $kindPills = [
-        'registration' => 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-200',
-        'transfer' => 'bg-violet-100 dark:bg-violet-950/60 text-violet-700 dark:text-violet-200',
-        'renewal' => 'bg-teal-100 dark:bg-teal-950/60 text-teal-700 dark:text-teal-200',
-    ];
     $maxMethodTotal = max(1, (float) collect($paymentMethods)->max('total'));
     $maxNodeAbs = max(1, (float) collect($nodes)->max(fn ($row) => abs((float) ($row['profit'] ?? $row['revenue'] ?? 0))));
+    $maxRegistrarAbs = max(1, (float) collect($domains['registrars'] ?? [])->max(fn ($row) => abs((float) ($row['profit'] ?? 0))));
 @endphp
 
 <div class="space-y-8">
@@ -76,7 +63,6 @@
     </div>
 
     <form method="GET" action="{{ route('admin.reports.index') }}" class="ui-card p-4 sm:p-5" onchange="if (event.target.tagName === 'SELECT') this.submit()">
-        <input type="hidden" name="category" value="{{ $category }}">
         <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div class="flex flex-wrap gap-3 items-end">
                 <x-form-select
@@ -110,39 +96,42 @@
         <a href="#bookkeeping-trend-card" class="rounded-full border border-slate-200 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:border-brand-400 hover:text-brand-700 dark:hover:text-brand-300">Trend</a>
         <a href="#profit-by-node" class="rounded-full border border-slate-200 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:border-brand-400 hover:text-brand-700 dark:hover:text-brand-300">Nodes</a>
         <a href="#domain-profit" class="rounded-full border border-slate-200 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:border-brand-400 hover:text-brand-700 dark:hover:text-brand-300">Domains</a>
-        <a href="#coin-trail" class="rounded-full border border-slate-200 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:border-brand-400 hover:text-brand-700 dark:hover:text-brand-300">Coin trail</a>
     </nav>
 
     <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
         <x-metric-card
             title="Cash in"
-            :value="'KES '.number_format($cashIn, 2)"
+            currency="KES"
+            :value="number_format($cashIn, 2)"
             color="emerald"
             :subtitle="$paymentCount.' completed platform '.\Illuminate\Support\Str::plural('payment', $paymentCount)"
             :href="route('admin.payments.index', ['status' => 'completed', 'from_date' => $from->toDateString(), 'to_date' => $to->toDateString()])"
-            icon='<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>'
+            icon='<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>'
         />
         <x-metric-card
             title="Spend"
-            :value="'KES '.number_format($spend, 2)"
+            currency="KES"
+            :value="number_format($spend, 2)"
             color="amber"
-            :subtitle="'Servers '.number_format($costs['nodes'], 2).' · Cosmotown '.number_format($costs['domains'], 2)"
-            icon='<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg>'
+            :subtitle="'Servers '.number_format($costs['nodes'], 2).' · Registrars '.number_format($costs['domains'], 2)"
+            icon='<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg>'
         />
         <x-metric-card
             title="Profit"
-            :value="'KES '.number_format($profit, 2)"
+            currency="KES"
+            :value="number_format($profit, 2)"
             :color="$profit >= 0 ? 'emerald' : 'red'"
             :subtitle="$marginPercent === null ? 'No cash in this period' : $marginPercent.'% of cash in'"
-            icon='<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>'
+            icon='<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>'
         />
         <x-metric-card
             title="Outstanding AR"
-            :value="'KES '.number_format($outstandingKes, 2)"
+            currency="KES"
+            :value="number_format($outstandingKes, 2)"
             color="amber"
-            subtitle="Platform invoices unpaid now — not in this period’s cash"
+            subtitle="Unpaid platform invoices — not this period’s cash"
             :href="route('admin.invoices.index', ['status' => 'unpaid'])"
-            icon='<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z"/></svg>'
+            icon='<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z"/></svg>'
         />
     </div>
 
@@ -163,9 +152,9 @@
             @endif
             @if($costs['domains_missing_cost'] > 0)
                 <p>
-                    {{ $costs['domains_missing_cost'] }} Cosmotown {{ \Illuminate\Support\Str::plural('domain', $costs['domains_missing_cost']) }} {{ $costs['domains_missing_cost'] === 1 ? 'has' : 'have' }} no registrar cost —
-                    <a href="{{ route('admin.domains.pricing') }}" class="font-semibold underline underline-offset-2">sync Cosmotown prices</a>.
-                    Those rows are excluded from domain profit and spend.
+                    {{ $costs['domains_missing_cost'] }} domain {{ \Illuminate\Support\Str::plural('fulfillment', $costs['domains_missing_cost']) }} {{ $costs['domains_missing_cost'] === 1 ? 'has' : 'have' }} no registrar cost —
+                    <a href="{{ route('admin.domains.pricing') }}" class="font-semibold underline underline-offset-2">set TLD costs</a>.
+                    Those fulfillments are excluded from domain profit and spend.
                 </p>
             @endif
         </div>
@@ -175,7 +164,7 @@
         <div id="bookkeeping-trend-card" class="ui-card overflow-hidden xl:col-span-2">
             <div class="ui-card-header">
                 <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Cash in vs spend</h2>
-                <p class="text-sm text-slate-500 dark:text-slate-400 mt-0.5">{{ $periodLabel }} · spend is provider cost plus Cosmotown fulfillments</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400 mt-0.5">{{ $periodLabel }} · spend is provider cost plus registrar fulfillments</p>
             </div>
             <div class="p-5 sm:p-6">
                 <div class="relative h-72">
@@ -283,11 +272,12 @@
         <div class="ui-card-header">
             <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                    <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Cosmotown domain profit</h2>
-                    <p class="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Fulfilled at Cosmotown this period. Collected is wholesale. Cost is the current registrar price for that TLD.</p>
+                    <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Domain profit by registrar</h2>
+                    <p class="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Fulfilled this period. Collected is wholesale. Cost is the current registrar price for that TLD.</p>
                 </div>
                 <p class="text-sm font-medium text-slate-600 dark:text-slate-300 shrink-0">
-                    {{ $domains['count'] }} {{ \Illuminate\Support\Str::plural('domain', $domains['count']) }}
+                    {{ $domains['count'] }} {{ \Illuminate\Support\Str::plural('fulfillment', $domains['count']) }}
+                    · {{ count($domains['registrars']) }} {{ \Illuminate\Support\Str::plural('registrar', count($domains['registrars'])) }}
                 </p>
             </div>
         </div>
@@ -297,7 +287,7 @@
                 <p class="mt-1 text-xl font-bold tabular-nums text-slate-900 dark:text-white">KES {{ number_format($domains['collected'], 2) }}</p>
             </div>
             <div class="bg-white dark:bg-slate-900 px-6 py-4">
-                <p class="text-xs font-medium uppercase tracking-wide text-slate-500">Cosmotown cost</p>
+                <p class="text-xs font-medium uppercase tracking-wide text-slate-500">Registrar cost</p>
                 <p class="mt-1 text-xl font-bold tabular-nums text-slate-900 dark:text-white">KES {{ number_format($domains['cost'], 2) }}</p>
             </div>
             <div class="bg-white dark:bg-slate-900 px-6 py-4">
@@ -309,138 +299,78 @@
             <table class="w-full text-sm">
                 <thead class="bg-slate-50/80 dark:bg-slate-800/80">
                     <tr class="text-slate-600 dark:text-slate-300">
-                        <th class="px-6 py-3 text-left font-semibold">Date</th>
-                        <th class="px-6 py-3 text-left font-semibold">Domain</th>
-                        <th class="px-6 py-3 text-left font-semibold">Type</th>
-                        <th class="px-6 py-3 text-left font-semibold">Payer</th>
+                        <th class="px-6 py-3 text-left font-semibold">Registrar</th>
+                        <th class="px-6 py-3 text-left font-semibold">Mix</th>
+                        <th class="px-6 py-3 text-right font-semibold tabular-nums">Fulfillments</th>
                         <th class="px-6 py-3 text-right font-semibold tabular-nums">Collected</th>
                         <th class="px-6 py-3 text-right font-semibold tabular-nums">Cost</th>
                         <th class="px-6 py-3 text-right font-semibold tabular-nums">Profit</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-200 dark:divide-slate-700">
-                    @forelse($domains['rows'] as $row)
+                    @forelse($domains['registrars'] as $row)
+                        @php $bar = min(100, (abs((float) $row['profit']) / $maxRegistrarAbs) * 100); @endphp
                         <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
-                            <td class="px-6 py-3.5 text-slate-600 dark:text-slate-400 whitespace-nowrap">{{ $row['completed_at']?->format('M d, Y') ?? '—' }}</td>
-                            <td class="px-6 py-3.5 font-medium">
-                                @if($row['source'] === 'order')
-                                    <a href="{{ route('admin.domain-orders.show', $row['source_id']) }}" class="text-brand-700 dark:text-brand-300 hover:underline">{{ $row['domain'] }}</a>
-                                @elseif($row['source'] === 'renewal')
-                                    <a href="{{ route('admin.domain-renewals.show', $row['source_id']) }}" class="text-brand-700 dark:text-brand-300 hover:underline">{{ $row['domain'] }}</a>
-                                @else
-                                    {{ $row['domain'] }}
-                                @endif
-                            </td>
                             <td class="px-6 py-3.5">
-                                <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ $kindPills[$row['kind']] ?? 'bg-slate-100 text-slate-600' }}">
-                                    {{ $row['kind'] }} · {{ $row['years'] }}y
-                                </span>
+                                <p class="font-medium text-slate-900 dark:text-white">{{ $row['name'] }}</p>
+                                @if($row['driver_label'])
+                                    <span class="mt-1 inline-flex items-center rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-600 dark:text-slate-300">{{ $row['driver_label'] }}</span>
+                                @endif
+                                <div class="mt-1.5 h-1 w-24 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                                    <div class="h-full rounded-full {{ $row['profit'] >= 0 ? 'bg-emerald-500' : 'bg-red-500' }}" style="width: {{ $bar }}%"></div>
+                                </div>
                             </td>
-                            <td class="px-6 py-3.5 text-slate-700 dark:text-slate-300">{{ $row['payer'] }}</td>
-                            <td class="px-6 py-3.5 text-right tabular-nums">{{ number_format($row['collected'], 2) }}</td>
+                            <td class="px-6 py-3.5 text-slate-600 dark:text-slate-400 text-xs leading-5">
+                                {{ $row['registrations'] }} {{ \Illuminate\Support\Str::plural('registration', $row['registrations']) }}
+                                · {{ $row['transfers'] }} {{ \Illuminate\Support\Str::plural('transfer', $row['transfers']) }}
+                                · {{ $row['renewals'] }} {{ \Illuminate\Support\Str::plural('renewal', $row['renewals']) }}
+                            </td>
+                            <td class="px-6 py-3.5 text-right tabular-nums text-slate-700 dark:text-slate-300">{{ number_format($row['count']) }}</td>
+                            <td class="px-6 py-3.5 text-right tabular-nums font-medium text-slate-900 dark:text-white">{{ number_format($row['collected'], 2) }}</td>
                             <td class="px-6 py-3.5 text-right tabular-nums">
-                                @if($row['cost'] === null)
+                                @if($row['missing_cost_count'] > 0 && $row['cost'] <= 0)
                                     <span class="text-amber-600 dark:text-amber-400 font-medium">Unknown</span>
                                 @else
-                                    {{ number_format($row['cost'], 2) }}
+                                    <span class="text-slate-700 dark:text-slate-300">{{ number_format($row['cost'], 2) }}</span>
+                                    @if($row['missing_cost_count'] > 0)
+                                        <p class="text-xs font-normal text-amber-700 dark:text-amber-300">{{ $row['missing_cost_count'] }} missing</p>
+                                    @endif
                                 @endif
                             </td>
-                            <td class="px-6 py-3.5 text-right tabular-nums font-semibold {{ ($row['profit'] ?? 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400' }}">
-                                @if($row['profit'] === null)
-                                    —
-                                @else
-                                    {{ number_format($row['profit'], 2) }}
-                                @endif
+                            <td class="px-6 py-3.5 text-right tabular-nums font-semibold {{ $row['profit'] >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400' }}">
+                                {{ number_format($row['profit'], 2) }}
                             </td>
                         </tr>
                     @empty
-                        <tr><td colspan="7" class="px-6 py-10 text-center text-slate-500">No Cosmotown registrations, transfers, or renewals fulfilled in this period.</td></tr>
+                        <tr><td colspan="6" class="px-6 py-10 text-center text-slate-500">No domain registrations, transfers, or renewals fulfilled in this period.</td></tr>
                     @endforelse
                 </tbody>
             </table>
         </div>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div class="ui-card overflow-hidden">
-            <div class="ui-card-header">
-                <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Payments by method</h2>
-            </div>
-            <div class="p-5 sm:p-6 space-y-4">
-                @forelse($paymentMethods as $row)
-                    @php $pct = min(100, ($row['total'] / $maxMethodTotal) * 100); @endphp
-                    <div>
-                        <div class="flex justify-between gap-3 text-sm mb-1.5">
-                            <div>
-                                <p class="font-medium text-slate-900 dark:text-white">{{ $row['label'] }}</p>
-                                <p class="text-xs text-slate-500">{{ $row['count'] }} {{ \Illuminate\Support\Str::plural('payment', $row['count']) }}</p>
-                            </div>
-                            <p class="tabular-nums font-semibold text-slate-900 dark:text-white">{{ number_format($row['total'], 2) }}</p>
-                        </div>
-                        <div class="h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                            <div class="h-full rounded-full bg-brand-500" style="width: {{ $pct }}%"></div>
-                        </div>
-                    </div>
-                @empty
-                    <p class="py-6 text-center text-slate-500 text-sm">No completed platform payments in this period.</p>
-                @endforelse
-            </div>
+    <div class="ui-card overflow-hidden lg:max-w-xl">
+        <div class="ui-card-header">
+            <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Payments by method</h2>
         </div>
-
-        <div id="coin-trail" class="ui-card overflow-hidden lg:col-span-2">
-            <div class="ui-card-header">
-                <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Coin trail</h2>
-                <p class="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Every completed payment that counts as platform cash in. Open an amount to see the payment.</p>
-                <div class="flex flex-wrap gap-2 mt-3">
-                    <a href="{{ route('admin.reports.index', $filterBase) }}" class="rounded-full px-3 py-1 text-xs font-semibold {{ $category ? 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300' : 'bg-brand-500 text-ink-950' }}">All</a>
-                    @foreach($categoryLabels as $key => $label)
-                        <a href="{{ route('admin.reports.index', $filterBase + ['category' => $key]) }}" class="rounded-full px-3 py-1 text-xs font-semibold {{ $category === $key ? 'bg-brand-500 text-ink-950' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300' }}">{{ $label }}</a>
-                    @endforeach
+        <div class="p-5 sm:p-6 space-y-4">
+            @forelse($paymentMethods as $row)
+                @php $pct = min(100, ($row['total'] / $maxMethodTotal) * 100); @endphp
+                <div>
+                    <div class="flex justify-between gap-3 text-sm mb-1.5">
+                        <div>
+                            <p class="font-medium text-slate-900 dark:text-white">{{ $row['label'] }}</p>
+                            <p class="text-xs text-slate-500">{{ $row['count'] }} {{ \Illuminate\Support\Str::plural('payment', $row['count']) }}</p>
+                        </div>
+                        <p class="tabular-nums font-semibold text-slate-900 dark:text-white">{{ number_format($row['total'], 2) }}</p>
+                    </div>
+                    <div class="h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                        <div class="h-full rounded-full bg-brand-500" style="width: {{ $pct }}%"></div>
+                    </div>
                 </div>
-            </div>
-            <div class="overflow-x-auto">
-                <table class="w-full text-sm">
-                    <thead class="bg-slate-50/80 dark:bg-slate-800/80">
-                        <tr class="text-slate-600 dark:text-slate-300">
-                            <th class="px-6 py-3 text-left font-semibold">When</th>
-                            <th class="px-6 py-3 text-left font-semibold">Payer</th>
-                            <th class="px-6 py-3 text-left font-semibold">Category</th>
-                            <th class="px-6 py-3 text-left font-semibold">Method</th>
-                            <th class="px-6 py-3 text-right font-semibold tabular-nums">KES</th>
-                            <th class="px-6 py-3 text-left font-semibold">Reference</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-slate-200 dark:divide-slate-700">
-                        @forelse($ledger as $entry)
-                            <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
-                                <td class="px-6 py-3.5 text-slate-600 dark:text-slate-400 whitespace-nowrap">{{ $entry['occurred_at']?->format('M d, Y H:i') ?? '—' }}</td>
-                                <td class="px-6 py-3.5 font-medium text-slate-900 dark:text-white">{{ $entry['payer'] }}</td>
-                                <td class="px-6 py-3.5">
-                                    <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ $categoryPills[$entry['category']] ?? 'bg-slate-100 text-slate-600' }}">
-                                        {{ $categoryLabels[$entry['category']] ?? $entry['category'] }}
-                                    </span>
-                                </td>
-                                <td class="px-6 py-3.5 text-slate-600 dark:text-slate-400">{{ $entry['method'] }}</td>
-                                <td class="px-6 py-3.5 text-right tabular-nums font-semibold">
-                                    <a href="{{ route('admin.payments.show', $entry['id']) }}" class="text-brand-700 dark:text-brand-300 hover:underline">{{ number_format($entry['amount_kes'], 2) }}</a>
-                                </td>
-                                <td class="px-6 py-3.5 text-slate-600 dark:text-slate-400">
-                                    @if($entry['invoice_id'] && $entry['invoice_number'])
-                                        <a href="{{ route('admin.invoices.show', $entry['invoice_id']) }}" class="hover:underline">{{ $entry['invoice_number'] }}</a>
-                                    @else
-                                        {{ $entry['reference'] ?? '—' }}
-                                    @endif
-                                </td>
-                            </tr>
-                        @empty
-                            <tr><td colspan="6" class="px-6 py-10 text-center text-slate-500">No platform payments in this period{{ $category ? ' for this category' : '' }}.</td></tr>
-                        @endforelse
-                    </tbody>
-                </table>
-            </div>
-            @if($ledger->hasPages())
-                <div class="px-6 py-4 border-t border-slate-200 dark:border-slate-800">{{ $ledger->links() }}</div>
-            @endif
+            @empty
+                <p class="py-6 text-center text-slate-500 text-sm">No completed platform payments in this period.</p>
+            @endforelse
         </div>
     </div>
 </div>

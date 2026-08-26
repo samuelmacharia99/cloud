@@ -3,7 +3,6 @@
 namespace App\Http\Requests\Admin;
 
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
 
 class FilterAdminReportsRequest extends FormRequest
 {
@@ -33,13 +32,6 @@ class FilterAdminReportsRequest extends FormRequest
         return [
             'year' => ['required', 'integer', 'min:2020', 'max:'.(now()->year + 1)],
             'month' => ['nullable', 'integer', 'min:1', 'max:12'],
-            'category' => ['nullable', 'string', Rule::in([
-                'hosting',
-                'reseller_subscription',
-                'domain',
-                'wallet_topup',
-                'other',
-            ])],
         ];
     }
 
@@ -53,12 +45,5 @@ class FilterAdminReportsRequest extends FormRequest
         $month = $this->validated('month');
 
         return $month === null ? null : (int) $month;
-    }
-
-    public function category(): ?string
-    {
-        $category = $this->validated('category') ?? null;
-
-        return is_string($category) && $category !== '' ? $category : null;
     }
 }

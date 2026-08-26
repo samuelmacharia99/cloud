@@ -13,8 +13,6 @@ class AdminReportsController extends Controller
         $report = $bookkeeping->build(
             $request->year(),
             $request->month(),
-            $request->category(),
-            max(1, $request->integer('page', 1)),
         );
 
         return view('admin.reports.index', $report);

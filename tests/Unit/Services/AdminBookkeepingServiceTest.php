@@ -258,7 +258,7 @@ class AdminBookkeepingServiceTest extends TestCase
         $this->assertEqualsWithDelta(2500.0, $row['revenue'], 0.01);
     }
 
-    public function test_cosmotown_domain_profit_is_wholesale_minus_registrar_cost(): void
+    public function test_domain_profit_is_grouped_by_registrar(): void
     {
         $customer = User::factory()->customer()->create(['reseller_id' => null]);
         $extension = $this->createCosmotownComExtension();
@@ -275,17 +275,26 @@ class AdminBookkeepingServiceTest extends TestCase
             'completed_at' => Carbon::parse('2026-08-09 14:00:00'),
         ]);
 
+        $openprovider = Registrar::query()->create([
+            'name' => 'Openprovider',
+            'slug' => 'openprovider-bookkeeping',
+            'driver' => RegistrarDriver::Openprovider,
+            'environment' => 'sandbox',
+            'is_active' => true,
+            'config' => ['username' => 'test'],
+        ]);
         DomainExtension::create([
-            'extension' => '.net',
+            'extension' => '.nl',
             'enabled' => true,
-            'registrar' => 'internal',
-            'registrar_register_cost_kes' => 100,
+            'registrar' => 'Openprovider',
+            'registrar_id' => $openprovider->id,
+            'registrar_register_cost_kes' => 400,
         ]);
         ResellerDomainOrder::create([
             'reseller_id' => null,
             'customer_id' => $customer->id,
-            'domain_name' => 'notcosmo',
-            'extension' => '.net',
+            'domain_name' => 'keukentest',
+            'extension' => '.nl',
             'years' => 1,
             'wholesale_amount' => 900,
             'retail_amount' => 900,
@@ -294,12 +303,23 @@ class AdminBookkeepingServiceTest extends TestCase
         ]);
 
         $report = app(AdminBookkeepingService::class)->build(2026, 8);
+        $byName = collect($report['domains']['registrars'])->keyBy('name');
 
-        $this->assertSame(1500.0, $report['domains']['collected']);
-        $this->assertSame(759.0, $report['domains']['cost']);
-        $this->assertSame(741.0, $report['domains']['profit']);
-        $this->assertSame(1, $report['domains']['count']);
-        $this->assertSame(759.0, $report['costs']['domains']);
+        $this->assertSame(2400.0, $report['domains']['collected']);
+        $this->assertSame(1159.0, $report['domains']['cost']);
+        $this->assertSame(1241.0, $report['domains']['profit']);
+        $this->assertSame(2, $report['domains']['count']);
+        $this->assertSame(1159.0, $report['costs']['domains']);
+        $this->assertCount(2, $report['domains']['registrars']);
+
+        $this->assertSame(1500.0, $byName['Cosmotown']['collected']);
+        $this->assertSame(759.0, $byName['Cosmotown']['cost']);
+        $this->assertSame(741.0, $byName['Cosmotown']['profit']);
+        $this->assertSame(1, $byName['Cosmotown']['registrations']);
+        $this->assertSame(900.0, $byName['Openprovider']['collected']);
+        $this->assertSame(400.0, $byName['Openprovider']['cost']);
+        $this->assertSame(500.0, $byName['Openprovider']['profit']);
+        $this->assertSame('Openprovider', $byName['Openprovider']['driver_label']);
     }
 
     public function test_full_year_filter_includes_each_month_and_does_not_charge_future_provider_months(): void

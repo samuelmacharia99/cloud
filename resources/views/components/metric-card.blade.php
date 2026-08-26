@@ -1,4 +1,4 @@
-@props(['title', 'value', 'icon', 'color' => 'blue', 'trend' => null, 'href' => null, 'subtitle' => null])
+@props(['title', 'value', 'icon', 'color' => 'blue', 'trend' => null, 'href' => null, 'subtitle' => null, 'currency' => null])
 
 @php
 $colorMap = [
@@ -12,25 +12,28 @@ $colorMap = [
 $icon = preg_replace('/<script[\s\S]*?<\/script>/i', '', $icon ?? '');
 @endphp
 
-<div class="ui-card ui-card-interactive p-5 sm:p-6 group">
-    <div class="flex items-start justify-between gap-4">
-        <div class="flex-1 min-w-0">
-            <p class="text-sm font-medium text-slate-500 dark:text-slate-400">{{ $title }}</p>
-            <p class="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white mt-1.5 truncate">{{ $value }}</p>
-            @if($subtitle)
-                <p class="text-xs text-slate-500 dark:text-slate-500 mt-2">{{ $subtitle }}</p>
-            @endif
-            @if($trend)
-                <p class="text-xs font-semibold mt-2 inline-flex items-center gap-1 {{ $trend['positive'] ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400' }}">
-                    <span>{{ $trend['positive'] ? '↑' : '↓' }}</span>
-                    {{ $trend['text'] }}
-                </p>
-            @endif
-        </div>
-        <div class="w-11 h-11 sm:w-12 sm:h-12 rounded-xl ring-1 {{ $colorMap[$color] }} flex items-center justify-center flex-shrink-0 transition-transform group-hover:scale-105">
+<div class="ui-card ui-card-interactive p-5 sm:p-6 group min-w-0">
+    <div class="flex items-start justify-between gap-3">
+        <p class="text-sm font-medium text-slate-500 dark:text-slate-400">{{ $title }}</p>
+        <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl ring-1 {{ $colorMap[$color] }} flex items-center justify-center flex-shrink-0 transition-transform group-hover:scale-105">
             {!! $icon !!}
         </div>
     </div>
+    <p class="mt-3 font-bold tracking-tight text-slate-900 dark:text-white leading-none">
+        @if($currency)
+            <span class="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">{{ $currency }}</span>
+        @endif
+        <span class="block text-xl sm:text-2xl tabular-nums whitespace-nowrap">{{ $value }}</span>
+    </p>
+    @if($subtitle)
+        <p class="text-xs text-slate-500 dark:text-slate-500 mt-2.5 leading-5 line-clamp-2">{{ $subtitle }}</p>
+    @endif
+    @if($trend)
+        <p class="text-xs font-semibold mt-2 inline-flex items-center gap-1 {{ $trend['positive'] ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400' }}">
+            <span>{{ $trend['positive'] ? '↑' : '↓' }}</span>
+            {{ $trend['text'] }}
+        </p>
+    @endif
     @if($href)
         <a href="{{ $href }}" class="inline-flex items-center gap-1 text-sm font-semibold text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 mt-4 transition-colors">
             View details

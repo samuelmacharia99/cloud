@@ -61,11 +61,13 @@ class AdminReportsTest extends TestCase
             ->assertOk()
             ->assertSee('Bookkeeping')
             ->assertSee('August 2026')
+            ->assertSee('Cash in')
             ->assertSee('2,500.00')
+            ->assertSee('Outstanding AR')
             ->assertSee('Cash in vs spend')
             ->assertSee('Profit by node')
-            ->assertSee('Cosmotown domain profit')
-            ->assertSee('Coin trail');
+            ->assertSee('Domain profit by registrar')
+            ->assertDontSee('Coin trail');
     }
 
     public function test_year_and_month_filters_change_the_period(): void
@@ -99,10 +101,10 @@ class AdminReportsTest extends TestCase
             ->assertSessionHasErrors('month');
     }
 
-    public function test_page_shows_node_and_domain_money_and_the_payment_trail(): void
+    public function test_page_shows_node_and_domain_money(): void
     {
         $admin = User::factory()->admin()->create();
-        $customer = User::factory()->customer()->create(['name' => 'Amina Otieno', 'reseller_id' => null]);
+        $customer = User::factory()->customer()->create(['reseller_id' => null]);
         Node::factory()->create([
             'name' => 'Mombasa App Host',
             'monthly_cost_usd' => 100,
@@ -141,12 +143,13 @@ class AdminReportsTest extends TestCase
             ->get(route('admin.reports.index'))
             ->assertOk()
             ->assertSee('Mombasa App Host')
-            ->assertSee('ledgertrace.com')
-            ->assertSee('Amina Otieno')
-            ->assertSee('Coin trail')
+            ->assertSee('Cosmotown')
+            ->assertSee('Domain profit by registrar')
+            ->assertDontSee('Coin trail')
             ->assertSee('5,000.00')
             ->assertSee('1,650.00')
-            ->assertSee('759.00');
+            ->assertSee('759.00')
+            ->assertDontSee('ledgertrace.com');
     }
 
     public function test_saved_node_usd_spend_is_shown_when_kes_rate_is_missing(): void
