@@ -41,6 +41,7 @@ class Node extends Model
         'region',
         'datacenter',
         'description',
+        'monthly_cost_usd',
         'nameserver_1',
         'nameserver_2',
         'nameserver_3',
@@ -59,6 +60,7 @@ class Node extends Model
         'ram_used_gb' => 'integer',
         'storage_used_gb' => 'integer',
         'container_count' => 'integer',
+        'monthly_cost_usd' => 'decimal:2',
         'verify_ssl' => 'boolean',
         'is_active' => 'boolean',
         'ssh_password' => 'encrypted',
@@ -114,6 +116,47 @@ class Node extends Model
     {
         return $this->hasMany(User::class, 'reseller_node_id')
             ->where('is_reseller', true);
+    }
+
+    /**
+     * USD row used for spend conversion. Missing or zero rates must not convert.
+     */
+    public static function usdCurrency(): ?Currency
+    {
+        $usd = Currency::query()->where('code', 'USD')->first();
+
+        if (! $usd || (float) $usd->exchange_rate <= 0) {
+            return null;
+        }
+
+        return $usd;
+    }
+
+    /**
+     * How many KES one USD is worth at the current catalog rate.
+     */
+    public static function usdToKesRate(): ?float
+    {
+        $usd = static::usdCurrency();
+
+        return $usd ? (1 / (float) $usd->exchange_rate) : null;
+    }
+
+    /**
+     * Monthly node spend converted to KES using the live USD rate. Not snapshotted.
+     */
+    public function monthlyCostKes(): ?float
+    {
+        if ($this->monthly_cost_usd === null) {
+            return null;
+        }
+
+        $usd = static::usdCurrency();
+        if (! $usd) {
+            return null;
+        }
+
+        return round($usd->convertToKES((float) $this->monthly_cost_usd), 2);
     }
 
     // Helper Methods

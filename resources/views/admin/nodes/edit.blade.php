@@ -105,6 +105,83 @@
                 </div>
             </div>
 
+            <!-- Monthly spend -->
+            <div
+                x-data="{
+                    usd: @js(old('monthly_cost_usd', $node->monthly_cost_usd)),
+                    rate: @js($usdToKesRate),
+                    kesPreview() {
+                        if (this.usd === null || this.usd === '') {
+                            return null;
+                        }
+                        const amount = parseFloat(this.usd);
+                        if (Number.isNaN(amount) || this.rate === null) {
+                            return null;
+                        }
+                        return amount * this.rate;
+                    },
+                    formatKes(value) {
+                        return new Intl.NumberFormat('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
+                    }
+                }"
+            >
+                <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-2">Monthly spend</h2>
+                <p class="text-sm text-slate-600 dark:text-slate-400 mb-6">
+                    Enter what you pay the provider each month in US dollars. Kenya shillings update automatically from the current USD rate.
+                </p>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <div>
+                        <label for="monthly_cost_usd" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Amount (USD)</label>
+                        <div class="relative">
+                            <span class="absolute inset-y-0 left-0 flex items-center pl-4 text-sm text-slate-500 dark:text-slate-400">$</span>
+                            <input
+                                type="number"
+                                id="monthly_cost_usd"
+                                name="monthly_cost_usd"
+                                x-model="usd"
+                                value="{{ old('monthly_cost_usd', $node->monthly_cost_usd) }}"
+                                min="0"
+                                max="999999.99"
+                                step="0.01"
+                                placeholder="0.00"
+                                class="w-full pl-8 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('monthly_cost_usd') border-red-500 @enderror"
+                            >
+                        </div>
+                        @error('monthly_cost_usd')
+                            <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                        @enderror
+                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Leave blank if this node has no tracked provider cost.</p>
+                    </div>
+                    <div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-4">
+                        <p class="text-sm font-medium text-slate-900 dark:text-white">Kenya shillings</p>
+                        <template x-if="usd !== null && usd !== '' && rate === null">
+                            <p class="mt-2 text-sm text-amber-700 dark:text-amber-300">
+                                USD rate is not configured.
+                                <a href="{{ route('admin.currencies.index') }}" class="underline">Set it in Currencies</a>
+                                so this can convert to KES.
+                            </p>
+                        </template>
+                        <template x-if="kesPreview() !== null">
+                            <p class="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
+                                KES <span x-text="formatKes(kesPreview())"></span>
+                                <span class="text-sm font-normal text-slate-500 dark:text-slate-400">/ month</span>
+                            </p>
+                        </template>
+                        <template x-if="(usd === null || usd === '') && rate !== null">
+                            <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">Enter a USD amount to see the KES equivalent.</p>
+                        </template>
+                        @if ($usdToKesRate)
+                            <p class="mt-3 text-xs text-slate-500 dark:text-slate-400">
+                                1 USD ≈ KES {{ number_format($usdToKesRate, 4) }}
+                                @if ($usdRateUpdatedAt)
+                                    · rate updated {{ $usdRateUpdatedAt->diffForHumans() }}
+                                @endif
+                            </p>
+                        @endif
+                    </div>
+                </div>
+            </div>
+
             <!-- Status -->
             <div>
                 <label for="status" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Status</label>

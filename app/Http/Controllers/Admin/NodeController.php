@@ -392,7 +392,17 @@ class NodeController extends Controller
             'mailcow' => 'Mailcow (Email)',
         ];
 
-        return view('admin.nodes.edit', compact('node', 'regions', 'types'));
+        $usdCurrency = Node::usdCurrency();
+        $usdToKesRate = Node::usdToKesRate();
+        $usdRateUpdatedAt = $usdCurrency?->rate_updated_at;
+
+        return view('admin.nodes.edit', compact(
+            'node',
+            'regions',
+            'types',
+            'usdToKesRate',
+            'usdRateUpdatedAt',
+        ));
     }
 
     public function update(Request $request, Node $node)
@@ -425,11 +435,13 @@ class NodeController extends Controller
             'nameserver_4' => 'nullable|string|max:255',
             'verify_ssl' => 'nullable|boolean',
             'description' => 'nullable|string',
+            'monthly_cost_usd' => 'nullable|numeric|min:0|max:999999.99',
             'is_active' => 'nullable|boolean',
         ]);
 
         $validated['verify_ssl'] = $request->has('verify_ssl');
         $validated['is_active'] = $request->has('is_active');
+        $this->applyMonthlyCostUsd($request, $validated);
         $this->stripBlankCredentialFields($validated);
 
         if ($nodeType === 'directadmin') {
@@ -1167,8 +1179,25 @@ class NodeController extends Controller
     }
 
     /**
+     * Persist USD spend only when the edit form submitted the field.
+     * Omitted keys leave the stored amount unchanged (API/tests). Empty input clears it.
+     *
      * @param  array<string, mixed>  $validated
      */
+    private function applyMonthlyCostUsd(Request $request, array &$validated): void
+    {
+        if (! $request->exists('monthly_cost_usd')) {
+            unset($validated['monthly_cost_usd']);
+
+            return;
+        }
+
+        $raw = $request->input('monthly_cost_usd');
+        $validated['monthly_cost_usd'] = ($raw === null || $raw === '')
+            ? null
+            : round((float) $raw, 2);
+    }
+
     private function stripBlankCredentialFields(array &$validated): void
     {
         foreach (['ssh_password', 'da_login_key', 'api_token'] as $field) {

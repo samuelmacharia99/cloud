@@ -48,7 +48,7 @@
     </div>
 
     <!-- Overview Cards -->
-    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
         <div class="ui-card p-6">
             <p class="text-sm text-slate-600 dark:text-slate-400 mb-2">Type</p>
             <p class="text-lg font-semibold text-slate-900 dark:text-white">{{ $node->getTypeLabel() }}</p>
@@ -80,6 +80,21 @@
         <div class="ui-card p-6">
             <p class="text-sm text-slate-600 dark:text-slate-400 mb-2">Last Heartbeat</p>
             <p class="text-lg font-semibold text-slate-900 dark:text-white">{{ $node->last_heartbeat_at?->diffForHumans() ?? 'Never' }}</p>
+        </div>
+
+        <div class="ui-card p-6">
+            <p class="text-sm text-slate-600 dark:text-slate-400 mb-2">Monthly spend</p>
+            @if ($node->monthly_cost_usd !== null)
+                <p class="text-lg font-semibold text-slate-900 dark:text-white">${{ number_format((float) $node->monthly_cost_usd, 2) }}</p>
+                @if ($node->monthlyCostKes() !== null)
+                    <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">≈ KES {{ number_format($node->monthlyCostKes(), 2) }}</p>
+                @else
+                    <p class="mt-1 text-xs text-amber-700 dark:text-amber-300">KES conversion unavailable — <a href="{{ route('admin.currencies.index') }}" class="underline">set the USD rate</a>.</p>
+                @endif
+            @else
+                <p class="text-lg font-semibold text-slate-900 dark:text-white">Not set</p>
+                <a href="{{ route('admin.nodes.edit', $node) }}" class="mt-1 inline-block text-sm text-blue-600 dark:text-blue-400 hover:underline">Set spend</a>
+            @endif
         </div>
     </div>
 
