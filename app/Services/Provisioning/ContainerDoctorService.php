@@ -222,24 +222,11 @@ class ContainerDoctorService
         $canonical = app(ContainerDeploymentService::class)->canonicalDatabaseIdentifiers($service);
         $database = (string) ($env['DB_DATABASE'] ?? $env['POSTGRES_DB'] ?? $env['MYSQL_DATABASE'] ?? '');
         $username = (string) ($env['DB_USERNAME'] ?? $env['POSTGRES_USER'] ?? $env['MYSQL_USER'] ?? '');
-        $dbPassword = (string) ($env['DB_PASSWORD'] ?? '');
-        $sidecarPassword = (string) ($env['POSTGRES_PASSWORD'] ?? $env['MYSQL_PASSWORD'] ?? '');
-        $urlPassword = null;
-        if (! empty($env['DATABASE_URL']) && is_string($env['DATABASE_URL'])) {
-            $parts = parse_url($env['DATABASE_URL']);
-            if (is_array($parts) && isset($parts['pass'])) {
-                $urlPassword = rawurldecode((string) $parts['pass']);
-            }
-        }
 
         $databaseLooksHealthy = $database !== ''
             && $database === $canonical['database']
             && $database !== $username
             && ! preg_match('/^u\d+_s\d+$/', $database);
-
-        $passwordsAligned = $dbPassword !== ''
-            && ($sidecarPassword === '' || $sidecarPassword === $dbPassword)
-            && ($urlPassword === null || $urlPassword === '' || $urlPassword === $dbPassword);
 
         foreach ($findings as &$finding) {
             $id = (string) ($finding['id'] ?? '');
@@ -254,17 +241,9 @@ class ContainerDoctorService
                 $finding['treat_label'] = 'Re-sync credentials';
             }
 
-            if (in_array($id, ['postgres_password_auth_failed', 'mysql_access_denied'], true)
-                && $databaseLooksHealthy
-                && $passwordsAligned
-            ) {
-                $finding['severity'] = 'info';
-                $finding['stale'] = true;
-                $finding['title'] = 'Older logs: database auth failure (current env looks aligned)';
-                $finding['summary'] = 'Logs still show auth failures, but DB name/password fields in the live environment look consistent. '
-                    .'Reload the app or re-sync if new errors appear.';
-                $finding['treat_label'] = 'Re-sync credentials';
-            }
+            // Do not mark mysql_access_denied / postgres password failures stale just because
+            // env keys agree with each other. DirectAdmin conversions often have aligned
+            // DB_PASSWORD/MYSQL_PASSWORD while `user`@`localhost` still rejects Docker overlay IPs.
         }
         unset($finding);
 
@@ -734,8 +713,14 @@ class ContainerDoctorService
                     );
 
                     $hasTables = ($checks['table_count'] ?? null) !== null && (int) $checks['table_count'] > 0;
+                    $looksLikeDbAuth = collect($appErrors)->contains(
+                        fn ($line) => (bool) preg_match('/Access denied for user|SQLSTATE\[HY000\]\s*\[1045\]|password authentication failed/i', (string) $line)
+                    );
 
-                    if ($looksLikeMissingViewCache) {
+                    if ($looksLikeDbAuth) {
+                        $treatAction = 'sync_database_credentials';
+                        $treatLabel = 'Repair DB credentials';
+                    } elseif ($looksLikeMissingViewCache) {
                         $treatAction = 'fix_storage_permissions';
                         $treatLabel = 'Create Laravel cache directories';
                     } elseif ($looksLikeMissingCacheLocks) {
@@ -755,7 +740,9 @@ class ContainerDoctorService
                         $treatLabel = 'Restart application';
                     }
 
-                    $summary = $looksLikeMissingViewCache
+                    $summary = $looksLikeDbAuth
+                        ? 'The app log shows MySQL/Postgres rejected the username or password (often `user`@`localhost` after a DirectAdmin import — the app container connects from a Docker overlay IP). Repair grants `user`@`%` and rewrites .env.'
+                        : ($looksLikeMissingViewCache
                         ? 'Laravel Blade compiled-view path is missing (storage/framework/views). DirectAdmin exports skip those cache dirs, so GET / 500s until they exist.'
                         : ($looksLikeMissingCacheLocks
                         ? 'DB connects and has tables, but Laravel is using database cache without a cache_locks table — that commonly 500s GET /.'
@@ -763,7 +750,7 @@ class ContainerDoctorService
                             ? 'DB connects, but the app error looks like missing tables/migrations.'
                             : 'The container is up and answering on its port, but the app itself returns HTTP '.$httpStatus
                                 .' (tables: '.((string) ($checks['table_count'] ?? '?')).'). '
-                                .'This is an application exception — clearing caches alone will not clear this card until the URL returns 2xx/3xx.'));
+                                .'This is an application exception — clearing caches alone will not clear this card until the URL returns 2xx/3xx.')));
 
                     $findings[] = [
                         'id' => 'live_http_5xx',
@@ -855,7 +842,7 @@ class ContainerDoctorService
                     'live_env_credential_drift',
                     'live_empty_database',
                     'live_missing_pdo',
-                    'live_http_5xx',
+                    'live_db_config_drift',
                     'live_upstream_unreachable',
                     'live_bootstrap_in_progress',
                 ], true)
@@ -1944,11 +1931,12 @@ PHP;
                     '/SQLSTATE\[HY000\]\s*\[\d+\]\s*Access denied/i',
                 ],
                 'title' => 'MySQL access denied',
-                'summary' => 'MySQL rejected the username/password. The sidecar volume may still have older credentials.',
+                'summary' => 'MySQL rejected the username/password from the app container IP. DirectAdmin users are often granted on localhost only; Docker connects as user@10.201.x.x. Repair creates user@% with the Environment password.',
                 'treat_action' => 'sync_database_credentials',
                 'treat_label' => 'Repair DB credentials',
                 'manual_steps' => [
-                    'Repair DB credentials from Doctor.',
+                    'Click Repair DB credentials (grants the app user from %, resets the password, rewrites .env).',
+                    'Do not use Fix storage permissions for this — artisan cache:clear needs a working DB.',
                     'If unresolved, Redeploy with Reset database.',
                 ],
             ],
@@ -2149,7 +2137,8 @@ PHP;
                 'treat_action' => 'fix_storage_permissions',
                 'treat_label' => 'Fix storage permissions',
                 'manual_steps' => [
-                    'Fix permissions, then: php artisan cache:clear',
+                    'Click Fix storage permissions (creates cache dirs). Cache clear uses the file driver so a broken MySQL user cannot fail the treatment.',
+                    'If logs also show Access denied for user, click Repair DB credentials.',
                 ],
             ],
             [
@@ -2975,25 +2964,59 @@ PHP;
         }
     }
 
-    private function clearLaravelCachesQuietly(Service $service, SSHService $ssh): void
+    /**
+     * Clear compiled/config/view/route caches without querying MySQL.
+     *
+     * `php artisan optimize:clear` / `cache:clear` run DELETE FROM `cache` when
+     * CACHE_STORE=database (common on DirectAdmin Laravel). That 1045s when the
+     * sidecar user is localhost-only and the app connects from 10.201.x.x.
+     */
+    public function laravelCacheClearScript(string $projectRoot): string
     {
-        $deployment = $service->containerDeployment;
-        $init = app(LaravelAppInitializationService::class);
+        $root = escapeshellarg($projectRoot);
 
+        return 'cd '.$root.'; '
+            .'rm -f bootstrap/cache/config.php bootstrap/cache/packages.php '
+            .'bootstrap/cache/services.php bootstrap/cache/events.php '
+            .'bootstrap/cache/routes.php bootstrap/cache/routes-v7.php '
+            .'2>/dev/null || true; '
+            .'CACHE_STORE=file CACHE_DRIVER=file php artisan config:clear --no-interaction || true; '
+            .'CACHE_STORE=file CACHE_DRIVER=file php artisan event:clear --no-interaction || true; '
+            .'CACHE_STORE=file CACHE_DRIVER=file php artisan view:clear --no-interaction || true; '
+            .'CACHE_STORE=file CACHE_DRIVER=file php artisan route:clear --no-interaction || true; '
+            .'CACHE_STORE=file CACHE_DRIVER=file php artisan cache:clear --no-interaction || true; '
+            .'echo ok';
+    }
+
+    private function resolveArtisanProjectRoot(SSHService $ssh, $deployment): string
+    {
         $locator = 'if [ -f /app/backend/artisan ]; then echo /app/backend; '
             .'elif [ -f /app/artisan ]; then echo /app; '
             .'else echo /app; fi';
-        $projectRoot = trim($ssh->exec(
+
+        return trim($ssh->exec(
             'docker exec -u www-data '.escapeshellarg($deployment->container_name)
             .' sh -lc '.escapeshellarg($locator),
             15
         )) ?: '/app';
+    }
 
-        $script = 'set -e; cd '.escapeshellarg($projectRoot).'; '
-            .'php artisan optimize:clear --no-interaction 2>/dev/null '
-            .'|| (php artisan config:clear --no-interaction; php artisan cache:clear --no-interaction)';
+    private function clearLaravelCachesQuietly(Service $service, SSHService $ssh): void
+    {
+        $deployment = $service->containerDeployment;
+        $projectRoot = $this->resolveArtisanProjectRoot($ssh, $deployment);
 
-        $init->dockerExecPublic($ssh, $deployment->container_name, $script, 120);
+        app(LaravelAppInitializationService::class)->dockerExecPublic(
+            $ssh,
+            $deployment->container_name,
+            $this->laravelCacheClearScript($projectRoot),
+            120
+        );
+    }
+
+    private function looksLikeDatabaseAuthFailure(string $message): bool
+    {
+        return (bool) preg_match('/Access denied for user|SQLSTATE\[HY000\]\s*\[1045\]|password authentication failed/i', $message);
     }
 
     /**
@@ -3104,23 +3127,32 @@ PHP;
         $init = app(LaravelAppInitializationService::class);
 
         try {
-            $locator = 'if [ -f /app/backend/artisan ]; then echo /app/backend; '
-                .'elif [ -f /app/artisan ]; then echo /app; '
-                .'else echo /app; fi';
-            $projectRoot = trim($ssh->exec(
-                'docker exec -u www-data '.escapeshellarg($deployment->container_name)
-                .' sh -lc '.escapeshellarg($locator),
-                15
-            )) ?: '/app';
+            $projectRoot = $this->resolveArtisanProjectRoot($ssh, $deployment);
+            $init->dockerExecPublic(
+                $ssh,
+                $deployment->container_name,
+                $this->laravelCacheClearScript($projectRoot),
+                120
+            );
 
-            $script = 'set -e; cd '.escapeshellarg($projectRoot).'; '
-                .'php artisan optimize:clear --no-interaction 2>/dev/null '
-                .'|| (php artisan config:clear --no-interaction; php artisan cache:clear --no-interaction; php artisan route:clear --no-interaction; php artisan view:clear --no-interaction)';
-
-            $init->dockerExecPublic($ssh, $deployment->container_name, $script, 120);
-
-            return ['success' => true, 'message' => 'Laravel caches cleared.'];
+            return ['success' => true, 'message' => 'Laravel caches cleared (file driver — no database cache table).'];
         } catch (\Throwable $e) {
+            if ($this->looksLikeDatabaseAuthFailure($e->getMessage())) {
+                $repair = $this->treatSyncDatabaseCredentials($service);
+                if ($repair['success']) {
+                    return [
+                        'success' => true,
+                        'message' => 'Cache clear needed a working DB user. '.$repair['message'],
+                    ];
+                }
+
+                return [
+                    'success' => false,
+                    'message' => 'Cache files were not fully cleared because MySQL rejected the app user. '
+                        .'Click Repair DB credentials next. '.$repair['message'],
+                ];
+            }
+
             return ['success' => false, 'message' => 'Failed to clear caches: '.$e->getMessage()];
         } finally {
             $ssh->disconnect();
@@ -3139,14 +3171,7 @@ PHP;
         $init = app(LaravelAppInitializationService::class);
 
         try {
-            $locator = 'if [ -f /app/backend/artisan ]; then echo /app/backend; '
-                .'elif [ -f /app/artisan ]; then echo /app; '
-                .'else echo /app; fi';
-            $projectRoot = trim($ssh->exec(
-                'docker exec -u www-data '.escapeshellarg($deployment->container_name)
-                .' sh -lc '.escapeshellarg($locator),
-                15
-            )) ?: '/app';
+            $projectRoot = $this->resolveArtisanProjectRoot($ssh, $deployment);
 
             $php = <<<'PHP'
 $root = getenv('PROJECT_ROOT') ?: '/app';
@@ -3169,11 +3194,9 @@ if (file_put_contents($envPath, $c) === false) { fwrite(STDERR, "write failed\n"
 echo "ok";
 PHP;
 
-            $script = 'set -e; export PROJECT_ROOT='.escapeshellarg($projectRoot).'; '
+            $script = 'export PROJECT_ROOT='.escapeshellarg($projectRoot).'; '
                 .'php -r '.escapeshellarg($php).'; '
-                .'cd '.escapeshellarg($projectRoot).'; '
-                .'php artisan optimize:clear --no-interaction 2>/dev/null '
-                .'|| php artisan config:clear --no-interaction';
+                .$this->laravelCacheClearScript($projectRoot);
 
             $init->dockerExecPublic($ssh, $deployment->container_name, $script, 120, asRoot: true);
 
@@ -3208,13 +3231,47 @@ PHP;
             $hostAppPath = $appDirectory->hostAppPath($deployment);
             $appDirectory->ensureLaravelWritableLayoutOnHost($ssh, $hostAppPath);
             $appDirectory->normalizeLaravelPermissions($ssh, $deployment);
-            $this->clearLaravelCachesQuietly($service, $ssh);
+
+            try {
+                $this->clearLaravelCachesQuietly($service, $ssh);
+            } catch (\Throwable $e) {
+                if (! $this->looksLikeDatabaseAuthFailure($e->getMessage())) {
+                    return ['success' => false, 'message' => 'Failed to fix permissions: '.$e->getMessage()];
+                }
+
+                $repair = $this->treatSyncDatabaseCredentials($service);
+                if ($repair['success']) {
+                    return [
+                        'success' => true,
+                        'message' => 'Fixed storage permissions. Also repaired DB credentials so artisan can run: '
+                            .$repair['message'],
+                    ];
+                }
+
+                return [
+                    'success' => true,
+                    'message' => 'Created Laravel cache/storage directories and fixed permissions. '
+                        .'Cache clear still cannot reach MySQL ('.mb_substr($e->getMessage(), 0, 180).'). '
+                        .'Click Repair DB credentials next.',
+                ];
+            }
 
             return [
                 'success' => true,
                 'message' => 'Created Laravel cache/storage directories, fixed permissions, and cleared config. Re-scan after a reload.',
             ];
         } catch (\Throwable $e) {
+            if ($this->looksLikeDatabaseAuthFailure($e->getMessage())) {
+                $repair = $this->treatSyncDatabaseCredentials($service);
+
+                return [
+                    'success' => $repair['success'],
+                    'message' => $repair['success']
+                        ? 'Permissions needed a working DB user. '.$repair['message']
+                        : 'Failed to fix permissions because MySQL rejected the app user. '.$repair['message'],
+                ];
+            }
+
             return ['success' => false, 'message' => 'Failed to fix permissions: '.$e->getMessage()];
         } finally {
             $ssh->disconnect();

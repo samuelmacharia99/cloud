@@ -366,6 +366,102 @@ LOG;
     }
 
     #[Test]
+    public function it_detects_mysql_access_denied_from_docker_overlay_ip(): void
+    {
+        $logs = <<<'LOG'
+SQLSTATE[HY000] [1045] Access denied for user 'u74_s24'@'10.201.0.26' (using password: YES) (SQL: delete from `cache`)
+Please provide a valid cache path.
+LOG;
+
+        $findings = app(ContainerDoctorService::class)->analyzeLogs($logs, 'laravel');
+        $ids = array_column($findings, 'id');
+
+        $this->assertContains('mysql_access_denied', $ids);
+        $this->assertContains('storage_permission_denied', $ids);
+
+        $mysql = collect($findings)->firstWhere('id', 'mysql_access_denied');
+        $this->assertSame('sync_database_credentials', $mysql['treat_action']);
+        $this->assertSame('critical', $mysql['severity']);
+    }
+
+    #[Test]
+    public function it_does_not_downgrade_mysql_access_denied_when_env_looks_aligned(): void
+    {
+        $service = new Service;
+        $service->id = 24;
+        $service->user_id = 74;
+        $service->setRelation('containerDeployment', new ContainerDeployment([
+            'env_values' => [
+                'DB_DATABASE' => 's24_db',
+                'DB_USERNAME' => 'u74_s24',
+                'DB_PASSWORD' => 'secret',
+                'MYSQL_PASSWORD' => 'secret',
+                'DATABASE_URL' => 'mysql://u74_s24:secret@db:3306/s24_db',
+            ],
+        ]));
+
+        $findings = [[
+            'id' => 'mysql_access_denied',
+            'severity' => 'critical',
+            'title' => 'MySQL access denied',
+            'summary' => 'Rejected',
+            'evidence' => ["Access denied for user 'u74_s24'@'10.201.0.26'"],
+            'treat_action' => 'sync_database_credentials',
+            'treat_label' => 'Repair DB credentials',
+            'manual_steps' => [],
+        ]];
+
+        $annotated = app(ContainerDoctorService::class)->annotateFindingsWithLiveStatus($service, $findings);
+
+        $this->assertSame('critical', $annotated[0]['severity']);
+        $this->assertArrayNotHasKey('stale', $annotated[0]);
+        $this->assertSame('sync_database_credentials', $annotated[0]['treat_action']);
+    }
+
+    #[Test]
+    public function it_keeps_mysql_access_denied_when_the_site_is_5xx_and_db_was_not_ok(): void
+    {
+        $merged = app(ContainerDoctorService::class)->mergeLogAndLiveFindings(
+            [[
+                'id' => 'mysql_access_denied',
+                'severity' => 'critical',
+                'title' => 'MySQL access denied',
+                'treat_action' => 'sync_database_credentials',
+            ]],
+            [
+                'findings' => [[
+                    'id' => 'live_http_5xx',
+                    'severity' => 'critical',
+                    'title' => 'HTTP 500',
+                    'treat_action' => 'fix_storage_permissions',
+                ]],
+                'checks' => ['http_status' => 500, 'db_ok' => false],
+            ]
+        );
+
+        $ids = array_column($merged, 'id');
+        $this->assertContains('mysql_access_denied', $ids);
+        $this->assertContains('live_http_5xx', $ids);
+    }
+
+    #[Test]
+    public function laravel_cache_clear_does_not_require_a_working_database_cache_table(): void
+    {
+        $script = app(ContainerDoctorService::class)->laravelCacheClearScript('/app');
+
+        $this->assertStringNotContainsString('optimize:clear', $script);
+        $this->assertStringNotContainsString('set -e', $script);
+        $this->assertStringContainsString('CACHE_STORE=file', $script);
+        $this->assertStringContainsString('CACHE_DRIVER=file', $script);
+        $this->assertStringContainsString('php artisan config:clear', $script);
+        $this->assertStringContainsString('php artisan cache:clear', $script);
+        $this->assertDoesNotMatchRegularExpression(
+            '/(?<!CACHE_STORE=file CACHE_DRIVER=file )php artisan cache:clear/',
+            $script
+        );
+    }
+
+    #[Test]
     public function it_downgrades_missing_database_finding_when_env_already_fixed(): void
     {
         $service = new Service;

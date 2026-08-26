@@ -2510,17 +2510,7 @@ class ContainerDeploymentService
             ?? ''
         );
 
-        $sql = sprintf(
-            'CREATE DATABASE IF NOT EXISTS %s; '
-            ."CREATE USER IF NOT EXISTS '%s'@'%%' IDENTIFIED BY '%s'; "
-            ."ALTER USER '%s'@'%%' IDENTIFIED BY '%s'; "
-            ."GRANT ALL PRIVILEGES ON %s.* TO '%s'@'%%'; "
-            .'FLUSH PRIVILEGES;',
-            $this->mysqlQuoteIdentifier($database),
-            addslashes($username), addslashes($password),
-            addslashes($username), addslashes($password),
-            $this->mysqlQuoteIdentifier($database), addslashes($username)
-        );
+        $sql = $this->mysqlPrivilegeRepairSql($database, $username, $password);
 
         $sqlArg = escapeshellarg($sql);
         $rootPwArg = escapeshellarg($rootPassword);
@@ -2576,6 +2566,38 @@ class ContainerDeploymentService
         ]);
 
         $ssh->exec($resetScript, 120);
+    }
+
+    /**
+     * Grant the app user from Docker overlay IPs (`user`@`10.201.x.x`) and localhost.
+     * DirectAdmin dumps often create `user`@`localhost` only, which MySQL reports as
+     * "Access denied for user 'u74_s24'@'10.201.0.26'" even with the right password.
+     */
+    public function mysqlPrivilegeRepairSql(string $database, string $username, string $password): string
+    {
+        $dbIdent = $this->mysqlQuoteIdentifier($database);
+        $user = addslashes($username);
+        $pass = addslashes($password);
+
+        return sprintf(
+            'CREATE DATABASE IF NOT EXISTS %s; '
+            ."CREATE USER IF NOT EXISTS '%s'@'%%' IDENTIFIED BY '%s'; "
+            ."ALTER USER '%s'@'%%' IDENTIFIED BY '%s'; "
+            ."CREATE USER IF NOT EXISTS '%s'@'localhost' IDENTIFIED BY '%s'; "
+            ."ALTER USER '%s'@'localhost' IDENTIFIED BY '%s'; "
+            ."GRANT ALL PRIVILEGES ON %s.* TO '%s'@'%%'; "
+            ."GRANT ALL PRIVILEGES ON %s.* TO '%s'@'localhost'; "
+            ."DROP USER IF EXISTS ''@'%%'; "
+            ."DROP USER IF EXISTS ''@'localhost'; "
+            .'FLUSH PRIVILEGES;',
+            $dbIdent,
+            $user, $pass,
+            $user, $pass,
+            $user, $pass,
+            $user, $pass,
+            $dbIdent, $user,
+            $dbIdent, $user
+        );
     }
 
     private function mysqlQuoteIdentifier(string $name): string

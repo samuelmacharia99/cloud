@@ -849,6 +849,9 @@ class DirectAdminToContainerMigrationService
                 $safeDatabase,
             );
 
+            $progress('Granting the app MySQL user from Docker overlay IPs');
+            $this->grantImportedMysqlUser($targetSsh, $containerPath, $dbService, $db, $safeDatabase, $importPass);
+
             $dbDefines = [
                 'DB_NAME' => $safeDatabase,
                 'DB_USER' => $db['user'] !== '' ? $db['user'] : 'wordpress',
@@ -1136,6 +1139,9 @@ class DirectAdminToContainerMigrationService
                     $importPass,
                     $safeDatabase,
                 );
+
+                $progress('Granting the app MySQL user from Docker overlay IPs');
+                $this->grantImportedMysqlUser($targetSsh, $containerPath, $dbService, $db, $safeDatabase, $importPass);
 
                 $progress('Rewriting application database settings');
                 $this->rewriteAppEnvDatabase(
@@ -1658,6 +1664,37 @@ class DirectAdminToContainerMigrationService
         }
 
         return $text === '' || str_ends_with($text, "\n") ? $text : $text."\n";
+    }
+
+    /**
+     * DirectAdmin MySQL users are typically `user`@`localhost`. After import the
+     * app container connects from a Docker overlay IP (e.g. 10.201.0.26), so
+     * Laravel 1045s until `user`@`%` exists with the same password as .env.
+     *
+     * @param  array{user: string, password: string, root_password: string}  $db
+     */
+    private function grantImportedMysqlUser(
+        SSHService $ssh,
+        string $containerPath,
+        string $dbService,
+        array $db,
+        string $database,
+        string $importPass,
+    ): void {
+        $user = $db['user'] !== '' ? $db['user'] : 'appuser';
+        $password = $db['password'] !== '' ? $db['password'] : $importPass;
+        $root = $db['root_password'] !== '' ? $db['root_password'] : $password;
+
+        $this->deployments->syncMysqlSidecarCredentials($ssh, $containerPath, [
+            'DB_HOST' => $dbService,
+            'DB_DATABASE' => $database,
+            'DB_USERNAME' => $user,
+            'DB_PASSWORD' => $password,
+            'MYSQL_ROOT_PASSWORD' => $root,
+            'MYSQL_DATABASE' => $database,
+            'MYSQL_USER' => $user,
+            'MYSQL_PASSWORD' => $password,
+        ]);
     }
 
     /**
