@@ -105,6 +105,8 @@ class ContainerDoctorService
             'run_migrations' => $this->treatRunMigrations($service),
             'migrate_fresh' => $this->treatMigrateFresh($service),
             'use_file_cache' => $this->treatUseFileCache($service),
+            'tune_request_concurrency' => $this->treatTuneRequestConcurrency($service),
+            'fix_compose_interpolation' => $this->treatFixComposeInterpolation($service),
             default => ['success' => false, 'message' => 'Unknown treatment action.'],
         };
 
@@ -172,6 +174,13 @@ class ContainerDoctorService
                 $findings,
                 fn (array $f) => ($f['id'] ?? '') !== 'php_builtin_dev_server'
             ));
+        }
+
+        if (in_array($stack, ['laravel', 'php'], true)) {
+            $accessFinding = $this->intermittentAccessLogFinding($normalized);
+            if ($accessFinding !== null) {
+                $findings[] = $accessFinding;
+            }
         }
 
         if ($findings === [] && trim($logs) !== '' && ! str_starts_with(trim($logs), 'Error fetching logs:')) {
@@ -287,6 +296,10 @@ class ContainerDoctorService
             'expected_image' => null,
             'disk_percent' => null,
             'publishes_port' => null,
+            'session_driver' => null,
+            'cache_store' => null,
+            'http_2xx_count' => null,
+            'http_5xx_count' => null,
         ];
         $findings = [];
 
@@ -458,6 +471,10 @@ class ContainerDoctorService
                 $liveEnv = $this->readLiveAppEnvironment($ssh, $deployment);
                 $checks['env_source'] = $liveEnv === [] ? 'platform' : 'app_dotenv';
                 $mergedEnv = $liveEnv === [] ? $platformEnv : array_merge($platformEnv, $liveEnv);
+                $checks['session_driver'] = strtolower(trim((string) ($mergedEnv['SESSION_DRIVER'] ?? '')));
+                $checks['cache_store'] = strtolower(trim((string) (
+                    $mergedEnv['CACHE_STORE'] ?? $mergedEnv['CACHE_DRIVER'] ?? ''
+                )));
 
                 if ($databaseTemplate) {
                     $probeEnv = $this->envForRuntimeDatabaseProbe($mergedEnv, (string) $databaseTemplate->type);
@@ -769,6 +786,17 @@ class ContainerDoctorService
                     ];
                 }
             }
+
+            $accessFinding = $this->intermittentAccessLogFinding($logs, [
+                'SESSION_DRIVER' => (string) ($checks['session_driver'] ?? ''),
+                'CACHE_STORE' => (string) ($checks['cache_store'] ?? ''),
+            ]);
+            $accessSummary = $this->summarizeAccessLogs($logs);
+            $checks['http_2xx_count'] = $accessSummary['status_2xx'];
+            $checks['http_5xx_count'] = $accessSummary['status_5xx'];
+            if ($accessFinding !== null && ! $this->findingsContain($findings, ['live_http_5xx', 'live_db_connection_failed'])) {
+                $findings[] = $accessFinding;
+            }
         } catch (\Throwable $e) {
             if ($findings === []) {
                 $findings[] = [
@@ -825,6 +853,8 @@ class ContainerDoctorService
             if ($httpOk && ($f['id'] ?? '') === 'storage_permission_denied') {
                 return false;
             }
+
+            // Homepage 200 does not mean /get-total-unread stopped 500ing.
 
             if (($checks['php_production_runtime'] ?? null) === true
                 && ($f['id'] ?? '') === 'php_builtin_dev_server') {
@@ -895,6 +925,133 @@ class ContainerDoctorService
         });
 
         return $merged;
+    }
+
+    /**
+     * Count 2xx vs 5xx from nginx / php-S access lines (ignores static assets).
+     *
+     * @return array{
+     *     requests: int,
+     *     status_2xx: int,
+     *     status_5xx: int,
+     *     mixed_paths: list<array{path: string, ok: int, fail: int, sample_fail_bytes: ?int}>
+     * }
+     */
+    public function summarizeAccessLogs(string $logs): array
+    {
+        $byPath = [];
+        $status2 = 0;
+        $status5 = 0;
+        $requests = 0;
+
+        foreach (preg_split("/\r\n|\n|\r/", $logs) ?: [] as $line) {
+            if (preg_match('/"([A-Z]+)\s+(\S+)\s+HTTP\/[\d.]+"\s+(\d{3})\s+(\d+|-)/', $line, $match) !== 1) {
+                continue;
+            }
+
+            $path = explode('?', (string) $match[2], 2)[0];
+            if ($path === '' || ! str_starts_with($path, '/')) {
+                continue;
+            }
+            if (preg_match('/\.(css|js|mjs|map|png|jpe?g|gif|ico|svg|webp|woff2?|ttf|eot|ogg|mp3|wav)(\?|$)/i', $path) === 1) {
+                continue;
+            }
+
+            $code = (int) $match[3];
+            $bytes = $match[4] === '-' ? null : (int) $match[4];
+            $requests++;
+            $byPath[$path] ??= ['ok' => 0, 'fail' => 0, 'sample_fail_bytes' => null];
+
+            if ($code >= 200 && $code < 400) {
+                $status2++;
+                $byPath[$path]['ok']++;
+            } elseif ($code >= 500) {
+                $status5++;
+                $byPath[$path]['fail']++;
+                $byPath[$path]['sample_fail_bytes'] ??= $bytes;
+            }
+        }
+
+        $mixed = [];
+        foreach ($byPath as $path => $counts) {
+            if ($counts['ok'] >= 1 && $counts['fail'] >= 2) {
+                $mixed[] = [
+                    'path' => $path,
+                    'ok' => $counts['ok'],
+                    'fail' => $counts['fail'],
+                    'sample_fail_bytes' => $counts['sample_fail_bytes'],
+                ];
+            }
+        }
+
+        usort($mixed, fn (array $a, array $b): int => $b['fail'] <=> $a['fail']);
+
+        return [
+            'requests' => $requests,
+            'status_2xx' => $status2,
+            'status_5xx' => $status5,
+            'mixed_paths' => array_slice($mixed, 0, 8),
+        ];
+    }
+
+    /**
+     * @param  array<string, string>  $env
+     * @return array<string, mixed>|null
+     */
+    public function intermittentAccessLogFinding(string $logs, array $env = []): ?array
+    {
+        $summary = $this->summarizeAccessLogs($logs);
+        if ($summary['mixed_paths'] === []) {
+            return null;
+        }
+
+        $paths = $summary['mixed_paths'];
+        $evidence = array_map(
+            fn (array $row): string => $row['path'].' '.$row['ok'].'×2xx / '.$row['fail'].'×5xx'
+                .($row['sample_fail_bytes'] !== null ? ' ('.$row['sample_fail_bytes'].'b 5xx)' : ''),
+            $paths
+        );
+
+        $pollish = collect($paths)->contains(
+            fn (array $row) => (bool) preg_match(
+                '/get-total-unread|unread|notification|heartbeat|\/ping$|\/health/i',
+                $row['path']
+            )
+        );
+
+        $session = strtolower(trim((string) ($env['SESSION_DRIVER'] ?? '')));
+        $cache = strtolower(trim((string) ($env['CACHE_STORE'] ?? '')));
+        $locking = $session === '' || in_array($session, ['file', 'database', 'redis'], true)
+            || in_array($cache, ['database', 'redis'], true);
+
+        $treatAction = $locking ? 'tune_request_concurrency' : 'restart_application';
+        $treatLabel = $locking ? 'Relax session/cache locking' : 'Restart application';
+
+        $summaryText = $pollish
+            ? 'The same routes return both HTTP 200 and HTTP 500 (often /get-total-unread while other tabs are open). '
+                .'File or database sessions lock the worker, so Ultimate POS polling 500s while a DataTables query runs.'
+            : 'Access logs show the same path succeeding and 500ing. That is worker exhaustion or session/cache locking, not a down database.';
+
+        if ($session !== '') {
+            $summaryText .= ' SESSION_DRIVER='.$session
+                .($cache !== '' ? ', CACHE_STORE='.$cache : '').'.';
+        }
+
+        return [
+            'id' => 'intermittent_http_5xx',
+            'severity' => 'warning',
+            'title' => 'Intermittent HTTP 500s on live traffic',
+            'summary' => $summaryText,
+            'evidence' => $evidence,
+            'treat_action' => $treatAction,
+            'treat_label' => $treatLabel,
+            'manual_steps' => [
+                'Click Relax session/cache locking — cookie sessions + file cache so concurrent AJAX is not serialized.',
+                'If PHP-FPM still logs pm.max_children, upgrade the plan for more workers.',
+                'In Terminal: tail -n 80 storage/logs/laravel.log around a failing /get-total-unread.',
+            ],
+            'source' => 'live',
+        ];
     }
 
     /**
@@ -2229,7 +2386,7 @@ PHP;
                 'treat_action' => 'use_file_cache',
                 'treat_label' => 'Switch cache to file',
                 'manual_steps' => [
-                    'Switch cache to file from Doctor, then set SESSION_DRIVER=file in Environment if sessions still fail.',
+                    'Switch cache to file from Doctor. If tabs still 500 on /get-total-unread, use Relax session/cache locking (cookie sessions).',
                 ],
             ],
             [
@@ -2262,6 +2419,57 @@ PHP;
                 'treat_label' => 'Restart application',
                 'manual_steps' => [
                     'Restart to recover, then raise the plan if this repeats on normal traffic.',
+                ],
+            ],
+            [
+                'id' => 'php_fpm_max_children',
+                'severity' => 'warning',
+                'stacks' => ['laravel', 'php'],
+                'patterns' => [
+                    '/server reached pm\.max_children/i',
+                    '/seems busy, spawning/i',
+                    '/max_children \(\d+\) already spawned/i',
+                ],
+                'title' => 'PHP-FPM ran out of workers',
+                'summary' => 'All PHP-FPM children are busy, so extra requests 500. Ultimate POS tabs that poll /get-total-unread plus DataTables queries fill a small worker pool, especially with file session locks.',
+                'treat_action' => 'tune_request_concurrency',
+                'treat_label' => 'Relax session/cache locking',
+                'manual_steps' => [
+                    'Click Relax session/cache locking (cookie sessions + file cache, no Redis).',
+                    'If it still saturates workers, upgrade the plan so PHP-FPM can start more children.',
+                ],
+            ],
+            [
+                'id' => 'php_max_execution_time',
+                'severity' => 'warning',
+                'stacks' => ['laravel', 'php', 'wordpress', '*'],
+                'patterns' => [
+                    '/Maximum execution time of \d+ seconds exceeded/i',
+                ],
+                'title' => 'A request exceeded PHP max_execution_time',
+                'summary' => 'A heavy page (often a DataTables AJAX draw) ran longer than max_execution_time. Concurrent polls then 500 while that worker is stuck.',
+                'treat_action' => 'tune_request_concurrency',
+                'treat_label' => 'Relax session/cache locking',
+                'manual_steps' => [
+                    'Relax session/cache locking so other tabs are not blocked on the slow query.',
+                    'In Terminal: tail -n 80 storage/logs/laravel.log for the slow route.',
+                ],
+            ],
+            [
+                'id' => 'compose_unset_variable',
+                'severity' => 'info',
+                'stacks' => ['*'],
+                'patterns' => [
+                    '/The \\\?"([A-Z][A-Z0-9_]+)\\\"? variable is not set\. Defaulting to a blank string/i',
+                    '/variable is not set\. Defaulting to a blank string/i',
+                ],
+                'title' => 'Docker Compose is interpolating empty environment variables',
+                'summary' => 'Compose warns when docker-compose.yml contains ${MAIL_USERNAME} (and similar) that are not in the project .env. This does not take the site down, but mail/redis settings can silently become blank.',
+                'treat_action' => 'fix_compose_interpolation',
+                'treat_label' => 'Fill Compose env defaults',
+                'manual_steps' => [
+                    'Click Fill Compose env defaults — writes missing MAIL_* keys next to docker-compose.yml.',
+                    'Set real SMTP values in the Environment tab if the app should send mail.',
                 ],
             ],
             [
@@ -3187,8 +3395,8 @@ $set = function (string $c, string $k, string $v): string {
 };
 $c = $set($c, 'CACHE_STORE', 'file');
 $c = $set($c, 'CACHE_DRIVER', 'file');
-if (preg_match('/^SESSION_DRIVER=(database|redis)/mi', $c)) {
-    $c = $set($c, 'SESSION_DRIVER', 'file');
+if (preg_match('/^SESSION_DRIVER=(redis)/mi', $c)) {
+    $c = $set($c, 'SESSION_DRIVER', 'cookie');
 }
 if (file_put_contents($envPath, $c) === false) { fwrite(STDERR, "write failed\n"); exit(1); }
 echo "ok";
@@ -3206,6 +3414,148 @@ PHP;
             ];
         } catch (\Throwable $e) {
             return ['success' => false, 'message' => 'Failed to switch cache driver: '.$e->getMessage()];
+        } finally {
+            $ssh->disconnect();
+        }
+    }
+
+    /**
+     * Cookie sessions + file cache so concurrent Ultimate POS AJAX is not serialized
+     * on a session file / cache_locks row.
+     *
+     * @return array{success: bool, message: string}
+     */
+    private function treatTuneRequestConcurrency(Service $service): array
+    {
+        $deployment = $service->containerDeployment;
+        $ssh = SSHService::forNode($deployment->node);
+        $init = app(LaravelAppInitializationService::class);
+
+        try {
+            $projectRoot = $this->resolveArtisanProjectRoot($ssh, $deployment);
+
+            $php = <<<'PHP'
+$root = getenv('PROJECT_ROOT') ?: '/app';
+$envPath = rtrim($root, '/').'/.env';
+if (!is_file($envPath)) { fwrite(STDERR, "MISSING_ENV\n"); exit(1); }
+$c = file_get_contents($envPath);
+if ($c === false) { fwrite(STDERR, "read failed\n"); exit(1); }
+$set = function (string $c, string $k, string $v): string {
+    if (preg_match('/^'.preg_quote($k, '/').'=/m', $c)) {
+        return preg_replace('/^'.preg_quote($k, '/').'=.*$/m', $k.'='.$v, $c, 1);
+    }
+    return rtrim($c)."\n".$k.'='.$v."\n";
+};
+$c = $set($c, 'CACHE_STORE', 'file');
+$c = $set($c, 'CACHE_DRIVER', 'file');
+$c = $set($c, 'SESSION_DRIVER', 'cookie');
+if (preg_match('/^QUEUE_CONNECTION=(redis|database)/mi', $c)) {
+    $c = $set($c, 'QUEUE_CONNECTION', 'sync');
+}
+if (preg_match('/^BROADCAST_DRIVER=(redis|pusher)/mi', $c) || preg_match('/^BROADCAST_CONNECTION=(redis|pusher)/mi', $c)) {
+    $c = $set($c, 'BROADCAST_DRIVER', 'log');
+    $c = $set($c, 'BROADCAST_CONNECTION', 'log');
+}
+if (file_put_contents($envPath, $c) === false) { fwrite(STDERR, "write failed\n"); exit(1); }
+echo "ok";
+PHP;
+
+            $script = 'export PROJECT_ROOT='.escapeshellarg($projectRoot).'; '
+                .'php -r '.escapeshellarg($php).'; '
+                .$this->laravelCacheClearScript($projectRoot);
+
+            $init->dockerExecPublic($ssh, $deployment->container_name, $script, 120, asRoot: true);
+
+            return [
+                'success' => true,
+                'message' => 'Set SESSION_DRIVER=cookie and CACHE_STORE=file, then cleared config. '
+                    .'Open tabs should stop 500ing /get-total-unread while a heavy page loads. Reload once.',
+            ];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'message' => 'Failed to relax session/cache locking: '.$e->getMessage()];
+        } finally {
+            $ssh->disconnect();
+        }
+    }
+
+    /**
+     * Write missing ${VAR} keys next to docker-compose.yml so Compose stops
+     * interpolating MAIL_USERNAME (and similar) as unset.
+     *
+     * @return array{success: bool, message: string}
+     */
+    private function treatFixComposeInterpolation(Service $service): array
+    {
+        $deployment = $service->containerDeployment;
+        if (! $deployment?->node) {
+            return ['success' => false, 'message' => 'Application is not deployed.'];
+        }
+
+        $ssh = SSHService::forNode($deployment->node);
+        $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+        $composePath = $containerPath.'/docker-compose.yml';
+        $composeEnvPath = $containerPath.'/.env';
+
+        try {
+            $yaml = '';
+            try {
+                $yaml = (string) $ssh->exec('cat '.escapeshellarg($composePath).' 2>/dev/null || true', 15);
+            } catch (\Throwable) {
+                $yaml = (string) ($deployment->docker_compose_content ?? '');
+            }
+
+            $keys = [];
+            if (preg_match_all('/\$\{([A-Z][A-Z0-9_]*)(?::-?[^{}]*)?\}/', $yaml, $matches) > 0) {
+                $keys = array_values(array_unique($matches[1]));
+            }
+            foreach (['MAIL_USERNAME', 'MAIL_PASSWORD', 'MAIL_HOST', 'MAIL_PORT', 'MAIL_ENCRYPTION', 'MAIL_FROM_ADDRESS', 'MAIL_FROM_NAME'] as $mailKey) {
+                $keys[] = $mailKey;
+            }
+            $keys = array_values(array_unique($keys));
+
+            $existing = '';
+            try {
+                $exists = trim($ssh->exec('test -f '.escapeshellarg($composeEnvPath).' && echo yes || echo no', 10));
+                if ($exists === 'yes') {
+                    $existing = (string) $ssh->exec('cat '.escapeshellarg($composeEnvPath), 15);
+                }
+            } catch (\Throwable) {
+                $existing = '';
+            }
+
+            $parsed = $this->parseEnvFileContent($existing);
+            $appEnv = $this->readLiveAppEnvironment($ssh, $deployment);
+            $lines = $existing === '' || str_ends_with($existing, "\n") ? $existing : $existing."\n";
+            $added = [];
+            foreach ($keys as $key) {
+                if (array_key_exists($key, $parsed) && trim((string) $parsed[$key]) !== '') {
+                    continue;
+                }
+                $value = array_key_exists($key, $parsed)
+                    ? (string) $parsed[$key]
+                    : (string) ($appEnv[$key] ?? '');
+                if (! array_key_exists($key, $parsed)) {
+                    $lines .= $key.'='.$value."\n";
+                    $added[] = $key;
+                }
+            }
+
+            if ($added === []) {
+                return [
+                    'success' => true,
+                    'message' => 'Compose project .env already has the usual MAIL_* keys. Re-scan if the warning persists.',
+                ];
+            }
+
+            $ssh->upload($lines, $composeEnvPath);
+
+            return [
+                'success' => true,
+                'message' => 'Wrote empty/default Compose interpolation keys: '.implode(', ', $added)
+                    .'. The warning should stop on the next compose command. Set real SMTP values in Environment to send mail.',
+            ];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'message' => 'Failed to fill Compose env defaults: '.$e->getMessage()];
         } finally {
             $ssh->disconnect();
         }

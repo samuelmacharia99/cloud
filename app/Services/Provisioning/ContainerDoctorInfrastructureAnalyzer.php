@@ -273,7 +273,7 @@ class ContainerDoctorInfrastructureAnalyzer
                 'treat_action' => 'use_file_cache',
                 'treat_label' => 'Switch cache to file',
                 'manual_steps' => [
-                    'Switch cache to file from Doctor, then set SESSION_DRIVER=file in Environment if sessions still fail.',
+                    'Switch cache to file from Doctor. If tabs still 500 on /get-total-unread, use Relax session/cache locking (cookie sessions).',
                 ],
             ],
             [
@@ -324,6 +324,56 @@ class ContainerDoctorInfrastructureAnalyzer
                 'manual_steps' => [
                     'In Terminal: npm ci && npm run build (from the app root).',
                     'Or commit public/build and pull again.',
+                ],
+            ],
+            [
+                'id' => 'php_fpm_max_children',
+                'severity' => 'warning',
+                'stacks' => ['laravel', 'php'],
+                'patterns' => ['/server reached pm\.max_children/i', '/seems busy, spawning/i'],
+                'match' => function (string $haystack): bool {
+                    return preg_match('/server reached pm\.max_children|seems busy, spawning|max_children \(\d+\) already spawned/i', $haystack) === 1;
+                },
+                'title' => 'PHP-FPM ran out of workers',
+                'summary' => 'All PHP-FPM children are busy, so extra requests 500. Concurrent Ultimate POS polls plus DataTables queries fill a small worker pool.',
+                'treat_action' => 'tune_request_concurrency',
+                'treat_label' => 'Relax session/cache locking',
+                'manual_steps' => [
+                    'Click Relax session/cache locking (cookie sessions + file cache).',
+                    'If it still saturates workers, upgrade the plan.',
+                ],
+            ],
+            [
+                'id' => 'php_max_execution_time',
+                'severity' => 'warning',
+                'stacks' => ['laravel', 'php', 'wordpress', '*'],
+                'patterns' => ['/Maximum execution time of \d+ seconds exceeded/i'],
+                'match' => function (string $haystack): bool {
+                    return preg_match('/Maximum execution time of \d+ seconds exceeded/i', $haystack) === 1;
+                },
+                'title' => 'A request exceeded PHP max_execution_time',
+                'summary' => 'A heavy page ran longer than max_execution_time. Concurrent polls then 500 while that worker is stuck.',
+                'treat_action' => 'tune_request_concurrency',
+                'treat_label' => 'Relax session/cache locking',
+                'manual_steps' => [
+                    'Relax session/cache locking so other tabs are not blocked on the slow query.',
+                ],
+            ],
+            [
+                'id' => 'compose_unset_variable',
+                'severity' => 'info',
+                'stacks' => ['*'],
+                'patterns' => ['/variable is not set\. Defaulting to a blank string/i'],
+                'match' => function (string $haystack): bool {
+                    return preg_match('/variable is not set\. Defaulting to a blank string/i', $haystack) === 1;
+                },
+                'title' => 'Docker Compose is interpolating empty environment variables',
+                'summary' => 'Compose warns when ${MAIL_USERNAME} (and similar) are not in the project .env. This does not take the site down.',
+                'treat_action' => 'fix_compose_interpolation',
+                'treat_label' => 'Fill Compose env defaults',
+                'manual_steps' => [
+                    'Click Fill Compose env defaults.',
+                    'Set real SMTP values in the Environment tab if the app should send mail.',
                 ],
             ],
             [

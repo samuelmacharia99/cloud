@@ -154,4 +154,14 @@ LOG;
         $this->assertNotNull($finding);
         $this->assertSame('switch_php_production_runtime', $finding['treat_action']);
     }
+
+    #[Test]
+    public function it_flags_php_fpm_worker_exhaustion(): void
+    {
+        $logs = 'WARNING: [pool www] server reached pm.max_children setting (3), consider raising it';
+        $finding = collect($this->analyzer()->findings($logs, 'laravel'))->firstWhere('id', 'php_fpm_max_children');
+
+        $this->assertNotNull($finding);
+        $this->assertSame('tune_request_concurrency', $finding['treat_action']);
+    }
 }

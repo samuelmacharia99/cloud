@@ -366,6 +366,86 @@ LOG;
     }
 
     #[Test]
+    public function it_detects_intermittent_500s_on_the_same_path(): void
+    {
+        $logs = <<<'LOG'
+user-74-service-24-laravel     | 10.201.0.1 - - [26/Aug/2026:11:23:44 +0000] "GET /get-total-unread HTTP/1.1" 200 72 "https://racegroup.co.ke/sells"
+user-74-service-24-laravel     | 10.201.0.1 - - [26/Aug/2026:11:23:52 +0000] "GET /get-total-unread HTTP/1.1" 500 44 "https://racegroup.co.ke/contacts/11"
+user-74-service-24-laravel     | 10.201.0.1 - - [26/Aug/2026:11:23:59 +0000] "GET /get-total-unread HTTP/1.1" 500 44 "https://racegroup.co.ke/sells/create"
+user-74-service-24-laravel     | 10.201.0.1 - - [26/Aug/2026:11:27:48 +0000] "GET /sells HTTP/1.1" 200 38822 "-"
+user-74-service-24-laravel     | 10.201.0.1 - - [26/Aug/2026:11:27:42 +0000] "GET /sells HTTP/1.1" 500 6622 "-"
+user-74-service-24-laravel     | 10.201.0.1 - - [26/Aug/2026:11:30:29 +0000] "GET /sells HTTP/1.1" 500 6622 "-"
+LOG;
+
+        $summary = app(ContainerDoctorService::class)->summarizeAccessLogs($logs);
+        $this->assertGreaterThanOrEqual(2, $summary['status_5xx']);
+        $this->assertGreaterThanOrEqual(2, $summary['status_2xx']);
+
+        $unread = collect($summary['mixed_paths'])->firstWhere('path', '/get-total-unread');
+        $this->assertNotNull($unread);
+        $this->assertSame(1, $unread['ok']);
+        $this->assertSame(2, $unread['fail']);
+
+        $finding = app(ContainerDoctorService::class)->intermittentAccessLogFinding($logs, [
+            'SESSION_DRIVER' => 'file',
+            'CACHE_STORE' => 'database',
+        ]);
+        $this->assertNotNull($finding);
+        $this->assertSame('intermittent_http_5xx', $finding['id']);
+        $this->assertSame('tune_request_concurrency', $finding['treat_action']);
+        $this->assertStringContainsString('get-total-unread', $finding['summary']);
+
+        $fromLogs = app(ContainerDoctorService::class)->analyzeLogs($logs, 'laravel');
+        $this->assertContains('intermittent_http_5xx', array_column($fromLogs, 'id'));
+    }
+
+    #[Test]
+    public function it_detects_php_fpm_max_children_and_compose_mail_warnings(): void
+    {
+        $logs = <<<'LOG'
+time="2026-08-26T14:35:22+03:00" level=warning msg="The \"MAIL_USERNAME\" variable is not set. Defaulting to a blank string."
+WARNING: [pool www] server reached pm.max_children setting (2), consider raising it
+PHP Fatal error:  Maximum execution time of 30 seconds exceeded
+user-74-service-24-laravel-db  | [Warning] [MY-010235] Following users were specified in CREATE USER IF NOT EXISTS but they already exist
+LOG;
+
+        $findings = app(ContainerDoctorService::class)->analyzeLogs($logs, 'laravel');
+        $ids = array_column($findings, 'id');
+
+        $this->assertContains('php_fpm_max_children', $ids);
+        $this->assertContains('php_max_execution_time', $ids);
+        $this->assertContains('compose_unset_variable', $ids);
+        $this->assertSame(
+            'tune_request_concurrency',
+            collect($findings)->firstWhere('id', 'php_fpm_max_children')['treat_action']
+        );
+        $this->assertSame(
+            'fix_compose_interpolation',
+            collect($findings)->firstWhere('id', 'compose_unset_variable')['treat_action']
+        );
+        $this->assertSame('info', collect($findings)->firstWhere('id', 'compose_unset_variable')['severity']);
+    }
+
+    #[Test]
+    public function it_keeps_intermittent_500s_when_the_homepage_is_ok(): void
+    {
+        $merged = app(ContainerDoctorService::class)->mergeLogAndLiveFindings(
+            [[
+                'id' => 'intermittent_http_5xx',
+                'severity' => 'warning',
+                'title' => 'Intermittent HTTP 500s',
+                'treat_action' => 'tune_request_concurrency',
+            ]],
+            [
+                'findings' => [],
+                'checks' => ['http_status' => 200, 'db_ok' => true, 'table_count' => 91],
+            ]
+        );
+
+        $this->assertContains('intermittent_http_5xx', array_column($merged, 'id'));
+    }
+
+    #[Test]
     public function it_detects_mysql_access_denied_from_docker_overlay_ip(): void
     {
         $logs = <<<'LOG'

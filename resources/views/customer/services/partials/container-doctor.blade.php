@@ -56,7 +56,7 @@
 
         <template x-if="!hasResult && !diagnosing && !error && !treatMessage">
             <p class="text-sm text-slate-500 dark:text-slate-400">
-                Click <span class="font-medium text-slate-700 dark:text-slate-200">Run doctor</span> to check crash-loops, nginx/php-fpm, a PHP development server, database credentials, missing drivers, Node/GD issues, permission errors, and more.
+                Click <span class="font-medium text-slate-700 dark:text-slate-200">Run doctor</span> to check crash-loops, nginx/php-fpm workers, database credentials, session/cache locking, intermittent 500s, Compose env warnings, permission errors, and more.
             </p>
         </template>
 
@@ -68,7 +68,7 @@
             </div>
         </template>
 
-        <template x-if="hasResult && liveChecks && (liveChecks.http_status || liveChecks.db_ok !== null || liveChecks.restarting || liveChecks.container_image || liveChecks.php_production_runtime !== null || liveChecks.publishes_port === false || liveChecks.disk_percent != null)">
+        <template x-if="hasResult && liveChecks && (liveChecks.http_status || liveChecks.db_ok !== null || liveChecks.restarting || liveChecks.container_image || liveChecks.php_production_runtime !== null || liveChecks.publishes_port === false || liveChecks.disk_percent != null || liveChecks.session_driver || liveChecks.http_5xx_count)">
             <div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 px-4 py-3 text-xs text-slate-600 dark:text-slate-300 flex flex-wrap gap-x-4 gap-y-1">
                 <span>Live checks:</span>
                 <span x-show="liveChecks.http_status" x-text="'HTTP ' + liveChecks.http_status"></span>
@@ -85,8 +85,9 @@
                       x-text="liveChecks.wordpress_image_editor ? 'Images: processing ok' : 'Images: no editor'"></span>
                 <span x-show="liveChecks.wordpress_missing_thumbnails"
                       x-text="'Thumbnails missing: ' + liveChecks.wordpress_missing_thumbnails"></span>
-                <span x-show="liveChecks.php_production_runtime === false">PHP: development server</span>
-                <span x-show="liveChecks.php_production_runtime === true">PHP: PHP-FPM</span>
+                <span x-show="liveChecks.session_driver" x-text="'Session: ' + liveChecks.session_driver"></span>
+                <span x-show="liveChecks.cache_store" x-text="'Cache: ' + liveChecks.cache_store"></span>
+                <span x-show="liveChecks.http_5xx_count" x-text="'Access 5xx: ' + liveChecks.http_5xx_count + ' / 2xx: ' + (liveChecks.http_2xx_count || 0)"></span>
             </div>
         </template>
 
