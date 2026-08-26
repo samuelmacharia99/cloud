@@ -108,7 +108,7 @@ class HetznerStorageBoxClient
             'Failed to upload backup to Hetzner Storage Box at '.$remotePath
             .': '.($lastError?->getMessage() ?? 'unknown error'),
             0,
-            $lastError instanceof \Exception ? $lastError : null
+            $lastError instanceof Exception ? $lastError : null
         );
     }
 
@@ -212,6 +212,23 @@ class HetznerStorageBoxClient
         ];
     }
 
+    /**
+     * @return array{host: string, port: int, username: string, password: string, base_path: string, driver: string, uses_hetzner: bool, configured: bool}
+     */
+    public function configurationSummary(): array
+    {
+        return [
+            'host' => $this->host(),
+            'port' => $this->port(),
+            'username' => $this->username(),
+            'password' => $this->password(),
+            'base_path' => trim($this->basePath(), '/'),
+            'driver' => $this->driver(),
+            'uses_hetzner' => $this->usesHetzner(),
+            'configured' => $this->isConfigured(),
+        ];
+    }
+
     public function disconnect(): void
     {
         if ($this->sftp) {
@@ -294,19 +311,19 @@ class HetznerStorageBoxClient
         return "Hetzner Storage Box {$action} failed for {$path}: {$detail}";
     }
 
-    private function host(): string
+    public function host(): string
     {
         return trim((string) (env('HETZNER_STORAGE_HOST') ?: Setting::getValue('hetzner_storage_host', '')));
     }
 
-    private function port(): int
+    public function port(): int
     {
         $port = env('HETZNER_STORAGE_PORT') ?: Setting::getValue('hetzner_storage_port', '23');
 
         return max(1, (int) $port);
     }
 
-    private function username(): string
+    public function username(): string
     {
         return trim((string) (env('HETZNER_STORAGE_USERNAME') ?: Setting::getValue('hetzner_storage_username', '')));
     }
@@ -325,7 +342,7 @@ class HetznerStorageBoxClient
         }
     }
 
-    private function basePath(): string
+    public function basePath(): string
     {
         return trim((string) (env('HETZNER_STORAGE_PATH') ?: Setting::getValue('hetzner_storage_path', 'backups/containers')));
     }

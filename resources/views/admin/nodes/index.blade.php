@@ -27,7 +27,7 @@
     </div>
 
     <!-- Stats Cards -->
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
         <div class="ui-card p-6">
             <div class="flex items-center justify-between">
                 <div>
@@ -72,6 +72,18 @@
                 </div>
                 <div class="p-3 bg-blue-100 dark:bg-blue-950 rounded-lg">
                     <svg class="w-6 h-6 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m0 0l8 4m-8-4v10l8 4m0-10l8 4m-8-4v10"/></svg>
+                </div>
+            </div>
+        </div>
+
+        <div class="ui-card p-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm text-slate-600 dark:text-slate-400">Storage Boxes</p>
+                    <p class="text-2xl font-bold text-cyan-600 dark:text-cyan-400 mt-1">{{ $stats['storage_boxes'] }}</p>
+                </div>
+                <div class="p-3 bg-cyan-100 dark:bg-cyan-950 rounded-lg">
+                    <svg class="w-6 h-6 text-cyan-600 dark:text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/></svg>
                 </div>
             </div>
         </div>
@@ -134,7 +146,7 @@
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
-                    @forelse ($nodes as $node)
+                    @foreach ($nodes as $node)
                         <tr class="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors" data-node-id="{{ $node->id }}">
                             <td class="px-6 py-4">
                                 <div>
@@ -210,13 +222,109 @@
                                 </div>
                             </td>
                         </tr>
-                    @empty
+                    @endforeach
+
+                    @if ($showStorageBoxes)
+                        @foreach ($configuredStorageBoxes as $box)
+                            <tr class="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors bg-cyan-50/40 dark:bg-cyan-950/20" data-storage-box-id="{{ $box['id'] }}">
+                                <td class="px-6 py-4">
+                                    <div>
+                                        <p class="text-sm font-medium text-slate-900 dark:text-white">{{ $box['name'] }}</p>
+                                        <p class="text-xs text-slate-600 dark:text-slate-400 font-mono">{{ $box['host'] }}:{{ $box['port'] }}</p>
+                                        <p class="text-xs text-slate-500 dark:text-slate-500 mt-1">Path: {{ $box['base_path'] ?: '(home)' }}</p>
+                                    </div>
+                                </td>
+                                <td class="px-6 py-4">
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-cyan-100 dark:bg-cyan-950 text-cyan-700 dark:text-cyan-300">
+                                        Storage Box
+                                    </span>
+                                </td>
+                                <td class="px-6 py-4">
+                                    @php
+                                        $boxStatusClasses = match ($box['status']) {
+                                            'online' => 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300',
+                                            'configured' => 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300',
+                                            'standby' => 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300',
+                                            default => 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300',
+                                        };
+                                        $boxStatusLabel = match ($box['status']) {
+                                            'online' => 'Online',
+                                            'configured' => 'Configured',
+                                            'standby' => 'Standby',
+                                            default => 'Incomplete',
+                                        };
+                                    @endphp
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ $boxStatusClasses }}">
+                                        {{ $boxStatusLabel }}
+                                    </span>
+                                    @if ($box['is_active_driver'])
+                                        <p class="text-xs text-emerald-600 dark:text-emerald-400 mt-1">Active backup target</p>
+                                    @else
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Not active backup target</p>
+                                    @endif
+                                </td>
+                                <td class="px-6 py-4">
+                                    <div class="space-y-1 text-xs text-slate-600 dark:text-slate-400">
+                                        <p><span class="font-medium text-slate-700 dark:text-slate-300">Archives:</span> {{ number_format($box['backup_count']) }}</p>
+                                        <p><span class="font-medium text-slate-700 dark:text-slate-300">Stored:</span> {{ formatBytes((int) $box['backup_bytes']) }}</p>
+                                    </div>
+                                </td>
+                                <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">Hetzner</td>
+                                <td class="px-6 py-4 text-sm font-medium text-slate-900 dark:text-white">—</td>
+                                <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
+                                    @if (! empty($box['last_backup_at']))
+                                        {{ \Illuminate\Support\Carbon::parse($box['last_backup_at'])->diffForHumans() }}
+                                    @else
+                                        Never
+                                    @endif
+                                </td>
+                                <td class="px-6 py-4 text-right">
+                                    <div class="flex items-center justify-end gap-2">
+                                        <a href="{{ $box['settings_url'] }}" class="px-3 py-1.5 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition">
+                                            Settings
+                                        </a>
+                                        <button type="button"
+                                            class="px-3 py-1.5 text-sm font-medium text-cyan-700 dark:text-cyan-300 hover:text-cyan-800 dark:hover:text-cyan-200 transition"
+                                            onclick="(async (btn) => {
+                                                btn.disabled = true;
+                                                const original = btn.textContent;
+                                                btn.textContent = 'Testing…';
+                                                try {
+                                                    const res = await fetch('{{ $box['test_url'] }}', {
+                                                        method: 'POST',
+                                                        headers: {
+                                                            'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]')?.content,
+                                                            'Accept': 'application/json',
+                                                        },
+                                                    });
+                                                    const data = await res.json();
+                                                    alert((data.ok ? 'OK: ' : 'Failed: ') + (data.message || JSON.stringify(data)));
+                                                } catch (e) {
+                                                    alert('Test request failed: ' + e.message);
+                                                } finally {
+                                                    btn.disabled = false;
+                                                    btn.textContent = original;
+                                                }
+                                            })(this)">
+                                            Test
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        @endforeach
+                    @endif
+
+                    @if ($nodes->isEmpty() && (! $showStorageBoxes || $configuredStorageBoxes->isEmpty()))
                         <tr>
                             <td colspan="8" class="px-6 py-12 text-center">
-                                <p class="text-slate-600 dark:text-slate-400">No nodes found. <a href="{{ route('admin.nodes.create') }}" class="text-blue-600 dark:text-blue-400 hover:underline">Create one</a></p>
+                                @if (request('type') === 'storage_box' && $configuredStorageBoxes->isEmpty())
+                                    <p class="text-slate-600 dark:text-slate-400">No storage boxes configured yet. <a href="{{ route('admin.settings.index', ['tab' => 'provisioning']) }}" class="text-blue-600 dark:text-blue-400 hover:underline">Configure Hetzner Storage Box</a> under Provisioning settings.</p>
+                                @else
+                                    <p class="text-slate-600 dark:text-slate-400">No nodes found. <a href="{{ route('admin.nodes.create') }}" class="text-blue-600 dark:text-blue-400 hover:underline">Create one</a></p>
+                                @endif
                             </td>
                         </tr>
-                    @endforelse
+                    @endif
                 </tbody>
             </table>
         </div>

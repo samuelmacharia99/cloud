@@ -10,6 +10,7 @@ use App\Models\Service;
 use App\Models\User;
 use App\Services\Provisioning\ContainerNodeAnalyticsService;
 use App\Services\Provisioning\DirectAdminService;
+use App\Services\Provisioning\InfrastructureStorageBoxService;
 use App\Services\Provisioning\MailcowService;
 use App\Services\Provisioning\NodeServiceRelocationService;
 use App\Services\ResellerDirectAdminService;
@@ -20,9 +21,16 @@ use Illuminate\View\View;
 
 class NodeController extends Controller
 {
-    public function index(Request $request)
+    public function index(Request $request, InfrastructureStorageBoxService $storageBoxes)
     {
+        $storageBoxFilter = $request->type === 'storage_box';
+        $showStorageBoxes = ! $request->filled('type') || $storageBoxFilter;
+
         $query = Node::query();
+
+        if ($storageBoxFilter) {
+            $query->whereRaw('0 = 1');
+        }
 
         // Search by name or hostname
         if ($request->filled('search')) {
@@ -34,7 +42,7 @@ class NodeController extends Controller
         }
 
         // Filter by type
-        if ($request->filled('type')) {
+        if ($request->filled('type') && ! $storageBoxFilter) {
             $query->where('type', $request->type);
         }
 
@@ -64,8 +72,10 @@ class NodeController extends Controller
 
         // Get distinct regions for filter
         $regions = Node::distinct()->pluck('region')->filter()->sort();
-        $types = ['dedicated_server', 'container_host', 'load_balancer', 'database_server', 'directadmin', 'mailcow'];
+        $types = ['dedicated_server', 'container_host', 'load_balancer', 'database_server', 'directadmin', 'mailcow', 'storage_box'];
         $statuses = ['online', 'offline', 'degraded', 'maintenance'];
+
+        $configuredStorageBoxes = $showStorageBoxes ? $storageBoxes->list() : collect();
 
         // Calculate summary stats
         $stats = [
@@ -73,9 +83,10 @@ class NodeController extends Controller
             'online' => Node::where('status', 'online')->count(),
             'offline' => Node::where('status', 'offline')->count(),
             'container_hosts' => Node::where('type', 'container_host')->count(),
+            'storage_boxes' => $storageBoxes->configuredCount(),
         ];
 
-        return view('admin.nodes.index', compact('nodes', 'regions', 'types', 'statuses', 'stats'));
+        return view('admin.nodes.index', compact('nodes', 'regions', 'types', 'statuses', 'stats', 'configuredStorageBoxes', 'showStorageBoxes'));
     }
 
     public function create()
