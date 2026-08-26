@@ -915,9 +915,16 @@ class ContainerDeploymentService
             'CACHE_STORE' => 'file',
             'CACHE_DRIVER' => 'file',
         ];
-        $httpsAppUrl = $this->httpsAppUrlWhenLiveDomainIsSecure($deployment, $fromEnv);
-        if ($httpsAppUrl !== null) {
-            $defaults['APP_URL'] = $httpsAppUrl;
+        $httpsOrigin = $this->httpsOriginForBoundDomain($deployment);
+        if ($httpsOrigin !== null) {
+            $appUrl = trim((string) ($fromEnv['APP_URL'] ?? ''));
+            if ($appUrl === '' || $this->urlIsHttpOnHttpsOrigin($appUrl, $httpsOrigin)) {
+                $defaults['APP_URL'] = $httpsOrigin;
+            }
+            $assetUrl = trim((string) ($fromEnv['ASSET_URL'] ?? ''));
+            if ($assetUrl === '' || $this->urlIsHttpOnHttpsOrigin($assetUrl, $httpsOrigin)) {
+                $defaults['ASSET_URL'] = $httpsOrigin;
+            }
         }
         $connection = strtolower((string) ($fromEnv['DB_CONNECTION'] ?? 'mysql'));
         $databaseType = in_array($connection, ['pgsql', 'postgresql'], true) ? 'postgresql' : 'mysql';
@@ -932,7 +939,7 @@ class ContainerDeploymentService
             'DB_CONNECTION', 'DB_HOST', 'DB_PORT', 'DB_DATABASE', 'DB_USERNAME', 'DB_PASSWORD',
             'MYSQL_DATABASE', 'MYSQL_USER', 'MYSQL_PASSWORD', 'DATABASE_URL',
             'POSTGRES_DB', 'POSTGRES_USER', 'POSTGRES_PASSWORD', 'TALKSASA_DB_DNS',
-            'SESSION_DRIVER', 'CACHE_STORE', 'CACHE_DRIVER', 'APP_URL',
+            'SESSION_DRIVER', 'CACHE_STORE', 'CACHE_DRIVER', 'APP_URL', 'ASSET_URL',
         ] as $key) {
             if (isset($pinned[$key]) && (string) $pinned[$key] !== '') {
                 $fromDb[$key] = (string) $pinned[$key];
@@ -3425,11 +3432,9 @@ class ContainerDeploymentService
     }
 
     /**
-     * DirectAdmin .env often keeps APP_URL=http://domain after the site is served on https://.
-     *
-     * @param  array<string, mixed>  $env
+     * HTTPS origin for a bound domain (Cloudflare/node TLS). Null for http://ip:port.
      */
-    public function httpsAppUrlWhenLiveDomainIsSecure(ContainerDeployment $deployment, array $env): ?string
+    public function httpsOriginForBoundDomain(ContainerDeployment $deployment): ?string
     {
         try {
             $live = (string) ($deployment->getAccessUrl() ?? '');
@@ -3445,17 +3450,41 @@ class ContainerDeploymentService
             $liveHost = substr($liveHost, 4);
         }
 
-        $appUrl = trim((string) ($env['APP_URL'] ?? ''));
-        $appScheme = strtolower((string) parse_url($appUrl, PHP_URL_SCHEME));
-        $appHost = strtolower((string) parse_url($appUrl, PHP_URL_HOST));
-        if (str_starts_with($appHost, 'www.')) {
-            $appHost = substr($appHost, 4);
+        return 'https://'.$liveHost;
+    }
+
+    public function urlIsHttpOnHttpsOrigin(string $url, string $httpsOrigin): bool
+    {
+        $scheme = strtolower((string) parse_url($url, PHP_URL_SCHEME));
+        $host = strtolower((string) parse_url($url, PHP_URL_HOST));
+        $originHost = strtolower((string) parse_url($httpsOrigin, PHP_URL_HOST));
+        if (str_starts_with($host, 'www.')) {
+            $host = substr($host, 4);
         }
-        if ($appScheme !== 'http' || $appHost === '' || $appHost !== $liveHost) {
+        if (str_starts_with($originHost, 'www.')) {
+            $originHost = substr($originHost, 4);
+        }
+
+        return $scheme === 'http' && $host !== '' && $host === $originHost;
+    }
+
+    /**
+     * DirectAdmin .env often keeps APP_URL=http://domain after the site is served on https://.
+     *
+     * @param  array<string, mixed>  $env
+     */
+    public function httpsAppUrlWhenLiveDomainIsSecure(ContainerDeployment $deployment, array $env): ?string
+    {
+        $httpsOrigin = $this->httpsOriginForBoundDomain($deployment);
+        if ($httpsOrigin === null) {
+            return null;
+        }
+        $appUrl = trim((string) ($env['APP_URL'] ?? ''));
+        if (! $this->urlIsHttpOnHttpsOrigin($appUrl, $httpsOrigin)) {
             return null;
         }
 
-        return 'https://'.$liveHost;
+        return $httpsOrigin;
     }
 
     /**

@@ -1967,23 +1967,29 @@ PHP;
         }
 
         $httpsUrl = $this->canonicalHttpsAppUrl($liveUrl) ?? $liveUrl;
+        $appUrlAlreadyHttps = ! $insecureAppUrl && str_starts_with(strtolower($appUrl), 'https://');
 
         return [
             'id' => 'live_mixed_content_app_url',
             'severity' => 'critical',
             'title' => 'HTTPS page loads HTTP CSS and JavaScript',
-            'summary' => 'GET / returns HTTP 200, but Laravel still emits http:// asset URLs (APP_URL='
-                .($appUrl !== '' ? $appUrl : 'http').'). Browsers block those on https://, so the site looks unstyled. '
-                .'Set APP_URL to '.$httpsUrl.' — MySQL stays up.',
+            'summary' => $appUrlAlreadyHttps
+                ? 'GET / returns HTTP 200 and APP_URL is already '.$appUrl
+                    .', but Laravel still emits http:// CSS/JS because PHP sees HTTP behind Cloudflare/node nginx. '
+                    .'asset() uses the request scheme unless ASSET_URL is set. Set ASSET_URL='.$httpsUrl.' — MySQL stays up.'
+                : 'GET / returns HTTP 200, but Laravel still emits http:// asset URLs (APP_URL='
+                    .($appUrl !== '' ? $appUrl : 'http').'). Browsers block those on https://, so the site looks unstyled. '
+                    .'Set APP_URL and ASSET_URL to '.$httpsUrl.' — MySQL stays up.',
             'evidence' => array_values(array_filter([
                 $appUrl !== '' ? 'APP_URL='.$appUrl : null,
+                'ASSET_URL='.((string) ($checks['asset_url'] ?? '') !== '' ? $checks['asset_url'] : 'unset'),
                 'live URL='.$liveUrl,
                 ...array_slice($httpAssets, 0, 5),
             ])),
             'treat_action' => 'fix_laravel_app_url',
-            'treat_label' => 'Use HTTPS app URL',
+            'treat_label' => 'Force HTTPS assets',
             'manual_steps' => [
-                'Click Use HTTPS app URL — writes APP_URL='.$httpsUrl.' into .env and compose, then recreates only the app.',
+                'Click Force HTTPS assets — writes ASSET_URL='.$httpsUrl.' into .env and compose so CSS/JS are https, then recreates only the app.',
                 'Reload the site. Do not Reset database.',
             ],
             'source' => 'live',
@@ -2109,6 +2115,13 @@ PHP;
             $log404s,
             fn (array $row) => str_starts_with((string) $row['path'], '/storage/')
         ));
+
+        if ($fromHtml !== [] && $probed !== []) {
+            if ($missing === []) {
+                return null;
+            }
+            $storageLog404s = [];
+        }
 
         if ($missing === [] && $storageLog404s === []) {
             return null;
@@ -4974,8 +4987,11 @@ PHP;
 
         try {
             $env = is_array($deployment->env_values) ? $deployment->env_values : [];
-            $overrides = ['APP_URL' => $target];
-            foreach (['ASSET_URL', 'FRONTEND_URL', 'VITE_APP_URL'] as $key) {
+            $overrides = [
+                'APP_URL' => $target,
+                'ASSET_URL' => $target,
+            ];
+            foreach (['FRONTEND_URL', 'VITE_APP_URL'] as $key) {
                 $current = trim((string) ($env[$key] ?? ''));
                 if ($current !== '' && $this->appUrlIsHttpWhileLiveIsHttps($current, $target)) {
                     $overrides[$key] = $target;
@@ -5002,7 +5018,7 @@ PHP;
 
             return [
                 'success' => true,
-                'message' => 'APP_URL is now '.$target.'. Reloaded the app container (MySQL left running). Reload the site.',
+                'message' => 'APP_URL and ASSET_URL are now '.$target.'. Reloaded the app container (MySQL left running). Hard-reload the site so CSS/JS load over HTTPS.',
             ];
         } catch (\Throwable $e) {
             return ['success' => false, 'message' => 'Failed to set HTTPS APP_URL: '.$e->getMessage()];

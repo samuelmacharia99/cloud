@@ -115,5 +115,6 @@ class ContainerAppDirectoryServiceTest extends TestCase
         $this->assertStringContainsString('ln -sfn ../storage/app/public', $script);
         $this->assertStringContainsString('public_html', $script);
         $this->assertStringContainsString('linked-storage-app-public', $script);
+        $this->assertStringContainsString('linked-found-media', $script);
     }
 }

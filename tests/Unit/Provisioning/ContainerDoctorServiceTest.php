@@ -183,6 +183,8 @@ LOG;
         $this->assertStringContainsString('/usr/sbin', $dockerfile);
         $this->assertStringNotContainsString('include fastcgi_params;', $script);
         $this->assertStringContainsString('include $TMP/fastcgi_params;', $script);
+        $this->assertStringContainsString('HTTP_X_FORWARDED_PROTO', $script);
+        $this->assertStringContainsString('talksasa_https', $script);
     }
 
     #[Test]

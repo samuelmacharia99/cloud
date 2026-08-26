@@ -165,6 +165,16 @@ http {
     gzip on;
     gzip_types text/plain text/css application/json application/javascript text/xml application/xml;
 
+    map \$http_x_forwarded_proto \$talksasa_https {
+        default off;
+        https on;
+    }
+    map \$http_x_forwarded_proto \$talksasa_scheme {
+        default \$scheme;
+        https https;
+        http http;
+    }
+
     server {
         listen ${PORT} default_server;
         listen [::]:${PORT} default_server;
@@ -180,6 +190,9 @@ http {
             include $TMP/fastcgi_params;
             fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
             fastcgi_param DOCUMENT_ROOT \$document_root;
+            fastcgi_param REQUEST_SCHEME \$talksasa_scheme;
+            fastcgi_param HTTPS \$talksasa_https if_not_empty;
+            fastcgi_param HTTP_X_FORWARDED_PROTO \$http_x_forwarded_proto;
             fastcgi_pass 127.0.0.1:9000;
             fastcgi_read_timeout 300;
             fastcgi_buffers 4 128k;

@@ -33,6 +33,7 @@ class ContainerEnvironmentService
         'MONGO_INITDB_ROOT_PASSWORD',
         'MONGO_INITDB_DATABASE',
         'APP_URL',
+        'ASSET_URL',
         'FRONTEND_URL',
         'TALKSASA_CLOUD_URL',
         'DATABASE_URL',

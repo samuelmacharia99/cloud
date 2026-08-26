@@ -369,6 +369,14 @@ class ContainerAppDirectoryService
             .'&& find "$HTML/storage" -type f 2>/dev/null | grep -q .; then '
             .'  ln -sfn "$HTML/storage" "$PUBLIC/storage"; echo linked-public-html-storage; exit 0; '
             .'fi; '
+            .'FOUND=$(find "$APP" \( -path "*/vendor/*" -o -path "*/node_modules/*" -o -path "*/.git/*" \) -prune '
+            .'-o -type d -name media -print 2>/dev/null | head -20); '
+            .'for d in $FOUND; do '
+            .'  case "$d" in "$DISK/media"|"$PUBLIC/storage/media") continue ;; esac; '
+            .'  if find "$d" -type f 2>/dev/null | grep -q .; then '
+            .'    ln -sfn "$(dirname "$d")" "$PUBLIC/storage"; echo linked-found-media:$(dirname "$d"); exit 0; '
+            .'  fi; '
+            .'done; '
             .'ln -sfn ../storage/app/public "$PUBLIC/storage"; echo linked-storage-app-public';
     }
 

@@ -304,6 +304,26 @@ YAML;
     }
 
     #[Test]
+    public function restart_sets_asset_url_when_app_url_is_already_https(): void
+    {
+        $deployment = new ContainerDeployment([
+            'container_name' => 'user-85-service-27-laravel',
+            'domain' => 'tajmaal.co.ke',
+            'env_values' => [
+                'APP_URL' => 'https://tajmaal.co.ke',
+                'DB_HOST' => 'user-85-service-27-laravel-db',
+                'DB_DATABASE' => 's27_db',
+            ],
+        ]);
+        $deployment->setRelation('domains', collect());
+        $deployment->setRelation('node', null);
+
+        $overrides = app(ContainerDeploymentService::class)->composeRuntimeEnvironmentOverrides($deployment);
+
+        $this->assertSame('https://tajmaal.co.ke', $overrides['ASSET_URL']);
+    }
+
+    #[Test]
     public function compose_document_root_patch_moves_php_server_to_public(): void
     {
         $yaml = <<<'YAML'
