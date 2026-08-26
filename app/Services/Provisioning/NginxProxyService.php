@@ -212,10 +212,12 @@ class NginxProxyService
 
             // Update domain with SSL info
             $domain->update([
+                'status' => 'active',
                 'ssl_enabled' => true,
                 'ssl_certificate_path' => $certPath,
                 'ssl_key_path' => $keyPath,
                 'verified_at' => now(),
+                'error_message' => null,
             ]);
 
             // Regenerate config with SSL blocks
@@ -231,12 +233,23 @@ class NginxProxyService
 
             $ssh->disconnect();
         } catch (Exception $e) {
-            $domain->update([
-                'status' => 'failed',
-                'error_message' => $e->getMessage(),
-            ]);
+            $this->recordSslFailure($domain, $e);
             throw $e;
         }
+    }
+
+    /**
+     * Persist an SSL issuance failure without taking down an already-bound vhost.
+     */
+    public function recordSslFailure(ContainerDomain $domain, \Throwable $e): void
+    {
+        $keepBound = $domain->status === 'active' || filled($domain->nginx_config_path);
+
+        $domain->update([
+            'status' => $keepBound ? 'active' : 'failed',
+            'ssl_enabled' => false,
+            'error_message' => $e->getMessage(),
+        ]);
     }
 
     /**

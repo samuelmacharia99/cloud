@@ -245,29 +245,47 @@
                                 default => 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300',
                             };
                         @endphp
-                        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 bg-slate-50 dark:bg-slate-800/80 rounded-lg">
-                            <div>
-                                <p class="font-mono text-sm text-slate-900 dark:text-white">{{ $domain->domain }}</p>
-                                <div class="flex items-center gap-2 mt-1">
-                                    <span class="px-2 py-0.5 rounded text-xs font-semibold {{ $domainStatus }}">{{ ucfirst($domain->status) }}</span>
-                                    @if ($domain->hasSsl())
-                                        <span class="px-2 py-0.5 rounded text-xs font-semibold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300">SSL</span>
+                        <div class="flex flex-col gap-3 p-3 bg-slate-50 dark:bg-slate-800/80 rounded-lg">
+                            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                <div>
+                                    <p class="font-mono text-sm text-slate-900 dark:text-white">{{ $domain->domain }}</p>
+                                    <div class="flex items-center gap-2 mt-1">
+                                        <span class="px-2 py-0.5 rounded text-xs font-semibold {{ $domainStatus }}">{{ ucfirst($domain->status) }}</span>
+                                        @if ($domain->hasSsl())
+                                            <span class="px-2 py-0.5 rounded text-xs font-semibold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300">SSL</span>
+                                        @elseif ($domain->canRequestSsl())
+                                            <span class="px-2 py-0.5 rounded text-xs font-semibold bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300">No SSL</span>
+                                        @endif
+                                    </div>
+                                </div>
+                                <div class="flex gap-2">
+                                    @if ($domain->canRequestSsl())
+                                        <form method="POST" action="{{ route('admin.services.container.domains.ssl', [$service, $domain]) }}">
+                                            @csrf
+                                            <button type="submit" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition">
+                                                {{ $domain->error_message ? 'Retry SSL' : 'Enable SSL' }}
+                                            </button>
+                                        </form>
                                     @endif
+                                    <form method="POST" action="{{ route('admin.services.container.domains.unbind', [$service, $domain]) }}" data-confirm="Remove {{ $domain->domain }} from this container?" data-confirm-title="Remove domain">
+                                        @csrf
+                                        @method('DELETE')
+                                        <button type="submit" class="px-3 py-1.5 border border-red-300 dark:border-red-800 text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/40 text-xs font-medium rounded-lg transition">Remove</button>
+                                    </form>
                                 </div>
                             </div>
-                            <div class="flex gap-2">
-                                @if ($domain->status === 'active' && ! $domain->ssl_enabled)
-                                    <form method="POST" action="{{ route('admin.services.container.domains.ssl', [$service, $domain]) }}">
-                                        @csrf
-                                        <button type="submit" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition">Enable SSL</button>
-                                    </form>
-                                @endif
-                                <form method="POST" action="{{ route('admin.services.container.domains.unbind', [$service, $domain]) }}" data-confirm="Remove {{ $domain->domain }} from this container?" data-confirm-title="Remove domain">
-                                    @csrf
-                                    @method('DELETE')
-                                    <button type="submit" class="px-3 py-1.5 border border-red-300 dark:border-red-800 text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/40 text-xs font-medium rounded-lg transition">Remove</button>
-                                </form>
-                            </div>
+                            @php
+                                $domainSetupError = $domain->error_message
+                                    ? app(\App\Services\Provisioning\ContainerSslErrorPresenter::class)->present($domain)
+                                    : null;
+                            @endphp
+                            @if ($domainSetupError)
+                                <x-container-ssl-error
+                                    :title="$domainSetupError['title']"
+                                    :guidance="$domainSetupError['guidance']"
+                                    :details="$domainSetupError['details']"
+                                />
+                            @endif
                         </div>
                     @endforeach
                 </div>

@@ -10,6 +10,7 @@ use App\Models\Service;
 use App\Services\Provisioning\ContainerBackupService;
 use App\Services\Provisioning\ContainerDeploymentService;
 use App\Services\Provisioning\ContainerDeployOptions;
+use App\Services\Provisioning\ContainerSslErrorPresenter;
 use App\Services\Provisioning\NginxProxyService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -281,8 +282,8 @@ class ContainerController extends Controller
                 return back()->withErrors(['error' => 'Domain does not belong to this service']);
             }
 
-            if ($domain->status !== 'active') {
-                return back()->withErrors(['error' => 'Domain must be active to enable SSL']);
+            if (! $domain->canRequestSsl()) {
+                return back()->withErrors(['error' => 'Domain must be bound before SSL can be issued']);
             }
 
             $nginxService = new NginxProxyService;
@@ -292,7 +293,16 @@ class ContainerController extends Controller
         } catch (\Exception $e) {
             \Log::error("Failed to enable SSL for domain {$domain->domain}: ".$e->getMessage());
 
-            return back()->withErrors(['error' => 'Failed to enable SSL: '.$e->getMessage()]);
+            $presenter = app(ContainerSslErrorPresenter::class);
+            $presented = $presenter->present($domain->fresh(), $e->getMessage());
+
+            return back()->withErrors([
+                'error' => $presenter->flashMessage($presented ?? [
+                    'title' => "SSL certificate could not be issued for {$domain->domain}.",
+                    'guidance' => 'Check DNS and retry SSL.',
+                    'details' => $e->getMessage(),
+                ]),
+            ]);
         }
     }
 

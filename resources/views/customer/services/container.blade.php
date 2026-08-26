@@ -502,9 +502,8 @@
                                                             </span>
                                                             @if ($domain->ssl_enabled && $domain->status === 'active')
                                                                 <span class="px-2 py-1 rounded text-xs font-semibold bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">🔒 SSL</span>
-                                                            @endif
-                                                            @if ($domain->error_message)
-                                                                <span class="text-xs text-red-600 dark:text-red-400">{{ $domain->error_message }}</span>
+                                                            @elseif ($domain->canRequestSsl())
+                                                                <span class="px-2 py-1 rounded text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200">No SSL</span>
                                                             @endif
                                                             @php
                                                                 $platformDomain = app(\App\Services\Dns\DomainCloudflareDnsService::class)
@@ -529,11 +528,11 @@
                                                     <button type="button" x-show="!editing" @click="editing = true" class="px-3 py-1 bg-slate-200 dark:bg-slate-600 text-slate-800 dark:text-slate-200 text-sm rounded hover:bg-slate-300 dark:hover:bg-slate-500">
                                                         Edit
                                                     </button>
-                                                    @if ($domain->status === 'active' && !$domain->ssl_enabled)
+                                                    @if ($domain->canRequestSsl())
                                                         <form method="POST" action="{{ route('customer.services.container.domains.ssl', [$service, $domain]) }}" class="inline">
                                                             @csrf
                                                             <button type="submit" class="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">
-                                                                Get SSL
+                                                                {{ $domain->error_message ? 'Retry SSL' : 'Get SSL' }}
                                                             </button>
                                                         </form>
                                                     @endif
@@ -546,6 +545,19 @@
                                                     </form>
                                                 </div>
                                             </div>
+                                            @php
+                                                $domainSetupError = $domain->error_message
+                                                    ? app(\App\Services\Provisioning\ContainerSslErrorPresenter::class)->present($domain)
+                                                    : null;
+                                            @endphp
+                                            @if ($domainSetupError)
+                                                <x-container-ssl-error
+                                                    class="mt-4"
+                                                    :title="$domainSetupError['title']"
+                                                    :guidance="$domainSetupError['guidance']"
+                                                    :details="$domainSetupError['details']"
+                                                />
+                                            @endif
                                         </div>
                                     @endforeach
                                 </div>

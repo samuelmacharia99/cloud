@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\Provisioning\ContainerSslErrorPresenter;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -46,6 +47,32 @@ class ContainerDomain extends Model
     public function hasSsl(): bool
     {
         return $this->ssl_enabled && $this->isActive();
+    }
+
+    /**
+     * SSL can be requested when HTTP routing is in place, including after a
+     * previous Let's Encrypt failure that used to mark the domain failed.
+     */
+    public function canRequestSsl(): bool
+    {
+        if ($this->ssl_enabled) {
+            return false;
+        }
+
+        if ($this->status === 'active') {
+            return true;
+        }
+
+        if ($this->status !== 'failed') {
+            return false;
+        }
+
+        if (filled($this->nginx_config_path)) {
+            return true;
+        }
+
+        return app(ContainerSslErrorPresenter::class)
+            ->looksLikeSslFailure((string) $this->error_message);
     }
 
     /**

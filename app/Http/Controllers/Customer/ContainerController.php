@@ -34,6 +34,7 @@ use App\Services\Provisioning\ContainerGitCredentialsService;
 use App\Services\Provisioning\ContainerGitPullErrorPresenter;
 use App\Services\Provisioning\ContainerGitRepositoryService;
 use App\Services\Provisioning\ContainerPhpExtensionsService;
+use App\Services\Provisioning\ContainerSslErrorPresenter;
 use App\Services\Provisioning\ContainerStagingService;
 use App\Services\Provisioning\LaravelAppInitializationService;
 use App\Services\Provisioning\NginxProxyService;
@@ -142,7 +143,7 @@ class ContainerController extends Controller
 
             $domainCount = $deployment->domains->count();
             $domainsMissingSsl = $deployment->domains
-                ->filter(fn ($domain) => $domain->status === 'active' && ! $domain->ssl_enabled)
+                ->filter(fn ($domain) => $domain->canRequestSsl())
                 ->count();
 
             $containerCronJobs = app(ContainerCronService::class)->listForService($service);
@@ -2033,8 +2034,8 @@ class ContainerController extends Controller
         }
 
         try {
-            if ($domain->status !== 'active') {
-                return $this->domainsTabRedirect($service)->withErrors(['error' => 'Domain must be active to enable SSL']);
+            if (! $domain->canRequestSsl()) {
+                return $this->domainsTabRedirect($service)->withErrors(['error' => 'Domain must be bound before SSL can be issued']);
             }
 
             $nginxService = app(NginxProxyService::class);
@@ -2044,7 +2045,7 @@ class ContainerController extends Controller
         } catch (\Exception $e) {
             \Log::error("Failed to enable SSL for domain {$domain->domain}: ".$e->getMessage());
 
-            return $this->domainsTabRedirect($service)->withErrors(['error' => 'Failed to enable SSL: '.$e->getMessage()]);
+            return $this->sslFailureRedirect($service, $domain, $e);
         }
     }
 
@@ -2053,6 +2054,20 @@ class ContainerController extends Controller
         return redirect()->route('customer.services.container.show', [
             'service' => $service,
             'tab' => 'domains',
+        ]);
+    }
+
+    private function sslFailureRedirect(Service $service, ContainerDomain $domain, \Throwable $e): RedirectResponse
+    {
+        $presenter = app(ContainerSslErrorPresenter::class);
+        $presented = $presenter->present($domain->fresh(), $e->getMessage());
+
+        return $this->domainsTabRedirect($service)->withErrors([
+            'error' => $presenter->flashMessage($presented ?? [
+                'title' => "SSL certificate could not be issued for {$domain->domain}.",
+                'guidance' => 'Check DNS and retry SSL.',
+                'details' => $e->getMessage(),
+            ]),
         ]);
     }
 
