@@ -1427,6 +1427,20 @@
                                 <input type="text" name="settings[hetzner_storage_path]" value="{{ $settings['hetzner_storage_path'] ?? 'backups/containers' }}" placeholder="backups/containers" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono text-sm" />
                                 <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Use <code class="font-mono">backups/containers</code> (no leading slash). Leading <code class="font-mono">/</code> is stripped automatically.</p>
                             </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Retention (days)</label>
+                                    <input type="number" name="settings[hetzner_storage_retention_days]" min="1" max="3650" value="{{ $settings['hetzner_storage_retention_days'] ?? '30' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Completed backups older than this are eligible for purge from the Storage Box.</p>
+                                </div>
+                                <div class="flex items-end">
+                                    <input type="hidden" name="settings[hetzner_storage_auto_purge]" value="0">
+                                    <label class="flex items-start gap-2 pb-2.5">
+                                        <input type="checkbox" name="settings[hetzner_storage_auto_purge]" value="1" @checked(in_array($settings['hetzner_storage_auto_purge'] ?? '0', ['1', 'true'], true)) class="rounded mt-1" />
+                                        <span class="text-sm text-slate-700 dark:text-slate-300">Automatically purge eligible backups nightly via platform cron</span>
+                                    </label>
+                                </div>
+                            </div>
                             <div>
                                 <button type="button"
                                     class="px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white text-sm font-medium rounded-lg"

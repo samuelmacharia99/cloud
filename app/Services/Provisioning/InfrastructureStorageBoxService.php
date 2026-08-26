@@ -9,6 +9,7 @@ class InfrastructureStorageBoxService
 {
     public function __construct(
         private HetznerStorageBoxClient $hetzner,
+        private StorageBoxRetentionService $retention,
     ) {}
 
     /**
@@ -25,9 +26,50 @@ class InfrastructureStorageBoxService
         return $boxes;
     }
 
+    /**
+     * @return array<string, mixed>
+     */
+    public function findOrFail(string $id): array
+    {
+        $box = $this->list()->firstWhere('id', $id);
+
+        if ($box === null) {
+            abort(404, 'Storage Box not found or not configured.');
+        }
+
+        return $this->enrichDetail($box);
+    }
+
+    public function refreshDiskUsage(string $id): void
+    {
+        $this->findOrFail($id);
+        $this->hetzner->clearDiskUsageCache();
+        $this->hetzner->diskUsage(true);
+    }
+
     public function configuredCount(): int
     {
         return $this->list()->count();
+    }
+
+    /**
+     * @param  array<string, mixed>  $box
+     * @return array<string, mixed>
+     */
+    private function enrichDetail(array $box): array
+    {
+        $days = $this->retention->retentionDays();
+
+        return array_merge($box, [
+            'disk' => $this->hetzner->diskUsage(),
+            'retention_days' => $days,
+            'auto_purge_enabled' => $this->retention->autoPurgeEnabled(),
+            'eligible_purge_count' => $this->retention->eligibleBackupCount($days),
+            'eligible_purge_bytes' => $this->retention->eligibleBackupBytes($days),
+            'show_url' => route('admin.storage-boxes.show', $box['id']),
+            'refresh_url' => route('admin.storage-boxes.refresh-stats', $box['id']),
+            'purge_url' => route('admin.storage-boxes.purge-retention', $box['id']),
+        ]);
     }
 
     /**
@@ -45,6 +87,7 @@ class InfrastructureStorageBoxService
         $backupCount = (int) ($stats->backup_count ?? 0);
         $backupBytes = (int) ($stats->total_bytes ?? 0);
         $lastBackupAt = $stats->last_backup_at ?? null;
+        $disk = $this->hetzner->diskUsage();
 
         return [
             'id' => 'hetzner-primary',
@@ -60,8 +103,10 @@ class InfrastructureStorageBoxService
             'backup_count' => $backupCount,
             'backup_bytes' => $backupBytes,
             'last_backup_at' => $lastBackupAt,
+            'disk' => $disk,
             'settings_url' => route('admin.settings.index', ['tab' => 'provisioning']),
             'test_url' => route('admin.settings.test-hetzner-storage'),
+            'show_url' => route('admin.storage-boxes.show', 'hetzner-primary'),
         ];
     }
 

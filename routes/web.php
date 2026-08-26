@@ -31,6 +31,7 @@ use App\Http\Controllers\Admin\ServiceController;
 use App\Http\Controllers\Admin\SettingController;
 use App\Http\Controllers\Admin\SmsController;
 use App\Http\Controllers\Admin\SmsTemplateController;
+use App\Http\Controllers\Admin\StorageBoxController;
 use App\Http\Controllers\Admin\TicketController;
 use App\Http\Controllers\Api\V1\ResellerPublic\ResellerPackageCatalogController;
 use App\Http\Controllers\ContainerGitDeployWebhookController;
@@ -228,6 +229,9 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/nodes/{node}/sync-packages', [NodeController::class, 'syncDirectAdminPackages'])->name('admin.nodes.sync-packages');
         Route::get('admin/nodes/{node}/packages-json', [NodeController::class, 'packagesJson'])->name('admin.nodes.packages-json');
         Route::get('admin/nodes-status-json', [NodeController::class, 'statusJson'])->name('admin.nodes.status-json');
+        Route::get('admin/storage-boxes/{storageBox}', [StorageBoxController::class, 'show'])->name('admin.storage-boxes.show');
+        Route::post('admin/storage-boxes/{storageBox}/refresh-stats', [StorageBoxController::class, 'refreshStats'])->name('admin.storage-boxes.refresh-stats');
+        Route::post('admin/storage-boxes/{storageBox}/purge-retention', [StorageBoxController::class, 'purgeRetention'])->name('admin.storage-boxes.purge-retention');
         Route::get('admin/nodes/{node}/delete', [NodeController::class, 'confirmDelete'])->name('admin.nodes.delete-confirm');
         Route::post('admin/nodes/{node}/relocate-services', [NodeController::class, 'relocateServices'])->name('admin.nodes.relocate-services');
         Route::post('admin/nodes/{node}/detach-services', [NodeController::class, 'detachServices'])->name('admin.nodes.detach-services');

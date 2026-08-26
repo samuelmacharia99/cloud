@@ -76,6 +76,7 @@ class SettingController extends Controller
             'backup_storage_driver',
             'hetzner_storage_host', 'hetzner_storage_port', 'hetzner_storage_username',
             'hetzner_storage_password', 'hetzner_storage_path',
+            'hetzner_storage_retention_days', 'hetzner_storage_auto_purge',
         ],
         'branding' => [
             'logo_url', 'favicon_url', 'primary_color', 'company_name', 'footer_text',

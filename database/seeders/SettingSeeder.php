@@ -130,6 +130,8 @@ class SettingSeeder extends Seeder
             ['key' => 'hetzner_storage_username', 'value' => '', 'description' => 'Hetzner Storage Box username'],
             ['key' => 'hetzner_storage_password', 'value' => '', 'description' => 'Hetzner Storage Box password (encrypted at rest)'],
             ['key' => 'hetzner_storage_path', 'value' => 'backups/containers', 'description' => 'Remote base path on the Storage Box (relative to SFTP home)'],
+            ['key' => 'hetzner_storage_retention_days', 'value' => '30', 'description' => 'Delete completed Storage Box backups older than this many days when purging'],
+            ['key' => 'hetzner_storage_auto_purge', 'value' => '0', 'description' => 'Automatically purge Storage Box backups past retention via cron'],
             ['key' => 'notify_reseller_domain_queued', 'value' => 'true', 'description' => 'Notify reseller when domain order is queued'],
             ['key' => 'notify_reseller_domain_pushed', 'value' => 'true', 'description' => 'Notify reseller when domain is pushed to admin'],
             ['key' => 'notify_domain_renewal_completed', 'value' => 'true', 'description' => 'Notify reseller when admin manually completes a domain renewal'],

@@ -186,6 +186,13 @@ class CronJobSeeder extends Seeder
                 'enabled' => true,
             ],
             [
+                'name' => 'Purge Storage Box Backups',
+                'description' => 'Deletes completed container backup archives on Hetzner Storage Box past the configured retention period.',
+                'command' => 'cron:purge-storage-box-backups',
+                'schedule' => '45 3 * * *',
+                'enabled' => true,
+            ],
+            [
                 'name' => 'Collect Reseller Disk Usage',
                 'description' => 'Records daily DirectAdmin and container disk usage per reseller for pool billing.',
                 'command' => 'cron:collect-reseller-disk-usage',

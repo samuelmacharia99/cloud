@@ -4,9 +4,11 @@ namespace App\Services\Provisioning;
 
 use App\Models\Setting;
 use Exception;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Log;
 use phpseclib3\Net\SFTP;
+use phpseclib3\Net\SSH2;
 
 class HetznerStorageBoxClient
 {
@@ -227,6 +229,181 @@ class HetznerStorageBoxClient
             'uses_hetzner' => $this->usesHetzner(),
             'configured' => $this->isConfigured(),
         ];
+    }
+
+    /**
+     * Live quota from the Storage Box (cached ~10 minutes).
+     *
+     * @return array<string, mixed>
+     */
+    public function diskUsage(bool $fresh = false): array
+    {
+        if (! $this->isConfigured()) {
+            return [
+                'available' => false,
+                'error' => 'Storage Box is not configured.',
+            ];
+        }
+
+        $cacheKey = 'hetzner_storage_box.disk_usage';
+
+        if (! $fresh && Cache::has($cacheKey)) {
+            return Cache::get($cacheKey);
+        }
+
+        try {
+            $usage = $this->fetchDiskUsageViaSsh();
+            Cache::put($cacheKey, $usage, now()->addMinutes(10));
+
+            return $usage;
+        } catch (\Throwable $e) {
+            Log::warning('Failed to read Hetzner Storage Box disk usage', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'available' => false,
+                'error' => $e->getMessage(),
+            ];
+        }
+    }
+
+    public function clearDiskUsageCache(): void
+    {
+        Cache::forget('hetzner_storage_box.disk_usage');
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function fetchDiskUsageViaSsh(): array
+    {
+        $ssh = new SSH2($this->host(), $this->port());
+        $ssh->setTimeout(30);
+
+        if (! $ssh->login($this->username(), $this->password())) {
+            throw new Exception(
+                'Could not log in over SSH on port '.$this->port()
+                .'. Enable SSH support for the Storage Box in Hetzner Console.'
+            );
+        }
+
+        $dfOutput = trim((string) $ssh->exec('df -h /home 2>/dev/null || df -h'));
+        $parsed = $this->parseDfOutput($dfOutput);
+
+        $base = trim($this->basePath(), '/');
+        $backupPathHuman = null;
+        $backupPathBytes = null;
+
+        if ($base !== '') {
+            $duOutput = trim((string) $ssh->exec('du -sb '.escapeshellarg($base).' 2>/dev/null | awk \'{print $1}\''));
+            if ($duOutput !== '' && ctype_digit($duOutput)) {
+                $backupPathBytes = (int) $duOutput;
+                $backupPathHuman = $this->formatBytes($backupPathBytes);
+            }
+        }
+
+        $version = trim((string) $ssh->exec('version 2>/dev/null || true'));
+
+        return [
+            'available' => true,
+            'filesystem' => $parsed['filesystem'] ?? null,
+            'mount_point' => $parsed['mount'] ?? '/home',
+            'total_human' => $parsed['size'] ?? null,
+            'used_human' => $parsed['used'] ?? null,
+            'available_human' => $parsed['avail'] ?? null,
+            'capacity_percent' => isset($parsed['capacity_percent']) ? (int) $parsed['capacity_percent'] : null,
+            'total_bytes' => $this->parseHumanSize($parsed['size'] ?? ''),
+            'used_bytes' => $this->parseHumanSize($parsed['used'] ?? ''),
+            'available_bytes' => $this->parseHumanSize($parsed['avail'] ?? ''),
+            'backup_path_human' => $backupPathHuman,
+            'backup_path_bytes' => $backupPathBytes,
+            'provider' => 'Hetzner Storage Box',
+            'access' => 'SFTP/SSH port '.$this->port(),
+            'server_version' => $version !== '' ? $version : null,
+            'raw_df' => $dfOutput,
+            'fetched_at' => now()->toIso8601String(),
+        ];
+    }
+
+    /**
+     * @return array<string, string|int|null>
+     */
+    private function parseDfOutput(string $output): array
+    {
+        $lines = array_values(array_filter(array_map('trim', preg_split('/\r\n|\r|\n/', $output) ?: [])));
+        $dataLine = null;
+
+        foreach (array_reverse($lines) as $line) {
+            if (preg_match('/\d+%/', $line) === 1) {
+                $dataLine = $line;
+                break;
+            }
+        }
+
+        if ($dataLine === null) {
+            throw new Exception('Could not parse Storage Box disk usage output.');
+        }
+
+        $parts = preg_split('/\s+/', $dataLine) ?: [];
+        if (count($parts) < 5) {
+            throw new Exception('Unexpected df output from Storage Box.');
+        }
+
+        return [
+            'filesystem' => (string) $parts[0],
+            'size' => (string) $parts[1],
+            'used' => (string) $parts[2],
+            'avail' => (string) $parts[3],
+            'capacity_percent' => (int) rtrim((string) $parts[4], '%'),
+            'mount' => (string) ($parts[5] ?? '/home'),
+        ];
+    }
+
+    private function parseHumanSize(string $value): ?int
+    {
+        $value = trim($value);
+        if ($value === '' || $value === '-') {
+            return null;
+        }
+
+        if (ctype_digit($value)) {
+            return (int) $value;
+        }
+
+        if (! preg_match('/^([\d.]+)\s*([KMGTPE]?)i?B?$/i', $value, $matches)) {
+            return null;
+        }
+
+        $number = (float) $matches[1];
+        $unit = strtoupper($matches[2] ?: '');
+
+        $multiplier = match ($unit) {
+            'K' => 1024,
+            'M' => 1024 ** 2,
+            'G' => 1024 ** 3,
+            'T' => 1024 ** 4,
+            'P' => 1024 ** 5,
+            'E' => 1024 ** 6,
+            default => 1,
+        };
+
+        return (int) round($number * $multiplier);
+    }
+
+    private function formatBytes(int $bytes): string
+    {
+        if ($bytes >= 1024 ** 4) {
+            return round($bytes / (1024 ** 4), 2).' TB';
+        }
+        if ($bytes >= 1024 ** 3) {
+            return round($bytes / (1024 ** 3), 2).' GB';
+        }
+        if ($bytes >= 1024 ** 2) {
+            return round($bytes / (1024 ** 2), 2).' MB';
+        }
+
+        return round($bytes / 1024, 2).' KB';
     }
 
     public function disconnect(): void

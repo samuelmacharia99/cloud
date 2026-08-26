@@ -265,8 +265,16 @@
                                 </td>
                                 <td class="px-6 py-4">
                                     <div class="space-y-1 text-xs text-slate-600 dark:text-slate-400">
-                                        <p><span class="font-medium text-slate-700 dark:text-slate-300">Archives:</span> {{ number_format($box['backup_count']) }}</p>
-                                        <p><span class="font-medium text-slate-700 dark:text-slate-300">Stored:</span> {{ formatBytes((int) $box['backup_bytes']) }}</p>
+                                        @php $disk = $box['disk'] ?? []; @endphp
+                                        @if (($disk['available'] ?? false) && ! empty($disk['available_human']))
+                                            <p><span class="font-medium text-slate-700 dark:text-slate-300">Free:</span> {{ $disk['available_human'] }} / {{ $disk['total_human'] ?? '?' }}</p>
+                                            @if (! empty($disk['capacity_percent']))
+                                                <p><span class="font-medium text-slate-700 dark:text-slate-300">Used:</span> {{ $disk['capacity_percent'] }}%</p>
+                                            @endif
+                                        @else
+                                            <p><span class="font-medium text-slate-700 dark:text-slate-300">Archives:</span> {{ number_format($box['backup_count']) }}</p>
+                                            <p><span class="font-medium text-slate-700 dark:text-slate-300">Tracked:</span> {{ formatBytes((int) $box['backup_bytes']) }}</p>
+                                        @endif
                                     </div>
                                 </td>
                                 <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">Hetzner</td>
@@ -280,6 +288,9 @@
                                 </td>
                                 <td class="px-6 py-4 text-right">
                                     <div class="flex items-center justify-end gap-2">
+                                        <a href="{{ $box['show_url'] }}" class="px-3 py-1.5 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition">
+                                            View
+                                        </a>
                                         <a href="{{ $box['settings_url'] }}" class="px-3 py-1.5 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition">
                                             Settings
                                         </a>
