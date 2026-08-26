@@ -295,6 +295,8 @@ class ContainerAppDirectoryService
         );
         $ssh->exec('mkdir -p '.implode(' ', $dirs), 15);
 
+        $this->purgeLaravelConfigCacheOnHost($ssh, $root);
+
         $envPath = $root.'/.env';
         try {
             $exists = trim($ssh->exec('test -f '.escapeshellarg($envPath).' && echo yes || echo no', 10));
@@ -305,6 +307,26 @@ class ContainerAppDirectoryService
                     $ssh->upload($cleaned, $envPath);
                 }
             }
+        } catch (\Throwable) {
+        }
+    }
+
+    /**
+     * `config:cache` bakes SESSION_DRIVER=database into bootstrap/cache/config.php.
+     * Recreating PHP-FPM with cookie in compose does not help until this file is gone.
+     */
+    public function purgeLaravelConfigCacheOnHost(SSHService $ssh, string $hostAppPath): void
+    {
+        $root = rtrim($hostAppPath, '/');
+        $files = [
+            $root.'/bootstrap/cache/config.php',
+            $root.'/bootstrap/cache/config.php.bak',
+            $root.'/backend/bootstrap/cache/config.php',
+            $root.'/backend/bootstrap/cache/config.php.bak',
+        ];
+        $args = implode(' ', array_map('escapeshellarg', $files));
+        try {
+            $ssh->exec('rm -f '.$args, 10);
         } catch (\Throwable) {
         }
     }

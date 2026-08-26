@@ -404,7 +404,13 @@ LOG;
         ]);
         $this->assertNotNull($relaxed);
         $this->assertSame('restart_application', $relaxed['treat_action']);
-        $this->assertStringContainsString('config.php', $relaxed['summary']);
+        $this->assertStringContainsString('compose', $relaxed['summary']);
+        $this->assertStringContainsString('Restart application', $relaxed['manual_steps'][0]);
+
+        $this->assertNull(app(ContainerDoctorService::class)->intermittentAccessLogFinding($logs, [
+            'SESSION_DRIVER' => 'cookie',
+            'CACHE_STORE' => 'file',
+        ], 'cookie'));
     }
 
     #[Test]
@@ -476,6 +482,32 @@ LOG;
     }
 
     #[Test]
+    public function it_drops_intermittent_500s_when_runtime_sessions_are_already_cookie(): void
+    {
+        $merged = app(ContainerDoctorService::class)->mergeLogAndLiveFindings(
+            [[
+                'id' => 'intermittent_http_5xx',
+                'severity' => 'critical',
+                'title' => 'Intermittent HTTP 500s',
+                'treat_action' => 'restart_application',
+            ]],
+            [
+                'findings' => [],
+                'checks' => [
+                    'http_status' => 200,
+                    'db_ok' => true,
+                    'session_driver' => 'cookie',
+                    'cache_store' => 'file',
+                    'session_driver_runtime' => 'cookie',
+                    'http_5xx_count' => 345,
+                ],
+            ]
+        );
+
+        $this->assertNotContains('intermittent_http_5xx', array_column($merged, 'id'));
+    }
+
+    #[Test]
     public function it_keeps_intermittent_500s_when_env_says_cookie_because_workers_may_be_stale(): void
     {
         $merged = app(ContainerDoctorService::class)->mergeLogAndLiveFindings(
@@ -492,6 +524,7 @@ LOG;
                     'db_ok' => true,
                     'session_driver' => 'cookie',
                     'cache_store' => 'file',
+                    'session_driver_runtime' => 'database',
                     'http_5xx_count' => 345,
                 ],
             ]

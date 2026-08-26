@@ -886,12 +886,21 @@ class ContainerDeploymentService
 
         try {
             $patched = $this->patchComposeServiceEnvironment($yaml, $deployment->container_name, $drivers);
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
+            Log::warning('Could not patch compose runtime drivers', [
+                'container' => $deployment->container_name,
+                'error' => $e->getMessage(),
+            ]);
+
             return;
         }
 
         $deployment->update(['docker_compose_content' => $patched]);
         $ssh->upload($patched, $containerPath.'/docker-compose.yml');
+        $this->appDirectory->purgeLaravelConfigCacheOnHost(
+            $ssh,
+            $this->appDirectory->hostAppPath($deployment)
+        );
     }
 
     /**

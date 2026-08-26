@@ -809,10 +809,14 @@ class ContainerDoctorService
                 }
             }
 
-            $accessFinding = $this->intermittentAccessLogFinding($logs, [
-                'SESSION_DRIVER' => (string) ($checks['session_driver'] ?? ''),
-                'CACHE_STORE' => (string) ($checks['cache_store'] ?? ''),
-            ]);
+            $accessFinding = $this->intermittentAccessLogFinding(
+                $logs,
+                [
+                    'SESSION_DRIVER' => (string) ($checks['session_driver'] ?? ''),
+                    'CACHE_STORE' => (string) ($checks['cache_store'] ?? ''),
+                ],
+                $checks['session_driver_runtime'] ?? null
+            );
             $accessSummary = $this->summarizeAccessLogs($logs);
             $checks['http_2xx_count'] = $accessSummary['status_2xx'];
             $checks['http_5xx_count'] = $accessSummary['status_5xx'];
@@ -913,6 +917,10 @@ class ContainerDoctorService
                     return false;
                 }
                 if (collect($liveFindings)->contains(fn ($live) => ($live['id'] ?? '') === 'live_http_5xx')) {
+                    return false;
+                }
+                $runtimeSession = strtolower(trim((string) ($checks['session_driver_runtime'] ?? '')));
+                if ($dbOk && in_array($runtimeSession, ['cookie', 'array'], true)) {
                     return false;
                 }
             }
@@ -1033,10 +1041,15 @@ class ContainerDoctorService
      * @param  array<string, string>  $env
      * @return array<string, mixed>|null
      */
-    public function intermittentAccessLogFinding(string $logs, array $env = []): ?array
+    public function intermittentAccessLogFinding(string $logs, array $env = [], ?string $runtimeSession = null): ?array
     {
         $summary = $this->summarizeAccessLogs($logs);
         if ($summary['mixed_paths'] === []) {
+            return null;
+        }
+
+        $runtimeSession = strtolower(trim((string) $runtimeSession));
+        if (in_array($runtimeSession, ['cookie', 'array'], true)) {
             return null;
         }
 
@@ -1065,7 +1078,8 @@ class ContainerDoctorService
             return null;
         }
 
-        $treatAction = ($relaxed || ! $locking) ? 'restart_application' : 'tune_request_concurrency';
+        $fpmStillDatabase = $runtimeSession === 'database';
+        $treatAction = ($relaxed || ! $locking || $fpmStillDatabase) ? 'restart_application' : 'tune_request_concurrency';
         $treatLabel = $treatAction === 'tune_request_concurrency'
             ? 'Relax session/cache locking'
             : 'Restart application';
@@ -1076,15 +1090,29 @@ class ContainerDoctorService
             : 'Access logs show the same path succeeding and 500ing. That is worker exhaustion, a stale config cache, or session/cache locking — not a down database.';
 
         if ($relaxed) {
-            $summaryText = '`.env` already has SESSION_DRIVER=cookie and file cache, but live traffic is still mixed 200/500. '
-                .'PHP-FPM still has SESSION_DRIVER=database from compose (Dotenv will not override it), so `bootstrap/cache/config.php` and runtime both use database sessions (`select * from sessions`). '
-                .'Restart recreates the app container only (MySQL stays up).';
+            $summaryText = $fpmStillDatabase
+                ? '`.env` already has SESSION_DRIVER=cookie and file cache, but PHP-FPM / config cache still use database sessions. '
+                    .'Dotenv does not override compose `environment`, so Restart must write cookie/file into compose, delete bootstrap/cache/config.php, and recreate the app (MySQL stays up).'
+                : '`.env` already has SESSION_DRIVER=cookie and file cache. Mixed 200/500 in the 6h access log can be leftover from the DB outage. '
+                    .'Restart writes cookie/file into compose, deletes bootstrap/cache/config.php, and recreates the app (MySQL stays up).';
         }
 
         if ($session !== '') {
             $summaryText .= ' SESSION_DRIVER='.$session
-                .($cache !== '' ? ', CACHE_STORE='.$cache : '').'.';
+                .($cache !== '' ? ', CACHE_STORE='.$cache : '')
+                .($runtimeSession !== '' ? ', runtime='.$runtimeSession : '').'.';
         }
+
+        $manualSteps = $treatAction === 'restart_application'
+            ? [
+                'Click Restart application — writes SESSION_DRIVER=cookie into compose, deletes config cache, recreates the app, and leaves MySQL running.',
+                'Re-scan. Live checks should show runtime session.driver=cookie. Older /login 500s in the 6h log window are leftover from the DB outage.',
+            ]
+            : [
+                'Click Relax session/cache locking — writes cookie sessions + file cache into compose and recreates the app (MySQL stays up).',
+                'If PHP-FPM still logs pm.max_children, upgrade the plan for more workers.',
+                'In Terminal: tail -n 80 storage/logs/laravel.log around a failing /get-total-unread.',
+            ];
 
         return [
             'id' => 'intermittent_http_5xx',
@@ -1094,11 +1122,7 @@ class ContainerDoctorService
             'evidence' => $evidence,
             'treat_action' => $treatAction,
             'treat_label' => $treatLabel,
-            'manual_steps' => [
-                'Click Relax session/cache locking — cookie sessions + file cache so concurrent AJAX is not serialized.',
-                'If PHP-FPM still logs pm.max_children, upgrade the plan for more workers.',
-                'In Terminal: tail -n 80 storage/logs/laravel.log around a failing /get-total-unread.',
-            ],
+            'manual_steps' => $manualSteps,
             'source' => 'live',
         ];
     }
@@ -3890,9 +3914,7 @@ $set = function (string $c, string $k, string $v): string {
 };
 $c = $set($c, 'CACHE_STORE', 'file');
 $c = $set($c, 'CACHE_DRIVER', 'file');
-if (preg_match('/^SESSION_DRIVER=(redis)/mi', $c)) {
-    $c = $set($c, 'SESSION_DRIVER', 'cookie');
-}
+$c = $set($c, 'SESSION_DRIVER', 'cookie');
 if (file_put_contents($envPath, $c) === false) { fwrite(STDERR, "write failed\n"); exit(1); }
 echo "ok";
 PHP;
@@ -3979,17 +4001,7 @@ PHP;
 
             $init->dockerExecPublic($ssh, $deployment->container_name, $script, 120, asRoot: true);
 
-            try {
-                $init->dockerExecPublic(
-                    $ssh,
-                    $deployment->container_name,
-                    $this->phpFpmReloadScript(),
-                    20,
-                    asRoot: true
-                );
-            } catch (\Throwable) {
-            }
-
+            $deploymentService = app(ContainerDeploymentService::class);
             $env = is_array($deployment->env_values) ? $deployment->env_values : [];
             $env['SESSION_DRIVER'] = 'cookie';
             $env['CACHE_STORE'] = 'file';
@@ -4006,10 +4018,27 @@ PHP;
             app(ContainerEnvironmentService::class)
                 ->syncDotEnvFile($ssh, $service, $deployment->fresh(), $env);
 
+            try {
+                $appDirectory = app(ContainerAppDirectoryService::class);
+                $appDirectory->ensureLaravelWritableLayoutOnHost($ssh, $appDirectory->hostAppPath($deployment));
+                $appDirectory->purgeLaravelConfigCacheOnHost($ssh, $appDirectory->hostAppPath($deployment));
+            } catch (\Throwable) {
+            }
+
+            $deploymentService->persistLaravelRuntimeDriversOnCompose($ssh, $deployment->fresh());
+            try {
+                $deploymentService->restartAppService($ssh, $deployment);
+            } catch (\Throwable $e) {
+                \Log::warning('Doctor could not recreate app after relaxing session/cache locking', [
+                    'service_id' => $service->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
             return [
                 'success' => true,
-                'message' => 'Set SESSION_DRIVER=cookie and CACHE_STORE=file, then cleared config. '
-                    .'Open tabs should stop 500ing /get-total-unread while a heavy page loads. Reload once.',
+                'message' => 'Set SESSION_DRIVER=cookie and CACHE_STORE=file in .env and compose, deleted config cache, and recreated the app (MySQL left running). '
+                    .'PHP-FPM will now see cookie/file — dotenv cannot override compose. Reload the site.',
             ];
         } catch (\Throwable $e) {
             return ['success' => false, 'message' => 'Failed to relax session/cache locking: '.$e->getMessage()];
