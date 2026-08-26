@@ -56,10 +56,12 @@ class AdminCosmotownTldPriceSyncTest extends TestCase
 
         Http::fake([
             'www.cosmotown.com/v1/reseller/tldprice*' => Http::response([
-                'register' => 7.59,
-                'renew' => 11.08,
-                'transfer' => 11.08,
-                'currency' => 'USD',
+                'com' => [
+                    'register' => ['1' => '7.59'],
+                    'renew' => ['1' => '11.08'],
+                    'transfer' => ['1' => '11.08'],
+                    'currency' => 'USD',
+                ],
             ], 200),
         ]);
 

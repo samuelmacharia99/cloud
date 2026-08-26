@@ -92,6 +92,9 @@ class CosmotownTldPriceSyncService
                     'extension' => $extension->extension,
                     'tld' => $tld,
                     'error' => $e->getMessage(),
+                    'http_status' => $e->httpStatus,
+                    'response_keys' => array_keys($e->response ?? []),
+                    'response' => $this->summarizePayload($e->response),
                 ]);
             }
         }
@@ -178,6 +181,27 @@ class CosmotownTldPriceSyncService
         $extension->update($updates);
 
         return true;
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $payload
+     * @return array<string, mixed>|null
+     */
+    private function summarizePayload(?array $payload): ?array
+    {
+        if ($payload === null) {
+            return null;
+        }
+
+        $json = json_encode($payload);
+        if ($json !== false && strlen($json) > 4000) {
+            return [
+                '_truncated' => true,
+                'preview' => substr($json, 0, 4000),
+            ];
+        }
+
+        return $payload;
     }
 
     private function toKes(?float $amount, string $currency): ?float

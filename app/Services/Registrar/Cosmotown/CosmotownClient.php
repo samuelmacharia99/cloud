@@ -14,6 +14,11 @@ class CosmotownClient
 
     public const PRODUCTION_BASE = 'https://www.cosmotown.com/v1/';
 
+    /** @var array<string, CosmotownTldPrice> */
+    private array $tldPriceCatalog = [];
+
+    private bool $tldPriceCatalogAttempted = false;
+
     public function __construct(private Registrar $registrar) {}
 
     public static function forRegistrar(Registrar $registrar): self
@@ -127,11 +132,60 @@ class CosmotownClient
      */
     public function getTldPrice(string $tld): CosmotownTldPrice
     {
-        $payload = $this->get('reseller/tldprice', [
-            'tld' => CosmotownTldPrice::normalizeTld($tld),
-        ]);
+        $normalized = CosmotownTldPrice::normalizeTld($tld);
+        if ($normalized === '') {
+            throw new CosmotownException('TLD is required to fetch Cosmotown prices.');
+        }
 
-        return CosmotownTldPrice::fromPayload($tld, $payload);
+        try {
+            return CosmotownTldPrice::fromPayload(
+                $normalized,
+                $this->get('reseller/tldprice', ['tld' => $normalized])
+            );
+        } catch (CosmotownException $e) {
+            if (in_array($e->httpStatus, [401, 403], true)) {
+                throw $e;
+            }
+
+            $fromCatalog = $this->priceFromCatalog($normalized);
+            if ($fromCatalog instanceof CosmotownTldPrice) {
+                return $fromCatalog;
+            }
+
+            try {
+                return CosmotownTldPrice::fromPayload(
+                    $normalized,
+                    $this->get('reseller/tldprice', ['tld' => '.'.$normalized])
+                );
+            } catch (CosmotownException $dotted) {
+                if (in_array($dotted->httpStatus, [401, 403], true)) {
+                    throw $dotted;
+                }
+
+                throw $e;
+            }
+        }
+    }
+
+    private function priceFromCatalog(string $tld): ?CosmotownTldPrice
+    {
+        if (! $this->tldPriceCatalogAttempted) {
+            $this->tldPriceCatalogAttempted = true;
+
+            try {
+                $this->tldPriceCatalog = CosmotownTldPrice::catalogFromPayload(
+                    $this->get('reseller/tldprice')
+                );
+            } catch (CosmotownException $e) {
+                if (in_array($e->httpStatus, [401, 403], true)) {
+                    throw $e;
+                }
+
+                $this->tldPriceCatalog = [];
+            }
+        }
+
+        return $this->tldPriceCatalog[$tld] ?? null;
     }
 
     /**
