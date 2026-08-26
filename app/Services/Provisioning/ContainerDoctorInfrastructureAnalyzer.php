@@ -271,14 +271,14 @@ class ContainerDoctorInfrastructureAnalyzer
                 'title' => 'App is using a MySQL unix socket that does not exist in Docker',
                 'summary' => 'The app is connecting via `/var/lib/mysql/mysql.sock` (DirectAdmin localhost socket). '
                     .'That file does not exist in Docker — the sidecar is TCP at this stack’s unique hostname (`{app}-db`). '
-                    .'Restart pins DB_HOST to that DNS, clears DB_SOCKET, and recreates the app only. '
+                    .'Restart pins DB_HOST, rewrites hardcoded socketPath in app.js/config, preloads a mysql TCP shim, and recreates the app only. '
                     .'Do not Repair DB credentials (GRANT is fine) and do not Reset database.',
                 'treat_action' => 'restart_application',
                 'treat_label' => 'Restart application',
                 'manual_steps' => [
-                    'Click Restart application — writes unique DB_HOST, removes the unix socket, recreates the app, and leaves MySQL running.',
+                    'Click Restart application — writes unique DB_HOST, rewrites hardcoded sockets, preloads a TCP shim, recreates the app, and leaves MySQL running.',
                     'Re-scan. Logs should no longer show ENOENT /var/lib/mysql/mysql.sock.',
-                    'Do not Reset database. If ENOENT remains, the app hardcodes the socket in source — point host at process.env.DB_HOST.',
+                    'Do not Reset database.',
                 ],
             ],
             [

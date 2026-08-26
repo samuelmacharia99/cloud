@@ -291,6 +291,10 @@ class ContainerEnvironmentService
         $hostAppPath = '/opt/talksasa/containers/'.$deployment->container_name.'/app';
         $relative = trim((string) (is_array($service->service_meta) ? ($service->service_meta['laravel_project_root'] ?? '') : ''), '/');
         $paths = [$hostAppPath.'/.env', $hostAppPath.'/backend/.env'];
+        if (in_array($slug, ['nodejs'], true)) {
+            $paths[] = $hostAppPath.'/.env.production';
+            $paths[] = $hostAppPath.'/.env.local';
+        }
         if ($relative !== '') {
             array_unshift($paths, $hostAppPath.'/'.$relative.'/.env');
         }

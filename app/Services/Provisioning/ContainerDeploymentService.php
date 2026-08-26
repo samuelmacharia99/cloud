@@ -906,6 +906,35 @@ class ContainerDeploymentService
             return;
         }
 
+        $dotenvService = $service ?? $deployment->service;
+        $slug = strtolower((string) (
+            $dotenvService instanceof Service
+                ? ($dotenvService->effectiveContainerTemplate()?->slug
+                    ?? $dotenvService->product?->containerTemplate?->slug
+                    ?? '')
+                : ''
+        ));
+        if ($slug === 'nodejs' && $dotenvService instanceof Service) {
+            $fixer = app(NodeMysqlUnixSocketFixer::class);
+            $unique = $this->sidecarDnsHost((string) $deployment->container_name);
+            try {
+                $fixer->apply($ssh, $dotenvService, $deployment, $unique);
+            } catch (\Throwable $e) {
+                Log::warning('Could not rewrite Node MySQL unix socket after restart pin', [
+                    'container' => $deployment->container_name,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+            try {
+                $patched = $fixer->patchComposeCommand($patched, $deployment->container_name);
+            } catch (\Throwable $e) {
+                Log::warning('Could not inject Node MySQL TCP shim into compose', [
+                    'container' => $deployment->container_name,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
         $deployment->update(['docker_compose_content' => $patched]);
         $ssh->upload($patched, $containerPath.'/docker-compose.yml');
         $this->appDirectory->purgeLaravelConfigCacheOnHost(
@@ -913,7 +942,6 @@ class ContainerDeploymentService
             $this->appDirectory->hostAppPath($deployment)
         );
 
-        $dotenvService = $service ?? $deployment->service;
         if ($dotenvService instanceof Service) {
             try {
                 app(ContainerEnvironmentService::class)->syncDotEnvFile(

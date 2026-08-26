@@ -169,6 +169,19 @@ class ContainerDoctorService
                 'treat_label' => $rule['treat_label'],
                 'manual_steps' => $rule['manual_steps'],
             ];
+
+            if (($rule['id'] ?? '') === 'mysql_unix_socket_missing' && $service) {
+                $containerName = (string) ($service->containerDeployment?->container_name ?? '');
+                if ($containerName !== '') {
+                    $dns = app(ContainerDeploymentService::class)->sidecarDnsHost($containerName);
+                    $last = count($findings) - 1;
+                    $findings[$last]['summary'] = str_replace('{app}-db', $dns, (string) $findings[$last]['summary']);
+                    $findings[$last]['manual_steps'] = array_map(
+                        fn (string $step) => str_replace('{app}-db', $dns, $step),
+                        $findings[$last]['manual_steps'] ?? []
+                    );
+                }
+            }
         }
 
         if ($this->findingsContain($findings, ['nginx_boot_failed'])) {
@@ -482,30 +495,44 @@ class ContainerDoctorService
                     $mergedEnv['CACHE_STORE'] ?? $mergedEnv['CACHE_DRIVER'] ?? ''
                 )));
                 if ($deploymentService->envUsesMysqlUnixSocket($mergedEnv)
-                    && ! $this->findingsContain($findings, ['mysql_unix_socket_missing'])) {
+                    || $this->findingsContain($findings, ['mysql_unix_socket_missing'])) {
                     $unique = $deploymentService->sidecarDnsHost((string) $deployment->container_name);
-                    $findings[] = [
+                    $envStillSocket = $deploymentService->envUsesMysqlUnixSocket($mergedEnv);
+                    $summary = $envStillSocket
+                        ? ('Environment still points at a DirectAdmin unix socket (`/var/lib/mysql/mysql.sock`). '
+                            .'That file is not in this container — MySQL is TCP at '.$unique
+                            .'. Restart writes DB_HOST='.$unique.', rewrites hardcoded socketPath in app source, '
+                            .'preloads a mysql TCP shim, and recreates the app (MySQL stays up). '
+                            .'Do not Repair DB credentials or Reset database.')
+                        : ('Environment already uses '.$unique.', but the process still opens `/var/lib/mysql/mysql.sock` — '
+                            .'the app hardcodes the DirectAdmin socket (typical after Git pull). '
+                            .'Restart rewrites those files, preloads a mysql TCP shim, and recreates the app only. '
+                            .'Do not Reset database.');
+                    $finding = [
                         'id' => 'mysql_unix_socket_missing',
                         'severity' => 'critical',
                         'title' => 'App is using a MySQL unix socket that does not exist in Docker',
-                        'summary' => 'Environment still points at a DirectAdmin unix socket (`/var/lib/mysql/mysql.sock`). '
-                            .'That file is not in this container — MySQL is TCP at '.$unique
-                            .'. Restart writes DB_HOST='.$unique.', clears DB_SOCKET, and recreates the app (MySQL stays up). '
-                            .'Do not Repair DB credentials or Reset database.',
+                        'summary' => $summary,
                         'evidence' => array_values(array_filter([
                             trim((string) ($mergedEnv['DB_HOST'] ?? '')) !== '' ? 'DB_HOST='.(string) $mergedEnv['DB_HOST'] : null,
                             trim((string) ($mergedEnv['DB_SOCKET'] ?? '')) !== '' ? 'DB_SOCKET='.(string) $mergedEnv['DB_SOCKET'] : null,
                             'sidecar DNS='.$unique,
+                            $envStillSocket ? 'env still uses unix socket' : 'env pinned; source still uses mysql.sock',
                         ])),
                         'treat_action' => 'restart_application',
                         'treat_label' => 'Restart application',
                         'manual_steps' => [
-                            'Click Restart application — pins DB_HOST to '.$unique.', removes the unix socket, recreates the app, and leaves MySQL running.',
+                            'Click Restart application — pins DB_HOST to '.$unique.', rewrites hardcoded sockets, preloads a TCP shim, recreates the app, and leaves MySQL running.',
                             'Re-scan. Logs should show a TCP connection, not ENOENT /var/lib/mysql/mysql.sock.',
                             'Do not Reset database.',
                         ],
                         'source' => 'live',
                     ];
+                    $findings = array_values(array_filter(
+                        $findings,
+                        fn (array $f) => ($f['id'] ?? '') !== 'mysql_unix_socket_missing'
+                    ));
+                    $findings[] = $finding;
                 }
                 $runtimeSession = $this->probeLaravelSessionDriver($ssh, $deployment);
                 if ($runtimeSession !== null) {
@@ -2960,14 +2987,14 @@ PHP;
                 'title' => 'App is using a MySQL unix socket that does not exist in Docker',
                 'summary' => 'The app is connecting via `/var/lib/mysql/mysql.sock` (DirectAdmin localhost socket). '
                     .'That file does not exist in Docker — the sidecar is TCP at this stack’s unique hostname (`{app}-db`). '
-                    .'Restart pins DB_HOST to that DNS, clears DB_SOCKET, and recreates the app only. '
+                    .'Restart pins DB_HOST, rewrites hardcoded socketPath in app.js/config, preloads a mysql TCP shim, and recreates the app only. '
                     .'Do not Repair DB credentials (GRANT is fine) and do not Reset database.',
                 'treat_action' => 'restart_application',
                 'treat_label' => 'Restart application',
                 'manual_steps' => [
-                    'Click Restart application — writes unique DB_HOST, removes the unix socket, recreates the app, and leaves MySQL running.',
+                    'Click Restart application — writes unique DB_HOST, rewrites hardcoded sockets, preloads a TCP shim, recreates the app, and leaves MySQL running.',
                     'Re-scan. Logs should no longer show ENOENT /var/lib/mysql/mysql.sock.',
-                    'Do not Reset database. If ENOENT remains, the app hardcodes the socket in source — point host at process.env.DB_HOST.',
+                    'Do not Reset database.',
                 ],
             ],
             [
@@ -5291,7 +5318,16 @@ PHP;
             $probe = $this->waitForUpstream($ssh, $deployment);
 
             if ($probe['reachable']) {
-                return ['success' => true, 'message' => 'Application container recreated with cookie/file drivers (database sidecar left running). Reload the site.'];
+                $slug = strtolower((string) (
+                    $service->effectiveContainerTemplate()?->slug
+                    ?? $service->product?->containerTemplate?->slug
+                    ?? ''
+                ));
+                $message = in_array($slug, ['laravel', 'php'], true)
+                    ? 'Application container recreated with cookie/file drivers (database sidecar left running). Reload the site.'
+                    : 'Application container recreated (database sidecar left running). Reload the site.';
+
+                return ['success' => true, 'message' => $message];
             }
 
             if (is_string($probe['bootstrapping'])) {
