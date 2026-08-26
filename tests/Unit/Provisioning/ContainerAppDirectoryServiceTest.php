@@ -104,4 +104,16 @@ class ContainerAppDirectoryServiceTest extends TestCase
         $this->assertStringContainsString('.talksasa-w', $script);
         $this->assertStringContainsString('fail missing:', $script);
     }
+
+    #[Test]
+    public function public_storage_link_script_points_at_storage_app_public(): void
+    {
+        $script = (new ContainerAppDirectoryService)->publicStorageLinkScript(
+            '/opt/talksasa/containers/user-85-service-27-laravel/app'
+        );
+
+        $this->assertStringContainsString('ln -sfn ../storage/app/public', $script);
+        $this->assertStringContainsString('public_html', $script);
+        $this->assertStringContainsString('linked-storage-app-public', $script);
+    }
 }

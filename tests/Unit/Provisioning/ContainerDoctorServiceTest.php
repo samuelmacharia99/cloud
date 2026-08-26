@@ -1121,6 +1121,59 @@ LOG;
     }
 
     #[Test]
+    public function it_detects_http_css_on_an_https_page(): void
+    {
+        $html = <<<'HTML'
+<link rel="canonical" href="http://tajmaal.co.ke">
+<link rel="stylesheet" href="http://tajmaal.co.ke/website/css/bootstrap.min.css">
+<link rel="stylesheet" href="http://tajmaal.co.ke/website/css/styles.css">
+<script src="http://tajmaal.co.ke/website/js/custom.js"></script>
+<img src="https://tajmaal.co.ke/storage/media/5/TAJMAAL-PNG.png">
+<a href="http://tajmaal.co.ke/contact">Contact</a>
+HTML;
+
+        $doctor = app(ContainerDoctorService::class);
+        $assets = $doctor->httpsPageHttpAssetUrls($html, 'https://tajmaal.co.ke');
+
+        $this->assertContains('http://tajmaal.co.ke/website/css/bootstrap.min.css', $assets);
+        $this->assertContains('http://tajmaal.co.ke/website/js/custom.js', $assets);
+        $this->assertCount(3, $assets);
+        $this->assertTrue($doctor->appUrlIsHttpWhileLiveIsHttps('http://tajmaal.co.ke', 'https://tajmaal.co.ke'));
+        $this->assertFalse($doctor->appUrlIsHttpWhileLiveIsHttps('https://tajmaal.co.ke', 'https://tajmaal.co.ke'));
+        $this->assertSame('https://tajmaal.co.ke', $doctor->canonicalHttpsAppUrl('https://tajmaal.co.ke/'));
+        $this->assertStringContainsString('head -c 200000', $doctor->homepageBodyProbeCommand('https://tajmaal.co.ke'));
+    }
+
+    #[Test]
+    public function it_detects_storage_media_404s_from_html_and_access_logs(): void
+    {
+        $html = <<<'HTML'
+<img src="https://tajmaal.co.ke/storage/media/48/2brkitchen.jpg">
+<img src="https://tajmaal.co.ke/storage/media/132/mas.jpg">
+<div style="background-image: url(https://tajmaal.co.ke/storage/media/148/PAGE-BANNER.jpg)"></div>
+HTML;
+        $logs = <<<'LOG'
+user-85-service-27-laravel  | 10.201.0.1 - - [26/Aug/2026:15:10:01 +0000] "GET /storage/media/48/2brkitchen.jpg HTTP/1.1" 404 5486
+user-85-service-27-laravel  | 10.201.0.1 - - [26/Aug/2026:15:10:01 +0000] "GET /storage/media/123/gym.jpg HTTP/1.1" 404 5486
+user-85-service-27-laravel  | 10.201.0.1 - - [26/Aug/2026:15:10:02 +0000] "GET /2-bedroom HTTP/1.1" 200 22000
+LOG;
+
+        $doctor = app(ContainerDoctorService::class);
+        $urls = $doctor->storageMediaUrlsFromHtml($html, 'https://tajmaal.co.ke');
+        $this->assertContains('https://tajmaal.co.ke/storage/media/48/2brkitchen.jpg', $urls);
+        $this->assertContains('https://tajmaal.co.ke/storage/media/148/PAGE-BANNER.jpg', $urls);
+
+        $asset404s = $doctor->staticAsset404s($logs);
+        $this->assertSame('/storage/media/48/2brkitchen.jpg', $asset404s[0]['path']);
+        $this->assertSame(1, $asset404s[0]['count']);
+        $this->assertNotContains('/2-bedroom', array_column($asset404s, 'path'));
+
+        $parsed = $doctor->parseAssetStatusLines("404 https://tajmaal.co.ke/storage/media/48/2brkitchen.jpg\n200 https://tajmaal.co.ke/website/css/styles.css\n");
+        $this->assertSame(404, $parsed[0]['status']);
+        $this->assertStringContainsString('/storage/media/48/2brkitchen.jpg', $doctor->assetStatusProbeCommand($urls));
+    }
+
+    #[Test]
     public function http_500_with_live_pdo_and_host_db_pins_unique_sidecar_dns(): void
     {
         $treat = app(ContainerDoctorService::class)->resolveHttp500Treatment(

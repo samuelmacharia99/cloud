@@ -349,6 +349,34 @@ class ContainerAppDirectoryService
         }
     }
 
+    /**
+     * DirectAdmin Spatie media lives in storage/app/public/media (or public_html/storage).
+     * Without public/storage, nginx hands /storage/media/*.jpg to Laravel → HTML 404.
+     */
+    public function publicStorageLinkScript(string $hostAppPath): string
+    {
+        $app = escapeshellarg($hostAppPath);
+
+        return 'APP='.$app.'; '
+            .'PUBLIC="$APP/public"; HTML="$APP/public_html"; DISK="$APP/storage/app/public"; '
+            .'if [ ! -d "$PUBLIC" ] && [ -d "$HTML" ]; then PUBLIC="$HTML"; fi; '
+            .'mkdir -p "$DISK" "$PUBLIC"; '
+            .'if [ -d "$PUBLIC/storage" ] && [ ! -L "$PUBLIC/storage" ]; then '
+            .'  if find "$PUBLIC/storage" -type f 2>/dev/null | grep -q .; then echo kept-public-storage-dir; exit 0; fi; '
+            .'  rm -rf "$PUBLIC/storage"; '
+            .'fi; '
+            .'if [ -d "$HTML/storage" ] && [ "$PUBLIC/storage" != "$HTML/storage" ] '
+            .'&& find "$HTML/storage" -type f 2>/dev/null | grep -q .; then '
+            .'  ln -sfn "$HTML/storage" "$PUBLIC/storage"; echo linked-public-html-storage; exit 0; '
+            .'fi; '
+            .'ln -sfn ../storage/app/public "$PUBLIC/storage"; echo linked-storage-app-public';
+    }
+
+    public function ensurePublicStorageLink(SSHService $ssh, string $hostAppPath): string
+    {
+        return trim((string) $ssh->exec('sh -lc '.escapeshellarg($this->publicStorageLinkScript($hostAppPath)), 30));
+    }
+
     public function prepareProjectForComposer(SSHService $ssh, ContainerDeployment $deployment, string $projectRoot = '/app'): void
     {
         $this->normalizePermissions($ssh, $deployment);

@@ -93,10 +93,12 @@ class ContainerDoctorService
             'fix_npm_cache_permissions' => $this->treatFixNpmCachePermissions($service),
             'clear_laravel_caches' => $this->treatClearLaravelCaches($service),
             'fix_storage_permissions' => $this->treatFixStoragePermissions($service),
+            'ensure_storage_link' => $this->treatEnsureStorageLink($service),
             'fix_wordpress_permissions' => $this->treatFixWordPressPermissions($service),
             'fix_wordpress_media_processing' => $this->treatFixWordPressMediaProcessing($service),
             'regenerate_wordpress_thumbnails' => $this->treatRegenerateWordPressThumbnails($service),
             'fix_wordpress_site_url' => $this->treatFixWordPressSiteUrl($service),
+            'fix_laravel_app_url' => $this->treatFixLaravelAppUrl($service),
             'refresh_domain_proxy' => $this->treatRefreshDomainProxy($service),
             'restart_application' => $this->treatRestartApplication($service),
             'recreate_application' => $this->treatRecreateApplication($service),
@@ -467,6 +469,8 @@ class ContainerDoctorService
                 $checks['env_source'] = $liveEnv === [] ? 'platform' : 'app_dotenv';
                 $mergedEnv = $liveEnv === [] ? $platformEnv : array_merge($platformEnv, $liveEnv);
                 $checks['session_driver'] = strtolower(trim((string) ($mergedEnv['SESSION_DRIVER'] ?? '')));
+                $checks['app_url'] = trim((string) ($mergedEnv['APP_URL'] ?? ''));
+                $checks['asset_url'] = trim((string) ($mergedEnv['ASSET_URL'] ?? ''));
                 $checks['cache_store'] = strtolower(trim((string) (
                     $mergedEnv['CACHE_STORE'] ?? $mergedEnv['CACHE_DRIVER'] ?? ''
                 )));
@@ -770,6 +774,27 @@ class ContainerDoctorService
                         ],
                         'source' => 'live',
                     ];
+                }
+            }
+
+            if (in_array($stack, ['laravel', 'php'], true)
+                && $httpStatus !== null
+                && $httpStatus >= 200
+                && $httpStatus < 400
+                && ! $this->findingsContain($findings, ['laravel_docroot_not_public'])) {
+                $liveUrl = (string) ($deployment->getAccessUrl() ?? '');
+                $html = $liveUrl !== '' ? $this->probeHttpBody($ssh, $liveUrl) : null;
+                if (! $this->findingsContain($findings, ['live_mixed_content_app_url'])) {
+                    $mixedFinding = $this->laravelMixedContentFinding($checks, $html, $liveUrl);
+                    if ($mixedFinding !== null) {
+                        $findings[] = $mixedFinding;
+                    }
+                }
+                if (! $this->findingsContain($findings, ['live_storage_assets_missing'])) {
+                    $storageFinding = $this->missingStorageAssetsFinding($ssh, $logs, $html, $liveUrl);
+                    if ($storageFinding !== null) {
+                        $findings[] = $storageFinding;
+                    }
                 }
             }
 
@@ -1848,6 +1873,287 @@ PHP;
         return 'curl -s -o /dev/null -w "%{http_code}" --max-time 12 -H '
             .escapeshellarg('Host: '.$host).' '
             .escapeshellarg('http://127.0.0.1/home').' || true';
+    }
+
+    public function homepageBodyProbeCommand(string $url): string
+    {
+        return 'curl -sL --max-time 12 -A '.escapeshellarg('Talksasa-Doctor/1.0')
+            .' '.escapeshellarg($url).' | head -c 200000 || true';
+    }
+
+    /**
+     * CSS/JS still emitted as http:// on an https:// page — browsers block them (unstyled UI).
+     *
+     * @return list<string>
+     */
+    public function httpsPageHttpAssetUrls(string $html, string $pageUrl): array
+    {
+        $pageScheme = strtolower((string) parse_url($pageUrl, PHP_URL_SCHEME));
+        $pageHost = $this->normalizedHttpHost((string) parse_url($pageUrl, PHP_URL_HOST));
+        if ($pageScheme !== 'https' || $pageHost === '') {
+            return [];
+        }
+
+        preg_match_all('/\b(?:href|src)=["\']([^"\']+)["\']/i', $html, $matches);
+        $hits = [];
+        foreach ($matches[1] as $url) {
+            $url = trim((string) $url);
+            if (preg_match('/^http:\/\//i', $url) !== 1) {
+                continue;
+            }
+            $assetHost = $this->normalizedHttpHost((string) parse_url($url, PHP_URL_HOST));
+            $path = (string) parse_url($url, PHP_URL_PATH);
+            if ($assetHost !== $pageHost) {
+                continue;
+            }
+            if (preg_match('/\.(css|js|mjs|woff2?|ttf|eot)(\?|$)/i', $path) !== 1) {
+                continue;
+            }
+            $hits[] = $url;
+            if (count($hits) >= 8) {
+                break;
+            }
+        }
+
+        return $hits;
+    }
+
+    public function appUrlIsHttpWhileLiveIsHttps(?string $appUrl, ?string $liveUrl): bool
+    {
+        $appScheme = strtolower((string) parse_url((string) $appUrl, PHP_URL_SCHEME));
+        $liveScheme = strtolower((string) parse_url((string) $liveUrl, PHP_URL_SCHEME));
+        $appHost = $this->normalizedHttpHost((string) parse_url((string) $appUrl, PHP_URL_HOST));
+        $liveHost = $this->normalizedHttpHost((string) parse_url((string) $liveUrl, PHP_URL_HOST));
+
+        return $liveScheme === 'https'
+            && $appScheme === 'http'
+            && $appHost !== ''
+            && $appHost === $liveHost;
+    }
+
+    public function canonicalHttpsAppUrl(string $liveUrl): ?string
+    {
+        $host = $this->normalizedHttpHost((string) parse_url($liveUrl, PHP_URL_HOST));
+        $scheme = strtolower((string) parse_url($liveUrl, PHP_URL_SCHEME));
+        if ($host === '' || $scheme !== 'https') {
+            return null;
+        }
+
+        return 'https://'.$host;
+    }
+
+    private function normalizedHttpHost(string $host): string
+    {
+        $host = strtolower(trim($host));
+        if (str_starts_with($host, 'www.')) {
+            return substr($host, 4);
+        }
+
+        return $host;
+    }
+
+    /**
+     * @param  array<string, mixed>  $checks
+     * @return array<string, mixed>|null
+     */
+    private function laravelMixedContentFinding(array $checks, ?string $html, string $liveUrl): ?array
+    {
+        $appUrl = (string) ($checks['app_url'] ?? '');
+        $httpAssets = is_string($html) ? $this->httpsPageHttpAssetUrls($html, $liveUrl) : [];
+        $insecureAppUrl = $this->appUrlIsHttpWhileLiveIsHttps($appUrl, $liveUrl);
+
+        if (! $insecureAppUrl && $httpAssets === []) {
+            return null;
+        }
+
+        $httpsUrl = $this->canonicalHttpsAppUrl($liveUrl) ?? $liveUrl;
+
+        return [
+            'id' => 'live_mixed_content_app_url',
+            'severity' => 'critical',
+            'title' => 'HTTPS page loads HTTP CSS and JavaScript',
+            'summary' => 'GET / returns HTTP 200, but Laravel still emits http:// asset URLs (APP_URL='
+                .($appUrl !== '' ? $appUrl : 'http').'). Browsers block those on https://, so the site looks unstyled. '
+                .'Set APP_URL to '.$httpsUrl.' — MySQL stays up.',
+            'evidence' => array_values(array_filter([
+                $appUrl !== '' ? 'APP_URL='.$appUrl : null,
+                'live URL='.$liveUrl,
+                ...array_slice($httpAssets, 0, 5),
+            ])),
+            'treat_action' => 'fix_laravel_app_url',
+            'treat_label' => 'Use HTTPS app URL',
+            'manual_steps' => [
+                'Click Use HTTPS app URL — writes APP_URL='.$httpsUrl.' into .env and compose, then recreates only the app.',
+                'Reload the site. Do not Reset database.',
+            ],
+            'source' => 'live',
+        ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function storageMediaUrlsFromHtml(string $html, string $liveUrl = ''): array
+    {
+        preg_match_all('/(?:src|href)=["\']([^"\']*\/storage\/[^"\']+)["\']/i', $html, $attr);
+        preg_match_all('/url\((["\']?)([^)\'"]*\/storage\/[^)\'"]+)\1\)/i', $html, $css);
+        $found = array_merge($attr[1] ?? [], $css[2] ?? []);
+        $base = rtrim($liveUrl, '/');
+        $urls = [];
+        foreach ($found as $url) {
+            $url = html_entity_decode(trim((string) $url), ENT_QUOTES);
+            if ($url === '') {
+                continue;
+            }
+            if (str_starts_with($url, '//')) {
+                $url = 'https:'.$url;
+            } elseif (str_starts_with($url, '/')) {
+                $url = $base !== '' ? $base.$url : $url;
+            }
+            if (! str_contains($url, '/storage/')) {
+                continue;
+            }
+            $urls[] = $url;
+            if (count($urls) >= 8) {
+                break;
+            }
+        }
+
+        return array_values(array_unique($urls));
+    }
+
+    /**
+     * @return list<array{path: string, count: int}>
+     */
+    public function staticAsset404s(string $logs): array
+    {
+        $counts = [];
+        foreach (preg_split("/\r\n|\n|\r/", $logs) ?: [] as $line) {
+            if (preg_match('/"([A-Z]+)\s+(\S+)\s+HTTP\/[\d.]+"\s+(404)\s+(\d+|-)/', $line, $match) !== 1) {
+                continue;
+            }
+            $path = explode('?', (string) $match[2], 2)[0];
+            if ($path === '' || ! str_starts_with($path, '/')) {
+                continue;
+            }
+            $isStorage = str_starts_with($path, '/storage/');
+            $isStatic = preg_match('/\.(css|js|mjs|png|jpe?g|gif|ico|svg|webp|woff2?|ttf|eot|mp4)(\?|$)/i', $path) === 1;
+            if (! $isStorage && ! $isStatic) {
+                continue;
+            }
+            $counts[$path] = ($counts[$path] ?? 0) + 1;
+        }
+
+        $rows = [];
+        foreach ($counts as $path => $count) {
+            $rows[] = ['path' => $path, 'count' => $count];
+        }
+        usort($rows, fn (array $a, array $b): int => $b['count'] <=> $a['count']);
+
+        return array_slice($rows, 0, 12);
+    }
+
+    /**
+     * @param  list<string>  $urls
+     */
+    public function assetStatusProbeCommand(array $urls): string
+    {
+        $urls = array_values(array_filter(array_slice($urls, 0, 8)));
+        if ($urls === []) {
+            return 'true';
+        }
+
+        $args = implode(' ', array_map('escapeshellarg', $urls));
+
+        return 'curl -sL -o /dev/null -w "%{http_code} %{url_effective}\n" --max-time 8 '.$args.' || true';
+    }
+
+    /**
+     * @return list<array{url: string, status: int}>
+     */
+    public function parseAssetStatusLines(string $output): array
+    {
+        $rows = [];
+        foreach (preg_split("/\r\n|\n|\r/", $output) ?: [] as $line) {
+            $line = trim($line);
+            if (preg_match('/^(\d{3})\s+(\S+)/', $line, $match) !== 1) {
+                continue;
+            }
+            $rows[] = ['url' => $match[2], 'status' => (int) $match[1]];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function missingStorageAssetsFinding(SSHService $ssh, string $logs, ?string $html, string $liveUrl): ?array
+    {
+        $fromHtml = is_string($html) ? $this->storageMediaUrlsFromHtml($html, $liveUrl) : [];
+        $probed = [];
+        if ($fromHtml !== []) {
+            try {
+                $output = (string) $ssh->exec($this->assetStatusProbeCommand($fromHtml), 25);
+                $probed = $this->parseAssetStatusLines($output);
+            } catch (\Throwable) {
+                $probed = [];
+            }
+        }
+        $missing = array_values(array_filter(
+            $probed,
+            fn (array $row) => ($row['status'] ?? 0) === 404
+        ));
+        $log404s = $this->staticAsset404s($logs);
+        $storageLog404s = array_values(array_filter(
+            $log404s,
+            fn (array $row) => str_starts_with((string) $row['path'], '/storage/')
+        ));
+
+        if ($missing === [] && $storageLog404s === []) {
+            return null;
+        }
+
+        $evidence = [
+            ...array_map(
+                fn (array $row) => 'GET '.($row['url'] ?? '').' → 404',
+                array_slice($missing, 0, 6)
+            ),
+            ...array_map(
+                fn (array $row) => 'log '.$row['path'].' 404×'.$row['count'],
+                array_slice($storageLog404s, 0, 4)
+            ),
+        ];
+
+        return [
+            'id' => 'live_storage_assets_missing',
+            'severity' => 'warning',
+            'title' => 'Images under /storage/ return 404',
+            'summary' => 'The HTML is 200, but Spatie/Laravel media URLs like /storage/media/48/2brkitchen.jpg 404. DirectAdmin imports often skip the public/storage symlink, so nginx hands those files to Laravel. Link public/storage — MySQL stays up. If files were never copied, restore media from backup after linking.',
+            'evidence' => array_values(array_filter($evidence)),
+            'treat_action' => 'ensure_storage_link',
+            'treat_label' => 'Link public/storage',
+            'manual_steps' => [
+                'Click Link public/storage — creates public/storage → storage/app/public (or public_html/storage).',
+                'Reload the gallery. Do not Reset database.',
+            ],
+            'source' => 'live',
+        ];
+    }
+
+    private function probeHttpBody(SSHService $ssh, string $url): ?string
+    {
+        if ($url === '' || ! str_starts_with($url, 'http')) {
+            return null;
+        }
+
+        try {
+            $body = (string) $ssh->exec($this->homepageBodyProbeCommand($url), 20);
+
+            return $body !== '' ? $body : null;
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     public function loginPathLooksLikeHeaderBufferFailure(?int $rootStatus, ?int $loginStatus): bool
@@ -4475,6 +4781,46 @@ PHP;
     /**
      * @return array{success: bool, message: string}
      */
+    private function treatEnsureStorageLink(Service $service): array
+    {
+        $deployment = $service->containerDeployment;
+        if (! $deployment?->node) {
+            return ['success' => false, 'message' => 'Application is not deployed.'];
+        }
+
+        $ssh = SSHService::forNode($deployment->node);
+        $appDirectory = app(ContainerAppDirectoryService::class);
+        $init = app(LaravelAppInitializationService::class);
+
+        try {
+            $result = $appDirectory->ensurePublicStorageLink($ssh, $appDirectory->hostAppPath($deployment));
+            try {
+                $projectRoot = $this->resolveArtisanProjectRoot($ssh, $deployment);
+                $init->dockerExecPublic(
+                    $ssh,
+                    $deployment->container_name,
+                    'cd '.escapeshellarg($projectRoot).'; php artisan storage:link --force --no-interaction || true',
+                    60
+                );
+            } catch (\Throwable) {
+            }
+
+            $hint = $result !== '' ? ' ('.$result.')' : '';
+
+            return [
+                'success' => true,
+                'message' => 'Linked public/storage'.$hint.'. Reload the gallery. If images still 404, the media files were not imported — restore them from backup. Do not Reset database.',
+            ];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'message' => 'Failed to link public/storage: '.$e->getMessage()];
+        } finally {
+            $ssh->disconnect();
+        }
+    }
+
+    /**
+     * @return array{success: bool, message: string}
+     */
     private function treatFixWordPressPermissions(Service $service): array
     {
         $deployment = $service->containerDeployment;
@@ -4601,6 +4947,68 @@ PHP;
         return $summary !== ''
             ? 'Thumbnails rebuilt: '.mb_substr($summary, 0, 200)
             : 'Thumbnails rebuilt for images that were missing sizes.';
+    }
+
+    /**
+     * DirectAdmin Laravel .env often keeps APP_URL=http://domain while Cloudflare serves https://.
+     * asset() then emits mixed-content CSS/JS. Rewrite APP_URL and recreate only the app.
+     *
+     * @return array{success: bool, message: string}
+     */
+    private function treatFixLaravelAppUrl(Service $service): array
+    {
+        $deployment = $service->containerDeployment;
+        if (! $deployment?->node) {
+            return ['success' => false, 'message' => 'Application is not deployed.'];
+        }
+
+        $target = $this->canonicalHttpsAppUrl((string) ($deployment->getAccessUrl() ?? ''));
+        if ($target === null) {
+            return ['success' => false, 'message' => 'Bind an HTTPS domain before rewriting APP_URL.'];
+        }
+
+        $ssh = SSHService::forNode($deployment->node);
+        $deploymentService = app(ContainerDeploymentService::class);
+        $envService = app(ContainerEnvironmentService::class);
+        $init = app(LaravelAppInitializationService::class);
+
+        try {
+            $env = is_array($deployment->env_values) ? $deployment->env_values : [];
+            $overrides = ['APP_URL' => $target];
+            foreach (['ASSET_URL', 'FRONTEND_URL', 'VITE_APP_URL'] as $key) {
+                $current = trim((string) ($env[$key] ?? ''));
+                if ($current !== '' && $this->appUrlIsHttpWhileLiveIsHttps($current, $target)) {
+                    $overrides[$key] = $target;
+                }
+            }
+
+            $env = array_merge($env, $overrides);
+            $deployment->update(['env_values' => $env]);
+            $envService->syncDotEnvFile($ssh, $service, $deployment, $overrides);
+            $deploymentService->persistLaravelRuntimeDriversOnCompose($ssh, $deployment, $overrides);
+
+            try {
+                $projectRoot = $this->resolveArtisanProjectRoot($ssh, $deployment);
+                $init->dockerExecPublic(
+                    $ssh,
+                    $deployment->container_name,
+                    $this->laravelCacheClearScript($projectRoot),
+                    120
+                );
+            } catch (\Throwable) {
+            }
+
+            $deploymentService->restartAppService($ssh, $deployment);
+
+            return [
+                'success' => true,
+                'message' => 'APP_URL is now '.$target.'. Reloaded the app container (MySQL left running). Reload the site.',
+            ];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'message' => 'Failed to set HTTPS APP_URL: '.$e->getMessage()];
+        } finally {
+            $ssh->disconnect();
+        }
     }
 
     /**

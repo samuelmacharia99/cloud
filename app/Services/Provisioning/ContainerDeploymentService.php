@@ -915,6 +915,10 @@ class ContainerDeploymentService
             'CACHE_STORE' => 'file',
             'CACHE_DRIVER' => 'file',
         ];
+        $httpsAppUrl = $this->httpsAppUrlWhenLiveDomainIsSecure($deployment, $fromEnv);
+        if ($httpsAppUrl !== null) {
+            $defaults['APP_URL'] = $httpsAppUrl;
+        }
         $connection = strtolower((string) ($fromEnv['DB_CONNECTION'] ?? 'mysql'));
         $databaseType = in_array($connection, ['pgsql', 'postgresql'], true) ? 'postgresql' : 'mysql';
         $pinned = $this->pinApplicationDatabaseHost(
@@ -928,7 +932,7 @@ class ContainerDeploymentService
             'DB_CONNECTION', 'DB_HOST', 'DB_PORT', 'DB_DATABASE', 'DB_USERNAME', 'DB_PASSWORD',
             'MYSQL_DATABASE', 'MYSQL_USER', 'MYSQL_PASSWORD', 'DATABASE_URL',
             'POSTGRES_DB', 'POSTGRES_USER', 'POSTGRES_PASSWORD', 'TALKSASA_DB_DNS',
-            'SESSION_DRIVER', 'CACHE_STORE', 'CACHE_DRIVER',
+            'SESSION_DRIVER', 'CACHE_STORE', 'CACHE_DRIVER', 'APP_URL',
         ] as $key) {
             if (isset($pinned[$key]) && (string) $pinned[$key] !== '') {
                 $fromDb[$key] = (string) $pinned[$key];
@@ -3418,6 +3422,40 @@ class ContainerDeploymentService
         }
 
         return $host !== '' ? $host : 'db';
+    }
+
+    /**
+     * DirectAdmin .env often keeps APP_URL=http://domain after the site is served on https://.
+     *
+     * @param  array<string, mixed>  $env
+     */
+    public function httpsAppUrlWhenLiveDomainIsSecure(ContainerDeployment $deployment, array $env): ?string
+    {
+        try {
+            $live = (string) ($deployment->getAccessUrl() ?? '');
+        } catch (\Throwable) {
+            return null;
+        }
+        $liveScheme = strtolower((string) parse_url($live, PHP_URL_SCHEME));
+        $liveHost = strtolower((string) parse_url($live, PHP_URL_HOST));
+        if ($liveScheme !== 'https' || $liveHost === '') {
+            return null;
+        }
+        if (str_starts_with($liveHost, 'www.')) {
+            $liveHost = substr($liveHost, 4);
+        }
+
+        $appUrl = trim((string) ($env['APP_URL'] ?? ''));
+        $appScheme = strtolower((string) parse_url($appUrl, PHP_URL_SCHEME));
+        $appHost = strtolower((string) parse_url($appUrl, PHP_URL_HOST));
+        if (str_starts_with($appHost, 'www.')) {
+            $appHost = substr($appHost, 4);
+        }
+        if ($appScheme !== 'http' || $appHost === '' || $appHost !== $liveHost) {
+            return null;
+        }
+
+        return 'https://'.$liveHost;
     }
 
     /**
