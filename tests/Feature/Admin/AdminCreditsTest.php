@@ -27,7 +27,7 @@ class AdminCreditsTest extends TestCase
         $this->actingAs($admin)
             ->get(route('admin.reports.index'))
             ->assertOk()
-            ->assertSee('Platform Reports');
+            ->assertSee('Bookkeeping');
     }
 
     public function test_admin_can_view_activity_log(): void
