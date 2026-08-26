@@ -788,7 +788,7 @@ class ContainerDeploymentService
                 // Recreate the app service only. `docker compose restart` does not
                 // reload compose `environment` (SESSION_DRIVER=database stays in
                 // PHP-FPM). Recreating the whole stack also bounces MySQL → HTTP 2002.
-                $ssh->exec($this->composeRestartAppCommand($containerPath, $deployment->container_name), self::DEPLOY_TIMEOUT);
+                $this->restartAppService($ssh, $deployment);
 
                 $deployment->update([
                     'last_status_check_at' => now(),
@@ -837,9 +837,12 @@ class ContainerDeploymentService
     }
 
     /**
-     * Write cookie/file drivers and current DB credentials into compose
+     * Write cookie/file drivers and this stack's unique DB hostname into compose
      * `environment` so PHP-FPM actually sees them after recreate. `.env` alone
      * is ignored when the variable is already set in the container env.
+     *
+     * Always read docker-compose.yml from disk. Using stale `docker_compose_content`
+     * from the panel DB has rewritten the sidecar definition and bounced MySQL.
      *
      * @param  array<string, string>  $drivers
      */
@@ -848,37 +851,22 @@ class ContainerDeploymentService
         ContainerDeployment $deployment,
         array $drivers = []
     ): void {
-        $fromEnv = is_array($deployment->env_values) ? $deployment->env_values : [];
-        $defaults = [
-            'SESSION_DRIVER' => 'cookie',
-            'CACHE_STORE' => 'file',
-            'CACHE_DRIVER' => 'file',
-        ];
-        $fromDb = [];
-        foreach ([
-            'DB_CONNECTION', 'DB_HOST', 'DB_PORT', 'DB_DATABASE', 'DB_USERNAME', 'DB_PASSWORD',
-            'MYSQL_DATABASE', 'MYSQL_USER', 'MYSQL_PASSWORD', 'DATABASE_URL',
-            'POSTGRES_DB', 'POSTGRES_USER', 'POSTGRES_PASSWORD', 'TALKSASA_DB_DNS',
-        ] as $key) {
-            if (isset($fromEnv[$key]) && (string) $fromEnv[$key] !== '') {
-                $fromDb[$key] = (string) $fromEnv[$key];
-            }
-        }
-        $drivers = array_merge($defaults, $fromDb, $drivers);
-        $env = array_merge($fromEnv, $drivers);
-        $deployment->update(['env_values' => $env]);
+        $drivers = $this->composeRuntimeEnvironmentOverrides($deployment, $drivers);
+        $fromEnv = array_merge(is_array($deployment->env_values) ? $deployment->env_values : [], $drivers);
+        $deployment->update(['env_values' => $fromEnv]);
 
         $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
-        $yaml = trim((string) ($deployment->docker_compose_content ?? ''));
+        $yaml = '';
+        try {
+            $yaml = trim((string) $ssh->exec(
+                'cat '.escapeshellarg($containerPath.'/docker-compose.yml'),
+                15
+            ));
+        } catch (\Throwable) {
+            $yaml = '';
+        }
         if ($yaml === '') {
-            try {
-                $yaml = trim((string) $ssh->exec(
-                    'cat '.escapeshellarg($containerPath.'/docker-compose.yml'),
-                    15
-                ));
-            } catch (\Throwable) {
-                return;
-            }
+            $yaml = trim((string) ($deployment->docker_compose_content ?? ''));
         }
         if ($yaml === '') {
             return;
@@ -901,6 +889,43 @@ class ContainerDeploymentService
             $ssh,
             $this->appDirectory->hostAppPath($deployment)
         );
+    }
+
+    /**
+     * Cookie/file drivers plus unique sidecar DNS — never the shared-network alias `db`.
+     *
+     * @param  array<string, string>  $drivers
+     * @return array<string, string>
+     */
+    public function composeRuntimeEnvironmentOverrides(ContainerDeployment $deployment, array $drivers = []): array
+    {
+        $fromEnv = is_array($deployment->env_values) ? $deployment->env_values : [];
+        $defaults = [
+            'SESSION_DRIVER' => 'cookie',
+            'CACHE_STORE' => 'file',
+            'CACHE_DRIVER' => 'file',
+        ];
+        $connection = strtolower((string) ($fromEnv['DB_CONNECTION'] ?? 'mysql'));
+        $databaseType = in_array($connection, ['pgsql', 'postgresql'], true) ? 'postgresql' : 'mysql';
+        $pinned = $this->pinApplicationDatabaseHost(
+            array_merge($fromEnv, $defaults, $drivers),
+            (string) $deployment->container_name,
+            $databaseType
+        );
+
+        $fromDb = [];
+        foreach ([
+            'DB_CONNECTION', 'DB_HOST', 'DB_PORT', 'DB_DATABASE', 'DB_USERNAME', 'DB_PASSWORD',
+            'MYSQL_DATABASE', 'MYSQL_USER', 'MYSQL_PASSWORD', 'DATABASE_URL',
+            'POSTGRES_DB', 'POSTGRES_USER', 'POSTGRES_PASSWORD', 'TALKSASA_DB_DNS',
+            'SESSION_DRIVER', 'CACHE_STORE', 'CACHE_DRIVER',
+        ] as $key) {
+            if (isset($pinned[$key]) && (string) $pinned[$key] !== '') {
+                $fromDb[$key] = (string) $pinned[$key];
+            }
+        }
+
+        return array_merge($defaults, $fromDb, $drivers);
     }
 
     /**
@@ -1003,7 +1028,25 @@ class ContainerDeploymentService
     public function restartAppService(SSHService $ssh, ContainerDeployment $deployment): void
     {
         $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
-        $ssh->exec($this->composeRestartAppCommand($containerPath, $deployment->container_name), self::DEPLOY_TIMEOUT);
+        $serviceName = $deployment->container_name;
+        try {
+            $yaml = trim((string) $ssh->exec(
+                'cat '.escapeshellarg($containerPath.'/docker-compose.yml'),
+                15
+            ));
+            if ($yaml !== '') {
+                $compose = Yaml::parse($yaml);
+                if (is_array($compose)) {
+                    $key = $this->resolveComposeAppServiceKey($compose, $deployment->container_name);
+                    if (is_string($key) && $key !== '') {
+                        $serviceName = $key;
+                    }
+                }
+            }
+        } catch (\Throwable) {
+        }
+
+        $ssh->exec($this->composeRestartAppCommand($containerPath, $serviceName), self::DEPLOY_TIMEOUT);
     }
 
     /**

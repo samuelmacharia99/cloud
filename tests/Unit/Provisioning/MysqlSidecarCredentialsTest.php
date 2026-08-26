@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\Provisioning;
 
+use App\Models\ContainerDeployment;
 use App\Services\Provisioning\ContainerDeploymentService;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -235,5 +236,50 @@ YAML;
             'WORDPRESS_DB_NAME' => 'wordpress',
             'DB_HOST' => 'user-74-service-24-wordpress-db',
         ]));
+    }
+
+    #[Test]
+    public function restart_compose_overrides_replace_shared_db_alias(): void
+    {
+        $deployment = new ContainerDeployment([
+            'container_name' => 'user-74-service-24-laravel',
+            'env_values' => [
+                'DB_HOST' => 'db',
+                'DB_USERNAME' => 'u74_s24',
+                'DB_PASSWORD' => 'secret',
+                'DB_DATABASE' => 's24_db',
+                'SESSION_DRIVER' => 'database',
+                'DATABASE_URL' => 'mysql://u74_s24:secret@db:3306/s24_db',
+            ],
+        ]);
+
+        $overrides = app(ContainerDeploymentService::class)->composeRuntimeEnvironmentOverrides($deployment);
+
+        $this->assertSame('cookie', $overrides['SESSION_DRIVER']);
+        $this->assertSame('file', $overrides['CACHE_STORE']);
+        $this->assertSame('user-74-service-24-laravel-db', $overrides['DB_HOST']);
+        $this->assertStringContainsString('@user-74-service-24-laravel-db:3306/', $overrides['DATABASE_URL']);
+        $this->assertStringNotContainsString('@db:', $overrides['DATABASE_URL']);
+
+        $yaml = <<<'YAML'
+services:
+  user-74-service-24-laravel:
+    container_name: user-74-service-24-laravel
+    environment:
+      DB_HOST: db
+      DATABASE_URL: mysql://u74_s24:secret@db:3306/s24_db
+  db:
+    image: mysql:8.0
+YAML;
+
+        $patched = app(ContainerDeploymentService::class)->patchComposeServiceEnvironment(
+            $yaml,
+            'user-74-service-24-laravel',
+            $overrides
+        );
+
+        $this->assertStringContainsString('DB_HOST: user-74-service-24-laravel-db', $patched);
+        $this->assertStringNotContainsString("DB_HOST: db\n", $patched);
+        $this->assertStringNotContainsString('@db:', $patched);
     }
 }

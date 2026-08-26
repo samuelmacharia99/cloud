@@ -1053,6 +1053,41 @@ LOG;
     }
 
     #[Test]
+    public function ambiguous_laravel_db_host_is_the_shared_network_alias(): void
+    {
+        $doctor = app(ContainerDoctorService::class);
+
+        $this->assertTrue($doctor->isAmbiguousLaravelDatabaseHost('db'));
+        $this->assertTrue($doctor->isAmbiguousLaravelDatabaseHost('localhost'));
+        $this->assertTrue($doctor->isAmbiguousLaravelDatabaseHost('127.0.0.1'));
+        $this->assertFalse($doctor->isAmbiguousLaravelDatabaseHost('user-74-service-24-laravel-db'));
+        $this->assertFalse($doctor->isAmbiguousLaravelDatabaseHost(null));
+    }
+
+    #[Test]
+    public function http_500_with_live_pdo_and_host_db_pins_unique_sidecar_dns(): void
+    {
+        $treat = app(ContainerDoctorService::class)->resolveHttp500Treatment(
+            [
+                'db_ok' => true,
+                'table_count' => 91,
+                'http_status' => 500,
+                'laravel_db_host' => 'db',
+            ],
+            [
+                'SQLSTATE[HY000] [2002] Connection refused at /app/vendor/laravel/framework',
+                'PDOException(code: 2002): SQLSTATE[HY000] [2002] Connection refused',
+                '#2 mysql:host=db;port=3306;dbname=s24_db',
+            ],
+            'laravel'
+        );
+
+        $this->assertSame('restart_application', $treat['treat_action']);
+        $this->assertStringContainsString('mysql:host=db', $treat['summary']);
+        $this->assertStringContainsString('talksasa-net', $treat['summary']);
+    }
+
+    #[Test]
     public function http_500_still_repairs_credentials_when_live_pdo_failed(): void
     {
         $treat = app(ContainerDoctorService::class)->resolveHttp500Treatment(

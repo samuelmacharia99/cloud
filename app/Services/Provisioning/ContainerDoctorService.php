@@ -478,6 +478,36 @@ class ContainerDoctorService
                     $checks['cache_store_runtime'] = $runtimeCache;
                 }
 
+                $runtimeDbHost = $this->probeLaravelDatabaseHost($ssh, $deployment);
+                if ($runtimeDbHost !== null) {
+                    $checks['laravel_db_host'] = $runtimeDbHost;
+                }
+
+                if (in_array($stack, ['laravel', 'php'], true)
+                    && $this->isAmbiguousLaravelDatabaseHost($runtimeDbHost)) {
+                    $unique = app(ContainerDeploymentService::class)
+                        ->sidecarDnsHost((string) $deployment->container_name);
+                    $findings[] = [
+                        'id' => 'stale_laravel_db_host',
+                        'severity' => 'critical',
+                        'title' => 'Laravel is still connecting to hostname db',
+                        'summary' => 'Doctor PDO can reach this stack’s sidecar (unique DNS '.$unique
+                            .'), but Laravel bootstrapped config still uses `db`. On talksasa-net that alias is shared by every site, so the public URL 1045s or 2002s while live checks say DB OK. '
+                            .'Restart writes DB_HOST='.$unique.' into compose and recreates the app — MySQL stays up.',
+                        'evidence' => [
+                            'laravel database.host='.$runtimeDbHost,
+                            'sidecar DNS='.$unique,
+                        ],
+                        'treat_action' => 'restart_application',
+                        'treat_label' => 'Restart application',
+                        'manual_steps' => [
+                            'Click Restart application — pins DB_HOST to '.$unique.', deletes config cache, recreates the app, and leaves MySQL running.',
+                            'Re-scan. laravel.log should show mysql:host='.$unique.' not mysql:host=db.',
+                        ],
+                        'source' => 'live',
+                    ];
+                }
+
                 if (in_array($stack, ['laravel', 'php'], true)
                     && $runtimeSession === 'database'
                     && ($checks['session_driver'] ?? '') === 'cookie') {
@@ -732,6 +762,8 @@ class ContainerDoctorService
                     'docker_network_missing',
                     'missing_vendor_autoload',
                     'stale_php_runtime_image',
+                    'stale_laravel_db_host',
+                    'stale_laravel_config_cache',
                 ]);
 
                 $appErrors = $containerReady ? $this->readRecentApplicationErrors($ssh, $deployment) : [];
@@ -1257,6 +1289,50 @@ PHP;
         }
 
         return $driver;
+    }
+
+    /**
+     * Hostname Laravel's bootstrapped config uses (DATABASE_URL / compose), not Doctor PDO.
+     */
+    public function probeLaravelDatabaseHost(SSHService $ssh, $deployment): ?string
+    {
+        $php = <<<'PHP'
+require "vendor/autoload.php";
+$app = require "bootstrap/app.php";
+$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+$default = (string) config("database.default");
+echo (string) config("database.connections.{$default}.host");
+PHP;
+        $script = 'if [ -f /app/backend/artisan ]; then cd /app/backend; '
+            .'elif [ -f /app/artisan ]; then cd /app; '
+            .'else exit 1; fi; '
+            .'php -r '.escapeshellarg($php);
+
+        try {
+            $host = strtolower(trim($ssh->exec(
+                'docker exec -u www-data '.escapeshellarg($deployment->container_name)
+                .' sh -lc '.escapeshellarg($script),
+                25
+            )));
+        } catch (\Throwable) {
+            return null;
+        }
+
+        if ($host === '' || strlen($host) > 120 || ! preg_match('/^[a-z0-9._-]+$/', $host)) {
+            return null;
+        }
+
+        return $host;
+    }
+
+    public function isAmbiguousLaravelDatabaseHost(?string $host): bool
+    {
+        $host = strtolower(trim((string) $host));
+        if (str_contains($host, ':')) {
+            $host = explode(':', $host, 2)[0];
+        }
+
+        return $host === 'db' || $host === 'localhost' || $host === '127.0.0.1';
     }
 
     /**
@@ -3557,6 +3633,20 @@ PHP;
         if (in_array($stack, ['laravel', 'php'], true) && $hasTables && $dbOk) {
             $staleSessions = (bool) preg_match('/select \* from [`\']sessions[`\']/i', $haystack)
                 || (($checks['session_driver_runtime'] ?? '') === 'database');
+            $laravelHost = strtolower(trim((string) ($checks['laravel_db_host'] ?? '')));
+            $usesSharedDbAlias = $this->isAmbiguousLaravelDatabaseHost($laravelHost)
+                || (bool) preg_match('/mysql:host=db[;\'"]/', $haystack);
+
+            if ($usesSharedDbAlias) {
+                return [
+                    'treat_action' => 'restart_application',
+                    'treat_label' => 'Restart application',
+                    'summary' => 'Live PDO works (tables: '.(string) ($checks['table_count'] ?? '?')
+                        .') because Doctor uses this stack’s unique sidecar DNS, but Laravel still connects to `mysql:host=db`. '
+                        .'That alias is shared on talksasa-net, which is why the public URL 500s (1045/2002) while this card says DB OK. '
+                        .'Restart writes DB_HOST to the unique *-db name and recreates the app — MySQL stays up.',
+                ];
+            }
 
             return [
                 'treat_action' => 'restart_application',
@@ -3567,7 +3657,7 @@ PHP;
                         .'Restart recycles the app container only — it will not bounce MySQL (that 2002s the site).'
                     : 'Live PDO works (tables: '.(string) ($checks['table_count'] ?? '?')
                         .') but the public URL still returns HTTP '.$httpStatus
-                        .'. Restart recycles PHP-FPM only; MySQL stays up. Leftover 2002 lines are from the previous full-stack restart.',
+                        .'. Restart recycles the app container only; MySQL stays up. Leftover 2002 lines are from a previous sidecar bounce.',
             ];
         }
 
