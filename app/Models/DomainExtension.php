@@ -31,6 +31,13 @@ class DomainExtension extends Model
         'dns_management',
         'auto_renewal',
         'transfer_price',
+        'registrar_register_cost_usd',
+        'registrar_renew_cost_usd',
+        'registrar_transfer_cost_usd',
+        'registrar_register_cost_kes',
+        'registrar_renew_cost_kes',
+        'registrar_transfer_cost_kes',
+        'registrar_cost_synced_at',
     ];
 
     protected $casts = [
@@ -38,6 +45,13 @@ class DomainExtension extends Model
         'dns_management' => 'boolean',
         'auto_renewal' => 'boolean',
         'transfer_price' => 'decimal:2',
+        'registrar_register_cost_usd' => 'decimal:2',
+        'registrar_renew_cost_usd' => 'decimal:2',
+        'registrar_transfer_cost_usd' => 'decimal:2',
+        'registrar_register_cost_kes' => 'decimal:2',
+        'registrar_renew_cost_kes' => 'decimal:2',
+        'registrar_transfer_cost_kes' => 'decimal:2',
+        'registrar_cost_synced_at' => 'datetime',
     ];
 
     public function registrarModel()
@@ -116,6 +130,33 @@ class DomainExtension extends Model
         }
 
         return $this->getRetailPricing($periodYears);
+    }
+
+    public function registrarRegistrationCost(int $periodYears = 1): ?float
+    {
+        if ($this->registrar_register_cost_kes === null) {
+            return null;
+        }
+
+        return round((float) $this->registrar_register_cost_kes * max(1, $periodYears), 2);
+    }
+
+    public function registrarRenewalCost(int $periodYears = 1): ?float
+    {
+        $annual = $this->registrar_renew_cost_kes ?? $this->registrar_register_cost_kes;
+
+        if ($annual === null) {
+            return null;
+        }
+
+        return round((float) $annual * max(1, $periodYears), 2);
+    }
+
+    public function hasRegistrarCosts(): bool
+    {
+        return $this->registrar_register_cost_kes !== null
+            || $this->registrar_renew_cost_kes !== null
+            || $this->registrar_transfer_cost_kes !== null;
     }
 
     /**

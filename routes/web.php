@@ -240,6 +240,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('admin/cosmotown-domains/unmatched', [DomainController::class, 'unmatchedCosmotown'])->name('admin.domains.cosmotown-unmatched');
         Route::post('admin/cosmotown-domains/import', [DomainController::class, 'importCosmotown'])->name('admin.domains.cosmotown-import');
         Route::post('admin/domains/sync-cosmotown', [DomainController::class, 'syncCosmotownInventory'])->name('admin.domains.sync-cosmotown');
+        Route::post('admin/domains/sync-cosmotown-tld-prices', [DomainController::class, 'syncCosmotownTldPrices'])->name('admin.domains.sync-cosmotown-tld-prices');
         Route::post('admin/domains/{domain}/generate-invoice', [DomainController::class, 'generateInvoice'])->name('admin.domains.generate-invoice');
         Route::put('admin/domains/{domain}/nameservers', [DomainController::class, 'updateNameservers'])->name('admin.domains.nameservers');
         Route::put('admin/domains/{domain}/registrant', [DomainController::class, 'updateRegistrant'])->name('admin.domains.registrant');

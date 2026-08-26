@@ -15,17 +15,27 @@
 @section('content')
 <div x-data="pricingManager()" x-init="@if ($errors->any()) showAddExtensionModal = true @endif" class="space-y-6">
     <!-- Header -->
-    <div class="flex items-center justify-between">
+    <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
             <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Domain Pricing</h1>
-            <p class="text-slate-600 dark:text-slate-400 mt-1">Configure retail and wholesale pricing for all domain extensions.</p>
+            <p class="text-slate-600 dark:text-slate-400 mt-1">Configure retail and wholesale pricing. Sync Cosmotown registrar costs to track platform profit.</p>
         </div>
-        <button @click="openAddExtensionModal()" class="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg transition">
-            <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-            </svg>
-            Add Extension
-        </button>
+        <div class="flex flex-wrap items-center gap-3">
+            @if ($cosmotownRegistrar)
+                <form method="POST" action="{{ route('admin.domains.sync-cosmotown-tld-prices') }}" data-confirm="Pull latest Cosmotown registrar costs for all enabled TLDs? Existing retail and wholesale prices are not changed.">
+                    @csrf
+                    <button type="submit" class="px-5 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg transition">
+                        Sync Cosmotown costs
+                    </button>
+                </form>
+            @endif
+            <button @click="openAddExtensionModal()" class="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg transition">
+                <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                </svg>
+                Add Extension
+            </button>
+        </div>
     </div>
 
     <!-- Success Message -->
@@ -63,6 +73,11 @@
                         <span class="px-3 py-1 bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white rounded-full text-xs font-medium">
                             {{ $extension->registrar }}
                         </span>
+                        @if ($extension->hasRegistrarCosts())
+                            <span class="px-3 py-1 bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 rounded-full text-xs font-medium">
+                                Cosmotown cost synced
+                            </span>
+                        @endif
                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ $extension->enabled ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300' : 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300' }}">
                             {{ $extension->enabled ? '●' : '○' }}
                         </span>
@@ -92,9 +107,11 @@
                         <thead class="bg-slate-50 dark:bg-slate-800 border-t border-slate-200 dark:border-slate-800">
                             <tr>
                                 <th class="px-6 py-3 text-left text-sm font-semibold text-slate-900 dark:text-white">Period</th>
+                                <th class="px-6 py-3 text-left text-sm font-semibold text-slate-900 dark:text-white">Registrar cost</th>
                                 <th class="px-6 py-3 text-left text-sm font-semibold text-slate-900 dark:text-white">Retail</th>
                                 <th class="px-6 py-3 text-left text-sm font-semibold text-slate-900 dark:text-white">Wholesale</th>
-                                <th class="px-6 py-3 text-left text-sm font-semibold text-slate-900 dark:text-white">Margin</th>
+                                <th class="px-6 py-3 text-left text-sm font-semibold text-slate-900 dark:text-white">Retail profit</th>
+                                <th class="px-6 py-3 text-left text-sm font-semibold text-slate-900 dark:text-white">Wholesale profit</th>
                                 <th class="px-6 py-3 text-center text-sm font-semibold text-slate-900 dark:text-white">Action</th>
                             </tr>
                         </thead>
@@ -104,10 +121,23 @@
                                     $pricing = $extension->getPricingForPeriod($period);
                                     $retail = $pricing->get('retail');
                                     $wholesale = $pricing->get('wholesale');
+                                    $registrarCost = $extension->registrarRegistrationCost($period);
+                                    $retailProfit = ($retail && $registrarCost !== null) ? $retail->price - $registrarCost : null;
+                                    $wholesaleProfit = ($wholesale && $registrarCost !== null) ? $wholesale->price - $registrarCost : null;
                                 @endphp
                                 <tr class="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
                                     <td class="px-6 py-3 text-sm font-medium text-slate-900 dark:text-white">
                                         {{ $period }}y
+                                    </td>
+                                    <td class="px-6 py-3 text-sm">
+                                        @if ($registrarCost !== null)
+                                            <div class="font-bold text-slate-900 dark:text-white">KSH {{ number_format($registrarCost, 2) }}</div>
+                                            @if ($extension->registrar_register_cost_usd)
+                                                <span class="text-xs text-slate-600 dark:text-slate-400">${{ number_format((float) $extension->registrar_register_cost_usd * $period, 2) }} USD</span>
+                                            @endif
+                                        @else
+                                            <span class="text-slate-500 dark:text-slate-400">Sync Cosmotown</span>
+                                        @endif
                                     </td>
                                     <td class="px-6 py-3 text-sm">
                                         @if ($retail)
@@ -130,9 +160,21 @@
                                         @endif
                                     </td>
                                     <td class="px-6 py-3 text-sm">
-                                        @if ($retail && $wholesale)
-                                            <div class="font-bold text-emerald-600 dark:text-emerald-400">KSH {{ number_format($retail->price - $wholesale->price, 2) }}</div>
-                                            <span class="text-xs text-slate-600 dark:text-slate-400">{{ round((($retail->price - $wholesale->price) / $wholesale->price) * 100, 1) }}%</span>
+                                        @if ($retailProfit !== null)
+                                            <div class="font-bold {{ $retailProfit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400' }}">KSH {{ number_format($retailProfit, 2) }}</div>
+                                            @if ($registrarCost > 0)
+                                                <span class="text-xs text-slate-600 dark:text-slate-400">{{ round(($retailProfit / $registrarCost) * 100, 1) }}%</span>
+                                            @endif
+                                        @else
+                                            <span class="text-slate-500 dark:text-slate-400">—</span>
+                                        @endif
+                                    </td>
+                                    <td class="px-6 py-3 text-sm">
+                                        @if ($wholesaleProfit !== null)
+                                            <div class="font-bold {{ $wholesaleProfit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400' }}">KSH {{ number_format($wholesaleProfit, 2) }}</div>
+                                            @if ($registrarCost > 0)
+                                                <span class="text-xs text-slate-600 dark:text-slate-400">{{ round(($wholesaleProfit / $registrarCost) * 100, 1) }}%</span>
+                                            @endif
                                         @else
                                             <span class="text-slate-500 dark:text-slate-400">—</span>
                                         @endif

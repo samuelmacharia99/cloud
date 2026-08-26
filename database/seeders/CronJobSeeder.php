@@ -326,6 +326,13 @@ class CronJobSeeder extends Seeder
                 'enabled' => true,
             ],
             [
+                'name' => 'Cosmotown TLD Price Sync',
+                'description' => 'Pulls Cosmotown registrar costs for enabled TLDs into Admin → Domains & Pricing.',
+                'command' => 'registrar:sync-cosmotown-tld-prices',
+                'schedule' => '0 3 * * *',
+                'enabled' => true,
+            ],
+            [
                 'name' => 'Telegram Log Monitor',
                 'description' => 'Scans Laravel logs and sends new errors to Telegram.',
                 'command' => 'telegram:monitor-logs',

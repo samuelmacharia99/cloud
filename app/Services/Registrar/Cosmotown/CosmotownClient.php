@@ -123,6 +123,18 @@ class CosmotownClient
     }
 
     /**
+     * Reseller wholesale cost for a TLD (registration, renewal, transfer).
+     */
+    public function getTldPrice(string $tld): CosmotownTldPrice
+    {
+        $payload = $this->get('reseller/tldprice', [
+            'tld' => CosmotownTldPrice::normalizeTld($tld),
+        ]);
+
+        return CosmotownTldPrice::fromPayload($tld, $payload);
+    }
+
+    /**
      * @return array{auth_code: string}
      */
     public function getDomainAuthCode(string $domain): array

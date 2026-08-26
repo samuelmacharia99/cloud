@@ -14,6 +14,7 @@ use App\Services\DomainRegistrantContactService;
 use App\Services\DomainRenewalService;
 use App\Services\NotificationService;
 use App\Services\Registrar\CosmotownInventorySyncService;
+use App\Services\Registrar\CosmotownTldPriceSyncService;
 use App\Services\Registrar\RegistrarFulfillmentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -108,6 +109,7 @@ class DomainController extends Controller
     {
         $extensions = DomainExtension::with('pricing')->orderBy('extension')->get();
         $periods = [1, 2, 3, 5, 10];
+        $cosmotownRegistrar = app(CosmotownInventorySyncService::class)->activeCosmotownRegistrar();
 
         // If showing pricing for a specific extension
         $selectedExtension = null;
@@ -115,7 +117,7 @@ class DomainController extends Controller
             $selectedExtension = DomainExtension::findOrFail($request->extension_id);
         }
 
-        return view('admin.domains.pricing', compact('extensions', 'periods', 'selectedExtension'));
+        return view('admin.domains.pricing', compact('extensions', 'periods', 'selectedExtension', 'cosmotownRegistrar'));
     }
 
     public function syncCosmotownInventory(CosmotownInventorySyncService $sync)
@@ -127,6 +129,18 @@ class DomainController extends Controller
 
         return redirect()
             ->route('admin.domains.index')
+            ->with($key, $result['message']);
+    }
+
+    public function syncCosmotownTldPrices(CosmotownTldPriceSyncService $sync)
+    {
+        $this->authorize('viewAny', Domain::class);
+
+        $result = $sync->sync();
+        $key = ($result['success'] || $result['synced'] > 0) ? 'success' : 'error';
+
+        return redirect()
+            ->route('admin.domains.pricing')
             ->with($key, $result['message']);
     }
 
