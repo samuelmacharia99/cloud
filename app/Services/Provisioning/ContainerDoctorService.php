@@ -3042,6 +3042,15 @@ PHP;
                         'error' => $e->getMessage(),
                     ]);
                 }
+
+                try {
+                    $deploymentService->syncMysqlSidecarCredentials($ssh, $containerPath, $syncEnv);
+                } catch (\Throwable $e) {
+                    \Log::warning('Doctor could not re-GRANT after app recreate', [
+                        'service_id' => $service->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
             } else {
                 app(ContainerEnvironmentService::class)
                     ->syncDotEnvFile($ssh, $service, $deployment, $envVars);
@@ -3064,11 +3073,27 @@ PHP;
             }
 
             if (! $probe['ok']) {
+                $hostHint = '';
+                try {
+                    $hosts = $deploymentService->mysqlListUserHosts(
+                        $ssh,
+                        $containerPath,
+                        $deploymentService->resolveMysqlComposeServiceName($envVars),
+                        (string) ($envVars['MYSQL_ROOT_PASSWORD'] ?? $envVars['DB_PASSWORD'] ?? ''),
+                        (string) ($envVars['DB_USERNAME'] ?? $envVars['MYSQL_USER'] ?? '')
+                    );
+                    if ($hosts !== []) {
+                        $hostHint = ' mysql.user Host values: '.implode(', ', $hosts).'.';
+                    }
+                } catch (\Throwable) {
+                }
+
                 return [
                     'success' => false,
                     'message' => $message.' Live connection still fails: '.($probe['error'] ?? 'unknown error')
-                        .'. Host-specific MySQL accounts (user@overlay-ip) were dropped and user@% recreated. '
-                        .'Do not Reset database — that wipes existing tables. Re-scan Doctor and click Repair again if 1045 persists.',
+                        .'. Host-specific MySQL accounts (user@overlay-ip) were dropped and user@% recreated.'
+                        .$hostHint
+                        .' Do not Reset database — that wipes existing tables. Re-scan Doctor and click Repair again if 1045 persists.',
                 ];
             }
 

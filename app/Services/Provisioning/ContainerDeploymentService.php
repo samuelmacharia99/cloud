@@ -2472,16 +2472,13 @@ class ContainerDeploymentService
         $username = (string) ($envVars['DB_USERNAME'] ?? $envVars['MYSQL_USER'] ?? 'appuser');
         $password = (string) ($envVars['DB_PASSWORD'] ?? $envVars['MYSQL_PASSWORD'] ?? '');
 
-        $script = 'try { '
-            .'$pdo = new PDO('
-            .'"mysql:host=db;port=3306;dbname='.addslashes($database).'", '
-            .'"'.addslashes($username).'", '
-            .'"'.addslashes($password).'", '
-            .'[PDO::ATTR_TIMEOUT => 5]'
-            .'); '
-            .'$pdo->query("SELECT 1"); '
-            .'exit(0); '
-            .'} catch (Throwable $e) { exit(1); }';
+        $script = $this->phpPdoEvalScript(
+            'mysql:host=db;port=3306;dbname='.$database,
+            $username,
+            $password,
+            '$pdo->query("SELECT 1"); exit(0);',
+            'exit(1);'
+        );
 
         $ssh->exec(
             'docker exec -u www-data '.$containerArg.' php -r '.escapeshellarg($script),
@@ -2533,16 +2530,12 @@ class ContainerDeploymentService
         $username = (string) ($envVars['DB_USERNAME'] ?? $envVars['MYSQL_USER'] ?? 'appuser');
         $password = (string) ($envVars['DB_PASSWORD'] ?? $envVars['MYSQL_PASSWORD'] ?? '');
 
-        $script = 'try { '
-            .'$pdo = new PDO('
-            .'"mysql:host=db;port=3306;dbname='.addslashes($database).'", '
-            .'"'.addslashes($username).'", '
-            .'"'.addslashes($password).'", '
-            .'[PDO::ATTR_TIMEOUT => 5]'
-            .'); '
-            .'$pdo->query("SELECT 1"); '
-            .'fwrite(STDOUT, "ok"); exit(0); '
-            .'} catch (Throwable $e) { fwrite(STDERR, $e->getMessage()); exit(1); }';
+        $script = $this->phpPdoEvalScript(
+            'mysql:host=db;port=3306;dbname='.$database,
+            $username,
+            $password,
+            '$pdo->query("SELECT 1"); fwrite(STDOUT, "ok"); exit(0);'
+        );
 
         return $this->runDatabaseProbeScript($ssh, $containerArg, $script);
     }
@@ -2562,19 +2555,19 @@ class ContainerDeploymentService
             $host = 'db';
         }
 
-        $script = 'if (!in_array("pgsql", PDO::getAvailableDrivers(), true)) {'
+        $script = $this->phpPdoEvalScript(
+            'pgsql:host='.$host.';port='.$port.';dbname='.$database,
+            $username,
+            $password,
+            '$pdo->query("SELECT 1"); fwrite(STDOUT, "ok"); exit(0);',
+            'fwrite(STDERR, $e->getMessage()); exit(1);'
+        );
+
+        $missingDriverGuard = 'if (!in_array("pgsql", PDO::getAvailableDrivers(), true)) {'
             .' fwrite(STDERR, "missing_pdo_pgsql"); exit(2);'
-            .'}'
-            .'try { '
-            .'$pdo = new PDO('
-            .'"pgsql:host='.addslashes($host).';port='.addslashes($port).';dbname='.addslashes($database).'", '
-            .'"'.addslashes($username).'", '
-            .'"'.addslashes($password).'", '
-            .'[PDO::ATTR_TIMEOUT => 5]'
-            .'); '
-            .'$pdo->query("SELECT 1"); '
-            .'fwrite(STDOUT, "ok"); exit(0); '
-            .'} catch (Throwable $e) { fwrite(STDERR, $e->getMessage()); exit(1); }';
+            .'}';
+
+        $script = $missingDriverGuard.$script;
 
         return $this->runDatabaseProbeScript($ssh, $containerArg, $script);
     }
@@ -2604,6 +2597,29 @@ class ContainerDeploymentService
     }
 
     /**
+     * Build a `php -r` PDO snippet. Passwords are base64 JSON so `$` / quotes are
+     * not interpolated by PHP's double-quoted strings (Doctor 1045 while HTTP 200).
+     */
+    public function phpPdoEvalScript(
+        string $dsn,
+        string $username,
+        string $password,
+        string $onSuccess,
+        string $onFailure = 'fwrite(STDERR, $e->getMessage()); exit(1);'
+    ): string {
+        $payload = base64_encode(json_encode([
+            'dsn' => $dsn,
+            'user' => $username,
+            'pass' => $password,
+        ], JSON_THROW_ON_ERROR));
+
+        return '$c=json_decode(base64_decode('.json_encode($payload).'), true);'
+            .'try { $pdo = new PDO($c["dsn"], $c["user"], $c["pass"], [PDO::ATTR_TIMEOUT => 5]); '
+            .$onSuccess
+            .' } catch (Throwable $e) { '.$onFailure.' }';
+    }
+
+    /**
      * Count user tables in the application database (best-effort).
      *
      * @param  array<string, mixed>  $envVars
@@ -2627,19 +2643,21 @@ class ContainerDeploymentService
         if ($databaseType === 'postgresql') {
             $port = (string) ($envVars['DB_PORT'] ?? '5432');
             // Count all non-system schemas (not only public) so custom schemas aren't reported as empty.
-            $script = 'try {'
-                .'$pdo = new PDO("pgsql:host='.addslashes($host).';port='.addslashes($port).';dbname='.addslashes($database).'",'
-                .'"'.addslashes($username).'","'.addslashes($password).'",[PDO::ATTR_TIMEOUT=>5]);'
-                .'$n=$pdo->query("SELECT COUNT(*) FROM pg_catalog.pg_tables WHERE schemaname NOT IN (\'pg_catalog\',\'information_schema\')")->fetchColumn();'
+            $script = $this->phpPdoEvalScript(
+                'pgsql:host='.$host.';port='.$port.';dbname='.$database,
+                $username,
+                $password,
+                '$n=$pdo->query("SELECT COUNT(*) FROM pg_catalog.pg_tables WHERE schemaname NOT IN (\'pg_catalog\',\'information_schema\')")->fetchColumn();'
                 .'fwrite(STDOUT,(string)$n); exit(0);'
-                .'} catch (Throwable $e) { fwrite(STDERR,$e->getMessage()); exit(1); }';
+            );
         } elseif (in_array($databaseType, ['mysql', 'mariadb'], true)) {
-            $script = 'try {'
-                .'$pdo = new PDO("mysql:host='.addslashes($host).';port=3306;dbname='.addslashes($database).'",'
-                .'"'.addslashes($username).'","'.addslashes($password).'",[PDO::ATTR_TIMEOUT=>5]);'
-                .'$n=$pdo->query("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_type=\'BASE TABLE\'")->fetchColumn();'
+            $script = $this->phpPdoEvalScript(
+                'mysql:host='.$host.';port=3306;dbname='.$database,
+                $username,
+                $password,
+                '$n=$pdo->query("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_type=\'BASE TABLE\'")->fetchColumn();'
                 .'fwrite(STDOUT,(string)$n); exit(0);'
-                .'} catch (Throwable $e) { fwrite(STDERR,$e->getMessage()); exit(1); }';
+            );
         } else {
             return null;
         }
@@ -2743,7 +2761,17 @@ class ContainerDeploymentService
         }
 
         if ($applied) {
+            $this->mysqlKillUserSessions($ssh, $containerPath, $dbService, $rootPassword, $username);
             $this->mysqlDropShadowHosts($ssh, $containerPath, $dbService, $rootPassword, $username);
+            $this->mysqlAlignRemainingShadowPasswords(
+                $ssh,
+                $containerPath,
+                $dbService,
+                $rootPassword,
+                $database,
+                $username,
+                $password
+            );
 
             return;
         }
@@ -2835,6 +2863,7 @@ class ContainerDeploymentService
             // ALTER still runs under mysql --force when DROP is skipped because
             // the account is connected — that is what actually sets the hash.
             $statements[] = "ALTER USER '{$user}'@'{$h}' IDENTIFIED WITH mysql_native_password BY '{$pass}'";
+            $statements[] = "ALTER USER '{$user}'@'{$h}' IDENTIFIED BY '{$pass}'";
             $statements[] = "GRANT ALL PRIVILEGES ON {$dbIdent}.* TO '{$user}'@'{$h}'";
         }
 
@@ -2849,7 +2878,7 @@ class ContainerDeploymentService
     /**
      * @return list<string>
      */
-    private function mysqlListUserHosts(
+    public function mysqlListUserHosts(
         SSHService $ssh,
         string $containerPath,
         string $dbService,
@@ -2934,9 +2963,162 @@ class ContainerDeploymentService
         )));
         $sql = $this->mysqlDropShadowHostsSql($username, $hosts);
         if ($sql === '') {
+            $this->mysqlKillUserSessions($ssh, $containerPath, $dbService, $rootPassword, $username);
+
             return;
         }
 
+        $this->mysqlKillUserSessions($ssh, $containerPath, $dbService, $rootPassword, $username);
+
+        $pathArg = escapeshellarg($containerPath);
+        $dbServiceArg = escapeshellarg($dbService);
+        $rootPwArg = escapeshellarg($rootPassword);
+        $sqlArg = escapeshellarg($sql);
+        $mysql = 'mysql --force -u root -e';
+        $commands = [
+            "cd {$pathArg} && docker compose exec -T -e MYSQL_PWD={$rootPwArg} {$dbServiceArg} {$mysql} {$sqlArg}",
+            "cd {$pathArg} && docker compose exec -T {$dbServiceArg} {$mysql} {$sqlArg}",
+        ];
+
+        foreach ($commands as $command) {
+            try {
+                $ssh->exec($command, 30);
+
+                return;
+            } catch (\Throwable $e) {
+                if ($this->mysqlSidecarGrantShouldStopDatabase($e->getMessage())) {
+                    continue;
+                }
+
+                return;
+            }
+        }
+    }
+
+    public function mysqlKillIdsSql(array $ids): string
+    {
+        $statements = [];
+        foreach ($ids as $id) {
+            $id = (int) $id;
+            if ($id > 0) {
+                $statements[] = 'KILL '.$id;
+            }
+        }
+
+        return $statements === [] ? '' : implode('; ', $statements).';';
+    }
+
+    /**
+     * If DROP USER cannot remove `user`@`10.%` (active connection), set that
+     * account to the known password so overlay clients stop 1045ing.
+     *
+     * @param  list<string>  $hosts
+     */
+    public function mysqlAlignHostPasswordsSql(string $database, string $username, string $password, array $hosts): string
+    {
+        $dbIdent = $this->mysqlQuoteIdentifier($database);
+        $user = $this->mysqlQuoteString($username);
+        $pass = $this->mysqlQuoteString($password);
+        $statements = [];
+        foreach ($hosts as $host) {
+            $host = trim((string) $host);
+            if ($host === '' || $host === '%' || strtolower($host) === 'localhost') {
+                continue;
+            }
+            $h = $this->mysqlQuoteString($host);
+            $statements[] = "ALTER USER '{$user}'@'{$h}' IDENTIFIED WITH mysql_native_password BY '{$pass}'";
+            $statements[] = "ALTER USER '{$user}'@'{$h}' IDENTIFIED BY '{$pass}'";
+            $statements[] = "GRANT ALL PRIVILEGES ON {$dbIdent}.* TO '{$user}'@'{$h}'";
+        }
+        if ($statements === []) {
+            return '';
+        }
+        $statements[] = 'FLUSH PRIVILEGES';
+
+        return implode('; ', $statements).';';
+    }
+
+    public function mysqlKillUserSessions(
+        SSHService $ssh,
+        string $containerPath,
+        string $dbService,
+        string $rootPassword,
+        string $username
+    ): void {
+        $pathArg = escapeshellarg($containerPath);
+        $dbServiceArg = escapeshellarg($dbService);
+        $rootPwArg = escapeshellarg($rootPassword);
+        $listSql = escapeshellarg(
+            "SELECT id FROM information_schema.processlist WHERE user='".$this->mysqlQuoteString($username)."' AND id <> CONNECTION_ID()"
+        );
+
+        $raw = '';
+        foreach ([
+            "cd {$pathArg} && docker compose exec -T -e MYSQL_PWD={$rootPwArg} {$dbServiceArg} mysql -N -B -u root -e {$listSql} 2>/dev/null || true",
+            "cd {$pathArg} && docker compose exec -T {$dbServiceArg} mysql -N -B -u root -e {$listSql} 2>/dev/null || true",
+        ] as $command) {
+            try {
+                $raw = trim($ssh->exec($command, 15));
+            } catch (\Throwable) {
+                $raw = '';
+            }
+            if ($raw !== '') {
+                break;
+            }
+        }
+
+        $ids = [];
+        foreach (preg_split("/\r\n|\n|\r/", $raw) ?: [] as $line) {
+            $line = trim($line);
+            if (ctype_digit($line)) {
+                $ids[] = (int) $line;
+            }
+        }
+
+        $sql = $this->mysqlKillIdsSql($ids);
+        if ($sql === '') {
+            return;
+        }
+
+        $this->mysqlExecRootSql($ssh, $containerPath, $dbService, $rootPassword, $sql);
+    }
+
+    private function mysqlAlignRemainingShadowPasswords(
+        SSHService $ssh,
+        string $containerPath,
+        string $dbService,
+        string $rootPassword,
+        string $database,
+        string $username,
+        string $password
+    ): void {
+        $remaining = [];
+        foreach ($this->mysqlListUserHosts($ssh, $containerPath, $dbService, $rootPassword, $username) as $host) {
+            if ($host !== '%' && strtolower($host) !== 'localhost') {
+                $remaining[] = $host;
+            }
+        }
+        if ($remaining === []) {
+            return;
+        }
+
+        $sql = $this->mysqlAlignHostPasswordsSql($database, $username, $password, $remaining);
+        if ($sql === '') {
+            return;
+        }
+
+        $this->mysqlExecRootSql($ssh, $containerPath, $dbService, $rootPassword, $sql);
+        $this->mysqlKillUserSessions($ssh, $containerPath, $dbService, $rootPassword, $username);
+        $this->mysqlDropShadowHosts($ssh, $containerPath, $dbService, $rootPassword, $username);
+    }
+
+    private function mysqlExecRootSql(
+        SSHService $ssh,
+        string $containerPath,
+        string $dbService,
+        string $rootPassword,
+        string $sql
+    ): void {
         $pathArg = escapeshellarg($containerPath);
         $dbServiceArg = escapeshellarg($dbService);
         $rootPwArg = escapeshellarg($rootPassword);

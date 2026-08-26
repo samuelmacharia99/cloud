@@ -27,6 +27,7 @@ class MysqlSidecarCredentialsTest extends TestCase
         $this->assertStringContainsString("CREATE USER 'u74_s24'@'%' IDENTIFIED WITH mysql_native_password BY 'secret'", $sql);
         $this->assertStringContainsString("CREATE USER 'u74_s24'@'localhost' IDENTIFIED WITH mysql_native_password BY 'secret'", $sql);
         $this->assertStringContainsString("ALTER USER 'u74_s24'@'%' IDENTIFIED WITH mysql_native_password BY 'secret'", $sql);
+        $this->assertStringContainsString("ALTER USER 'u74_s24'@'%' IDENTIFIED BY 'secret'", $sql);
         $this->assertStringContainsString("GRANT ALL PRIVILEGES ON `s24_db`.* TO 'u74_s24'@'%'", $sql);
         $this->assertStringContainsString("GRANT ALL PRIVILEGES ON `s24_db`.* TO 'u74_s24'@'localhost'", $sql);
         $this->assertStringContainsString("DROP USER IF EXISTS ''@'%'", $sql);
@@ -157,5 +158,41 @@ YAML;
         $this->assertStringContainsString('SESSION_DRIVER=cookie', $patched);
         $this->assertStringNotContainsString('SESSION_DRIVER=database', $patched);
         $this->assertStringContainsString('DB_HOST=db', $patched);
+    }
+
+    #[Test]
+    public function pdo_probe_script_does_not_interpolate_dollar_signs_in_passwords(): void
+    {
+        $script = app(ContainerDeploymentService::class)->phpPdoEvalScript(
+            'mysql:host=db;port=3306;dbname=s24_db',
+            'u74_s24',
+            'p$ass"word\'x',
+            '$pdo->query("SELECT 1"); fwrite(STDOUT, "ok"); exit(0);'
+        );
+
+        $this->assertStringContainsString('base64_decode', $script);
+        $this->assertStringNotContainsString('p$ass', $script);
+        $this->assertMatchesRegularExpression('/base64_decode\("[A-Za-z0-9+\/=]+"\)/', $script);
+        preg_match('/base64_decode\("([A-Za-z0-9+\/=]+)"\)/', $script, $matches);
+        $decoded = json_decode(base64_decode($matches[1]), true);
+        $this->assertSame('p$ass"word\'x', $decoded['pass']);
+        $this->assertSame('u74_s24', $decoded['user']);
+        $this->assertSame('mysql:host=db;port=3306;dbname=s24_db', $decoded['dsn']);
+    }
+
+    #[Test]
+    public function leftover_shadow_hosts_get_the_known_password_when_drop_fails(): void
+    {
+        $sql = app(ContainerDeploymentService::class)->mysqlAlignHostPasswordsSql(
+            's24_db',
+            'u74_s24',
+            'secret',
+            ['10.%', '%', 'localhost']
+        );
+
+        $this->assertStringContainsString("ALTER USER 'u74_s24'@'10.%' IDENTIFIED BY 'secret'", $sql);
+        $this->assertStringContainsString("GRANT ALL PRIVILEGES ON `s24_db`.* TO 'u74_s24'@'10.%'", $sql);
+        $this->assertStringNotContainsString("ALTER USER 'u74_s24'@'%'", $sql);
+        $this->assertSame('KILL 12; KILL 15;', app(ContainerDeploymentService::class)->mysqlKillIdsSql([12, '15', 0, 'x']));
     }
 }
