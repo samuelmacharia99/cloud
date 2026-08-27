@@ -649,12 +649,24 @@ class DirectAdminToContainerMigrationService
             $daSsh->exec('mkdir -p '.escapeshellarg($remoteWork));
 
             $wpCreds = $this->parseWpDatabaseCredentials($daSsh, $exportRoot);
+            $daUsername = $this->directAdminUsername($source);
+            $fromDisk = $this->listDirectAdminUserMysqlDatabaseNames($daSsh, $daUsername);
             $dbName = $databaseName
                 ?: ($wpCreds['DB_NAME'] ?? null)
-                ?: ($inventory['databases'][0]['name'] ?? null);
+                ?: ($inventory['databases'][0]['name'] ?? null)
+                ?: $this->pickPreferredMysqlDatabaseName($fromDisk, $daUsername, $wpCreds);
 
             if (! $dbName) {
                 throw new \RuntimeException('Could not determine MySQL database name for WordPress.');
+            }
+
+            if (blank($wpCreds['DB_USER'] ?? null) || blank($wpCreds['DB_PASSWORD'] ?? null)) {
+                $wpCreds = $this->enrichDatabaseCredentialsFromDirectAdmin(
+                    $daSsh,
+                    $daUsername,
+                    (string) $dbName,
+                    array_merge($wpCreds, ['DB_NAME' => (string) $dbName])
+                );
             }
 
             if (blank($wpCreds['DB_USER'] ?? null)) {
@@ -2084,16 +2096,39 @@ class DirectAdminToContainerMigrationService
     /**
      * Read DB_* defines from wp-config.php on the DirectAdmin node.
      *
+     * Prefer `cat` + local parse. `php -r` is often missing on DA, and line-oriented
+     * grep misses WPCS multi-line define() blocks, which left DB_NAME empty even
+     * after the bash-quoting fix.
+     *
      * @return array{DB_NAME: ?string, DB_USER: ?string, DB_PASSWORD: ?string, DB_HOST: string}
      */
     public function parseWpDatabaseCredentials(SSHService $ssh, string $docroot): array
     {
+        $empty = [
+            'DB_NAME' => null,
+            'DB_USER' => null,
+            'DB_PASSWORD' => null,
+            'DB_HOST' => 'localhost',
+        ];
+
+        foreach ($this->wpConfigCandidatePaths($docroot, $ssh) as $cfgPath) {
+            $text = $this->readRemoteTextFile($ssh, $cfgPath);
+            if (trim($text) === '') {
+                continue;
+            }
+
+            $creds = $this->parseWpConfigDefineLines($text, $empty);
+            if (! blank($creds['DB_NAME'] ?? null) || ! blank($creds['DB_USER'] ?? null)) {
+                return $creds;
+            }
+        }
+
         $cfgPath = rtrim($docroot, '/').'/wp-config.php';
 
         try {
             $out = $ssh->exec($this->wpConfigDatabasePhpParseCommand($cfgPath));
             $creds = $this->decodeWpDatabaseCredentialLines($out);
-            if (! blank($creds['DB_USER'] ?? null)) {
+            if (! blank($creds['DB_USER'] ?? null) || ! blank($creds['DB_NAME'] ?? null)) {
                 return $creds;
             }
         } catch (\Throwable) {
@@ -2101,6 +2136,55 @@ class DirectAdminToContainerMigrationService
         }
 
         return $this->parseWpDatabaseCredentialsViaGrep($ssh, $cfgPath);
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function wpConfigCandidatePaths(string $exportRoot, ?SSHService $ssh = null): array
+    {
+        $root = rtrim($exportRoot, '/');
+        $paths = [
+            $root.'/wp-config.php',
+            dirname($root).'/wp-config.php',
+        ];
+
+        if ($ssh instanceof SSHService) {
+            try {
+                $found = trim((string) $ssh->exec(
+                    'find '.escapeshellarg($root).' '.escapeshellarg(dirname($root))
+                    .' -maxdepth 3 -type f -name wp-config.php ! -path "*/wp-content/*" 2>/dev/null | head -8 || true',
+                    20
+                ));
+                foreach (preg_split('/\r\n|\n|\r/', $found) ?: [] as $line) {
+                    $line = trim($line);
+                    if ($line !== '') {
+                        $paths[] = $line;
+                    }
+                }
+            } catch (\Throwable) {
+            }
+        }
+
+        return array_values(array_unique(array_filter($paths)));
+    }
+
+    public function readRemoteTextFile(SSHService $ssh, string $path): string
+    {
+        try {
+            $exists = trim($ssh->exec('test -f '.escapeshellarg($path).' && echo yes || echo no', 10));
+            if ($exists !== 'yes') {
+                return '';
+            }
+
+            return (string) $ssh->exec('cat '.escapeshellarg($path), 20);
+        } catch (\Throwable) {
+            try {
+                return (string) $ssh->downloadFile($path);
+            } catch (\Throwable) {
+                return '';
+            }
+        }
     }
 
     public function wpConfigDatabasePhpParseCommand(string $cfgPath): string
@@ -2162,9 +2246,21 @@ PHP;
      */
     public function parseWpConfigDefineLines(string $raw, array $creds): array
     {
+        $raw = preg_replace('/\/\*.*?\*\//s', '', $raw) ?? $raw;
+
         foreach (['DB_NAME', 'DB_USER', 'DB_PASSWORD', 'DB_HOST'] as $key) {
             if (preg_match('/define\s*\(\s*[\'"]'.$key.'[\'"]\s*,\s*([\'"])(.*?)\1\s*\)/s', $raw, $m)) {
                 $creds[$key] = stripcslashes($m[2]);
+
+                continue;
+            }
+
+            if (preg_match(
+                '/define\s*\(\s*[\'"]'.$key.'[\'"]\s*,\s*getenv(?:_docker)?\s*\(\s*[\'"][^\'"]+[\'"]\s*,\s*[\'"]([^\'"]*)[\'"]/s',
+                $raw,
+                $m
+            )) {
+                $creds[$key] = stripcslashes($m[1]);
             }
         }
 
@@ -2173,6 +2269,79 @@ PHP;
         }
 
         return $creds;
+    }
+
+    public function listDirectAdminUserMysqlDatabaseNamesCommand(string $daUsername): string
+    {
+        $user = preg_replace('/[^a-zA-Z0-9_]/', '', $daUsername) ?: '';
+        $dir = '/usr/local/directadmin/data/users/'.$user.'/mysql';
+
+        return 'ls -1 '.escapeshellarg($dir).'/*.conf 2>/dev/null | xargs -n1 basename 2>/dev/null | sed "s/\\.conf$//" || true';
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function parseMysqlConfBasenameList(string $raw): array
+    {
+        $names = [];
+        foreach (preg_split('/\r\n|\n|\r/', $raw) ?: [] as $line) {
+            $line = preg_replace('/\.conf$/i', '', trim($line)) ?? '';
+            if ($line === '' || str_contains($line, '*') || ! preg_match('/^[a-zA-Z0-9_]+$/', $line)) {
+                continue;
+            }
+            $names[] = $line;
+        }
+
+        return array_values(array_unique($names));
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function listDirectAdminUserMysqlDatabaseNames(SSHService $ssh, string $daUsername): array
+    {
+        if (trim($daUsername) === '') {
+            return [];
+        }
+
+        try {
+            $raw = (string) $ssh->exec($this->listDirectAdminUserMysqlDatabaseNamesCommand($daUsername), 15);
+        } catch (\Throwable) {
+            return [];
+        }
+
+        return $this->parseMysqlConfBasenameList($raw);
+    }
+
+    /**
+     * @param  list<string>  $names
+     * @param  array{DB_NAME?: ?string, DB_USER?: ?string}  $wpCreds
+     */
+    public function pickPreferredMysqlDatabaseName(array $names, string $daUsername, array $wpCreds = []): ?string
+    {
+        $names = array_values(array_filter($names, fn ($name) => is_string($name) && $name !== ''));
+        if ($names === []) {
+            return null;
+        }
+        if (count($names) === 1) {
+            return $names[0];
+        }
+
+        $user = (string) ($wpCreds['DB_USER'] ?? '');
+        if ($user !== '' && in_array($user, $names, true)) {
+            return $user;
+        }
+
+        $prefix = $daUsername !== '' ? $daUsername.'_' : '';
+        if ($prefix !== '') {
+            $prefixed = array_values(array_filter($names, fn (string $name) => str_starts_with($name, $prefix)));
+            if ($prefixed !== []) {
+                return $prefixed[0];
+            }
+        }
+
+        return $names[0];
     }
 
     /**

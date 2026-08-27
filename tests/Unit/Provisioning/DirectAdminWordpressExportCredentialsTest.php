@@ -81,6 +81,70 @@ PHP;
         $this->assertSame('localhost:/var/lib/mysql/mysql.sock', $creds['DB_HOST']);
     }
 
+    public function test_parse_wp_config_define_lines_reads_multiline_and_getenv_docker(): void
+    {
+        $raw = <<<'PHP'
+<?php
+define(
+	'DB_NAME',
+	'benwooda_wp'
+);
+define( 'DB_USER', getenv_docker('WORDPRESS_DB_USER', 'benwooda_wpuser') );
+define('DB_PASSWORD', 'secret');
+define('DB_HOST', 'localhost');
+PHP;
+
+        $creds = app(DirectAdminToContainerMigrationService::class)->parseWpConfigDefineLines($raw, [
+            'DB_NAME' => null,
+            'DB_USER' => null,
+            'DB_PASSWORD' => null,
+            'DB_HOST' => 'localhost',
+        ]);
+
+        $this->assertSame('benwooda_wp', $creds['DB_NAME']);
+        $this->assertSame('benwooda_wpuser', $creds['DB_USER']);
+        $this->assertSame('secret', $creds['DB_PASSWORD']);
+    }
+
+    public function test_pick_preferred_mysql_database_name_prefers_username_prefix(): void
+    {
+        $service = app(DirectAdminToContainerMigrationService::class);
+
+        $this->assertSame('benwooda_wp', $service->pickPreferredMysqlDatabaseName(
+            ['roundcube', 'benwooda_wp'],
+            'benwooda'
+        ));
+        $this->assertSame('benwooda_wpuser', $service->pickPreferredMysqlDatabaseName(
+            ['benwooda_wp', 'benwooda_wpuser'],
+            'benwooda',
+            ['DB_USER' => 'benwooda_wpuser']
+        ));
+        $this->assertSame('onlydb', $service->pickPreferredMysqlDatabaseName(['onlydb'], 'benwooda'));
+        $this->assertNull($service->pickPreferredMysqlDatabaseName([], 'benwooda'));
+    }
+
+    public function test_parse_mysql_conf_basename_list_ignores_glob(): void
+    {
+        $raw = "benwooda_wp.conf\n*.conf\nbenwooda_wp2\n";
+
+        $this->assertSame(
+            ['benwooda_wp', 'benwooda_wp2'],
+            app(DirectAdminToContainerMigrationService::class)->parseMysqlConfBasenameList($raw)
+        );
+    }
+
+    public function test_list_directadmin_mysql_names_command_is_valid_bash(): void
+    {
+        $cmd = app(DirectAdminToContainerMigrationService::class)
+            ->listDirectAdminUserMysqlDatabaseNamesCommand('benwooda');
+
+        $syntax = [];
+        $code = 0;
+        exec('bash -n -c '.escapeshellarg($cmd).' 2>&1', $syntax, $code);
+        $this->assertSame(0, $code, implode("\n", $syntax));
+        $this->assertStringContainsString('/users/benwooda/mysql', $cmd);
+    }
+
     public function test_build_mysql_dump_command_uses_wp_credentials_not_root(): void
     {
         $service = app(DirectAdminToContainerMigrationService::class);
