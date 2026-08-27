@@ -2089,8 +2089,24 @@ class DirectAdminToContainerMigrationService
     public function parseWpDatabaseCredentials(SSHService $ssh, string $docroot): array
     {
         $cfgPath = rtrim($docroot, '/').'/wp-config.php';
+
+        try {
+            $out = $ssh->exec($this->wpConfigDatabasePhpParseCommand($cfgPath));
+            $creds = $this->decodeWpDatabaseCredentialLines($out);
+            if (! blank($creds['DB_USER'] ?? null)) {
+                return $creds;
+            }
+        } catch (\Throwable) {
+            // Fall through to grep parser when php CLI is missing on the node.
+        }
+
+        return $this->parseWpDatabaseCredentialsViaGrep($ssh, $cfgPath);
+    }
+
+    public function wpConfigDatabasePhpParseCommand(string $cfgPath): string
+    {
         $php = <<<'PHP'
-$cfgPath = $argv[1] ?? '';
+$cfgPath = getenv('TALKSASA_WP_CONFIG') ?: '';
 $text = @file_get_contents($cfgPath);
 if ($text === false) {
     fwrite(STDERR, "unreadable\n");
@@ -2103,17 +2119,20 @@ foreach (['DB_NAME', 'DB_USER', 'DB_PASSWORD', 'DB_HOST'] as $key) {
 }
 PHP;
 
-        try {
-            $out = $ssh->exec('php -r '.escapeshellarg($php).' '.escapeshellarg($cfgPath).' 2>/dev/null || true');
-            $creds = $this->decodeWpDatabaseCredentialLines($out);
-            if (! blank($creds['DB_USER'] ?? null)) {
-                return $creds;
-            }
-        } catch (\Throwable) {
-            // Fall through to grep parser when php CLI is missing on the node.
-        }
+        return 'TALKSASA_WP_CONFIG='.escapeshellarg($cfgPath)
+            .' php -r '.escapeshellarg($php).' 2>/dev/null || true';
+    }
 
-        return $this->parseWpDatabaseCredentialsViaGrep($ssh, $cfgPath);
+    /**
+     * Fixed-string-safe grep. A double-quoted regex with `(` / `"` is parsed by
+     * `bash -c` on DirectAdmin before `|| true`, so the convert dies with
+     * "syntax error near unexpected token `(`".
+     */
+    public function wpConfigDatabaseDefineGrepCommand(string $cfgPath): string
+    {
+        $pattern = "define[[:space:]]*\\([[:space:]]*['\"]DB_(NAME|USER|PASSWORD|HOST)";
+
+        return 'grep -E '.escapeshellarg($pattern).' '.escapeshellarg($cfgPath).' 2>/dev/null || true';
     }
 
     /**
@@ -2121,11 +2140,6 @@ PHP;
      */
     public function parseWpDatabaseCredentialsViaGrep(SSHService $ssh, string $cfgPath): array
     {
-        $raw = $ssh->exec(
-            'grep -E "define\\s*\\(\\s*[\'\\\"]DB_(NAME|USER|PASSWORD|HOST)[\'\\\"]" '
-            .escapeshellarg($cfgPath).' 2>/dev/null || true'
-        );
-
         $creds = [
             'DB_NAME' => null,
             'DB_USER' => null,
@@ -2133,6 +2147,21 @@ PHP;
             'DB_HOST' => 'localhost',
         ];
 
+        try {
+            $raw = $ssh->exec($this->wpConfigDatabaseDefineGrepCommand($cfgPath));
+        } catch (\Throwable) {
+            return $creds;
+        }
+
+        return $this->parseWpConfigDefineLines($raw, $creds);
+    }
+
+    /**
+     * @param  array{DB_NAME: ?string, DB_USER: ?string, DB_PASSWORD: ?string, DB_HOST: string}  $creds
+     * @return array{DB_NAME: ?string, DB_USER: ?string, DB_PASSWORD: ?string, DB_HOST: string}
+     */
+    public function parseWpConfigDefineLines(string $raw, array $creds): array
+    {
         foreach (['DB_NAME', 'DB_USER', 'DB_PASSWORD', 'DB_HOST'] as $key) {
             if (preg_match('/define\s*\(\s*[\'"]'.$key.'[\'"]\s*,\s*([\'"])(.*?)\1\s*\)/s', $raw, $m)) {
                 $creds[$key] = stripcslashes($m[2]);

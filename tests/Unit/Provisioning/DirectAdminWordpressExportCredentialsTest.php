@@ -28,6 +28,59 @@ class DirectAdminWordpressExportCredentialsTest extends TestCase
         $this->assertSame('localhost', $creds['DB_HOST']);
     }
 
+    public function test_wp_config_grep_command_is_valid_bash_c(): void
+    {
+        $service = app(DirectAdminToContainerMigrationService::class);
+        $path = '/home/benwooda/domains/benwood.africa/public_html/wp-config.php';
+        $cmd = $service->wpConfigDatabaseDefineGrepCommand($path);
+
+        $this->assertStringStartsWith('grep -E ', $cmd);
+        $this->assertStringNotContainsString('grep -E "', $cmd);
+
+        $syntax = [];
+        $code = 0;
+        exec('bash -n -c '.escapeshellarg($cmd).' 2>&1', $syntax, $code);
+        $this->assertSame(0, $code, implode("\n", $syntax));
+    }
+
+    public function test_wp_config_php_parse_command_passes_path_via_env(): void
+    {
+        $service = app(DirectAdminToContainerMigrationService::class);
+        $path = '/home/benwooda/domains/benwood.africa/public_html/wp-config.php';
+        $cmd = $service->wpConfigDatabasePhpParseCommand($path);
+
+        $this->assertStringContainsString('TALKSASA_WP_CONFIG=', $cmd);
+        $this->assertStringContainsString('php -r ', $cmd);
+        $this->assertStringNotContainsString('$argv', $cmd);
+
+        $syntax = [];
+        $code = 0;
+        exec('bash -n -c '.escapeshellarg($cmd).' 2>&1', $syntax, $code);
+        $this->assertSame(0, $code, implode("\n", $syntax));
+    }
+
+    public function test_parse_wp_config_define_lines_accepts_spaced_defines(): void
+    {
+        $raw = <<<'PHP'
+define( 'DB_NAME', 'benwooda_wp' );
+define( "DB_USER", "benwooda_wpuser" );
+define('DB_PASSWORD','p@ss with spaces');
+define('DB_HOST', 'localhost:/var/lib/mysql/mysql.sock');
+PHP;
+
+        $creds = app(DirectAdminToContainerMigrationService::class)->parseWpConfigDefineLines($raw, [
+            'DB_NAME' => null,
+            'DB_USER' => null,
+            'DB_PASSWORD' => null,
+            'DB_HOST' => 'localhost',
+        ]);
+
+        $this->assertSame('benwooda_wp', $creds['DB_NAME']);
+        $this->assertSame('benwooda_wpuser', $creds['DB_USER']);
+        $this->assertSame('p@ss with spaces', $creds['DB_PASSWORD']);
+        $this->assertSame('localhost:/var/lib/mysql/mysql.sock', $creds['DB_HOST']);
+    }
+
     public function test_build_mysql_dump_command_uses_wp_credentials_not_root(): void
     {
         $service = app(DirectAdminToContainerMigrationService::class);
