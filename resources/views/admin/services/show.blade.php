@@ -85,76 +85,12 @@
     @endif
 
     @php
-        $daConvert = $service->service_meta['da_convert'] ?? null;
+        $daConvert = is_array($service->service_meta['da_convert'] ?? null)
+            ? $service->service_meta['da_convert']
+            : [];
         $canRevertDaConvert = app(\App\Services\Provisioning\DirectAdminToContainerConvertService::class)->canRevertToDirectAdmin($service);
     @endphp
-    @if (!empty($daConvert['status']))
-        <div class="rounded-xl border px-4 py-3 text-sm {{ ($daConvert['status'] ?? '') === 'completed' ? 'border-emerald-200 bg-emerald-50 dark:bg-emerald-950/40 dark:border-emerald-800 text-emerald-900 dark:text-emerald-100' : (($daConvert['status'] ?? '') === 'failed' ? 'border-red-200 bg-red-50 dark:bg-red-950/40 dark:border-red-800 text-red-900 dark:text-red-100' : (($daConvert['status'] ?? '') === 'reverted' ? 'border-slate-200 bg-slate-50 dark:bg-slate-900 dark:border-slate-700 text-slate-800 dark:text-slate-200' : 'border-indigo-200 bg-indigo-50 dark:bg-indigo-950/40 dark:border-indigo-800 text-indigo-900 dark:text-indigo-100')) }}">
-            <p class="font-semibold">DA → Application Hosting convert: <span class="uppercase">{{ $daConvert['status'] }}</span></p>
-            @if (!empty($daConvert['error']))
-                <p class="mt-1">{{ $daConvert['error'] }}</p>
-            @endif
-            @if (!empty($daConvert['steps']) && is_array($daConvert['steps']))
-                <ul class="mt-2 font-mono text-xs space-y-1 opacity-90">
-                    @foreach (array_slice($daConvert['steps'], -5) as $step)
-                        <li>{{ $step }}</li>
-                    @endforeach
-                </ul>
-            @endif
-            @if (in_array($daConvert['status'] ?? '', ['queued', 'running'], true))
-                <p class="mt-2 text-xs opacity-80">
-                    Refresh this page for progress.
-                    Prefer <code class="font-mono">QUEUE_CONNECTION=database</code> (or redis) with
-                    <code class="font-mono">php artisan queue:work --timeout=2400</code>
-                    so large imports are not killed by PHP’s web <code class="font-mono">max_execution_time</code>.
-                    @if (!empty($daConvert['heartbeat_at']))
-                        Last heartbeat: {{ $daConvert['heartbeat_at'] }}
-                    @endif
-                </p>
-            @endif
-            @if (($daConvert['status'] ?? '') === 'completed')
-                @php
-                    $mailMigration = $service->service_meta['mailcow_migration'] ?? [];
-                @endphp
-                @if (!empty($mailMigration['email_service_id']) || !empty($service->service_meta['da_legacy']['email_service_id']))
-                    <div class="mt-3 text-xs space-y-1 opacity-90">
-                        @if (!empty($mailMigration['mailboxes_created']))
-                            <p>Mailboxes created: {{ count($mailMigration['mailboxes_created']) }}</p>
-                        @endif
-                        @if (!empty($mailMigration['copied_maildirs']))
-                            <p>Maildirs copied: {{ count($mailMigration['copied_maildirs']) }}</p>
-                        @endif
-                        @if (!empty($mailMigration['sync_jobs']))
-                            <p>IMAP sync jobs: {{ count($mailMigration['sync_jobs']) }}</p>
-                        @endif
-                        @if (!empty($mailMigration['failed_mailboxes']))
-                            <p>Need review: {{ implode(', ', $mailMigration['failed_mailboxes']) }}</p>
-                        @endif
-                        @if (!empty($mailMigration['note']))
-                            <p>{{ $mailMigration['note'] }}</p>
-                        @endif
-                    </div>
-                    <form method="POST" action="{{ route('admin.services.retry-mail-pull', $service) }}" class="mt-3" data-confirm="Copy maildirs from DirectAdmin into Mailcow and recreate IMAP sync jobs? DirectAdmin mail is not deleted." data-confirm-title="Retry mail pull">
-                        @csrf
-                        <button type="submit" class="px-3 py-1.5 bg-teal-700 hover:bg-teal-800 text-white text-xs font-medium rounded-lg transition">
-                            Retry mail pull from DirectAdmin
-                        </button>
-                    </form>
-                @endif
-            @endif
-            @if ($canRevertDaConvert)
-                <form method="POST" action="{{ route('admin.services.revert-from-container', $service) }}" class="mt-3" data-confirm="{{ in_array($daConvert['status'] ?? '', ['queued', 'running'], true) ? 'Convert looks stuck. Force revert to DirectAdmin? Stop any queue worker first if it is still processing this job. Delete leftover containers on the node manually.' : 'Restore this service to DirectAdmin? You must delete any leftover container on the node yourself.' }}" data-confirm-title="Revert to DirectAdmin">
-                    @csrf
-                    <button type="submit" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-medium rounded-lg transition">
-                        {{ in_array($daConvert['status'] ?? '', ['queued', 'running'], true) ? 'Force revert (stuck convert)' : 'Revert to DirectAdmin' }}
-                    </button>
-                </form>
-            @endif
-            @if (($daConvert['status'] ?? '') === 'reverted' && !empty($daConvert['manual_container_cleanup']))
-                <p class="mt-2 text-xs font-mono opacity-80">Manual cleanup: /opt/talksasa/containers/{{ $daConvert['manual_container_cleanup'] }}</p>
-            @endif
-        </div>
-    @endif
+    @include('admin.services.partials.mail-pull-console')
 
     @if ($hasStaleOverlimitFlags ?? false)
         <div class="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-5 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -1350,4 +1286,118 @@
         </div>
     @endif
 </div>
+
+@push('scripts')
+<script>
+function mailPullConsole(initial) {
+    return {
+        view: initial || { percent: 0, label: 'Idle', log: 'Awaiting mail pull…', is_active: false, status: 'idle', can_retry: false },
+        starting: false,
+        pollTimer: null,
+        statusUrl: @json(route('admin.services.mail-pull-status', $service)),
+        retryUrl: @json(route('admin.services.retry-mail-pull', $service)),
+
+        init() {
+            this.scrollLog();
+            this.schedulePoll();
+        },
+
+        schedulePoll() {
+            if (this.pollTimer) clearInterval(this.pollTimer);
+            this.pollTimer = setInterval(() => this.refresh(), this.view.is_active ? 1000 : 8000);
+        },
+
+        byteLabel() {
+            const done = this.view.bytes_done || 0;
+            const total = this.view.bytes_total || 0;
+            if (!total) return '';
+            return this.fmt(done) + ' / ' + this.fmt(total);
+        },
+
+        fmt(bytes) {
+            bytes = Number(bytes) || 0;
+            if (bytes < 1024) return bytes + ' B';
+            const units = ['KB', 'MB', 'GB'];
+            let value = bytes / 1024;
+            let i = 0;
+            while (value >= 1024 && i < units.length - 1) {
+                value /= 1024;
+                i++;
+            }
+            return (value >= 10 ? Math.round(value) : value.toFixed(1)) + ' ' + units[i];
+        },
+
+        statusBadgeClass() {
+            const s = this.view.status;
+            if (s === 'running' || s === 'pending' || s === 'queued') return 'border-teal-400/40 bg-teal-500/10 text-teal-300';
+            if (s === 'completed') return 'border-emerald-400/40 bg-emerald-500/10 text-emerald-300';
+            if (s === 'failed') return 'border-red-400/40 bg-red-500/10 text-red-300';
+            return 'border-slate-600 bg-slate-800 text-slate-400';
+        },
+
+        scrollLog() {
+            this.$nextTick(() => {
+                const el = this.$refs.logEl;
+                if (el) el.scrollTop = el.scrollHeight;
+            });
+        },
+
+        async refresh() {
+            try {
+                const response = await fetch(this.statusUrl, {
+                    headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                });
+                if (!response.ok) return;
+                const previousLog = this.view.log;
+                const wasActive = this.view.is_active;
+                this.view = await response.json();
+                if (this.view.log !== previousLog) this.scrollLog();
+                if (wasActive !== this.view.is_active) this.schedulePoll();
+            } catch (error) {
+                console.error('Mail pull status refresh failed', error);
+            }
+        },
+
+        async startRetry() {
+            if (this.starting || this.view.is_active || !this.view.can_retry) return;
+            if (window.appConfirm) {
+                const ok = await window.appConfirm(
+                    'Copy maildirs from DirectAdmin into Mailcow and recreate IMAP sync jobs? DirectAdmin mail is not deleted.',
+                    'Retry mail pull',
+                    'Start copy'
+                );
+                if (!ok) return;
+            }
+
+            this.starting = true;
+            try {
+                const response = await fetch(this.retryUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content,
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                    body: JSON.stringify({}),
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    this.view.label = data.message || 'Failed to start mail pull.';
+                    return;
+                }
+                this.view = data;
+                this.scrollLog();
+                this.schedulePoll();
+                await this.refresh();
+            } catch (error) {
+                this.view.label = 'Failed to start mail pull.';
+            } finally {
+                this.starting = false;
+            }
+        },
+    };
+}
+</script>
+@endpush
 @endsection

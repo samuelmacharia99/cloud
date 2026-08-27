@@ -3,8 +3,11 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\RetryDirectAdminMailPullJob;
 use App\Models\Service;
+use App\Services\Provisioning\DirectAdminMailPullProgress;
 use App\Services\Provisioning\DirectAdminToMailcowMigrationService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -59,23 +62,57 @@ class DirectAdminMailcowMigrationController extends Controller
             ->with('success', $result['message']);
     }
 
-    public function retry(Service $service, DirectAdminToMailcowMigrationService $migrator): RedirectResponse
+    public function status(Service $service, DirectAdminMailPullProgress $progress): JsonResponse
     {
+        return response()->json($progress->operatorView($service));
+    }
+
+    public function retry(
+        Request $request,
+        Service $service,
+        DirectAdminMailPullProgress $progress,
+    ): JsonResponse|RedirectResponse {
         $legacy = is_array($service->service_meta['da_legacy'] ?? null) ? $service->service_meta['da_legacy'] : [];
         $migration = is_array($service->service_meta['mailcow_migration'] ?? null) ? $service->service_meta['mailcow_migration'] : [];
         if ($legacy === [] && $migration === [] && ! $service->isSharedHosting()) {
-            return redirect()->route('admin.services.show', $service)
-                ->withErrors(['error' => 'This service has no DirectAdmin mail pull to retry.']);
+            return $this->retryResponse($request, $service, false, 'This service has no DirectAdmin mail pull to retry.');
         }
 
-        $result = $migrator->retryMailContentPull($service);
+        if ($progress->isActive($service)) {
+            return $this->retryResponse($request, $service, true, 'Mail pull is already running. Watch the live terminal.');
+        }
 
-        if (! ($result['success'] ?? false)) {
+        $progress->queue($service);
+        RetryDirectAdminMailPullJob::dispatch($service->id)->afterResponse();
+
+        return $this->retryResponse(
+            $request,
+            $service,
+            true,
+            'Mail pull queued. Watch the live terminal for percent and copy progress.',
+        );
+    }
+
+    private function retryResponse(
+        Request $request,
+        Service $service,
+        bool $ok,
+        string $message,
+    ): JsonResponse|RedirectResponse {
+        if ($request->wantsJson() || $request->ajax()) {
+            $payload = app(DirectAdminMailPullProgress::class)->operatorView($service);
+            $payload['success'] = $ok;
+            $payload['message'] = $message;
+
+            return response()->json($payload, $ok ? 200 : 422);
+        }
+
+        if (! $ok) {
             return redirect()->route('admin.services.show', $service)
-                ->withErrors(['error' => $result['message'] ?? 'Mail pull retry failed.']);
+                ->withErrors(['error' => $message]);
         }
 
         return redirect()->route('admin.services.show', $service)
-            ->with('success', $result['message']);
+            ->with('success', $message);
     }
 }

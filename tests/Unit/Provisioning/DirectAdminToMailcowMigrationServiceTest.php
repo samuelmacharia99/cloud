@@ -89,4 +89,20 @@ TXT;
         $this->assertStringContainsString('/home/winkairwaystrave/imap/', $cmds[1]);
         $this->assertStringContainsString('dovecot-mailcow', $cmds[2]);
     }
+
+    public function test_maildir_size_commands_are_valid_bash(): void
+    {
+        $service = app(DirectAdminToMailcowMigrationService::class);
+        $cmds = [
+            $service->maildirSizeCommand('/home/winkairwaystrave/imap/winkairwaystraveladventure.co.ke/info'),
+            $service->remoteFileSizeCommand('/tmp/mail.tgz'),
+        ];
+
+        foreach ($cmds as $cmd) {
+            $syntax = [];
+            $code = 0;
+            exec('bash -n -c '.escapeshellarg($cmd).' 2>&1', $syntax, $code);
+            $this->assertSame(0, $code, $cmd."\n".implode("\n", $syntax));
+        }
+    }
 }

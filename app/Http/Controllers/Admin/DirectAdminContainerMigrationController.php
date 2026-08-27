@@ -139,7 +139,7 @@ class DirectAdminContainerMigrationController extends Controller
 
         return redirect()
             ->route('admin.services.show', $service)
-            ->with('success', 'Silent convert queued: same service, no invoice, no customer notification. Refresh this page for progress (da_convert status). Ensure a queue worker is running if QUEUE_CONNECTION is not sync.');
+            ->with('success', 'Silent convert queued. Watch the live terminal on this page for percent and copy progress. Prefer QUEUE_CONNECTION=database with php artisan queue:work --timeout=2400.');
     }
 
     public function revert(

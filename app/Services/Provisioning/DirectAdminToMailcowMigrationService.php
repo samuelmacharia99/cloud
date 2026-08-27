@@ -19,6 +19,7 @@ class DirectAdminToMailcowMigrationService
 {
     public function __construct(
         private MailcowProvisioningService $mailcowProvisioning,
+        private DirectAdminMailPullProgress $mailPullProgress,
     ) {}
 
     /**
@@ -414,12 +415,18 @@ class DirectAdminToMailcowMigrationService
         $emailId = (int) ($legacy['email_service_id'] ?? $migration['email_service_id'] ?? 0);
         $emailService = $emailId > 0 ? Service::query()->find($emailId) : null;
         if (! $emailService) {
-            return ['success' => false, 'message' => 'No Mailcow email service is linked to this convert.'];
+            $message = 'No Mailcow email service is linked to this convert.';
+            $this->mailPullProgress->fail($service, $message);
+
+            return ['success' => false, 'message' => $message];
         }
 
         $product = $emailService->product;
         if (! $product || $product->type !== 'email_hosting') {
-            return ['success' => false, 'message' => 'Linked Email Hosting product is missing.'];
+            $message = 'Linked Email Hosting product is missing.';
+            $this->mailPullProgress->fail($service, $message);
+
+            return ['success' => false, 'message' => $message];
         }
 
         $byDomain = $this->mailboxMapFromEmails($migration['mailboxes_created'] ?? []);
@@ -433,7 +440,10 @@ class DirectAdminToMailcowMigrationService
         }
 
         if ($byDomain === []) {
-            return ['success' => false, 'message' => 'No DirectAdmin mailboxes to copy. Check /etc/virtual/{domain}/passwd on the DA node.'];
+            $message = 'No DirectAdmin mailboxes to copy. Check /etc/virtual/{domain}/passwd on the DA node.';
+            $this->mailPullProgress->fail($service, $message);
+
+            return ['success' => false, 'message' => $message];
         }
 
         return $this->pullFromDirectAdminUser($service, $product, $byDomain, [
@@ -562,6 +572,16 @@ class DirectAdminToMailcowMigrationService
         return str_contains($out, 'ok');
     }
 
+    public function maildirSizeCommand(string $path): string
+    {
+        return 'du -sb '.escapeshellarg($path).' 2>/dev/null | awk \'{print $1}\'';
+    }
+
+    public function remoteFileSizeCommand(string $path): string
+    {
+        return 'stat -c%s '.escapeshellarg($path).' 2>/dev/null || echo 0';
+    }
+
     public function locateDirectAdminMaildirCommand(string $username, string $domain, string $local): string
     {
         $home = '/home/'.trim($username, '/');
@@ -595,6 +615,9 @@ class DirectAdminToMailcowMigrationService
             .'echo copied';
     }
 
+    /**
+     * @param  (callable(string, string, int, int): void)|null  $onProgress  phase, detail, bytesDone, bytesTotal
+     */
     public function copyDirectAdminMaildirToMailcow(
         Node $daNode,
         Node $mailcowNode,
@@ -602,6 +625,7 @@ class DirectAdminToMailcowMigrationService
         string $domain,
         string $local,
         string $email,
+        ?callable $onProgress = null,
     ): bool {
         $workId = 'mail-'.$local.'-'.Str::lower(Str::random(6));
         $remoteTar = '/tmp/'.$workId.'.tgz';
@@ -610,40 +634,80 @@ class DirectAdminToMailcowMigrationService
             mkdir(dirname($localTar), 0755, true);
         }
 
+        $report = static function (string $phase, string $detail = '', int $done = 0, int $total = 0) use ($onProgress): void {
+            if ($onProgress) {
+                $onProgress($phase, $detail, $done, $total);
+            }
+        };
+
         $daSsh = null;
         $mailSsh = null;
 
         try {
             $daSsh = SSHService::forNode($daNode);
             $mailSsh = SSHService::forNode($mailcowNode);
+            $report('locate', 'locating maildir');
             $maildir = trim((string) $daSsh->exec(
                 $this->locateDirectAdminMaildirCommand($username, $domain, $local),
                 20
             ));
             if ($maildir === '' || $maildir === 'none' || ! str_starts_with($maildir, '/')) {
+                $report('locate', 'no maildir on DirectAdmin');
+
                 return false;
             }
 
+            $mailboxBytes = (int) trim((string) $daSsh->exec($this->maildirSizeCommand($maildir), 30));
+            $sizeHint = $mailboxBytes > 0 ? DirectAdminMailPullProgress::formatBytes($mailboxBytes) : 'unknown size';
+            $report('archive', 'archiving '.$sizeHint.' from '.$maildir, 0, $mailboxBytes);
             $daSsh->exec(
                 'tar -czf '.escapeshellarg($remoteTar).' -C '.escapeshellarg($maildir).' .',
                 600
             );
-            $daSsh->downloadToLocal($remoteTar, $localTar);
+            $tarBytes = (int) trim((string) $daSsh->exec($this->remoteFileSizeCommand($remoteTar), 15));
+            $archiveSize = $tarBytes > 0 ? $tarBytes : $mailboxBytes;
+            $report('download', 'downloading archive '.DirectAdminMailPullProgress::formatBytes($archiveSize), 0, $archiveSize);
+            $daSsh->downloadToLocal(
+                $remoteTar,
+                $localTar,
+                function (int $done, int $total) use ($report) {
+                    $report('download', 'downloading '.DirectAdminMailPullProgress::formatBytes($done)
+                        .' / '.DirectAdminMailPullProgress::formatBytes($total), $done, $total);
+                },
+                600,
+            );
             @$daSsh->exec('rm -f '.escapeshellarg($remoteTar));
 
-            $mailSsh->uploadFromLocal($localTar, $remoteTar);
+            $localBytes = (int) (@filesize($localTar) ?: $archiveSize);
+            $report('upload', 'uploading to Mailcow '.DirectAdminMailPullProgress::formatBytes($localBytes), 0, $localBytes);
+            $mailSsh->uploadFromLocal(
+                $localTar,
+                $remoteTar,
+                function (int $done, int $total) use ($report) {
+                    $report('upload', 'uploading '.DirectAdminMailPullProgress::formatBytes($done)
+                        .' / '.DirectAdminMailPullProgress::formatBytes($total), $done, $total);
+                },
+                600,
+            );
+            $report('extract', 'extracting into dovecot for '.$email, $localBytes, $localBytes);
             $out = trim((string) $mailSsh->exec(
                 $this->extractMaildirIntoMailcowCommand($email, $remoteTar),
                 600
             ));
             @$mailSsh->exec('rm -f '.escapeshellarg($remoteTar));
 
-            return str_contains($out, 'copied');
+            $copied = str_contains($out, 'copied');
+            if ($copied) {
+                $report('copied', 'copied maildir into Mailcow', $localBytes, $localBytes);
+            }
+
+            return $copied;
         } catch (\Throwable $e) {
             Log::warning('DirectAdmin maildir copy to Mailcow failed', [
                 'email' => $email,
                 'error' => $e->getMessage(),
             ]);
+            $report('extract', 'copy failed: '.$e->getMessage());
 
             return false;
         } finally {
@@ -697,14 +761,20 @@ class DirectAdminToMailcowMigrationService
         array $options = [],
     ): array {
         if ($product->type !== 'email_hosting') {
-            return ['success' => false, 'message' => 'Selected product is not email hosting.'];
+            $message = 'Selected product is not email hosting.';
+            $this->mailPullProgress->fail($daService, $message);
+
+            return ['success' => false, 'message' => $message];
         }
 
         $byDomain = array_filter($byDomain, fn ($rows) => is_array($rows) && $rows !== []);
         if ($byDomain === []) {
+            $message = 'No DirectAdmin mailboxes to pull.';
+            $this->mailPullProgress->complete($daService, $message);
+
             return [
                 'success' => true,
-                'message' => 'No DirectAdmin mailboxes to pull.',
+                'message' => $message,
                 'created_mailboxes' => [],
                 'sync_jobs' => [],
             ];
@@ -788,6 +858,8 @@ class DirectAdminToMailcowMigrationService
         $limits = $this->mailcowProvisioning->limitsForProduct($product);
         $mailboxCount = array_sum(array_map('count', $byDomain));
         $domainMailboxCap = (string) max($limits['mailboxes'], $mailboxCount + 5);
+        $this->mailPullProgress->begin($daService, $mailboxCount);
+        $this->mailPullProgress->log($daService, 'Provisioning Mailcow domain and mailboxes');
 
         foreach ($extraDomains as $extraDomain) {
             $this->ensureMailcowDomain($client, $extraDomain, $emailService, $limits, $domainMailboxCap);
@@ -823,6 +895,11 @@ class DirectAdminToMailcowMigrationService
             $imapHost = (string) ($daNode->hostname ?: $daNode->ip_address);
         }
 
+        $mailboxIndex = 0;
+        $copyProgress = function (string $phase, string $detail, int $done, int $total) use ($daService): void {
+            $this->mailPullProgress->phase($daService, $phase, $detail, $done, $total);
+        };
+
         foreach ($byDomain as $domain => $boxes) {
             foreach ($boxes as $box) {
                 $local = strtolower(trim((string) ($box['account'] ?? '')));
@@ -834,6 +911,8 @@ class DirectAdminToMailcowMigrationService
                 }
 
                 $email = $local.'@'.$domain;
+                $mailboxIndex++;
+                $this->mailPullProgress->mailbox($daService, $mailboxIndex, $mailboxCount, $email);
                 $mailcowPassword = $this->mailcowProvisioning->generateMailboxPassword();
                 $add = $client->addMailbox([
                     'local_part' => $local,
@@ -852,6 +931,7 @@ class DirectAdminToMailcowMigrationService
 
                 if (! $mailboxReady) {
                     $failed[] = $email;
+                    $this->mailPullProgress->log($daService, $email.' Mailcow create failed');
                     Log::info('Mailcow mailbox create skipped/failed during migrate', [
                         'mailbox' => $email,
                         'message' => $add['message'] ?? null,
@@ -862,6 +942,7 @@ class DirectAdminToMailcowMigrationService
 
                 if ($add['success'] ?? false) {
                     $created[] = $email;
+                    $this->mailPullProgress->log($daService, $email.' mailbox ready on Mailcow');
                 }
 
                 if (! $pullMail) {
@@ -869,10 +950,19 @@ class DirectAdminToMailcowMigrationService
                 }
 
                 if ($daNode && $mailcowNode && $username !== '') {
-                    if ($this->copyDirectAdminMaildirToMailcow($daNode, $mailcowNode, $username, $domain, $local, $email)) {
+                    if ($this->copyDirectAdminMaildirToMailcow(
+                        $daNode,
+                        $mailcowNode,
+                        $username,
+                        $domain,
+                        $local,
+                        $email,
+                        $copyProgress,
+                    )) {
                         $copied[] = $email;
                     } else {
                         $failed[] = $email.' (maildir copy)';
+                        $this->mailPullProgress->log($daService, $email.' maildir copy failed');
                     }
                 }
 
@@ -880,6 +970,7 @@ class DirectAdminToMailcowMigrationService
                     continue;
                 }
 
+                $this->mailPullProgress->phase($daService, 'sync', 'IMAP sync job for '.$email);
                 $imapPassword = $sharedImapPassword;
                 if ($imapPassword === '' && $username !== '' && $daNode) {
                     $imapPassword = $this->mailcowProvisioning->generateMailboxPassword();
@@ -925,8 +1016,10 @@ class DirectAdminToMailcowMigrationService
                 ]);
                 if ($sync['success'] ?? false) {
                     $syncJobs[] = $email;
+                    $this->mailPullProgress->log($daService, $email.' IMAP sync job created');
                 } else {
                     $failed[] = $email.' (sync)';
+                    $this->mailPullProgress->log($daService, $email.' IMAP sync job failed');
                     Log::warning('Mailcow sync job failed', [
                         'mailbox' => $email,
                         'message' => $sync['message'] ?? null,
@@ -935,6 +1028,7 @@ class DirectAdminToMailcowMigrationService
             }
         }
 
+        $daService->refresh();
         $daMeta = is_array($daService->service_meta) ? $daService->service_meta : [];
         $daMeta['mailcow_migration'] = [
             'status' => 'migrated',
@@ -963,13 +1057,21 @@ class DirectAdminToMailcowMigrationService
             }
         }
 
+        $message = 'Mail pulled to Mailcow. Created '.count($created).' mailbox(es)'
+            .($copied !== [] ? ', copied maildir for '.count($copied) : '')
+            .($syncJobs !== [] ? ', IMAP sync on '.count($syncJobs) : '')
+            .($failed !== [] ? ', '.count($failed).' need review' : '')
+            .'. Update MX, then DirectAdmin can be decommissioned.';
+
+        $this->mailPullProgress->complete($daService, $message, [
+            'copied_maildirs' => $copied,
+            'sync_jobs' => $syncJobs,
+            'failed_mailboxes' => $failed,
+        ]);
+
         return [
             'success' => true,
-            'message' => 'Mail pulled to Mailcow. Created '.count($created).' mailbox(es)'
-                .($copied !== [] ? ', copied maildir for '.count($copied) : '')
-                .($syncJobs !== [] ? ', IMAP sync on '.count($syncJobs) : '')
-                .($failed !== [] ? ', '.count($failed).' need review' : '')
-                .'. Update MX, then DirectAdmin can be decommissioned.',
+            'message' => $message,
             'email_service' => $emailService->fresh(),
             'created_mailboxes' => $created,
             'copied_maildirs' => $copied,

@@ -598,7 +598,7 @@ class DirectAdminToContainerConvertService
 
             $emailServiceId = null;
             if ($mustPullMail && $emailProduct) {
-                $steps[] = 'Pulling mailboxes to Mailcow (IMAP sync from DirectAdmin)';
+                $steps[] = 'Pulling mailboxes to Mailcow (live copy progress on this page)';
                 $this->appendConvertStep($service, $steps);
                 $byDomain = $preflight['email']['by_domain'] ?? [];
                 if ($byDomain === [] && ($preflight['email']['all'] ?? []) !== []) {

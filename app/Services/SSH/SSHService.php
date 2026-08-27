@@ -191,27 +191,35 @@ class SSHService
 
     /**
      * Download a remote file to a local path (streamed; suitable for large archives).
+     *
+     * @param  (callable(int, int): void)|null  $onProgress  bytes transferred, remote size
      */
-    public function downloadToLocal(string $remotePath, string $localPath): void
-    {
+    public function downloadToLocal(
+        string $remotePath,
+        string $localPath,
+        ?callable $onProgress = null,
+        int $timeoutSeconds = 0,
+    ): void {
         $this->ensureConnected();
 
         try {
             $this->initSFTP();
+            $this->applySftpTimeout($timeoutSeconds);
 
             $directory = dirname($localPath);
             if (! is_dir($directory)) {
                 mkdir($directory, 0755, true);
             }
 
-            if ($this->sftp->get($remotePath, $localPath) === false) {
+            if (! $this->sftpGet($remotePath, $localPath, $onProgress)) {
                 throw new \Exception('File not found or read failed');
             }
         } catch (\Exception $e) {
             if ($this->isChannelConflictMessage($e->getMessage())) {
                 $this->resetSftp();
                 $this->initSFTP();
-                if ($this->sftp->get($remotePath, $localPath) === false) {
+                $this->applySftpTimeout($timeoutSeconds);
+                if (! $this->sftpGet($remotePath, $localPath, $onProgress)) {
                     throw new \RuntimeException(
                         "Failed to download {$remotePath}: File not found or read failed",
                         0,
@@ -227,14 +235,22 @@ class SSHService
                 0,
                 $e
             );
+        } finally {
+            $this->restoreSftpTimeout($timeoutSeconds);
         }
     }
 
     /**
      * Upload a local file to a remote path (streamed; suitable for large archives).
+     *
+     * @param  (callable(int, int): void)|null  $onProgress  bytes transferred, local size
      */
-    public function uploadFromLocal(string $localPath, string $remotePath): void
-    {
+    public function uploadFromLocal(
+        string $localPath,
+        string $remotePath,
+        ?callable $onProgress = null,
+        int $timeoutSeconds = 0,
+    ): void {
         $this->ensureConnected();
 
         if (! is_readable($localPath)) {
@@ -243,13 +259,14 @@ class SSHService
 
         try {
             $this->initSFTP();
+            $this->applySftpTimeout($timeoutSeconds);
 
             $directory = dirname($remotePath);
             if ($directory !== '/') {
                 $this->mkdirp($directory);
             }
 
-            if (! $this->sftp->put($remotePath, $localPath, SFTP::SOURCE_LOCAL_FILE)) {
+            if (! $this->sftpPut($localPath, $remotePath, $onProgress)) {
                 throw new \Exception("Failed to write file to {$remotePath}");
             }
 
@@ -258,11 +275,12 @@ class SSHService
             if ($this->isChannelConflictMessage($e->getMessage())) {
                 $this->resetSftp();
                 $this->initSFTP();
+                $this->applySftpTimeout($timeoutSeconds);
                 $directory = dirname($remotePath);
                 if ($directory !== '/') {
                     $this->mkdirp($directory);
                 }
-                if (! $this->sftp->put($remotePath, $localPath, SFTP::SOURCE_LOCAL_FILE)) {
+                if (! $this->sftpPut($localPath, $remotePath, $onProgress)) {
                     throw new \RuntimeException(
                         "Failed to upload {$remotePath}: ".$e->getMessage(),
                         0,
@@ -279,6 +297,8 @@ class SSHService
                 0,
                 $e
             );
+        } finally {
+            $this->restoreSftpTimeout($timeoutSeconds);
         }
     }
 
@@ -489,6 +509,52 @@ class SSHService
                 0,
                 $e
             );
+        }
+    }
+
+    /**
+     * @param  (callable(int, int): void)|null  $onProgress
+     */
+    private function sftpGet(string $remotePath, string $localPath, ?callable $onProgress): bool
+    {
+        $size = (int) ($this->sftp->filesize($remotePath) ?: 0);
+        $callback = $onProgress
+            ? function ($offset) use ($onProgress, $size) {
+                $done = (int) $offset;
+                $onProgress($done, $size > 0 ? $size : $done);
+            }
+        : null;
+
+        return $this->sftp->get($remotePath, $localPath, 0, -1, $callback) !== false;
+    }
+
+    /**
+     * @param  (callable(int, int): void)|null  $onProgress
+     */
+    private function sftpPut(string $localPath, string $remotePath, ?callable $onProgress): bool
+    {
+        $size = (int) (@filesize($localPath) ?: 0);
+        $callback = $onProgress
+            ? function ($sent) use ($onProgress, $size) {
+                $done = (int) $sent;
+                $onProgress($done, $size > 0 ? $size : $done);
+            }
+        : null;
+
+        return (bool) $this->sftp->put($remotePath, $localPath, SFTP::SOURCE_LOCAL_FILE, -1, -1, $callback);
+    }
+
+    private function applySftpTimeout(int $timeoutSeconds): void
+    {
+        if ($timeoutSeconds > 0 && $this->sftp) {
+            $this->sftp->setTimeout($timeoutSeconds);
+        }
+    }
+
+    private function restoreSftpTimeout(int $timeoutSeconds): void
+    {
+        if ($timeoutSeconds > 0 && $this->sftp) {
+            $this->sftp->setTimeout($this->timeout);
         }
     }
 
