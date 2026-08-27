@@ -106,6 +106,94 @@ PHP;
         $this->assertSame('secret', $creds['DB_PASSWORD']);
     }
 
+    public function test_parse_wp_config_define_lines_reads_variable_and_elvis_getenv(): void
+    {
+        $raw = <<<'PHP'
+<?php
+$dbname = 'benwooda_wp';
+define('DB_NAME', $dbname);
+define('DB_USER', getenv('WORDPRESS_DB_USER') ?: 'benwooda_wpuser');
+define('DB_PASSWORD', 'secret', false);
+PHP;
+
+        $creds = app(DirectAdminToContainerMigrationService::class)->parseWpConfigDefineLines($raw, [
+            'DB_NAME' => null,
+            'DB_USER' => null,
+            'DB_PASSWORD' => null,
+            'DB_HOST' => 'localhost',
+        ]);
+
+        $this->assertSame('benwooda_wp', $creds['DB_NAME']);
+        $this->assertSame('benwooda_wpuser', $creds['DB_USER']);
+        $this->assertSame('secret', $creds['DB_PASSWORD']);
+    }
+
+    public function test_wp_config_referenced_paths_follow_require_not_wp_settings(): void
+    {
+        $raw = <<<'PHP'
+<?php
+require_once '/home/benwooda/wp-config.php';
+require_once __DIR__ . '/wp-settings.php';
+include 'wp-config-local.php';
+PHP;
+
+        $paths = app(DirectAdminToContainerMigrationService::class)->wpConfigReferencedPaths(
+            '/home/benwooda/domains/benwood.africa/public_html/wp-config.php',
+            $raw
+        );
+
+        $this->assertContains('/home/benwooda/wp-config.php', $paths);
+        $this->assertContains('/home/benwooda/domains/benwood.africa/public_html/wp-config-local.php', $paths);
+        $this->assertNotContains('/home/benwooda/domains/benwood.africa/public_html/wp-settings.php', $paths);
+    }
+
+    public function test_wp_config_candidate_paths_include_user_home(): void
+    {
+        $paths = app(DirectAdminToContainerMigrationService::class)->wpConfigCandidatePaths(
+            '/home/benwooda/domains/benwood.africa/public_html',
+            null,
+            'benwooda'
+        );
+
+        $this->assertContains('/home/benwooda/domains/benwood.africa/public_html/wp-config.php', $paths);
+        $this->assertContains('/home/benwooda/wp-config.php', $paths);
+    }
+
+    public function test_remote_cat_and_grep_commands_are_valid_bash(): void
+    {
+        $service = app(DirectAdminToContainerMigrationService::class);
+        $cat = $service->remoteCatCommand('/home/benwooda/domains/benwood.africa/public_html/wp-config.php');
+        $grep = $service->remoteGrepFileCommand(
+            '/usr/local/directadmin/conf/mysql.conf',
+            '^(user|passwd|host)='
+        );
+
+        foreach ([$cat, $grep] as $cmd) {
+            $syntax = [];
+            $code = 0;
+            exec('bash -n -c '.escapeshellarg($cmd).' 2>&1', $syntax, $code);
+            $this->assertSame(0, $code, $cmd."\n".implode("\n", $syntax));
+        }
+
+        $this->assertStringContainsString('sudo -n cat', $cat);
+        $this->assertStringContainsString('grep -E ', $grep);
+        $this->assertStringNotContainsString('grep -E "', $grep);
+    }
+
+    public function test_filter_application_mysql_database_names_scopes_to_da_user(): void
+    {
+        $raw = "information_schema\nmysql\nbenwooda_wp\nroundcube\notheruser_wp\n";
+
+        $this->assertSame(
+            ['benwooda_wp'],
+            app(DirectAdminToContainerMigrationService::class)->filterApplicationMysqlDatabaseNames($raw, 'benwooda')
+        );
+        $this->assertSame(
+            [],
+            app(DirectAdminToContainerMigrationService::class)->filterApplicationMysqlDatabaseNames($raw, '')
+        );
+    }
+
     public function test_pick_preferred_mysql_database_name_prefers_username_prefix(): void
     {
         $service = app(DirectAdminToContainerMigrationService::class);
@@ -143,6 +231,8 @@ PHP;
         exec('bash -n -c '.escapeshellarg($cmd).' 2>&1', $syntax, $code);
         $this->assertSame(0, $code, implode("\n", $syntax));
         $this->assertStringContainsString('/users/benwooda/mysql', $cmd);
+        $this->assertStringContainsString('find ', $cmd);
+        $this->assertStringContainsString('sudo -n find', $cmd);
     }
 
     public function test_build_mysql_dump_command_uses_wp_credentials_not_root(): void

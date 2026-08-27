@@ -100,10 +100,22 @@ class DirectAdminToContainerConvertService
         $mailboxCount = count($email['all'] ?? []);
         $daEmailCount = (int) ($inventory['account']['counts']['email'] ?? 0);
         $emailWarnings = $email['warnings'] ?? [];
+        $dashboardFailed = filled($inventory['account']['dashboard_error'] ?? null);
+        $virtualPasswdScanned = (bool) ($email['virtual_passwd_scanned'] ?? false);
 
-        if ($daEmailCount > 0 && $mailboxCount === 0) {
+        if ($this->shouldBlockOnMissingMailboxInventory(
+            $daEmailCount,
+            $mailboxCount,
+            $dashboardFailed,
+            $virtualPasswdScanned,
+        )) {
             $blockers[] = sprintf(
-                'DirectAdmin reports %d email account(s) but mailbox inventory found none. Mail would be left on DirectAdmin if you convert now. Check POP API access on the DA node or verify maildirs under /home/{username}/imap before converting.',
+                'DirectAdmin reports %d email account(s) but mailbox inventory found none. Mail would be left on DirectAdmin if you convert now. Check POP API access on the DA node or verify maildirs under /home/{username}/imap and /etc/virtual/{domain}/passwd before converting.',
+                $daEmailCount
+            );
+        } elseif ($daEmailCount > 0 && $mailboxCount === 0) {
+            $emailWarnings[] = sprintf(
+                'Cached DirectAdmin usage shows %d email account(s), but the live dashboard failed and /etc/virtual listed none. Convert will not pull mail — confirm on DirectAdmin before decommissioning.',
                 $daEmailCount
             );
         } elseif ($daEmailCount > $mailboxCount && $mailboxCount > 0) {
@@ -175,6 +187,27 @@ class DirectAdminToContainerConvertService
         }
 
         return $warnings;
+    }
+
+    /**
+     * Cached DA usage is not proof mail exists when SHOW_USER_CONFIG failed.
+     * Trust /etc/virtual/{domain}/passwd over a stale email count.
+     */
+    public function shouldBlockOnMissingMailboxInventory(
+        int $daEmailCount,
+        int $mailboxCount,
+        bool $dashboardFailed,
+        bool $virtualPasswdScanned,
+    ): bool {
+        if ($mailboxCount > 0 || $daEmailCount <= 0) {
+            return false;
+        }
+
+        if ($dashboardFailed && $virtualPasswdScanned) {
+            return false;
+        }
+
+        return true;
     }
 
     /**
@@ -402,7 +435,8 @@ class DirectAdminToContainerConvertService
         $username = (string) ($creds['username'] ?? $service->external_reference ?? ($service->service_meta['username'] ?? ''));
         $classified = $this->classifyMailboxes($username, $all);
 
-        $fatal = $all === [] && $listed['errors'] !== [] && count($domains) === count($listed['errors']);
+        $sshScanned = (bool) ($listed['ssh_scanned'] ?? false);
+        $fatal = $all === [] && $listed['errors'] !== [] && ! $sshScanned;
         $daEmailCount = (int) ($inventory['account']['counts']['email'] ?? 0);
         $warnings = [];
         if ($daEmailCount > 0 && $all === [] && ! $fatal) {
@@ -425,6 +459,8 @@ class DirectAdminToContainerConvertService
             'errors' => $listed['errors'],
             'da_email_count' => $daEmailCount,
             'warnings' => $warnings,
+            'ssh_scanned' => $sshScanned,
+            'virtual_passwd_scanned' => (bool) ($listed['virtual_passwd_scanned'] ?? false),
         ];
     }
 

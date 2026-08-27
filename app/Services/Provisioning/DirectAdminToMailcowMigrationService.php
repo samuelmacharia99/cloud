@@ -111,6 +111,8 @@ class DirectAdminToMailcowMigrationService
                 'by_domain' => [],
                 'all' => [],
                 'errors' => ['Missing DirectAdmin username or node for mailbox inventory.'],
+                'ssh_scanned' => false,
+                'virtual_passwd_scanned' => false,
             ];
         }
 
@@ -168,8 +170,12 @@ class DirectAdminToMailcowMigrationService
             }
         }
 
+        $sshScanned = false;
+        $virtualPasswdScanned = false;
         if ($all === [] && $daService->node) {
             $sshListed = $this->listMailboxesViaSsh($daService->node, $username, $domains);
+            $sshScanned = true;
+            $virtualPasswdScanned = (bool) ($sshListed['virtual_passwd_scanned'] ?? false);
             foreach ($sshListed['errors'] as $error) {
                 $errors[] = $error;
             }
@@ -183,17 +189,20 @@ class DirectAdminToMailcowMigrationService
             'by_domain' => $byDomain,
             'all' => $all,
             'errors' => $errors,
+            'ssh_scanned' => $sshScanned,
+            'virtual_passwd_scanned' => $virtualPasswdScanned,
         ];
     }
 
     /**
-     * Fallback when CMD_API_POP returns empty: read /home/{user}/imap/{domain}/{account} on the DA node.
+     * Fallback when CMD_API_POP returns empty: maildirs plus /etc/virtual/{domain}/passwd.
      *
      * @param  list<string>  $domains
      * @return array{
      *     by_domain: array<string, list<array{account: string, email: string, domain: string}>>,
      *     all: list<array{account: string, email: string, domain: string}>,
-     *     errors: list<string>
+     *     errors: list<string>,
+     *     virtual_passwd_scanned: bool
      * }
      */
     public function listMailboxesViaSsh(Node $node, string $username, array $domains = []): array
@@ -202,9 +211,15 @@ class DirectAdminToMailcowMigrationService
         $byDomain = [];
         $all = [];
         $errors = [];
+        $virtualPasswdScanned = false;
 
         if ($username === '') {
-            return ['by_domain' => [], 'all' => [], 'errors' => ['Missing DirectAdmin username for SSH mailbox scan.']];
+            return [
+                'by_domain' => [],
+                'all' => [],
+                'errors' => ['Missing DirectAdmin username for SSH mailbox scan.'],
+                'virtual_passwd_scanned' => false,
+            ];
         }
 
         $home = '/home/'.trim($username, '/');
@@ -212,18 +227,39 @@ class DirectAdminToMailcowMigrationService
             fn ($domain) => strtolower(trim((string) $domain)),
             $domains,
         ))));
+        $raw = '';
 
         try {
             $ssh = SSHService::forNode($node);
-            $command = 'for base in '.escapeshellarg($home.'/imap').' '.escapeshellarg($home.'/Maildir').'; do '
-                .'if [ -d "$base" ]; then '
-                .'find "$base" -mindepth 2 -maxdepth 2 -type d 2>/dev/null; '
-                .'fi; '
-                .'done';
-            $raw = trim($ssh->exec($command));
-            $ssh->disconnect();
+            try {
+                $command = '{ for base in '.escapeshellarg($home.'/imap').' '.escapeshellarg($home.'/Maildir').'; do '
+                    .'if [ -d "$base" ]; then '
+                    .'find "$base" -mindepth 2 -maxdepth 2 -type d 2>/dev/null; '
+                    .'fi; '
+                    .'done; } || true';
+                $raw = trim((string) $ssh->exec($command));
+
+                if ($domainsFilter !== []) {
+                    try {
+                        $virtRaw = trim((string) $ssh->exec($this->virtualPasswdListCommand($domainsFilter)));
+                        $virtualPasswdScanned = true;
+                        foreach ($this->parseVirtualPasswdNameLines($virtRaw) as $item) {
+                            $this->appendMailbox($byDomain, $all, $item);
+                        }
+                    } catch (\Throwable) {
+                        $virtualPasswdScanned = false;
+                    }
+                }
+            } finally {
+                $ssh->disconnect();
+            }
         } catch (\Throwable $e) {
-            return ['by_domain' => [], 'all' => [], 'errors' => ['SSH mailbox scan: '.$e->getMessage()]];
+            return [
+                'by_domain' => [],
+                'all' => [],
+                'errors' => ['SSH mailbox scan: '.$e->getMessage()],
+                'virtual_passwd_scanned' => $virtualPasswdScanned,
+            ];
         }
 
         foreach (preg_split("/\r\n|\n|\r/", $raw) ?: [] as $line) {
@@ -244,29 +280,123 @@ class DirectAdminToMailcowMigrationService
             if ($domainsFilter !== [] && ! in_array($domain, $domainsFilter, true)) {
                 continue;
             }
-            $item = [
+            $this->appendMailbox($byDomain, $all, [
                 'account' => $account,
                 'email' => strtolower($account.'@'.$domain),
                 'domain' => $domain,
-            ];
-            $byDomain[$domain] ??= [];
-            $existing = array_column($byDomain[$domain], 'account');
-            if (in_array($account, $existing, true)) {
-                continue;
-            }
-            $byDomain[$domain][] = $item;
-            $all[] = $item;
+            ]);
         }
 
         if ($all === [] && $domainsFilter !== []) {
-            $errors[] = 'SSH mailbox scan found no maildirs under '.$home.'/imap or '.$home.'/Maildir.';
+            $errors[] = 'SSH mailbox scan found no maildirs under '.$home.'/imap or '.$home.'/Maildir'
+                .($virtualPasswdScanned ? ', and /etc/virtual/{domain}/passwd listed none.' : '.');
         }
 
         return [
             'by_domain' => $byDomain,
             'all' => $all,
             'errors' => $errors,
+            'virtual_passwd_scanned' => $virtualPasswdScanned,
         ];
+    }
+
+    /**
+     * @param  list<string>  $domains
+     */
+    public function virtualPasswdListCommand(array $domains): string
+    {
+        $parts = [];
+        foreach ($domains as $domain) {
+            $domain = strtolower(trim((string) $domain));
+            if ($domain === '' || ! str_contains($domain, '.')) {
+                continue;
+            }
+            $quoted = escapeshellarg('/etc/virtual/'.$domain.'/passwd');
+            $dom = escapeshellarg($domain);
+            $parts[] = '{ cat '.$quoted.' || sudo -n cat '.$quoted.'; } 2>/dev/null'
+                .' | awk -F: -v d='.$dom.' \'$1 != "" && $1 !~ /^#/ { print d ":" $1 }\'';
+        }
+
+        if ($parts === []) {
+            return 'true';
+        }
+
+        return '{ '.implode('; ', $parts).'; } || true';
+    }
+
+    /**
+     * @return list<array{account: string, email: string, domain: string}>
+     */
+    public function parseVirtualPasswdNameLines(string $raw): array
+    {
+        $items = [];
+        foreach (preg_split("/\r\n|\n|\r/", $raw) ?: [] as $line) {
+            $line = trim($line);
+            if ($line === '' || ! str_contains($line, ':')) {
+                continue;
+            }
+            [$domain, $local] = explode(':', $line, 2);
+            $parsed = $this->parseVirtualPasswdLines($local."\n", $domain);
+            foreach ($parsed as $item) {
+                $items[] = $item;
+            }
+        }
+
+        return $items;
+    }
+
+    /**
+     * @return list<array{account: string, email: string, domain: string}>
+     */
+    public function parseVirtualPasswdLines(string $raw, string $domain): array
+    {
+        $domain = strtolower(trim($domain));
+        $items = [];
+        if ($domain === '' || ! str_contains($domain, '.')) {
+            return [];
+        }
+
+        foreach (preg_split("/\r\n|\n|\r/", $raw) ?: [] as $line) {
+            $line = trim($line);
+            if ($line === '' || str_starts_with($line, '#')) {
+                continue;
+            }
+            $local = strtolower(trim((string) explode(':', $line, 2)[0]));
+            if ($local === '' || ! preg_match('/^[a-z0-9._+-]+$/', $local)) {
+                continue;
+            }
+            $items[] = [
+                'account' => $local,
+                'email' => $local.'@'.$domain,
+                'domain' => $domain,
+            ];
+        }
+
+        return $items;
+    }
+
+    /**
+     * @param  array<string, list<array{account: string, email: string, domain: string}>>  $byDomain
+     * @param  list<array{account: string, email: string, domain: string}>  $all
+     * @param  array{account: string, email: string, domain: string}  $item
+     */
+    private function appendMailbox(array &$byDomain, array &$all, array $item): void
+    {
+        $domain = strtolower((string) ($item['domain'] ?? ''));
+        $account = strtolower(trim((string) ($item['account'] ?? '')));
+        if ($domain === '' || $account === '') {
+            return;
+        }
+        $item['account'] = $account;
+        $item['domain'] = $domain;
+        $item['email'] = strtolower((string) ($item['email'] ?? ($account.'@'.$domain)));
+        $byDomain[$domain] ??= [];
+        $existing = array_column($byDomain[$domain], 'account');
+        if (in_array($account, $existing, true)) {
+            return;
+        }
+        $byDomain[$domain][] = $item;
+        $all[] = $item;
     }
 
     /**

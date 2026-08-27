@@ -752,6 +752,41 @@ class DirectAdminToContainerConvertServiceTest extends TestCase
         $this->assertSame('static_or_php', $classified['stack']);
     }
 
+    public function test_stack_probe_command_survives_pipefail_and_is_valid_bash(): void
+    {
+        $cmd = app(DirectAdminToContainerMigrationService::class)
+            ->buildStackProbeCommand('/home/winkairwaystrave/domains/winkairwaystraveladventure.co.ke/public_html');
+
+        $syntax = [];
+        $code = 0;
+        exec('bash -n -c '.escapeshellarg($cmd).' 2>&1', $syntax, $code);
+        $this->assertSame(0, $code, implode("\n", $syntax));
+        $this->assertStringContainsString('set +o pipefail', $cmd);
+        $this->assertStringEndsWith('|| true', $cmd);
+    }
+
+    public function test_classifies_existing_empty_docroot_as_static(): void
+    {
+        $docroot = '/home/winkairwaystrave/domains/winkairwaystraveladventure.co.ke/public_html';
+        $classified = app(DirectAdminToContainerMigrationService::class)->classifyDetectedMarkers(
+            'DIR:'.$docroot,
+            $docroot
+        );
+
+        $this->assertSame('static_or_php', $classified['stack']);
+    }
+
+    public function test_missing_mailbox_inventory_does_not_block_when_dashboard_failed_and_virtual_was_scanned(): void
+    {
+        $convert = app(DirectAdminToContainerConvertService::class);
+
+        $this->assertTrue($convert->shouldBlockOnMissingMailboxInventory(4, 0, false, false));
+        $this->assertTrue($convert->shouldBlockOnMissingMailboxInventory(4, 0, true, false));
+        $this->assertFalse($convert->shouldBlockOnMissingMailboxInventory(4, 0, true, true));
+        $this->assertFalse($convert->shouldBlockOnMissingMailboxInventory(4, 2, true, true));
+        $this->assertFalse($convert->shouldBlockOnMissingMailboxInventory(0, 0, false, false));
+    }
+
     public function test_generic_tar_command_creates_empty_archive_when_docroot_is_missing(): void
     {
         $migrator = app(DirectAdminToContainerMigrationService::class);
