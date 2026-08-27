@@ -112,6 +112,36 @@
                     @endif
                 </p>
             @endif
+            @if (($daConvert['status'] ?? '') === 'completed')
+                @php
+                    $mailMigration = $service->service_meta['mailcow_migration'] ?? [];
+                @endphp
+                @if (!empty($mailMigration['email_service_id']) || !empty($service->service_meta['da_legacy']['email_service_id']))
+                    <div class="mt-3 text-xs space-y-1 opacity-90">
+                        @if (!empty($mailMigration['mailboxes_created']))
+                            <p>Mailboxes created: {{ count($mailMigration['mailboxes_created']) }}</p>
+                        @endif
+                        @if (!empty($mailMigration['copied_maildirs']))
+                            <p>Maildirs copied: {{ count($mailMigration['copied_maildirs']) }}</p>
+                        @endif
+                        @if (!empty($mailMigration['sync_jobs']))
+                            <p>IMAP sync jobs: {{ count($mailMigration['sync_jobs']) }}</p>
+                        @endif
+                        @if (!empty($mailMigration['failed_mailboxes']))
+                            <p>Need review: {{ implode(', ', $mailMigration['failed_mailboxes']) }}</p>
+                        @endif
+                        @if (!empty($mailMigration['note']))
+                            <p>{{ $mailMigration['note'] }}</p>
+                        @endif
+                    </div>
+                    <form method="POST" action="{{ route('admin.services.retry-mail-pull', $service) }}" class="mt-3" data-confirm="Copy maildirs from DirectAdmin into Mailcow and recreate IMAP sync jobs? DirectAdmin mail is not deleted." data-confirm-title="Retry mail pull">
+                        @csrf
+                        <button type="submit" class="px-3 py-1.5 bg-teal-700 hover:bg-teal-800 text-white text-xs font-medium rounded-lg transition">
+                            Retry mail pull from DirectAdmin
+                        </button>
+                    </form>
+                @endif
+            @endif
             @if ($canRevertDaConvert)
                 <form method="POST" action="{{ route('admin.services.revert-from-container', $service) }}" class="mt-3" data-confirm="{{ in_array($daConvert['status'] ?? '', ['queued', 'running'], true) ? 'Convert looks stuck. Force revert to DirectAdmin? Stop any queue worker first if it is still processing this job. Delete leftover containers on the node manually.' : 'Restore this service to DirectAdmin? You must delete any leftover container on the node yourself.' }}" data-confirm-title="Revert to DirectAdmin">
                     @csrf

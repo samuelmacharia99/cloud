@@ -58,4 +58,24 @@ class DirectAdminMailcowMigrationController extends Controller
             ->route('admin.services.show', $emailService ?? $service)
             ->with('success', $result['message']);
     }
+
+    public function retry(Service $service, DirectAdminToMailcowMigrationService $migrator): RedirectResponse
+    {
+        $legacy = is_array($service->service_meta['da_legacy'] ?? null) ? $service->service_meta['da_legacy'] : [];
+        $migration = is_array($service->service_meta['mailcow_migration'] ?? null) ? $service->service_meta['mailcow_migration'] : [];
+        if ($legacy === [] && $migration === [] && ! $service->isSharedHosting()) {
+            return redirect()->route('admin.services.show', $service)
+                ->withErrors(['error' => 'This service has no DirectAdmin mail pull to retry.']);
+        }
+
+        $result = $migrator->retryMailContentPull($service);
+
+        if (! ($result['success'] ?? false)) {
+            return redirect()->route('admin.services.show', $service)
+                ->withErrors(['error' => $result['message'] ?? 'Mail pull retry failed.']);
+        }
+
+        return redirect()->route('admin.services.show', $service)
+            ->with('success', $result['message']);
+    }
 }

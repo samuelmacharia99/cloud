@@ -771,7 +771,7 @@ class DirectAdminToContainerConvertService
                 ? sprintf(' %d extra site(s) queued as sibling containers on this package. Combined usage above package specs bills as overage.', count($siblingIds))
                 : '';
             $mailNote = $emailServiceId
-                ? ' Mail pulled to Mailcow — update MX when IMAP sync has caught up, then decommission DirectAdmin.'
+                ? ' '.trim((string) ($mailResult['message'] ?? 'Mail pulled to Mailcow.'))
                 : '';
             $steps[] = sprintf(
                 'Convert complete. Next due %s · renewal will bill Application Hosting (~%s).%s%s',

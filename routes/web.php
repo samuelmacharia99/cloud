@@ -394,6 +394,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/services/{service}/migrate-to-container', [DirectAdminContainerMigrationController::class, 'store'])->name('admin.services.migrate-to-container.store');
         Route::get('admin/services/{service}/migrate-mail', [DirectAdminMailcowMigrationController::class, 'show'])->name('admin.services.migrate-mail');
         Route::post('admin/services/{service}/migrate-mail', [DirectAdminMailcowMigrationController::class, 'store'])->name('admin.services.migrate-mail.store');
+        Route::post('admin/services/{service}/retry-mail-pull', [DirectAdminMailcowMigrationController::class, 'retry'])->name('admin.services.retry-mail-pull');
         Route::post('admin/services/{service}/revert-from-container', [DirectAdminContainerMigrationController::class, 'revert'])->name('admin.services.revert-from-container');
         Route::post('admin/nodes/{node}/migrate-containers', [ContainerMigrationController::class, 'migrateNode'])->name('admin.nodes.migrate-containers');
 

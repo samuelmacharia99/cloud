@@ -10,6 +10,7 @@ use App\Models\Service;
 use App\Services\Hosting\DirectAdminCustomerPanelApi;
 use App\Services\SSH\SSHService;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 /**
  * DirectAdmin mailboxes → Mailcow: provision domains, recreate mailboxes, IMAP-pull mail.
@@ -400,6 +401,261 @@ class DirectAdminToMailcowMigrationService
     }
 
     /**
+     * Re-copy maildirs and recreate IMAP sync jobs after convert when Mailcow inboxes are empty.
+     *
+     * @return array{success: bool, message: string, copied_maildirs?: list<string>, sync_jobs?: list<string>, failed_mailboxes?: list<string>}
+     */
+    public function retryMailContentPull(Service $service): array
+    {
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        $legacy = is_array($meta['da_legacy'] ?? null) ? $meta['da_legacy'] : [];
+        $migration = is_array($meta['mailcow_migration'] ?? null) ? $meta['mailcow_migration'] : [];
+
+        $emailId = (int) ($legacy['email_service_id'] ?? $migration['email_service_id'] ?? 0);
+        $emailService = $emailId > 0 ? Service::query()->find($emailId) : null;
+        if (! $emailService) {
+            return ['success' => false, 'message' => 'No Mailcow email service is linked to this convert.'];
+        }
+
+        $product = $emailService->product;
+        if (! $product || $product->type !== 'email_hosting') {
+            return ['success' => false, 'message' => 'Linked Email Hosting product is missing.'];
+        }
+
+        $byDomain = $this->mailboxMapFromEmails($migration['mailboxes_created'] ?? []);
+
+        $daNode = Node::query()->find((int) ($legacy['da_node_id'] ?? 0));
+        $username = (string) ($legacy['username'] ?? '');
+        $domain = strtolower(trim((string) ($legacy['domain'] ?? $meta['domain'] ?? '')));
+        if ($byDomain === [] && $daNode && $username !== '') {
+            $listed = $this->listMailboxesViaSsh($daNode, $username, $domain !== '' ? [$domain] : []);
+            $byDomain = $listed['by_domain'];
+        }
+
+        if ($byDomain === []) {
+            return ['success' => false, 'message' => 'No DirectAdmin mailboxes to copy. Check /etc/virtual/{domain}/passwd on the DA node.'];
+        }
+
+        return $this->pullFromDirectAdminUser($service, $product, $byDomain, [
+            'pull_mail' => true,
+            'da_imap_host' => (string) ($daNode?->hostname ?: $daNode?->ip_address ?: ''),
+            'bundled' => (bool) (($emailService->service_meta['email_domain_mode'] ?? '') === 'bundled_with_container'),
+            'project_id' => $service->project_id,
+        ]);
+    }
+
+    /**
+     * @param  list<string>  $emails
+     * @return array<string, list<array{account: string, email: string, domain: string}>>
+     */
+    public function mailboxMapFromEmails(array $emails): array
+    {
+        $byDomain = [];
+        $all = [];
+        foreach ($emails as $email) {
+            $email = strtolower(trim((string) $email));
+            if ($email === '' || ! str_contains($email, '@')) {
+                continue;
+            }
+            [$local, $domain] = explode('@', $email, 2);
+            $this->appendMailbox($byDomain, $all, [
+                'account' => $local,
+                'email' => $email,
+                'domain' => $domain,
+            ]);
+        }
+
+        return $byDomain;
+    }
+
+    public function mailcowMailboxAlreadyExists(array $add): bool
+    {
+        $message = strtolower((string) ($add['message'] ?? json_encode($add['data'] ?? [])));
+
+        return str_contains($message, 'exist')
+            || str_contains($message, 'object_exists');
+    }
+
+    public function mailcowMailboxExists(MailcowService $client, string $domain, string $email): bool
+    {
+        $listed = $client->listMailboxes($domain);
+        if (! ($listed['success'] ?? false)) {
+            return false;
+        }
+
+        $email = strtolower($email);
+        foreach ($listed['data'] ?? [] as $row) {
+            if (! is_array($row)) {
+                if (strtolower((string) $row) === $email) {
+                    return true;
+                }
+
+                continue;
+            }
+            $candidate = strtolower((string) ($row['username'] ?? ''));
+            if ($candidate === '' && isset($row['local_part'], $row['domain'])) {
+                $candidate = strtolower($row['local_part'].'@'.$row['domain']);
+            }
+            if ($candidate === $email) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public function setDirectAdminMailboxPassword(
+        ?DirectAdminCustomerPanelApi $api,
+        Node $daNode,
+        string $username,
+        string $domain,
+        string $local,
+        string $password,
+    ): bool {
+        if ($api && $username !== '') {
+            try {
+                $changed = $api->changeEmailAccountPassword($username, $domain, $local, $password);
+                if ($changed['success'] ?? false) {
+                    return true;
+                }
+            } catch (\Throwable) {
+            }
+        }
+
+        return $this->changeDirectAdminEmailPasswordViaSsh($daNode, $domain, $local, $password);
+    }
+
+    public function updateVirtualPasswdHashCommand(string $domain, string $localPart, string $password): string
+    {
+        $domain = strtolower(preg_replace('/[^a-z0-9.-]/', '', $domain) ?: '');
+        $user = strtolower(preg_replace('/[^a-z0-9._+-]/', '', $localPart) ?: '');
+        $file = '/etc/virtual/'.$domain.'/passwd';
+        $passB64 = base64_encode($password);
+
+        return 'set +o pipefail; '
+            .'FILE='.escapeshellarg($file).'; USER='.escapeshellarg($user).'; '
+            .'PASS=$(printf %s '.escapeshellarg($passB64).' | base64 -d); '
+            .'if [ ! -f "$FILE" ]; then echo missing; exit 1; fi; '
+            .'if ! grep -q "^${USER}:" "$FILE"; then echo nouser; exit 1; fi; '
+            .'HASH=$(printf %s "$PASS" | openssl passwd -6 -stdin 2>/dev/null || printf %s "$PASS" | python3 -c \'import crypt,sys; print(crypt.crypt(sys.stdin.read().rstrip("\\n"), crypt.METHOD_SHA512))\'); '
+            .'if [ -z "$HASH" ]; then echo nohash; exit 1; fi; '
+            .'awk -F: -v u="$USER" -v h="$HASH" \'BEGIN{OFS=FS} $1==u{$2=h} {print}\' "$FILE" > "$FILE.talksasa" '
+            .'&& mv "$FILE.talksasa" "$FILE" && chmod 640 "$FILE" && echo ok || echo fail';
+    }
+
+    public function changeDirectAdminEmailPasswordViaSsh(Node $daNode, string $domain, string $local, string $password): bool
+    {
+        try {
+            $ssh = SSHService::forNode($daNode);
+            $out = trim((string) $ssh->exec($this->updateVirtualPasswdHashCommand($domain, $local, $password), 30));
+            $ssh->disconnect();
+        } catch (\Throwable $e) {
+            Log::warning('SSH DirectAdmin mailbox password update failed', [
+                'domain' => $domain,
+                'local' => $local,
+                'error' => $e->getMessage(),
+            ]);
+
+            return false;
+        }
+
+        return str_contains($out, 'ok');
+    }
+
+    public function locateDirectAdminMaildirCommand(string $username, string $domain, string $local): string
+    {
+        $home = '/home/'.trim($username, '/');
+        $domain = strtolower($domain);
+        $local = strtolower($local);
+
+        return 'set +o pipefail; '
+            .'for p in '
+            .escapeshellarg($home.'/imap/'.$domain.'/'.$local).' '
+            .escapeshellarg($home.'/imap/'.$domain.'/'.$local.'/Maildir').' '
+            .escapeshellarg($home.'/Maildir').'; do '
+            .'if [ -d "$p/cur" ]; then printf "%s\n" "$p"; exit 0; fi; '
+            .'done; echo none';
+    }
+
+    public function extractMaildirIntoMailcowCommand(string $email, string $remoteTar): string
+    {
+        $email = strtolower($email);
+        [$local, $domain] = array_pad(explode('@', $email, 2), 2, '');
+        $dest = '/var/vmail/'.$domain.'/'.$local;
+
+        return 'set +o pipefail; '
+            .'MC=/opt/mailcow-dockerized; [ -d "$MC" ] || MC=/opt/mailcow; '
+            .'cd "$MC" || exit 1; '
+            .'docker compose exec -T dovecot-mailcow mkdir -p '.escapeshellarg($dest).' || exit 1; '
+            .'docker compose exec -T dovecot-mailcow tar -xzf - -C '.escapeshellarg($dest)
+            .' < '.escapeshellarg($remoteTar).' || exit 1; '
+            .'docker compose exec -T dovecot-mailcow chown -R vmail:vmail '.escapeshellarg($dest).' || true; '
+            .'docker compose exec -T dovecot-mailcow doveadm force-resync -u '.escapeshellarg($email).' "*" || true; '
+            .'docker compose exec -T dovecot-mailcow doveadm quota recalc -u '.escapeshellarg($email).' || true; '
+            .'echo copied';
+    }
+
+    public function copyDirectAdminMaildirToMailcow(
+        Node $daNode,
+        Node $mailcowNode,
+        string $username,
+        string $domain,
+        string $local,
+        string $email,
+    ): bool {
+        $workId = 'mail-'.$local.'-'.Str::lower(Str::random(6));
+        $remoteTar = '/tmp/'.$workId.'.tgz';
+        $localTar = storage_path('app/migrations/'.$workId.'.tgz');
+        if (! is_dir(dirname($localTar))) {
+            mkdir(dirname($localTar), 0755, true);
+        }
+
+        $daSsh = null;
+        $mailSsh = null;
+
+        try {
+            $daSsh = SSHService::forNode($daNode);
+            $mailSsh = SSHService::forNode($mailcowNode);
+            $maildir = trim((string) $daSsh->exec(
+                $this->locateDirectAdminMaildirCommand($username, $domain, $local),
+                20
+            ));
+            if ($maildir === '' || $maildir === 'none' || ! str_starts_with($maildir, '/')) {
+                return false;
+            }
+
+            $daSsh->exec(
+                'tar -czf '.escapeshellarg($remoteTar).' -C '.escapeshellarg($maildir).' .',
+                600
+            );
+            $daSsh->downloadToLocal($remoteTar, $localTar);
+            @$daSsh->exec('rm -f '.escapeshellarg($remoteTar));
+
+            $mailSsh->uploadFromLocal($localTar, $remoteTar);
+            $out = trim((string) $mailSsh->exec(
+                $this->extractMaildirIntoMailcowCommand($email, $remoteTar),
+                600
+            ));
+            @$mailSsh->exec('rm -f '.escapeshellarg($remoteTar));
+
+            return str_contains($out, 'copied');
+        } catch (\Throwable $e) {
+            Log::warning('DirectAdmin maildir copy to Mailcow failed', [
+                'email' => $email,
+                'error' => $e->getMessage(),
+            ]);
+
+            return false;
+        } finally {
+            $daSsh?->disconnect();
+            $mailSsh?->disconnect();
+            if (is_file($localTar)) {
+                @unlink($localTar);
+            }
+        }
+    }
+
+    /**
      * Create (or reuse) email_hosting service, provision Mailcow domain, create mailboxes, optional sync jobs.
      *
      * @param  array{product_id: int, create_sync_jobs?: bool, da_imap_host?: string, da_imap_password?: string, pull_mail?: bool, project_id?: int|null, bundled?: bool}  $options
@@ -545,12 +801,27 @@ class DirectAdminToMailcowMigrationService
 
         $created = [];
         $syncJobs = [];
+        $copied = [];
         $failed = [];
-        $username = (string) ($daService->getHostingCredentials()['username']
+        $legacy = is_array($daService->service_meta['da_legacy'] ?? null) ? $daService->service_meta['da_legacy'] : [];
+        $username = (string) ($legacy['username']
+            ?? ($daService->getHostingCredentials()['username'] ?? null)
             ?? $daService->service_meta['username']
             ?? $daService->external_reference
             ?? '');
-        $api = $daService->node ? DirectAdminCustomerPanelApi::forServiceNode($daService->node) : null;
+        $daNode = $daService->node;
+        $legacyNodeId = (int) ($legacy['da_node_id'] ?? 0);
+        if ($legacyNodeId > 0) {
+            $fromLegacy = Node::query()->find($legacyNodeId);
+            if ($fromLegacy) {
+                $daNode = $fromLegacy;
+            }
+        }
+        $api = $daNode ? DirectAdminCustomerPanelApi::forServiceNode($daNode) : null;
+        $mailcowNode = $this->mailcowProvisioning->resolveNode($emailService);
+        if ($imapHost === '' && $daNode) {
+            $imapHost = (string) ($daNode->hostname ?: $daNode->ip_address);
+        }
 
         foreach ($byDomain as $domain => $boxes) {
             foreach ($boxes as $box) {
@@ -575,7 +846,11 @@ class DirectAdminToMailcowMigrationService
                     'force_pw_update' => '1',
                 ]);
 
-                if (! ($add['success'] ?? false)) {
+                $mailboxReady = ($add['success'] ?? false)
+                    || $this->mailcowMailboxAlreadyExists($add)
+                    || $this->mailcowMailboxExists($client, $domain, $email);
+
+                if (! $mailboxReady) {
                     $failed[] = $email;
                     Log::info('Mailcow mailbox create skipped/failed during migrate', [
                         'mailbox' => $email,
@@ -585,24 +860,43 @@ class DirectAdminToMailcowMigrationService
                     continue;
                 }
 
-                $created[] = $email;
+                if ($add['success'] ?? false) {
+                    $created[] = $email;
+                }
 
-                if (! $pullMail || $imapHost === '') {
+                if (! $pullMail) {
+                    continue;
+                }
+
+                if ($daNode && $mailcowNode && $username !== '') {
+                    if ($this->copyDirectAdminMaildirToMailcow($daNode, $mailcowNode, $username, $domain, $local, $email)) {
+                        $copied[] = $email;
+                    } else {
+                        $failed[] = $email.' (maildir copy)';
+                    }
+                }
+
+                if ($imapHost === '') {
                     continue;
                 }
 
                 $imapPassword = $sharedImapPassword;
-                if ($imapPassword === '' && $api && $username !== '') {
+                if ($imapPassword === '' && $username !== '' && $daNode) {
                     $imapPassword = $this->mailcowProvisioning->generateMailboxPassword();
-                    $changed = $api->changeEmailAccountPassword($username, $domain, $local, $imapPassword);
-                    if (! ($changed['success'] ?? false)) {
+                    $changed = $this->setDirectAdminMailboxPassword(
+                        $api,
+                        $daNode,
+                        $username,
+                        $domain,
+                        $local,
+                        $imapPassword,
+                    );
+                    if (! $changed) {
                         Log::warning('Could not set DirectAdmin IMAP password for mail pull', [
                             'mailbox' => $email,
-                            'message' => $changed['message'] ?? null,
                         ]);
                         $failed[] = $email.' (DA password)';
-
-                        continue;
+                        $imapPassword = '';
                     }
                 }
 
@@ -648,10 +942,13 @@ class DirectAdminToMailcowMigrationService
             'migrated_at' => now()->toIso8601String(),
             'mailboxes_created' => $created,
             'sync_jobs' => $syncJobs,
+            'copied_maildirs' => $copied,
             'failed_mailboxes' => $failed,
             'additional_mail_domains' => $extraDomains,
             'keep_email_on_da' => false,
-            'note' => 'Mail is pulling into Mailcow. Cut over MX when sync has caught up, then decommission DirectAdmin.',
+            'note' => ($copied !== [] || $syncJobs !== [])
+                ? 'Mail is on Mailcow. Confirm inboxes, then cut over MX and decommission DirectAdmin.'
+                : 'Mailboxes exist on Mailcow but content may still be on DirectAdmin. Retry mail pull (SSH maildir copy).',
         ];
         $daService->update(['service_meta' => $daMeta]);
 
@@ -669,11 +966,13 @@ class DirectAdminToMailcowMigrationService
         return [
             'success' => true,
             'message' => 'Mail pulled to Mailcow. Created '.count($created).' mailbox(es)'
+                .($copied !== [] ? ', copied maildir for '.count($copied) : '')
                 .($syncJobs !== [] ? ', IMAP sync on '.count($syncJobs) : '')
                 .($failed !== [] ? ', '.count($failed).' need review' : '')
                 .'. Update MX, then DirectAdmin can be decommissioned.',
             'email_service' => $emailService->fresh(),
             'created_mailboxes' => $created,
+            'copied_maildirs' => $copied,
             'sync_jobs' => $syncJobs,
             'failed_mailboxes' => $failed,
         ];
