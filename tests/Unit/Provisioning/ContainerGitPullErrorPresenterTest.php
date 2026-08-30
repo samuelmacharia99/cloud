@@ -126,6 +126,38 @@ class ContainerGitPullErrorPresenterTest extends TestCase
     }
 
     #[Test]
+    public function it_explains_next_build_banner_only_failures(): void
+    {
+        $pull = $this->failedPull(
+            'post_pull',
+            'Run stack post-pull steps',
+            "Node post-pull step failed: SSH command failed: docker run --rm node:20-alpine sh -c 'next build'\nError: Command exited with status 1\nOutput:   ▲ Next.js 14.2.35",
+        );
+
+        $error = $this->presenter->present($pull);
+
+        $this->assertSame('The Next.js build exited without a usable error.', $error['title']);
+        $this->assertStringContainsString('stderr', $error['guidance']);
+        $this->assertStringContainsString('use server', $error['guidance']);
+    }
+
+    #[Test]
+    public function it_redacts_database_credentials_from_presented_details(): void
+    {
+        $password = 'superSecretDbPass99';
+        $pull = $this->failedPull(
+            'post_pull',
+            'Run stack post-pull steps',
+            "Node post-pull step failed: DATABASE_URL=mysql://u1_s1:{$password}@app-db:3306/s1_db npm error EACCES",
+        );
+
+        $error = $this->presenter->present($pull);
+
+        $this->assertStringNotContainsString($password, $error['details']);
+        $this->assertStringContainsString('mysql://[credentials]@app-db:3306/s1_db', $error['details']);
+    }
+
+    #[Test]
     public function it_explains_use_server_export_failures(): void
     {
         $pull = $this->failedPull(

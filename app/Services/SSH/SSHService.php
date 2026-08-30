@@ -122,6 +122,7 @@ class SSHService
 
                 $this->ssh->setTimeout($timeout);
                 $output = $this->ssh->exec($command);
+                $output = $this->mergeStdErrorIntoOutput($output);
                 $exitStatus = $this->ssh->getExitStatus();
 
                 // Long-running commands can leave the SSH2 bitmap mid-channel; clear it for the next call.
@@ -179,6 +180,28 @@ class SSHService
         throw $lastError instanceof \Throwable
             ? $lastError
             : new SSHCommandException($command, '', 'SSH exec failed after retries');
+    }
+
+    /**
+     * phpseclib exec() returns stdout only. Next.js and docker put the failure on stderr.
+     */
+    private function mergeStdErrorIntoOutput(mixed $output): mixed
+    {
+        if ($output === false || ! is_object($this->ssh) || ! method_exists($this->ssh, 'getStdError')) {
+            return $output;
+        }
+
+        $stderr = trim((string) $this->ssh->getStdError());
+        if ($stderr === '') {
+            return $output;
+        }
+
+        $stdout = (string) $output;
+        if ($stdout !== '' && str_contains($stdout, $stderr)) {
+            return $output;
+        }
+
+        return $stdout === '' ? $stderr : rtrim($stdout)."\n".$stderr;
     }
 
     /**

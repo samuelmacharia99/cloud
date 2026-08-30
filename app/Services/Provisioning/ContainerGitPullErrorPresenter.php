@@ -2,6 +2,7 @@
 
 namespace App\Services\Provisioning;
 
+use App\Exceptions\SSH\SSHCommandException;
 use App\Models\ContainerGitPull;
 
 class ContainerGitPullErrorPresenter
@@ -187,6 +188,14 @@ class ContainerGitPullErrorPresenter
                 );
             }
 
+            if ($this->isNextBuildBannerOnly($message, $details)) {
+                return $this->result(
+                    'The Next.js build exited without a usable error.',
+                    'Retry the pull. Talksasa now keeps Next.js stderr and attaches the build sidecar to the database network. If the next error mentions a "use server" export, that file must export only async functions — push that fix, then pull again.',
+                    $details,
+                );
+            }
+
             return $this->result(
                 'The application build failed.',
                 'Review the build output below, fix the dependency or build error, then restart the pull.',
@@ -216,7 +225,29 @@ class ContainerGitPullErrorPresenter
      */
     private function result(string $title, string $guidance, string $details): array
     {
-        return compact('title', 'guidance', 'details');
+        return [
+            'title' => $title,
+            'guidance' => $guidance,
+            'details' => SSHCommandException::redactSensitive($details),
+        ];
+    }
+
+    private function isNextBuildBannerOnly(string $message, string $details): bool
+    {
+        if (! $this->contains($message, ['next.js', 'next build'])) {
+            return false;
+        }
+
+        if ($this->contains($message, [
+            'compiled successfully',
+            'failed to collect page data',
+            'creating an optimized production build',
+            'build error occurred',
+        ])) {
+            return false;
+        }
+
+        return (bool) preg_match('/Output:\s*(?:▲\s*)?Next\.js\s+[\d.]+\s*\z/u', $details);
     }
 
     /**

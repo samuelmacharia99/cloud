@@ -1109,9 +1109,16 @@ class ContainerStackCommandService
         $workDirArg = escapeshellarg($workDir);
         $wrapped = $this->alpineOpensslEnsurePrefix($dockerImage).$command;
         $commandArg = escapeshellarg($wrapped);
+        $network = ContainerDeploymentService::SHARED_DOCKER_NETWORK;
+        if (! preg_match('/^[a-z0-9][a-z0-9.-]*$/', $network)) {
+            throw new \InvalidArgumentException('Unsafe Docker network name.');
+        }
+        $networkArg = ' --network '.escapeshellarg($network);
 
+        // 2>&1: Next.js writes compile/page-data failures to stderr; phpseclib keeps stdout.
+        // talksasa-net: collect-page-data Prisma clients must resolve {app}-db.
         return trim($ssh->exec(
-            "docker run --rm -v {$volumeArg} -w {$workDirArg} {$imageArg} sh -c {$commandArg}",
+            "docker run --rm{$networkArg} -v {$volumeArg} -w {$workDirArg} {$imageArg} sh -c {$commandArg} 2>&1",
             $timeout
         ));
     }

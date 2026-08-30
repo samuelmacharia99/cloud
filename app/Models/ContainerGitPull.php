@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Exceptions\SSH\SSHCommandException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -139,7 +140,7 @@ class ContainerGitPull extends Model
     {
         $this->attributes['error_message'] = $value === null
             ? null
-            : self::truncateErrorMessage($value);
+            : self::truncateErrorMessage(SSHCommandException::redactSensitive($value));
     }
 
     public static function truncateErrorMessage(string $message): string

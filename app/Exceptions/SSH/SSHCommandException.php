@@ -37,7 +37,7 @@ class SSHCommandException extends Exception
     public static function redactSensitive(string $value): string
     {
         $value = preg_replace(
-            '#(https://)(?:[^/@\s]+(?::[^@\s]*)?@)#i',
+            '#((?:https?|mysql|mariadb|postgres|postgresql|mongodb)://)(?:[^/@\s]+(?::[^@\s]*)?@)#i',
             '$1[credentials]@',
             $value
         ) ?? $value;

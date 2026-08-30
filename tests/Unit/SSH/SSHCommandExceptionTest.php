@@ -23,4 +23,18 @@ class SSHCommandExceptionTest extends TestCase
         $this->assertStringNotContainsString($token, $exception->output);
         $this->assertStringContainsString('[credentials]@github.com', $exception->getMessage());
     }
+
+    #[Test]
+    public function it_redacts_database_url_credentials(): void
+    {
+        $password = 'superSecretDbPass99';
+        $exception = new SSHCommandException(
+            "docker run sh -c 'DATABASE_URL=mysql://u30_s165:{$password}@app-db:3306/s165_db next build'",
+            "▲ Next.js 14.2.35\nPrisma could not connect",
+            'Command exited with status 1'
+        );
+
+        $this->assertStringNotContainsString($password, $exception->getMessage());
+        $this->assertStringContainsString('mysql://[credentials]@app-db:3306/s165_db', $exception->getMessage());
+    }
 }

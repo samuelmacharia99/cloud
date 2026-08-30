@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Customer;
 
+use App\Exceptions\SSH\SSHCommandException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Customer\ImportContainerDatabaseRequest;
 use App\Http\Requests\Customer\PullContainerGitRepositoryRequest;
@@ -811,7 +812,9 @@ class ContainerController extends Controller
             'status' => $pull->status,
             'steps' => $pull->steps,
             'log' => $pull->log,
-            'error_message' => $pull->error_message,
+            'error_message' => $pull->error_message !== null
+                ? SSHCommandException::redactSensitive($pull->error_message)
+                : null,
             'error' => app(ContainerGitPullErrorPresenter::class)->present($pull),
             'commit' => $pull->commit,
             'started_at' => $pull->started_at?->toIso8601String(),

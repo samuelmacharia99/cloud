@@ -136,10 +136,12 @@ class ContainerStackCommandServiceTest extends TestCase
         $ssh = $this->createMock(SSHService::class);
         $ssh->expects($this->once())
             ->method('exec')
-            ->with($this->callback(fn (string $command): bool => str_contains($command, 'docker run --rm -v ')
+            ->with($this->callback(fn (string $command): bool => str_contains($command, 'docker run --rm --network ')
+                && str_contains($command, 'talksasa-net')
                 && str_contains($command, 'node:20-alpine')
                 && str_contains($command, 'apk add --no-cache openssl libc6-compat')
-                && str_contains($command, 'node ./node_modules/next/dist/bin/next build')))
+                && str_contains($command, 'node ./node_modules/next/dist/bin/next build')
+                && str_ends_with(trim($command), '2>&1')))
             ->willReturn('');
 
         $service->runUnlimitedMemoryNodeCommand(
@@ -159,9 +161,11 @@ class ContainerStackCommandServiceTest extends TestCase
         $ssh = $this->createMock(SSHService::class);
         $ssh->expects($this->once())
             ->method('exec')
-            ->with($this->callback(fn (string $command): bool => str_contains($command, 'docker run --rm -v ')
+            ->with($this->callback(fn (string $command): bool => str_contains($command, 'docker run --rm --network ')
+                && str_contains($command, 'talksasa-net')
                 && str_contains($command, 'node:20-alpine')
-                && str_contains($command, '/usr/local/bin/npm ci --include=dev --legacy-peer-deps')))
+                && str_contains($command, '/usr/local/bin/npm ci --include=dev --legacy-peer-deps')
+                && str_ends_with(trim($command), '2>&1')))
             ->willReturn('');
 
         $service->runUnlimitedMemoryNodeCommand(
