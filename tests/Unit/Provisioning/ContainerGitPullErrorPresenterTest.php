@@ -110,6 +110,22 @@ class ContainerGitPullErrorPresenterTest extends TestCase
     }
 
     #[Test]
+    public function it_explains_unknown_prisma_binary_target_failures(): void
+    {
+        $pull = $this->failedPull(
+            'post_pull',
+            'Run stack post-pull steps',
+            'Node post-pull step failed: SSH command failed: node .talksasa/prepare-build.cjs Error: Unknown binaryTarget native and no custom engine files were provided',
+        );
+
+        $error = $this->presenter->present($pull);
+
+        $this->assertSame('Prisma generate rejected an invalid engine target.', $error['title']);
+        $this->assertStringContainsString('schema.prisma', $error['guidance']);
+        $this->assertStringContainsString('native', $error['guidance']);
+    }
+
+    #[Test]
     public function it_explains_use_server_export_failures(): void
     {
         $pull = $this->failedPull(

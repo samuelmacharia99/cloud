@@ -267,13 +267,14 @@ function generatePrismaClient() {
     }
 
     const { spawnSync } = require('child_process');
+    // Do not set PRISMA_CLI_BINARY_TARGETS. That env is for CLI engine
+    // downloads and rejects "native" (valid only in schema.prisma).
+    // generate already follows schema binaryTargets; Alpine OpenSSL is
+    // installed before this script so detection matches openssl-3.0.x.
     const result = spawnSync(process.execPath, [cli, 'generate'], {
         cwd: ROOT,
         encoding: 'utf8',
-        env: {
-            ...process.env,
-            PRISMA_CLI_BINARY_TARGETS: 'native,linux-musl,linux-musl-openssl-3.0.x,debian-openssl-3.0.x',
-        },
+        env: process.env,
     });
 
     return {

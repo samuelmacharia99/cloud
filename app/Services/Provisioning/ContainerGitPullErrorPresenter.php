@@ -171,6 +171,14 @@ class ContainerGitPullErrorPresenter
                 );
             }
 
+            if ($this->contains($message, ['unknown binarytarget'])) {
+                return $this->result(
+                    'Prisma generate rejected an invalid engine target.',
+                    'Retry the pull. Talksasa regenerates Prisma Client from schema.prisma after installing Alpine OpenSSL, without passing "native" (that keyword is only valid inside the schema). If it still fails, add both "linux-musl" and "linux-musl-openssl-3.0.x" to binaryTargets, commit, and retry.',
+                    $details,
+                );
+            }
+
             if ($hasPrismaMusl) {
                 return $this->result(
                     'Prisma could not load its query engine on Alpine.',

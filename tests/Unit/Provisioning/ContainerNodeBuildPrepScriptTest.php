@@ -88,7 +88,11 @@ class ContainerNodeBuildPrepScriptTest extends TestCase
         file_put_contents($temp.'/prisma/schema.prisma', "generator client {\n  provider = \"prisma-client-js\"\n}\n");
         file_put_contents(
             $temp.'/node_modules/prisma/build/index.js',
-            "const fs = require('fs');\nfs.writeFileSync('prisma-generated.marker', process.argv.slice(2).join(' '));\n"
+            "const fs = require('fs');\n"
+            ."fs.writeFileSync('prisma-generated.marker', JSON.stringify({\n"
+            ."  argv: process.argv.slice(2),\n"
+            ."  binaryTargets: process.env.PRISMA_CLI_BINARY_TARGETS ?? null,\n"
+            ."}));\n"
         );
 
         $script = realpath(__DIR__.'/../../../resources/container-templates/nodejs/prepare-build.cjs');
@@ -100,7 +104,9 @@ class ContainerNodeBuildPrepScriptTest extends TestCase
 
         $this->assertSame(0, $exitCode, implode("\n", $output));
         $this->assertFileExists($temp.'/prisma-generated.marker');
-        $this->assertSame('generate', trim((string) file_get_contents($temp.'/prisma-generated.marker')));
+        $generated = json_decode((string) file_get_contents($temp.'/prisma-generated.marker'), true, 512, JSON_THROW_ON_ERROR);
+        $this->assertSame(['generate'], $generated['argv']);
+        $this->assertNull($generated['binaryTargets']);
 
         $marker = json_decode((string) file_get_contents($temp.'/.talksasa/build-prepared.json'), true, 512, JSON_THROW_ON_ERROR);
         $this->assertSame('prisma/schema.prisma', $marker['prisma']['schema']);
