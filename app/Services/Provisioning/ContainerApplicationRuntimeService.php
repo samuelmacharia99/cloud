@@ -1187,6 +1187,7 @@ class ContainerApplicationRuntimeService
 
     public function nodeBootstrap(?string $packageJson = null): string
     {
+        $openssl = 'if command -v apk >/dev/null 2>&1; then apk add --no-cache openssl libc6-compat >/dev/null 2>&1 || true; fi; ';
         $binFix = 'find node_modules/.bin node_modules/next/dist/bin node_modules/vite/bin -type f -exec chmod u+x {} + 2>/dev/null || true';
         $installForBuild = $this->npmInstallShellCommand();
         $buildCommand = $this->npmBuildShellCommand(null, false, $packageJson);
@@ -1202,7 +1203,7 @@ class ContainerApplicationRuntimeService
             : $this->npmOmitDevInstallCommand($packageJson);
 
         if (! $this->packageJsonRequiresProductionBuild($packageJson)) {
-            return '[ -f package.json ] && '.$steadyStateInstall.' && '.$binFix;
+            return $openssl.'[ -f package.json ] && '.$steadyStateInstall.' && '.$binFix;
         }
 
         $artifactMissingCheck = $this->packageJsonBuildArtifactMissingCheck($packageJson);
@@ -1210,7 +1211,7 @@ class ContainerApplicationRuntimeService
         $buildBranch = $installForBuild.' && '.$binFix.' && '.$prepareStep.$buildCommand
             .($pruneStep !== '' ? ' && '.$pruneStep : '');
 
-        return '[ -f package.json ] && { if '.$artifactMissingCheck.'; then rm -rf node_modules && '.$buildBranch.'; else '.$steadyStateInstall.' && '.$binFix.'; fi; }';
+        return $openssl.'[ -f package.json ] && { if '.$artifactMissingCheck.'; then rm -rf node_modules && '.$buildBranch.'; else '.$steadyStateInstall.' && '.$binFix.'; fi; }';
     }
 
     private function rubyBootstrap(): string

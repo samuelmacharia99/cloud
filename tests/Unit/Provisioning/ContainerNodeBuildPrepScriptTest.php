@@ -73,4 +73,37 @@ class ContainerNodeBuildPrepScriptTest extends TestCase
         $this->assertSame('next start -H 0.0.0.0', $pkg['scripts']['start']);
         $this->assertStringNotContainsString('3001', $pkg['scripts']['start']);
     }
+
+    #[Test]
+    public function it_runs_prisma_generate_when_a_schema_is_present(): void
+    {
+        $temp = sys_get_temp_dir().'/talksasa-node-prep-prisma-'.uniqid();
+        mkdir($temp.'/prisma', 0777, true);
+        mkdir($temp.'/node_modules/prisma/build', 0777, true);
+
+        file_put_contents($temp.'/package.json', json_encode([
+            'name' => 'prisma-app',
+            'dependencies' => ['next' => '14.2.35', 'prisma' => '5.22.0'],
+        ], JSON_THROW_ON_ERROR));
+        file_put_contents($temp.'/prisma/schema.prisma', "generator client {\n  provider = \"prisma-client-js\"\n}\n");
+        file_put_contents(
+            $temp.'/node_modules/prisma/build/index.js',
+            "const fs = require('fs');\nfs.writeFileSync('prisma-generated.marker', process.argv.slice(2).join(' '));\n"
+        );
+
+        $script = realpath(__DIR__.'/../../../resources/container-templates/nodejs/prepare-build.cjs');
+        $this->assertNotFalse($script);
+
+        $output = [];
+        $exitCode = 0;
+        exec('cd '.escapeshellarg($temp).' && node '.escapeshellarg($script).' 2>&1', $output, $exitCode);
+
+        $this->assertSame(0, $exitCode, implode("\n", $output));
+        $this->assertFileExists($temp.'/prisma-generated.marker');
+        $this->assertSame('generate', trim((string) file_get_contents($temp.'/prisma-generated.marker')));
+
+        $marker = json_decode((string) file_get_contents($temp.'/.talksasa/build-prepared.json'), true, 512, JSON_THROW_ON_ERROR);
+        $this->assertSame('prisma/schema.prisma', $marker['prisma']['schema']);
+        $this->assertSame(0, $marker['prisma']['status']);
+    }
 }

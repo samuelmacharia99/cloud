@@ -94,6 +94,37 @@ class ContainerGitPullErrorPresenterTest extends TestCase
     }
 
     #[Test]
+    public function it_explains_prisma_musl_and_use_server_build_failures(): void
+    {
+        $pull = $this->failedPull(
+            'post_pull',
+            'Run stack post-pull steps',
+            'Node post-pull step failed: PrismaClientInitializationError: Prisma Client could not locate the Query Engine for runtime "linux-musl". binaryTargets have been pinned. Error: A "use server" file can only export async functions, found object. Failed to collect page data for /crm/support/service-requests',
+        );
+
+        $error = $this->presenter->present($pull);
+
+        $this->assertSame('The Next.js build failed on Prisma and a server action.', $error['title']);
+        $this->assertStringContainsString('/crm/support/service-requests', $error['guidance']);
+        $this->assertStringContainsString('async function', $error['guidance']);
+    }
+
+    #[Test]
+    public function it_explains_use_server_export_failures(): void
+    {
+        $pull = $this->failedPull(
+            'post_pull',
+            'Run stack post-pull steps',
+            'Error: A "use server" file can only export async functions, found object. Read more: https://nextjs.org/docs/messages/invalid-use-server-value Failed to collect page data for /settings',
+        );
+
+        $error = $this->presenter->present($pull);
+
+        $this->assertSame('Next.js rejected a server action export.', $error['title']);
+        $this->assertStringContainsString('/settings', $error['guidance']);
+    }
+
+    #[Test]
     public function it_returns_no_error_for_a_successful_pull(): void
     {
         $pull = new ContainerGitPull([

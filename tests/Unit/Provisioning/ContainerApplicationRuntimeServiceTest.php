@@ -355,6 +355,7 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
         $runtime = new ContainerApplicationRuntimeService;
         $bootstrap = $runtime->nodeBootstrap($packageJson);
 
+        $this->assertStringContainsString('apk add --no-cache openssl libc6-compat', $bootstrap);
         $this->assertStringContainsString('env -i HOME=/tmp', $bootstrap);
         $this->assertStringContainsString('/usr/local/bin/npm install --production=false --include=dev', $bootstrap);
         $this->assertStringContainsString('node ./node_modules/next/dist/bin/next build', $bootstrap);

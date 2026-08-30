@@ -1107,12 +1107,26 @@ class ContainerStackCommandService
         $imageArg = escapeshellarg($dockerImage);
         $volumeArg = escapeshellarg(rtrim($hostAppPath, '/').':'.rtrim($workDir, '/'));
         $workDirArg = escapeshellarg($workDir);
-        $commandArg = escapeshellarg($command);
+        $wrapped = $this->alpineOpensslEnsurePrefix($dockerImage).$command;
+        $commandArg = escapeshellarg($wrapped);
 
         return trim($ssh->exec(
             "docker run --rm -v {$volumeArg} -w {$workDirArg} {$imageArg} sh -c {$commandArg}",
             $timeout
         ));
+    }
+
+    /**
+     * Prisma on node:*-alpine cannot detect libssl and then looks for linux-musl
+     * (OpenSSL 1.1) instead of linux-musl-openssl-3.0.x. Install OpenSSL first.
+     */
+    public function alpineOpensslEnsurePrefix(string $dockerImage): string
+    {
+        if (! str_contains(strtolower($dockerImage), 'alpine')) {
+            return '';
+        }
+
+        return 'if command -v apk >/dev/null 2>&1; then apk add --no-cache openssl libc6-compat >/dev/null 2>&1 || true; fi; ';
     }
 
     private function isSafeDockerImageReference(string $image): bool

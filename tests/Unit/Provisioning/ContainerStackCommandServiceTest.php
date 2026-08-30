@@ -138,6 +138,7 @@ class ContainerStackCommandServiceTest extends TestCase
             ->method('exec')
             ->with($this->callback(fn (string $command): bool => str_contains($command, 'docker run --rm -v ')
                 && str_contains($command, 'node:20-alpine')
+                && str_contains($command, 'apk add --no-cache openssl libc6-compat')
                 && str_contains($command, 'node ./node_modules/next/dist/bin/next build')))
             ->willReturn('');
 
@@ -171,6 +172,14 @@ class ContainerStackCommandServiceTest extends TestCase
             '/app',
             600
         );
+    }
+
+    #[Test]
+    public function it_skips_alpine_openssl_prefix_on_debian_node_images(): void
+    {
+        $service = new ContainerStackCommandService;
+        $this->assertSame('', $service->alpineOpensslEnsurePrefix('node:20-bookworm-slim'));
+        $this->assertStringContainsString('apk add --no-cache openssl', $service->alpineOpensslEnsurePrefix('node:20-alpine'));
     }
 
     #[Test]

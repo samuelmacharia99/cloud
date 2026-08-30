@@ -253,18 +253,58 @@ function patchPackageJsonNextListen() {
     return { from: original, to: start };
 }
 
+function generatePrismaClient() {
+    const schemaRel = ['prisma/schema.prisma', 'schema.prisma'].find((relative) =>
+        fs.existsSync(path.join(ROOT, relative))
+    );
+    if (!schemaRel) {
+        return { skipped: 'no-schema' };
+    }
+
+    const cli = path.join(ROOT, 'node_modules/prisma/build/index.js');
+    if (!fs.existsSync(cli)) {
+        return { skipped: 'prisma-cli-missing', schema: schemaRel };
+    }
+
+    const { spawnSync } = require('child_process');
+    const result = spawnSync(process.execPath, [cli, 'generate'], {
+        cwd: ROOT,
+        encoding: 'utf8',
+        env: {
+            ...process.env,
+            PRISMA_CLI_BINARY_TARGETS: 'native,linux-musl,linux-musl-openssl-3.0.x,debian-openssl-3.0.x',
+        },
+    });
+
+    return {
+        schema: schemaRel,
+        status: result.status,
+        stdout: String(result.stdout || '').slice(-500),
+        stderr: String(result.stderr || '').slice(-800),
+    };
+}
+
 function main() {
     ensureTalksasaDir();
 
+    const prisma = generatePrismaClient();
     const result = {
         preparedAt: new Date().toISOString(),
         tsconfig: patchAllTsConfigs(),
         next: wrapNextConfig(),
         nuxt: wrapNuxtConfig(),
         nextListen: patchPackageJsonNextListen(),
+        prisma,
     };
 
     fs.writeFileSync(MARKER, JSON.stringify(result, null, 2) + '\n');
+
+    if (prisma && Number.isInteger(prisma.status) && prisma.status !== 0) {
+        if (prisma.stderr) {
+            process.stderr.write(prisma.stderr);
+        }
+        process.exit(prisma.status);
+    }
 }
 
 main();

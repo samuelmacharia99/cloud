@@ -142,6 +142,43 @@ class ContainerGitPullErrorPresenter
                 );
             }
 
+            $hasUseServer = $this->contains($message, ['use server', '"use server"'])
+                && $this->contains($message, ['can only export async functions', 'invalid-use-server-value']);
+            $hasPrismaMusl = $this->contains($message, ['prismaclientinitializationerror', 'prisma client could not locate'])
+                && $this->contains($message, ['linux-musl', 'binarytargets']);
+
+            if ($hasUseServer && $hasPrismaMusl) {
+                $route = $this->nextPageDataRoute($details);
+
+                return $this->result(
+                    'The Next.js build failed on Prisma and a server action.',
+                    'Retry the pull so Alpine OpenSSL is installed before Prisma generate. Also fix the "use server" file'
+                    .($route !== null ? ' used by '.$route : '')
+                    .': it exported an object, but Next.js only allows async function exports. Push that fix, then restart the pull.',
+                    $details,
+                );
+            }
+
+            if ($hasUseServer) {
+                $route = $this->nextPageDataRoute($details);
+
+                return $this->result(
+                    'Next.js rejected a server action export.',
+                    'A file marked "use server"'
+                    .($route !== null ? ' (used by '.$route.')' : '')
+                    .' exported an object instead of async functions. Export only async functions from that file, push the fix, then restart the pull.',
+                    $details,
+                );
+            }
+
+            if ($hasPrismaMusl) {
+                return $this->result(
+                    'Prisma could not load its query engine on Alpine.',
+                    'Retry the pull. Talksasa now installs OpenSSL in the Alpine build sidecar and regenerates Prisma Client so linux-musl-openssl-3.0.x is available. If it still fails, add both "linux-musl" and "linux-musl-openssl-3.0.x" to binaryTargets in schema.prisma, commit, and retry.',
+                    $details,
+                );
+            }
+
             return $this->result(
                 'The application build failed.',
                 'Review the build output below, fix the dependency or build error, then restart the pull.',
@@ -186,6 +223,17 @@ class ContainerGitPullErrorPresenter
         }
 
         return false;
+    }
+
+    private function nextPageDataRoute(string $details): ?string
+    {
+        if (preg_match('/Failed to collect page data for (\/[^\s]+)/', $details, $matches) !== 1) {
+            return null;
+        }
+
+        $route = rtrim((string) $matches[1], '.');
+
+        return $route !== '' ? $route : null;
     }
 
     private function failedStepKey(ContainerGitPull $pull): ?string
