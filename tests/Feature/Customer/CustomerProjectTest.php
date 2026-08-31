@@ -371,6 +371,7 @@ YAML,
             ->assertSee('1 Member')
             ->assertSee('1 Resource')
             ->assertSee('Deploy new service')
+            ->assertSee('aria-label="Rename project"', false)
             ->assertSee('not billed again');
     }
 }
