@@ -68,20 +68,31 @@ class ProjectHostingCheckoutService
         }
 
         $projectName = $this->recipes->defaultProjectName($session, $domainHint);
-        $project = CustomerProject::create([
-            'user_id' => $user->id,
-            'name' => mb_substr($projectName, 0, 100),
-            'recipe_key' => $recipe['key'],
-            'resource_pool' => [
-                'product_id' => $product->id,
-                'product_name' => $product->name,
-                'roles' => collect($roles)->map(fn (array $r) => [
-                    'key' => $r['key'],
-                    'cpu_share' => $r['cpu_share'],
-                    'memory_share' => $r['memory_share'],
-                ])->values()->all(),
-            ],
-        ]);
+        $resourcePool = [
+            'product_id' => $product->id,
+            'product_name' => $product->name,
+            'roles' => collect($roles)->map(fn (array $r) => [
+                'key' => $r['key'],
+                'cpu_share' => $r['cpu_share'],
+                'memory_share' => $r['memory_share'],
+            ])->values()->all(),
+        ];
+
+        $existing = $this->projects->projectFromTechstackSession($user);
+        if ($existing && $existing->liveApplicationHostingServices()->isEmpty()) {
+            $existing->update([
+                'recipe_key' => $recipe['key'],
+                'resource_pool' => $resourcePool,
+            ]);
+            $project = $existing;
+        } else {
+            $project = CustomerProject::create([
+                'user_id' => $user->id,
+                'name' => mb_substr($projectName, 0, 100),
+                'recipe_key' => $recipe['key'],
+                'resource_pool' => $resourcePool,
+            ]);
+        }
 
         $provisioningDriver = $product->provisioning_driver_key ?: 'container';
         $nextDue = now()->addMonths($this->billingCycleMonths((string) ($item['billing_cycle'] ?? 'monthly')));

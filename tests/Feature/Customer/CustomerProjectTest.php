@@ -149,7 +149,8 @@ YAML,
             ->assertOk()
             ->assertSee('Client A')
             ->assertSee('Solo Shared')
-            ->assertSee('drop here');
+            ->assertSee('Owner')
+            ->assertSee('1 Resource');
 
         $this->actingAs($customer)
             ->patchJson(route('customer.services.project', $service), [
@@ -322,7 +323,7 @@ YAML,
         $this->assertDatabaseHas('customer_projects', ['id' => $project->id]);
     }
 
-    public function test_empty_projects_are_hidden_on_services_index(): void
+    public function test_empty_projects_appear_as_cards_on_services_index(): void
     {
         $customer = User::factory()->customer()->create();
         $product = Product::factory()->create(['type' => 'shared_hosting', 'name' => 'Shared']);
@@ -341,7 +342,35 @@ YAML,
             ->get(route('customer.services.index'))
             ->assertOk()
             ->assertSee('Solo Shared')
-            ->assertDontSee('Empty — drop a service card here')
-            ->assertDontSee('>Orphan Empty Project</h2>', false);
+            ->assertSee('Orphan Empty Project')
+            ->assertSee('Choose a plan')
+            ->assertSee('New project');
+    }
+
+    public function test_billed_project_card_offers_included_deploy(): void
+    {
+        $customer = User::factory()->customer()->create();
+        $product = Product::factory()->containerHosting()->create(['name' => 'App Hosting']);
+        $project = CustomerProject::factory()->create([
+            'user_id' => $customer->id,
+            'name' => 'LS Production',
+        ]);
+        Service::factory()->create([
+            'user_id' => $customer->id,
+            'product_id' => $product->id,
+            'project_id' => $project->id,
+            'status' => 'active',
+            'billing_cycle' => 'monthly',
+        ]);
+
+        $this->actingAs($customer)
+            ->get(route('customer.services.index'))
+            ->assertOk()
+            ->assertSee('LS Production')
+            ->assertSee('Owner')
+            ->assertSee('1 Member')
+            ->assertSee('1 Resource')
+            ->assertSee('Deploy new service')
+            ->assertSee('not billed again');
     }
 }

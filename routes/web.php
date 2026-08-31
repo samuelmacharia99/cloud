@@ -612,6 +612,11 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::delete('/my/projects/{project}', [App\Http\Controllers\Customer\ServiceController::class, 'destroyProject'])
             ->middleware('throttle:10,1')
             ->name('customer.projects.destroy');
+        Route::get('/my/projects/{project}/deploy', [App\Http\Controllers\Customer\ServiceController::class, 'deployForm'])
+            ->name('customer.projects.deploy');
+        Route::post('/my/projects/{project}/deploy', [App\Http\Controllers\Customer\ServiceController::class, 'deploy'])
+            ->middleware('throttle:20,10')
+            ->name('customer.projects.deploy.store');
         Route::get('/my/services/{service}/wordpress-admin', [App\Http\Controllers\Customer\ServiceController::class, 'wordpressAdminLogin'])
             ->middleware('throttle:10,1')
             ->name('customer.services.wordpress-admin');

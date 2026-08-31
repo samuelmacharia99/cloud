@@ -74,12 +74,14 @@ class CustomerProjectService
 
     /**
      * @param  Collection<int, Service>  $services
+     * @param  Collection<int, CustomerProject>|null  $allProjects
      * @return list<array{type: string, project?: CustomerProject, services: Collection<int, Service>, containers: list<string>}>
      */
-    public function groupForDisplay(Collection $services): array
+    public function groupForDisplay(Collection $services, ?Collection $allProjects = null): array
     {
         $groups = [];
         $used = [];
+        $seenProjectIds = [];
 
         $byProject = $services
             ->filter(fn (Service $s) => $s->project_id)
@@ -118,10 +120,31 @@ class CustomerProjectService
                 'services' => $members->values(),
                 'containers' => $containers,
             ];
+            $seenProjectIds[$project->id] = true;
 
             foreach ($members as $member) {
                 $used[$member->id] = true;
             }
+        }
+
+        if ($allProjects) {
+            $empty = $allProjects
+                ->reject(fn (CustomerProject $project) => isset($seenProjectIds[$project->id]))
+                ->sortBy(fn (CustomerProject $project) => mb_strtolower($project->name));
+
+            foreach ($empty as $project) {
+                $groups[] = [
+                    'type' => 'project',
+                    'project' => $project,
+                    'services' => collect(),
+                    'containers' => [],
+                ];
+            }
+
+            $groups = collect($groups)
+                ->sortBy(fn (array $group) => mb_strtolower((string) ($group['project']->name ?? 'zzz')))
+                ->values()
+                ->all();
         }
 
         $ungrouped = $services
@@ -175,6 +198,51 @@ class CustomerProjectService
         }
     }
 
+    public function attachPaidServiceFromSession(User $user, Service $service): void
+    {
+        if (! $service->isContainerHosting()) {
+            return;
+        }
+
+        $session = session('selected_techstack', []);
+        $projectId = (int) ($session['project_id'] ?? 0);
+        if ($projectId <= 0) {
+            return;
+        }
+
+        $project = CustomerProject::query()
+            ->where('user_id', $user->id)
+            ->whereKey($projectId)
+            ->first();
+
+        if (! $project) {
+            return;
+        }
+
+        if (! $service->project_id) {
+            $this->assignService($service, $project);
+        }
+
+        $this->ensurePlanPool($project->fresh(['services.product', 'billingService']));
+    }
+
+    /**
+     * Existing empty project from “choose a plan to start”, if the customer owns it.
+     */
+    public function projectFromTechstackSession(User $user): ?CustomerProject
+    {
+        $session = session('selected_techstack', []);
+        $projectId = (int) ($session['project_id'] ?? 0);
+        if ($projectId <= 0) {
+            return null;
+        }
+
+        return CustomerProject::query()
+            ->where('user_id', $user->id)
+            ->whereKey($projectId)
+            ->first();
+    }
+
     public function createProject(User $user, string $name, ?Service $firstService = null): CustomerProject
     {
         $project = CustomerProject::create([
@@ -200,9 +268,80 @@ class CustomerProjectService
         $service->project_id = $project?->id;
         $service->save();
 
+        if ($project) {
+            $this->ensurePlanPool($project->fresh(['services.product', 'billingService']));
+        }
+
         if ($project === null) {
             $this->pruneEmptyProjects($service->user);
         }
+    }
+
+    /**
+     * Point the project at a billed Application Hosting plan and mark extras as included.
+     */
+    public function ensurePlanPool(CustomerProject $project): void
+    {
+        $project->loadMissing(['services.product', 'billingService']);
+
+        $anchor = $project->resolvedBillingService();
+        if (! $anchor) {
+            return;
+        }
+
+        $updates = [];
+        if (! $project->billing_service_id) {
+            $updates['billing_service_id'] = $anchor->id;
+        }
+        if (! $project->recipe_key) {
+            $updates['recipe_key'] = CustomerProject::PLAN_POOL_RECIPE;
+        }
+        if ($updates !== []) {
+            $project->update($updates);
+        }
+
+        $this->markAnchorMeta($anchor, $project);
+
+        foreach ($project->liveApplicationHostingServices() as $member) {
+            if ((int) $member->id === (int) $anchor->id) {
+                continue;
+            }
+            $this->markIncludedWorkloadMeta($member, $project);
+        }
+    }
+
+    public function markAnchorMeta(Service $service, CustomerProject $project): void
+    {
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        if (! empty($meta['project_recipe']) && ! empty($meta['project_billing_anchor'])) {
+            return;
+        }
+
+        $recipe = $project->recipe_key ?: CustomerProject::PLAN_POOL_RECIPE;
+        if (empty($meta['project_recipe'])) {
+            $meta['project_recipe'] = $recipe;
+        }
+        if (empty($meta['project_role'])) {
+            $meta['project_role'] = 'primary';
+            $meta['project_role_label'] = 'Primary';
+        }
+        $meta['project_billing_anchor'] = true;
+        $service->update(['service_meta' => $meta]);
+    }
+
+    public function markIncludedWorkloadMeta(Service $service, CustomerProject $project): void
+    {
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        if (! empty($meta['project_recipe']) && array_key_exists('project_billing_anchor', $meta) && ! $meta['project_billing_anchor']) {
+            return;
+        }
+
+        $recipe = $project->recipe_key ?: CustomerProject::PLAN_POOL_RECIPE;
+        $meta['project_recipe'] = $meta['project_recipe'] ?? $recipe;
+        $meta['project_role'] = $meta['project_role'] ?? 'workload';
+        $meta['project_role_label'] = $meta['project_role_label'] ?? 'Service';
+        $meta['project_billing_anchor'] = false;
+        $service->update(['service_meta' => $meta]);
     }
 
     /**

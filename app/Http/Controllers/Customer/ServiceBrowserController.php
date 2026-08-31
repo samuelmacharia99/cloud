@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Customer;
 use App\Enums\ServiceStatus;
 use App\Http\Controllers\Controller;
 use App\Models\ContainerTemplate;
+use App\Models\CustomerProject;
 use App\Models\DatabaseTemplate;
 use App\Models\Product;
 use App\Services\Checkout\SharedHostingCheckoutService;
@@ -128,6 +129,7 @@ class ServiceBrowserController extends Controller
             'deployment_platform' => 'nullable|in:shared,container',
             'framework' => 'nullable|string|max:64',
             'frontend' => 'nullable|string|max:64',
+            'project_id' => 'nullable|integer|exists:customer_projects,id',
         ]);
 
         $language = ContainerTemplate::findOrFail($validated['language_id']);
@@ -185,6 +187,17 @@ class ServiceBrowserController extends Controller
             'deployment_platform' => 'container',
             'stack_builder_version' => (int) config('stack_builder.version', 1),
         ];
+
+        $projectId = (int) ($validated['project_id'] ?? 0);
+        if ($projectId > 0) {
+            $ownedProject = CustomerProject::query()
+                ->where('user_id', $user->id)
+                ->whereKey($projectId)
+                ->first();
+            if ($ownedProject) {
+                $techstackData['project_id'] = $ownedProject->id;
+            }
+        }
 
         if ($database) {
             $techstackData['database_id'] = $database->id;

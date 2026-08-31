@@ -119,5 +119,11 @@ class ProjectRecipeServiceTest extends TestCase
             'project_role' => 'primary',
             'project_billing_anchor' => true,
         ]));
+
+        $this->assertTrue($service->shouldSkipRenewalInvoice([
+            'project_recipe' => 'plan_pool',
+            'project_role' => 'workload',
+            'project_billing_anchor' => false,
+        ]));
     }
 }

@@ -3,22 +3,27 @@
 namespace App\Http\Controllers\Customer;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\DeployProjectWorkloadRequest;
 use App\Http\Requests\DestroyCustomerProjectRequest;
 use App\Http\Requests\MoveCustomerServiceProjectRequest;
 use App\Http\Requests\RenameCustomerProjectRequest;
 use App\Http\Requests\RenameCustomerServiceRequest;
 use App\Http\Requests\StoreCustomerProjectRequest;
+use App\Models\ContainerTemplate;
 use App\Models\CustomerProject;
+use App\Models\DatabaseTemplate;
 use App\Models\Service;
 use App\Services\Customer\CustomerHostingUpgradeService;
 use App\Services\Customer\CustomerProjectRemovalService;
 use App\Services\Customer\CustomerProjectService;
 use App\Services\Customer\CustomerServiceCancellationService;
 use App\Services\Customer\CustomerServiceRenewalService;
+use App\Services\Customer\ProjectWorkloadDeployService;
 use App\Services\Hosting\ServicePackageUsageService;
 use App\Services\Provisioning\WordPressAdminLoginService;
 use App\Services\ServiceEnforcementInsightService;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 class ServiceController extends Controller
 {
@@ -36,8 +41,11 @@ class ServiceController extends Controller
             ->latest()
             ->get();
 
-        $serviceGroups = $projectService->groupForDisplay($services);
-        $projects = $user->customerProjects()->orderBy('name')->get();
+        $projects = $user->customerProjects()
+            ->with(['billingService.product.containerTemplate', 'billingService.containerDeployment'])
+            ->orderBy('name')
+            ->get();
+        $serviceGroups = $projectService->groupForDisplay($services, $projects);
 
         return view('customer.services.index', compact(
             'services',
@@ -78,7 +86,9 @@ class ServiceController extends Controller
             $service,
         );
 
-        return back()->with('success', 'Project “'.$project->name.'” created.');
+        return redirect()
+            ->route('customer.services.index', ['project' => $project->id])
+            ->with('success', 'Project “'.$project->name.'” created.');
     }
 
     public function renameProject(RenameCustomerProjectRequest $request, CustomerProject $project)
@@ -131,6 +141,70 @@ class ServiceController extends Controller
         return back()->with('success', $project
             ? 'Moved to “'.$project->name.'”.'
             : 'Removed from project.');
+    }
+
+    public function deployForm(CustomerProject $project)
+    {
+        $this->authorize('update', $project);
+
+        $languages = ContainerTemplate::active()
+            ->reorder()
+            ->orderByRaw("CASE slug
+                WHEN 'wordpress' THEN 1
+                WHEN 'nodejs' THEN 2
+                WHEN 'python' THEN 3
+                WHEN 'static-site' THEN 4
+                ELSE 100
+            END")
+            ->orderBy('order')
+            ->orderBy('name')
+            ->get();
+        $databases = DatabaseTemplate::active()->get();
+        $includedDeploy = $project->canDeployIncludedWorkload();
+
+        return view('customer.select-techstack', [
+            'languages' => $languages,
+            'databases' => $databases,
+            'cartCount' => 0,
+            'attachDomain' => null,
+            'project' => $project,
+            'includedDeploy' => $includedDeploy,
+            'stackFormAction' => $includedDeploy
+                ? route('customer.projects.deploy.store', $project)
+                : route('customer.confirm-techstack.store'),
+        ]);
+    }
+
+    public function deploy(
+        DeployProjectWorkloadRequest $request,
+        CustomerProject $project,
+        ProjectWorkloadDeployService $deployer,
+    ) {
+        $this->authorize('deployWorkload', $project);
+
+        $language = ContainerTemplate::query()->findOrFail($request->validated('language_id'));
+        $database = $request->filled('database_id')
+            ? DatabaseTemplate::query()->findOrFail($request->validated('database_id'))
+            : null;
+
+        try {
+            $service = $deployer->deploy(
+                $request->user(),
+                $project,
+                $language,
+                $database,
+                $request->validated('framework'),
+                $request->validated('frontend'),
+            );
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (\RuntimeException $e) {
+            return back()->withErrors(['language_id' => $e->getMessage()]);
+        }
+
+        return redirect()
+            ->route('customer.services.show', $service)
+            ->with('success', $service->name.' was added to '.$project->name.' on the existing plan. Extra usage above the plan is billed as overage.');
     }
 
     public function wordpressAdminLogin(Service $service, WordPressAdminLoginService $loginService)

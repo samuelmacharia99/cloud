@@ -560,6 +560,7 @@ class CheckoutController extends Controller
 
                         if ($product->type === 'container_hosting') {
                             app(CustomerProjectService::class)->syncRelated($service->fresh());
+                            app(CustomerProjectService::class)->attachPaidServiceFromSession($user, $service->fresh());
                         }
 
                         if ($product->type === 'container_hosting' && $request) {
@@ -1417,6 +1418,7 @@ class CheckoutController extends Controller
 
                         if ($product->type === 'container_hosting') {
                             app(CustomerProjectService::class)->syncRelated($service->fresh());
+                            app(CustomerProjectService::class)->attachPaidServiceFromSession($user, $service->fresh());
                         }
 
                         if ($product->type === 'container_hosting' && $request) {

@@ -4,6 +4,9 @@
 
 @section('content')
 @php
+    $project = $project ?? null;
+    $includedDeploy = $includedDeploy ?? false;
+    $stackFormAction = $stackFormAction ?? route('customer.confirm-techstack.store');
     $stackGlow = [
         'nodejs' => '51, 153, 51',
         'python' => '55, 118, 171',
@@ -36,24 +39,38 @@
     <div class="flex items-start justify-between gap-4">
         <div class="min-w-0">
             <p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-ink-500 dark:text-ink-400 mb-2">
-                Deploy · Runtime
+                @if($project)
+                    {{ $includedDeploy ? 'Project · Included deploy' : 'Project · Choose a plan' }}
+                @else
+                    Deploy · Runtime
+                @endif
             </p>
             <h1 class="font-display text-3xl sm:text-4xl text-ink-950 dark:text-white leading-[1.05]">
-                What are you shipping?
+                @if($project)
+                    Deploy into {{ $project->name }}
+                @else
+                    What are you shipping?
+                @endif
             </h1>
             <p class="text-ink-600 dark:text-ink-400 mt-2 max-w-xl text-[15px] leading-relaxed">
-                Pick a runtime. Configure framework, frontend, and database next — then push with Git on isolated application hosting.
+                @if($includedDeploy && $project)
+                    This site uses the existing {{ $project->resolvedBillingService()?->customerPlanName() ?? 'project' }} plan. You are not billed again — usage above the plan is metered on renewal.
+                @elseif($project)
+                    Pick a runtime, then choose a plan. Billing starts for this project after checkout.
+                @else
+                    Pick a runtime. Configure framework, frontend, and database next — then push with Git on isolated application hosting.
+                @endif
             </p>
         </div>
         <a
-            href="{{ route('customer.cart.index') }}"
+            href="{{ $project ? route('customer.services.index') : route('customer.cart.index') }}"
             class="shrink-0 inline-flex items-center gap-2 rounded-full border border-ink-200/80 dark:border-ink-700/80 bg-white/70 dark:bg-ink-900/60 backdrop-blur px-3.5 py-2 text-sm font-medium text-ink-700 dark:text-ink-200 hover:border-ink-300 dark:hover:border-ink-600 transition shadow-sm"
         >
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/>
             </svg>
-            Cart
-            @if($cartCount > 0)
+            {{ $project ? 'Back to projects' : 'Cart' }}
+            @if(!$project && $cartCount > 0)
                 <span class="min-w-[1.25rem] h-5 px-1.5 rounded-full bg-ink-950 dark:bg-brand-400 text-white dark:text-ink-950 text-[11px] font-bold flex items-center justify-center">{{ $cartCount }}</span>
             @endif
         </a>
@@ -116,12 +133,15 @@
         </div>
     </div>
 
-    <form id="skip-db-form" method="POST" action="{{ route('customer.confirm-techstack.store') }}" class="hidden">
+    <form id="skip-db-form" method="POST" action="{{ $stackFormAction }}" class="hidden">
         @csrf
         <input type="hidden" id="skip-db-form-language" name="language_id" value="">
         <input type="hidden" name="database_id" value="">
         <input type="hidden" name="frontend" value="static">
         <input type="hidden" name="deployment_platform" value="container">
+        @if($project && ! $includedDeploy)
+            <input type="hidden" name="project_id" value="{{ $project->id }}">
+        @endif
     </form>
 
     <div
@@ -277,12 +297,15 @@
                         <input type="hidden" name="framework" :value="selectedFramework || ''">
                         <input type="hidden" name="frontend" :value="selectedFrontend || ''">
                         <input type="hidden" name="deployment_platform" value="container">
+                        @if($project && ! $includedDeploy)
+                            <input type="hidden" name="project_id" value="{{ $project->id }}">
+                        @endif
                         <button
                             type="submit"
                             :disabled="!canContinue"
                             class="w-full px-6 py-3.5 bg-ink-950 hover:bg-ink-800 dark:bg-brand-400 dark:hover:bg-brand-300 dark:text-ink-950 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-2xl font-semibold shadow-lg shadow-ink-950/15 dark:shadow-brand-400/20 transition"
                         >
-                            Continue to packages
+                            {{ $includedDeploy ? 'Deploy service' : 'Continue to packages' }}
                         </button>
                     </form>
                     <button
@@ -308,7 +331,7 @@ function techstackSelector() {
         selectedDatabaseId: '',
         showStackModal: false,
         loading: false,
-        confirmTechstackUrl: @json(route('customer.confirm-techstack.store')),
+        confirmTechstackUrl: @json($stackFormAction),
         stackOptionsUrlTemplate: @json(url('/api/languages/__ID__/stack-options')),
 
         get canContinue() {

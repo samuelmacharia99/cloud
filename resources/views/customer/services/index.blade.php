@@ -62,7 +62,7 @@
         },
     }"
 >
-    <x-page-header title="My Services" description="Drag a service card onto a project to group it. Laravel + Next stacks group automatically.">
+    <x-page-header title="My Services" description="Projects share one plan. Open a project to deploy more services without a second bill — usage above the plan is metered.">
         <x-slot:actions>
             <button type="button" @click="showNewProject = true" class="btn-secondary">New project</button>
             <a href="{{ route('customer.email-hosting') }}" class="btn-secondary">Email Hosting</a>
@@ -73,7 +73,7 @@
     <div x-show="showNewProject" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" @keydown.escape.window="showNewProject = false">
         <div class="w-full max-w-md rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-xl p-6" @click.outside="showNewProject = false">
             <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-1">New project</h3>
-            <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Then use Move on a service card to add it. Empty projects stay hidden until they have a service.</p>
+            <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Give it a name, then open the card to choose a plan or deploy a service.</p>
             <form method="POST" action="{{ route('customer.projects.store') }}" class="space-y-4">
                 @csrf
                 <input type="text" name="name" x-model="newProjectName" required minlength="2" maxlength="100" class="w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800">
@@ -90,194 +90,32 @@
         x-cloak
         class="rounded-lg border border-brand-200 dark:border-brand-800 bg-brand-50 dark:bg-brand-950/40 px-4 py-2 text-sm text-brand-800 dark:text-brand-200"
     >
-        Drop onto a project folder (or “No project”) to move.
+        Drop onto a project card (or “No project”) to move.
     </p>
 
-    @if ($services->count() > 0)
-        <div class="space-y-5">
-            @foreach ($serviceGroups as $group)
-                @php
-                    $isProject = ($group['type'] ?? '') === 'project';
-                    $project = $isProject ? $group['project'] : null;
-                    $groupServices = $group['services'];
-                    $containers = $group['containers'] ?? [];
-                    $primaryContainer = $isProject
-                        ? $groupServices->first(fn ($s) => $s->isContainerHosting())
-                        : null;
-                    $canRemoveProject = $isProject && $groupServices->contains(fn ($s) => $s->isContainerHosting())
-                        && ! $groupServices->contains(function ($s) {
-                            $status = $s->status->value ?? (string) $s->status;
+    <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        @foreach ($serviceGroups as $group)
+            @include('customer.services.partials.project-card', [
+                'group' => $group,
+                'projects' => $projects,
+            ])
+        @endforeach
 
-                            return ! $s->isContainerHosting() && ! in_array($status, ['terminated', 'cancelled'], true);
-                        });
-                    $dropKey = $isProject ? (string) $project->id : 'none';
-                @endphp
+        <button
+            type="button"
+            @click="showNewProject = true"
+            class="min-h-[11.5rem] rounded-2xl border border-dashed border-slate-300 dark:border-white/20 bg-transparent text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:hover:border-white/40 hover:text-slate-700 dark:hover:text-slate-200 transition flex flex-col items-center justify-center gap-2"
+        >
+            <span class="text-2xl leading-none" aria-hidden="true">+</span>
+            <span class="text-sm font-medium">New project</span>
+        </button>
+    </div>
 
-                <section
-                    class="rounded-xl border bg-white dark:bg-slate-900 transition-colors"
-                    @if($isProject)
-                    x-data="{
-                        expanded: @js($groupServices->count() <= 6),
-                        showRenameProject: false,
-                        showRemoveProject: false,
-                        renameProjectName: @js($project->name),
-                        confirmName: '',
-                    }"
-                    @else
-                    x-data="{ expanded: @js($groupServices->count() <= 6) }"
-                    @endif
-                    :class="dropTarget === @js($dropKey) && draggingId
-                        ? 'border-brand-400 dark:border-brand-500 ring-2 ring-brand-300/60 dark:ring-brand-700/60 bg-brand-50/40 dark:bg-brand-950/20'
-                        : 'border-slate-200 dark:border-slate-700'"
-                    @dragover.prevent="onDragOver($event, @js($dropKey)); if (draggingId) expanded = true;"
-                    @dragleave="onDragLeave($event, @js($dropKey))"
-                    @drop.prevent="onDrop($event, @js($isProject ? $project->id : null))"
-                >
-                    @if($isProject)
-                        <div class="flex flex-wrap items-center justify-between gap-2 px-4 sm:px-5 py-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40">
-                            <button
-                                type="button"
-                                class="min-w-0 flex-1 flex items-start gap-2 text-left rounded-lg -m-1 p-1 hover:bg-slate-100/80 dark:hover:bg-slate-800/60 transition-colors"
-                                @click="expanded = !expanded"
-                                :aria-expanded="expanded.toString()"
-                                aria-controls="project-services-{{ $project->id }}"
-                            >
-                                <span class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 dark:text-slate-500 mt-0.5">
-                                    <svg class="w-4 h-4 transition-transform duration-200" :class="expanded ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                                    </svg>
-                                </span>
-                                <span class="min-w-0">
-                                    <h2 class="font-semibold text-slate-900 dark:text-white truncate">{{ $project->name }}</h2>
-                                    <p class="text-xs text-slate-500 dark:text-slate-400">
-                                        {{ $groupServices->count() }} {{ Str::plural('service', $groupServices->count()) }}
-                                        @if(count($containers) >= 2)
-                                            · {{ implode(', ', $containers) }}
-                                        @endif
-                                        @if(!empty($project->recipe_key))
-                                            · billed as one project
-                                        @endif
-                                        · drop here
-                                        <span x-show="!expanded" x-cloak class="text-slate-400 dark:text-slate-500"> · collapsed</span>
-                                    </p>
-                                </span>
-                            </button>
-                            <div class="flex items-center gap-3 shrink-0">
-                                <button type="button" @click.stop="showRenameProject = true" class="text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-400">
-                                    Rename project
-                                </button>
-                                @if($canRemoveProject)
-                                    <button type="button" @click.stop="showRemoveProject = true" class="text-sm font-medium text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300">
-                                        Remove project
-                                    </button>
-                                @endif
-                            </div>
-
-                            <div x-show="showRenameProject" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" @keydown.escape.window="showRenameProject = false">
-                                <div class="w-full max-w-md rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-xl p-6" @click.outside="showRenameProject = false">
-                                    <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Rename project</h3>
-                                    <form method="POST" action="{{ route('customer.projects.rename', $project) }}" class="space-y-4">
-                                        @csrf
-                                        @method('PATCH')
-                                        <input type="text" name="name" x-model="renameProjectName" required minlength="2" maxlength="100" class="w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800">
-                                        <div class="flex gap-2">
-                                            <button type="button" @click="showRenameProject = false" class="btn-secondary flex-1 btn-sm">Cancel</button>
-                                            <button type="submit" class="btn-primary flex-1 btn-sm">Save</button>
-                                        </div>
-                                    </form>
-                                </div>
-                            </div>
-
-                            @if($canRemoveProject)
-                                <div x-show="showRemoveProject" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" @keydown.escape.window="showRemoveProject = false">
-                                    <div class="w-full max-w-md rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-xl p-6" @click.outside="showRemoveProject = false">
-                                        <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-1">Remove project</h3>
-                                        <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">
-                                            This permanently deletes every Application Hosting site in <strong>{{ $project->name }}</strong>, including containers and files. This cannot be undone. Email Hosting is not deleted this way.
-                                        </p>
-                                        <form method="POST" action="{{ route('customer.projects.destroy', $project) }}" class="space-y-4">
-                                            @csrf
-                                            @method('DELETE')
-                                            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                                                Type <span class="font-mono">{{ $project->name }}</span> to confirm
-                                                <input type="text" name="confirm_name" x-model="confirmName" required autocomplete="off" class="mt-1.5 w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800">
-                                            </label>
-                                            <label class="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-300">
-                                                <input type="checkbox" name="confirm" value="1" required class="mt-1 rounded border-slate-300 dark:border-slate-600">
-                                                <span>I understand these Application Hosting sites and their files will be permanently deleted.</span>
-                                            </label>
-                                            <div class="flex gap-2">
-                                                <button type="button" @click="showRemoveProject = false" class="btn-secondary flex-1 btn-sm">Keep project</button>
-                                                <button
-                                                    type="submit"
-                                                    class="flex-1 btn-sm rounded-lg bg-red-600 hover:bg-red-700 text-white font-medium px-3 py-2 disabled:opacity-40"
-                                                    :disabled="confirmName !== @js($project->name)"
-                                                >Delete sites</button>
-                                            </div>
-                                        </form>
-                                    </div>
-                                </div>
-                            @endif
-                        </div>
-                    @else
-                        <button
-                            type="button"
-                            class="w-full flex items-center gap-2 px-4 sm:px-5 py-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 text-left hover:bg-slate-100/80 dark:hover:bg-slate-800/60 transition-colors"
-                            @click="expanded = !expanded"
-                            :aria-expanded="expanded.toString()"
-                            aria-controls="project-services-none"
-                        >
-                            <span class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 dark:text-slate-500">
-                                <svg class="w-4 h-4 transition-transform duration-200" :class="expanded ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                                </svg>
-                            </span>
-                            <span class="min-w-0">
-                                <h2 class="font-semibold text-slate-900 dark:text-white">No project</h2>
-                                <p class="text-xs text-slate-500 dark:text-slate-400">
-                                    Drag cards here to ungroup, or onto a project above.
-                                    <span x-show="!expanded" x-cloak class="text-slate-400 dark:text-slate-500"> · collapsed</span>
-                                </p>
-                            </span>
-                        </button>
-                    @endif
-
-                    <div
-                        id="{{ $isProject ? 'project-services-'.$project->id : 'project-services-none' }}"
-                        x-show="expanded"
-                        x-cloak
-                        x-transition:enter="transition ease-out duration-150"
-                        x-transition:enter-start="opacity-0 -translate-y-1"
-                        x-transition:enter-end="opacity-100 translate-y-0"
-                        x-transition:leave="transition ease-in duration-100"
-                        x-transition:leave-start="opacity-100"
-                        x-transition:leave-end="opacity-0"
-                        class="p-4 sm:p-5"
-                    >
-                        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-5 min-h-[6rem]">
-                            @foreach ($groupServices as $service)
-                                @include('customer.services.partials.service-card', [
-                                    'service' => $service,
-                                    'allProjects' => $projects,
-                                    'nestedContainers' => (
-                                        $primaryContainer
-                                        && $service->id === $primaryContainer->id
-                                        && count($containers) >= 2
-                                    ) ? $containers : [],
-                                ])
-                            @endforeach
-                        </div>
-                    </div>
-                </section>
-            @endforeach
-        </div>
-    @else
-        <x-empty-state
-            title="No services yet"
-            description="Deploy application hosting, or order Email Hosting as its own plan and bundle them in the cart."
-            action-label="Deploy your first app"
-            action-href="{{ $deployUrl }}"
-        />
+    @if ($services->isEmpty() && $projects->isEmpty())
+        <p class="text-sm text-slate-500 dark:text-slate-400">
+            Create a project, then deploy an Application Hosting plan into it.
+            <a href="{{ $deployUrl }}" class="font-medium text-brand-600 dark:text-brand-400 hover:underline">Deploy your first app</a>
+        </p>
     @endif
 </div>
 @endsection
