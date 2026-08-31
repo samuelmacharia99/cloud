@@ -87,8 +87,40 @@ class ServiceController extends Controller
         );
 
         return redirect()
-            ->route('customer.services.index', ['project' => $project->id])
+            ->route('customer.projects.show', $project)
             ->with('success', 'Project “'.$project->name.'” created.');
+    }
+
+    public function showProject(CustomerProject $project, CustomerProjectService $projectService)
+    {
+        $this->authorize('view', $project);
+
+        if ((int) $project->user_id !== (int) auth()->id()) {
+            abort(403);
+        }
+
+        $user = auth()->user();
+        $project->load(['billingService.product.containerTemplate', 'billingService.containerDeployment']);
+
+        $services = $user->services()
+            ->with(['product.containerTemplate', 'resellerProduct', 'invoice', 'containerDeployment'])
+            ->where('project_id', $project->id)
+            ->whereNotIn('status', ['cancelled', 'terminated'])
+            ->whereHas('product', fn ($q) => $q->where('type', '!=', 'domain'))
+            ->latest()
+            ->get();
+
+        $projects = $user->customerProjects()->orderBy('name')->get();
+        $containers = $projectService->containerLabelsForMembers($services);
+        $primaryContainer = $services->first(fn (Service $s) => $s->isContainerHosting());
+
+        return view('customer.services.project-show', compact(
+            'project',
+            'services',
+            'projects',
+            'containers',
+            'primaryContainer',
+        ));
     }
 
     public function renameProject(RenameCustomerProjectRequest $request, CustomerProject $project)

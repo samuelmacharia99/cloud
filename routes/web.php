@@ -608,6 +608,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::patch('/my/services/{service}/rename', [App\Http\Controllers\Customer\ServiceController::class, 'rename'])->name('customer.services.rename');
         Route::patch('/my/services/{service}/project', [App\Http\Controllers\Customer\ServiceController::class, 'moveService'])->name('customer.services.project');
         Route::post('/my/projects', [App\Http\Controllers\Customer\ServiceController::class, 'storeProject'])->name('customer.projects.store');
+        Route::get('/my/projects/{project}', [App\Http\Controllers\Customer\ServiceController::class, 'showProject'])->name('customer.projects.show');
         Route::patch('/my/projects/{project}/rename', [App\Http\Controllers\Customer\ServiceController::class, 'renameProject'])->name('customer.projects.rename');
         Route::delete('/my/projects/{project}', [App\Http\Controllers\Customer\ServiceController::class, 'destroyProject'])
             ->middleware('throttle:10,1')

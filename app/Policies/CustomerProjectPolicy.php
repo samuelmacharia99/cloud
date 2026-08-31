@@ -13,6 +13,13 @@ class CustomerProjectPolicy
         return Response::allow();
     }
 
+    public function view(User $user, CustomerProject $customerProject): Response
+    {
+        return $user->is_admin || $user->id === $customerProject->user_id
+            ? Response::allow()
+            : Response::deny('You can only view your own projects.');
+    }
+
     public function rename(User $user, CustomerProject $customerProject): Response
     {
         return $user->is_admin || $user->id === $customerProject->user_id

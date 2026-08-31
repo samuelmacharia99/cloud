@@ -4,6 +4,8 @@ namespace App\Services\Provisioning;
 
 use App\Models\Service;
 use App\Services\SSH\SSHService;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use RuntimeException;
 
 class WordPressAdminLoginService
@@ -314,12 +316,61 @@ PHP;
         string $appService,
         array $envValues
     ): int {
-        $preferredLogin = trim((string) ($envValues['WORDPRESS_ADMIN_USER'] ?? 'admin'));
-        $preferredLogin = preg_replace('/[^a-zA-Z0-9._@-]/', '', $preferredLogin) ?: 'admin';
-        $preferredEmail = trim((string) ($envValues['WORDPRESS_ADMIN_EMAIL'] ?? ''));
+        $php = $this->administratorProbeScript(
+            (string) ($envValues['WORDPRESS_ADMIN_USER'] ?? 'admin'),
+            (string) ($envValues['WORDPRESS_ADMIN_EMAIL'] ?? '')
+        );
+
+        try {
+            $output = $ssh->exec(
+                "cd {$containerPath} && docker compose exec -T {$appService} php -d display_errors=0 -r ".escapeshellarg($php),
+                60
+            );
+        } catch (\Throwable $e) {
+            throw new RuntimeException(
+                'Could not resolve a WordPress administrator account: '.$e->getMessage(),
+                0,
+                $e
+            );
+        }
+
+        $userId = $this->parseAdministratorIdFromOutput($output);
+        if ($userId > 0) {
+            return $userId;
+        }
+
+        $diagnostics = $this->parseDiagnosticsFromOutput($output);
+        $probeAnswered = str_contains($output, 'TALKASA_WP_ADMIN_ID=');
+
+        Log::error('WordPress admin SSO could not resolve an administrator.', [
+            'container' => $appService,
+            'probe_answered' => $probeAnswered,
+            'diagnostics' => $diagnostics,
+            'output_tail' => $this->tailForLog($output),
+        ]);
+
+        if (! $probeAnswered) {
+            throw new RuntimeException(
+                'Could not read this site\'s WordPress users.'
+                .' The container responded but WordPress did not, so it may still be installing or its database is unreachable.'
+                .' Try again in a moment — if it keeps failing, contact support.'
+            );
+        }
+
+        throw new RuntimeException($this->noAdministratorMessage($diagnostics));
+    }
+
+    /**
+     * PHP run inside the container to find a user we can safely sign in as.
+     * Each strategy is a fallback for a way sites drift after imports and converts.
+     */
+    public function administratorProbeScript(string $preferredLogin, string $preferredEmail = ''): string
+    {
+        $preferredLogin = preg_replace('/[^a-zA-Z0-9._@-]/', '', trim($preferredLogin)) ?: 'admin';
+        $preferredEmail = trim($preferredEmail);
         $preferredEmail = filter_var($preferredEmail, FILTER_VALIDATE_EMAIL) ? $preferredEmail : '';
 
-        $php = <<<PHP
+        return <<<PHP
 @ini_set('display_errors', '0');
 @ini_set('display_startup_errors', '0');
 error_reporting(0);
@@ -372,32 +423,28 @@ if (\$userId > 0) {
 if (! empty(\$capsUsers[0])) {
     \$emit((int) \$capsUsers[0]);
 }
+if (is_multisite() && function_exists('get_super_admins')) {
+    foreach ((array) get_super_admins() as \$superLogin) {
+        \$superUser = get_user_by('login', (string) \$superLogin);
+        if (\$superUser) {
+            \$emit((int) \$superUser->ID);
+        }
+    }
+}
+\$roles = function_exists('wp_roles') ? array_keys((array) wp_roles()->roles) : [];
+echo 'TALKASA_WP_ADMIN_DIAG=' . json_encode([
+    'multisite' => is_multisite() ? 1 : 0,
+    'users' => (int) \$wpdb->get_var("SELECT COUNT(*) FROM {\$wpdb->users}"),
+    'cap_rows' => (int) \$wpdb->get_var(\$wpdb->prepare(
+        "SELECT COUNT(*) FROM {\$wpdb->usermeta} WHERE meta_key = %s",
+        \$metaKey
+    )),
+    'meta_key' => \$metaKey,
+    'roles' => array_slice(\$roles, 0, 12),
+]) . "\n";
 echo 'TALKASA_WP_ADMIN_ID=0';
 exit(0);
 PHP;
-
-        try {
-            $output = $ssh->exec(
-                "cd {$containerPath} && docker compose exec -T {$appService} php -d display_errors=0 -r ".escapeshellarg($php),
-                60
-            );
-        } catch (\Throwable $e) {
-            throw new RuntimeException(
-                'Could not resolve a WordPress administrator account: '.$e->getMessage(),
-                0,
-                $e
-            );
-        }
-
-        $userId = $this->parseAdministratorIdFromOutput($output);
-        if ($userId > 0) {
-            return $userId;
-        }
-
-        throw new RuntimeException(
-            'Could not resolve a WordPress administrator account.'
-            .' Ensure the site has at least one administrator user, then try again.'
-        );
     }
 
     public function parseAdministratorIdFromOutput(string $output): int
@@ -407,5 +454,50 @@ PHP;
         }
 
         return 0;
+    }
+
+    /**
+     * Counts and role names the container reported when no administrator was found.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function parseDiagnosticsFromOutput(string $output): ?array
+    {
+        if (preg_match('/TALKASA_WP_ADMIN_DIAG=(\{[^\r\n]*\})/', $output, $matches) !== 1) {
+            return null;
+        }
+
+        $decoded = json_decode($matches[1], true);
+
+        return is_array($decoded) ? $decoded : null;
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $diagnostics
+     */
+    public function noAdministratorMessage(?array $diagnostics): string
+    {
+        $base = 'No WordPress user on this site has administrator permissions, so there is no account to sign you in as.';
+        $users = isset($diagnostics['users']) ? (int) $diagnostics['users'] : null;
+
+        if ($users === 0) {
+            return $base.' The site database currently holds no WordPress users at all —'
+                .' restore it from a backup or reinstall WordPress, then try again.';
+        }
+
+        if ($users !== null) {
+            return $base.' The site has '.$users.' '.Str::plural('user', $users)
+                .', but none of them holds the administrator role.'
+                .' Give one of them administrator, then try again.';
+        }
+
+        return $base.' Ensure the site has at least one administrator user, then try again.';
+    }
+
+    private function tailForLog(string $output): string
+    {
+        $collapsed = trim((string) preg_replace('/\s+/', ' ', $output));
+
+        return mb_substr($collapsed, -500);
     }
 }

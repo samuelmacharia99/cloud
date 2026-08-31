@@ -345,6 +345,33 @@ class CustomerProjectService
     }
 
     /**
+     * @param  Collection<int, Service>  $members
+     * @return list<string>
+     */
+    public function containerLabelsForMembers(Collection $members): array
+    {
+        $primary = $members->first(fn (Service $s) => $s->isContainerHosting()) ?? $members->first();
+        $containers = $this->composeContainerLabels($primary);
+
+        $roleLabels = $members
+            ->map(function (Service $service) {
+                $meta = is_array($service->service_meta) ? $service->service_meta : [];
+
+                return $meta['project_role_label'] ?? null;
+            })
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($roleLabels !== []) {
+            return $roleLabels;
+        }
+
+        return $containers;
+    }
+
+    /**
      * Human-readable compose / intended roles (Backend, Frontend, …).
      *
      * @return list<string>

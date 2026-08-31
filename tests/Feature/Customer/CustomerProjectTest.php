@@ -35,10 +35,17 @@ class CustomerProjectTest extends TestCase
         $response->assertOk();
         $response->assertSee('Atlas');
         $response->assertSee('Rename project');
-        $response->assertSee('Backend');
-        $response->assertSee('Frontend');
-        $response->assertSee('Edge');
-        $response->assertSee('Database');
+
+        $project = CustomerProject::query()->where('user_id', $customer->id)->first();
+        $this->assertNotNull($project);
+
+        $this->actingAs($customer)
+            ->get(route('customer.projects.show', $project))
+            ->assertOk()
+            ->assertSee('Backend')
+            ->assertSee('Frontend')
+            ->assertSee('Edge')
+            ->assertSee('Database');
         $this->assertNotNull(Service::query()->where('name', 'Atlas')->value('project_id'));
     }
 
@@ -70,9 +77,16 @@ class CustomerProjectTest extends TestCase
         $this->actingAs($customer)
             ->get(route('customer.services.index'))
             ->assertOk()
-            ->assertSee('Washflow App')
-            ->assertSee('Washflow Mail')
             ->assertSee('Rename project');
+
+        $project = CustomerProject::query()->where('user_id', $customer->id)->first();
+        $this->assertNotNull($project);
+
+        $this->actingAs($customer)
+            ->get(route('customer.projects.show', $project))
+            ->assertOk()
+            ->assertSee('Washflow App')
+            ->assertSee('Washflow Mail');
 
         $this->assertSame(
             $app->fresh()->project_id,
@@ -108,6 +122,14 @@ YAML,
 
         $this->actingAs($customer)
             ->get(route('customer.services.index'))
+            ->assertOk()
+            ->assertSee('Rename project');
+
+        $project = CustomerProject::query()->where('user_id', $customer->id)->first();
+        $this->assertNotNull($project);
+
+        $this->actingAs($customer)
+            ->get(route('customer.projects.show', $project))
             ->assertOk()
             ->assertSee('Backend')
             ->assertSee('Frontend')
@@ -148,9 +170,14 @@ YAML,
             ->get(route('customer.services.index'))
             ->assertOk()
             ->assertSee('Client A')
-            ->assertSee('Solo Shared')
             ->assertSee('Owner')
             ->assertSee('1 Resource');
+
+        $this->actingAs($customer)
+            ->get(route('customer.projects.show', $project))
+            ->assertOk()
+            ->assertSee('Client A')
+            ->assertSee('Solo Shared');
 
         $this->actingAs($customer)
             ->patchJson(route('customer.services.project', $service), [
@@ -347,6 +374,33 @@ YAML,
             ->assertSee('New project');
     }
 
+    public function test_customer_cannot_view_another_users_project(): void
+    {
+        $owner = User::factory()->customer()->create();
+        $other = User::factory()->customer()->create();
+        $project = CustomerProject::factory()->create([
+            'user_id' => $owner->id,
+            'name' => 'Owner Project',
+        ]);
+
+        $this->actingAs($other)
+            ->get(route('customer.projects.show', $project))
+            ->assertForbidden();
+    }
+
+    public function test_create_project_redirects_to_project_show_page(): void
+    {
+        $customer = User::factory()->customer()->create();
+
+        $response = $this->actingAs($customer)
+            ->post(route('customer.projects.store'), ['name' => 'New Workspace']);
+
+        $project = CustomerProject::query()->where('user_id', $customer->id)->where('name', 'New Workspace')->first();
+        $this->assertNotNull($project);
+
+        $response->assertRedirect(route('customer.projects.show', $project));
+    }
+
     public function test_billed_project_card_offers_included_deploy(): void
     {
         $customer = User::factory()->customer()->create();
@@ -371,7 +425,14 @@ YAML,
             ->assertSee('1 Member')
             ->assertSee('1 Resource')
             ->assertSee('Deploy new service')
-            ->assertSee('aria-label="Rename project"', false)
+            ->assertSee('Open project')
+            ->assertSee('aria-label="Rename project"', false);
+
+        $this->actingAs($customer)
+            ->get(route('customer.projects.show', $project))
+            ->assertOk()
+            ->assertSee('LS Production')
+            ->assertSee('Deploy new service')
             ->assertSee('not billed again');
     }
 }

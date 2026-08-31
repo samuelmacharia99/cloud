@@ -62,7 +62,7 @@
         },
     }"
 >
-    <x-page-header title="My Services" description="A project is billed once. Open one to deploy more services on the same plan — only usage above the plan is metered.">
+    <x-page-header title="My Services" description="A project is billed once. Open a project to see its services and deploy more on the same plan — only usage above the plan is metered.">
         <x-slot:actions>
             <button type="button" @click="showNewProject = true" class="btn-secondary">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
