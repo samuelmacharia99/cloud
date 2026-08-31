@@ -17,11 +17,14 @@
     $billingService = $isProject ? $project->resolvedBillingService() : null;
     $planLimits = $isProject ? $project->includedPlanLimits() : null;
     $canDeployIncluded = $isProject && $project->canDeployIncludedWorkload();
+    $primaryActionLabel = $canDeployIncluded ? 'Deploy new service' : 'Choose a plan';
+    $nextDue = $billingService?->next_due_date;
     $openByDefault = $isProject && request()->integer('project') === (int) $project->id;
+    $trim = fn ($value) => rtrim(rtrim(number_format((float) $value, 2), '0'), '.');
 @endphp
 
 <article
-    class="flex flex-col rounded-2xl border bg-white dark:bg-[#1a1a1a] transition-all duration-200 min-h-[11.5rem]"
+    class="relative flex flex-col overflow-visible transition-all duration-300 {{ $isProject ? 'ui-card' : 'rounded-2xl border border-dashed border-ink-300/80 dark:border-ink-700/70 bg-white/45 dark:bg-ink-900/25' }}"
     @if($isProject)
     x-data="{
         open: @js($openByDefault),
@@ -36,46 +39,76 @@
     @endif
     :class="[
         dropTarget === @js($dropKey) && draggingId
-            ? 'border-brand-400 dark:border-brand-500 ring-2 ring-brand-300/60 dark:ring-brand-700/60'
-            : 'border-slate-200 dark:border-white/10',
-        open ? 'sm:col-span-2 xl:col-span-4' : '',
+            ? 'border-brand-400/80 dark:border-brand-500/60 ring-2 ring-brand-300/60 dark:ring-brand-600/50'
+            : '',
+        open ? 'sm:col-span-2 xl:col-span-3' : '',
     ]"
     @dragover.prevent="onDragOver($event, @js($dropKey)); if (draggingId) open = true;"
     @dragleave="onDragLeave($event, @js($dropKey))"
     @drop.prevent="onDrop($event, @js($isProject ? $project->id : null))"
 >
-    <div class="flex-1 p-5">
-        <div class="flex items-start justify-between gap-3">
+    <div
+        x-show="draggingId && dropTarget === @js($dropKey)"
+        x-cloak
+        class="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-brand-50/85 dark:bg-brand-950/70 pointer-events-none"
+    >
+        <span class="inline-flex items-center gap-2 rounded-full bg-white/90 dark:bg-ink-900/90 px-3.5 py-1.5 text-xs font-semibold text-brand-700 dark:text-brand-200 shadow-soft">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v12m0 0l-4-4m4 4l4-4M4 20h16"/>
+            </svg>
+            Drop to move here
+        </span>
+    </div>
+
+    <div class="flex-1 p-5 max-w-2xl">
+        <div class="flex items-start gap-3">
             <button
                 type="button"
-                class="min-w-0 flex-1 text-left"
+                class="flex min-w-0 flex-1 items-start gap-3 text-left"
                 @click="open = !open"
                 :aria-expanded="open.toString()"
                 aria-controls="{{ $isProject ? 'project-services-'.$project->id : 'project-services-none' }}"
             >
-                <div class="flex items-center gap-2 min-w-0">
-                    <span class="text-slate-500 dark:text-slate-300 shrink-0" aria-hidden="true">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M5 16h14l-1.2-6.5L16 11l-4-6-4 6-1.8-1.5L5 16z"/>
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M6 16h12v2a1 1 0 01-1 1H7a1 1 0 01-1-1v-2z"/>
+                @if($isProject)
+                    <span class="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-400 to-brand-600 text-ink-950 ring-1 ring-brand-300/50 shadow-glow" aria-hidden="true">
+                        <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M21 7.5l-9-4.5-9 4.5m18 0l-9 4.5m9-4.5v9l-9 4.5m0-9L3 7.5m9 4.5v9m-9-13.5v9l9 4.5"/>
                         </svg>
                     </span>
-                    <h2 class="font-semibold text-slate-900 dark:text-white truncate">
+                @else
+                    <span class="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-dashed border-ink-300 dark:border-ink-600 text-ink-400 dark:text-ink-500" aria-hidden="true">
+                        <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3.75 9.75h16.5M3.75 6.75A2.25 2.25 0 016 4.5h3.13c.6 0 1.17.24 1.6.66l1.11 1.09h6.16A2.25 2.25 0 0120.25 8.5v8.75a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6.75z"/>
+                        </svg>
+                    </span>
+                @endif
+
+                <span class="min-w-0">
+                    <span class="block font-display font-bold tracking-tight text-ink-950 dark:text-white truncate" title="{{ $isProject ? $project->name : 'No project' }}">
                         {{ $isProject ? $project->name : 'No project' }}
-                    </h2>
-                </div>
+                    </span>
+                    <span class="mt-0.5 block text-xs text-ink-500 dark:text-ink-400 truncate">
+                        @if($billingService)
+                            {{ $billingService->customerPlanName() }} <span class="text-ink-300 dark:text-ink-600">·</span> {{ $billingService->billing_cycle }}
+                        @elseif($isProject)
+                            No plan yet
+                        @else
+                            Not grouped under a project
+                        @endif
+                    </span>
+                </span>
             </button>
 
             @if($isProject)
-                <div class="flex items-center gap-1 shrink-0">
+                <div class="flex shrink-0 items-center gap-0.5">
                     <button
                         type="button"
-                        class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10"
+                        class="action-icon-btn w-8 h-8 text-ink-400 hover:text-ink-900 dark:hover:text-white"
                         @click.stop="showRenameProject = true"
                         aria-label="Rename project"
                         title="Rename project"
                     >
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <svg class="!w-4 !h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
                         </svg>
                     </button>
@@ -83,20 +116,21 @@
                         <div class="relative" @click.outside="menu = false">
                             <button
                                 type="button"
-                                class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10"
+                                class="action-icon-btn w-8 h-8 text-ink-400 hover:text-ink-900 dark:hover:text-white"
                                 @click.stop="menu = !menu"
                                 aria-label="Project actions"
                             >
-                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                                <svg class="!w-[18px] !h-[18px]" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
                                     <path d="M6 10a2 2 0 11-4 0 2 2 0 014 0zm6 0a2 2 0 11-4 0 2 2 0 014 0zm6 0a2 2 0 11-4 0 2 2 0 014 0z"/>
                                 </svg>
                             </button>
                             <div
                                 x-show="menu"
                                 x-cloak
-                                class="absolute right-0 mt-1 w-44 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#222] shadow-xl z-20 py-1"
+                                x-transition.origin.top.right
+                                class="ui-card absolute right-0 z-30 mt-1 w-48 p-1"
                             >
-                                <button type="button" @click="menu = false; showRemoveProject = true" class="w-full text-left px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30">
+                                <button type="button" @click="menu = false; showRemoveProject = true" class="w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40">
                                     Remove project
                                 </button>
                             </div>
@@ -106,52 +140,80 @@
             @endif
         </div>
 
-        <div class="mt-3 flex flex-wrap items-center gap-2">
+        <div class="mt-3.5 flex flex-wrap items-center gap-1.5">
+            @if($billingService)
+                <x-status-badge :status="$billingService->status" type="service" />
+            @endif
             @if($isProject)
-                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-slate-200">Owner</span>
-                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-slate-200">
-                    {{ $project->memberCount() }} {{ Str::plural('Member', $project->memberCount()) }}
-                </span>
+                <span class="status-pill bg-ink-100/90 dark:bg-white/10 text-ink-600 dark:text-ink-200" >Owner</span>
+                <span class="status-pill bg-ink-100/90 dark:bg-white/10 text-ink-600 dark:text-ink-200">{{ $project->memberCount() }} {{ Str::plural('Member', $project->memberCount()) }}</span>
             @else
-                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-slate-200">Ungrouped</span>
+                <span class="status-pill bg-ink-100/90 dark:bg-white/10 text-ink-600 dark:text-ink-200">Ungrouped</span>
             @endif
         </div>
 
         @if($isProject)
-            <div class="mt-4">
-                @if($canDeployIncluded)
-                    <a
-                        href="{{ route('customer.projects.deploy', $project) }}"
-                        class="inline-flex items-center justify-center w-full px-3 py-2 rounded-lg text-sm font-medium bg-ink-950 text-white hover:bg-ink-800 dark:bg-white dark:text-ink-950 dark:hover:bg-slate-100 transition"
-                        @click.stop
-                    >
-                        Deploy new service
-                    </a>
-                @else
-                    <a
-                        href="{{ route('customer.projects.deploy', $project) }}"
-                        class="inline-flex items-center justify-center w-full px-3 py-2 rounded-lg text-sm font-medium bg-ink-950 text-white hover:bg-ink-800 dark:bg-white dark:text-ink-950 dark:hover:bg-slate-100 transition"
-                        @click.stop
-                    >
-                        Choose a plan
-                    </a>
-                @endif
-            </div>
+            @if($planLimits)
+                <div class="ui-soft-inset mt-4 px-3.5 py-3">
+                    <dl class="grid grid-cols-3 divide-x divide-ink-200/70 dark:divide-ink-700/60 text-center">
+                        <div class="px-1">
+                            <dt class="text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-400 dark:text-ink-500">vCPU</dt>
+                            <dd class="mt-0.5 text-sm font-bold tabular-nums text-ink-950 dark:text-white">{{ $trim($planLimits['cpu']) }}</dd>
+                        </div>
+                        <div class="px-1">
+                            <dt class="text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-400 dark:text-ink-500">RAM</dt>
+                            <dd class="mt-0.5 text-sm font-bold tabular-nums text-ink-950 dark:text-white">{{ $trim($planLimits['memory_mb'] / 1024) }} GB</dd>
+                        </div>
+                        <div class="px-1">
+                            <dt class="text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-400 dark:text-ink-500">Disk</dt>
+                            <dd class="mt-0.5 text-sm font-bold tabular-nums text-ink-950 dark:text-white">
+                                {{ $planLimits['disk_gb'] > 0 ? $trim($planLimits['disk_gb']).' GB' : '—' }}
+                            </dd>
+                        </div>
+                    </dl>
+                    @if($nextDue)
+                        <p class="mt-2.5 flex items-center gap-1.5 border-t border-ink-200/70 dark:border-ink-700/60 pt-2 text-[11px] text-ink-500 dark:text-ink-400">
+                            <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="M6.75 3v2.25M17.25 3v2.25M3.75 8.25h16.5M4.5 5.25h15a.75.75 0 01.75.75v13.5a.75.75 0 01-.75.75h-15a.75.75 0 01-.75-.75V6a.75.75 0 01.75-.75z"/>
+                            </svg>
+                            Plan renews {{ $nextDue->format('M j, Y') }}
+                        </p>
+                    @endif
+                </div>
+            @else
+                <p class="mt-4 rounded-xl border border-dashed border-ink-300/80 dark:border-ink-700/70 px-3.5 py-3 text-xs text-ink-500 dark:text-ink-400">
+                    Pick a plan to start this project. Everything you deploy afterwards shares that one bill.
+                </p>
+            @endif
+
+            <a
+                href="{{ route('customer.projects.deploy', $project) }}"
+                class="btn-primary btn-sm mt-4 w-full"
+                @click.stop
+            >
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v14m-7-7h14"/>
+                </svg>
+                {{ $primaryActionLabel }}
+            </a>
+        @else
+            <p class="mt-4 rounded-xl border border-dashed border-ink-300/80 dark:border-ink-700/70 px-3.5 py-3 text-xs text-ink-500 dark:text-ink-400">
+                Drag any card onto a project to group it under that project's plan.
+            </p>
         @endif
     </div>
 
     <button
         type="button"
-        class="flex items-center justify-between gap-2 px-5 py-3 border-t border-slate-100 dark:border-white/10 text-sm text-slate-600 dark:text-slate-300"
+        class="flex items-center justify-between gap-2 border-t border-ink-100/90 dark:border-ink-800/70 px-5 py-3 text-sm transition-colors hover:bg-brand-50/50 dark:hover:bg-white/5 rounded-b-2xl"
         @click="open = !open"
     >
-        <span>
-            {{ $resourceCount }} {{ Str::plural('Resource', $resourceCount) }}
-            <span x-show="!open" x-cloak class="text-slate-400"> · collapsed</span>
+        <span class="inline-flex items-center gap-2 font-medium text-ink-700 dark:text-ink-200">
+            <svg class="w-4 h-4 shrink-0 text-ink-400 transition-transform duration-200" :class="open ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+            <span>{{ $resourceCount }} {{ Str::plural('Resource', $resourceCount) }}</span>
         </span>
-        <svg class="w-4 h-4 transition-transform" :class="open ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-        </svg>
     </button>
 
     <div
@@ -161,35 +223,22 @@
         x-transition:enter="transition ease-out duration-150"
         x-transition:enter-start="opacity-0 -translate-y-1"
         x-transition:enter-end="opacity-100 translate-y-0"
-        class="border-t border-slate-100 dark:border-white/10 p-5 space-y-4"
+        class="border-t border-ink-100/90 dark:border-ink-800/70 p-5 space-y-4"
     >
-        @if($isProject)
-            @if($billingService && $planLimits)
-                <div class="rounded-xl bg-slate-50 dark:bg-white/5 px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
-                    <p class="font-medium text-slate-900 dark:text-white">{{ $billingService->customerPlanName() }} · {{ $billingService->billing_cycle }}</p>
-                    <p class="mt-0.5">
-                        Included {{ rtrim(rtrim(number_format($planLimits['cpu'], 2), '0'), '.') }} CPU ·
-                        {{ rtrim(rtrim(number_format($planLimits['memory_mb'] / 1024, 2), '0'), '.') }} GB RAM
-                        @if($planLimits['disk_gb'] > 0)
-                            · {{ rtrim(rtrim(number_format($planLimits['disk_gb'], 2), '0'), '.') }} GB disk
-                        @endif
-                    </p>
-                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        Extra services on this project are not billed again. Usage above these specs is metered on the next {{ $billingService->billing_cycle }} invoice.
-                    </p>
-                </div>
-            @elseif($isProject)
-                <p class="text-sm text-slate-500 dark:text-slate-400">
-                    Choose a plan to start this project. Additional services after that stay on the same bill.
+        @if($isProject && $billingService && $planLimits)
+            <div class="rounded-xl border border-brand-200/70 dark:border-brand-900/60 bg-brand-50/70 dark:bg-brand-950/25 px-4 py-3">
+                <p class="text-sm font-semibold text-ink-950 dark:text-white">
+                    {{ $billingService->customerPlanName() }} <span class="text-ink-400">·</span> <span class="capitalize font-medium">{{ $billingService->billing_cycle }}</span>
                 </p>
-            @endif
-
-        @else
-            <p class="text-sm text-slate-500 dark:text-slate-400">Drag cards here to ungroup, or onto a project.</p>
+                <p class="mt-1 text-xs text-ink-600 dark:text-ink-300">
+                    Extra services on this project are not billed again. Usage above the included
+                    {{ $trim($planLimits['cpu']) }} vCPU / {{ $trim($planLimits['memory_mb'] / 1024) }} GB RAM is metered on the next {{ $billingService->billing_cycle }} invoice.
+                </p>
+            </div>
         @endif
 
         @if($groupServices->isNotEmpty())
-            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 min-h-[4rem]">
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
                 @foreach ($groupServices as $service)
                     @include('customer.services.partials.service-card', [
                         'service' => $service,
@@ -203,18 +252,24 @@
                 @endforeach
             </div>
         @elseif($isProject)
-            <p class="text-sm text-slate-500 dark:text-slate-400">No services in this project yet.</p>
+            <div class="rounded-xl border border-dashed border-ink-300/80 dark:border-ink-700/70 px-4 py-6 text-center">
+                <p class="text-sm font-medium text-ink-700 dark:text-ink-200">No services here yet</p>
+                <p class="mt-1 text-xs text-ink-500 dark:text-ink-400">
+                    {{ $canDeployIncluded ? 'Deploy one on the plan above, or drag an existing card here.' : 'Choose a plan to deploy your first service.' }}
+                </p>
+            </div>
         @endif
     </div>
 
     @if($isProject)
-        <div x-show="showRenameProject" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" @keydown.escape.window="showRenameProject = false">
-            <div class="w-full max-w-md rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-xl p-6" @click.outside="showRenameProject = false">
-                <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Rename project</h3>
-                <form method="POST" action="{{ route('customer.projects.rename', $project) }}" class="space-y-4">
+        <div x-show="showRenameProject" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink-950/60 backdrop-blur-sm" @keydown.escape.window="showRenameProject = false">
+            <div class="ui-card w-full max-w-md p-6" @click.outside="showRenameProject = false">
+                <h3 class="font-display text-lg font-bold text-ink-950 dark:text-white">Rename project</h3>
+                <p class="mt-1 text-sm text-ink-500 dark:text-ink-400">Your own label — billing and deployments are unchanged.</p>
+                <form method="POST" action="{{ route('customer.projects.rename', $project) }}" class="mt-4 space-y-4">
                     @csrf
                     @method('PATCH')
-                    <input type="text" name="name" x-model="renameProjectName" required minlength="2" maxlength="100" class="w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800">
+                    <input type="text" name="name" x-model="renameProjectName" required minlength="2" maxlength="100" class="w-full px-4 py-2.5">
                     <div class="flex gap-2">
                         <button type="button" @click="showRenameProject = false" class="btn-secondary flex-1 btn-sm">Cancel</button>
                         <button type="submit" class="btn-primary flex-1 btn-sm">Save</button>
@@ -224,28 +279,28 @@
         </div>
 
         @if($canRemoveProject)
-            <div x-show="showRemoveProject" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" @keydown.escape.window="showRemoveProject = false">
-                <div class="w-full max-w-md rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-xl p-6" @click.outside="showRemoveProject = false">
-                    <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-1">Remove project</h3>
-                    <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">
+            <div x-show="showRemoveProject" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink-950/60 backdrop-blur-sm" @keydown.escape.window="showRemoveProject = false">
+                <div class="ui-card w-full max-w-md p-6" @click.outside="showRemoveProject = false">
+                    <h3 class="font-display text-lg font-bold text-ink-950 dark:text-white">Remove project</h3>
+                    <p class="mt-1 text-sm text-ink-600 dark:text-ink-300">
                         This permanently deletes every Application Hosting site in <strong>{{ $project->name }}</strong>, including containers and files. This cannot be undone. Email Hosting is not deleted this way.
                     </p>
-                    <form method="POST" action="{{ route('customer.projects.destroy', $project) }}" class="space-y-4">
+                    <form method="POST" action="{{ route('customer.projects.destroy', $project) }}" class="mt-4 space-y-4">
                         @csrf
                         @method('DELETE')
-                        <label class="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                        <label class="block text-sm font-medium text-ink-700 dark:text-ink-200">
                             Type <span class="font-mono">{{ $project->name }}</span> to confirm
-                            <input type="text" name="confirm_name" x-model="confirmName" required autocomplete="off" class="mt-1.5 w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800">
+                            <input type="text" name="confirm_name" x-model="confirmName" required autocomplete="off" class="mt-1.5 w-full px-4 py-2.5">
                         </label>
-                        <label class="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-300">
-                            <input type="checkbox" name="confirm" value="1" required class="mt-1 rounded border-slate-300 dark:border-slate-600">
+                        <label class="flex items-start gap-2 text-sm text-ink-700 dark:text-ink-200">
+                            <input type="checkbox" name="confirm" value="1" required class="mt-1 rounded">
                             <span>I understand these Application Hosting sites and their files will be permanently deleted.</span>
                         </label>
                         <div class="flex gap-2">
                             <button type="button" @click="showRemoveProject = false" class="btn-secondary flex-1 btn-sm">Keep project</button>
                             <button
                                 type="submit"
-                                class="flex-1 btn-sm rounded-lg bg-red-600 hover:bg-red-700 text-white font-medium px-3 py-2 disabled:opacity-40"
+                                class="btn btn-sm flex-1 bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-500 disabled:opacity-40"
                                 :disabled="confirmName !== @js($project->name)"
                             >Delete sites</button>
                         </div>
