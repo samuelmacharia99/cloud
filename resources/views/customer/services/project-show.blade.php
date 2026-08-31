@@ -5,7 +5,7 @@
 @section('content')
 @php
     $billingService = $project->resolvedBillingService();
-    $planLimits = $project->includedPlanLimits();
+    $planLimits = $planUsage['limits'] ?? $project->includedPlanLimits();
     $canDeployIncluded = $project->canDeployIncludedWorkload();
     $canRemoveProject = $services->contains(fn ($s) => $s->isContainerHosting())
         && ! $services->contains(function ($s) {
@@ -87,7 +87,6 @@
             <x-status-badge :status="$billingService->status" type="service" />
         @endif
         <span class="status-pill bg-ink-100/90 dark:bg-white/10 text-ink-600 dark:text-ink-200">Owner</span>
-        <span class="status-pill bg-ink-100/90 dark:bg-white/10 text-ink-600 dark:text-ink-200">{{ $project->memberCount() }} {{ Str::plural('Member', $project->memberCount()) }}</span>
         <span class="status-pill bg-ink-100/90 dark:bg-white/10 text-ink-600 dark:text-ink-200">{{ $project->resourceCount() }} {{ Str::plural('Resource', $project->resourceCount()) }}</span>
     </div>
 
@@ -119,6 +118,16 @@
                 </p>
             @endif
         </div>
+        @if($planUsage && $canDeployIncluded)
+            <p class="mt-3 text-xs text-ink-500 dark:text-ink-400">
+                Next included deploy uses up to
+                {{ $trim($planUsage['next_workload_share']['cpu'] * 100) }}% CPU /
+                {{ $trim($planUsage['next_workload_share']['memory'] * 100) }}% RAM
+                of the plan pool
+                ({{ $trim($planUsage['remaining_cpu_share'] * 100) }}% CPU /
+                {{ $trim($planUsage['remaining_memory_share'] * 100) }}% RAM still unallocated).
+            </p>
+        @endif
     @else
         <div class="ui-card px-5 py-4">
             <p class="text-sm text-ink-600 dark:text-ink-300">

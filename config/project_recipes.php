@@ -4,6 +4,28 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Plan pool defaults
+    |--------------------------------------------------------------------------
+    |
+    | When a customer deploys an additional included service onto an existing
+    | Application Hosting project, resource_share is taken from the remaining
+    | plan pool using these defaults (capped by what is still unallocated).
+    |
+    */
+
+    'plan_pool' => [
+        'default_workload_share' => [
+            'cpu' => 0.25,
+            'memory' => 0.25,
+        ],
+        'min_workload_share' => [
+            'cpu' => 0.05,
+            'memory' => 0.05,
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Project recipes
     |--------------------------------------------------------------------------
     |

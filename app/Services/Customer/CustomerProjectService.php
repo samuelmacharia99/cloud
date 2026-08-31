@@ -278,6 +278,40 @@ class CustomerProjectService
     }
 
     /**
+     * @return array{
+     *   project: CustomerProject,
+     *   services: Collection<int, Service>,
+     *   projects: Collection<int, CustomerProject>,
+     *   containers: list<string>,
+     *   primaryContainer: ?Service,
+     *   planUsage: array<string, mixed>|null
+     * }
+     */
+    public function showContext(User $user, CustomerProject $project): array
+    {
+        $project->load(['billingService.product.containerTemplate', 'billingService.containerDeployment']);
+
+        $services = $user->services()
+            ->with(['product.containerTemplate', 'resellerProduct', 'invoice', 'containerDeployment'])
+            ->where('project_id', $project->id)
+            ->whereNotIn('status', ['cancelled', 'terminated'])
+            ->whereHas('product', fn ($q) => $q->where('type', '!=', 'domain'))
+            ->latest()
+            ->get();
+
+        $primaryContainer = $services->first(fn (Service $s) => $s->isContainerHosting());
+
+        return [
+            'project' => $project,
+            'services' => $services,
+            'projects' => $user->customerProjects()->orderBy('name')->get(),
+            'containers' => $this->containerLabelsForMembers($services),
+            'primaryContainer' => $primaryContainer,
+            'planUsage' => $project->planUsageSummary(),
+        ];
+    }
+
+    /**
      * Point the project at a billed Application Hosting plan and mark extras as included.
      */
     public function ensurePlanPool(CustomerProject $project): void
@@ -295,6 +329,15 @@ class CustomerProjectService
         }
         if (! $project->recipe_key) {
             $updates['recipe_key'] = CustomerProject::PLAN_POOL_RECIPE;
+        }
+        if (! is_array($project->resource_pool) || $project->resource_pool === []) {
+            $product = $anchor->product;
+            if ($product) {
+                $updates['resource_pool'] = [
+                    'product_id' => $product->id,
+                    'product_name' => $product->name,
+                ];
+            }
         }
         if ($updates !== []) {
             $project->update($updates);

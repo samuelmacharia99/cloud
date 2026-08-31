@@ -40,7 +40,7 @@ class ProjectWorkloadDeployTest extends TestCase
                 'language_id' => $language->id,
                 'frontend' => 'static',
             ])
-            ->assertRedirect();
+            ->assertRedirect(route('customer.projects.show', $project));
 
         $extra = Service::query()
             ->where('project_id', $project->id)
@@ -53,6 +53,9 @@ class ProjectWorkloadDeployTest extends TestCase
         $this->assertSame($anchor->product_id, $extra->product_id);
         $this->assertSame($anchor->billing_cycle, $extra->billing_cycle);
         $this->assertFalse((bool) $extra->service_meta['project_billing_anchor']);
+        $this->assertTrue((bool) ($extra->service_meta['included_on_project_plan'] ?? false));
+        $this->assertSame(0.25, (float) $extra->service_meta['resource_share']['cpu']);
+        $this->assertSame(0.25, (float) $extra->service_meta['resource_share']['memory']);
         $this->assertTrue(app(ProjectRecipeService::class)->shouldSkipRenewalInvoice($extra->service_meta));
         $this->assertSame($invoiceCount, Invoice::query()->count());
         $this->assertSame($project->fresh()->billing_service_id, $anchor->id);

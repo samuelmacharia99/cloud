@@ -401,6 +401,38 @@ YAML,
         $response->assertRedirect(route('customer.projects.show', $project));
     }
 
+    public function test_admin_with_customer_assets_can_view_project_show(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $product = Product::factory()->containerHosting()->create();
+        $project = CustomerProject::factory()->create([
+            'user_id' => $admin->id,
+            'name' => 'Admin Project',
+        ]);
+        Service::factory()->create([
+            'user_id' => $admin->id,
+            'product_id' => $product->id,
+            'project_id' => $project->id,
+            'status' => 'active',
+            'name' => 'Admin App',
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('customer.projects.show', $project))
+            ->assertOk()
+            ->assertSee('Admin Project')
+            ->assertSee('Admin App');
+    }
+
+    public function test_admin_without_customer_assets_is_redirected_from_services_index(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        $this->actingAs($admin)
+            ->get(route('customer.services.index'))
+            ->assertRedirect(route('dashboard'));
+    }
+
     public function test_billed_project_card_offers_included_deploy(): void
     {
         $customer = User::factory()->customer()->create();
@@ -422,7 +454,6 @@ YAML,
             ->assertOk()
             ->assertSee('LS Production')
             ->assertSee('Owner')
-            ->assertSee('1 Member')
             ->assertSee('1 Resource')
             ->assertSee('Deploy new service')
             ->assertSee('Open project')

@@ -136,9 +136,120 @@ class CustomerProject extends Model
         );
     }
 
-    public function memberCount(): int
+    /**
+     * @return array{cpu: float, memory: float}
+     */
+    public function allocatedResourceShares(): array
     {
-        return 1;
+        $cpu = 0.0;
+        $memory = 0.0;
+        $anchorId = $this->resolvedBillingService()?->id;
+
+        foreach ($this->liveApplicationHostingServices() as $service) {
+            $meta = is_array($service->service_meta) ? $service->service_meta : [];
+            $isAnchor = $anchorId && (int) $service->id === (int) $anchorId;
+            $share = $meta['resource_share'] ?? null;
+
+            if (is_array($share)) {
+                $cpu += (float) ($share['cpu'] ?? 0);
+                $memory += (float) ($share['memory'] ?? 0);
+
+                continue;
+            }
+
+            if (! $isAnchor) {
+                $cpu += 1.0;
+                $memory += 1.0;
+            }
+        }
+
+        return ['cpu' => $cpu, 'memory' => $memory];
+    }
+
+    /**
+     * Default share for an additional included workload on this project.
+     *
+     * @return array{cpu: float, memory: float}
+     */
+    public function defaultIncludedWorkloadShare(): array
+    {
+        $pool = is_array($this->resource_pool) ? $this->resource_pool : [];
+
+        if (isset($pool['cpu_share'], $pool['memory_share'])) {
+            return [
+                'cpu' => (float) $pool['cpu_share'],
+                'memory' => (float) $pool['memory_share'],
+            ];
+        }
+
+        $defaults = config('project_recipes.plan_pool.default_workload_share', [
+            'cpu' => 0.25,
+            'memory' => 0.25,
+        ]);
+
+        return [
+            'cpu' => (float) ($defaults['cpu'] ?? 0.25),
+            'memory' => (float) ($defaults['memory'] ?? 0.25),
+        ];
+    }
+
+    /**
+     * Resolve resource_share for a new included workload, capped by remaining pool.
+     *
+     * @return array{cpu: float, memory: float}
+     */
+    public function resolveIncludedWorkloadShare(): array
+    {
+        $default = $this->defaultIncludedWorkloadShare();
+        $allocated = $this->allocatedResourceShares();
+        $remainingCpu = max(0.0, 1.0 - $allocated['cpu']);
+        $remainingMemory = max(0.0, 1.0 - $allocated['memory']);
+
+        $min = config('project_recipes.plan_pool.min_workload_share', [
+            'cpu' => 0.05,
+            'memory' => 0.05,
+        ]);
+        $minCpu = (float) ($min['cpu'] ?? 0.05);
+        $minMemory = (float) ($min['memory'] ?? 0.05);
+
+        if ($remainingCpu <= 0 || $remainingMemory <= 0) {
+            return [
+                'cpu' => $minCpu,
+                'memory' => $minMemory,
+            ];
+        }
+
+        return [
+            'cpu' => max($minCpu, min($default['cpu'], $remainingCpu)),
+            'memory' => max($minMemory, min($default['memory'], $remainingMemory)),
+        ];
+    }
+
+    /**
+     * @return array{
+     *   limits: array{cpu: float, memory_mb: int, disk_gb: float},
+     *   allocated_shares: array{cpu: float, memory: float},
+     *   remaining_cpu_share: float,
+     *   remaining_memory_share: float,
+     *   next_workload_share: array{cpu: float, memory: float}
+     * }|null
+     */
+    public function planUsageSummary(): ?array
+    {
+        $limits = $this->includedPlanLimits();
+        if ($limits === null) {
+            return null;
+        }
+
+        $allocated = $this->allocatedResourceShares();
+
+        return [
+            'limits' => $limits,
+            'allocated_shares' => $allocated,
+            'remaining_cpu_share' => max(0.0, 1.0 - $allocated['cpu']),
+            'remaining_memory_share' => max(0.0, 1.0 - $allocated['memory']),
+            'next_workload_share' => $this->resolveIncludedWorkloadShare(),
+        ];
     }
 
     public function resourceCount(): int

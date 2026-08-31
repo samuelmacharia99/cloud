@@ -14,7 +14,12 @@ class CheckCustomerRole
         }
 
         if (auth()->user()->is_admin && ! session('impersonating')) {
-            return redirect()->route('dashboard');
+            $user = auth()->user();
+            $ownsCustomerAssets = $user->services()->exists() || $user->customerProjects()->exists();
+
+            if (! $ownsCustomerAssets) {
+                return redirect()->route('dashboard');
+            }
         }
 
         if (auth()->user()->is_reseller) {

@@ -89,6 +89,7 @@ class ProjectWorkloadDeployService
         $roles = TechStackRoutingService::resolveDefaultRoles($language, $framework, $frontend);
         $product = $anchor->product;
         $recipe = $project->recipe_key ?: CustomerProject::PLAN_POOL_RECIPE;
+        $resourceShare = $project->fresh()->resolveIncludedWorkloadShare();
         $serviceName = $this->recipes->roleServiceName(
             $this->recipes->projectSlug($project->name),
             Str::slug($language->slug ?: $language->name) ?: 'app'
@@ -109,6 +110,10 @@ class ProjectWorkloadDeployService
             'deployment_platform' => 'container',
             'stack_builder_version' => (int) config('stack_builder.version', 1),
             'included_on_project_plan' => true,
+            'resource_share' => [
+                'cpu' => $resourceShare['cpu'],
+                'memory' => $resourceShare['memory'],
+            ],
         ];
 
         if ($database) {

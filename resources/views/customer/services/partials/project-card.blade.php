@@ -141,7 +141,7 @@
             @endif
             @if($isProject)
                 <span class="status-pill bg-ink-100/90 dark:bg-white/10 text-ink-600 dark:text-ink-200">Owner</span>
-                <span class="status-pill bg-ink-100/90 dark:bg-white/10 text-ink-600 dark:text-ink-200">{{ $project->memberCount() }} {{ Str::plural('Member', $project->memberCount()) }}</span>
+                <span class="status-pill bg-ink-100/90 dark:bg-white/10 text-ink-600 dark:text-ink-200">{{ $resourceCount }} {{ Str::plural('Resource', $resourceCount) }}</span>
             @else
                 <span class="status-pill bg-ink-100/90 dark:bg-white/10 text-ink-600 dark:text-ink-200">Ungrouped</span>
             @endif

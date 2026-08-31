@@ -95,32 +95,7 @@ class ServiceController extends Controller
     {
         $this->authorize('view', $project);
 
-        if ((int) $project->user_id !== (int) auth()->id()) {
-            abort(403);
-        }
-
-        $user = auth()->user();
-        $project->load(['billingService.product.containerTemplate', 'billingService.containerDeployment']);
-
-        $services = $user->services()
-            ->with(['product.containerTemplate', 'resellerProduct', 'invoice', 'containerDeployment'])
-            ->where('project_id', $project->id)
-            ->whereNotIn('status', ['cancelled', 'terminated'])
-            ->whereHas('product', fn ($q) => $q->where('type', '!=', 'domain'))
-            ->latest()
-            ->get();
-
-        $projects = $user->customerProjects()->orderBy('name')->get();
-        $containers = $projectService->containerLabelsForMembers($services);
-        $primaryContainer = $services->first(fn (Service $s) => $s->isContainerHosting());
-
-        return view('customer.services.project-show', compact(
-            'project',
-            'services',
-            'projects',
-            'containers',
-            'primaryContainer',
-        ));
+        return view('customer.services.project-show', $projectService->showContext(auth()->user(), $project));
     }
 
     public function renameProject(RenameCustomerProjectRequest $request, CustomerProject $project)
@@ -235,7 +210,7 @@ class ServiceController extends Controller
         }
 
         return redirect()
-            ->route('customer.services.show', $service)
+            ->route('customer.projects.show', $project)
             ->with('success', $service->name.' was added to '.$project->name.' on the existing plan. Extra usage above the plan is billed as overage.');
     }
 
