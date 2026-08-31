@@ -605,6 +605,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
     // Customer-only routes
     Route::middleware(['customer', 'reseller.customer.catalog'])->group(function () {
         Route::get('/my/services', [App\Http\Controllers\Customer\ServiceController::class, 'index'])->name('customer.services.index');
+        Route::get('/my/services/ungrouped', [App\Http\Controllers\Customer\ServiceController::class, 'showUngrouped'])->name('customer.services.ungrouped');
         Route::patch('/my/services/{service}/rename', [App\Http\Controllers\Customer\ServiceController::class, 'rename'])->name('customer.services.rename');
         Route::patch('/my/services/{service}/project', [App\Http\Controllers\Customer\ServiceController::class, 'moveService'])->name('customer.services.project');
         Route::post('/my/projects', [App\Http\Controllers\Customer\ServiceController::class, 'storeProject'])->name('customer.projects.store');

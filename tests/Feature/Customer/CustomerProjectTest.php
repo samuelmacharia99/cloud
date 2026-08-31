@@ -244,9 +244,43 @@ YAML,
             ->assertOk()
             ->assertSee('Solo Shared')
             ->assertSee('No project')
+            ->assertSee(route('customer.services.ungrouped'), false)
             ->assertDontSee('Rename project');
 
         $this->assertDatabaseCount('customer_projects', 0);
+
+        $this->actingAs($customer)
+            ->get(route('customer.services.ungrouped'))
+            ->assertOk()
+            ->assertSee('Solo Shared');
+    }
+
+    public function test_standalone_application_hosting_becomes_a_project_you_can_open(): void
+    {
+        $customer = User::factory()->customer()->create();
+        $product = Product::factory()->containerHosting()->create(['name' => 'App Hosting']);
+        Service::factory()->create([
+            'user_id' => $customer->id,
+            'product_id' => $product->id,
+            'name' => 'Site 156',
+            'status' => 'active',
+            'billing_cycle' => 'monthly',
+        ]);
+
+        $this->actingAs($customer)
+            ->get(route('customer.services.index'))
+            ->assertOk()
+            ->assertSee('Site 156')
+            ->assertSee('Open project');
+
+        $project = CustomerProject::query()->where('user_id', $customer->id)->first();
+        $this->assertNotNull($project);
+
+        $this->actingAs($customer)
+            ->get(route('customer.projects.show', $project))
+            ->assertOk()
+            ->assertSee('Site 156')
+            ->assertSee('Deploy new service');
     }
 
     public function test_customer_can_remove_an_application_hosting_project_and_its_sites(): void

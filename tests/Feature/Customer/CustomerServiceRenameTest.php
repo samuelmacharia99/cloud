@@ -62,7 +62,7 @@ class CustomerServiceRenameTest extends TestCase
         ]);
 
         $this->actingAs($customer)
-            ->get(route('customer.services.index'))
+            ->get(route('customer.services.ungrouped'))
             ->assertOk()
             ->assertSee('My Project')
             ->assertSee('Rename');

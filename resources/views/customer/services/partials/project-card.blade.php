@@ -22,8 +22,6 @@
         renameProjectName: @js($project->name),
         confirmName: '',
     }"
-    @else
-    x-data="{ open: false }"
     @endif
     :class="dropTarget === @js($dropKey) && draggingId
         ? 'border-brand-400/80 dark:border-brand-500/60 ring-2 ring-brand-300/60 dark:ring-brand-600/50'
@@ -50,7 +48,7 @@
             @if($isProject)
                 <a href="{{ route('customer.projects.show', $project) }}" class="flex min-w-0 flex-1 items-start gap-3 text-left group/card">
             @else
-                <button type="button" class="flex min-w-0 flex-1 items-start gap-3 text-left" @click="open = !open" :aria-expanded="open.toString()">
+                <a href="{{ route('customer.services.ungrouped') }}" class="flex min-w-0 flex-1 items-start gap-3 text-left group/card">
             @endif
                 @if($isProject)
                     <span class="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-400 to-brand-600 text-ink-950 ring-1 ring-brand-300/50 shadow-glow transition-transform group-hover/card:scale-105" aria-hidden="true">
@@ -67,7 +65,7 @@
                 @endif
 
                 <span class="min-w-0">
-                    <span class="block font-display font-bold tracking-tight text-ink-950 dark:text-white truncate {{ $isProject ? 'group-hover/card:text-brand-700 dark:group-hover/card:text-brand-300' : '' }}" title="{{ $isProject ? $project->name : 'No project' }}">
+                    <span class="block font-display font-bold tracking-tight text-ink-950 dark:text-white truncate group-hover/card:text-brand-700 dark:group-hover/card:text-brand-300" title="{{ $isProject ? $project->name : 'No project' }}">
                         {{ $isProject ? $project->name : 'No project' }}
                     </span>
                     <span class="mt-0.5 block text-xs text-ink-500 dark:text-ink-400 truncate">
@@ -80,11 +78,7 @@
                         @endif
                     </span>
                 </span>
-            @if($isProject)
                 </a>
-            @else
-                </button>
-            @endif
 
             @if($isProject)
                 <div class="flex shrink-0 items-center gap-0.5">
@@ -198,7 +192,10 @@
             </div>
         @else
             <p class="mt-4 rounded-xl border border-dashed border-ink-300/80 dark:border-ink-700/70 px-3.5 py-3 text-xs text-ink-500 dark:text-ink-400">
-                Drag any card onto a project to group it under that project's plan.
+                {{ $groupServices->map(fn ($s) => $s->customerServiceName())->filter()->take(3)->implode(' · ') }}
+                @if($groupServices->count() > 3)
+                    <span class="text-ink-400">+{{ $groupServices->count() - 3 }} more</span>
+                @endif
             </p>
         @endif
     </div>
@@ -217,40 +214,18 @@
             <span class="text-xs font-medium text-brand-600 dark:text-brand-400">View all</span>
         </a>
     @else
-        <button
-            type="button"
-            class="flex items-center justify-between gap-2 border-t border-ink-100/90 dark:border-ink-800/70 px-5 py-3 text-sm transition-colors hover:bg-brand-50/50 dark:hover:bg-white/5 rounded-b-2xl w-full"
-            @click="open = !open"
+        <a
+            href="{{ route('customer.services.ungrouped') }}"
+            class="flex items-center justify-between gap-2 border-t border-ink-100/90 dark:border-ink-800/70 px-5 py-3 text-sm transition-colors hover:bg-brand-50/50 dark:hover:bg-white/5 rounded-b-2xl"
         >
             <span class="inline-flex items-center gap-2 font-medium text-ink-700 dark:text-ink-200">
-                <svg class="w-4 h-4 shrink-0 text-ink-400 transition-transform duration-200" :class="open ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                <svg class="w-4 h-4 shrink-0 text-ink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
                 </svg>
                 <span>{{ $resourceCount }} {{ Str::plural('Resource', $resourceCount) }}</span>
             </span>
-        </button>
-
-        <div
-            id="project-services-none"
-            x-show="open"
-            x-cloak
-            x-transition:enter="transition ease-out duration-150"
-            x-transition:enter-start="opacity-0 -translate-y-1"
-            x-transition:enter-end="opacity-100 translate-y-0"
-            class="border-t border-ink-100/90 dark:border-ink-800/70 p-5 space-y-4"
-        >
-            @if($groupServices->isNotEmpty())
-                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                    @foreach ($groupServices as $service)
-                        @include('customer.services.partials.service-card', [
-                            'service' => $service,
-                            'allProjects' => $projects,
-                            'nestedContainers' => [],
-                        ])
-                    @endforeach
-                </div>
-            @endif
-        </div>
+            <span class="text-xs font-medium text-brand-600 dark:text-brand-400">View all</span>
+        </a>
     @endif
 
     @if($isProject)

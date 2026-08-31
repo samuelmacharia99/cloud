@@ -54,6 +54,24 @@ class ServiceController extends Controller
         ));
     }
 
+    public function showUngrouped(CustomerProjectService $projectService)
+    {
+        $user = auth()->user();
+        $projectService->ensureForUser($user);
+
+        $services = $user->services()
+            ->with(['product.containerTemplate', 'resellerProduct', 'invoice', 'containerDeployment'])
+            ->whereNull('project_id')
+            ->whereNotIn('status', ['cancelled', 'terminated'])
+            ->whereHas('product', fn ($q) => $q->where('type', '!=', 'domain'))
+            ->latest()
+            ->get();
+
+        $projects = $user->customerProjects()->orderBy('name')->get();
+
+        return view('customer.services.ungrouped', compact('services', 'projects'));
+    }
+
     public function rename(RenameCustomerServiceRequest $request, Service $service)
     {
         $this->authorize('rename', $service);

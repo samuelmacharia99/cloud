@@ -21,6 +21,13 @@ class CustomerWordPressAdminLoginTest extends TestCase
 
         $this->actingAs($customer)
             ->get(route('customer.services.index'))
+            ->assertOk();
+
+        $projectId = $service->fresh()->project_id;
+        $this->assertNotNull($projectId);
+
+        $this->actingAs($customer)
+            ->get(route('customer.projects.show', $projectId))
             ->assertOk()
             ->assertSee('WP Admin')
             ->assertSee(route('customer.services.wordpress-admin', $service), false)
@@ -39,7 +46,7 @@ class CustomerWordPressAdminLoginTest extends TestCase
         ]);
 
         $this->actingAs($customer)
-            ->get(route('customer.services.index'))
+            ->get(route('customer.services.ungrouped'))
             ->assertOk()
             ->assertSee('Rename')
             ->assertDontSee('WP Admin');

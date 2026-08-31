@@ -70,6 +70,31 @@ class CustomerProjectService
                 }
             }
         }
+
+        $this->ensureStandaloneApplicationProjects($user);
+    }
+
+    /**
+     * Each billed Application Hosting site is a project so the customer can
+     * open it and deploy more services on that plan.
+     */
+    public function ensureStandaloneApplicationProjects(User $user): void
+    {
+        $orphans = $user->services()
+            ->with(['product'])
+            ->whereNull('project_id')
+            ->whereNotIn('status', ['cancelled', 'terminated'])
+            ->get()
+            ->filter(fn (Service $service) => $service->isContainerHosting());
+
+        foreach ($orphans as $service) {
+            $name = trim((string) ($service->customerServiceName() ?: $service->name));
+            if ($name === '') {
+                $name = CustomerProject::DEFAULT_NAME;
+            }
+
+            $this->createProject($user, mb_substr($name, 0, 100), $service);
+        }
     }
 
     /**
