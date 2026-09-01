@@ -19,6 +19,14 @@ class ContainerTemplateEnvironmentService
             $env = $this->prepareWordPressEnvironment($env);
         }
 
+        if (($template->slug ?? '') === 'hermes') {
+            $env = $this->prepareHermesEnvironment($env);
+        }
+
+        if (($template->slug ?? '') === 'openclaw') {
+            $env = $this->prepareOpenClawEnvironment($env);
+        }
+
         if (in_array($template->slug ?? '', ['laravel', 'php'], true)) {
             // Customer Terminal + npm run as www-data; avoid root-owned /var/www/.npm.
             $env['HOME'] = $env['HOME'] ?? '/tmp';
@@ -211,6 +219,64 @@ class ContainerTemplateEnvironmentService
         }
 
         return $env;
+    }
+
+    /**
+     * @param  array<string, string>  $env
+     * @return array<string, string>
+     */
+    private function prepareHermesEnvironment(array $env): array
+    {
+        $env['HERMES_DASHBOARD'] = $this->filledOr($env, 'HERMES_DASHBOARD', '1');
+        $env['HERMES_DASHBOARD_HOST'] = $this->filledOr($env, 'HERMES_DASHBOARD_HOST', '0.0.0.0');
+        $env['HERMES_DASHBOARD_BASIC_AUTH_USERNAME'] = $this->filledOr($env, 'HERMES_DASHBOARD_BASIC_AUTH_USERNAME', 'admin');
+        $env['API_SERVER_ENABLED'] = $this->filledOr($env, 'API_SERVER_ENABLED', 'true');
+        $env['API_SERVER_HOST'] = $this->filledOr($env, 'API_SERVER_HOST', '0.0.0.0');
+
+        if (trim((string) ($env['HERMES_DASHBOARD_BASIC_AUTH_PASSWORD'] ?? '')) === '') {
+            $env['HERMES_DASHBOARD_BASIC_AUTH_PASSWORD'] = Str::random(24);
+        }
+
+        if (trim((string) ($env['HERMES_DASHBOARD_BASIC_AUTH_SECRET'] ?? '')) === '') {
+            $env['HERMES_DASHBOARD_BASIC_AUTH_SECRET'] = Str::random(32);
+        }
+
+        if (trim((string) ($env['API_SERVER_KEY'] ?? '')) === '') {
+            $env['API_SERVER_KEY'] = Str::random(32);
+        }
+
+        return $env;
+    }
+
+    /**
+     * @param  array<string, string>  $env
+     * @return array<string, string>
+     */
+    private function prepareOpenClawEnvironment(array $env): array
+    {
+        $env['OPENCLAW_GATEWAY_BIND'] = $this->filledOr($env, 'OPENCLAW_GATEWAY_BIND', 'lan');
+        $env['HOME'] = $this->filledOr($env, 'HOME', '/home/node');
+        $env['OPENCLAW_STATE_DIR'] = $this->filledOr($env, 'OPENCLAW_STATE_DIR', '/home/node/.openclaw');
+        $env['OPENCLAW_CONFIG_DIR'] = $this->filledOr($env, 'OPENCLAW_CONFIG_DIR', '/home/node/.openclaw');
+        $env['OPENCLAW_CONFIG_PATH'] = $this->filledOr($env, 'OPENCLAW_CONFIG_PATH', '/home/node/.openclaw/openclaw.json');
+        $env['OPENCLAW_WORKSPACE_DIR'] = $this->filledOr($env, 'OPENCLAW_WORKSPACE_DIR', '/home/node/.openclaw/workspace');
+        $env['OPENCLAW_DISABLE_BONJOUR'] = $this->filledOr($env, 'OPENCLAW_DISABLE_BONJOUR', '1');
+
+        if (trim((string) ($env['OPENCLAW_GATEWAY_TOKEN'] ?? '')) === '') {
+            $env['OPENCLAW_GATEWAY_TOKEN'] = Str::random(32);
+        }
+
+        return $env;
+    }
+
+    /**
+     * @param  array<string, string>  $env
+     */
+    private function filledOr(array $env, string $key, string $default): string
+    {
+        $value = trim((string) ($env[$key] ?? ''));
+
+        return $value !== '' ? $value : $default;
     }
 
     private function generateSecretValue(string $key): string

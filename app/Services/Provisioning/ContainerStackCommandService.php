@@ -35,6 +35,8 @@ class ContainerStackCommandService
         return match ($template->slug ?? null) {
             'strapi' => '/srv/app',
             'wordpress' => '/var/www/html',
+            'hermes' => '/opt/data',
+            'openclaw' => '/home/node/.openclaw',
             default => '/app',
         };
     }

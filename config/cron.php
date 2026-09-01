@@ -20,6 +20,7 @@ return [
         // Runs every five minutes and degrades individual node/container failures
         // instead of failing the scheduler. The command stops before this threshold.
         'cron:collect-container-metrics' => 240,
+        'cron:refresh-project-consumption' => 180,
         // Runs every minute; each customer job is capped, but a full batch can
         // still take a few minutes when SSH is slow.
         'cron:run-container-jobs' => 600,
@@ -48,6 +49,7 @@ return [
         'cron:collect-reseller-disk-usage' => 45,
         'cron:reconcile-directadmin-hosted-accounts' => 45,
         'cron:collect-container-metrics' => 5,
+        'cron:refresh-project-consumption' => 10,
         'cron:run-container-jobs' => 15,
         'cron:sync-service-live-status' => 20,
         'cron:poll-node-health' => 5,

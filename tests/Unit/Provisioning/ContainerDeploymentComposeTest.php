@@ -607,4 +607,80 @@ class ContainerDeploymentComposeTest extends TestCase
             'failed to create network talksasa-user-67-service-253-static-site: Error response from daemon: all predefined address pools have been fully subnetted'
         ));
     }
+
+    #[Test]
+    public function render_compose_sets_official_agent_gateway_commands_and_volumes(): void
+    {
+        $this->assertSame(['gateway', 'run'], ContainerDeploymentService::imageGatewayCommand('hermes'));
+        $this->assertSame(
+            ['node', 'dist/index.js', 'gateway', '--bind', 'lan', '--port', '18789'],
+            ContainerDeploymentService::imageGatewayCommand('openclaw')
+        );
+        $this->assertNull(ContainerDeploymentService::imageGatewayCommand('ghost'));
+
+        $runtimeImages = $this->createMock(RuntimeImageProvisioner::class);
+        $runtimeImages->method('usesRuntimeImage')->willReturn(false);
+
+        $deployer = new ContainerDeploymentService(
+            runtimeImages: $runtimeImages,
+            templateEnvironment: new ContainerTemplateEnvironmentService
+        );
+
+        $method = new ReflectionMethod(ContainerDeploymentService::class, 'renderCompose');
+        $method->setAccessible(true);
+
+        $hermesYaml = $method->invoke(
+            $deployer,
+            new ContainerTemplate([
+                'slug' => 'hermes',
+                'docker_image' => 'nousresearch/hermes-agent:latest',
+                'default_port' => 9119,
+                'required_cpu_cores' => 1,
+                'required_ram_mb' => 2048,
+                'volume_paths' => ['hermes_data' => '/opt/data'],
+            ]),
+            'user-1-service-10-hermes',
+            31010,
+            [],
+            null,
+            null,
+            null,
+            null,
+            null
+        );
+
+        $this->assertStringContainsString('nousresearch/hermes-agent:latest', $hermesYaml);
+        $this->assertStringContainsString("command:\n      - gateway\n      - run", $hermesYaml);
+        $this->assertStringContainsString('hermes_data:/opt/data', $hermesYaml);
+        $this->assertStringContainsString("ports:\n      - '31010:9119'", $hermesYaml);
+
+        $openClawYaml = $method->invoke(
+            $deployer,
+            new ContainerTemplate([
+                'slug' => 'openclaw',
+                'docker_image' => 'openclaw/openclaw:latest',
+                'default_port' => 18789,
+                'required_cpu_cores' => 1,
+                'required_ram_mb' => 2048,
+                'volume_paths' => [
+                    'openclaw_state' => '/home/node/.openclaw',
+                    'openclaw_workspace' => '/home/node/.openclaw/workspace',
+                ],
+            ]),
+            'user-1-service-11-openclaw',
+            31011,
+            [],
+            null,
+            null,
+            null,
+            null,
+            null
+        );
+
+        $this->assertStringContainsString('openclaw/openclaw:latest', $openClawYaml);
+        $this->assertStringContainsString('--bind', $openClawYaml);
+        $this->assertStringContainsString('lan', $openClawYaml);
+        $this->assertStringContainsString('openclaw_state:/home/node/.openclaw', $openClawYaml);
+        $this->assertStringContainsString("ports:\n      - '31011:18789'", $openClawYaml);
+    }
 }

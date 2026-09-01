@@ -100,6 +100,41 @@ class TechStackConfirmRouteTest extends TestCase
         $this->assertContains('nextjs', $frameworks);
     }
 
+    public function test_hermes_confirms_without_database_or_frontend(): void
+    {
+        $customer = User::factory()->customer()->create();
+        $language = $this->makeLanguage('hermes');
+        $this->makeProductForLanguage($language);
+
+        $this->actingAs($customer)
+            ->post(route('customer.confirm-techstack.store'), [
+                'language_id' => $language->id,
+                'database_id' => '',
+                'frontend' => '',
+                'deployment_platform' => 'container',
+            ])
+            ->assertRedirect(route('customer.confirm-techstack'));
+
+        $techstack = session('selected_techstack');
+        $this->assertSame($language->id, $techstack['language_id']);
+        $this->assertSame('hermes', $techstack['language_slug']);
+        $this->assertSame('none', $techstack['frontend']);
+        $this->assertArrayNotHasKey('database_id', $techstack);
+    }
+
+    public function test_openclaw_stack_options_skip_the_builder_modal(): void
+    {
+        $customer = User::factory()->customer()->create();
+        $language = $this->makeLanguage('openclaw');
+
+        $this->actingAs($customer)
+            ->getJson(route('api.languages.stack-options', $language))
+            ->assertOk()
+            ->assertJsonPath('skip_modal', true)
+            ->assertJsonPath('backend', 'openclaw')
+            ->assertJsonPath('database.show', false);
+    }
+
     public function test_nodejs_next_framework_locks_frontend_in_stack_options(): void
     {
         $customer = User::factory()->customer()->create();

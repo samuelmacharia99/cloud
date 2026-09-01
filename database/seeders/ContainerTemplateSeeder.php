@@ -502,5 +502,127 @@ class ContainerTemplateSeeder extends Seeder
                 'order' => 4,
             ]
         );
+
+        $this->seedAgentStacks();
+    }
+
+    public function seedAgentStacks(): void
+    {
+        foreach (self::agentStackDefinitions() as $slug => $attributes) {
+            ContainerTemplate::query()->firstOrCreate(['slug' => $slug], $attributes);
+        }
+    }
+
+    /**
+     * Official Hermes Agent and OpenClaw gateway images.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    public static function agentStackDefinitions(): array
+    {
+        return [
+            'hermes' => [
+                'name' => 'Hermes Agent',
+                'description' => 'Nous Research Hermes Agent — always-on AI gateway with a web dashboard. Requires a plan with at least 2 GB RAM. Add an LLM API key after deploy under Environment.',
+                'category' => 'web',
+                'docker_image' => 'nousresearch/hermes-agent:latest',
+                'default_port' => 9119,
+                'required_ram_mb' => 2048,
+                'required_cpu_cores' => 1.0,
+                'required_storage_gb' => 10,
+                'versions' => [
+                    'latest',
+                ],
+                'environment_variables' => [
+                    [
+                        'key' => 'ANTHROPIC_API_KEY',
+                        'label' => 'Anthropic API key',
+                        'default' => '',
+                        'required' => false,
+                        'secret' => true,
+                    ],
+                    [
+                        'key' => 'OPENAI_API_KEY',
+                        'label' => 'OpenAI API key',
+                        'default' => '',
+                        'required' => false,
+                        'secret' => true,
+                    ],
+                    [
+                        'key' => 'TELEGRAM_BOT_TOKEN',
+                        'label' => 'Telegram bot token',
+                        'default' => '',
+                        'required' => false,
+                        'secret' => true,
+                    ],
+                    [
+                        'key' => 'HERMES_DASHBOARD_BASIC_AUTH_USERNAME',
+                        'label' => 'Dashboard username',
+                        'default' => 'admin',
+                        'required' => false,
+                        'secret' => false,
+                    ],
+                ],
+                'volume_paths' => [
+                    'hermes_data' => '/opt/data',
+                ],
+                'compose_services' => [],
+                'setup_commands' => [],
+                'strict_health_check' => true,
+                'health_check_timeout_seconds' => 300,
+                'is_active' => true,
+                'order' => 10,
+            ],
+            'openclaw' => [
+                'name' => 'OpenClaw',
+                'description' => 'OpenClaw gateway and Control UI. Requires a plan with at least 2 GB RAM. Add an LLM API key after deploy under Environment, then sign in with the generated gateway token.',
+                'category' => 'web',
+                'docker_image' => 'openclaw/openclaw:latest',
+                'default_port' => 18789,
+                'required_ram_mb' => 2048,
+                'required_cpu_cores' => 1.0,
+                'required_storage_gb' => 10,
+                'versions' => [
+                    'latest',
+                    'main',
+                    'extended-stable',
+                    'slim',
+                    'latest-browser',
+                ],
+                'environment_variables' => [
+                    [
+                        'key' => 'OPENAI_API_KEY',
+                        'label' => 'OpenAI API key',
+                        'default' => '',
+                        'required' => false,
+                        'secret' => true,
+                    ],
+                    [
+                        'key' => 'ANTHROPIC_API_KEY',
+                        'label' => 'Anthropic API key',
+                        'default' => '',
+                        'required' => false,
+                        'secret' => true,
+                    ],
+                    [
+                        'key' => 'TELEGRAM_BOT_TOKEN',
+                        'label' => 'Telegram bot token',
+                        'default' => '',
+                        'required' => false,
+                        'secret' => true,
+                    ],
+                ],
+                'volume_paths' => [
+                    'openclaw_state' => '/home/node/.openclaw',
+                    'openclaw_workspace' => '/home/node/.openclaw/workspace',
+                ],
+                'compose_services' => [],
+                'setup_commands' => [],
+                'strict_health_check' => true,
+                'health_check_timeout_seconds' => 300,
+                'is_active' => true,
+                'order' => 11,
+            ],
+        ];
     }
 }

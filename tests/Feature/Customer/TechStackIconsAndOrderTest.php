@@ -44,11 +44,15 @@ class TechStackIconsAndOrderTest extends TestCase
             ->assertOk()
             ->assertSee('#21759B', false)
             ->assertSee('#339933', false)
+            ->assertSee('#C9A227', false)
+            ->assertSee('#FF4D1A', false)
             ->assertSeeInOrder([
                 'WordPress',
                 'Node.js',
                 'Python',
                 'Static Website',
+                'Hermes Agent',
+                'OpenClaw',
                 'Strapi',
             ]);
     }

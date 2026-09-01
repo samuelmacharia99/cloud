@@ -177,6 +177,7 @@ return [
 
         'static-site' => [
             'backend' => 'static-site',
+            'skip_modal' => true,
             'framework' => [
                 'required' => false,
                 'show' => false,
@@ -238,6 +239,52 @@ return [
                 'show' => true,
                 'allow_none' => false,
                 'types' => ['mysql', 'mariadb', 'postgresql', 'mongodb'],
+            ],
+        ],
+
+        'hermes' => [
+            'backend' => 'hermes',
+            'skip_modal' => true,
+            'framework' => [
+                'required' => false,
+                'show' => false,
+                'options' => [],
+                'locked' => 'hermes',
+            ],
+            'frontend' => [
+                'required' => false,
+                'show' => false,
+                'options' => ['none'],
+                'locked' => 'none',
+            ],
+            'database' => [
+                'required' => false,
+                'show' => false,
+                'allow_none' => true,
+                'types' => [],
+            ],
+        ],
+
+        'openclaw' => [
+            'backend' => 'openclaw',
+            'skip_modal' => true,
+            'framework' => [
+                'required' => false,
+                'show' => false,
+                'options' => [],
+                'locked' => 'openclaw',
+            ],
+            'frontend' => [
+                'required' => false,
+                'show' => false,
+                'options' => ['none'],
+                'locked' => 'none',
+            ],
+            'database' => [
+                'required' => false,
+                'show' => false,
+                'allow_none' => true,
+                'types' => [],
             ],
         ],
 

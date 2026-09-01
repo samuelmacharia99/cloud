@@ -1654,6 +1654,21 @@ class ContainerDeploymentService
     }
 
     /**
+     * Official agent images need an explicit gateway command so the published
+     * port is reachable (Hermes dashboard / OpenClaw Control UI).
+     *
+     * @return list<string>|null
+     */
+    public static function imageGatewayCommand(?string $slug): ?array
+    {
+        return match ($slug) {
+            'hermes' => ['gateway', 'run'],
+            'openclaw' => ['node', 'dist/index.js', 'gateway', '--bind', 'lan', '--port', '18789'],
+            default => null,
+        };
+    }
+
+    /**
      * Render docker-compose.yml from template with optional database sidecar
      */
     private function renderCompose(
@@ -1745,6 +1760,11 @@ class ContainerDeploymentService
                     '/app'
                 );
             }
+        }
+
+        $imageGatewayCommand = self::imageGatewayCommand($template->slug ?? null);
+        if ($imageGatewayCommand !== null) {
+            $compose['services'][$containerName]['command'] = $imageGatewayCommand;
         }
 
         if ($this->applicationRuntime->supportsTemplate($template->slug ?? null)) {

@@ -36,6 +36,8 @@ class ServiceBrowserController extends Controller
                 WHEN 'nodejs' THEN 2
                 WHEN 'python' THEN 3
                 WHEN 'static-site' THEN 4
+                WHEN 'hermes' THEN 5
+                WHEN 'openclaw' THEN 6
                 ELSE 100
             END")
             ->orderBy('order')

@@ -158,6 +158,13 @@ class CronJobSeeder extends Seeder
                 'enabled' => true,
             ],
             [
+                'name' => 'Refresh Project Consumption',
+                'description' => 'Averages last-6-hour container metrics per project and stores used-vs-included plan consumption.',
+                'command' => 'cron:refresh-project-consumption',
+                'schedule' => '10 */6 * * *',
+                'enabled' => true,
+            ],
+            [
                 'name' => 'Run Container Cron Jobs',
                 'description' => 'Executes customer-defined scheduled commands inside running container services via docker exec.',
                 'command' => 'cron:run-container-jobs',

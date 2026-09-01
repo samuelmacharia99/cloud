@@ -242,7 +242,28 @@ class TechStackRoutingServiceTest extends TestCase
         $language = $this->createLanguage('static-site');
 
         $this->assertTrue(TechStackRoutingService::isValidStackSelection($language, null, 'static', null));
+        $this->assertTrue(TechStackRoutingService::isValidStackSelection($language, null, null, null));
         $this->assertTrue(TechStackRoutingService::isValidCombination($language, null));
+        $this->assertTrue(TechStackRoutingService::skipsStackModal($language));
+    }
+
+    public function test_hermes_and_openclaw_skip_modal_and_allow_no_database(): void
+    {
+        $hermes = $this->createLanguage('hermes');
+        $openclaw = $this->createLanguage('openclaw');
+
+        $this->assertTrue(TechStackRoutingService::skipsStackModal($hermes));
+        $this->assertTrue(TechStackRoutingService::skipsStackModal($openclaw));
+        $this->assertTrue(TechStackRoutingService::isValidStackSelection($hermes, null, null, null));
+        $this->assertTrue(TechStackRoutingService::isValidStackSelection($openclaw, null, '', null));
+        $this->assertTrue(TechStackRoutingService::isValidCombination($hermes, null));
+        $this->assertTrue(TechStackRoutingService::isValidCombination($openclaw, null));
+
+        $payload = TechStackRoutingService::stackOptionsPayload($hermes);
+        $this->assertTrue($payload['skip_modal']);
+        $this->assertFalse($payload['framework']['show']);
+        $this->assertFalse($payload['frontend']['show']);
+        $this->assertFalse($payload['database']['show']);
     }
 
     public function test_apply_session_selection_copies_stack_builder_roles(): void

@@ -22,12 +22,16 @@ class CustomerProject extends Model
         'billing_service_id',
         'recipe_key',
         'resource_pool',
+        'consumption_snapshot',
+        'consumption_snapshot_at',
     ];
 
     protected function casts(): array
     {
         return [
             'resource_pool' => 'array',
+            'consumption_snapshot' => 'array',
+            'consumption_snapshot_at' => 'datetime',
         ];
     }
 

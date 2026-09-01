@@ -17,6 +17,8 @@
         'ruby' => '204, 52, 45',
         'ghost' => '21, 23, 26',
         'strapi' => '73, 69, 255',
+        'hermes' => '201, 162, 39',
+        'openclaw' => '255, 77, 26',
         'go' => '0, 173, 216',
         'golang' => '0, 173, 216',
     ];
@@ -30,9 +32,15 @@
         'ruby' => 'Ruby apps',
         'ghost' => 'Publishing',
         'strapi' => 'Headless CMS',
+        'hermes' => 'AI agent',
+        'openclaw' => 'AI gateway',
         'go' => 'Go services',
         'golang' => 'Go services',
     ];
+    $skipModalSlugs = $languages
+        ->filter(fn ($language) => \App\Services\TechStackRoutingService::skipsStackModal($language))
+        ->pluck('slug')
+        ->values();
 @endphp
 
 <div class="space-y-8" x-data="techstackSelector()" @keydown.escape="showStackModal = false">
@@ -137,7 +145,7 @@
         @csrf
         <input type="hidden" id="skip-db-form-language" name="language_id" value="">
         <input type="hidden" name="database_id" value="">
-        <input type="hidden" name="frontend" value="static">
+        <input type="hidden" name="frontend" value="">
         <input type="hidden" name="deployment_platform" value="container">
         @if($project && ! $includedDeploy)
             <input type="hidden" name="project_id" value="{{ $project->id }}">
@@ -333,6 +341,7 @@ function techstackSelector() {
         loading: false,
         confirmTechstackUrl: @json($stackFormAction),
         stackOptionsUrlTemplate: @json(url('/api/languages/__ID__/stack-options')),
+        skipModalSlugs: @json($skipModalSlugs),
 
         get canContinue() {
             if (!this.stackOptions) {
@@ -362,7 +371,7 @@ function techstackSelector() {
             this.selectedFrontend = '';
             this.selectedDatabaseId = '';
 
-            if (language.slug === 'static-site') {
+            if (this.skipModalSlugs.includes(language.slug)) {
                 this.$nextTick(() => {
                     document.getElementById('skip-db-form-language').value = languageId;
                     document.getElementById('skip-db-form').submit();

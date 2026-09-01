@@ -309,7 +309,8 @@ class CustomerProjectService
      *   projects: Collection<int, CustomerProject>,
      *   containers: list<string>,
      *   primaryContainer: ?Service,
-     *   planUsage: array<string, mixed>|null
+     *   planUsage: array<string, mixed>|null,
+     *   consumption: array<string, mixed>|null
      * }
      */
     public function showContext(User $user, CustomerProject $project): array
@@ -333,6 +334,7 @@ class CustomerProjectService
             'containers' => $this->containerLabelsForMembers($services),
             'primaryContainer' => $primaryContainer,
             'planUsage' => $project->planUsageSummary(),
+            'consumption' => app(ProjectConsumptionService::class)->forDisplay($project),
         ];
     }
 

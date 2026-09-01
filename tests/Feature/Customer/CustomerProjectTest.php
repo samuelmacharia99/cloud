@@ -3,6 +3,7 @@
 namespace Tests\Feature\Customer;
 
 use App\Models\ContainerDeployment;
+use App\Models\ContainerMetric;
 use App\Models\CustomerProject;
 use App\Models\Product;
 use App\Models\Service;
@@ -499,5 +500,54 @@ YAML,
             ->assertSee('LS Production')
             ->assertSee('Deploy new service')
             ->assertSee('not billed again');
+    }
+
+    public function test_project_show_renders_consumption_against_the_plan(): void
+    {
+        $customer = User::factory()->customer()->create();
+        $product = Product::factory()->containerHosting()->create([
+            'name' => 'App Hosting',
+            'resource_limits' => ['cpu' => 2, 'memory' => 4096, 'disk' => 40, 'bandwidth_gb' => 100],
+        ]);
+        $project = CustomerProject::factory()->create([
+            'user_id' => $customer->id,
+            'name' => 'Analytics Project',
+        ]);
+        $service = Service::factory()->create([
+            'user_id' => $customer->id,
+            'product_id' => $product->id,
+            'project_id' => $project->id,
+            'status' => 'active',
+            'billing_cycle' => 'monthly',
+            'next_due_date' => now()->addMonth(),
+        ]);
+        $project->update(['billing_service_id' => $service->id]);
+        $deployment = ContainerDeployment::factory()->create([
+            'service_id' => $service->id,
+            'status' => 'running',
+        ]);
+        ContainerMetric::create([
+            'container_deployment_id' => $deployment->id,
+            'sample_type' => ContainerMetric::SAMPLE_USAGE,
+            'cpu_percentage' => 50,
+            'memory_used_mb' => 1024,
+            'memory_limit_mb' => 4096,
+            'memory_percentage' => 25,
+            'disk_used_gb' => 5,
+            'net_io_rx_bytes' => 0,
+            'net_io_tx_bytes' => 0,
+            'recorded_at' => now()->subHour(),
+        ]);
+
+        $this->actingAs($customer)
+            ->get(route('customer.projects.show', $project))
+            ->assertOk()
+            ->assertSee('Plan consumption')
+            ->assertSee('Average over the last 6 hours')
+            ->assertSee(' / 2 included')
+            ->assertSee('this cycle');
+
+        $this->assertNotNull($project->fresh()->consumption_snapshot_at);
+        $this->assertSame(0.5, (float) $project->fresh()->consumption_snapshot['cpu_cores']);
     }
 }

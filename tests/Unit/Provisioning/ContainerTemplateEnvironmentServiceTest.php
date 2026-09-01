@@ -110,6 +110,55 @@ class ContainerTemplateEnvironmentServiceTest extends TestCase
     }
 
     #[Test]
+    public function it_generates_hermes_dashboard_and_api_secrets(): void
+    {
+        $service = new ContainerTemplateEnvironmentService;
+        $template = (object) [
+            'slug' => 'hermes',
+            'environment_variables' => [],
+        ];
+
+        $env = $service->prepare($template, [], $this->makeService());
+
+        $this->assertSame('1', $env['HERMES_DASHBOARD']);
+        $this->assertSame('0.0.0.0', $env['HERMES_DASHBOARD_HOST']);
+        $this->assertSame('admin', $env['HERMES_DASHBOARD_BASIC_AUTH_USERNAME']);
+        $this->assertNotSame('', $env['HERMES_DASHBOARD_BASIC_AUTH_PASSWORD']);
+        $this->assertNotSame('', $env['HERMES_DASHBOARD_BASIC_AUTH_SECRET']);
+        $this->assertSame('true', $env['API_SERVER_ENABLED']);
+        $this->assertSame('0.0.0.0', $env['API_SERVER_HOST']);
+        $this->assertGreaterThanOrEqual(8, strlen($env['API_SERVER_KEY']));
+
+        $preserved = $service->prepare($template, [
+            'HERMES_DASHBOARD_BASIC_AUTH_USERNAME' => 'ops',
+            'HERMES_DASHBOARD_BASIC_AUTH_PASSWORD' => 'keep-me',
+            'API_SERVER_KEY' => 'fixed-key-12345678',
+        ], $this->makeService());
+
+        $this->assertSame('ops', $preserved['HERMES_DASHBOARD_BASIC_AUTH_USERNAME']);
+        $this->assertSame('keep-me', $preserved['HERMES_DASHBOARD_BASIC_AUTH_PASSWORD']);
+        $this->assertSame('fixed-key-12345678', $preserved['API_SERVER_KEY']);
+    }
+
+    #[Test]
+    public function it_generates_openclaw_gateway_token_and_lan_bind(): void
+    {
+        $service = new ContainerTemplateEnvironmentService;
+        $template = (object) [
+            'slug' => 'openclaw',
+            'environment_variables' => [],
+        ];
+
+        $env = $service->prepare($template, [], $this->makeService());
+
+        $this->assertSame('lan', $env['OPENCLAW_GATEWAY_BIND']);
+        $this->assertSame('/home/node', $env['HOME']);
+        $this->assertSame('/home/node/.openclaw', $env['OPENCLAW_STATE_DIR']);
+        $this->assertNotSame('', $env['OPENCLAW_GATEWAY_TOKEN']);
+        $this->assertSame(32, strlen($env['OPENCLAW_GATEWAY_TOKEN']));
+    }
+
+    #[Test]
     public function it_sets_npm_cache_and_file_cache_defaults_for_laravel(): void
     {
         $service = new ContainerTemplateEnvironmentService;

@@ -15,7 +15,30 @@
         });
     $primaryActionLabel = $canDeployIncluded ? 'Deploy new service' : 'Choose a plan';
     $nextDue = $billingService?->next_due_date;
+    $consumption = $consumption ?? null;
     $trim = fn ($value) => rtrim(rtrim(number_format((float) $value, 2), '0'), '.');
+    $barWidth = function (?float $percent): string {
+        if ($percent === null) {
+            return '0%';
+        }
+
+        return min(100, max(0, $percent)).'%';
+    };
+    $barTone = function (?float $percent): string {
+        if ($percent === null) {
+            return 'bg-ink-300 dark:bg-ink-600';
+        }
+        if ($percent >= 100) {
+            return 'bg-red-500';
+        }
+        if ($percent >= 80) {
+            return 'bg-amber-500';
+        }
+
+        return 'bg-brand-500';
+    };
+    $formatGb = fn (float $gb) => $trim($gb).' GB';
+    $bytesToGb = fn (int $bytes) => $bytes / (1024 ** 3);
 @endphp
 
 <div
@@ -92,23 +115,94 @@
 
     @if($planLimits)
         <div class="ui-card px-5 py-4">
-            <h2 class="text-sm font-semibold text-ink-950 dark:text-white">Included plan resources</h2>
-            <dl class="mt-3 grid grid-cols-3 divide-x divide-ink-200/70 dark:divide-ink-700/60 text-center">
-                <div class="px-1">
-                    <dt class="text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-400 dark:text-ink-500">vCPU</dt>
-                    <dd class="mt-0.5 text-lg font-bold tabular-nums text-ink-950 dark:text-white">{{ $trim($planLimits['cpu']) }}</dd>
+            <div class="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                    <h2 class="text-sm font-semibold text-ink-950 dark:text-white">Plan consumption</h2>
+                    <p class="mt-0.5 text-xs text-ink-500 dark:text-ink-400">
+                        @if($consumption)
+                            Average over the last {{ (int) ($consumption['window_hours'] ?? 6) }} hours
+                            @if(! empty($consumption['sampled_at']))
+                                · updated {{ \Illuminate\Support\Carbon::parse($consumption['sampled_at'])->timezone(config('app.timezone'))->format('M j, g:i A') }}
+                            @endif
+                        @else
+                            Included plan resources
+                        @endif
+                    </p>
                 </div>
-                <div class="px-1">
-                    <dt class="text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-400 dark:text-ink-500">RAM</dt>
-                    <dd class="mt-0.5 text-lg font-bold tabular-nums text-ink-950 dark:text-white">{{ $trim($planLimits['memory_mb'] / 1024) }} GB</dd>
-                </div>
-                <div class="px-1">
-                    <dt class="text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-400 dark:text-ink-500">Disk</dt>
-                    <dd class="mt-0.5 text-lg font-bold tabular-nums text-ink-950 dark:text-white">
-                        {{ $planLimits['disk_gb'] > 0 ? $trim($planLimits['disk_gb']).' GB' : '—' }}
-                    </dd>
-                </div>
-            </dl>
+                @if($consumption && ! ($consumption['has_samples'] ?? false))
+                    <span class="status-pill bg-ink-100/90 dark:bg-white/10 text-ink-600 dark:text-ink-200">Waiting for metrics</span>
+                @endif
+            </div>
+
+            @php
+                $rows = [
+                    [
+                        'label' => 'vCPU',
+                        'used' => $consumption ? $trim((float) ($consumption['cpu_cores'] ?? 0)) : '—',
+                        'included' => $trim($planLimits['cpu']),
+                        'percent' => $consumption['percent']['cpu'] ?? null,
+                    ],
+                    [
+                        'label' => 'RAM',
+                        'used' => $consumption ? $formatGb(((int) ($consumption['memory_mb'] ?? 0)) / 1024) : '—',
+                        'included' => $formatGb($planLimits['memory_mb'] / 1024),
+                        'percent' => $consumption['percent']['memory'] ?? null,
+                    ],
+                    [
+                        'label' => 'Disk',
+                        'used' => $consumption ? $formatGb((float) ($consumption['disk_gb'] ?? 0)) : '—',
+                        'included' => $planLimits['disk_gb'] > 0 ? $formatGb($planLimits['disk_gb']) : '—',
+                        'percent' => $consumption['percent']['disk'] ?? null,
+                    ],
+                ];
+            @endphp
+
+            <div class="mt-4 space-y-3.5">
+                @foreach ($rows as $row)
+                    <div>
+                        <div class="flex items-baseline justify-between gap-3 text-sm">
+                            <span class="font-medium text-ink-700 dark:text-ink-200">{{ $row['label'] }}</span>
+                            <span class="tabular-nums text-ink-950 dark:text-white">
+                                <span class="font-bold">{{ $row['used'] }}</span>
+                                <span class="text-ink-400 dark:text-ink-500"> / {{ $row['included'] }} included</span>
+                            </span>
+                        </div>
+                        <div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-ink-100 dark:bg-ink-800">
+                            <div class="h-full rounded-full {{ $barTone($row['percent']) }}" style="width: {{ $barWidth($row['percent']) }}"></div>
+                        </div>
+                    </div>
+                @endforeach
+
+                @if($consumption)
+                    @php
+                        $includedBw = (float) ($consumption['included']['bandwidth_gb'] ?? 0);
+                        $cycleGb = $bytesToGb((int) ($consumption['billing_transfer_bytes'] ?? 0));
+                        $windowGb = $bytesToGb((int) ($consumption['transfer_bytes'] ?? 0));
+                        $bwPercent = $consumption['percent']['bandwidth'] ?? null;
+                    @endphp
+                    <div>
+                        <div class="flex items-baseline justify-between gap-3 text-sm">
+                            <span class="font-medium text-ink-700 dark:text-ink-200">Transfer</span>
+                            <span class="tabular-nums text-ink-950 dark:text-white">
+                                <span class="font-bold">{{ $formatGb($cycleGb) }}</span>
+                                <span class="text-ink-400 dark:text-ink-500">
+                                    @if($includedBw > 0)
+                                        / {{ $formatGb($includedBw) }} this cycle
+                                    @else
+                                        this cycle
+                                    @endif
+                                </span>
+                            </span>
+                        </div>
+                        <div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-ink-100 dark:bg-ink-800">
+                            <div class="h-full rounded-full {{ $barTone($bwPercent) }}" style="width: {{ $barWidth($bwPercent ?? ($includedBw > 0 ? null : 0)) }}"></div>
+                        </div>
+                        <p class="mt-1 text-[11px] text-ink-500 dark:text-ink-400">
+                            {{ $formatGb($windowGb) }} in the last {{ (int) ($consumption['window_hours'] ?? 6) }} hours
+                        </p>
+                    </div>
+                @endif
+            </div>
             @if($nextDue)
                 <p class="mt-3 flex items-center gap-1.5 border-t border-ink-200/70 dark:border-ink-700/60 pt-3 text-xs text-ink-500 dark:text-ink-400">
                     <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">

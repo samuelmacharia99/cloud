@@ -205,9 +205,16 @@ class TechStackRoutingService
                     'type' => $db->type,
                 ])->values()->all(),
             ],
-            'skip_modal' => strtolower((string) $language->slug) === 'static-site',
+            'skip_modal' => self::skipsStackModal($language),
             'stack_builder_version' => (int) config('stack_builder.version', 1),
         ];
+    }
+
+    public static function skipsStackModal(ContainerTemplate $language): bool
+    {
+        $definition = self::stackDefinition($language);
+
+        return (bool) ($definition['skip_modal'] ?? false);
     }
 
     /**
