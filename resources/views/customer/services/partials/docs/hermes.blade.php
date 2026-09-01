@@ -14,6 +14,7 @@
             <li>Deploy Ollama into the same project and pull a model (Chat tab or <code class="font-mono text-xs">ollama pull mistral</code> in Terminal).</li>
             <li>On this Overview, choose that Ollama service and click <strong>Connect Ollama</strong>. Hermes restarts once.</li>
             <li>Same-host containers talk over the private Docker network (<code class="font-mono text-xs">http://&lt;ollama-container&gt;:11434</code>), not localhost — localhost inside Hermes is Hermes itself.</li>
+            <li>If Chat shows <strong>connection interrupted (code 1006)</strong>, restart Hermes so the domain proxy can upgrade WebSockets. The first local-model reply can take a minute after connect.</li>
         </ol>
     </div>
 

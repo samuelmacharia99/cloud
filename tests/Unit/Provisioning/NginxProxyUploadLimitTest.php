@@ -53,6 +53,9 @@ class NginxProxyUploadLimitTest extends TestCase
 
         // HTTP/1.0 upstreams with request buffering off stall large media uploads.
         $this->assertStringContainsString('proxy_http_version 1.1;', $http);
+        $this->assertStringContainsString('proxy_set_header Upgrade $http_upgrade;', $http);
+        $this->assertStringContainsString('proxy_set_header Connection "upgrade";', $http);
+        $this->assertStringNotContainsString('proxy_set_header Connection "";', $http);
         $this->assertStringNotContainsString('proxy_request_buffering off', $http);
         $this->assertTrue($nginx->vhostIsCurrent($http));
         $this->assertStringContainsString('proxy_buffer_size 128k;', $http);
@@ -101,5 +104,29 @@ server {
 CONF;
 
         $this->assertFalse((new NginxProxyService)->vhostIsCurrent($v2));
+    }
+
+    #[Test]
+    public function v4_vhosts_without_websocket_upgrade_are_not_current(): void
+    {
+        config(['security.container_file_upload.max_size_mb' => 100]);
+
+        $v4 = <<<'CONF'
+# talksasa-vhost v4
+server {
+    listen 80;
+    server_name example.test;
+    client_max_body_size 100M;
+
+    location / {
+        proxy_pass http://127.0.0.1:30001;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_buffer_size 128k;
+    }
+}
+CONF;
+
+        $this->assertFalse((new NginxProxyService)->vhostIsCurrent($v4));
     }
 }

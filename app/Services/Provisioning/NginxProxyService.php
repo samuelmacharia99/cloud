@@ -13,7 +13,7 @@ class NginxProxyService
     /**
      * Bump when the generated vhost changes so existing sites are rewritten.
      */
-    public const VHOST_REVISION = 'v4';
+    public const VHOST_REVISION = 'v5';
 
     /**
      * Bind a domain to a container via nginx reverse proxy
@@ -345,6 +345,9 @@ EOL;
     /**
      * Cookie sessions (Ultimate POS /home login) send a large encrypted Set-Cookie.
      * Default proxy_buffer_size is 4k/8k, which 502s that route while GET / still works.
+     *
+     * Hermes / OpenClaw / n8n chat UIs need a real WebSocket upgrade. Clearing
+     * Connection (HTTP keepalive) makes the browser see close code 1006.
      */
     public function proxyPassLocation(int $port): string
     {
@@ -355,11 +358,13 @@ EOL;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Host \$host;
         proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_set_header Connection "";
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
         proxy_redirect off;
-        proxy_read_timeout 300s;
-        proxy_send_timeout 300s;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
         proxy_buffer_size 128k;
         proxy_buffers 4 256k;
         proxy_busy_buffers_size 256k;
@@ -491,7 +496,9 @@ EOL;
     {
         return str_contains($config, '# talksasa-vhost '.self::VHOST_REVISION)
             && str_contains($config, 'client_max_body_size '.$this->clientMaxBodySize())
-            && str_contains($config, 'proxy_buffer_size 128k');
+            && str_contains($config, 'proxy_buffer_size 128k')
+            && str_contains($config, 'proxy_set_header Upgrade')
+            && str_contains($config, 'proxy_set_header Connection "upgrade"');
     }
 
     /**

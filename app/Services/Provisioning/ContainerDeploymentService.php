@@ -5004,6 +5004,15 @@ class ContainerDeploymentService
             $this->syncPhpExtensionsIfSupported($ssh, $service, $deployment);
             $this->syncDatabaseCredentialsAfterStart($ssh, $service, $deployment, $containerPath);
 
+            try {
+                app(NginxProxyService::class)->refreshBoundDomainVhosts($service);
+            } catch (\Throwable $e) {
+                Log::warning('Could not refresh nginx vhost after environment apply', [
+                    'service_id' => $service->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
             $deployment->update(['status' => 'running']);
         } finally {
             $ssh->disconnect();

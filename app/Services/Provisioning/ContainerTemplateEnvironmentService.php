@@ -284,12 +284,20 @@ class ContainerTemplateEnvironmentService
         }
 
         if ($publicUrl !== null) {
-            $env['HERMES_DASHBOARD_PUBLIC_URL'] = $this->filledOr(
-                $env,
-                'HERMES_DASHBOARD_PUBLIC_URL',
-                $publicUrl
-            );
+            $env['HERMES_DASHBOARD_PUBLIC_URL'] = $publicUrl;
         }
+
+        // Nginx on the host reaches the published port via the Docker bridge,
+        // not loopback. Chat WebSockets (/api/ws, /api/pty) reject untrusted
+        // peers and X-Forwarded-* from those addresses unless they are listed.
+        $env['FORWARDED_ALLOW_IPS'] = $this->filledOr(
+            $env,
+            'FORWARDED_ALLOW_IPS',
+            '127.0.0.1,::1,172.16.0.0/12,10.0.0.0/8'
+        );
+        $env['HERMES_WS_PING_INTERVAL'] = $this->filledOr($env, 'HERMES_WS_PING_INTERVAL', '30');
+        $env['HERMES_WS_PING_TIMEOUT'] = $this->filledOr($env, 'HERMES_WS_PING_TIMEOUT', '120');
+        $env['HERMES_WS_WRITE_TIMEOUT'] = $this->filledOr($env, 'HERMES_WS_WRITE_TIMEOUT', '180');
 
         return $env;
     }

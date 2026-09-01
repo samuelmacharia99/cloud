@@ -127,6 +127,8 @@ class ContainerTemplateEnvironmentServiceTest extends TestCase
         $this->assertNotSame('', $env['HERMES_DASHBOARD_BASIC_AUTH_SECRET']);
         $this->assertSame('true', $env['API_SERVER_ENABLED']);
         $this->assertSame('0.0.0.0', $env['API_SERVER_HOST']);
+        $this->assertSame('127.0.0.1,::1,172.16.0.0/12,10.0.0.0/8', $env['FORWARDED_ALLOW_IPS']);
+        $this->assertSame('180', $env['HERMES_WS_WRITE_TIMEOUT']);
         $this->assertGreaterThanOrEqual(8, strlen($env['API_SERVER_KEY']));
 
         $preserved = $service->prepare($template, [

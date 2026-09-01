@@ -73,6 +73,7 @@ class ContainerHermesOllamaLinkServiceTest extends TestCase
         $this->assertSame($base, $patch['OLLAMA_BASE_URL']);
         $this->assertSame($base.'/v1', $patch['OPENAI_BASE_URL']);
         $this->assertSame('1800', $patch['HERMES_API_TIMEOUT']);
+        $this->assertSame('180', $patch['HERMES_WS_WRITE_TIMEOUT']);
         $this->assertSame((string) $ollama->id, $patch['TALKSASA_OLLAMA_SERVICE_ID']);
         $this->assertSame('mistral:latest', $patch['TALKSASA_OLLAMA_MODEL']);
         $this->assertArrayNotHasKey('OPENAI_API_KEY', $patch);

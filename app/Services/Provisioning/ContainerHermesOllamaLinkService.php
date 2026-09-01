@@ -240,9 +240,18 @@ class ContainerHermesOllamaLinkService
             'OLLAMA_BASE_URL' => $baseUrl,
             'OPENAI_BASE_URL' => $openaiUrl,
             'HERMES_API_TIMEOUT' => (string) self::HERMES_API_TIMEOUT_SECONDS,
+            'FORWARDED_ALLOW_IPS' => '127.0.0.1,::1,172.16.0.0/12,10.0.0.0/8',
+            'HERMES_WS_PING_INTERVAL' => '30',
+            'HERMES_WS_PING_TIMEOUT' => '120',
+            'HERMES_WS_WRITE_TIMEOUT' => '180',
             self::ENV_OLLAMA_SERVICE_ID => (string) $ollama->id,
             self::ENV_OLLAMA_MODEL => $model,
         ];
+
+        $publicUrl = $hermes->containerDeployment?->getAccessUrl();
+        if (is_string($publicUrl) && $publicUrl !== '') {
+            $patch['HERMES_DASHBOARD_PUBLIC_URL'] = rtrim($publicUrl, '/');
+        }
 
         $existingKey = trim((string) ($env['OPENAI_API_KEY'] ?? ''));
         if ($existingKey === '' || $this->isDummyOpenAiKey($existingKey)) {
