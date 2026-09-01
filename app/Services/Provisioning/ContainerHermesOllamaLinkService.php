@@ -27,6 +27,13 @@ class ContainerHermesOllamaLinkService
 
     public const ENV_OLLAMA_MODEL = 'TALKSASA_OLLAMA_MODEL';
 
+    /**
+     * Tool schemas Hermes sends on every turn. On CPU these dominate prefill.
+     *
+     * @var list<string>
+     */
+    public const LOCAL_DISABLED_TOOLSETS = ['browser', 'vision', 'web', 'memory'];
+
     public function __construct(
         private ContainerEnvironmentService $environment,
         private ContainerOllamaModelService $ollamaModels,
@@ -245,6 +252,7 @@ class ContainerHermesOllamaLinkService
             'OLLAMA_BASE_URL' => $baseUrl,
             'OPENAI_BASE_URL' => $openaiUrl,
             'HERMES_API_TIMEOUT' => (string) self::HERMES_API_TIMEOUT_SECONDS,
+            'HERMES_STREAM_READ_TIMEOUT' => (string) self::HERMES_API_TIMEOUT_SECONDS,
             'FORWARDED_ALLOW_IPS' => '127.0.0.1,::1,172.16.0.0/12,10.0.0.0/8',
             'HERMES_WS_PING_INTERVAL' => '30',
             'HERMES_WS_PING_TIMEOUT' => '120',
@@ -272,6 +280,8 @@ class ContainerHermesOllamaLinkService
      * returns HTTP 404 "404 page not found".
      * llama3.1:8b has no thinking capability; Hermes still sends reasoning_effort
      * unless we set it to none (HTTP 400 "does not support thinking").
+     * Ollama's /v1 hang with stream=true + many tools is avoided by turning
+     * streaming off. Heavy toolsets are disabled so CPU prefill is not 10+ minutes.
      *
      * @return list<string>
      */
@@ -282,6 +292,10 @@ class ContainerHermesOllamaLinkService
         $this->assertModelName($model);
 
         $exec = 'docker exec '.escapeshellarg($containerName).' hermes config set ';
+        $disabledToolsets = json_encode(self::LOCAL_DISABLED_TOOLSETS, JSON_UNESCAPED_SLASHES);
+        if (! is_string($disabledToolsets) || $disabledToolsets === '') {
+            throw new InvalidArgumentException('Could not encode Hermes toolset list.');
+        }
 
         return [
             $exec.escapeshellarg('model.provider').' '.escapeshellarg('custom'),
@@ -290,6 +304,8 @@ class ContainerHermesOllamaLinkService
             $exec.escapeshellarg('model.context_length').' '.escapeshellarg((string) ContainerOllamaModelService::AGENT_CONTEXT_LENGTH),
             $exec.escapeshellarg('model.ollama_num_ctx').' '.escapeshellarg((string) ContainerOllamaModelService::AGENT_CONTEXT_LENGTH),
             $exec.escapeshellarg('agent.reasoning_effort').' '.escapeshellarg('none'),
+            $exec.escapeshellarg('model.streaming').' '.escapeshellarg('false'),
+            $exec.escapeshellarg('agent.disabled_toolsets').' '.escapeshellarg($disabledToolsets),
         ];
     }
 
@@ -311,8 +327,9 @@ class ContainerHermesOllamaLinkService
         $context = (int) ($env['OLLAMA_CONTEXT_LENGTH'] ?? 0);
         $numCtx = (int) ($env['OLLAMA_NUM_CTX'] ?? 0);
         $floor = ContainerOllamaModelService::AGENT_CONTEXT_LENGTH;
+        $flash = trim((string) ($env['OLLAMA_FLASH_ATTENTION'] ?? ''));
 
-        return $context < $floor || $numCtx < $floor;
+        return $context < $floor || $numCtx < $floor || $flash !== '1';
     }
 
     public function ensureOllamaAgentContext(Service $ollama): void
@@ -328,6 +345,7 @@ class ContainerHermesOllamaLinkService
             [
                 'OLLAMA_CONTEXT_LENGTH' => $length,
                 'OLLAMA_NUM_CTX' => $length,
+                'OLLAMA_FLASH_ATTENTION' => '1',
             ],
             restart: true
         );

@@ -73,6 +73,7 @@ class ContainerHermesOllamaLinkServiceTest extends TestCase
         $this->assertSame($base, $patch['OLLAMA_BASE_URL']);
         $this->assertSame($base.'/v1', $patch['OPENAI_BASE_URL']);
         $this->assertSame('1800', $patch['HERMES_API_TIMEOUT']);
+        $this->assertSame('1800', $patch['HERMES_STREAM_READ_TIMEOUT']);
         $this->assertSame('180', $patch['HERMES_WS_WRITE_TIMEOUT']);
         $this->assertSame((string) $ollama->id, $patch['TALKSASA_OLLAMA_SERVICE_ID']);
         $this->assertSame('mistral:latest', $patch['TALKSASA_OLLAMA_MODEL']);
@@ -99,7 +100,7 @@ class ContainerHermesOllamaLinkServiceTest extends TestCase
             'llama3.1:8b'
         );
 
-        $this->assertCount(6, $commands);
+        $this->assertCount(8, $commands);
         $this->assertStringContainsString("docker exec 'user-4-service-339-hermes' hermes config set", $commands[0]);
         $this->assertStringContainsString("'model.provider' 'custom'", $commands[0]);
         $this->assertStringContainsString("'model.base_url' 'http://user-4-service-338-ollama:11434/v1'", $commands[1]);
@@ -107,6 +108,8 @@ class ContainerHermesOllamaLinkServiceTest extends TestCase
         $this->assertStringContainsString("'model.context_length' '65536'", $commands[3]);
         $this->assertStringContainsString("'model.ollama_num_ctx' '65536'", $commands[4]);
         $this->assertStringContainsString("'agent.reasoning_effort' 'none'", $commands[5]);
+        $this->assertStringContainsString("'model.streaming' 'false'", $commands[6]);
+        $this->assertStringContainsString("'agent.disabled_toolsets' '".json_encode(['browser', 'vision', 'web', 'memory'])."'", $commands[7]);
     }
 
     #[Test]
@@ -121,6 +124,7 @@ class ContainerHermesOllamaLinkServiceTest extends TestCase
             [
                 'OLLAMA_CONTEXT_LENGTH' => '65536',
                 'OLLAMA_NUM_CTX' => '65536',
+                'OLLAMA_FLASH_ATTENTION' => '1',
             ]
         );
 

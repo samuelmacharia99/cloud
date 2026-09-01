@@ -17,6 +17,7 @@
             <li>If Chat shows <strong>connection interrupted (code 1006)</strong>, restart Hermes so the domain proxy can upgrade WebSockets. The first local-model reply can take a minute after connect.</li>
             <li>After Connect, start a <strong>new</strong> Chat session. The old session stays on <code class="font-mono text-xs">mistral:7b</code> and will keep failing the 64K check. The status bar should show <code class="font-mono text-xs">llama3.1:8b</code>, not <code class="font-mono text-xs">mistral:7b</code>.</li>
             <li>If Chat shows <strong>does not support thinking</strong>, Connect again so Hermes turns off reasoning for this model. llama3.1 does not implement Ollama thinking.</li>
+            <li>If Chat sits on <strong>brainstorming</strong> for many minutes, that is CPU prefill of a large prompt (expected on 8 GB, no GPU). Connect again so we turn off streaming (Ollama can hang with stream + tools) and drop browser/vision/web/memory toolsets. Leave the session running; the first token can still take a few minutes.</li>
         </ol>
     </div>
 

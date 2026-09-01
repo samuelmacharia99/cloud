@@ -22,6 +22,9 @@
                     @endif
                     via {{ $hermesOllamaLinkPanel['connected']['via'] }}.
                 </p>
+                <p class="mt-2 text-slate-600 dark:text-slate-400">
+                    On CPU, the first reply can sit on “brainstorming” for several minutes while the model reads Hermes’ prompt. That is prefill, not a crash. Later turns are faster if the model stays loaded.
+                </p>
                 @if (!empty($hermesOllamaLinkPanel['connected']['base_url']))
                     <p class="mt-1 font-mono text-xs break-all text-slate-600 dark:text-slate-400">{{ $hermesOllamaLinkPanel['connected']['base_url'] }}</p>
                 @endif
