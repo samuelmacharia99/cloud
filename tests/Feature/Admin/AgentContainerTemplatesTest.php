@@ -51,4 +51,25 @@ class AgentContainerTemplatesTest extends TestCase
             ->assertSee('#C9A227', false)
             ->assertSee('#FF4D1A', false);
     }
+
+    public function test_admin_can_view_hermes_and_openclaw_template_details(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $hermes = ContainerTemplate::query()->where('slug', 'hermes')->firstOrFail();
+        $openclaw = ContainerTemplate::query()->where('slug', 'openclaw')->firstOrFail();
+
+        $this->actingAs($admin)
+            ->get(route('admin.container-templates.show', $hermes))
+            ->assertOk()
+            ->assertSee('Hermes Agent')
+            ->assertSee('nousresearch/hermes-agent:latest')
+            ->assertSee('9119');
+
+        $this->actingAs($admin)
+            ->get(route('admin.container-templates.show', $openclaw))
+            ->assertOk()
+            ->assertSee('OpenClaw')
+            ->assertSee('openclaw/openclaw:latest')
+            ->assertSee('latest-browser');
+    }
 }

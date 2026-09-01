@@ -243,7 +243,7 @@ class ContainerTemplateController
      */
     public function show(ContainerTemplate $containerTemplate): View
     {
-        $containerTemplate->load('products', 'versions');
+        $containerTemplate->load('products');
         $deploymentCount = \App\Models\ContainerDeployment::whereHas('service.product', function ($q) use ($containerTemplate) {
             $q->where('container_template_id', $containerTemplate->id);
         })->count();
