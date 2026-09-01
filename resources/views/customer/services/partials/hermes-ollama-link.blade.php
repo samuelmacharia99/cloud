@@ -2,10 +2,8 @@
     <div class="mt-6 pt-6 border-t border-amber-200 dark:border-amber-800">
         <h4 class="text-sm font-semibold text-slate-900 dark:text-white">Ollama in this project</h4>
         <p class="mt-1 text-sm text-slate-600 dark:text-slate-300">
-            Hermes and Ollama are separate containers. Connect them so Hermes uses the model running in Ollama
-            over the private Docker network (same host) instead of a cloud API key.
-            Hermes needs 64,000 tokens of context — Mistral 7B maxes out at 32K, so pull
-            <code class="font-mono text-xs">llama3.1:8b</code> on Ollama first if that is all you have.
+            Prefer an LLM API key under Environment. Local Ollama is not offered as a new stack.
+            If this project already has Ollama, you can still connect it here.
         </p>
 
         @if (!empty($hermesOllamaLinkPanel['connected']))

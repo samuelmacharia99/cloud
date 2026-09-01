@@ -178,7 +178,7 @@ class ServiceController extends Controller
     {
         $this->authorize('update', $project);
 
-        $languages = ContainerTemplate::active()
+        $languages = ContainerTemplate::offeredForNewDeploy()
             ->reorder()
             ->orderByRaw("CASE slug
                 WHEN 'wordpress' THEN 1

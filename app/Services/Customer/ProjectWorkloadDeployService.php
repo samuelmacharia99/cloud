@@ -74,6 +74,12 @@ class ProjectWorkloadDeployService
             ]);
         }
 
+        if (! $language->isOfferedForNewDeploy()) {
+            throw ValidationException::withMessages([
+                'language_id' => 'That runtime is not available for new deploys.',
+            ]);
+        }
+
         if ($database && $database->hosting_type !== 'container') {
             throw ValidationException::withMessages([
                 'database_id' => 'Selected database is not available for application hosting.',

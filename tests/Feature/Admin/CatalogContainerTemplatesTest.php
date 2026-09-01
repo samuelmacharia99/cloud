@@ -28,9 +28,11 @@ class CatalogContainerTemplatesTest extends TestCase
             $template = ContainerTemplate::query()->where('slug', $slug)->first();
             $this->assertNotNull($template, $slug.' template missing');
             $this->assertSame($image, $template->docker_image);
-            $this->assertTrue($template->is_active);
             if ($slug === 'ollama') {
+                $this->assertFalse($template->is_active);
                 $this->assertSame(900, $template->health_check_timeout_seconds);
+            } else {
+                $this->assertTrue($template->is_active);
             }
         }
     }
@@ -51,6 +53,7 @@ class CatalogContainerTemplatesTest extends TestCase
         $this->assertSame('ollama/ollama:latest', $definitions['ollama']['docker_image']);
         $this->assertSame(11434, $definitions['ollama']['default_port']);
         $this->assertSame(['7b', '8b'], $definitions['ollama']['versions']);
+        $this->assertFalse($definitions['ollama']['is_active']);
         $this->assertSame(900, $definitions['ollama']['health_check_timeout_seconds']);
         $this->assertSame('/root/.ollama', $definitions['ollama']['volume_paths']['ollama_data']);
     }

@@ -29,7 +29,7 @@ class ServiceBrowserController extends Controller
      */
     public function selectTechstack()
     {
-        $languages = ContainerTemplate::active()
+        $languages = ContainerTemplate::offeredForNewDeploy()
             ->reorder()
             ->orderByRaw("CASE slug
                 WHEN 'wordpress' THEN 1
@@ -143,6 +143,9 @@ class ServiceBrowserController extends Controller
         ]);
 
         $language = ContainerTemplate::findOrFail($validated['language_id']);
+        if (! $language->isOfferedForNewDeploy()) {
+            return back()->with('error', 'That runtime is not available for new deploys.');
+        }
         $database = ! empty($validated['database_id'])
             ? DatabaseTemplate::findOrFail($validated['database_id'])
             : null;

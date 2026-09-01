@@ -58,6 +58,19 @@ class ContainerTemplate extends Model
         return $query->where('is_active', true)->orderBy('order');
     }
 
+    /**
+     * Customer deploy / tech-stack picker. Existing Ollama services keep running.
+     */
+    public function scopeOfferedForNewDeploy($query)
+    {
+        return $query->active()->where('slug', '!=', 'ollama');
+    }
+
+    public function isOfferedForNewDeploy(): bool
+    {
+        return $this->is_active && $this->slug !== 'ollama';
+    }
+
     // Accessors & Helpers
     public function getRequiredEnvVars(): array
     {

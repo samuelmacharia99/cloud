@@ -81,8 +81,8 @@ class ContainerHermesOllamaLinkService
         $emptyReason = null;
         if ($candidates->isEmpty()) {
             $emptyReason = $service->project_id
-                ? 'Deploy Ollama into this project, start it, then connect it here.'
-                : 'Add Hermes and Ollama to the same project first, then connect them here.';
+                ? 'Ollama is not offered as a new stack. Add an LLM API key under Environment, or connect an Ollama service that is already in this project.'
+                : 'Add an LLM API key under Environment. Local Ollama is not available as a new deploy.';
         }
 
         return [

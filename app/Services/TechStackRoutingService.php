@@ -303,6 +303,10 @@ class TechStackRoutingService
         ?string $frontend,
         ?DatabaseTemplate $database
     ): bool {
+        if (! $language->isOfferedForNewDeploy()) {
+            return false;
+        }
+
         $definition = self::stackDefinition($language);
         $roles = self::resolveDefaultRoles($language, $framework, $frontend);
 
@@ -461,7 +465,7 @@ class TechStackRoutingService
 
         // Other DBs: Laravel plus non-PHP application stacks
         return ContainerTemplate::query()
-            ->active()
+            ->offeredForNewDeploy()
             ->where(function ($q) {
                 $q->where('slug', 'laravel')
                     ->orWhere(function ($inner) {

@@ -31,7 +31,7 @@ class ProjectWorkloadDeployTest extends TestCase
             ->assertOk()
             ->assertSee('Deploy into '.$project->name)
             ->assertSee('not billed again')
-            ->assertSee('Ollama');
+            ->assertDontSee('Ollama');
 
         $response = $this->actingAs($customer)
             ->post(route('customer.projects.deploy.store', $project), [
@@ -64,45 +64,7 @@ class ProjectWorkloadDeployTest extends TestCase
         $this->assertSame($project->fresh()->billing_service_id, $anchor->id);
     }
 
-    public function test_included_ollama_deploy_persists_model_size(): void
-    {
-        [$customer, $project] = $this->makeBilledProject();
-        $ollama = ContainerTemplate::query()->where('slug', 'ollama')->firstOrFail();
-
-        Bus::fake();
-
-        $response = $this->actingAs($customer)
-            ->post(route('customer.projects.deploy.store', $project), [
-                'language_id' => $ollama->id,
-                'selected_version' => '8b',
-            ]);
-
-        $extra = Service::query()
-            ->where('project_id', $project->id)
-            ->where('id', '!=', $project->billing_service_id)
-            ->first();
-
-        $this->assertNotNull($extra);
-        $response->assertRedirect(route('customer.services.deploying', $extra));
-        $this->assertSame('ollama', $extra->service_meta['language_slug']);
-        $this->assertSame('8b', $extra->service_meta['selected_version']);
-        $this->assertSame('provisioning', $extra->status->value ?? $extra->status);
-
-        $this->actingAs($customer)
-            ->get(route('customer.services.deploying', $extra))
-            ->assertOk()
-            ->assertSee('Live console')
-            ->assertSee('Pull the image and start the runtime');
-
-        $this->actingAs($customer)
-            ->getJson(route('customer.services.deploying.status', $extra))
-            ->assertOk()
-            ->assertJsonPath('status', 'provisioning')
-            ->assertJsonPath('is_active', true)
-            ->assertJsonPath('redirect', null);
-    }
-
-    public function test_included_ollama_deploy_requires_model_size(): void
+    public function test_included_ollama_deploy_is_rejected(): void
     {
         [$customer, $project] = $this->makeBilledProject();
         $ollama = ContainerTemplate::query()->where('slug', 'ollama')->firstOrFail();
@@ -111,8 +73,9 @@ class ProjectWorkloadDeployTest extends TestCase
             ->from(route('customer.projects.deploy', $project))
             ->post(route('customer.projects.deploy.store', $project), [
                 'language_id' => $ollama->id,
+                'selected_version' => '8b',
             ])
-            ->assertSessionHasErrors('selected_version');
+            ->assertSessionHasErrors('language_id');
 
         $this->assertSame(1, Service::query()->where('project_id', $project->id)->count());
     }

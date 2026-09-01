@@ -307,7 +307,8 @@ class TechStackRoutingServiceTest extends TestCase
 
         $ollama = $this->createLanguage('ollama');
         $this->assertFalse(TechStackRoutingService::skipsStackModal($ollama));
-        $this->assertTrue(TechStackRoutingService::isValidStackSelection($ollama, null, null, null));
+        $this->assertFalse(TechStackRoutingService::isValidStackSelection($ollama, null, null, null));
+        $this->assertFalse($ollama->isOfferedForNewDeploy());
         $this->assertTrue(TechStackRoutingService::isValidCombination($ollama, null));
         $this->assertFalse(TechStackRoutingService::usesSelectedVersionAsImageTag('ollama'));
         $this->assertSame(['7b', '8b'], TechStackRoutingService::requiredSelectedVersions($ollama));

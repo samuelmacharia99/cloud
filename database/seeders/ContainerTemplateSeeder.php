@@ -861,7 +861,7 @@ class ContainerTemplateSeeder extends Seeder
             ],
             'ollama' => [
                 'name' => 'Ollama',
-                'description' => 'Run Mistral-family models on your plan via Ollama. Choose 7B or 8B at deploy. Needs at least 8 GB RAM (16 GB recommended for 8B). Models are pulled after the API starts.',
+                'description' => 'Local Ollama runtime (existing services only). Not offered for new deploys — CPU 8B models are too slow for Hermes. Use an LLM API key on Hermes instead.',
                 'category' => 'web',
                 'docker_image' => 'ollama/ollama:latest',
                 'default_port' => 11434,
@@ -880,7 +880,7 @@ class ContainerTemplateSeeder extends Seeder
                 'setup_commands' => [],
                 'strict_health_check' => true,
                 'health_check_timeout_seconds' => 900,
-                'is_active' => true,
+                'is_active' => false,
                 'order' => 18,
             ],
         ];
