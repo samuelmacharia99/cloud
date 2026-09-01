@@ -36,6 +36,7 @@ class ProjectWorkloadDeployService
         ?DatabaseTemplate $database,
         ?string $framework,
         ?string $frontend,
+        ?string $selectedVersion = null,
     ): Service {
         if ((int) $project->user_id !== (int) $user->id) {
             throw ValidationException::withMessages([
@@ -86,6 +87,15 @@ class ProjectWorkloadDeployService
             ]);
         }
 
+        $requiredVersions = TechStackRoutingService::requiredSelectedVersions($language);
+        if ($requiredVersions !== []) {
+            if (! in_array((string) $selectedVersion, $requiredVersions, true)) {
+                throw ValidationException::withMessages([
+                    'selected_version' => 'Choose a '.strtolower(TechStackRoutingService::versionPickerPayload($language)['label']).'.',
+                ]);
+            }
+        }
+
         $roles = TechStackRoutingService::resolveDefaultRoles($language, $framework, $frontend);
         $product = $anchor->product;
         $recipe = $project->recipe_key ?: CustomerProject::PLAN_POOL_RECIPE;
@@ -115,6 +125,10 @@ class ProjectWorkloadDeployService
                 'memory' => $resourceShare['memory'],
             ],
         ];
+
+        if ($selectedVersion !== null && $selectedVersion !== '') {
+            $meta['selected_version'] = $selectedVersion;
+        }
 
         if ($database) {
             $meta['database_id'] = $database->id;

@@ -181,12 +181,13 @@ class ServiceController extends Controller
                 WHEN 'static-site' THEN 4
                 WHEN 'hermes' THEN 5
                 WHEN 'openclaw' THEN 6
-                WHEN 'n8n' THEN 7
-                WHEN 'go' THEN 8
-                WHEN 'directus' THEN 9
-                WHEN 'chatwoot' THEN 10
-                WHEN 'odoo' THEN 11
-                WHEN 'erpnext' THEN 12
+                WHEN 'ollama' THEN 7
+                WHEN 'n8n' THEN 8
+                WHEN 'go' THEN 9
+                WHEN 'directus' THEN 10
+                WHEN 'chatwoot' THEN 11
+                WHEN 'odoo' THEN 12
+                WHEN 'erpnext' THEN 13
                 ELSE 100
             END")
             ->orderBy('order')
@@ -228,6 +229,7 @@ class ServiceController extends Controller
                 $database,
                 $request->validated('framework'),
                 $request->validated('frontend'),
+                $request->validated('selected_version'),
             );
         } catch (ValidationException $e) {
             throw $e;

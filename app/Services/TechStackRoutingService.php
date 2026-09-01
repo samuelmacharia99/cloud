@@ -205,9 +205,86 @@ class TechStackRoutingService
                     'type' => $db->type,
                 ])->values()->all(),
             ],
+            'version_picker' => self::versionPickerPayload($language),
             'skip_modal' => self::skipsStackModal($language),
             'stack_builder_version' => (int) config('stack_builder.version', 1),
         ];
+    }
+
+    /**
+     * Model-size / version radios for stacks that do not map versions to Docker tags.
+     *
+     * @return array{show: bool, required: bool, label: string, help: ?string, options: list<array{value: string, label: string, description: ?string}>, value: ?string}
+     */
+    public static function versionPickerPayload(ContainerTemplate $language): array
+    {
+        $definition = self::stackDefinition($language);
+        $picker = $definition['version_picker'] ?? [];
+        $options = [];
+
+        foreach ($picker['options'] ?? [] as $option) {
+            if (! is_array($option)) {
+                continue;
+            }
+
+            $value = trim((string) ($option['value'] ?? ''));
+            if ($value === '') {
+                continue;
+            }
+
+            $options[] = [
+                'value' => $value,
+                'label' => (string) ($option['label'] ?? $value),
+                'description' => isset($option['description']) ? (string) $option['description'] : null,
+            ];
+        }
+
+        $show = (bool) ($picker['show'] ?? false) && $options !== [];
+
+        return [
+            'show' => $show,
+            'required' => $show && (bool) ($picker['required'] ?? true),
+            'label' => (string) ($picker['label'] ?? 'Version'),
+            'help' => isset($picker['help']) ? (string) $picker['help'] : null,
+            'options' => $options,
+            'value' => $options[0]['value'] ?? null,
+        ];
+    }
+
+    public static function versionLabel(ContainerTemplate $language, string $version): string
+    {
+        foreach (self::versionPickerPayload($language)['options'] as $option) {
+            if ($option['value'] === $version) {
+                return $option['label'];
+            }
+        }
+
+        return $version;
+    }
+
+    /**
+     * Whether selected_version is appended as the Docker image tag (php:8.3, not ollama/ollama:7b).
+     */
+    public static function usesSelectedVersionAsImageTag(?string $slug): bool
+    {
+        $definition = config('stack_builder.stacks.'.strtolower((string) $slug), []);
+
+        return (bool) ($definition['version_as_image_tag'] ?? true);
+    }
+
+    /**
+     * Required model-size / version keys for stacks that expose a version picker.
+     *
+     * @return list<string>
+     */
+    public static function requiredSelectedVersions(ContainerTemplate $language): array
+    {
+        $picker = self::versionPickerPayload($language);
+        if (! $picker['show'] || ! $picker['required']) {
+            return [];
+        }
+
+        return array_values(array_column($picker['options'], 'value'));
     }
 
     public static function skipsStackModal(ContainerTemplate $language): bool
@@ -483,6 +560,10 @@ class TechStackRoutingService
 
         if (! empty($techstack['stack_builder_version'])) {
             $serviceMeta['stack_builder_version'] = (int) $techstack['stack_builder_version'];
+        }
+
+        if (empty($serviceMeta['selected_version']) && ! empty($techstack['selected_version'])) {
+            $serviceMeta['selected_version'] = (string) $techstack['selected_version'];
         }
 
         return $serviceMeta;

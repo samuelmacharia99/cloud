@@ -19,6 +19,7 @@
         'strapi' => '73, 69, 255',
         'hermes' => '201, 162, 39',
         'openclaw' => '255, 77, 26',
+        'ollama' => '17, 17, 17',
         'n8n' => '234, 75, 113',
         'directus' => '102, 68, 255',
         'chatwoot' => '31, 147, 255',
@@ -39,6 +40,7 @@
         'strapi' => 'Headless CMS',
         'hermes' => 'AI agent',
         'openclaw' => 'AI gateway',
+        'ollama' => 'Local LLM',
         'n8n' => 'Automation',
         'directus' => 'Headless CMS',
         'chatwoot' => 'Live chat',
@@ -209,6 +211,39 @@
                             <p class="font-semibold text-ink-950 dark:text-white mt-0.5" x-text="selectedLanguage.name"></p>
                         </div>
 
+                        <template x-if="stackOptions.version_picker && stackOptions.version_picker.show">
+                            <div>
+                                <p class="text-sm font-semibold text-ink-950 dark:text-white mb-1">
+                                    <span x-text="stackOptions.version_picker.label || 'Version'"></span>
+                                    <span class="text-red-500" x-show="stackOptions.version_picker.required">*</span>
+                                </p>
+                                <p
+                                    class="text-xs text-ink-600 dark:text-ink-400 mb-3"
+                                    x-show="stackOptions.version_picker.help"
+                                    x-text="stackOptions.version_picker.help"
+                                ></p>
+                                <div class="space-y-2.5">
+                                    <template x-for="option in stackOptions.version_picker.options" :key="option.value">
+                                        <label class="techstack-soft-option block p-4 rounded-2xl cursor-pointer"
+                                            :class="selectedVersion === option.value ? 'is-selected' : ''"
+                                        >
+                                            <div class="flex items-start gap-3">
+                                                <input type="radio" name="selected_version" :value="option.value" x-model="selectedVersion" class="mt-1">
+                                                <div class="flex-1">
+                                                    <span class="font-semibold text-ink-950 dark:text-white" x-text="option.label"></span>
+                                                    <p
+                                                        class="text-sm text-ink-600 dark:text-ink-400 mt-1"
+                                                        x-show="option.description"
+                                                        x-text="option.description"
+                                                    ></p>
+                                                </div>
+                                            </div>
+                                        </label>
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+
                         <template x-if="stackOptions.framework.show">
                             <div>
                                 <p class="text-sm font-semibold text-ink-950 dark:text-white mb-3">
@@ -314,6 +349,7 @@
                         <input type="hidden" name="database_id" :value="selectedDatabaseId">
                         <input type="hidden" name="framework" :value="selectedFramework || ''">
                         <input type="hidden" name="frontend" :value="selectedFrontend || ''">
+                        <input type="hidden" name="selected_version" :value="selectedVersion || ''">
                         <input type="hidden" name="deployment_platform" value="container">
                         @if($project && ! $includedDeploy)
                             <input type="hidden" name="project_id" value="{{ $project->id }}">
@@ -347,6 +383,7 @@ function techstackSelector() {
         selectedFramework: '',
         selectedFrontend: '',
         selectedDatabaseId: '',
+        selectedVersion: '',
         showStackModal: false,
         loading: false,
         confirmTechstackUrl: @json($stackFormAction),
@@ -370,6 +407,10 @@ function techstackSelector() {
                 return false;
             }
 
+            if (this.stackOptions.version_picker?.show && this.stackOptions.version_picker.required && !this.selectedVersion) {
+                return false;
+            }
+
             return true;
         },
 
@@ -380,6 +421,7 @@ function techstackSelector() {
             this.selectedFramework = '';
             this.selectedFrontend = '';
             this.selectedDatabaseId = '';
+            this.selectedVersion = '';
 
             if (this.skipModalSlugs.includes(language.slug)) {
                 this.$nextTick(() => {
@@ -441,6 +483,10 @@ function techstackSelector() {
                     this.selectedDatabaseId = String(data.database.options[0].id);
                 } else if (data.database?.allow_none && this.selectedDatabaseId === undefined) {
                     this.selectedDatabaseId = '';
+                }
+
+                if (data.version_picker?.show && data.version_picker.value && !this.selectedVersion) {
+                    this.selectedVersion = data.version_picker.value;
                 }
             } catch (error) {
                 console.error('Error loading stack options:', error);

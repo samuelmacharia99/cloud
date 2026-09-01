@@ -776,4 +776,46 @@ class ContainerDeploymentComposeTest extends TestCase
         $this->assertStringContainsString('bench new-site', $erpnextYaml);
         $this->assertStringContainsString('admin-secret', $erpnextYaml);
     }
+
+    #[Test]
+    public function ollama_keeps_official_image_when_model_size_is_selected(): void
+    {
+        $runtimeImages = $this->createMock(RuntimeImageProvisioner::class);
+        $runtimeImages->method('usesRuntimeImage')->willReturn(false);
+
+        $deployer = new ContainerDeploymentService(
+            runtimeImages: $runtimeImages,
+            templateEnvironment: new ContainerTemplateEnvironmentService
+        );
+
+        $method = new ReflectionMethod(ContainerDeploymentService::class, 'renderCompose');
+        $method->setAccessible(true);
+
+        $yaml = $method->invoke(
+            $deployer,
+            new ContainerTemplate([
+                'slug' => 'ollama',
+                'docker_image' => 'ollama/ollama:latest',
+                'default_port' => 11434,
+                'required_cpu_cores' => 2,
+                'required_ram_mb' => 8192,
+                'versions' => ['7b', '8b'],
+                'volume_paths' => ['ollama_data' => '/root/.ollama'],
+            ]),
+            'user-1-service-25-ollama',
+            31025,
+            ['OLLAMA_HOST' => '0.0.0.0:11434', 'OLLAMA_MODEL' => 'ministral-3:8b'],
+            null,
+            null,
+            '8b',
+            null,
+            null
+        );
+
+        $this->assertStringContainsString('ollama/ollama:latest', $yaml);
+        $this->assertStringNotContainsString('ollama/ollama:8b', $yaml);
+        $this->assertStringContainsString('ollama_data:/root/.ollama', $yaml);
+        $this->assertStringContainsString("ports:\n      - '31025:11434'", $yaml);
+        $this->assertStringContainsString('ministral-3:8b', $yaml);
+    }
 }

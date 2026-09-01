@@ -22,6 +22,7 @@ class DeployProjectWorkloadRequest extends FormRequest
             'deployment_platform' => ['nullable', 'in:container'],
             'framework' => ['nullable', 'string', 'max:64'],
             'frontend' => ['nullable', 'string', 'max:64'],
+            'selected_version' => ['nullable', 'string', 'max:32'],
         ];
     }
 

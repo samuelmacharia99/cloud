@@ -38,12 +38,13 @@ class ServiceBrowserController extends Controller
                 WHEN 'static-site' THEN 4
                 WHEN 'hermes' THEN 5
                 WHEN 'openclaw' THEN 6
-                WHEN 'n8n' THEN 7
-                WHEN 'go' THEN 8
-                WHEN 'directus' THEN 9
-                WHEN 'chatwoot' THEN 10
-                WHEN 'odoo' THEN 11
-                WHEN 'erpnext' THEN 12
+                WHEN 'ollama' THEN 7
+                WHEN 'n8n' THEN 8
+                WHEN 'go' THEN 9
+                WHEN 'directus' THEN 10
+                WHEN 'chatwoot' THEN 11
+                WHEN 'odoo' THEN 12
+                WHEN 'erpnext' THEN 13
                 ELSE 100
             END")
             ->orderBy('order')
@@ -136,8 +137,9 @@ class ServiceBrowserController extends Controller
             'database_id' => 'nullable|exists:database_templates,id',
             'deployment_platform' => 'nullable|in:shared,container',
             'framework' => 'nullable|string|max:64',
-            'frontend' => 'nullable|string|max:64',
-            'project_id' => 'nullable|integer|exists:customer_projects,id',
+            'frontend' => ['nullable', 'string', 'max:64'],
+            'project_id' => ['nullable', 'integer', 'exists:customer_projects,id'],
+            'selected_version' => ['nullable', 'string', 'max:32'],
         ]);
 
         $language = ContainerTemplate::findOrFail($validated['language_id']);
@@ -158,6 +160,12 @@ class ServiceBrowserController extends Controller
 
         if (! TechStackRoutingService::isValidStackSelection($language, $framework, $frontend, $database)) {
             return back()->with('error', 'Invalid techstack combination selected');
+        }
+
+        $requiredVersions = TechStackRoutingService::requiredSelectedVersions($language);
+        $selectedVersion = $validated['selected_version'] ?? null;
+        if ($requiredVersions !== [] && ! in_array((string) $selectedVersion, $requiredVersions, true)) {
+            return back()->with('error', 'Choose a '.strtolower(TechStackRoutingService::versionPickerPayload($language)['label']).'.');
         }
 
         $roles = TechStackRoutingService::resolveDefaultRoles($language, $framework, $frontend);
@@ -195,6 +203,10 @@ class ServiceBrowserController extends Controller
             'deployment_platform' => 'container',
             'stack_builder_version' => (int) config('stack_builder.version', 1),
         ];
+
+        if ($selectedVersion !== null && $selectedVersion !== '') {
+            $techstackData['selected_version'] = $selectedVersion;
+        }
 
         $projectId = (int) ($validated['project_id'] ?? 0);
         if ($projectId > 0) {

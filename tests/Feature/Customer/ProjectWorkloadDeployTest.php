@@ -33,7 +33,8 @@ class ProjectWorkloadDeployTest extends TestCase
             ->get(route('customer.projects.deploy', $project))
             ->assertOk()
             ->assertSee('Deploy into '.$project->name)
-            ->assertSee('not billed again');
+            ->assertSee('not billed again')
+            ->assertSee('Ollama');
 
         $this->actingAs($customer)
             ->post(route('customer.projects.deploy.store', $project), [
@@ -59,6 +60,49 @@ class ProjectWorkloadDeployTest extends TestCase
         $this->assertTrue(app(ProjectRecipeService::class)->shouldSkipRenewalInvoice($extra->service_meta));
         $this->assertSame($invoiceCount, Invoice::query()->count());
         $this->assertSame($project->fresh()->billing_service_id, $anchor->id);
+    }
+
+    public function test_included_ollama_deploy_persists_model_size(): void
+    {
+        [$customer, $project] = $this->makeBilledProject();
+        $ollama = ContainerTemplate::query()->where('slug', 'ollama')->firstOrFail();
+
+        $this->mock(ProvisioningService::class, function ($mock) {
+            $mock->shouldReceive('provision')->once()->andReturnUsing(function (Service $service) {
+                $service->update(['status' => 'active']);
+            });
+        });
+
+        $this->actingAs($customer)
+            ->post(route('customer.projects.deploy.store', $project), [
+                'language_id' => $ollama->id,
+                'selected_version' => '8b',
+            ])
+            ->assertRedirect(route('customer.projects.show', $project));
+
+        $extra = Service::query()
+            ->where('project_id', $project->id)
+            ->where('id', '!=', $project->billing_service_id)
+            ->first();
+
+        $this->assertNotNull($extra);
+        $this->assertSame('ollama', $extra->service_meta['language_slug']);
+        $this->assertSame('8b', $extra->service_meta['selected_version']);
+    }
+
+    public function test_included_ollama_deploy_requires_model_size(): void
+    {
+        [$customer, $project] = $this->makeBilledProject();
+        $ollama = ContainerTemplate::query()->where('slug', 'ollama')->firstOrFail();
+
+        $this->actingAs($customer)
+            ->from(route('customer.projects.deploy', $project))
+            ->post(route('customer.projects.deploy.store', $project), [
+                'language_id' => $ollama->id,
+            ])
+            ->assertSessionHasErrors('selected_version');
+
+        $this->assertSame(1, Service::query()->where('project_id', $project->id)->count());
     }
 
     public function test_included_deploy_is_rejected_when_the_plan_is_unpaid(): void

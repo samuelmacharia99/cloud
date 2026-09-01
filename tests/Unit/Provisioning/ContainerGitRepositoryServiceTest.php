@@ -89,6 +89,7 @@ class ContainerGitRepositoryServiceTest extends TestCase
         $this->assertTrue($service->supportsTemplate('ruby'));
         $this->assertTrue($service->supportsTemplate('nodejs'));
         $this->assertFalse($service->supportsTemplate('wordpress'));
+        $this->assertFalse($service->supportsTemplate('ollama'));
         $this->assertFalse($service->supportsTemplate(null));
     }
 

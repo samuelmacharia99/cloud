@@ -21,6 +21,7 @@ class CatalogContainerTemplatesTest extends TestCase
             'chatwoot' => 'chatwoot/chatwoot:latest',
             'odoo' => 'odoo:18',
             'erpnext' => 'frappe/erpnext:v15',
+            'ollama' => 'ollama/ollama:latest',
         ];
 
         foreach ($expected as $slug => $image) {
@@ -44,6 +45,10 @@ class CatalogContainerTemplatesTest extends TestCase
         $this->assertSame('odoo:18', $definitions['odoo']['docker_image']);
         $this->assertSame('frappe/erpnext:v15', $definitions['erpnext']['docker_image']);
         $this->assertArrayHasKey('db', $definitions['erpnext']['compose_services']);
+        $this->assertSame('ollama/ollama:latest', $definitions['ollama']['docker_image']);
+        $this->assertSame(11434, $definitions['ollama']['default_port']);
+        $this->assertSame(['7b', '8b'], $definitions['ollama']['versions']);
+        $this->assertSame('/root/.ollama', $definitions['ollama']['volume_paths']['ollama_data']);
     }
 
     public function test_admin_can_list_and_open_catalog_templates(): void
@@ -60,8 +65,10 @@ class CatalogContainerTemplatesTest extends TestCase
             ->assertSee('Chatwoot')
             ->assertSee('Odoo')
             ->assertSee('ERPNext')
+            ->assertSee('Ollama')
             ->assertSee('#EA4B71', false)
-            ->assertSee('#6644FF', false);
+            ->assertSee('#6644FF', false)
+            ->assertSee('#111111', false);
 
         $this->actingAs($admin)
             ->get(route('admin.container-templates.show', $n8n))

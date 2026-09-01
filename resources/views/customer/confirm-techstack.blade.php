@@ -6,6 +6,7 @@
 @php
     $rate = (float) ($currency?->exchange_rate ?? 1);
     $symbol = $currency?->symbol ?? 'KES';
+    $stackSelection = $stackSelection ?? [];
     $productCount = $products->count();
     $gridClass = match (true) {
         $productCount === 1 => 'grid-cols-1 max-w-md mx-auto',
@@ -218,13 +219,25 @@
 
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                     @if($language->versions && count($language->versions) > 0)
+                        @php
+                            $versionPicker = \App\Services\TechStackRoutingService::versionPickerPayload($language);
+                        @endphp
                         <div>
-                            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">{{ $language->name }} version</label>
+                            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                {{ $versionPicker['show'] ? $versionPicker['label'] : $language->name.' version' }}
+                            </label>
                             <select x-model="version" class="w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm">
                                 @foreach($language->versions as $version)
-                                    <option value="{{ $version }}">v{{ $version }}</option>
+                                    <option value="{{ $version }}">
+                                        {{ $versionPicker['show']
+                                            ? \App\Services\TechStackRoutingService::versionLabel($language, $version)
+                                            : 'v'.$version }}
+                                    </option>
                                 @endforeach
                             </select>
+                            @if($versionPicker['show'] && $versionPicker['help'])
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1.5">{{ $versionPicker['help'] }}</p>
+                            @endif
                         </div>
                     @endif
 
@@ -269,7 +282,7 @@ function packageConfigurator(currencyCode, currencySymbol, exchangeRate) {
         selectedProductName: '',
         selectedProductPrice: 0,
         cycle: 'monthly',
-        version: @js($language->versions[0] ?? ''),
+        version: @js($stackSelection['selected_version'] ?? $language->versions[0] ?? ''),
         basePrice: 0,
         yearlyPrice: 0,
         calculatedPrice: 0,

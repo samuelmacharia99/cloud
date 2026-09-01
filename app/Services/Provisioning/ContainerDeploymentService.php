@@ -406,7 +406,7 @@ class ContainerDeploymentService
 
                 if (($template->slug ?? '') === 'wordpress') {
                     // Domains first so wp core install gets the real public URL when available.
-                    $this->reattachAndRebindDomains($service, $deployment);
+                    $this->reattachAndBindPrimaryDomains($service, $deployment);
 
                     if ($options->shouldInstallWordPressApplication((string) ($template->slug ?? ''))) {
                         try {
@@ -437,10 +437,35 @@ class ContainerDeploymentService
                         $containerName,
                         $containerPath
                     );
+                } elseif (($template->slug ?? '') === 'ollama') {
+                    $this->reattachAndBindPrimaryDomains($service, $deployment);
+
+                    try {
+                        $pullResult = app(ContainerOllamaModelService::class)->pullIfNeeded(
+                            $service->fresh(['product.containerTemplate', 'containerDeployment']),
+                            $deployment->fresh(),
+                            $ssh,
+                            $containerPath,
+                            $containerName,
+                        );
+                        $this->recordDeploymentEvent($service, $deployment, 'ollama_model_pulled', [
+                            'skipped' => $pullResult['skipped'],
+                            'model' => $pullResult['model'],
+                            'message' => $pullResult['message'],
+                        ]);
+                    } catch (\Throwable $pullError) {
+                        \Log::warning('Ollama model pull failed', [
+                            'service_id' => $service->id,
+                            'error' => $pullError->getMessage(),
+                        ]);
+                        $this->recordDeploymentEvent($service, $deployment, 'ollama_model_pull_failed', [
+                            'error' => $pullError->getMessage(),
+                        ]);
+                    }
                 } else {
                     // Ensure existing bound domains always follow the latest deployment
                     // row/port after redeploys, otherwise nginx may point to stale ports.
-                    $this->reattachAndRebindDomains($service, $deployment);
+                    $this->reattachAndBindPrimaryDomains($service, $deployment);
                 }
 
                 if ($options->shouldInstallLaravelApplication((string) ($template->slug ?? ''))) {
@@ -4088,7 +4113,10 @@ class ContainerDeploymentService
                 ? $template->versions
                 : json_decode($template->versions, true) ?? [];
 
-            if (in_array($selectedVersion, $versions, true)) {
+            if (
+                in_array($selectedVersion, $versions, true)
+                && strtolower((string) ($template->slug ?? '')) !== 'ollama'
+            ) {
                 $imageName = explode(':', $dockerImage)[0];
 
                 return $imageName.':'.$selectedVersion;
@@ -5580,6 +5608,23 @@ class ContainerDeploymentService
                     ]);
                 }
             }
+        }
+    }
+
+    private function reattachAndBindPrimaryDomains(Service $service, ContainerDeployment $latestDeployment): void
+    {
+        $this->reattachAndRebindDomains($service, $latestDeployment);
+
+        try {
+            app(ContainerDomainBindingService::class)->attachPrimaryHosts(
+                $service->fresh(['product', 'user', 'containerDeployment.node', 'containerDeployment.domains'])
+            );
+        } catch (\Throwable $e) {
+            \Log::warning('Failed to auto-bind primary domain and www after deploy', [
+                'service_id' => $service->id,
+                'deployment_id' => $latestDeployment->id,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 

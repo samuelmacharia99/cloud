@@ -135,6 +135,41 @@ class TechStackConfirmRouteTest extends TestCase
             ->assertJsonPath('database.show', false);
     }
 
+    public function test_ollama_stack_options_require_a_model_size(): void
+    {
+        $customer = User::factory()->customer()->create();
+        $language = $this->makeLanguage('ollama');
+        $this->makeProductForLanguage($language);
+
+        $this->actingAs($customer)
+            ->getJson(route('api.languages.stack-options', $language))
+            ->assertOk()
+            ->assertJsonPath('skip_modal', false)
+            ->assertJsonPath('backend', 'ollama')
+            ->assertJsonPath('database.show', false)
+            ->assertJsonPath('version_picker.show', true)
+            ->assertJsonPath('version_picker.required', true)
+            ->assertJsonPath('version_picker.value', '7b');
+
+        $this->actingAs($customer)
+            ->from(route('customer.select-techstack'))
+            ->post(route('customer.confirm-techstack.store'), [
+                'language_id' => $language->id,
+                'deployment_platform' => 'container',
+            ])
+            ->assertRedirect(route('customer.select-techstack'));
+
+        $this->actingAs($customer)
+            ->post(route('customer.confirm-techstack.store'), [
+                'language_id' => $language->id,
+                'selected_version' => '8b',
+                'deployment_platform' => 'container',
+            ])
+            ->assertRedirect(route('customer.confirm-techstack'));
+
+        $this->assertSame('8b', session('selected_techstack.selected_version'));
+    }
+
     public function test_nodejs_next_framework_locks_frontend_in_stack_options(): void
     {
         $customer = User::factory()->customer()->create();

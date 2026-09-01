@@ -75,6 +75,12 @@
         </svg>
         @break
 
+    @case('ollama')
+        <svg {{ $attributes->merge(['class' => $class]) }} viewBox="0 0 24 24" fill="#111111" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <path d="M8.1 2.4c.7 0 1.3.6 1.3 1.3v1.3h1.4V3.7c0-1.5-1.2-2.7-2.7-2.7S5.4 2.2 5.4 3.7v6.2c-1 .7-1.6 1.8-1.6 3.1v6.8h2.3v-6.8c0-.4.3-.8.8-.8h.7v7.6h2.3v-7.6h2.2v7.6h2.3v-8c0-1.7-1.2-3.2-2.8-3.6V3.7c0-1.5-1.2-2.7-2.7-2.7zm9.2 9.3c-1.5 0-2.7 1.1-2.9 2.6h2.3c.1-.4.5-.7.9-.7.6 0 1 .5 1 1.1v5.8h2.3v-5.8c0-1.9-1.5-3-3.6-3z"/>
+        </svg>
+        @break
+
     @case('n8n')
         <svg {{ $attributes->merge(['class' => $class]) }} viewBox="0 0 24 24" fill="#EA4B71" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
             <path d="M4 10a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm16 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM12 4a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm0 12a2 2 0 1 1 0 4 2 2 0 0 1 0-4z"/>

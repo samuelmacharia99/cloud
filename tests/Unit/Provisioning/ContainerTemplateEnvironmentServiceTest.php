@@ -210,6 +210,27 @@ class ContainerTemplateEnvironmentServiceTest extends TestCase
     }
 
     #[Test]
+    public function it_maps_ollama_model_size_to_official_library_tags(): void
+    {
+        $service = new ContainerTemplateEnvironmentService;
+
+        $seven = $service->prepare(
+            (object) ['slug' => 'ollama', 'environment_variables' => []],
+            [],
+            $this->makeService(null, ['selected_version' => '7b'])
+        );
+        $this->assertSame('0.0.0.0:11434', $seven['OLLAMA_HOST']);
+        $this->assertSame('mistral:7b', $seven['OLLAMA_MODEL']);
+
+        $eight = $service->prepare(
+            (object) ['slug' => 'ollama', 'environment_variables' => []],
+            [],
+            $this->makeService(null, ['selected_version' => '8b'])
+        );
+        $this->assertSame('ministral-3:8b', $eight['OLLAMA_MODEL']);
+    }
+
+    #[Test]
     public function it_sets_npm_cache_and_file_cache_defaults_for_laravel(): void
     {
         $service = new ContainerTemplateEnvironmentService;
@@ -226,11 +247,12 @@ class ContainerTemplateEnvironmentServiceTest extends TestCase
         $this->assertSame('file', $env['CACHE_DRIVER']);
     }
 
-    private function makeService(?User $user = null): Service
+    private function makeService(?User $user = null, array $meta = []): Service
     {
         $service = new Service;
         $service->id = 1;
         $service->user_id = 1;
+        $service->service_meta = $meta;
         $service->setRelation('user', $user ?? new User(['email' => 'admin@example.com']));
 
         return $service;

@@ -29,6 +29,7 @@ use App\Services\Provisioning\ContainerCronService;
 use App\Services\Provisioning\ContainerDeploymentService;
 use App\Services\Provisioning\ContainerDeployOptions;
 use App\Services\Provisioning\ContainerDoctorService;
+use App\Services\Provisioning\ContainerDomainBindingService;
 use App\Services\Provisioning\ContainerEnvironmentService;
 use App\Services\Provisioning\ContainerFileService;
 use App\Services\Provisioning\ContainerGitCredentialsService;
@@ -1911,37 +1912,23 @@ class ContainerController extends Controller
             }
 
             $hostname = strtolower($request->domain);
-            $nodeIp = $deployment->node->ip_address;
-            $nginxService = app(NginxProxyService::class);
+            $bound = app(ContainerDomainBindingService::class)->bindHostnamePair($service, $hostname);
+            $names = collect($bound)->pluck('domain')->filter()->sort()->values();
+
+            if ($names->isEmpty()) {
+                return $this->domainsTabRedirect($service)
+                    ->withErrors(['error' => 'Could not bind that domain. It may already be attached to another application.']);
+            }
 
             $platformDomain = app(DomainCloudflareDnsService::class)
-                ->resolvePlatformDomainForHostname($service->user_id, $hostname);
+                ->resolvePlatformDomainForHostname($service->user_id, $names->first());
 
+            $message = $names->count() > 1
+                ? 'Domains '.$names->implode(' and ').' bound successfully'
+                : "Domain {$names->first()} bound successfully";
             if ($platformDomain) {
-                app(DomainCloudflareDnsService::class)->upsertARecord($platformDomain, $hostname, $nodeIp);
+                $message .= '. DNS A records updated via managed DNS.';
             }
-
-            $dnsCorrect = $nginxService->checkDns($hostname, $nodeIp);
-
-            $domain = ContainerDomain::create([
-                'container_deployment_id' => $deployment->id,
-                'domain' => $hostname,
-                'status' => 'pending',
-            ]);
-
-            $nginxService->bind($domain);
-
-            try {
-                app(ContainerDeploymentService::class)->syncViteAllowedHosts($service, $deployment);
-            } catch (\Throwable $e) {
-                \Log::warning("Failed to allow {$hostname} on the Vite preview server: ".$e->getMessage());
-            }
-
-            $message = "Domain {$domain->domain} bound successfully";
-            if ($platformDomain) {
-                $message .= '. DNS A record updated via managed DNS.';
-            }
-            $message .= $this->appendAutoSslMessage($nginxService, $domain, $service, $dnsCorrect, $nodeIp);
 
             return $this->domainsTabRedirect($service)->with('success', $message);
         } catch (\Exception $e) {

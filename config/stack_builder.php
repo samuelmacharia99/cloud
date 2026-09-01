@@ -422,6 +422,48 @@ return [
             ],
         ],
 
+        'ollama' => [
+            'backend' => 'ollama',
+            'skip_modal' => false,
+            'version_as_image_tag' => false,
+            'version_picker' => [
+                'show' => true,
+                'required' => true,
+                'label' => 'Model size',
+                'help' => 'Mistral-family models. 7B fits 8 GB plans. 8B is stronger and needs about 16 GB RAM.',
+                'options' => [
+                    [
+                        'value' => '7b',
+                        'label' => 'Mistral 7B',
+                        'description' => 'Faster replies. Official ollama.com/library/mistral:7b.',
+                    ],
+                    [
+                        'value' => '8b',
+                        'label' => 'Ministral 8B',
+                        'description' => 'Stronger Mistral-family model. Official ollama.com/library/ministral-3:8b.',
+                    ],
+                ],
+            ],
+            'framework' => [
+                'required' => false,
+                'show' => false,
+                'options' => [],
+                'locked' => 'ollama',
+            ],
+            'frontend' => [
+                'required' => false,
+                'show' => false,
+                'options' => ['none'],
+                'locked' => 'none',
+            ],
+            'database' => [
+                'required' => false,
+                'show' => false,
+                'allow_none' => true,
+                'types' => [],
+            ],
+        ],
+
     ],
 
     /*

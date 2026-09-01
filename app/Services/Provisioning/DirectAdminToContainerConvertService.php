@@ -3,7 +3,6 @@
 namespace App\Services\Provisioning;
 
 use App\Jobs\ConvertDirectAdminProjectSiteJob;
-use App\Models\ContainerDomain;
 use App\Models\ContainerTemplate;
 use App\Models\CustomerProject;
 use App\Models\Node;
@@ -1299,38 +1298,7 @@ class DirectAdminToContainerConvertService
             return;
         }
 
-        $service->loadMissing('containerDeployment');
-        $deployment = $service->containerDeployment;
-        if (! $deployment) {
-            return;
-        }
-
-        $existing = ContainerDomain::query()->where('domain', $hostname)->first();
-        if ($existing && (int) $existing->container_deployment_id !== (int) $deployment->id) {
-            Log::warning('Convert hostname already bound to another container', [
-                'service_id' => $service->id,
-                'domain' => $hostname,
-                'other_deployment_id' => $existing->container_deployment_id,
-            ]);
-
-            return;
-        }
-
-        $domain = $existing ?? ContainerDomain::query()->create([
-            'container_deployment_id' => $deployment->id,
-            'domain' => $hostname,
-            'status' => 'pending',
-        ]);
-
-        try {
-            app(NginxProxyService::class)->bind($domain);
-        } catch (\Throwable $e) {
-            Log::warning('Convert hostname recorded but nginx bind failed', [
-                'service_id' => $service->id,
-                'domain' => $hostname,
-                'error' => $e->getMessage(),
-            ]);
-        }
+        app(ContainerDomainBindingService::class)->bindHostnamePair($service, $hostname);
     }
 
     public function exportIncludesDatabaseMessage(string $stack): string

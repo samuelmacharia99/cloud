@@ -47,6 +47,10 @@ class ContainerTemplateEnvironmentService
             $env = $this->prepareErpnextEnvironment($env);
         }
 
+        if (($template->slug ?? '') === 'ollama') {
+            $env = $this->prepareOllamaEnvironment($env, $service);
+        }
+
         if (in_array($template->slug ?? '', ['laravel', 'php'], true)) {
             // Customer Terminal + npm run as www-data; avoid root-owned /var/www/.npm.
             $env['HOME'] = $env['HOME'] ?? '/tmp';
@@ -462,6 +466,28 @@ class ContainerTemplateEnvironmentService
         if (trim((string) ($env['ERPNEXT_ADMIN_PASSWORD'] ?? '')) === '') {
             $env['ERPNEXT_ADMIN_PASSWORD'] = Str::random(20);
         }
+
+        return $env;
+    }
+
+    /**
+     * @param  array<string, string>  $env
+     * @return array<string, string>
+     */
+    private function prepareOllamaEnvironment(array $env, Service $service): array
+    {
+        $env['OLLAMA_HOST'] = $this->filledOr($env, 'OLLAMA_HOST', '0.0.0.0:11434');
+        $env['OLLAMA_KEEP_ALIVE'] = $this->filledOr($env, 'OLLAMA_KEEP_ALIVE', '24h');
+
+        $selectedVersion = is_array($service->service_meta)
+            ? ($service->service_meta['selected_version'] ?? null)
+            : null;
+
+        $env['OLLAMA_MODEL'] = $this->filledOr(
+            $env,
+            'OLLAMA_MODEL',
+            ContainerOllamaModelService::modelTag(is_string($selectedVersion) ? $selectedVersion : null)
+        );
 
         return $env;
     }

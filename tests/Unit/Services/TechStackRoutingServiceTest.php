@@ -304,6 +304,22 @@ class TechStackRoutingServiceTest extends TestCase
         $this->assertFalse(TechStackRoutingService::isValidStackSelection($chatwoot, null, null, $mysql));
         $this->assertTrue(TechStackRoutingService::isValidStackSelection($odoo, null, null, $postgres));
         $this->assertTrue(TechStackRoutingService::isValidStackSelection($erpnext, null, null, null));
+
+        $ollama = $this->createLanguage('ollama');
+        $this->assertFalse(TechStackRoutingService::skipsStackModal($ollama));
+        $this->assertTrue(TechStackRoutingService::isValidStackSelection($ollama, null, null, null));
+        $this->assertTrue(TechStackRoutingService::isValidCombination($ollama, null));
+        $this->assertFalse(TechStackRoutingService::usesSelectedVersionAsImageTag('ollama'));
+        $this->assertSame(['7b', '8b'], TechStackRoutingService::requiredSelectedVersions($ollama));
+
+        $payload = TechStackRoutingService::stackOptionsPayload($ollama);
+        $this->assertFalse($payload['skip_modal']);
+        $this->assertTrue($payload['version_picker']['show']);
+        $this->assertTrue($payload['version_picker']['required']);
+        $this->assertSame('Model size', $payload['version_picker']['label']);
+        $this->assertSame('7b', $payload['version_picker']['value']);
+        $this->assertSame('Mistral 7B', TechStackRoutingService::versionLabel($ollama, '7b'));
+        $this->assertSame('Ministral 8B', TechStackRoutingService::versionLabel($ollama, '8b'));
     }
 
     public function test_apply_session_selection_copies_stack_builder_roles(): void

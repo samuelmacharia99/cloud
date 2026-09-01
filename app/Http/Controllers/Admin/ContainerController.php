@@ -10,6 +10,7 @@ use App\Models\Service;
 use App\Services\Provisioning\ContainerBackupService;
 use App\Services\Provisioning\ContainerDeploymentService;
 use App\Services\Provisioning\ContainerDeployOptions;
+use App\Services\Provisioning\ContainerDomainBindingService;
 use App\Services\Provisioning\ContainerSslErrorPresenter;
 use App\Services\Provisioning\NginxProxyService;
 use Illuminate\Http\JsonResponse;
@@ -218,18 +219,18 @@ class ContainerController extends Controller
                 return back()->withErrors(['error' => 'Container not deployed yet']);
             }
 
-            // Create domain record
-            $domain = ContainerDomain::create([
-                'container_deployment_id' => $deployment->id,
-                'domain' => strtolower($request->domain),
-                'status' => 'pending',
-            ]);
+            $bound = app(ContainerDomainBindingService::class)->bindHostnamePair($service, (string) $request->domain);
+            $names = collect($bound)->pluck('domain')->filter()->sort()->values();
 
-            // Bind domain to nginx
-            $nginxService = new NginxProxyService;
-            $nginxService->bind($domain);
+            if ($names->isEmpty()) {
+                return back()->withErrors(['error' => 'Could not bind that domain. It may already be attached to another application.']);
+            }
 
-            return back()->with('success', "Domain {$domain->domain} bound successfully");
+            $label = $names->count() > 1
+                ? 'Domains '.$names->implode(' and ').' bound successfully'
+                : "Domain {$names->first()} bound successfully";
+
+            return back()->with('success', $label);
         } catch (\Exception $e) {
             \Log::error("Failed to bind domain for service {$service->id}: ".$e->getMessage());
 

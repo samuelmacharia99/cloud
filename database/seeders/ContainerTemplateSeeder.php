@@ -635,7 +635,7 @@ class ContainerTemplateSeeder extends Seeder
     }
 
     /**
-     * Ready-made and runtime stacks from the public catalog (n8n, Go, Directus, Chatwoot, Odoo, ERPNext).
+     * Ready-made and runtime stacks from the public catalog (n8n, Go, Directus, Chatwoot, Odoo, ERPNext, Ollama).
      *
      * @return array<string, array<string, mixed>>
      */
@@ -858,6 +858,30 @@ class ContainerTemplateSeeder extends Seeder
                 'health_check_timeout_seconds' => 420,
                 'is_active' => true,
                 'order' => 17,
+            ],
+            'ollama' => [
+                'name' => 'Ollama',
+                'description' => 'Run Mistral-family models on your plan via Ollama. Choose 7B or 8B at deploy. Needs at least 8 GB RAM (16 GB recommended for 8B). Models are pulled after the API starts.',
+                'category' => 'web',
+                'docker_image' => 'ollama/ollama:latest',
+                'default_port' => 11434,
+                'required_ram_mb' => 8192,
+                'required_cpu_cores' => 2.0,
+                'required_storage_gb' => 20,
+                'versions' => [
+                    '7b',
+                    '8b',
+                ],
+                'environment_variables' => [],
+                'volume_paths' => [
+                    'ollama_data' => '/root/.ollama',
+                ],
+                'compose_services' => [],
+                'setup_commands' => [],
+                'strict_health_check' => true,
+                'health_check_timeout_seconds' => 180,
+                'is_active' => true,
+                'order' => 18,
             ],
         ];
     }
