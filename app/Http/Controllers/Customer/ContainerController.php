@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Customer;
 
 use App\Exceptions\SSH\SSHCommandException;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Customer\ChatContainerOllamaRequest;
 use App\Http\Requests\Customer\ImportContainerDatabaseRequest;
 use App\Http\Requests\Customer\PullContainerGitRepositoryRequest;
 use App\Http\Requests\Customer\UpdateContainerGitRepositoryRequest;
@@ -35,6 +36,7 @@ use App\Services\Provisioning\ContainerFileService;
 use App\Services\Provisioning\ContainerGitCredentialsService;
 use App\Services\Provisioning\ContainerGitPullErrorPresenter;
 use App\Services\Provisioning\ContainerGitRepositoryService;
+use App\Services\Provisioning\ContainerOllamaModelService;
 use App\Services\Provisioning\ContainerPhpExtensionsService;
 use App\Services\Provisioning\ContainerSslErrorPresenter;
 use App\Services\Provisioning\ContainerStagingService;
@@ -105,6 +107,16 @@ class ContainerController extends Controller
             ->supportsTemplate($templateSlug);
         $phpExtensionsPanel = $supportsPhpExtensions
             ? app(ContainerPhpExtensionsService::class)->buildPanelState($service, $deployment)
+            : null;
+        $ollamaModels = app(ContainerOllamaModelService::class);
+        $supportsOllamaChat = $ollamaModels->supportsTemplate($templateSlug);
+        $ollamaChatPanel = $supportsOllamaChat
+            ? [
+                'container_running' => (bool) $deployment?->isRunning(),
+                'default_model' => $deployment
+                    ? $ollamaModels->defaultModelName($service, $deployment)
+                    : ContainerOllamaModelService::modelTag(null),
+            ]
             : null;
         $gitRepositoryService = app(ContainerGitRepositoryService::class);
         $gitCredentialsService = app(ContainerGitCredentialsService::class);
@@ -177,6 +189,8 @@ class ContainerController extends Controller
             'templateSlug',
             'supportsPhpExtensions',
             'phpExtensionsPanel',
+            'supportsOllamaChat',
+            'ollamaChatPanel',
             'supportsGitRepository',
             'gitRepository',
             'containerLimits',
@@ -529,6 +543,121 @@ class ContainerController extends Controller
             return $wantsJson
                 ? response()->json(['error' => $message], 500)
                 : back()->withErrors(['error' => $message]);
+        }
+    }
+
+    public function ollamaModels(
+        Service $service,
+        ContainerOllamaModelService $ollamaModels,
+    ): JsonResponse {
+        abort_if($service->user_id !== auth()->id(), 403);
+        $this->authorize('manageContainer', $service);
+
+        if (! $ollamaModels->supportsService($service)) {
+            return response()->json(['error' => 'Chat is only available on Ollama services.'], 400);
+        }
+
+        $deployment = $service->containerDeployment;
+        if (! $deployment || ! $deployment->isRunning() || ! $deployment->node) {
+            return response()->json(['error' => 'Start the app before chatting with the model.'], 400);
+        }
+
+        try {
+            $ssh = SSHService::forNode($deployment->node);
+            $models = $ollamaModels->listModels($ssh, $deployment);
+            $default = $ollamaModels->defaultModelName($service, $deployment, $models);
+
+            return response()->json([
+                'models' => $models,
+                'default_model' => $default,
+            ]);
+        } catch (\Throwable $e) {
+            \Log::warning('Failed to list Ollama models', [
+                'service_id' => $service->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'models' => [],
+                'default_model' => $ollamaModels->defaultModelName($service, $deployment),
+                'warning' => 'Could not list installed models. You can still send a message using the planned model.',
+            ]);
+        }
+    }
+
+    public function ollamaChat(
+        ChatContainerOllamaRequest $request,
+        Service $service,
+        ContainerOllamaModelService $ollamaModels,
+    ): JsonResponse {
+        abort_if($service->user_id !== auth()->id(), 403);
+        $this->authorize('manageContainer', $service);
+
+        if (! $ollamaModels->supportsService($service)) {
+            return response()->json(['error' => 'Chat is only available on Ollama services.'], 400);
+        }
+
+        $deployment = $service->containerDeployment;
+        if (! $deployment || ! $deployment->isRunning() || ! $deployment->node) {
+            return response()->json(['error' => 'Start the app before chatting with the model.'], 400);
+        }
+
+        if (! $deployment->node->ssh_username || (! $deployment->node->ssh_password && ! $deployment->node->da_login_key)) {
+            return response()->json(['error' => 'The container host is not properly configured.'], 400);
+        }
+
+        $history = $request->input('history', []);
+        $messages = is_array($history) ? $history : [];
+        $messages[] = [
+            'role' => 'user',
+            'content' => trim((string) $request->input('message')),
+        ];
+
+        $model = trim((string) $request->input('model', ''));
+        if ($model === '') {
+            $model = $ollamaModels->defaultModelName($service, $deployment);
+        }
+
+        set_time_limit(ContainerOllamaModelService::CHAT_TIMEOUT_SECONDS + 30);
+
+        try {
+            $ssh = SSHService::forNode($deployment->node);
+            try {
+                $available = $ollamaModels->listModels($ssh, $deployment);
+                if ($available !== [] && ! in_array($model, $available, true)) {
+                    $model = $ollamaModels->defaultModelName($service, $deployment, $available);
+                }
+            } catch (\Throwable) {
+                // Keep the requested model if listing fails.
+            }
+
+            $reply = $ollamaModels->chat($ssh, $deployment, $model, $messages);
+
+            \Log::info('Ollama chat completed', [
+                'service_id' => $service->id,
+                'model' => $reply['model'],
+            ]);
+
+            return response()->json([
+                'model' => $reply['model'],
+                'message' => [
+                    'role' => 'assistant',
+                    'content' => $reply['content'],
+                ],
+            ]);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['error' => $e->getMessage()], 422);
+        } catch (\RuntimeException $e) {
+            \Log::warning('Ollama chat failed', [
+                'service_id' => $service->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json(['error' => $e->getMessage()], 502);
+        } catch (\Throwable $e) {
+            \Log::error("Ollama chat failed for service {$service->id}: ".$e->getMessage());
+
+            return response()->json(['error' => 'Could not reach Ollama. Confirm the app is running and try again.'], 500);
         }
     }
 

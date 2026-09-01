@@ -126,7 +126,7 @@
             @elseif ($terminalTemplateSlug === 'nodejs')
                 Interactive shell for your Node.js app. Run <code class="font-mono text-xs">npm</code>, <code class="font-mono text-xs">node</code>, and inspect files in <code class="font-mono text-xs">/app</code>.
             @elseif ($terminalTemplateSlug === 'ollama')
-                Interactive shell for Ollama. Run <code class="font-mono text-xs">ollama list</code>, <code class="font-mono text-xs">ollama pull</code>, and inspect models in <code class="font-mono text-xs">{{ $terminalDefaultCwd }}</code>.
+                Interactive shell for Ollama. Chat with the model on the <strong>Chat</strong> tab. Here you can run <code class="font-mono text-xs">ollama list</code> and <code class="font-mono text-xs">ollama pull</code>. Typing a question here runs it as a shell command, not as a chat.
             @else
                 Interactive shell for your app. Run stack commands and inspect files in <code class="font-mono text-xs">{{ $terminalDefaultCwd }}</code>.
             @endif

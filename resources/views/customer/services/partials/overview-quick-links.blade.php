@@ -8,6 +8,18 @@
 @endphp
 
 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+    @if (!empty($supportsOllamaChat))
+        <button
+            type="button"
+            @click="$dispatch('container-set-tab', 'chat')"
+            class="text-left rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4 hover:border-blue-300 dark:hover:border-blue-600 transition group"
+        >
+            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Chat</p>
+            <p class="mt-1 text-lg font-semibold text-slate-900 dark:text-white">Talk to Mistral</p>
+            <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">Send messages to the installed model</p>
+            <span class="mt-2 inline-block text-xs font-medium text-blue-600 dark:text-blue-400 group-hover:underline">Open →</span>
+        </button>
+    @endif
     <button
         type="button"
         @click="$dispatch('container-set-tab', 'environment')"

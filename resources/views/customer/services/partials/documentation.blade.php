@@ -1,6 +1,10 @@
 @php
-    $templateSlug = $service->product?->containerTemplate?->slug ?? '';
-    $templateName = $service->product?->containerTemplate?->name ?? 'Application';
+    $templateSlug = $service->effectiveContainerTemplate()?->slug
+        ?? $service->product?->containerTemplate?->slug
+        ?? '';
+    $templateName = $service->effectiveContainerTemplate()?->name
+        ?? $service->product?->containerTemplate?->name
+        ?? 'Application';
 @endphp
 
 <div class="space-y-8">
@@ -36,6 +40,9 @@
             @break
         @case('strapi')
             @include('customer.services.partials.docs.strapi')
+            @break
+        @case('ollama')
+            @include('customer.services.partials.docs.ollama')
             @break
         @case('static-site')
             @include('customer.services.partials.docs.static-site')

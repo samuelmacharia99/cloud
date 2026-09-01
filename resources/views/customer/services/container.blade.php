@@ -206,6 +206,9 @@
         @if ($deployment)
             @php
                 $containerTabs = ['overview', 'environment', 'files', 'terminal', 'backups', 'domains', 'database', 'cron', 'logs', 'documentation'];
+                if (! empty($supportsOllamaChat)) {
+                    array_splice($containerTabs, array_search('terminal', $containerTabs, true), 0, 'chat');
+                }
                 if (! empty($supportsGitRepository)) {
                     array_splice($containerTabs, array_search('terminal', $containerTabs, true) + 1, 0, 'github');
                 }
@@ -224,6 +227,9 @@
                             <option value="overview">Overview</option>
                             <option value="environment">Environment</option>
                             <option value="files">Files</option>
+                            @if (!empty($supportsOllamaChat))
+                                <option value="chat">Chat</option>
+                            @endif
                             <option value="terminal">Terminal</option>
                             @if (!empty($supportsGitRepository))
                                 <option value="github">Git</option>
@@ -255,10 +261,13 @@
                                 ['overview', 'Overview'],
                                 ['environment', 'Environment'],
                                 ['files', 'Files'],
-                                ['terminal', 'Terminal'],
                             ] as [$tabKey, $tabLabel])
                                 <button type="button" @click="setTab('{{ $tabKey }}')" :class="activeTab === '{{ $tabKey }}' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'border-b-2 border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-3 py-2.5 font-medium transition text-sm whitespace-nowrap" role="tab" :aria-selected="activeTab === '{{ $tabKey }}'">{{ $tabLabel }}</button>
                             @endforeach
+                            @if (!empty($supportsOllamaChat))
+                                <button type="button" @click="setTab('chat')" :class="activeTab === 'chat' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'border-b-2 border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-3 py-2.5 font-medium transition text-sm whitespace-nowrap" role="tab" :aria-selected="activeTab === 'chat'">Chat</button>
+                            @endif
+                            <button type="button" @click="setTab('terminal')" :class="activeTab === 'terminal' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'border-b-2 border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-3 py-2.5 font-medium transition text-sm whitespace-nowrap" role="tab" :aria-selected="activeTab === 'terminal'">Terminal</button>
                             @if (!empty($supportsGitRepository))
                                 <button type="button" @click="setTab('github')" :class="activeTab === 'github' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'border-b-2 border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-3 py-2.5 font-medium transition text-sm whitespace-nowrap" role="tab" :aria-selected="activeTab === 'github'">Git</button>
                             @endif
@@ -364,6 +373,15 @@
                             @include('customer.services.partials.file-manager')
                         </div>
                     </template>
+
+                    <!-- Chat Tab -->
+                    @if (!empty($supportsOllamaChat))
+                        <template x-if="hasVisited('chat')">
+                            <div x-show="activeTab === 'chat'">
+                                @include('customer.services.partials.ollama-chat')
+                            </div>
+                        </template>
+                    @endif
 
                     <!-- Terminal Tab -->
                     <template x-if="hasVisited('terminal')">
