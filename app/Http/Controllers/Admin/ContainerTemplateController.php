@@ -2,10 +2,11 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Models\ContainerDeployment;
 use App\Models\ContainerTemplate;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
-use Illuminate\Http\RedirectResponse;
 
 class ContainerTemplateController
 {
@@ -49,7 +50,7 @@ class ContainerTemplateController
             'compose_services' => 'nullable|string',
             'setup_commands' => 'nullable|string',
             'strict_health_check' => 'nullable|boolean',
-            'health_check_timeout_seconds' => 'required|integer|min:30|max:900',
+            'health_check_timeout_seconds' => 'required|integer|min:30|max:1800',
             'is_active' => 'boolean',
             'order' => 'required|integer|min:0',
         ]);
@@ -86,7 +87,7 @@ class ContainerTemplateController
                 return back()->withInput()->withErrors(['setup_commands' => 'Invalid JSON format']);
             }
             $setupCommandErrors = $this->validateSetupCommands($setupCommands);
-            if (!empty($setupCommandErrors)) {
+            if (! empty($setupCommandErrors)) {
                 return back()->withInput()->withErrors(['setup_commands' => implode(' ', $setupCommandErrors)]);
             }
         }
@@ -129,7 +130,7 @@ class ContainerTemplateController
     public function update(Request $request, ContainerTemplate $containerTemplate): RedirectResponse
     {
         $validated = $request->validate([
-            'slug' => 'required|string|unique:container_templates,slug,' . $containerTemplate->id,
+            'slug' => 'required|string|unique:container_templates,slug,'.$containerTemplate->id,
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
             'category' => 'required|string|in:web,database,utility,cache',
@@ -143,7 +144,7 @@ class ContainerTemplateController
             'compose_services' => 'nullable|string',
             'setup_commands' => 'nullable|string',
             'strict_health_check' => 'nullable|boolean',
-            'health_check_timeout_seconds' => 'required|integer|min:30|max:900',
+            'health_check_timeout_seconds' => 'required|integer|min:30|max:1800',
             'is_active' => 'boolean',
             'order' => 'required|integer|min:0',
         ]);
@@ -180,7 +181,7 @@ class ContainerTemplateController
                 return back()->withInput()->withErrors(['setup_commands' => 'Invalid JSON format']);
             }
             $setupCommandErrors = $this->validateSetupCommands($setupCommands);
-            if (!empty($setupCommandErrors)) {
+            if (! empty($setupCommandErrors)) {
                 return back()->withInput()->withErrors(['setup_commands' => implode(' ', $setupCommandErrors)]);
             }
         }
@@ -217,20 +218,23 @@ class ContainerTemplateController
         $errors = [];
 
         foreach ($setupCommands as $index => $command) {
-            if (!is_string($command) || trim($command) === '') {
-                $errors[] = "Setup command #".($index + 1)." must be a non-empty string.";
+            if (! is_string($command) || trim($command) === '') {
+                $errors[] = 'Setup command #'.($index + 1).' must be a non-empty string.';
+
                 continue;
             }
 
             $cmd = trim($command);
 
             if (strlen($cmd) > 500) {
-                $errors[] = "Setup command #".($index + 1)." is too long.";
+                $errors[] = 'Setup command #'.($index + 1).' is too long.';
+
                 continue;
             }
 
             if (preg_match('/[;&|`$<>\\\\]/', $cmd)) {
-                $errors[] = "Setup command #".($index + 1)." contains disallowed shell control characters.";
+                $errors[] = 'Setup command #'.($index + 1).' contains disallowed shell control characters.';
+
                 continue;
             }
         }
@@ -244,7 +248,7 @@ class ContainerTemplateController
     public function show(ContainerTemplate $containerTemplate): View
     {
         $containerTemplate->load('products');
-        $deploymentCount = \App\Models\ContainerDeployment::whereHas('service.product', function ($q) use ($containerTemplate) {
+        $deploymentCount = ContainerDeployment::whereHas('service.product', function ($q) use ($containerTemplate) {
             $q->where('container_template_id', $containerTemplate->id);
         })->count();
 

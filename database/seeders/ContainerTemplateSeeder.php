@@ -879,7 +879,7 @@ class ContainerTemplateSeeder extends Seeder
                 'compose_services' => [],
                 'setup_commands' => [],
                 'strict_health_check' => true,
-                'health_check_timeout_seconds' => 180,
+                'health_check_timeout_seconds' => 900,
                 'is_active' => true,
                 'order' => 18,
             ],

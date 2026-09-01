@@ -818,4 +818,17 @@ class ContainerDeploymentComposeTest extends TestCase
         $this->assertStringContainsString("ports:\n      - '31025:11434'", $yaml);
         $this->assertStringContainsString('ministral-3:8b', $yaml);
     }
+
+    #[Test]
+    public function ollama_compose_up_waits_long_enough_for_image_pull(): void
+    {
+        $method = new ReflectionMethod(ContainerDeploymentService::class, 'composeUpTimeoutSeconds');
+        $method->setAccessible(true);
+        $deployer = new ContainerDeploymentService(
+            templateEnvironment: new ContainerTemplateEnvironmentService
+        );
+
+        $this->assertSame(1200, $method->invoke($deployer, (object) ['slug' => 'ollama']));
+        $this->assertSame(180, $method->invoke($deployer, (object) ['slug' => 'wordpress']));
+    }
 }

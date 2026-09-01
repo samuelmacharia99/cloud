@@ -151,7 +151,7 @@
         <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
             <div>
                 <label class="{{ $labelClass }}">Health Check Timeout (seconds) *</label>
-                <input type="number" name="health_check_timeout_seconds" value="{{ old('health_check_timeout_seconds', $containerTemplate->health_check_timeout_seconds ?? 120) }}" min="30" max="900" class="{{ $inputClass }} @error('health_check_timeout_seconds') border-red-500 @enderror" required>
+                <input type="number" name="health_check_timeout_seconds" value="{{ old('health_check_timeout_seconds', $containerTemplate->health_check_timeout_seconds ?? 120) }}" min="30" max="1800" class="{{ $inputClass }} @error('health_check_timeout_seconds') border-red-500 @enderror" required>
                 @error('health_check_timeout_seconds')<p class="{{ $errorClass }}">{{ $message }}</p>@enderror
             </div>
             <div class="flex items-end">

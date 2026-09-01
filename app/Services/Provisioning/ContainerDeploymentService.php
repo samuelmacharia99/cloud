@@ -312,10 +312,18 @@ class ContainerDeploymentService
                 }
 
                 // Deploy container
+                $composeTimeout = $this->composeUpTimeoutSeconds($template);
+                $this->recordDeploymentEvent($service, $deployment, 'compose_up_started', [
+                    'container_name' => $containerName,
+                    'timeout_seconds' => $composeTimeout,
+                    'image' => $this->resolveDockerImage($template, $selectedVersion),
+                ]);
+                $deployment->touch();
                 $this->composeUp(
                     $ssh,
                     $containerPath,
-                    $this->runtimeImages->usesRuntimeImage($template)
+                    $this->runtimeImages->usesRuntimeImage($template),
+                    timeoutSeconds: $composeTimeout,
                 );
 
                 // Host mount is the source of truth for /app; ensure placeholders after compose is up.
@@ -333,8 +341,14 @@ class ContainerDeploymentService
                 // relaxed templates continue for smoother redeploys while still logging warnings.
                 $strictHealthCheck = $this->isStrictHealthCheckEnabled($template);
                 $healthTimeoutSeconds = $this->healthCheckTimeoutSeconds($template);
+                $this->recordDeploymentEvent($service, $deployment, 'health_check_started', [
+                    'container_name' => $containerName,
+                    'strict' => $strictHealthCheck,
+                    'timeout_seconds' => $healthTimeoutSeconds,
+                ]);
+                $deployment->touch();
                 try {
-                    $this->waitForContainerHealth($ssh, $containerName, $healthTimeoutSeconds);
+                    $this->waitForContainerHealth($ssh, $containerName, $healthTimeoutSeconds, $deployment);
                     $this->recordDeploymentEvent($service, $deployment, 'health_check_passed', [
                         'container_name' => $containerName,
                         'strict' => $strictHealthCheck,
@@ -2331,10 +2345,15 @@ class ContainerDeploymentService
     /**
      * Wait for container to be healthy
      */
-    private function waitForContainerHealth(SSHService $ssh, string $containerName, int $timeoutSeconds): void
-    {
+    private function waitForContainerHealth(
+        SSHService $ssh,
+        string $containerName,
+        int $timeoutSeconds,
+        ?ContainerDeployment $deployment = null,
+    ): void {
         $maxAttempts = max(1, (int) ceil($timeoutSeconds / self::HEALTH_CHECK_DELAY));
         for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
+            $deployment?->touch();
             try {
                 $status = $this->getContainerStatus($ssh, $containerName);
 
@@ -4092,7 +4111,16 @@ class ContainerDeploymentService
         $raw = $template->health_check_timeout_seconds ?? $defaultTimeout;
         $timeout = (int) $raw;
 
-        return max(30, min(900, $timeout));
+        return max(30, min(1800, $timeout));
+    }
+
+    private function composeUpTimeoutSeconds($template): int
+    {
+        return match (strtolower((string) ($template->slug ?? ''))) {
+            'ollama' => 1200,
+            'erpnext', 'chatwoot', 'odoo' => 600,
+            default => 180,
+        };
     }
 
     public function resolveTemplateDockerImage(object $template, ?string $selectedVersion = null): string
@@ -4130,20 +4158,22 @@ class ContainerDeploymentService
         SSHService $ssh,
         string $containerPath,
         bool $localRuntimeImage,
-        bool $useExplicitComposeFile = false
+        bool $useExplicitComposeFile = false,
+        int $timeoutSeconds = self::DEPLOY_TIMEOUT,
     ): void {
         $this->ensureSharedDockerNetwork($ssh);
 
         $fileFlag = $useExplicitComposeFile ? ' -f docker-compose.yml' : '';
         $pullFlag = $localRuntimeImage ? ' --pull never' : '';
         $command = "cd {$containerPath} && docker compose{$fileFlag} up -d{$pullFlag}";
+        $timeoutSeconds = max(self::DEPLOY_TIMEOUT, $timeoutSeconds);
 
         try {
-            $ssh->exec($command, self::DEPLOY_TIMEOUT);
+            $ssh->exec($command, $timeoutSeconds);
         } catch (\Throwable $e) {
             if ($this->isDockerAddressPoolExhausted($e->getMessage())) {
                 $this->ensureSharedDockerNetwork($ssh);
-                $ssh->exec($command, self::DEPLOY_TIMEOUT);
+                $ssh->exec($command, $timeoutSeconds);
 
                 return;
             }
@@ -4160,7 +4190,7 @@ class ContainerDeploymentService
             ]);
 
             $this->clearDockerComposeNameConflicts($ssh, $project, $e->getMessage());
-            $ssh->exec($command, self::DEPLOY_TIMEOUT);
+            $ssh->exec($command, $timeoutSeconds);
         }
     }
 

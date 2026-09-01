@@ -64,6 +64,17 @@ class ContainerController extends Controller
                 ->with('info', 'Complete payment to activate this service.');
         }
 
+        $status = $service->status->value ?? (string) $service->status;
+        if (in_array($status, ['pending', 'provisioning'], true)) {
+            return redirect()->route('customer.services.deploying', $service);
+        }
+        if ($status === 'failed') {
+            $failedDeployment = $service->containerDeployment;
+            if (! $failedDeployment || $failedDeployment->status !== 'running') {
+                return redirect()->route('customer.services.deploying', $service);
+            }
+        }
+
         if ($service->product?->type !== 'container_hosting') {
             abort(404);
         }
@@ -299,7 +310,7 @@ class ContainerController extends Controller
             }
 
             if ($deployment->status === 'deploying' || $service->status === 'provisioning') {
-                $isStale = $deployment->updated_at && $deployment->updated_at->lt(now()->subMinutes(5));
+                $isStale = $deployment->updated_at && $deployment->updated_at->lt(now()->subMinutes(45));
                 if ($isStale) {
                     $deployment->update([
                         'status' => 'failed',
@@ -845,7 +856,7 @@ class ContainerController extends Controller
         }
 
         // If provisioning has been stuck for too long, fail it so user can recover.
-        if ($deployment->updated_at && $deployment->updated_at->lt(now()->subMinutes(5))) {
+        if ($deployment->updated_at && $deployment->updated_at->lt(now()->subMinutes(45))) {
             $deployment->update([
                 'status' => 'failed',
                 'last_status_check_at' => now(),

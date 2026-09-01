@@ -153,7 +153,7 @@
         </div>
     </div>
 
-    <form id="skip-db-form" method="POST" action="{{ $stackFormAction }}" class="hidden">
+    <form id="skip-db-form" method="POST" action="{{ $stackFormAction }}" class="hidden" @if($includedDeploy) @submit="submitting = true" @endif>
         @csrf
         <input type="hidden" id="skip-db-form-language" name="language_id" value="">
         <input type="hidden" name="database_id" value="">
@@ -343,7 +343,7 @@
                 </div>
 
                 <div class="flex gap-3 pt-1">
-                    <form :action="confirmTechstackUrl" method="POST" class="flex-1">
+                    <form :action="confirmTechstackUrl" method="POST" class="flex-1" @if($includedDeploy) @submit="submitting = true" @endif>
                         @csrf
                         <input type="hidden" name="language_id" :value="selectedLanguage.id">
                         <input type="hidden" name="database_id" :value="selectedDatabaseId">
@@ -373,6 +373,20 @@
             </div>
         </div>
     </div>
+
+    @if($includedDeploy)
+        <div
+            x-show="submitting"
+            x-cloak
+            class="fixed inset-0 z-[80] bg-ink-950/70 backdrop-blur-sm flex items-center justify-center p-6"
+        >
+            <div class="max-w-sm w-full rounded-3xl bg-white dark:bg-ink-900 border border-ink-200 dark:border-ink-700 p-6 text-center shadow-2xl">
+                <div class="mx-auto h-12 w-12 rounded-full border-2 border-brand-500/30 border-t-brand-500 animate-spin"></div>
+                <p class="mt-4 font-display text-xl text-ink-950 dark:text-white">Starting deploy</p>
+                <p class="mt-2 text-sm text-ink-600 dark:text-ink-400">Opening the live console. Image pulls can take several minutes and will not time out in your browser.</p>
+            </div>
+        </div>
+    @endif
 </div>
 
 <script>
@@ -384,6 +398,7 @@ function techstackSelector() {
         selectedFrontend: '',
         selectedDatabaseId: '',
         selectedVersion: '',
+        submitting: false,
         showStackModal: false,
         loading: false,
         confirmTechstackUrl: @json($stackFormAction),
@@ -424,6 +439,7 @@ function techstackSelector() {
             this.selectedVersion = '';
 
             if (this.skipModalSlugs.includes(language.slug)) {
+                this.submitting = {{ $includedDeploy ? 'true' : 'false' }};
                 this.$nextTick(() => {
                     document.getElementById('skip-db-form-language').value = languageId;
                     document.getElementById('skip-db-form').submit();

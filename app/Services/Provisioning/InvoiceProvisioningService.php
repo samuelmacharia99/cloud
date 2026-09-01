@@ -3,6 +3,7 @@
 namespace App\Services\Provisioning;
 
 use App\Enums\ServiceStatus;
+use App\Jobs\ProvisionContainerServiceJob;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Service;
@@ -103,7 +104,11 @@ class InvoiceProvisioningService
                 $this->resellerEnforcement->assertCanProvision($service);
 
                 $service->update(['status' => ServiceStatus::Provisioning]);
-                $this->provisioningService->provision($service->fresh());
+                if ($service->isContainerHosting()) {
+                    ProvisionContainerServiceJob::dispatchForService((int) $service->id);
+                } else {
+                    $this->provisioningService->provision($service->fresh());
+                }
                 $provisioned++;
             } catch (\Throwable $e) {
                 $failed[] = $service->id;
@@ -200,9 +205,17 @@ class InvoiceProvisioningService
             return false;
         }
 
-        return $invoice->items->contains(
+        if ($invoice->items->contains(
             fn (InvoiceItem $item) => $this->isHostingType($item->product?->type ?? $item->service?->product?->type)
-        );
+        )) {
+            return true;
+        }
+
+        return Service::query()
+            ->where('invoice_id', $invoice->id)
+            ->with(['product', 'user'])
+            ->get()
+            ->contains(fn (Service $service) => $this->isResellerManagedHostingService($service));
     }
 
     private function isResellerManagedHostingService(Service $service): bool

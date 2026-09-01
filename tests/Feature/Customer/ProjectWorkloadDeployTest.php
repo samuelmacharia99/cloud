@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Customer;
 
+use App\Jobs\ProvisionContainerServiceJob;
 use App\Models\ContainerTemplate;
 use App\Models\CustomerProject;
 use App\Models\Invoice;
@@ -9,8 +10,8 @@ use App\Models\Product;
 use App\Models\Service;
 use App\Models\User;
 use App\Services\Billing\ProjectRecipeService;
-use App\Services\Provisioning\ProvisioningService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Bus;
 use Tests\TestCase;
 
 class ProjectWorkloadDeployTest extends TestCase
@@ -21,11 +22,7 @@ class ProjectWorkloadDeployTest extends TestCase
     {
         [$customer, $project, $anchor, $language] = $this->makeBilledProject();
 
-        $this->mock(ProvisioningService::class, function ($mock) {
-            $mock->shouldReceive('provision')->once()->andReturnUsing(function (Service $service) {
-                $service->update(['status' => 'active']);
-            });
-        });
+        Bus::fake();
 
         $invoiceCount = Invoice::query()->count();
 
@@ -36,12 +33,11 @@ class ProjectWorkloadDeployTest extends TestCase
             ->assertSee('not billed again')
             ->assertSee('Ollama');
 
-        $this->actingAs($customer)
+        $response = $this->actingAs($customer)
             ->post(route('customer.projects.deploy.store', $project), [
                 'language_id' => $language->id,
                 'frontend' => 'static',
-            ])
-            ->assertRedirect(route('customer.projects.show', $project));
+            ]);
 
         $extra = Service::query()
             ->where('project_id', $project->id)
@@ -49,6 +45,12 @@ class ProjectWorkloadDeployTest extends TestCase
             ->first();
 
         $this->assertNotNull($extra);
+        $response->assertRedirect(route('customer.services.deploying', $extra));
+        Bus::assertDispatched(
+            ProvisionContainerServiceJob::class,
+            fn (ProvisionContainerServiceJob $job) => $job->serviceId === $extra->id
+        );
+        $this->assertSame('provisioning', $extra->status->value ?? $extra->status);
         $this->assertSame(0.0, (float) $extra->custom_price);
         $this->assertNull($extra->invoice_id);
         $this->assertSame($anchor->product_id, $extra->product_id);
@@ -67,18 +69,13 @@ class ProjectWorkloadDeployTest extends TestCase
         [$customer, $project] = $this->makeBilledProject();
         $ollama = ContainerTemplate::query()->where('slug', 'ollama')->firstOrFail();
 
-        $this->mock(ProvisioningService::class, function ($mock) {
-            $mock->shouldReceive('provision')->once()->andReturnUsing(function (Service $service) {
-                $service->update(['status' => 'active']);
-            });
-        });
+        Bus::fake();
 
-        $this->actingAs($customer)
+        $response = $this->actingAs($customer)
             ->post(route('customer.projects.deploy.store', $project), [
                 'language_id' => $ollama->id,
                 'selected_version' => '8b',
-            ])
-            ->assertRedirect(route('customer.projects.show', $project));
+            ]);
 
         $extra = Service::query()
             ->where('project_id', $project->id)
@@ -86,8 +83,23 @@ class ProjectWorkloadDeployTest extends TestCase
             ->first();
 
         $this->assertNotNull($extra);
+        $response->assertRedirect(route('customer.services.deploying', $extra));
         $this->assertSame('ollama', $extra->service_meta['language_slug']);
         $this->assertSame('8b', $extra->service_meta['selected_version']);
+        $this->assertSame('provisioning', $extra->status->value ?? $extra->status);
+
+        $this->actingAs($customer)
+            ->get(route('customer.services.deploying', $extra))
+            ->assertOk()
+            ->assertSee('Live console')
+            ->assertSee('Pull the image and start the runtime');
+
+        $this->actingAs($customer)
+            ->getJson(route('customer.services.deploying.status', $extra))
+            ->assertOk()
+            ->assertJsonPath('status', 'provisioning')
+            ->assertJsonPath('is_active', true)
+            ->assertJsonPath('redirect', null);
     }
 
     public function test_included_ollama_deploy_requires_model_size(): void
@@ -117,6 +129,40 @@ class ProjectWorkloadDeployTest extends TestCase
 
         $this->assertSame(1, Service::query()->where('project_id', $project->id)->count());
         $this->assertSame('pending', $anchor->fresh()->status->value ?? $anchor->fresh()->status);
+    }
+
+    public function test_failed_included_deploy_can_be_retried_from_the_console(): void
+    {
+        [$customer, $project, $anchor, $language] = $this->makeBilledProject();
+
+        Bus::fake();
+
+        $this->actingAs($customer)
+            ->post(route('customer.projects.deploy.store', $project), [
+                'language_id' => $language->id,
+                'frontend' => 'static',
+            ]);
+
+        $extra = Service::query()
+            ->where('project_id', $project->id)
+            ->where('id', '!=', $anchor->id)
+            ->first();
+
+        $this->assertNotNull($extra);
+        $extra->update(['status' => 'failed']);
+
+        $this->actingAs($customer)
+            ->get(route('customer.services.deploying', $extra))
+            ->assertOk()
+            ->assertSee('Retry deploy')
+            ->assertSee('Live console');
+
+        $this->actingAs($customer)
+            ->post(route('customer.services.deploying.retry', $extra))
+            ->assertRedirect(route('customer.services.deploying', $extra));
+
+        $this->assertSame('provisioning', $extra->fresh()->status->value ?? $extra->fresh()->status);
+        Bus::assertDispatched(ProvisionContainerServiceJob::class, 2);
     }
 
     public function test_other_customers_cannot_deploy_into_a_project(): void

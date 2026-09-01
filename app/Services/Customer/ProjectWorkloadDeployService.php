@@ -2,6 +2,7 @@
 
 namespace App\Services\Customer;
 
+use App\Jobs\ProvisionContainerServiceJob;
 use App\Models\ContainerTemplate;
 use App\Models\CustomerProject;
 use App\Models\DatabaseTemplate;
@@ -9,7 +10,6 @@ use App\Models\Service;
 use App\Models\User;
 use App\Services\Billing\ProjectRecipeService;
 use App\Services\Provisioning\InvoiceProvisioningService;
-use App\Services\Provisioning\ProvisioningService;
 use App\Services\ResellerEnforcementService;
 use App\Services\TechStackRoutingService;
 use Illuminate\Support\Str;
@@ -20,7 +20,6 @@ class ProjectWorkloadDeployService
     public function __construct(
         private CustomerProjectService $projects,
         private ProjectRecipeService $recipes,
-        private ProvisioningService $provisioning,
         private InvoiceProvisioningService $invoiceProvisioning,
         private ResellerEnforcementService $resellerEnforcement,
     ) {}
@@ -160,7 +159,7 @@ class ProjectWorkloadDeployService
 
         try {
             $service->update(['status' => 'provisioning']);
-            $this->provisioning->provision($service->fresh());
+            ProvisionContainerServiceJob::dispatchForService((int) $service->id, deferUntilResponse: true);
         } catch (\Throwable $e) {
             throw ValidationException::withMessages([
                 'language_id' => 'The service was created but provisioning failed: '.$e->getMessage(),

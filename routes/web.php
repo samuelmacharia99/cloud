@@ -619,6 +619,13 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('/my/projects/{project}/deploy', [App\Http\Controllers\Customer\ServiceController::class, 'deploy'])
             ->middleware('throttle:20,10')
             ->name('customer.projects.deploy.store');
+        Route::get('/my/services/{service}/deploying', [App\Http\Controllers\Customer\ServiceController::class, 'deploying'])
+            ->name('customer.services.deploying');
+        Route::get('/my/services/{service}/deploying/status', [App\Http\Controllers\Customer\ServiceController::class, 'deployingStatus'])
+            ->name('customer.services.deploying.status');
+        Route::post('/my/services/{service}/deploying/retry', [App\Http\Controllers\Customer\ServiceController::class, 'retryDeploy'])
+            ->middleware('throttle:10,10')
+            ->name('customer.services.deploying.retry');
         Route::get('/my/services/{service}/wordpress-admin', [App\Http\Controllers\Customer\ServiceController::class, 'wordpressAdminLogin'])
             ->middleware('throttle:10,1')
             ->name('customer.services.wordpress-admin');

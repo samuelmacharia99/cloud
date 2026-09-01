@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Customer;
 
+use App\Enums\ServiceStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\DeployProjectWorkloadRequest;
 use App\Http\Requests\DestroyCustomerProjectRequest;
@@ -9,6 +10,7 @@ use App\Http\Requests\MoveCustomerServiceProjectRequest;
 use App\Http\Requests\RenameCustomerProjectRequest;
 use App\Http\Requests\RenameCustomerServiceRequest;
 use App\Http\Requests\StoreCustomerProjectRequest;
+use App\Jobs\ProvisionContainerServiceJob;
 use App\Models\ContainerTemplate;
 use App\Models\CustomerProject;
 use App\Models\DatabaseTemplate;
@@ -20,10 +22,14 @@ use App\Services\Customer\CustomerServiceCancellationService;
 use App\Services\Customer\CustomerServiceRenewalService;
 use App\Services\Customer\ProjectWorkloadDeployService;
 use App\Services\Hosting\ServicePackageUsageService;
+use App\Services\Provisioning\ContainerDeployProgressService;
 use App\Services\Provisioning\WordPressAdminLoginService;
 use App\Services\ServiceEnforcementInsightService;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
+use Illuminate\View\View;
 
 class ServiceController extends Controller
 {
@@ -238,8 +244,58 @@ class ServiceController extends Controller
         }
 
         return redirect()
-            ->route('customer.projects.show', $project)
-            ->with('success', $service->name.' was added to '.$project->name.' on the existing plan. Extra usage above the plan is billed as overage.');
+            ->route('customer.services.deploying', $service);
+    }
+
+    public function deploying(Service $service, ContainerDeployProgressService $progress): View|RedirectResponse
+    {
+        $this->authorize('view', $service);
+
+        if ($invoice = $service->unpaidActivationInvoice()) {
+            return redirect()->route('customer.payment.select-method', $invoice)
+                ->with('info', 'Complete payment to activate this service.');
+        }
+
+        $payload = $progress->payload($service);
+        if ($payload['is_ready'] && $payload['redirect']) {
+            return redirect()->to($payload['redirect']);
+        }
+
+        return view('customer.services.deploying', [
+            'service' => $service,
+            'progress' => $payload,
+        ]);
+    }
+
+    public function deployingStatus(Service $service, ContainerDeployProgressService $progress): JsonResponse
+    {
+        $this->authorize('view', $service);
+
+        return response()->json($progress->payload($service->fresh()));
+    }
+
+    public function retryDeploy(Service $service): RedirectResponse
+    {
+        $this->authorize('view', $service);
+
+        $status = $service->status instanceof ServiceStatus
+            ? $service->status
+            : ServiceStatus::tryFrom((string) $service->status);
+
+        if ($status === ServiceStatus::Active) {
+            return redirect()->route('customer.services.container.show', $service);
+        }
+
+        if (! in_array($status, [ServiceStatus::Failed, ServiceStatus::Provisioning, ServiceStatus::Pending], true)) {
+            return back()->withErrors(['error' => 'This service cannot be retried in its current state.']);
+        }
+
+        $service->update(['status' => ServiceStatus::Provisioning]);
+        ProvisionContainerServiceJob::dispatchForService((int) $service->id, deferUntilResponse: true);
+
+        return redirect()
+            ->route('customer.services.deploying', $service)
+            ->with('success', 'Deploy restarted. Watch the console for progress.');
     }
 
     public function wordpressAdminLogin(Service $service, WordPressAdminLoginService $loginService)
