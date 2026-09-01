@@ -29,11 +29,14 @@ class ContainerOllamaModelService
     public const CHAT_TIMEOUT_SECONDS = 180;
 
     /**
-     * Hermes Agent rejects models below 64K context. Ollama must raise num_ctx
-     * server-side; /api/show still reports the GGUF max, so Hermes also needs
-     * model.context_length set to this value.
+     * Hermes Agent rejects models below 64K context. Mistral 7B's GGUF max is
+     * 32,768 — a Modelfile cannot raise that. llama3.1:8b is 128K and fits an 8 GB plan.
      */
     public const AGENT_CONTEXT_LENGTH = 65536;
+
+    public const HERMES_MIN_CONTEXT_LENGTH = 64000;
+
+    public const HERMES_BASE_MODEL = 'llama3.1:8b';
 
     public function __construct(
         private ContainerStackCommandService $stackCommands,
@@ -397,6 +400,153 @@ class ContainerOllamaModelService
     public function preloadWithAgentContext(SSHService $ssh, ContainerDeployment $deployment, string $model): void
     {
         $ssh->exec($this->buildPreloadContextCommand($deployment, $model), 180);
+    }
+
+    public function buildShowCommand(ContainerDeployment $deployment, string $model): string
+    {
+        $json = json_encode(['name' => $this->assertModelName($model)], JSON_UNESCAPED_SLASHES);
+        if (! is_string($json) || $json === '') {
+            throw new RuntimeException('Could not encode the Ollama show request.');
+        }
+
+        return $this->buildHostJsonPostCommand($deployment, '/api/show', $json, 15);
+    }
+
+    public function buildPsCommand(ContainerDeployment $deployment): string
+    {
+        $port = $this->publishedPort($deployment);
+
+        return 'curl -fsS --max-time 15 '.escapeshellarg('http://127.0.0.1:'.$port.'/api/ps');
+    }
+
+    public function nativeContextFromShow(string $output): int
+    {
+        $decoded = json_decode(trim($output), true);
+        if (! is_array($decoded)) {
+            return 0;
+        }
+
+        $info = $decoded['model_info'] ?? [];
+        if (! is_array($info)) {
+            return 0;
+        }
+
+        foreach ($info as $key => $value) {
+            if (is_string($key) && str_ends_with($key, '.context_length')) {
+                return max(0, (int) $value);
+            }
+        }
+
+        return 0;
+    }
+
+    public function runtimeContextFromPs(string $output, string $model): int
+    {
+        $decoded = json_decode(trim($output), true);
+        $models = is_array($decoded) ? ($decoded['models'] ?? []) : [];
+        if (! is_array($models)) {
+            return 0;
+        }
+
+        foreach ($models as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $name = trim((string) ($row['name'] ?? $row['model'] ?? ''));
+            if ($name === $model || str_starts_with($name, $model)) {
+                return max(0, (int) ($row['context_length'] ?? 0));
+            }
+        }
+
+        return 0;
+    }
+
+    /**
+     * Pick a model whose GGUF native context is at least 64K. Mistral 7B cannot
+     * be raised with a Modelfile — /api/show still reports 32,768.
+     *
+     * @param  array<string, int>  $nativeContexts  model tag => /api/show context_length
+     */
+    public function selectHermesBaseModel(string $preferred, array $nativeContexts): string
+    {
+        $preferredCtx = max(0, (int) ($nativeContexts[$preferred] ?? 0));
+        if ($preferredCtx >= self::HERMES_MIN_CONTEXT_LENGTH && $this->isValidModelName($preferred)) {
+            return $preferred;
+        }
+
+        $knownGood = (int) ($nativeContexts[self::HERMES_BASE_MODEL] ?? 0);
+        if ($knownGood >= self::HERMES_MIN_CONTEXT_LENGTH) {
+            return self::HERMES_BASE_MODEL;
+        }
+
+        foreach ($nativeContexts as $name => $context) {
+            if (! is_string($name) || ! $this->isValidModelName($name)) {
+                continue;
+            }
+            if (str_ends_with($name, '-hermes')) {
+                continue;
+            }
+            if ((int) $context >= self::HERMES_MIN_CONTEXT_LENGTH) {
+                return $name;
+            }
+        }
+
+        throw new InvalidArgumentException(
+            $this->missingHermesModelMessage($preferred, $preferredCtx)
+        );
+    }
+
+    public function missingHermesModelMessage(string $preferred, int $nativeContext): string
+    {
+        $window = $nativeContext > 0 ? number_format($nativeContext) : 'under 64,000';
+
+        return $preferred.' only has '.$window.' tokens of context. Hermes needs 64,000. '
+            .'Mistral 7B cannot be raised above 32K. On the Ollama service, run `ollama pull llama3.1:8b` in Terminal, '
+            .'wait until the pull finishes, then Connect Ollama again. Open a new Hermes Chat session after that — '
+            .'this session stays on '.$preferred.'.';
+    }
+
+    public function showNativeContext(SSHService $ssh, ContainerDeployment $deployment, string $model): int
+    {
+        try {
+            $output = $ssh->exec($this->buildShowCommand($deployment, $model), 20);
+        } catch (SSHCommandException) {
+            return 0;
+        }
+
+        return $this->nativeContextFromShow($output);
+    }
+
+    public function probeRuntimeContext(SSHService $ssh, ContainerDeployment $deployment, string $model): int
+    {
+        try {
+            $output = $ssh->exec($this->buildPsCommand($deployment), 20);
+        } catch (SSHCommandException) {
+            return 0;
+        }
+
+        return $this->runtimeContextFromPs($output, $model);
+    }
+
+    private function buildHostJsonPostCommand(ContainerDeployment $deployment, string $path, string $json, int $timeout): string
+    {
+        $port = $this->publishedPort($deployment);
+
+        return 'printf %s '.escapeshellarg(base64_encode($json))
+            .' | base64 -d | curl -fsS --max-time '.$timeout
+            .' -X POST '.escapeshellarg('http://127.0.0.1:'.$port.$path)
+            .' -H '.escapeshellarg('Content-Type: application/json')
+            .' -d @-';
+    }
+
+    private function publishedPort(ContainerDeployment $deployment): int
+    {
+        $port = (int) ($deployment->assigned_port ?? 0);
+        if ($port < 1 || $port > 65535) {
+            throw new RuntimeException('Ollama is not reachable: no published port.');
+        }
+
+        return $port;
     }
 
     private function assertModelName(string $name): string

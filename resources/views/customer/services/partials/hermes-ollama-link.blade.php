@@ -4,6 +4,8 @@
         <p class="mt-1 text-sm text-slate-600 dark:text-slate-300">
             Hermes and Ollama are separate containers. Connect them so Hermes uses the model running in Ollama
             over the private Docker network (same host) instead of a cloud API key.
+            Hermes needs 64,000 tokens of context — Mistral 7B maxes out at 32K, so pull
+            <code class="font-mono text-xs">llama3.1:8b</code> on Ollama first if that is all you have.
         </p>
 
         @if (!empty($hermesOllamaLinkPanel['connected']))
@@ -39,7 +41,7 @@
                     method="POST"
                     action="{{ route('customer.services.container.hermes.ollama.connect', $service) }}"
                     class="mt-4 flex flex-col sm:flex-row sm:items-end gap-3"
-                    data-confirm="Hermes will use this Ollama API with a 64K context window. Ollama may restart, then Hermes restarts (brief downtime)."
+                    data-confirm="Hermes needs a 64K-context model. Mistral 7B cannot be used. If llama3.1:8b is not pulled yet, Connect will tell you to pull it first. Ollama may restart, then Hermes restarts (brief downtime). Open a new Chat session after connecting."
                     data-confirm-title="Connect Ollama"
                 >
                     @csrf

@@ -135,13 +135,14 @@ class ContainerHermesOllamaLinkService
             restart: true
         );
 
-        $warning = $this->applyGatewayModelConfig($hermes->fresh(['containerDeployment.node']), $openaiUrl, $resolvedModel);
+        $warning = $this->applyGatewayModelConfig($hermes->fresh(['containerDeployment.node']), $baseUrl, $resolvedModel);
 
         $ollamaName = $ollama->name;
+        $sessionNote = ' Open a new Chat session — existing sessions stay on the old model.';
 
         return [
             'message' => $warning === null
-                ? "Hermes now uses {$ollamaName} ({$resolvedModel}) over the {$via}."
+                ? "Hermes now uses {$ollamaName} ({$resolvedModel}) over the {$via}.".$sessionNote
                 : "Hermes env now points at {$ollamaName}. {$warning}",
             'base_url' => $baseUrl,
             'openai_base_url' => $openaiUrl,
@@ -265,19 +266,22 @@ class ContainerHermesOllamaLinkService
     }
 
     /**
+     * Native Ollama API (no /v1). The OpenAI-compatible shim drops num_ctx, so
+     * Hermes would still see the 32K keep-alive copy of Mistral.
+     *
      * @return list<string>
      */
-    public function buildGatewayConfigCommands(string $containerName, string $openaiBaseUrl, string $model): array
+    public function buildGatewayConfigCommands(string $containerName, string $ollamaBaseUrl, string $model): array
     {
         $this->assertContainerName($containerName);
-        $this->assertHttpUrl($openaiBaseUrl);
+        $this->assertHttpUrl($ollamaBaseUrl);
         $this->assertModelName($model);
 
         $exec = 'docker exec '.escapeshellarg($containerName).' hermes config set ';
 
         return [
-            $exec.escapeshellarg('model.provider').' '.escapeshellarg('custom'),
-            $exec.escapeshellarg('model.base_url').' '.escapeshellarg($openaiBaseUrl),
+            $exec.escapeshellarg('model.provider').' '.escapeshellarg('ollama'),
+            $exec.escapeshellarg('model.base_url').' '.escapeshellarg($ollamaBaseUrl),
             $exec.escapeshellarg('model.default').' '.escapeshellarg($model),
             $exec.escapeshellarg('model.context_length').' '.escapeshellarg((string) ContainerOllamaModelService::AGENT_CONTEXT_LENGTH),
             $exec.escapeshellarg('model.ollama_num_ctx').' '.escapeshellarg((string) ContainerOllamaModelService::AGENT_CONTEXT_LENGTH),
@@ -327,8 +331,8 @@ class ContainerHermesOllamaLinkService
     }
 
     /**
-     * Bake 64K num_ctx into a derived Ollama tag and reload it. Hermes reads
-     * live /api/ps, so a KEEP_ALIVE copy loaded at 32K will still fail.
+     * Hermes reads live /api/ps context_length. Mistral 7B's GGUF max is 32K —
+     * a Modelfile cannot raise that — so we refuse it and require a 64K+ model.
      */
     public function prepareHermesRuntimeModel(Service $ollama, string $model): string
     {
@@ -336,40 +340,77 @@ class ContainerHermesOllamaLinkService
         $deployment = $ollama->containerDeployment;
         $node = $deployment?->node;
         if (! $deployment || ! $node) {
-            return $model;
+            throw new DomainException('Ollama is not deployed yet.');
         }
-
-        $alias = $this->ollamaModels->hermesAliasName($model);
 
         try {
             $ssh = SSHService::forNode($node);
-            $this->ollamaModels->createHermesAlias($ssh, $deployment, $model, $alias);
+            $nativeContexts = $this->probeInstalledNativeContexts($ssh, $deployment, $model);
+            $base = $this->ollamaModels->selectHermesBaseModel($model, $nativeContexts);
+            $alias = $this->ollamaModels->hermesAliasName($base);
+
+            $this->ollamaModels->createHermesAlias($ssh, $deployment, $base, $alias);
             $this->ollamaModels->stopModel($ssh, $deployment, $model);
+            if ($base !== $model) {
+                $this->ollamaModels->stopModel($ssh, $deployment, $base);
+            }
             $this->ollamaModels->stopModel($ssh, $deployment, $alias);
             $this->ollamaModels->preloadWithAgentContext($ssh, $deployment, $alias);
 
+            $runtime = $this->ollamaModels->probeRuntimeContext($ssh, $deployment, $alias);
+            if ($runtime < ContainerOllamaModelService::HERMES_MIN_CONTEXT_LENGTH) {
+                $shown = $runtime > 0 ? number_format($runtime) : 'unknown';
+
+                throw new DomainException(
+                    'Ollama loaded '.$alias.' with '.$shown.' tokens of runtime context. Hermes needs 64,000. '
+                    .'Confirm '.$base.' finished pulling, then Connect Ollama again. Open a new Chat session after that.'
+                );
+            }
+
             return $alias;
+        } catch (DomainException|InvalidArgumentException $e) {
+            throw $e instanceof DomainException
+                ? $e
+                : new DomainException($e->getMessage(), 0, $e);
         } catch (\Throwable $e) {
-            Log::warning('Could not bake a 64K Ollama alias for Hermes; trying a reload of the base model', [
+            Log::warning('Could not load a 64K Ollama model for Hermes', [
                 'service_id' => $ollama->id,
                 'model' => $model,
                 'error' => $e->getMessage(),
             ]);
-        }
 
+            throw new DomainException(
+                'Could not load a 64K model for Hermes: '.$e->getMessage()
+            );
+        }
+    }
+
+    /**
+     * @return array<string, int>
+     */
+    private function probeInstalledNativeContexts(
+        SSHService $ssh,
+        ContainerDeployment $deployment,
+        string $preferred,
+    ): array {
+        $installed = [];
         try {
-            $ssh = SSHService::forNode($node);
-            $this->ollamaModels->stopModel($ssh, $deployment, $model);
-            $this->ollamaModels->preloadWithAgentContext($ssh, $deployment, $model);
-        } catch (\Throwable $e) {
-            Log::warning('Could not reload Ollama with 64K context before Hermes connect', [
-                'service_id' => $ollama->id,
-                'model' => $model,
-                'error' => $e->getMessage(),
-            ]);
+            $installed = $this->ollamaModels->listModels($ssh, $deployment);
+        } catch (\Throwable) {
+            $installed = [];
         }
 
-        return $model;
+        $names = array_values(array_unique(array_filter(
+            array_merge([$preferred, ContainerOllamaModelService::HERMES_BASE_MODEL], $installed),
+            fn ($name) => is_string($name) && $this->ollamaModels->isValidModelName($name)
+        )));
+
+        $contexts = [];
+        foreach ($names as $name) {
+            $contexts[$name] = $this->ollamaModels->showNativeContext($ssh, $deployment, $name);
+        }
+
+        return $contexts;
     }
 
     public function normalizeBaseUrl(string $url): string
@@ -426,21 +467,21 @@ class ContainerHermesOllamaLinkService
         return $this->ollamaModels->defaultModelName($ollama, $deployment, $available);
     }
 
-    private function applyGatewayModelConfig(Service $hermes, string $openaiUrl, string $model): ?string
+    private function applyGatewayModelConfig(Service $hermes, string $ollamaBaseUrl, string $model): ?string
     {
         $deployment = $hermes->containerDeployment;
         $containerName = trim((string) ($deployment?->container_name ?? ''));
         $node = $deployment?->node;
 
         if (! $deployment || ! $node || ! $this->isValidContainerName($containerName)) {
-            return 'Confirm the model provider is Custom in the Hermes dashboard if chat fails.';
+            return 'Confirm the model provider is Ollama in the Hermes dashboard if chat fails.';
         }
 
         try {
             $ssh = SSHService::forNode($node);
             $this->deployments->waitForContainerRunning($ssh, $containerName, 90);
 
-            foreach ($this->buildGatewayConfigCommands($containerName, $openaiUrl, $model) as $command) {
+            foreach ($this->buildGatewayConfigCommands($containerName, $ollamaBaseUrl, $model) as $command) {
                 $ssh->exec($command, 30);
             }
 
@@ -452,7 +493,7 @@ class ContainerHermesOllamaLinkService
                 'error' => $e->getMessage(),
             ]);
 
-            return 'Confirm the model provider is Custom with '.$openaiUrl.' in the Hermes dashboard if chat fails.';
+            return 'Confirm the model provider is Ollama with '.$ollamaBaseUrl.' in the Hermes dashboard if chat fails.';
         }
 
         return null;

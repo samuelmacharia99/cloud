@@ -37,6 +37,7 @@ class ContainerHermesOllamaLinkTest extends TestCase
             ->assertSee('Ollama in this project')
             ->assertSee('Connect Ollama')
             ->assertSee($ollama->name)
+            ->assertSee('llama3.1:8b')
             ->assertSee('private Docker network', false);
     }
 

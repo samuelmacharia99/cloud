@@ -108,6 +108,7 @@ TXT;
 
         $this->assertSame('mistral-hermes', $models->hermesAliasName('mistral:7b'));
         $this->assertSame('ministral-3-hermes', $models->hermesAliasName('ministral-3:8b'));
+        $this->assertSame('llama3-1-hermes', $models->hermesAliasName('llama3.1:8b'));
 
         $create = $models->buildCreateHermesAliasCommand($deployment, 'mistral:7b', 'mistral-hermes');
         $this->assertStringContainsString("docker exec -i 'user-4-service-338-ollama' ollama create 'mistral-hermes' -f -", $create);
@@ -117,6 +118,84 @@ TXT;
         $this->assertStringContainsString('http://127.0.0.1:32101/api/generate', $preload);
         $this->assertStringContainsString(base64_encode('{"model":"mistral-hermes","keep_alive":"24h","options":{"num_ctx":65536}}'), $preload);
         $this->assertStringContainsString("docker exec 'user-4-service-338-ollama' ollama stop 'mistral:7b'", $models->buildStopModelCommand($deployment, 'mistral:7b'));
+    }
+
+    #[Test]
+    public function it_reads_native_context_from_ollama_show(): void
+    {
+        $show = json_encode([
+            'modelfile' => "FROM mistral:7b\nPARAMETER num_ctx 65536\n",
+            'model_info' => [
+                'general.architecture' => 'llama',
+                'llama.context_length' => 32768,
+            ],
+        ]);
+
+        $this->assertSame(32768, $this->service()->nativeContextFromShow($show));
+        $this->assertSame(0, $this->service()->nativeContextFromShow('not-json'));
+    }
+
+    #[Test]
+    public function it_reads_runtime_context_from_ollama_ps(): void
+    {
+        $ps = json_encode([
+            'models' => [
+                ['name' => 'mistral:7b', 'context_length' => 32768],
+                ['name' => 'llama3-1-hermes', 'context_length' => 65536],
+            ],
+        ]);
+
+        $this->assertSame(32768, $this->service()->runtimeContextFromPs($ps, 'mistral:7b'));
+        $this->assertSame(65536, $this->service()->runtimeContextFromPs($ps, 'llama3-1-hermes'));
+        $this->assertSame(0, $this->service()->runtimeContextFromPs($ps, 'missing:tag'));
+    }
+
+    #[Test]
+    public function it_refuses_mistral_7b_when_no_64k_model_is_installed(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('mistral:7b only has 32,768 tokens of context');
+        $this->expectExceptionMessage('ollama pull llama3.1:8b');
+
+        $this->service()->selectHermesBaseModel('mistral:7b', [
+            'mistral:7b' => 32768,
+        ]);
+    }
+
+    #[Test]
+    public function it_selects_llama31_when_preferred_model_is_capped_at_32k(): void
+    {
+        $this->assertSame(
+            'llama3.1:8b',
+            $this->service()->selectHermesBaseModel('mistral:7b', [
+                'mistral:7b' => 32768,
+                'llama3.1:8b' => 131072,
+            ])
+        );
+    }
+
+    #[Test]
+    public function it_keeps_a_preferred_model_that_already_has_64k_context(): void
+    {
+        $this->assertSame(
+            'qwen2.5:7b',
+            $this->service()->selectHermesBaseModel('qwen2.5:7b', [
+                'qwen2.5:7b' => 131072,
+            ])
+        );
+    }
+
+    #[Test]
+    public function it_skips_hermes_aliases_when_selecting_a_64k_base_model(): void
+    {
+        $this->assertSame(
+            'llama3.1:8b',
+            $this->service()->selectHermesBaseModel('mistral:7b', [
+                'mistral:7b' => 32768,
+                'mistral-hermes' => 32768,
+                'llama3.1:8b' => 131072,
+            ])
+        );
     }
 
     private function service(): ContainerOllamaModelService
