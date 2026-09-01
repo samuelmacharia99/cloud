@@ -127,6 +127,7 @@ class ContainerHermesOllamaLinkService
         $via = $this->describeEndpoint($baseUrl);
 
         $this->ensureOllamaAgentContext($ollama);
+        $resolvedModel = $this->prepareHermesRuntimeModel($ollama, $resolvedModel);
 
         $this->environment->updateVariables(
             $hermes,
@@ -279,6 +280,7 @@ class ContainerHermesOllamaLinkService
             $exec.escapeshellarg('model.base_url').' '.escapeshellarg($openaiBaseUrl),
             $exec.escapeshellarg('model.default').' '.escapeshellarg($model),
             $exec.escapeshellarg('model.context_length').' '.escapeshellarg((string) ContainerOllamaModelService::AGENT_CONTEXT_LENGTH),
+            $exec.escapeshellarg('model.ollama_num_ctx').' '.escapeshellarg((string) ContainerOllamaModelService::AGENT_CONTEXT_LENGTH),
         ];
     }
 
@@ -294,9 +296,14 @@ class ContainerHermesOllamaLinkService
 
     public function ollamaNeedsAgentContext(Service $ollama): bool
     {
-        $current = (int) ($ollama->containerDeployment?->env_values['OLLAMA_CONTEXT_LENGTH'] ?? 0);
+        $env = is_array($ollama->containerDeployment?->env_values)
+            ? $ollama->containerDeployment->env_values
+            : [];
+        $context = (int) ($env['OLLAMA_CONTEXT_LENGTH'] ?? 0);
+        $numCtx = (int) ($env['OLLAMA_NUM_CTX'] ?? 0);
+        $floor = ContainerOllamaModelService::AGENT_CONTEXT_LENGTH;
 
-        return $current < ContainerOllamaModelService::AGENT_CONTEXT_LENGTH;
+        return $context < $floor || $numCtx < $floor;
     }
 
     public function ensureOllamaAgentContext(Service $ollama): void
@@ -306,13 +313,63 @@ class ContainerHermesOllamaLinkService
             return;
         }
 
+        $length = (string) ContainerOllamaModelService::AGENT_CONTEXT_LENGTH;
         $this->environment->updateVariables(
             $ollama,
-            ['OLLAMA_CONTEXT_LENGTH' => (string) ContainerOllamaModelService::AGENT_CONTEXT_LENGTH],
+            [
+                'OLLAMA_CONTEXT_LENGTH' => $length,
+                'OLLAMA_NUM_CTX' => $length,
+            ],
             restart: true
         );
         $ollama->unsetRelation('containerDeployment');
         $ollama->load('containerDeployment.node');
+    }
+
+    /**
+     * Bake 64K num_ctx into a derived Ollama tag and reload it. Hermes reads
+     * live /api/ps, so a KEEP_ALIVE copy loaded at 32K will still fail.
+     */
+    public function prepareHermesRuntimeModel(Service $ollama, string $model): string
+    {
+        $ollama->loadMissing('containerDeployment.node');
+        $deployment = $ollama->containerDeployment;
+        $node = $deployment?->node;
+        if (! $deployment || ! $node) {
+            return $model;
+        }
+
+        $alias = $this->ollamaModels->hermesAliasName($model);
+
+        try {
+            $ssh = SSHService::forNode($node);
+            $this->ollamaModels->createHermesAlias($ssh, $deployment, $model, $alias);
+            $this->ollamaModels->stopModel($ssh, $deployment, $model);
+            $this->ollamaModels->stopModel($ssh, $deployment, $alias);
+            $this->ollamaModels->preloadWithAgentContext($ssh, $deployment, $alias);
+
+            return $alias;
+        } catch (\Throwable $e) {
+            Log::warning('Could not bake a 64K Ollama alias for Hermes; trying a reload of the base model', [
+                'service_id' => $ollama->id,
+                'model' => $model,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        try {
+            $ssh = SSHService::forNode($node);
+            $this->ollamaModels->stopModel($ssh, $deployment, $model);
+            $this->ollamaModels->preloadWithAgentContext($ssh, $deployment, $model);
+        } catch (\Throwable $e) {
+            Log::warning('Could not reload Ollama with 64K context before Hermes connect', [
+                'service_id' => $ollama->id,
+                'model' => $model,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return $model;
     }
 
     public function normalizeBaseUrl(string $url): string

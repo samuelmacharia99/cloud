@@ -327,6 +327,78 @@ class ContainerOllamaModelService
         return $name !== '' && preg_match('/^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$/', $name) === 1;
     }
 
+    /**
+     * Derived Ollama tag with PARAMETER num_ctx baked in (Hermes 64K floor).
+     */
+    public function hermesAliasName(string $baseModel): string
+    {
+        $base = strtolower(trim(explode(':', $this->assertModelName($baseModel))[0]));
+        $slug = preg_replace('/[^a-z0-9]+/', '-', $base) ?? 'model';
+        $slug = trim($slug, '-') ?: 'model';
+        $alias = $slug.'-hermes';
+
+        return $this->assertModelName($alias);
+    }
+
+    public function buildStopModelCommand(ContainerDeployment $deployment, string $model): string
+    {
+        return 'docker exec '.escapeshellarg($this->assertContainerName($deployment))
+            .' ollama stop '.escapeshellarg($this->assertModelName($model));
+    }
+
+    public function buildCreateHermesAliasCommand(ContainerDeployment $deployment, string $fromModel, string $alias): string
+    {
+        $from = $this->assertModelName($fromModel);
+        $alias = $this->assertModelName($alias);
+        $modelfile = 'FROM '.$from."\nPARAMETER num_ctx ".self::AGENT_CONTEXT_LENGTH."\n";
+
+        return 'printf %s '.escapeshellarg(base64_encode($modelfile))
+            .' | base64 -d | docker exec -i '.escapeshellarg($this->assertContainerName($deployment))
+            .' ollama create '.escapeshellarg($alias).' -f -';
+    }
+
+    public function buildPreloadContextCommand(ContainerDeployment $deployment, string $model): string
+    {
+        $port = (int) ($deployment->assigned_port ?? 0);
+        if ($port < 1 || $port > 65535) {
+            throw new RuntimeException('Ollama is not reachable: no published port.');
+        }
+
+        $json = json_encode([
+            'model' => $this->assertModelName($model),
+            'keep_alive' => '24h',
+            'options' => ['num_ctx' => self::AGENT_CONTEXT_LENGTH],
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if (! is_string($json) || $json === '') {
+            throw new RuntimeException('Could not encode the Ollama preload request.');
+        }
+
+        return 'printf %s '.escapeshellarg(base64_encode($json))
+            .' | base64 -d | curl -fsS --max-time 180 -X POST '
+            .escapeshellarg('http://127.0.0.1:'.$port.'/api/generate')
+            .' -H '.escapeshellarg('Content-Type: application/json')
+            .' -d @-';
+    }
+
+    public function createHermesAlias(SSHService $ssh, ContainerDeployment $deployment, string $fromModel, string $alias): void
+    {
+        $ssh->exec($this->buildCreateHermesAliasCommand($deployment, $fromModel, $alias), 120);
+    }
+
+    public function stopModel(SSHService $ssh, ContainerDeployment $deployment, string $model): void
+    {
+        try {
+            $ssh->exec($this->buildStopModelCommand($deployment, $model), 30);
+        } catch (SSHCommandException) {
+            // Not loaded.
+        }
+    }
+
+    public function preloadWithAgentContext(SSHService $ssh, ContainerDeployment $deployment, string $model): void
+    {
+        $ssh->exec($this->buildPreloadContextCommand($deployment, $model), 180);
+    }
+
     private function assertModelName(string $name): string
     {
         $model = trim($name);
@@ -335,6 +407,16 @@ class ContainerOllamaModelService
         }
 
         return $model;
+    }
+
+    private function assertContainerName(ContainerDeployment $deployment): string
+    {
+        $container = trim((string) $deployment->container_name);
+        if ($container === '' || preg_match('/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/', $container) !== 1) {
+            throw new InvalidArgumentException('Invalid container name.');
+        }
+
+        return $container;
     }
 
     private function lastJsonObject(string $output): ?string

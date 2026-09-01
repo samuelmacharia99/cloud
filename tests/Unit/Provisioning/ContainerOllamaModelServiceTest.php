@@ -97,6 +97,28 @@ TXT;
         );
     }
 
+    #[Test]
+    public function it_builds_a_hermes_alias_modelfile_with_64k_num_ctx(): void
+    {
+        $deployment = new ContainerDeployment([
+            'container_name' => 'user-4-service-338-ollama',
+            'assigned_port' => 32101,
+        ]);
+        $models = $this->service();
+
+        $this->assertSame('mistral-hermes', $models->hermesAliasName('mistral:7b'));
+        $this->assertSame('ministral-3-hermes', $models->hermesAliasName('ministral-3:8b'));
+
+        $create = $models->buildCreateHermesAliasCommand($deployment, 'mistral:7b', 'mistral-hermes');
+        $this->assertStringContainsString("docker exec -i 'user-4-service-338-ollama' ollama create 'mistral-hermes' -f -", $create);
+        $this->assertStringContainsString(base64_encode("FROM mistral:7b\nPARAMETER num_ctx 65536\n"), $create);
+
+        $preload = $models->buildPreloadContextCommand($deployment, 'mistral-hermes');
+        $this->assertStringContainsString('http://127.0.0.1:32101/api/generate', $preload);
+        $this->assertStringContainsString(base64_encode('{"model":"mistral-hermes","keep_alive":"24h","options":{"num_ctx":65536}}'), $preload);
+        $this->assertStringContainsString("docker exec 'user-4-service-338-ollama' ollama stop 'mistral:7b'", $models->buildStopModelCommand($deployment, 'mistral:7b'));
+    }
+
     private function service(): ContainerOllamaModelService
     {
         return new ContainerOllamaModelService($this->createMock(ContainerStackCommandService::class));

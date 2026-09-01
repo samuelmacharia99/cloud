@@ -533,6 +533,11 @@ class ContainerTemplateEnvironmentService
             'OLLAMA_CONTEXT_LENGTH',
             (string) ContainerOllamaModelService::AGENT_CONTEXT_LENGTH
         );
+        $env['OLLAMA_NUM_CTX'] = $this->filledOr(
+            $env,
+            'OLLAMA_NUM_CTX',
+            (string) ContainerOllamaModelService::AGENT_CONTEXT_LENGTH
+        );
 
         $selectedVersion = is_array($service->service_meta)
             ? ($service->service_meta['selected_version'] ?? null)

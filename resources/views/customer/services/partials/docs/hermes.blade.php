@@ -15,7 +15,7 @@
             <li>On this Overview, choose that Ollama service and click <strong>Connect Ollama</strong>. Ollama may restart to raise context to 64K, then Hermes restarts.</li>
             <li>Same-host containers talk over the private Docker network (<code class="font-mono text-xs">http://&lt;ollama-container&gt;:11434</code>), not localhost — localhost inside Hermes is Hermes itself.</li>
             <li>If Chat shows <strong>connection interrupted (code 1006)</strong>, restart Hermes so the domain proxy can upgrade WebSockets. The first local-model reply can take a minute after connect.</li>
-            <li>Hermes needs at least 64K context. Connect Ollama again after this is deployed so Ollama is restarted with <code class="font-mono text-xs">OLLAMA_CONTEXT_LENGTH=65536</code> and Hermes is told the same window (Mistral’s advertised 32K is too small).</li>
+            <li>Hermes needs 64K runtime context. Connect Ollama again so we create a <code class="font-mono text-xs">mistral-hermes</code> alias with <code class="font-mono text-xs">num_ctx 65536</code>, reload it, and set <code class="font-mono text-xs">model.ollama_num_ctx</code>. A model already loaded at 32K (keep-alive) will still fail until that reload.</li>
         </ol>
     </div>
 
