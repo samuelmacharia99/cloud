@@ -44,6 +44,9 @@
         @case('ollama')
             @include('customer.services.partials.docs.ollama')
             @break
+        @case('hermes')
+            @include('customer.services.partials.docs.hermes')
+            @break
         @case('static-site')
             @include('customer.services.partials.docs.static-site')
             @break

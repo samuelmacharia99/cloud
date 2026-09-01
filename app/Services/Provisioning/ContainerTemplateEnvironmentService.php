@@ -2,6 +2,7 @@
 
 namespace App\Services\Provisioning;
 
+use App\Models\ContainerDeployment;
 use App\Models\Service;
 use Illuminate\Support\Str;
 
@@ -20,7 +21,7 @@ class ContainerTemplateEnvironmentService
         }
 
         if (($template->slug ?? '') === 'hermes') {
-            $env = $this->prepareHermesEnvironment($env);
+            $env = $this->prepareHermesEnvironment($env, $service);
         }
 
         if (($template->slug ?? '') === 'openclaw') {
@@ -253,7 +254,7 @@ class ContainerTemplateEnvironmentService
      * @param  array<string, string>  $env
      * @return array<string, string>
      */
-    private function prepareHermesEnvironment(array $env): array
+    private function prepareHermesEnvironment(array $env, Service $service): array
     {
         $env['HERMES_DASHBOARD'] = $this->filledOr($env, 'HERMES_DASHBOARD', '1');
         $env['HERMES_DASHBOARD_HOST'] = $this->filledOr($env, 'HERMES_DASHBOARD_HOST', '0.0.0.0');
@@ -273,7 +274,48 @@ class ContainerTemplateEnvironmentService
             $env['API_SERVER_KEY'] = Str::random(32);
         }
 
+        $publicUrl = null;
+        if ($service->relationLoaded('containerDeployment')) {
+            $deployment = $service->getRelation('containerDeployment');
+            $accessUrl = $deployment?->getAccessUrl();
+            if (is_string($accessUrl) && $accessUrl !== '') {
+                $publicUrl = rtrim($accessUrl, '/');
+            }
+        }
+
+        if ($publicUrl !== null) {
+            $env['HERMES_DASHBOARD_PUBLIC_URL'] = $this->filledOr(
+                $env,
+                'HERMES_DASHBOARD_PUBLIC_URL',
+                $publicUrl
+            );
+        }
+
         return $env;
+    }
+
+    /**
+     * @return array{
+     *     url: ?string,
+     *     username: string,
+     *     password: string,
+     *     container_running: bool
+     * }|null
+     */
+    public function hermesDashboardPanel(Service $service, ?ContainerDeployment $deployment): ?array
+    {
+        if (($service->effectiveContainerTemplate()?->slug ?? '') !== 'hermes') {
+            return null;
+        }
+
+        $env = is_array($deployment?->env_values) ? $deployment->env_values : [];
+
+        return [
+            'url' => $deployment?->getAccessUrl(),
+            'username' => trim((string) ($env['HERMES_DASHBOARD_BASIC_AUTH_USERNAME'] ?? 'admin')) ?: 'admin',
+            'password' => (string) ($env['HERMES_DASHBOARD_BASIC_AUTH_PASSWORD'] ?? ''),
+            'container_running' => (bool) $deployment?->isRunning(),
+        ];
     }
 
     /**

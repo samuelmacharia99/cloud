@@ -40,6 +40,7 @@ use App\Services\Provisioning\ContainerOllamaModelService;
 use App\Services\Provisioning\ContainerPhpExtensionsService;
 use App\Services\Provisioning\ContainerSslErrorPresenter;
 use App\Services\Provisioning\ContainerStagingService;
+use App\Services\Provisioning\ContainerTemplateEnvironmentService;
 use App\Services\Provisioning\LaravelAppInitializationService;
 use App\Services\Provisioning\NginxProxyService;
 use App\Services\SSH\SSHService;
@@ -118,6 +119,8 @@ class ContainerController extends Controller
                     : ContainerOllamaModelService::modelTag(null),
             ]
             : null;
+        $hermesDashboardPanel = app(ContainerTemplateEnvironmentService::class)
+            ->hermesDashboardPanel($service, $deployment);
         $gitRepositoryService = app(ContainerGitRepositoryService::class);
         $gitCredentialsService = app(ContainerGitCredentialsService::class);
         $supportsGitRepository = $gitRepositoryService->supportsService($service);
@@ -191,6 +194,7 @@ class ContainerController extends Controller
             'phpExtensionsPanel',
             'supportsOllamaChat',
             'ollamaChatPanel',
+            'hermesDashboardPanel',
             'supportsGitRepository',
             'gitRepository',
             'containerLimits',

@@ -338,6 +338,18 @@
                                 </span>
                             @endif
 
+                            @if (!empty($hermesDashboardPanel['url']) && !empty($hermesDashboardPanel['container_running']))
+                                <a
+                                    href="{{ $hermesDashboardPanel['url'] }}"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    class="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-medium transition"
+                                    onclick="window.open(this.href, '_blank'); return false;"
+                                >
+                                    Open dashboard
+                                </a>
+                            @endif
+
                             @if ($service->isWordPressContainer())
                                 <a href="{{ route('customer.services.wordpress-admin', $service) }}" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition">
                                     WP Admin
@@ -352,6 +364,10 @@
                         @include('customer.services.partials.staging')
 
                         @include('customer.services.partials.overview-quick-links')
+
+                        @if (!empty($hermesDashboardPanel))
+                            @include('customer.services.partials.hermes-dashboard')
+                        @endif
 
                         @if (!empty($isLaravelTemplate))
                             @include('customer.services.partials.laravel-setup')
