@@ -23,7 +23,7 @@
         <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-6 space-y-3">
             <h4 class="font-semibold text-slate-900 dark:text-white">LLM keys</h4>
             <ul class="text-sm text-slate-600 dark:text-slate-300 space-y-2">
-                <li>Prefer connecting the project Ollama service on Overview. That sets the Ollama provider (native API, not /v1) automatically.</li>
+                <li>Prefer connecting the project Ollama service on Overview. That sets a custom endpoint at <code class="font-mono text-xs">http://&lt;ollama-container&gt;:11434/v1</code> automatically.</li>
                 <li>Or add <code class="font-mono text-xs">OPENAI_API_KEY</code> / <code class="font-mono text-xs">ANTHROPIC_API_KEY</code> under Environment, then apply.</li>
             </ul>
         </div>

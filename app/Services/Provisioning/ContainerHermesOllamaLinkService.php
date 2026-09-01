@@ -136,7 +136,7 @@ class ContainerHermesOllamaLinkService
             restart: true
         );
 
-        $warning = $this->applyGatewayModelConfig($hermes->fresh(['containerDeployment.node']), $baseUrl, $resolvedModel);
+        $warning = $this->applyGatewayModelConfig($hermes->fresh(['containerDeployment.node']), $openaiUrl, $resolvedModel);
 
         $ollamaName = $ollama->name;
         $sessionNote = ' Open a new Chat session — existing sessions stay on the old model.';
@@ -267,22 +267,23 @@ class ContainerHermesOllamaLinkService
     }
 
     /**
-     * Native Ollama API (no /v1). The OpenAI-compatible shim drops num_ctx, so
-     * Hermes would still see the 32K keep-alive copy of Mistral.
+     * Hermes talks to Ollama through the OpenAI SDK, which appends
+     * /chat/completions. The SDK base_url must already include /v1 or Ollama
+     * returns HTTP 404 "404 page not found".
      *
      * @return list<string>
      */
-    public function buildGatewayConfigCommands(string $containerName, string $ollamaBaseUrl, string $model): array
+    public function buildGatewayConfigCommands(string $containerName, string $openaiBaseUrl, string $model): array
     {
         $this->assertContainerName($containerName);
-        $this->assertHttpUrl($ollamaBaseUrl);
+        $this->assertHttpUrl($openaiBaseUrl);
         $this->assertModelName($model);
 
         $exec = 'docker exec '.escapeshellarg($containerName).' hermes config set ';
 
         return [
-            $exec.escapeshellarg('model.provider').' '.escapeshellarg('ollama'),
-            $exec.escapeshellarg('model.base_url').' '.escapeshellarg($ollamaBaseUrl),
+            $exec.escapeshellarg('model.provider').' '.escapeshellarg('custom'),
+            $exec.escapeshellarg('model.base_url').' '.escapeshellarg($openaiBaseUrl),
             $exec.escapeshellarg('model.default').' '.escapeshellarg($model),
             $exec.escapeshellarg('model.context_length').' '.escapeshellarg((string) ContainerOllamaModelService::AGENT_CONTEXT_LENGTH),
             $exec.escapeshellarg('model.ollama_num_ctx').' '.escapeshellarg((string) ContainerOllamaModelService::AGENT_CONTEXT_LENGTH),
@@ -477,21 +478,21 @@ class ContainerHermesOllamaLinkService
         return $this->ollamaModels->defaultModelName($ollama, $deployment, $available);
     }
 
-    private function applyGatewayModelConfig(Service $hermes, string $ollamaBaseUrl, string $model): ?string
+    private function applyGatewayModelConfig(Service $hermes, string $openaiUrl, string $model): ?string
     {
         $deployment = $hermes->containerDeployment;
         $containerName = trim((string) ($deployment?->container_name ?? ''));
         $node = $deployment?->node;
 
         if (! $deployment || ! $node || ! $this->isValidContainerName($containerName)) {
-            return 'Confirm the model provider is Ollama in the Hermes dashboard if chat fails.';
+            return 'Confirm the model provider is Custom with '.$openaiUrl.' in the Hermes dashboard if chat fails.';
         }
 
         try {
             $ssh = SSHService::forNode($node);
             $this->deployments->waitForContainerRunning($ssh, $containerName, 90);
 
-            foreach ($this->buildGatewayConfigCommands($containerName, $ollamaBaseUrl, $model) as $command) {
+            foreach ($this->buildGatewayConfigCommands($containerName, $openaiUrl, $model) as $command) {
                 $ssh->exec($command, 30);
             }
 
@@ -503,7 +504,7 @@ class ContainerHermesOllamaLinkService
                 'error' => $e->getMessage(),
             ]);
 
-            return 'Confirm the model provider is Ollama with '.$ollamaBaseUrl.' in the Hermes dashboard if chat fails.';
+            return 'Confirm the model provider is Custom with '.$openaiUrl.' in the Hermes dashboard if chat fails.';
         }
 
         return null;
