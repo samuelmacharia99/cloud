@@ -270,6 +270,8 @@ class ContainerHermesOllamaLinkService
      * Hermes talks to Ollama through the OpenAI SDK, which appends
      * /chat/completions. The SDK base_url must already include /v1 or Ollama
      * returns HTTP 404 "404 page not found".
+     * llama3.1:8b has no thinking capability; Hermes still sends reasoning_effort
+     * unless we set it to none (HTTP 400 "does not support thinking").
      *
      * @return list<string>
      */
@@ -287,6 +289,7 @@ class ContainerHermesOllamaLinkService
             $exec.escapeshellarg('model.default').' '.escapeshellarg($model),
             $exec.escapeshellarg('model.context_length').' '.escapeshellarg((string) ContainerOllamaModelService::AGENT_CONTEXT_LENGTH),
             $exec.escapeshellarg('model.ollama_num_ctx').' '.escapeshellarg((string) ContainerOllamaModelService::AGENT_CONTEXT_LENGTH),
+            $exec.escapeshellarg('agent.reasoning_effort').' '.escapeshellarg('none'),
         ];
     }
 

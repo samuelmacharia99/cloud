@@ -99,13 +99,14 @@ class ContainerHermesOllamaLinkServiceTest extends TestCase
             'llama3.1:8b'
         );
 
-        $this->assertCount(5, $commands);
+        $this->assertCount(6, $commands);
         $this->assertStringContainsString("docker exec 'user-4-service-339-hermes' hermes config set", $commands[0]);
         $this->assertStringContainsString("'model.provider' 'custom'", $commands[0]);
         $this->assertStringContainsString("'model.base_url' 'http://user-4-service-338-ollama:11434/v1'", $commands[1]);
         $this->assertStringContainsString("'model.default' 'llama3.1:8b'", $commands[2]);
         $this->assertStringContainsString("'model.context_length' '65536'", $commands[3]);
         $this->assertStringContainsString("'model.ollama_num_ctx' '65536'", $commands[4]);
+        $this->assertStringContainsString("'agent.reasoning_effort' 'none'", $commands[5]);
     }
 
     #[Test]
