@@ -354,10 +354,12 @@ class ContainerOllamaModelService
         $from = $this->assertModelName($fromModel);
         $alias = $this->assertModelName($alias);
         $modelfile = 'FROM '.$from."\nPARAMETER num_ctx ".self::AGENT_CONTEXT_LENGTH."\n";
+        $inside = 'printf %s '.escapeshellarg(base64_encode($modelfile))
+            .' | base64 -d > /tmp/talksasa-hermes.Modelfile'
+            .' && ollama create '.escapeshellarg($alias).' -f /tmp/talksasa-hermes.Modelfile';
 
-        return 'printf %s '.escapeshellarg(base64_encode($modelfile))
-            .' | base64 -d | docker exec -i '.escapeshellarg($this->assertContainerName($deployment))
-            .' ollama create '.escapeshellarg($alias).' -f -';
+        return 'docker exec '.escapeshellarg($this->assertContainerName($deployment))
+            .' sh -c '.escapeshellarg($inside);
     }
 
     public function buildPreloadContextCommand(ContainerDeployment $deployment, string $model): string

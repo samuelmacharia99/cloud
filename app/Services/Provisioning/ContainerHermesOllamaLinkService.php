@@ -2,6 +2,7 @@
 
 namespace App\Services\Provisioning;
 
+use App\Exceptions\SSH\SSHCommandException;
 use App\Models\ContainerDeployment;
 use App\Models\Service;
 use App\Services\SSH\SSHService;
@@ -333,6 +334,8 @@ class ContainerHermesOllamaLinkService
     /**
      * Hermes reads live /api/ps context_length. Mistral 7B's GGUF max is 32K —
      * a Modelfile cannot raise that — so we refuse it and require a 64K+ model.
+     * Models that already have 64K+ are used as-is: a derived alias is unnecessary
+     * and `ollama create -f -` fails over SSH (empty stdin).
      */
     public function prepareHermesRuntimeModel(Service $ollama, string $model): string
     {
@@ -347,31 +350,38 @@ class ContainerHermesOllamaLinkService
             $ssh = SSHService::forNode($node);
             $nativeContexts = $this->probeInstalledNativeContexts($ssh, $deployment, $model);
             $base = $this->ollamaModels->selectHermesBaseModel($model, $nativeContexts);
-            $alias = $this->ollamaModels->hermesAliasName($base);
 
-            $this->ollamaModels->createHermesAlias($ssh, $deployment, $base, $alias);
             $this->ollamaModels->stopModel($ssh, $deployment, $model);
             if ($base !== $model) {
                 $this->ollamaModels->stopModel($ssh, $deployment, $base);
             }
-            $this->ollamaModels->stopModel($ssh, $deployment, $alias);
-            $this->ollamaModels->preloadWithAgentContext($ssh, $deployment, $alias);
+            $this->ollamaModels->preloadWithAgentContext($ssh, $deployment, $base);
 
-            $runtime = $this->ollamaModels->probeRuntimeContext($ssh, $deployment, $alias);
+            $runtime = $this->ollamaModels->probeRuntimeContext($ssh, $deployment, $base);
             if ($runtime < ContainerOllamaModelService::HERMES_MIN_CONTEXT_LENGTH) {
                 $shown = $runtime > 0 ? number_format($runtime) : 'unknown';
 
                 throw new DomainException(
-                    'Ollama loaded '.$alias.' with '.$shown.' tokens of runtime context. Hermes needs 64,000. '
-                    .'Confirm '.$base.' finished pulling, then Connect Ollama again. Open a new Chat session after that.'
+                    'Ollama loaded '.$base.' with '.$shown.' tokens of runtime context. Hermes needs 64,000. '
+                    .'Wait a minute for '.$base.' to finish loading, then Connect Ollama again. Open a new Chat session after that.'
                 );
             }
 
-            return $alias;
+            return $base;
         } catch (DomainException|InvalidArgumentException $e) {
             throw $e instanceof DomainException
                 ? $e
                 : new DomainException($e->getMessage(), 0, $e);
+        } catch (SSHCommandException $e) {
+            Log::warning('Could not load a 64K Ollama model for Hermes', [
+                'service_id' => $ollama->id,
+                'model' => $model,
+                'error' => $e->getMessage(),
+            ]);
+
+            throw new DomainException(
+                'Could not load a 64K model for Hermes. Confirm `ollama list` shows llama3.1:8b on the Ollama service, then Connect again.'
+            );
         } catch (\Throwable $e) {
             Log::warning('Could not load a 64K Ollama model for Hermes', [
                 'service_id' => $ollama->id,
@@ -380,7 +390,7 @@ class ContainerHermesOllamaLinkService
             ]);
 
             throw new DomainException(
-                'Could not load a 64K model for Hermes: '.$e->getMessage()
+                'Could not load a 64K model for Hermes. Confirm `ollama list` shows llama3.1:8b on the Ollama service, then Connect again.'
             );
         }
     }

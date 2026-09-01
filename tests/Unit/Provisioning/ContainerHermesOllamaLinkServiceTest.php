@@ -96,7 +96,7 @@ class ContainerHermesOllamaLinkServiceTest extends TestCase
         $commands = $this->service()->buildGatewayConfigCommands(
             'user-4-service-339-hermes',
             'http://user-4-service-338-ollama:11434',
-            'llama3-1-hermes'
+            'llama3.1:8b'
         );
 
         $this->assertCount(5, $commands);
@@ -104,7 +104,7 @@ class ContainerHermesOllamaLinkServiceTest extends TestCase
         $this->assertStringContainsString("'model.provider' 'ollama'", $commands[0]);
         $this->assertStringContainsString("'model.base_url' 'http://user-4-service-338-ollama:11434'", $commands[1]);
         $this->assertStringNotContainsString('/v1', $commands[1]);
-        $this->assertStringContainsString("'model.default' 'llama3-1-hermes'", $commands[2]);
+        $this->assertStringContainsString("'model.default' 'llama3.1:8b'", $commands[2]);
         $this->assertStringContainsString("'model.context_length' '65536'", $commands[3]);
         $this->assertStringContainsString("'model.ollama_num_ctx' '65536'", $commands[4]);
     }

@@ -15,7 +15,7 @@
             <li>On this Overview, choose that Ollama service and click <strong>Connect Ollama</strong>. Ollama may restart to raise context to 64K, then Hermes restarts.</li>
             <li>Same-host containers talk over the private Docker network (<code class="font-mono text-xs">http://&lt;ollama-container&gt;:11434</code>), not localhost — localhost inside Hermes is Hermes itself.</li>
             <li>If Chat shows <strong>connection interrupted (code 1006)</strong>, restart Hermes so the domain proxy can upgrade WebSockets. The first local-model reply can take a minute after connect.</li>
-            <li>After Connect, start a <strong>new</strong> Chat session. The old session stays on <code class="font-mono text-xs">mistral:7b</code> and will keep failing the 64K check. The status bar should show the Hermes alias (for example <code class="font-mono text-xs">llama3-1-hermes</code>), not <code class="font-mono text-xs">mistral:7b</code>.</li>
+            <li>After Connect, start a <strong>new</strong> Chat session. The old session stays on <code class="font-mono text-xs">mistral:7b</code> and will keep failing the 64K check. The status bar should show <code class="font-mono text-xs">llama3.1:8b</code>, not <code class="font-mono text-xs">mistral:7b</code>.</li>
         </ol>
     </div>
 

@@ -111,7 +111,9 @@ TXT;
         $this->assertSame('llama3-1-hermes', $models->hermesAliasName('llama3.1:8b'));
 
         $create = $models->buildCreateHermesAliasCommand($deployment, 'mistral:7b', 'mistral-hermes');
-        $this->assertStringContainsString("docker exec -i 'user-4-service-338-ollama' ollama create 'mistral-hermes' -f -", $create);
+        $this->assertStringContainsString("docker exec 'user-4-service-338-ollama' sh -c", $create);
+        $this->assertStringNotContainsString('docker exec -i', $create);
+        $this->assertStringContainsString('-f /tmp/talksasa-hermes.Modelfile', $create);
         $this->assertStringContainsString(base64_encode("FROM mistral:7b\nPARAMETER num_ctx 65536\n"), $create);
 
         $preload = $models->buildPreloadContextCommand($deployment, 'mistral-hermes');
