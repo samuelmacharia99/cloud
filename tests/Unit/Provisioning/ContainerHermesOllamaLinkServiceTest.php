@@ -99,11 +99,27 @@ class ContainerHermesOllamaLinkServiceTest extends TestCase
             'mistral:latest'
         );
 
-        $this->assertCount(3, $commands);
+        $this->assertCount(4, $commands);
         $this->assertStringContainsString("docker exec 'user-4-service-339-hermes' hermes config set", $commands[0]);
         $this->assertStringContainsString("'model.provider' 'custom'", $commands[0]);
         $this->assertStringContainsString("'model.base_url' 'http://user-4-service-338-ollama:11434/v1'", $commands[1]);
         $this->assertStringContainsString("'model.default' 'mistral:latest'", $commands[2]);
+        $this->assertStringContainsString("'model.context_length' '65536'", $commands[3]);
+    }
+
+    #[Test]
+    public function it_flags_ollama_when_context_is_below_the_hermes_minimum(): void
+    {
+        [, $ollama] = $this->makePairedServices();
+
+        $this->assertTrue($this->service()->ollamaNeedsAgentContext($ollama));
+
+        $ollama->containerDeployment->env_values = array_merge(
+            $ollama->containerDeployment->env_values ?? [],
+            ['OLLAMA_CONTEXT_LENGTH' => '65536']
+        );
+
+        $this->assertFalse($this->service()->ollamaNeedsAgentContext($ollama));
     }
 
     #[Test]

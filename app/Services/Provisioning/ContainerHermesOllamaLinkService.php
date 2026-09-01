@@ -126,6 +126,8 @@ class ContainerHermesOllamaLinkService
         $resolvedModel = $this->resolveModel($ollama, $model);
         $via = $this->describeEndpoint($baseUrl);
 
+        $this->ensureOllamaAgentContext($ollama);
+
         $this->environment->updateVariables(
             $hermes,
             $this->buildLinkEnvironment($hermes, $ollama, $baseUrl, $openaiUrl, $resolvedModel),
@@ -276,6 +278,7 @@ class ContainerHermesOllamaLinkService
             $exec.escapeshellarg('model.provider').' '.escapeshellarg('custom'),
             $exec.escapeshellarg('model.base_url').' '.escapeshellarg($openaiBaseUrl),
             $exec.escapeshellarg('model.default').' '.escapeshellarg($model),
+            $exec.escapeshellarg('model.context_length').' '.escapeshellarg((string) ContainerOllamaModelService::AGENT_CONTEXT_LENGTH),
         ];
     }
 
@@ -287,6 +290,29 @@ class ContainerHermesOllamaLinkService
     public function isOllamaService(Service $service): bool
     {
         return $this->ollamaModels->supportsService($service);
+    }
+
+    public function ollamaNeedsAgentContext(Service $ollama): bool
+    {
+        $current = (int) ($ollama->containerDeployment?->env_values['OLLAMA_CONTEXT_LENGTH'] ?? 0);
+
+        return $current < ContainerOllamaModelService::AGENT_CONTEXT_LENGTH;
+    }
+
+    public function ensureOllamaAgentContext(Service $ollama): void
+    {
+        $ollama->loadMissing('containerDeployment');
+        if (! $this->ollamaNeedsAgentContext($ollama)) {
+            return;
+        }
+
+        $this->environment->updateVariables(
+            $ollama,
+            ['OLLAMA_CONTEXT_LENGTH' => (string) ContainerOllamaModelService::AGENT_CONTEXT_LENGTH],
+            restart: true
+        );
+        $ollama->unsetRelation('containerDeployment');
+        $ollama->load('containerDeployment.node');
     }
 
     public function normalizeBaseUrl(string $url): string

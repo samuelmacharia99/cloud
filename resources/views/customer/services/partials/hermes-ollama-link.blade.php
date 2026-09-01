@@ -39,7 +39,7 @@
                     method="POST"
                     action="{{ route('customer.services.container.hermes.ollama.connect', $service) }}"
                     class="mt-4 flex flex-col sm:flex-row sm:items-end gap-3"
-                    data-confirm="Hermes will use this Ollama API. The Hermes stack restarts once (brief downtime)."
+                    data-confirm="Hermes will use this Ollama API with a 64K context window. Ollama may restart, then Hermes restarts (brief downtime)."
                     data-confirm-title="Connect Ollama"
                 >
                     @csrf

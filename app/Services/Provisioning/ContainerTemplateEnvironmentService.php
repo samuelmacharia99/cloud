@@ -528,6 +528,11 @@ class ContainerTemplateEnvironmentService
     {
         $env['OLLAMA_HOST'] = $this->filledOr($env, 'OLLAMA_HOST', '0.0.0.0:11434');
         $env['OLLAMA_KEEP_ALIVE'] = $this->filledOr($env, 'OLLAMA_KEEP_ALIVE', '24h');
+        $env['OLLAMA_CONTEXT_LENGTH'] = $this->filledOr(
+            $env,
+            'OLLAMA_CONTEXT_LENGTH',
+            (string) ContainerOllamaModelService::AGENT_CONTEXT_LENGTH
+        );
 
         $selectedVersion = is_array($service->service_meta)
             ? ($service->service_meta['selected_version'] ?? null)

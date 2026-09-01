@@ -28,6 +28,13 @@ class ContainerOllamaModelService
 
     public const CHAT_TIMEOUT_SECONDS = 180;
 
+    /**
+     * Hermes Agent rejects models below 64K context. Ollama must raise num_ctx
+     * server-side; /api/show still reports the GGUF max, so Hermes also needs
+     * model.context_length set to this value.
+     */
+    public const AGENT_CONTEXT_LENGTH = 65536;
+
     public function __construct(
         private ContainerStackCommandService $stackCommands,
     ) {}

@@ -223,6 +223,7 @@ class ContainerTemplateEnvironmentServiceTest extends TestCase
         );
         $this->assertSame('0.0.0.0:11434', $seven['OLLAMA_HOST']);
         $this->assertSame('mistral:7b', $seven['OLLAMA_MODEL']);
+        $this->assertSame('65536', $seven['OLLAMA_CONTEXT_LENGTH']);
 
         $eight = $service->prepare(
             (object) ['slug' => 'ollama', 'environment_variables' => []],
