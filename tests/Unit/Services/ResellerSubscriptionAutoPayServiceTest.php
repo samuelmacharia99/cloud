@@ -33,6 +33,7 @@ class ResellerSubscriptionAutoPayServiceTest extends TestCase
 
         $this->mock(NotificationService::class, function ($mock) {
             $mock->shouldReceive('notifyPaymentReceived')->andReturnNull();
+            $mock->shouldReceive('notifyResellerSubscriptionInvoice')->andReturnNull();
         });
 
         $this->mock(ResellerEnforcementService::class, function ($mock) {

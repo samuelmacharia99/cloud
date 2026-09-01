@@ -4,10 +4,13 @@ namespace Tests\Feature;
 
 use App\Models\CronJob;
 use App\Models\Invoice;
+use App\Models\Payment;
 use App\Models\ResellerPackage;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\ResellerInvoicePaymentService;
 use App\Services\ResellerPackageSubscriptionService;
+use App\Services\ResellerWalletService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -165,9 +168,10 @@ class ResellerPackageSubscriptionTest extends TestCase
         ]);
     }
 
-    public function test_unpaid_upgrade_invoice_does_not_block_renewal_invoice_generation(): void
+    public function test_unpaid_upgrade_invoice_blocks_renewal_invoice_generation(): void
     {
         Setting::setValue('reseller_package_invoice_advance_days', '10');
+        Setting::setValue('reseller_auto_pay_subscription_from_wallet', 'false');
 
         $starter = $this->createPackage(['name' => 'Starter', 'price' => 5300]);
         $pro = $this->createPackage(['name' => 'Pro', 'price' => 10600]);
@@ -183,14 +187,11 @@ class ResellerPackageSubscriptionTest extends TestCase
 
         $this->artisan('cron:generate-reseller-invoices')->assertSuccessful();
 
-        $renewalInvoice = Invoice::query()
+        $this->assertSame(0, Invoice::query()
             ->where('user_id', $reseller->id)
             ->where('type', 'reseller_subscription')
             ->where('notes', 'like', '%Renewal%')
-            ->first();
-
-        $this->assertNotNull($renewalInvoice);
-        $this->assertSame('unpaid', $renewalInvoice->status->value);
+            ->count());
     }
 
     public function test_admin_can_generate_renewal_invoice_manually(): void
@@ -328,5 +329,187 @@ class ResellerPackageSubscriptionTest extends TestCase
 
         $expectedSubtotal = round((100000 - 50000) * (182 / 365), 2);
         $this->assertSame($expectedSubtotal, (float) $invoice->subtotal);
+    }
+
+    public function test_upgrade_cancels_open_renewal_and_leaves_paid_history(): void
+    {
+        Setting::setValue('tax_enabled', 'false');
+        Setting::setValue('reseller_auto_pay_subscription_from_wallet', 'false');
+
+        $starter = $this->createPackage(['name' => 'Starter', 'price' => 5300]);
+        $pro = $this->createPackage(['name' => 'Pro', 'price' => 10600]);
+        $reseller = $this->createReseller();
+        $service = app(ResellerPackageSubscriptionService::class);
+
+        $service->activateSubscription($reseller, $starter);
+        $reseller->update(['package_expires_at' => now()->addDays(8)->startOfDay()]);
+        $reseller->refresh();
+
+        $paidRenewal = $service->createSubscriptionInvoice($reseller, $starter, renewal: true);
+        $paidRenewal->update(['status' => 'paid', 'paid_date' => now()->subMonth()]);
+
+        $openRenewal = $service->createSubscriptionInvoice($reseller, $starter, renewal: true);
+        $unrelated = Invoice::factory()->create([
+            'user_id' => $reseller->id,
+            'type' => 'domain_renewal',
+            'status' => 'unpaid',
+            'subtotal' => 1500,
+            'tax' => 0,
+            'total' => 1500,
+        ]);
+
+        $upgrade = $service->createSubscriptionInvoice($reseller, $pro);
+
+        $this->assertSame('cancelled', $openRenewal->fresh()->status->value);
+        $this->assertStringContainsString($upgrade->invoice_number, $openRenewal->fresh()->notes ?? '');
+        $this->assertSame('paid', $paidRenewal->fresh()->status->value);
+        $this->assertSame('unpaid', $unrelated->fresh()->status->value);
+        $this->assertSame('unpaid', $upgrade->status->value);
+    }
+
+    public function test_upgrade_refunds_wallet_hold_on_cancelled_renewal(): void
+    {
+        Setting::setValue('tax_enabled', 'false');
+        Setting::setValue('reseller_auto_pay_subscription_from_wallet', 'false');
+
+        $starter = $this->createPackage(['name' => 'Starter', 'price' => 5300]);
+        $pro = $this->createPackage(['name' => 'Pro', 'price' => 10600]);
+        $reseller = $this->createReseller();
+        $service = app(ResellerPackageSubscriptionService::class);
+
+        $service->activateSubscription($reseller, $starter);
+        $reseller->update(['package_expires_at' => now()->addDays(15)->startOfDay()]);
+        $reseller->refresh();
+
+        $renewal = $service->createSubscriptionInvoice($reseller, $starter, renewal: true);
+        app(ResellerWalletService::class)->getOrCreate($reseller)->update(['balance' => 2000]);
+        app(ResellerInvoicePaymentService::class)->applyWallet($renewal, $reseller, true);
+
+        $this->assertSame(2000.0, (float) $renewal->fresh()->wallet_amount_applied);
+        $this->assertSame(0.0, (float) $reseller->fresh()->wallet->balance);
+
+        $service->createSubscriptionInvoice($reseller, $pro);
+
+        $this->assertSame('cancelled', $renewal->fresh()->status->value);
+        $this->assertSame(0.0, (float) $renewal->fresh()->wallet_amount_applied);
+        $this->assertSame(2000.0, (float) $reseller->fresh()->wallet->balance);
+    }
+
+    public function test_upgrade_does_not_cancel_invoice_with_completed_payment(): void
+    {
+        Setting::setValue('tax_enabled', 'false');
+        Setting::setValue('reseller_auto_pay_subscription_from_wallet', 'false');
+
+        $starter = $this->createPackage(['name' => 'Starter', 'price' => 5300]);
+        $pro = $this->createPackage(['name' => 'Pro', 'price' => 10600]);
+        $reseller = $this->createReseller();
+        $service = app(ResellerPackageSubscriptionService::class);
+
+        $service->activateSubscription($reseller, $starter);
+        $reseller->update(['package_expires_at' => now()->addDays(8)->startOfDay()]);
+        $reseller->refresh();
+
+        $renewal = $service->createSubscriptionInvoice($reseller, $starter, renewal: true);
+        Payment::factory()->create([
+            'user_id' => $reseller->id,
+            'invoice_id' => $renewal->id,
+            'amount' => 1000,
+            'status' => 'completed',
+            'payment_method' => 'mpesa',
+        ]);
+
+        $service->createSubscriptionInvoice($reseller, $pro);
+
+        $this->assertSame('unpaid', $renewal->fresh()->status->value);
+    }
+
+    public function test_paid_upgrade_in_renewal_window_issues_new_package_renewal(): void
+    {
+        Setting::setValue('tax_enabled', 'false');
+        Setting::setValue('reseller_auto_pay_subscription_from_wallet', 'false');
+        Setting::setValue('reseller_package_invoice_advance_days', '10');
+
+        $starter = $this->createPackage(['name' => 'Starter', 'price' => 5300]);
+        $pro = $this->createPackage(['name' => 'Pro', 'price' => 10600]);
+        $reseller = $this->createReseller();
+        $service = app(ResellerPackageSubscriptionService::class);
+
+        $service->activateSubscription($reseller, $starter);
+        $reseller->update(['package_expires_at' => now()->addDays(5)->startOfDay()]);
+        $reseller->refresh();
+
+        $oldRenewal = $service->createSubscriptionInvoice($reseller, $starter, renewal: true);
+        $upgrade = $service->createSubscriptionInvoice($reseller, $pro);
+
+        $this->assertSame('cancelled', $oldRenewal->fresh()->status->value);
+
+        $upgrade->update(['status' => 'paid', 'paid_date' => now()]);
+        $service->activateFromPaidInvoice($upgrade->fresh());
+
+        $newRenewal = Invoice::query()
+            ->where('user_id', $reseller->id)
+            ->where('type', 'reseller_subscription')
+            ->where('notes', 'like', '%Renewal%')
+            ->where('status', 'unpaid')
+            ->latest('id')
+            ->first();
+
+        $this->assertNotNull($newRenewal);
+        $this->assertNotSame($oldRenewal->id, $newRenewal->id);
+        $this->assertStringContainsString('Pro', $newRenewal->items()->first()?->description ?? '');
+        $this->assertSame(10600.0, (float) $newRenewal->subtotal);
+        $this->assertSame($pro->id, $reseller->fresh()->reseller_package_id);
+    }
+
+    public function test_admin_upgrade_cancels_open_package_invoice(): void
+    {
+        Setting::setValue('tax_enabled', 'false');
+        Setting::setValue('reseller_auto_pay_subscription_from_wallet', 'false');
+
+        $starter = $this->createPackage(['name' => 'Starter', 'price' => 5300]);
+        $pro = $this->createPackage(['name' => 'Pro', 'price' => 10600]);
+        $admin = User::factory()->admin()->create();
+        $reseller = User::factory()->reseller()->create();
+        $service = app(ResellerPackageSubscriptionService::class);
+
+        $service->activateSubscription($reseller, $starter);
+        $reseller->update(['package_expires_at' => now()->addDays(8)->startOfDay()]);
+        $reseller->refresh();
+
+        $renewal = $service->createSubscriptionInvoice($reseller, $starter, renewal: true);
+
+        $response = $this->actingAs($admin)->post(route('admin.resellers.upgrade-package', $reseller), [
+            'reseller_package_id' => $pro->id,
+        ]);
+
+        $response->assertRedirect(route('admin.resellers.show', $reseller));
+        $this->assertSame('cancelled', $renewal->fresh()->status->value);
+        $this->assertSame($starter->id, $reseller->fresh()->reseller_package_id);
+    }
+
+    public function test_admin_generate_renewal_refuses_when_upgrade_is_unpaid(): void
+    {
+        Setting::setValue('reseller_auto_pay_subscription_from_wallet', 'false');
+
+        $starter = $this->createPackage(['name' => 'Starter', 'price' => 5300]);
+        $pro = $this->createPackage(['name' => 'Pro', 'price' => 10600]);
+        $admin = User::factory()->admin()->create();
+        $reseller = $this->createReseller();
+        $service = app(ResellerPackageSubscriptionService::class);
+
+        $service->activateSubscription($reseller, $starter);
+        $reseller->update(['package_expires_at' => now()->addDays(3)->startOfDay()]);
+        $reseller->refresh();
+
+        $service->createSubscriptionInvoice($reseller, $pro);
+
+        $response = $this->actingAs($admin)->post(route('admin.resellers.generate-renewal-invoice', $reseller));
+
+        $response->assertRedirect(route('admin.resellers.show', $reseller));
+        $response->assertSessionHas('error');
+        $this->assertSame(0, Invoice::query()
+            ->where('user_id', $reseller->id)
+            ->where('notes', 'like', '%Renewal%')
+            ->count());
     }
 }

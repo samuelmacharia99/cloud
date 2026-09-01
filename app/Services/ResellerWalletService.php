@@ -107,6 +107,46 @@ class ResellerWalletService
         });
     }
 
+    public function creditInvoiceRefund(User $reseller, float $amount, string $description, int $invoiceId): WalletTransaction
+    {
+        if ($amount <= 0) {
+            throw new \InvalidArgumentException('Refund amount must be greater than zero.');
+        }
+
+        return $this->db->transaction(function () use ($reseller, $amount, $description, $invoiceId) {
+            $existing = WalletTransaction::query()
+                ->where('reference_id', $invoiceId)
+                ->where('reference_type', 'Invoice')
+                ->where('type', 'refund')
+                ->where('status', 'completed')
+                ->first();
+
+            if ($existing) {
+                return $existing;
+            }
+
+            $wallet = $this->getOrCreate($reseller);
+            $wallet = ResellerWallet::where('id', $wallet->id)->lockForUpdate()->firstOrFail();
+
+            $balanceBefore = (float) $wallet->balance;
+            $balanceAfter = $balanceBefore + $amount;
+
+            $wallet->update(['balance' => $balanceAfter]);
+
+            return WalletTransaction::create([
+                'wallet_id' => $wallet->id,
+                'type' => 'refund',
+                'amount' => $amount,
+                'balance_before' => $balanceBefore,
+                'balance_after' => $balanceAfter,
+                'description' => $description,
+                'reference_id' => $invoiceId,
+                'reference_type' => 'Invoice',
+                'status' => 'completed',
+            ]);
+        });
+    }
+
     public function refund(User $reseller, float $amount, string $description, int $domainOrderId): WalletTransaction
     {
         return $this->db->transaction(function () use ($reseller, $amount, $description, $domainOrderId) {

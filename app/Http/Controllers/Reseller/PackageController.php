@@ -136,13 +136,15 @@ class PackageController extends Controller
         }
 
         $existingInvoice = $this->subscriptions->pendingSubscriptionInvoice($user, $package);
+        $invoice = $existingInvoice
+            ? $this->subscriptions->issueOrReuseSubscriptionInvoice($user, $package)
+            : $this->subscriptions->createSubscriptionInvoice($user, $package);
+
         if ($existingInvoice) {
             return redirect()
-                ->route('reseller.payment.select-method', $existingInvoice)
-                ->with('info', 'Complete payment for invoice #'.$existingInvoice->invoice_number.' to activate this plan.');
+                ->route('reseller.payment.select-method', $invoice)
+                ->with('info', 'Complete payment for invoice #'.$invoice->invoice_number.' to activate this plan.');
         }
-
-        $invoice = $this->subscriptions->createSubscriptionInvoice($user, $package);
 
         return redirect()
             ->route('reseller.payment.select-method', $invoice)

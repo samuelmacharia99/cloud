@@ -121,6 +121,7 @@ class ResellerController extends Controller
         $subscriptionService = app(ResellerPackageSubscriptionService::class);
         $upgradeQuotes = [];
         $pendingRenewalInvoice = null;
+        $pendingUpgradeInvoice = null;
         $packageMissingRenewalInvoice = false;
         if ($user->resellerPackage) {
             foreach ($packages as $pkg) {
@@ -129,6 +130,7 @@ class ResellerController extends Controller
                 }
             }
             $pendingRenewalInvoice = $subscriptionService->pendingRenewalSubscriptionInvoice($user);
+            $pendingUpgradeInvoice = $subscriptionService->pendingPlanChangeInvoice($user);
             $packageMissingRenewalInvoice = app(InvoiceGenerationScheduleService::class)
                 ->resellerPackageMissingRenewalInvoice($user);
         }
@@ -150,6 +152,7 @@ class ResellerController extends Controller
             'walletTransactions',
             'upgradeQuotes',
             'pendingRenewalInvoice',
+            'pendingUpgradeInvoice',
             'packageMissingRenewalInvoice',
         ));
     }
@@ -528,8 +531,7 @@ class ResellerController extends Controller
         $newPackage = ResellerPackage::find($validated['reseller_package_id']);
         $subscriptionService = app(ResellerPackageSubscriptionService::class);
 
-        $existingInvoice = $subscriptionService->pendingSubscriptionInvoice($user, $newPackage);
-        $invoice = $existingInvoice ?: $subscriptionService->createSubscriptionInvoice($user, $newPackage);
+        $invoice = $subscriptionService->issueOrReuseSubscriptionInvoice($user, $newPackage);
 
         return redirect()->route('admin.resellers.show', $user)
             ->with('success', "Upgrade invoice #{$invoice->invoice_number} generated. The new plan activates after payment.");

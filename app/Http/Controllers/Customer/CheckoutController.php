@@ -1885,16 +1885,17 @@ class CheckoutController extends Controller
 
         $subscriptions = app(ResellerPackageSubscriptionService::class);
         $pending = $subscriptions->pendingSubscriptionInvoice($user, $package);
+        $invoice = $pending
+            ? $subscriptions->issueOrReuseSubscriptionInvoice($user, $package)
+            : $subscriptions->createSubscriptionInvoice($user, $package);
 
         if ($pending) {
             SessionCart::clearPortal();
 
             return redirect()
-                ->route('reseller.payment.select-method', $pending)
-                ->with('info', 'Complete payment for invoice #'.$pending->invoice_number.' to activate this plan.');
+                ->route('reseller.payment.select-method', $invoice)
+                ->with('info', 'Complete payment for invoice #'.$invoice->invoice_number.' to activate this plan.');
         }
-
-        $invoice = $subscriptions->createSubscriptionInvoice($user, $package);
         SessionCart::clearPortal();
 
         if ($invoice->isPaid()) {

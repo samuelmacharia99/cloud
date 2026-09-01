@@ -341,7 +341,20 @@
                             </div>
                         </div>
 
-                        @if ($packageMissingRenewalInvoice ?? false)
+                        @if ($pendingUpgradeInvoice ?? null)
+                            <div class="mt-4 rounded-lg border border-violet-200 dark:border-violet-900/50 bg-violet-50 dark:bg-violet-950/20 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                <div>
+                                    <p class="text-sm font-medium text-violet-900 dark:text-violet-200">Upgrade invoice open</p>
+                                    <p class="text-xs text-violet-800 dark:text-violet-300 mt-1">
+                                        {{ $pendingUpgradeInvoice->invoice_number }} · due {{ $pendingUpgradeInvoice->due_date?->format('M d, Y') }}
+                                        · leftover unpaid package invoices were cancelled so only this charge stays collectible.
+                                    </p>
+                                </div>
+                                <a href="{{ route('admin.invoices.show', $pendingUpgradeInvoice) }}" class="text-xs font-medium text-violet-700 dark:text-violet-300 hover:underline shrink-0">
+                                    View invoice →
+                                </a>
+                            </div>
+                        @elseif ($packageMissingRenewalInvoice ?? false)
                             <div class="mt-4 rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                                 <div>
                                     <p class="text-sm font-medium text-amber-900 dark:text-amber-200">Renewal invoice missing</p>
@@ -980,7 +993,7 @@
                             @endif
                         </p>
                         <p class="text-sm text-slate-600 dark:text-slate-400">
-                            Upgrades are prorated for the remainder of the current billing period. The renewal date does not change.
+                            Upgrades are prorated for the remainder of the current billing period. The renewal date does not change. Any other unpaid package invoice is cancelled automatically so only the upgrade stays collectible.
                         </p>
 
                         <div>

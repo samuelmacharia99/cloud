@@ -2,12 +2,17 @@
 
 namespace App\Services;
 
+use App\Enums\InvoiceStatus;
+use App\Enums\PaymentStatus;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\ResellerPackage;
 use App\Models\User;
 use App\Services\Billing\InvoiceNumberService;
 use Carbon\Carbon;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class ResellerPackageSubscriptionService
 {
@@ -20,6 +25,8 @@ class ResellerPackageSubscriptionService
     public const DOWNGRADE_META = '[downgrade:1]';
 
     public const ACTIVATED_META = '[activated:1]';
+
+    public const SUPERSEDED_META_PREFIX = '[superseded_by:';
 
     public function packageIdFromInvoice(Invoice $invoice): ?int
     {
@@ -171,25 +178,33 @@ class ResellerPackageSubscriptionService
             $notes = $label.' '.self::PACKAGE_META_PREFIX.$package->id.']';
         }
 
-        $invoice = app(InvoiceNumberService::class)->createWithUniqueNumber(
-            fn (string $number) => Invoice::create([
-                'user_id' => $user->id,
-                'type' => 'reseller_subscription',
-                'invoice_number' => $number,
-                'status' => 'unpaid',
-                'due_date' => $dueDate,
-                'subtotal' => 0,
-                'tax' => 0,
-                'total' => 0,
-                'notes' => $notes,
-            ]),
-        );
+        $invoice = DB::transaction(function () use ($user, $dueDate, $notes, $label, $lineAmount, $renewal) {
+            $invoice = app(InvoiceNumberService::class)->createWithUniqueNumber(
+                fn (string $number) => Invoice::create([
+                    'user_id' => $user->id,
+                    'type' => 'reseller_subscription',
+                    'invoice_number' => $number,
+                    'status' => 'unpaid',
+                    'due_date' => $dueDate,
+                    'subtotal' => 0,
+                    'tax' => 0,
+                    'total' => 0,
+                    'notes' => $notes,
+                ]),
+            );
 
-        $this->appendPackageLineItem($invoice, $label, $lineAmount);
+            $this->appendPackageLineItem($invoice, $label, $lineAmount);
 
-        if ($renewal) {
-            app(ResellerDiskUsageBillingService::class)->addUsageItemsToSubscriptionInvoice($invoice, $user, true);
-        }
+            if ($renewal) {
+                app(ResellerDiskUsageBillingService::class)->addUsageItemsToSubscriptionInvoice($invoice, $user, true);
+            }
+
+            if (! $renewal) {
+                $this->cancelSupersededSubscriptionInvoices($user, $invoice);
+            }
+
+            return $invoice->fresh();
+        });
 
         app(ResellerSubscriptionAutoPayService::class)->attempt($invoice);
 
@@ -198,6 +213,21 @@ class ResellerPackageSubscriptionService
         }
 
         return $invoice->fresh(['items']);
+    }
+
+    /**
+     * Reuse an unpaid invoice for this package, or create one. Leftover open package invoices are cancelled.
+     */
+    public function issueOrReuseSubscriptionInvoice(User $user, ResellerPackage $package): Invoice
+    {
+        $existing = $this->pendingSubscriptionInvoice($user, $package);
+        if ($existing) {
+            $this->cancelSupersededSubscriptionInvoices($user, $existing);
+
+            return $existing->fresh(['items']);
+        }
+
+        return $this->createSubscriptionInvoice($user, $package);
     }
 
     /**
@@ -245,9 +275,78 @@ class ResellerPackageSubscriptionService
         return $query->latest()->first();
     }
 
+    public function pendingPlanChangeInvoice(User $user): ?Invoice
+    {
+        return Invoice::query()
+            ->where('user_id', $user->id)
+            ->where('type', 'reseller_subscription')
+            ->whereIn('status', ['unpaid', 'overdue'])
+            ->where(function ($query) {
+                $query->where('notes', 'like', '%'.self::UPGRADE_META.'%')
+                    ->orWhere('notes', 'like', '%'.self::DOWNGRADE_META.'%');
+            })
+            ->latest()
+            ->first();
+    }
+
+    /**
+     * Cancel leftover unpaid package invoices so only $keep stays collectible.
+     *
+     * @return Collection<int, Invoice>
+     */
+    public function cancelSupersededSubscriptionInvoices(User $user, Invoice $keep): Collection
+    {
+        return DB::transaction(function () use ($user, $keep) {
+            $open = Invoice::query()
+                ->where('user_id', $user->id)
+                ->where('type', 'reseller_subscription')
+                ->whereIn('status', [InvoiceStatus::Unpaid->value, InvoiceStatus::Overdue->value])
+                ->whereKeyNot($keep->id)
+                ->lockForUpdate()
+                ->get();
+
+            $cancelled = collect();
+
+            foreach ($open as $invoice) {
+                if ($this->invoiceHasCompletedPayment($invoice)) {
+                    Log::warning('Left open package invoice in place because it already has a completed payment', [
+                        'reseller_id' => $user->id,
+                        'invoice_id' => $invoice->id,
+                        'invoice_number' => $invoice->invoice_number,
+                        'kept_invoice_number' => $keep->invoice_number,
+                    ]);
+
+                    continue;
+                }
+
+                $this->releaseWalletHoldOnInvoice($user, $invoice);
+
+                $invoice->update([
+                    'status' => InvoiceStatus::Cancelled->value,
+                    'wallet_amount_applied' => 0,
+                    'notes' => trim(($invoice->notes ?? '').' '.self::SUPERSEDED_META_PREFIX.$keep->invoice_number.'] Cancelled automatically because a newer package invoice replaced it.'),
+                ]);
+
+                $cancelled->push($invoice->fresh());
+
+                AdminActivityService::log(
+                    'reseller.package_invoice_superseded',
+                    "Cancelled invoice {$invoice->invoice_number} because package invoice {$keep->invoice_number} replaced it",
+                    $invoice,
+                    [
+                        'reseller_id' => $user->id,
+                        'superseded_by' => $keep->invoice_number,
+                    ],
+                );
+            }
+
+            return $cancelled;
+        });
+    }
+
     /**
      * Open renewal invoice for the current package billing period only.
-     * Upgrade or stale subscription invoices must not block cron renewal generation.
+     * An unpaid upgrade invoice supersedes renewal generation until it is paid or cancelled.
      */
     public function pendingRenewalSubscriptionInvoice(User $user): ?Invoice
     {
@@ -281,6 +380,10 @@ class ResellerPackageSubscriptionService
         }
 
         $schedule = app(InvoiceGenerationScheduleService::class);
+
+        if ($this->pendingPlanChangeInvoice($user)) {
+            throw new \InvalidArgumentException('Pay or cancel the open package upgrade invoice before generating a renewal.');
+        }
 
         if (! $force && ! $schedule->isResellerPackageDueForRenewalInvoice($user)) {
             throw new \InvalidArgumentException('Reseller is not yet due for a renewal invoice.');
@@ -318,8 +421,10 @@ class ResellerPackageSubscriptionService
             $this->extendSubscription($user, $package);
         } elseif ($this->isUpgradeInvoice($invoice)) {
             $this->applyUpgrade($user, $package);
+            $this->issueReplacementRenewalIfDue($user->fresh());
         } elseif ($this->isDowngradeInvoice($invoice)) {
             $this->applyDowngrade($user, $package);
+            $this->issueReplacementRenewalIfDue($user->fresh());
         } else {
             $this->activateSubscription($user, $package);
         }
@@ -370,6 +475,47 @@ class ResellerPackageSubscriptionService
             'reseller_package_id' => $package->id,
             'package_expires_at' => $this->calculateExpiryFrom($base, $package),
         ]);
+    }
+
+    private function issueReplacementRenewalIfDue(User $user): void
+    {
+        $schedule = app(InvoiceGenerationScheduleService::class);
+
+        if (! $schedule->isResellerPackageDueForRenewalInvoice($user)) {
+            return;
+        }
+
+        if ($this->pendingRenewalSubscriptionInvoice($user)) {
+            return;
+        }
+
+        try {
+            $this->createRenewalInvoiceIfNeeded($user);
+        } catch (\InvalidArgumentException) {
+            // Not due, or another open renewal already exists.
+        }
+    }
+
+    private function invoiceHasCompletedPayment(Invoice $invoice): bool
+    {
+        return $invoice->payments()
+            ->where('status', PaymentStatus::Completed->value)
+            ->exists();
+    }
+
+    private function releaseWalletHoldOnInvoice(User $user, Invoice $invoice): void
+    {
+        $applied = round((float) ($invoice->wallet_amount_applied ?? 0), 2);
+        if ($applied <= 0) {
+            return;
+        }
+
+        app(ResellerWalletService::class)->creditInvoiceRefund(
+            $user,
+            $applied,
+            "Released from cancelled invoice {$invoice->invoice_number}",
+            $invoice->id,
+        );
     }
 
     private function calculateExpiryFrom(\DateTimeInterface $from, ResellerPackage $package): Carbon

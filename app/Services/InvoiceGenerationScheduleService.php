@@ -106,7 +106,13 @@ class InvoiceGenerationScheduleService
             return false;
         }
 
-        return app(ResellerPackageSubscriptionService::class)->pendingRenewalSubscriptionInvoice($user) === null;
+        $subscriptions = app(ResellerPackageSubscriptionService::class);
+
+        if ($subscriptions->pendingPlanChangeInvoice($user)) {
+            return false;
+        }
+
+        return $subscriptions->pendingRenewalSubscriptionInvoice($user) === null;
     }
 
     public function serviceAdvanceDays(Service $service): int

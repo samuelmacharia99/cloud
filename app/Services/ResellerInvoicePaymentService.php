@@ -123,14 +123,21 @@ class ResellerInvoicePaymentService
 
     private function syncWalletAmountApplied(Invoice $invoice): void
     {
-        $applied = (float) WalletTransaction::query()
+        $debits = (float) WalletTransaction::query()
             ->where('reference_id', $invoice->id)
             ->where('reference_type', 'Invoice')
             ->whereIn('type', ['subscription_debit', 'domain_debit'])
             ->where('status', 'completed')
             ->sum('amount');
 
-        $applied = round($applied, 2);
+        $refunds = (float) WalletTransaction::query()
+            ->where('reference_id', $invoice->id)
+            ->where('reference_type', 'Invoice')
+            ->where('type', 'refund')
+            ->where('status', 'completed')
+            ->sum('amount');
+
+        $applied = round(max(0, $debits - $refunds), 2);
 
         if (abs($applied - (float) $invoice->wallet_amount_applied) > 0.001) {
             $invoice->update(['wallet_amount_applied' => $applied]);

@@ -281,7 +281,7 @@
                         $quote = $upgradeQuotes[$package->id] ?? null;
                         $chargeAmount = $quote ? $quote['amount'] : $package->price;
                         $confirmMessage = $quote
-                            ? 'You will be charged KSH '.number_format($chargeAmount, 0).' (prorated upgrade for '.$quote['days_remaining'].' days remaining). Your renewal date stays the same. Continue?'
+                            ? 'You will be charged KSH '.number_format($chargeAmount, 0).' (prorated upgrade for '.$quote['days_remaining'].' days remaining). Your renewal date stays the same. Any other unpaid package invoice will be cancelled. Continue?'
                             : 'You will be charged KSH '.number_format($chargeAmount, 0).' for this plan. Continue?';
                     @endphp
                     <form action="{{ route('reseller.packages.subscribe', $package) }}" method="POST" data-confirm="{{ $confirmMessage }}" data-confirm-title="{{ $quote ? 'Confirm upgrade' : 'Confirm subscription' }}">

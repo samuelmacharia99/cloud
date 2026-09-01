@@ -38,6 +38,16 @@ class GenerateResellerInvoicesCommand extends BaseCronCommand
         $skippedCount = 0;
 
         foreach ($resellers as $reseller) {
+            if ($this->subscriptions->pendingPlanChangeInvoice($reseller)) {
+                Log::info('Reseller renewal invoice skipped: unpaid package upgrade invoice is open', [
+                    'reseller_id' => $reseller->id,
+                    'package_expires_at' => $reseller->package_expires_at?->toDateString(),
+                ]);
+                $skippedCount++;
+
+                continue;
+            }
+
             $pending = $this->subscriptions->pendingRenewalSubscriptionInvoice($reseller);
             if ($pending) {
                 Log::info('Reseller renewal invoice skipped: open renewal invoice for current period', [
