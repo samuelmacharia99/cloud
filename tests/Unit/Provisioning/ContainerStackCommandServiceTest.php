@@ -46,6 +46,14 @@ class ContainerStackCommandServiceTest extends TestCase
             'slug' => 'strapi',
             'volume_paths' => ['strapi_app' => '/srv/app'],
         ]));
+        $this->assertSame('/root/.ollama', $service->resolveWorkDir((object) [
+            'slug' => 'ollama',
+            'volume_paths' => ['ollama_data' => '/root/.ollama'],
+        ]));
+        $this->assertSame('/root/.ollama', $service->resolveWorkDir((object) [
+            'slug' => 'ollama',
+            'volume_paths' => [],
+        ]));
     }
 
     #[Test]

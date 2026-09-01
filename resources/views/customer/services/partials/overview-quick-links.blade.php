@@ -4,7 +4,7 @@
     $backupAgeDays = $latestBackup?->created_at?->diffInDays(now());
     $backupStale = $latestBackup === null || ($backupAgeDays !== null && $backupAgeDays > 7);
     $terminalAppRoot = app(\App\Services\Terminal\ContainerTerminalService::class)
-        ->resolveAppRootFromTemplate($service->product?->containerTemplate ?? null);
+        ->resolveAppRootFromTemplate($service->effectiveContainerTemplate() ?? $service->product?->containerTemplate ?? null);
 @endphp
 
 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">

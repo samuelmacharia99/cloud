@@ -32,11 +32,16 @@ class ContainerStackCommandService
             return (string) $volumePaths['wp_data'];
         }
 
+        if (is_array($volumePaths) && isset($volumePaths['ollama_data'])) {
+            return (string) $volumePaths['ollama_data'];
+        }
+
         return match ($template->slug ?? null) {
             'strapi' => '/srv/app',
             'wordpress' => '/var/www/html',
             'hermes' => '/opt/data',
             'openclaw' => '/home/node/.openclaw',
+            'ollama' => '/root/.ollama',
             default => '/app',
         };
     }

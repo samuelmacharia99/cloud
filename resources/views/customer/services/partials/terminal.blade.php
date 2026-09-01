@@ -125,8 +125,10 @@
                 Interactive shell for your app. Supports <code class="font-mono text-xs">composer</code>, <code class="font-mono text-xs">php artisan</code>, and file cleanup in <code class="font-mono text-xs">/app</code>.
             @elseif ($terminalTemplateSlug === 'nodejs')
                 Interactive shell for your Node.js app. Run <code class="font-mono text-xs">npm</code>, <code class="font-mono text-xs">node</code>, and inspect files in <code class="font-mono text-xs">/app</code>.
+            @elseif ($terminalTemplateSlug === 'ollama')
+                Interactive shell for Ollama. Run <code class="font-mono text-xs">ollama list</code>, <code class="font-mono text-xs">ollama pull</code>, and inspect models in <code class="font-mono text-xs">{{ $terminalDefaultCwd }}</code>.
             @else
-                Interactive shell for your app. Run stack commands and inspect files in <code class="font-mono text-xs">/app</code>.
+                Interactive shell for your app. Run stack commands and inspect files in <code class="font-mono text-xs">{{ $terminalDefaultCwd }}</code>.
             @endif
         </p>
         <p class="text-xs text-blue-700 dark:text-blue-400">
