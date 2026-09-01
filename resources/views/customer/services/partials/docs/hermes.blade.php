@@ -8,12 +8,21 @@
         </ol>
     </div>
 
+    <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/40 p-6">
+        <h4 class="text-lg font-semibold text-slate-900 dark:text-white">Connect project Ollama</h4>
+        <ol class="mt-4 space-y-3 text-sm text-slate-700 dark:text-slate-300 list-decimal list-inside">
+            <li>Deploy Ollama into the same project and pull a model (Chat tab or <code class="font-mono text-xs">ollama pull mistral</code> in Terminal).</li>
+            <li>On this Overview, choose that Ollama service and click <strong>Connect Ollama</strong>. Hermes restarts once.</li>
+            <li>Same-host containers talk over the private Docker network (<code class="font-mono text-xs">http://&lt;ollama-container&gt;:11434</code>), not localhost — localhost inside Hermes is Hermes itself.</li>
+        </ol>
+    </div>
+
     <div class="grid md:grid-cols-2 gap-6">
         <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-6 space-y-3">
             <h4 class="font-semibold text-slate-900 dark:text-white">LLM keys</h4>
             <ul class="text-sm text-slate-600 dark:text-slate-300 space-y-2">
-                <li>Add <code class="font-mono text-xs">OPENAI_API_KEY</code> or <code class="font-mono text-xs">ANTHROPIC_API_KEY</code> under Environment, then apply.</li>
-                <li>To use your Ollama container, in the Hermes dashboard set a custom OpenAI-compatible provider with that service’s URL plus <code class="font-mono text-xs">/v1</code> (for example <code class="font-mono text-xs">https://your-ollama-host/v1</code>) and model <code class="font-mono text-xs">mistral:latest</code>.</li>
+                <li>Prefer connecting the project Ollama service on Overview. That sets a custom OpenAI-compatible provider automatically.</li>
+                <li>Or add <code class="font-mono text-xs">OPENAI_API_KEY</code> / <code class="font-mono text-xs">ANTHROPIC_API_KEY</code> under Environment, then apply.</li>
             </ul>
         </div>
 

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Customer;
 use App\Exceptions\SSH\SSHCommandException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Customer\ChatContainerOllamaRequest;
+use App\Http\Requests\Customer\ConnectHermesOllamaRequest;
 use App\Http\Requests\Customer\ImportContainerDatabaseRequest;
 use App\Http\Requests\Customer\PullContainerGitRepositoryRequest;
 use App\Http\Requests\Customer\UpdateContainerGitRepositoryRequest;
@@ -36,6 +37,7 @@ use App\Services\Provisioning\ContainerFileService;
 use App\Services\Provisioning\ContainerGitCredentialsService;
 use App\Services\Provisioning\ContainerGitPullErrorPresenter;
 use App\Services\Provisioning\ContainerGitRepositoryService;
+use App\Services\Provisioning\ContainerHermesOllamaLinkService;
 use App\Services\Provisioning\ContainerOllamaModelService;
 use App\Services\Provisioning\ContainerPhpExtensionsService;
 use App\Services\Provisioning\ContainerSslErrorPresenter;
@@ -121,6 +123,9 @@ class ContainerController extends Controller
             : null;
         $hermesDashboardPanel = app(ContainerTemplateEnvironmentService::class)
             ->hermesDashboardPanel($service, $deployment);
+        $hermesOllamaLinkPanel = $hermesDashboardPanel
+            ? app(ContainerHermesOllamaLinkService::class)->panelState($service, $deployment)
+            : null;
         $gitRepositoryService = app(ContainerGitRepositoryService::class);
         $gitCredentialsService = app(ContainerGitCredentialsService::class);
         $supportsGitRepository = $gitRepositoryService->supportsService($service);
@@ -195,6 +200,7 @@ class ContainerController extends Controller
             'supportsOllamaChat',
             'ollamaChatPanel',
             'hermesDashboardPanel',
+            'hermesOllamaLinkPanel',
             'supportsGitRepository',
             'gitRepository',
             'containerLimits',
@@ -662,6 +668,53 @@ class ContainerController extends Controller
             \Log::error("Ollama chat failed for service {$service->id}: ".$e->getMessage());
 
             return response()->json(['error' => 'Could not reach Ollama. Confirm the app is running and try again.'], 500);
+        }
+    }
+
+    public function connectHermesOllama(
+        ConnectHermesOllamaRequest $request,
+        Service $service,
+        ContainerHermesOllamaLinkService $link,
+    ): RedirectResponse {
+        abort_if($service->user_id !== auth()->id(), 403);
+        $this->authorize('manageContainer', $service);
+
+        if (! $link->supportsHermes($service)) {
+            return $this->redirectToContainerTab($service, 'overview')
+                ->withErrors(['error' => 'Connect Ollama from a Hermes Agent service.']);
+        }
+
+        $ollama = Service::query()
+            ->with(['product.containerTemplate', 'containerDeployment.node'])
+            ->findOrFail((int) $request->validated('ollama_service_id'));
+
+        abort_if((int) $ollama->user_id !== (int) $service->user_id, 403);
+
+        $model = trim((string) $request->validated('model', ''));
+
+        try {
+            $result = $link->connect($service, $ollama, $model !== '' ? $model : null);
+
+            $redirect = $this->redirectToContainerTab($service, 'overview')
+                ->with('success', $result['message']);
+
+            if (! empty($result['warning'])) {
+                $redirect->withErrors(['error' => $result['warning']]);
+            }
+
+            return $redirect;
+        } catch (\DomainException|\InvalidArgumentException $e) {
+            return $this->redirectToContainerTab($service, 'overview')
+                ->withErrors(['error' => $e->getMessage()]);
+        } catch (\Throwable $e) {
+            \Log::error('Failed to connect Hermes to Ollama', [
+                'service_id' => $service->id,
+                'ollama_service_id' => $ollama->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return $this->redirectToContainerTab($service, 'overview')
+                ->withErrors(['error' => 'Could not connect Ollama: '.$e->getMessage()]);
         }
     }
 

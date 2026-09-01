@@ -54,10 +54,11 @@
         </div>
     </dl>
 
+    @include('customer.services.partials.hermes-ollama-link')
+
     <p class="mt-4 text-xs text-slate-600 dark:text-slate-400">
         Change these under <strong>Environment</strong> (<code class="font-mono">HERMES_DASHBOARD_BASIC_AUTH_USERNAME</code>
         and <code class="font-mono">HERMES_DASHBOARD_BASIC_AUTH_PASSWORD</code>), then apply so the container restarts.
-        Add an LLM key there too (OpenAI, Anthropic, or point Hermes at your Ollama service URL).
     </p>
 </div>
 @endif
