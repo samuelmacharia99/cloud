@@ -266,6 +266,46 @@ class TechStackRoutingServiceTest extends TestCase
         $this->assertFalse($payload['database']['show']);
     }
 
+    public function test_catalog_stacks_require_the_right_databases(): void
+    {
+        DatabaseTemplate::query()->delete();
+
+        $postgres = $this->createDatabase('container');
+        $postgres->forceFill(['type' => 'postgresql', 'slug' => 'postgres-catalog-test'])->save();
+        $mysql = DatabaseTemplate::create([
+            'name' => 'MySQL',
+            'slug' => 'mysql-catalog-test',
+            'description' => 'MySQL',
+            'type' => 'mysql',
+            'docker_image' => 'mysql:8.0',
+            'default_port' => 3306,
+            'required_ram_mb' => 256,
+            'hosting_type' => 'container',
+            'is_active' => true,
+            'order' => 1,
+        ]);
+
+        $n8n = $this->createLanguage('n8n');
+        $go = $this->createLanguage('go');
+        $directus = $this->createLanguage('directus');
+        $chatwoot = $this->createLanguage('chatwoot');
+        $odoo = $this->createLanguage('odoo');
+        $erpnext = $this->createLanguage('erpnext');
+
+        $this->assertTrue(TechStackRoutingService::skipsStackModal($n8n));
+        $this->assertTrue(TechStackRoutingService::skipsStackModal($erpnext));
+        $this->assertFalse(TechStackRoutingService::skipsStackModal($directus));
+        $this->assertTrue(TechStackRoutingService::isValidStackSelection($n8n, null, null, null));
+        $this->assertTrue(TechStackRoutingService::isValidStackSelection($go, null, 'none', null));
+        $this->assertTrue(TechStackRoutingService::isValidStackSelection($directus, null, null, $mysql));
+        $this->assertTrue(TechStackRoutingService::isValidStackSelection($directus, null, null, $postgres));
+        $this->assertFalse(TechStackRoutingService::isValidStackSelection($directus, null, null, null));
+        $this->assertTrue(TechStackRoutingService::isValidStackSelection($chatwoot, null, null, $postgres));
+        $this->assertFalse(TechStackRoutingService::isValidStackSelection($chatwoot, null, null, $mysql));
+        $this->assertTrue(TechStackRoutingService::isValidStackSelection($odoo, null, null, $postgres));
+        $this->assertTrue(TechStackRoutingService::isValidStackSelection($erpnext, null, null, null));
+    }
+
     public function test_apply_session_selection_copies_stack_builder_roles(): void
     {
         session(['selected_techstack' => [

@@ -1563,8 +1563,8 @@ class ContainerDeploymentService
         $env['DATA_DIR'] = '/data';
         $env['COMPOSE_PROJECT_NAME'] = 'talksasa-'.$service->id;
 
-        if (in_array($template->slug ?? '', ['nodejs', 'ruby'], true)) {
-            $env['PORT'] = (string) ($template->default_port ?? 3000);
+        if (in_array($template->slug ?? '', ['nodejs', 'ruby', 'go'], true)) {
+            $env['PORT'] = (string) ($template->default_port ?? ($template->slug === 'go' ? 8080 : 3000));
         }
 
         if (($template->slug ?? '') === 'python') {
@@ -1664,6 +1664,8 @@ class ContainerDeploymentService
         return match ($slug) {
             'hermes' => ['gateway', 'run'],
             'openclaw' => ['node', 'dist/index.js', 'gateway', '--bind', 'lan', '--port', '18789'],
+            'chatwoot' => ['bundle', 'exec', 'rails', 's', '-p', '3000', '-b', '0.0.0.0'],
+            'erpnext' => ['nginx-entrypoint.sh'],
             default => null,
         };
     }
@@ -4761,7 +4763,7 @@ class ContainerDeploymentService
         if (! isset($template->volume_paths) || ! is_array($template->volume_paths)) {
             // Legacy template rows may miss volume_paths; still keep app path
             // for runtime templates that expect /app content.
-            if (in_array($slug, ['laravel', 'php', 'nodejs', 'python', 'ruby', 'wordpress'], true)) {
+            if (in_array($slug, ['laravel', 'php', 'nodejs', 'python', 'ruby', 'go', 'wordpress'], true)) {
                 return $path;
             }
 
@@ -4776,7 +4778,7 @@ class ContainerDeploymentService
             return $path;
         }
 
-        if (in_array($slug, ['laravel', 'php', 'nodejs', 'python', 'ruby'], true)) {
+        if (in_array($slug, ['laravel', 'php', 'nodejs', 'python', 'ruby', 'go'], true)) {
             return $path;
         }
 

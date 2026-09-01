@@ -181,6 +181,12 @@ class ServiceController extends Controller
                 WHEN 'static-site' THEN 4
                 WHEN 'hermes' THEN 5
                 WHEN 'openclaw' THEN 6
+                WHEN 'n8n' THEN 7
+                WHEN 'go' THEN 8
+                WHEN 'directus' THEN 9
+                WHEN 'chatwoot' THEN 10
+                WHEN 'odoo' THEN 11
+                WHEN 'erpnext' THEN 12
                 ELSE 100
             END")
             ->orderBy('order')

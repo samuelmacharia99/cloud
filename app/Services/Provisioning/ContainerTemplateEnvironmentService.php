@@ -27,6 +27,26 @@ class ContainerTemplateEnvironmentService
             $env = $this->prepareOpenClawEnvironment($env);
         }
 
+        if (($template->slug ?? '') === 'n8n') {
+            $env = $this->prepareN8nEnvironment($env, $port);
+        }
+
+        if (($template->slug ?? '') === 'directus') {
+            $env = $this->prepareDirectusEnvironment($env, $service);
+        }
+
+        if (($template->slug ?? '') === 'chatwoot') {
+            $env = $this->prepareChatwootEnvironment($env, $service, $port);
+        }
+
+        if (($template->slug ?? '') === 'odoo') {
+            $env = $this->prepareOdooEnvironment($env);
+        }
+
+        if (($template->slug ?? '') === 'erpnext') {
+            $env = $this->prepareErpnextEnvironment($env);
+        }
+
         if (in_array($template->slug ?? '', ['laravel', 'php'], true)) {
             // Customer Terminal + npm run as www-data; avoid root-owned /var/www/.npm.
             $env['HOME'] = $env['HOME'] ?? '/tmp';
@@ -68,6 +88,10 @@ class ContainerTemplateEnvironmentService
      */
     public function syncEmbeddedDatabaseSidecar(array &$compose, object $template, array $envVars, string $appServiceName): void
     {
+        $this->inheritEnvironmentIntoSameImageSidecars($compose, $template, $envVars, $appServiceName);
+        $this->syncChatwootSidecars($compose, $template, $envVars);
+        $this->syncErpnextSidecars($compose, $template, $envVars);
+
         if (($template->slug ?? '') !== 'wordpress' || ! isset($compose['services']['mysql'])) {
             return;
         }
@@ -300,10 +324,250 @@ class ContainerTemplateEnvironmentService
             return $email !== '' ? $email : 'noreply@example.com';
         }
 
-        if ($key === 'WORDPRESS_ADMIN_EMAIL') {
+        if (in_array($key, ['WORDPRESS_ADMIN_EMAIL', 'ADMIN_EMAIL'], true)) {
             return trim((string) ($service->user?->email ?? '')) ?: 'admin@example.com';
         }
 
         return '';
+    }
+
+    /**
+     * @param  array<string, string>  $env
+     * @return array<string, string>
+     */
+    private function prepareN8nEnvironment(array $env, ?int $port): array
+    {
+        $env['N8N_PORT'] = $this->filledOr($env, 'N8N_PORT', '5678');
+        $env['N8N_PROTOCOL'] = $this->filledOr($env, 'N8N_PROTOCOL', 'https');
+        $env['N8N_PROXY_HOPS'] = $this->filledOr($env, 'N8N_PROXY_HOPS', '1');
+        $env['N8N_BASIC_AUTH_ACTIVE'] = $this->filledOr($env, 'N8N_BASIC_AUTH_ACTIVE', 'true');
+        $env['N8N_BASIC_AUTH_USER'] = $this->filledOr($env, 'N8N_BASIC_AUTH_USER', 'admin');
+        $env['GENERIC_TIMEZONE'] = $this->filledOr($env, 'GENERIC_TIMEZONE', 'Africa/Nairobi');
+        $env['N8N_HOST'] = $this->filledOr($env, 'N8N_HOST', $this->publicHost($port));
+        $env['WEBHOOK_URL'] = $this->filledOr($env, 'WEBHOOK_URL', $this->publicUrl($port));
+
+        if (trim((string) ($env['N8N_ENCRYPTION_KEY'] ?? '')) === '') {
+            $env['N8N_ENCRYPTION_KEY'] = Str::random(32);
+        }
+
+        if (trim((string) ($env['N8N_BASIC_AUTH_PASSWORD'] ?? '')) === '') {
+            $env['N8N_BASIC_AUTH_PASSWORD'] = Str::random(24);
+        }
+
+        return $env;
+    }
+
+    /**
+     * @param  array<string, string>  $env
+     * @return array<string, string>
+     */
+    private function prepareDirectusEnvironment(array $env, Service $service): array
+    {
+        $env['ADMIN_EMAIL'] = $this->filledOr(
+            $env,
+            'ADMIN_EMAIL',
+            trim((string) ($service->user?->email ?? '')) ?: 'admin@example.com'
+        );
+        $env['DB_CLIENT'] = $this->filledOr($env, 'DB_CLIENT', $this->directusClient($env));
+        $env['DB_HOST'] = $this->filledOr($env, 'DB_HOST', 'db');
+        $env['DB_USER'] = $this->filledOr($env, 'DB_USER', (string) ($env['DB_USERNAME'] ?? 'appuser'));
+        $env['DB_PASSWORD'] = $this->filledOr($env, 'DB_PASSWORD', (string) ($env['DB_PASSWORD'] ?? ''));
+        $env['DB_DATABASE'] = $this->filledOr($env, 'DB_DATABASE', (string) ($env['DB_DATABASE'] ?? 'appdb'));
+        $env['DB_PORT'] = $this->filledOr($env, 'DB_PORT', $this->directusClient($env) === 'pg' ? '5432' : '3306');
+
+        if (trim((string) ($env['SECRET'] ?? '')) === '') {
+            $env['SECRET'] = Str::random(40);
+        }
+
+        if (trim((string) ($env['ADMIN_PASSWORD'] ?? '')) === '') {
+            $env['ADMIN_PASSWORD'] = Str::random(20);
+        }
+
+        return $env;
+    }
+
+    /**
+     * @param  array<string, string>  $env
+     */
+    private function directusClient(array $env): string
+    {
+        $connection = strtolower((string) ($env['DB_CONNECTION'] ?? ''));
+
+        return in_array($connection, ['pgsql', 'postgres', 'postgresql', 'pg'], true) ? 'pg' : 'mysql';
+    }
+
+    /**
+     * @param  array<string, string>  $env
+     * @return array<string, string>
+     */
+    private function prepareChatwootEnvironment(array $env, Service $service, ?int $port): array
+    {
+        $env['RAILS_ENV'] = $this->filledOr($env, 'RAILS_ENV', 'production');
+        $env['NODE_ENV'] = $this->filledOr($env, 'NODE_ENV', 'production');
+        $env['INSTALLATION_ENV'] = $this->filledOr($env, 'INSTALLATION_ENV', 'docker');
+        $env['FRONTEND_URL'] = $this->filledOr($env, 'FRONTEND_URL', $this->publicUrl($port));
+        $env['POSTGRES_HOST'] = $this->filledOr($env, 'POSTGRES_HOST', (string) ($env['DB_HOST'] ?? 'db'));
+        $env['POSTGRES_PORT'] = $this->filledOr($env, 'POSTGRES_PORT', (string) ($env['DB_PORT'] ?? '5432'));
+        $env['POSTGRES_DATABASE'] = $this->filledOr($env, 'POSTGRES_DATABASE', (string) ($env['DB_DATABASE'] ?? $env['POSTGRES_DB'] ?? 'appdb'));
+        $env['POSTGRES_USERNAME'] = $this->filledOr($env, 'POSTGRES_USERNAME', (string) ($env['DB_USERNAME'] ?? $env['POSTGRES_USER'] ?? 'appuser'));
+        $env['POSTGRES_PASSWORD'] = $this->filledOr($env, 'POSTGRES_PASSWORD', (string) ($env['DB_PASSWORD'] ?? $env['POSTGRES_PASSWORD'] ?? ''));
+        $env['REDIS_URL'] = $this->filledOr($env, 'REDIS_URL', 'redis://redis:6379');
+        $env['MAILER_SENDER_EMAIL'] = $this->filledOr(
+            $env,
+            'MAILER_SENDER_EMAIL',
+            trim((string) ($service->user?->email ?? '')) ?: 'noreply@example.com'
+        );
+
+        if (trim((string) ($env['SECRET_KEY_BASE'] ?? '')) === '') {
+            $env['SECRET_KEY_BASE'] = Str::random(64);
+        }
+
+        return $env;
+    }
+
+    /**
+     * @param  array<string, string>  $env
+     * @return array<string, string>
+     */
+    private function prepareOdooEnvironment(array $env): array
+    {
+        $env['HOST'] = $this->filledOr($env, 'HOST', (string) ($env['DB_HOST'] ?? 'db'));
+        $env['PORT'] = $this->filledOr($env, 'PORT', (string) ($env['DB_PORT'] ?? '5432'));
+        $env['USER'] = $this->filledOr($env, 'USER', (string) ($env['DB_USERNAME'] ?? $env['POSTGRES_USER'] ?? 'appuser'));
+        $env['PASSWORD'] = $this->filledOr($env, 'PASSWORD', (string) ($env['DB_PASSWORD'] ?? $env['POSTGRES_PASSWORD'] ?? ''));
+
+        return $env;
+    }
+
+    /**
+     * @param  array<string, string>  $env
+     * @return array<string, string>
+     */
+    private function prepareErpnextEnvironment(array $env): array
+    {
+        $env['DB_HOST'] = $this->filledOr($env, 'DB_HOST', 'db');
+        $env['DB_PORT'] = $this->filledOr($env, 'DB_PORT', '3306');
+        $env['BACKEND'] = $this->filledOr($env, 'BACKEND', 'backend:8000');
+        $env['SOCKETIO'] = $this->filledOr($env, 'SOCKETIO', 'websocket:9000');
+        $env['FRAPPE_SITE_NAME_HEADER'] = $this->filledOr($env, 'FRAPPE_SITE_NAME_HEADER', 'frontend');
+        $env['FRAPPE_REDIS_CACHE'] = $this->filledOr($env, 'FRAPPE_REDIS_CACHE', 'redis://redis-cache:6379');
+        $env['FRAPPE_REDIS_QUEUE'] = $this->filledOr($env, 'FRAPPE_REDIS_QUEUE', 'redis://redis-queue:6379');
+
+        if (trim((string) ($env['MYSQL_ROOT_PASSWORD'] ?? '')) === '') {
+            $env['MYSQL_ROOT_PASSWORD'] = Str::random(32);
+        }
+
+        $env['MARIADB_ROOT_PASSWORD'] = $this->filledOr($env, 'MARIADB_ROOT_PASSWORD', $env['MYSQL_ROOT_PASSWORD']);
+
+        if (trim((string) ($env['ERPNEXT_ADMIN_PASSWORD'] ?? '')) === '') {
+            $env['ERPNEXT_ADMIN_PASSWORD'] = Str::random(20);
+        }
+
+        return $env;
+    }
+
+    private function publicUrl(?int $port): string
+    {
+        return $port ? "http://localhost:{$port}" : 'http://localhost';
+    }
+
+    private function publicHost(?int $port): string
+    {
+        return $port ? "localhost:{$port}" : 'localhost';
+    }
+
+    /**
+     * @param  array<string, mixed>  $compose
+     * @param  array<string, string>  $envVars
+     */
+    private function inheritEnvironmentIntoSameImageSidecars(
+        array &$compose,
+        object $template,
+        array $envVars,
+        string $appServiceName
+    ): void {
+        $image = (string) ($template->docker_image ?? '');
+        if ($image === '' || ! isset($compose['services']) || ! is_array($compose['services'])) {
+            return;
+        }
+
+        foreach ($compose['services'] as $name => $service) {
+            if ($name === $appServiceName || ! is_array($service)) {
+                continue;
+            }
+
+            if (($service['image'] ?? '') !== $image) {
+                continue;
+            }
+
+            $existing = is_array($service['environment'] ?? null) ? $service['environment'] : [];
+            $compose['services'][$name]['environment'] = array_merge($existing, $envVars);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $compose
+     * @param  array<string, string>  $envVars
+     */
+    private function syncChatwootSidecars(array &$compose, object $template, array $envVars): void
+    {
+        if (($template->slug ?? '') !== 'chatwoot' || ! isset($compose['services']['sidekiq'])) {
+            return;
+        }
+
+        $depends = ['redis'];
+        if (isset($compose['services']['db'])) {
+            $depends[] = 'db';
+        }
+
+        $compose['services']['sidekiq']['depends_on'] = $depends;
+        $compose['services']['sidekiq']['environment'] = array_merge(
+            is_array($compose['services']['sidekiq']['environment'] ?? null)
+                ? $compose['services']['sidekiq']['environment']
+                : [],
+            $envVars
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $compose
+     * @param  array<string, string>  $envVars
+     */
+    private function syncErpnextSidecars(array &$compose, object $template, array $envVars): void
+    {
+        if (($template->slug ?? '') !== 'erpnext' || ! isset($compose['services']['db'])) {
+            return;
+        }
+
+        $rootPassword = trim((string) ($envVars['MYSQL_ROOT_PASSWORD'] ?? ''));
+        $adminPassword = trim((string) ($envVars['ERPNEXT_ADMIN_PASSWORD'] ?? 'admin'));
+        if ($rootPassword === '') {
+            throw new \RuntimeException('ERPNext deploy is missing MYSQL_ROOT_PASSWORD before composing the MariaDB sidecar.');
+        }
+
+        $compose['services']['db']['environment'] = [
+            'MYSQL_ROOT_PASSWORD' => $rootPassword,
+            'MARIADB_ROOT_PASSWORD' => $rootPassword,
+        ];
+
+        $siteExists = '[ -d sites/frontend ]';
+        $create = 'bench new-site --mariadb-user-host-login-scope=% --admin-password='
+            .escapeshellarg($adminPassword)
+            .' --db-root-username=root --db-root-password='
+            .escapeshellarg($rootPassword)
+            .' --install-app erpnext --set-default frontend';
+
+        if (isset($compose['services']['create-site'])) {
+            $compose['services']['create-site']['environment'] = array_merge(
+                is_array($compose['services']['create-site']['environment'] ?? null)
+                    ? $compose['services']['create-site']['environment']
+                    : [],
+                $envVars
+            );
+            $compose['services']['create-site']['entrypoint'] = ['bash', '-c'];
+            $compose['services']['create-site']['command'] = [
+                'wait-for-it -t 180 db:3306; if '.$siteExists.'; then echo site-exists; else '.$create.'; fi',
+            ];
+        }
     }
 }

@@ -159,6 +159,57 @@ class ContainerTemplateEnvironmentServiceTest extends TestCase
     }
 
     #[Test]
+    public function it_prepares_catalog_stack_secrets_and_database_aliases(): void
+    {
+        $service = new ContainerTemplateEnvironmentService;
+        $user = new User(['email' => 'ops@example.com']);
+
+        $n8n = $service->prepare((object) ['slug' => 'n8n', 'environment_variables' => []], [], $this->makeService($user), 32001);
+        $this->assertSame('https', $n8n['N8N_PROTOCOL']);
+        $this->assertSame('http://localhost:32001', $n8n['WEBHOOK_URL']);
+        $this->assertNotSame('', $n8n['N8N_ENCRYPTION_KEY']);
+        $this->assertNotSame('', $n8n['N8N_BASIC_AUTH_PASSWORD']);
+
+        $directus = $service->prepare((object) ['slug' => 'directus', 'environment_variables' => []], [
+            'DB_CONNECTION' => 'pgsql',
+            'DB_HOST' => 'db',
+            'DB_USERNAME' => 'directus',
+            'DB_PASSWORD' => 'secret-db',
+            'DB_DATABASE' => 'directus',
+        ], $this->makeService($user));
+        $this->assertSame('pg', $directus['DB_CLIENT']);
+        $this->assertSame('directus', $directus['DB_USER']);
+        $this->assertSame('ops@example.com', $directus['ADMIN_EMAIL']);
+        $this->assertGreaterThanOrEqual(32, strlen($directus['SECRET']));
+
+        $chatwoot = $service->prepare((object) ['slug' => 'chatwoot', 'environment_variables' => []], [
+            'DB_HOST' => 'db',
+            'DB_PORT' => '5432',
+            'DB_DATABASE' => 'chatwoot',
+            'DB_USERNAME' => 'chatwoot',
+            'DB_PASSWORD' => 'cw-pass',
+        ], $this->makeService($user), 32002);
+        $this->assertSame('db', $chatwoot['POSTGRES_HOST']);
+        $this->assertSame('chatwoot', $chatwoot['POSTGRES_DATABASE']);
+        $this->assertSame('redis://redis:6379', $chatwoot['REDIS_URL']);
+        $this->assertSame(64, strlen($chatwoot['SECRET_KEY_BASE']));
+
+        $odoo = $service->prepare((object) ['slug' => 'odoo', 'environment_variables' => []], [
+            'DB_HOST' => 'db',
+            'DB_USERNAME' => 'odoo',
+            'DB_PASSWORD' => 'odoo-pass',
+        ], $this->makeService());
+        $this->assertSame('db', $odoo['HOST']);
+        $this->assertSame('odoo', $odoo['USER']);
+        $this->assertSame('odoo-pass', $odoo['PASSWORD']);
+
+        $erpnext = $service->prepare((object) ['slug' => 'erpnext', 'environment_variables' => []], [], $this->makeService());
+        $this->assertSame('backend:8000', $erpnext['BACKEND']);
+        $this->assertNotSame('', $erpnext['MYSQL_ROOT_PASSWORD']);
+        $this->assertNotSame('', $erpnext['ERPNEXT_ADMIN_PASSWORD']);
+    }
+
+    #[Test]
     public function it_sets_npm_cache_and_file_cache_defaults_for_laravel(): void
     {
         $service = new ContainerTemplateEnvironmentService;

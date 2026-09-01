@@ -288,6 +288,140 @@ return [
             ],
         ],
 
+        'n8n' => [
+            'backend' => 'n8n',
+            'skip_modal' => true,
+            'framework' => [
+                'required' => false,
+                'show' => false,
+                'options' => [],
+                'locked' => 'n8n',
+            ],
+            'frontend' => [
+                'required' => false,
+                'show' => false,
+                'options' => ['none'],
+                'locked' => 'none',
+            ],
+            'database' => [
+                'required' => false,
+                'show' => false,
+                'allow_none' => true,
+                'types' => [],
+            ],
+        ],
+
+        'go' => [
+            'backend' => 'go',
+            'framework' => [
+                'required' => false,
+                'show' => true,
+                'options' => ['other'],
+                'locked' => null,
+            ],
+            'frontend' => [
+                'required' => true,
+                'show' => true,
+                'options' => ['none', 'vite-spa'],
+                'locked' => null,
+            ],
+            'database' => [
+                'required' => false,
+                'show' => true,
+                'allow_none' => true,
+                'types' => ['mysql', 'mariadb', 'postgresql', 'mongodb', 'redis'],
+            ],
+        ],
+
+        'directus' => [
+            'backend' => 'directus',
+            'framework' => [
+                'required' => false,
+                'show' => false,
+                'options' => [],
+                'locked' => 'directus',
+            ],
+            'frontend' => [
+                'required' => false,
+                'show' => false,
+                'options' => ['none'],
+                'locked' => 'none',
+            ],
+            'database' => [
+                'required' => true,
+                'show' => true,
+                'allow_none' => false,
+                'types' => ['mysql', 'mariadb', 'postgresql'],
+            ],
+        ],
+
+        'chatwoot' => [
+            'backend' => 'chatwoot',
+            'framework' => [
+                'required' => false,
+                'show' => false,
+                'options' => [],
+                'locked' => 'chatwoot',
+            ],
+            'frontend' => [
+                'required' => false,
+                'show' => false,
+                'options' => ['none'],
+                'locked' => 'none',
+            ],
+            'database' => [
+                'required' => true,
+                'show' => true,
+                'allow_none' => false,
+                'types' => ['postgresql'],
+            ],
+        ],
+
+        'odoo' => [
+            'backend' => 'odoo',
+            'framework' => [
+                'required' => false,
+                'show' => false,
+                'options' => [],
+                'locked' => 'odoo',
+            ],
+            'frontend' => [
+                'required' => false,
+                'show' => false,
+                'options' => ['none'],
+                'locked' => 'none',
+            ],
+            'database' => [
+                'required' => true,
+                'show' => true,
+                'allow_none' => false,
+                'types' => ['postgresql'],
+            ],
+        ],
+
+        'erpnext' => [
+            'backend' => 'erpnext',
+            'skip_modal' => true,
+            'framework' => [
+                'required' => false,
+                'show' => false,
+                'options' => [],
+                'locked' => 'erpnext',
+            ],
+            'frontend' => [
+                'required' => false,
+                'show' => false,
+                'options' => ['none'],
+                'locked' => 'none',
+            ],
+            'database' => [
+                'required' => false,
+                'show' => false,
+                'allow_none' => true,
+                'types' => [],
+            ],
+        ],
+
     ],
 
     /*

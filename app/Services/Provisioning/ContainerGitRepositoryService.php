@@ -641,7 +641,7 @@ class ContainerGitRepositoryService
 
     public function supportsTemplate(?string $slug): bool
     {
-        return in_array($slug, ['laravel', 'php', 'nodejs', 'python', 'ruby'], true);
+        return in_array($slug, ['laravel', 'php', 'nodejs', 'python', 'ruby', 'go'], true);
     }
 
     /**

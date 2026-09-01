@@ -46,6 +46,8 @@ class TechStackIconsAndOrderTest extends TestCase
             ->assertSee('#339933', false)
             ->assertSee('#C9A227', false)
             ->assertSee('#FF4D1A', false)
+            ->assertSee('#EA4B71', false)
+            ->assertSee('#00ADD8', false)
             ->assertSeeInOrder([
                 'WordPress',
                 'Node.js',
@@ -53,6 +55,12 @@ class TechStackIconsAndOrderTest extends TestCase
                 'Static Website',
                 'Hermes Agent',
                 'OpenClaw',
+                'n8n',
+                'Go Application',
+                'Directus',
+                'Chatwoot',
+                'Odoo',
+                'ERPNext',
                 'Strapi',
             ]);
     }

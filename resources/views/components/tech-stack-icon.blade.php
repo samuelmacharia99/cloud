@@ -75,6 +75,37 @@
         </svg>
         @break
 
+    @case('n8n')
+        <svg {{ $attributes->merge(['class' => $class]) }} viewBox="0 0 24 24" fill="#EA4B71" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <path d="M4 10a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm16 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM12 4a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm0 12a2 2 0 1 1 0 4 2 2 0 0 1 0-4z"/>
+            <path d="M6.2 11.3h11.6v1.4H6.2zM10.6 7.4 7.8 10l1 1.1 2.8-2.6-1-1.1zm2.8 0 2.8 2.6-1 1.1-2.8-2.6 1-1.1zM10.6 16.6l-1-1.1L7.8 14l1-1.1 2.8 2.6-1 1.1zm2.8 0-1-1.1 2.8-2.6 1 1.1-2.8 2.6z"/>
+        </svg>
+        @break
+
+    @case('directus')
+        <svg {{ $attributes->merge(['class' => $class]) }} viewBox="0 0 24 24" fill="#6644FF" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <path d="M12 2 3.5 6.5v11L12 22l8.5-4.5v-11L12 2zm0 3.1 5.4 2.8v8.2L12 18.9 6.6 16.1V7.9L12 5.1zm0 3.2-2.7 1.4v4.6L12 15.7l2.7-1.4V9.7L12 8.3z"/>
+        </svg>
+        @break
+
+    @case('chatwoot')
+        <svg {{ $attributes->merge(['class' => $class]) }} viewBox="0 0 24 24" fill="#1F93FF" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <path d="M4 4.8A2.8 2.8 0 0 1 6.8 2h10.4A2.8 2.8 0 0 1 20 4.8v8.4a2.8 2.8 0 0 1-2.8 2.8H13l-4.2 4.1c-.7.7-1.8.2-1.8-.7V16H6.8A2.8 2.8 0 0 1 4 13.2V4.8zM8 7.2h8v1.8H8V7.2zm0 3.3h5.5v1.8H8v-1.8z"/>
+        </svg>
+        @break
+
+    @case('odoo')
+        <svg {{ $attributes->merge(['class' => $class]) }} viewBox="0 0 24 24" fill="#714B67" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <path d="M6.2 7.2a4.8 4.8 0 1 1 0 9.6 4.8 4.8 0 0 1 0-9.6zm0 2.2a2.6 2.6 0 1 0 0 5.2 2.6 2.6 0 0 0 0-5.2zM13.6 7.5h2.2v9h-2.2v-9zm4.4 0h2.2v9H18v-9z"/>
+        </svg>
+        @break
+
+    @case('erpnext')
+        <svg {{ $attributes->merge(['class' => $class]) }} viewBox="0 0 24 24" fill="#0089FF" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <path d="M4 5.2h10.4c3.4 0 5.6 2.1 5.6 5.3 0 3.3-2.2 5.4-5.6 5.4H8.6V18.8H4V5.2zm4.6 3.2v3.1h5.4c1.3 0 2.1-.7 2.1-1.6 0-.9-.8-1.5-2.1-1.5H8.6z"/>
+        </svg>
+        @break
+
     @case('go')
     @case('golang')
         <svg {{ $attributes->merge(['class' => $class]) }} viewBox="0 0 24 24" fill="#00ADD8" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">

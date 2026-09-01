@@ -19,6 +19,11 @@
         'strapi' => '73, 69, 255',
         'hermes' => '201, 162, 39',
         'openclaw' => '255, 77, 26',
+        'n8n' => '234, 75, 113',
+        'directus' => '102, 68, 255',
+        'chatwoot' => '31, 147, 255',
+        'odoo' => '113, 75, 103',
+        'erpnext' => '0, 137, 255',
         'go' => '0, 173, 216',
         'golang' => '0, 173, 216',
     ];
@@ -34,6 +39,11 @@
         'strapi' => 'Headless CMS',
         'hermes' => 'AI agent',
         'openclaw' => 'AI gateway',
+        'n8n' => 'Automation',
+        'directus' => 'Headless CMS',
+        'chatwoot' => 'Live chat',
+        'odoo' => 'ERP',
+        'erpnext' => 'ERP',
         'go' => 'Go services',
         'golang' => 'Go services',
     ];

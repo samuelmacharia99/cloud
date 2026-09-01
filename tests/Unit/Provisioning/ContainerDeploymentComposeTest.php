@@ -683,4 +683,97 @@ class ContainerDeploymentComposeTest extends TestCase
         $this->assertStringContainsString('openclaw_state:/home/node/.openclaw', $openClawYaml);
         $this->assertStringContainsString("ports:\n      - '31011:18789'", $openClawYaml);
     }
+
+    #[Test]
+    public function render_compose_sets_chatwoot_and_erpnext_gateway_commands(): void
+    {
+        $this->assertSame(
+            ['bundle', 'exec', 'rails', 's', '-p', '3000', '-b', '0.0.0.0'],
+            ContainerDeploymentService::imageGatewayCommand('chatwoot')
+        );
+        $this->assertSame(['nginx-entrypoint.sh'], ContainerDeploymentService::imageGatewayCommand('erpnext'));
+
+        $runtimeImages = $this->createMock(RuntimeImageProvisioner::class);
+        $runtimeImages->method('usesRuntimeImage')->willReturn(false);
+
+        $deployer = new ContainerDeploymentService(
+            runtimeImages: $runtimeImages,
+            templateEnvironment: new ContainerTemplateEnvironmentService
+        );
+
+        $method = new ReflectionMethod(ContainerDeploymentService::class, 'renderCompose');
+        $method->setAccessible(true);
+
+        $chatwootYaml = $method->invoke(
+            $deployer,
+            new ContainerTemplate([
+                'slug' => 'chatwoot',
+                'docker_image' => 'chatwoot/chatwoot:latest',
+                'default_port' => 3000,
+                'required_cpu_cores' => 1,
+                'required_ram_mb' => 2048,
+                'compose_services' => [
+                    'redis' => ['image' => 'redis:7-alpine'],
+                    'sidekiq' => [
+                        'image' => 'chatwoot/chatwoot:latest',
+                        'command' => ['bundle', 'exec', 'sidekiq'],
+                    ],
+                ],
+            ]),
+            'user-1-service-20-chatwoot',
+            32010,
+            ['SECRET_KEY_BASE' => 'chatwoot-secret', 'REDIS_URL' => 'redis://redis:6379'],
+            null,
+            null,
+            null,
+            null,
+            null
+        );
+
+        $this->assertStringContainsString('chatwoot/chatwoot:latest', $chatwootYaml);
+        $this->assertStringContainsString('sidekiq', $chatwootYaml);
+        $this->assertStringContainsString('chatwoot-secret', $chatwootYaml);
+        $this->assertStringContainsString('-b', $chatwootYaml);
+
+        $erpnextYaml = $method->invoke(
+            $deployer,
+            new ContainerTemplate([
+                'slug' => 'erpnext',
+                'docker_image' => 'frappe/erpnext:v15',
+                'default_port' => 8080,
+                'required_cpu_cores' => 2,
+                'required_ram_mb' => 4096,
+                'volume_paths' => [
+                    'erpnext_sites' => '/home/frappe/frappe-bench/sites',
+                ],
+                'compose_services' => [
+                    'db' => [
+                        'image' => 'mariadb:11.8',
+                        'environment' => ['MYSQL_ROOT_PASSWORD' => 'changeme'],
+                    ],
+                    'create-site' => [
+                        'image' => 'frappe/erpnext:v15',
+                        'command' => ['echo waiting-for-sync'],
+                    ],
+                ],
+            ]),
+            'user-1-service-21-erpnext',
+            32011,
+            [
+                'MYSQL_ROOT_PASSWORD' => 'root-secret',
+                'ERPNEXT_ADMIN_PASSWORD' => 'admin-secret',
+            ],
+            null,
+            null,
+            null,
+            null,
+            null
+        );
+
+        $this->assertStringContainsString('nginx-entrypoint.sh', $erpnextYaml);
+        $this->assertStringContainsString('mariadb:11.8', $erpnextYaml);
+        $this->assertStringContainsString('root-secret', $erpnextYaml);
+        $this->assertStringContainsString('bench new-site', $erpnextYaml);
+        $this->assertStringContainsString('admin-secret', $erpnextYaml);
+    }
 }

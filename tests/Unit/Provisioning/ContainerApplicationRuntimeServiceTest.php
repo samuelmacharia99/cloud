@@ -540,4 +540,18 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
         $this->assertSame('next', $runtime->source);
         $this->assertStringContainsString('npx next start -H 0.0.0.0 -p ${PORT:-3000}', $runtime->command[2]);
     }
+
+    #[Test]
+    public function it_detects_go_module_and_cmd_server_entrypoints(): void
+    {
+        $module = $this->service->detectGoFromContents(null, true, true, false, 8080);
+        $this->assertSame('entrypoint', $module->source);
+        $this->assertStringContainsString('go run .', $module->command[2]);
+        $this->assertStringContainsString('go mod download', $module->command[2]);
+
+        $cmd = $this->service->detectGoFromContents(null, true, false, true, 8080);
+        $this->assertStringContainsString('go run ./cmd/server', $cmd->command[2]);
+
+        $this->assertTrue($this->service->supportsTemplate('go'));
+    }
 }

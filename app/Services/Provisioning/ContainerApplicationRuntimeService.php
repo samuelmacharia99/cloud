@@ -10,7 +10,7 @@ class ContainerApplicationRuntimeService
     /**
      * @var list<string>
      */
-    private const RUNTIME_TEMPLATE_SLUGS = ['nodejs', 'python', 'ruby'];
+    private const RUNTIME_TEMPLATE_SLUGS = ['nodejs', 'python', 'ruby', 'go'];
 
     public function supportsTemplate(?string $slug): bool
     {
@@ -27,6 +27,7 @@ class ContainerApplicationRuntimeService
             'nodejs' => $this->detectNodeRuntime($ssh, $hostAppPath, $defaultPort),
             'ruby' => $this->detectRubyRuntime($ssh, $hostAppPath, $defaultPort),
             'python' => $this->detectPythonRuntime($ssh, $hostAppPath, $defaultPort),
+            'go' => $this->detectGoRuntime($ssh, $hostAppPath, $defaultPort),
             default => $this->fallbackRuntime($slug, $defaultPort),
         };
     }
@@ -261,6 +262,62 @@ class ContainerApplicationRuntimeService
         return $this->fallbackRuntime('python', $defaultPort);
     }
 
+    public function detectGoRuntime(SSHService $ssh, string $hostAppPath, int $defaultPort): ApplicationRuntime
+    {
+        return $this->detectGoFromContents(
+            $this->readProcfileWebCommand($ssh, $hostAppPath),
+            $this->hostFileExists($ssh, $hostAppPath.'/go.mod'),
+            $this->hostFileExists($ssh, $hostAppPath.'/main.go'),
+            $this->hostFileExists($ssh, $hostAppPath.'/cmd/server/main.go'),
+            $defaultPort
+        );
+    }
+
+    public function detectGoFromContents(
+        ?string $procfileCommand,
+        bool $hasGoMod,
+        bool $hasMainGo,
+        bool $hasCmdServer,
+        int $defaultPort
+    ): ApplicationRuntime {
+        if ($procfileCommand !== null) {
+            return $this->shellRuntime(
+                $procfileCommand,
+                $defaultPort,
+                'procfile',
+                'Procfile web process',
+                $this->goBootstrap($hasGoMod)
+            );
+        }
+
+        if ($hasCmdServer) {
+            return $this->shellRuntime(
+                'go run ./cmd/server',
+                $defaultPort,
+                'entrypoint',
+                'go run ./cmd/server',
+                $this->goBootstrap($hasGoMod)
+            );
+        }
+
+        if ($hasMainGo || $hasGoMod) {
+            return $this->shellRuntime(
+                'go run .',
+                $defaultPort,
+                'entrypoint',
+                'go run .',
+                $this->goBootstrap($hasGoMod)
+            );
+        }
+
+        return $this->fallbackRuntime('go', $defaultPort);
+    }
+
+    private function goBootstrap(bool $hasGoMod): ?string
+    {
+        return $hasGoMod ? 'go mod download' : null;
+    }
+
     public function fallbackRuntime(string $slug, int $defaultPort): ApplicationRuntime
     {
         $command = match ($slug) {
@@ -268,6 +325,7 @@ class ContainerApplicationRuntimeService
                 .$defaultPort.",'0.0.0.0')\"",
             'python' => 'python -m http.server ${PORT:-'.$defaultPort.'} --bind 0.0.0.0',
             'ruby' => 'ruby -run -e httpd . -p ${PORT:-'.$defaultPort.'} -b 0.0.0.0',
+            'go' => 'sleep infinity',
             default => 'sleep infinity',
         };
 
