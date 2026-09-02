@@ -6,6 +6,8 @@ use App\Enums\RegistrarDriver;
 use App\Models\Domain;
 use App\Models\DomainExtension;
 use App\Models\DomainPricing;
+use App\Models\Invoice;
+use App\Models\InvoiceItem;
 use App\Models\Registrar;
 use App\Models\Setting;
 use App\Models\User;
@@ -222,6 +224,94 @@ class CustomerDomainRegistryTest extends TestCase
         $this->assertSame('KE', $domain->registrant_contact['country']);
     }
 
+    public function test_checkout_rejects_duplicate_pending_domain_with_an_unpaid_invoice(): void
+    {
+        $customer = User::factory()->customer()->create();
+        $this->seedRetailKe();
+        Setting::setValue('tax_enabled', 'false');
+
+        $existing = Domain::create([
+            'user_id' => $customer->id,
+            'name' => 'simpleproject',
+            'extension' => '.co.ke',
+            'status' => 'pending',
+        ]);
+        $invoice = Invoice::factory()->create([
+            'user_id' => $customer->id,
+            'status' => 'unpaid',
+            'invoice_number' => 'INV-DUP-00001',
+        ]);
+        InvoiceItem::create([
+            'invoice_id' => $invoice->id,
+            'domain_id' => $existing->id,
+            'description' => 'simpleproject.co.ke (1 year(s))',
+            'quantity' => 1,
+            'unit_price' => 1500,
+            'amount' => 1500,
+        ]);
+        $this->actingAs($customer);
+        SessionCart::putPortal([
+            'domain_dup' => [
+                'type' => 'domain',
+                'domain' => 'simpleproject',
+                'extension' => '.co.ke',
+                'years' => 1,
+                'nameservers' => [
+                    'use_default' => true,
+                    'ns1' => 'albert.ns.cloudflare.com',
+                    'ns2' => 'aliza.ns.cloudflare.com',
+                ],
+            ],
+        ]);
+
+        $this->from(route('customer.checkout.show'))
+            ->post(route('customer.checkout.process'), $this->withRegistrant([
+                'agree_terms' => '1',
+            ], $customer))
+            ->assertRedirect(route('customer.checkout.show'))
+            ->assertSessionHasErrors('domain');
+
+        $this->assertSame(1, Domain::query()->where('name', 'simpleproject')->count());
+        $this->assertSame(1, Invoice::query()->where('user_id', $customer->id)->count());
+    }
+
+    public function test_checkout_reuses_orphaned_pending_domain_instead_of_failing_unique(): void
+    {
+        $customer = User::factory()->customer()->create();
+        $this->seedRetailKe();
+        Setting::setValue('tax_enabled', 'false');
+
+        $existing = Domain::create([
+            'user_id' => $customer->id,
+            'name' => 'simpleproject',
+            'extension' => '.co.ke',
+            'status' => 'pending',
+        ]);
+
+        $this->actingAs($customer);
+        SessionCart::putPortal([
+            'domain_orphan' => [
+                'type' => 'domain',
+                'domain' => 'simpleproject',
+                'extension' => '.co.ke',
+                'years' => 1,
+                'nameservers' => [
+                    'use_default' => true,
+                    'ns1' => 'albert.ns.cloudflare.com',
+                    'ns2' => 'aliza.ns.cloudflare.com',
+                ],
+            ],
+        ]);
+
+        $this->post(route('customer.checkout.process'), $this->withRegistrant([
+            'agree_terms' => '1',
+        ], $customer))->assertRedirect();
+
+        $this->assertSame(1, Domain::query()->where('name', 'simpleproject')->count());
+        $this->assertSame($existing->id, Domain::query()->where('name', 'simpleproject')->value('id'));
+        $this->assertDatabaseHas('invoices', ['user_id' => $customer->id, 'status' => 'unpaid']);
+    }
+
     private function seedRetailCom(): DomainExtension
     {
         $extension = DomainExtension::query()->firstOrCreate(
@@ -244,6 +334,33 @@ class CustomerDomainRegistryTest extends TestCase
                 'tier' => 'retail',
             ],
             ['price' => 1400, 'renewal_price' => 1200, 'enabled' => true]
+        );
+
+        return $extension;
+    }
+
+    private function seedRetailKe(): DomainExtension
+    {
+        $extension = DomainExtension::query()->firstOrCreate(
+            ['extension' => '.co.ke'],
+            ['description' => 'CO.KE', 'enabled' => true]
+        );
+
+        DomainPricing::query()->firstOrCreate(
+            [
+                'domain_extension_id' => $extension->id,
+                'period_years' => 1,
+                'tier' => 'wholesale',
+            ],
+            ['price' => 1000, 'renewal_price' => 900, 'enabled' => true]
+        );
+        DomainPricing::query()->firstOrCreate(
+            [
+                'domain_extension_id' => $extension->id,
+                'period_years' => 1,
+                'tier' => 'retail',
+            ],
+            ['price' => 1500, 'renewal_price' => 1300, 'enabled' => true]
         );
 
         return $extension;

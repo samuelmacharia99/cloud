@@ -15,6 +15,7 @@ use App\Models\ResellerProduct;
 use App\Models\Service;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\Checkout\CheckoutDomainRegistrationService;
 use App\Services\Provisioning\InvoiceProvisioningService;
 use App\Services\Provisioning\ProvisioningService;
 use Carbon\Carbon;
@@ -635,17 +636,19 @@ class ResellerCustomerOrderService
         $domainName = strtolower($domainName);
         $domainExpiresAt = $this->resolveDomainExpiresAt($expiresAt, $years);
 
-        $domain = Domain::create(array_merge([
-            'user_id' => $customer->id,
-            'reseller_id' => $reseller->id,
-            'name' => $domainName,
-            'extension' => $extension->extension,
-            'status' => 'pending',
-            'type' => 'registration',
-            'auto_renew' => false,
-            'expires_at' => $domainExpiresAt,
-            'registrant_contact' => $this->resolvedRegistrantContact($customer, $registrantContact),
-        ], app(ResellerNameserverService::class)->domainColumnsForItem($reseller, $cartItem)));
+        $domain = app(CheckoutDomainRegistrationService::class)->createOrReuse(
+            $customer,
+            $domainName,
+            $extension->extension,
+            array_merge([
+                'reseller_id' => $reseller->id,
+                'status' => 'pending',
+                'type' => 'registration',
+                'auto_renew' => false,
+                'expires_at' => $domainExpiresAt,
+                'registrant_contact' => $this->resolvedRegistrantContact($customer, $registrantContact),
+            ], app(ResellerNameserverService::class)->domainColumnsForItem($reseller, $cartItem)),
+        );
 
         $order = ResellerDomainOrder::create([
             'reseller_id' => $reseller->id,

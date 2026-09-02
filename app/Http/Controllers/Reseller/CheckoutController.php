@@ -14,6 +14,7 @@ use App\Models\ResellerDomainOrder;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\Billing\InvoiceNumberService;
+use App\Services\Checkout\CheckoutDomainRegistrationService;
 use App\Services\DomainPushService;
 use App\Services\DomainRegistrantContactService;
 use App\Services\DomainRenewalPushService;
@@ -260,17 +261,18 @@ class CheckoutController extends Controller
                     $wholesaleAmount = $wholesalePrice->price * $item['years'];
                     $subtotal += $wholesaleAmount;
 
-                    // Create domain
-                    $domain = Domain::create(array_merge([
-                        'user_id' => $reseller->id,
-                        'reseller_id' => $reseller->id,
-                        'name' => $item['domain'],
-                        'extension' => $item['extension'],
-                        'status' => 'pending',
-                        'type' => 'registration',
-                        'auto_renew' => false,
-                        'registrant_contact' => $registrantContact,
-                    ], $this->nameservers->domainColumnsForItem($reseller, $item)));
+                    $domain = app(CheckoutDomainRegistrationService::class)->createOrReuse(
+                        $reseller,
+                        (string) $item['domain'],
+                        (string) $item['extension'],
+                        array_merge([
+                            'reseller_id' => $reseller->id,
+                            'status' => 'pending',
+                            'type' => 'registration',
+                            'auto_renew' => false,
+                            'registrant_contact' => $registrantContact,
+                        ], $this->nameservers->domainColumnsForItem($reseller, $item)),
+                    );
 
                     // Create reseller domain order
                     $order = ResellerDomainOrder::create([

@@ -19,6 +19,7 @@ use App\Models\User;
 use App\Rules\ValidCountryCode;
 use App\Services\Billing\InvoiceNumberService;
 use App\Services\Billing\InvoiceSettlementService;
+use App\Services\Checkout\CheckoutDomainRegistrationService;
 use App\Services\Checkout\ContainerEmailBundleService;
 use App\Services\Checkout\EmailHostingCheckoutService;
 use App\Services\Checkout\ProjectHostingCheckoutService;
@@ -592,21 +593,15 @@ class CheckoutController extends Controller
                         $cloudflareDns = ! empty($item['cloudflare_dns'])
                             && app(DomainCloudflareDnsService::class)->isAvailableForCustomer($user);
 
-                        // Create Domain
-                        $domain = Domain::create([
-                            'user_id' => $user->id,
-                            'reseller_id' => $user->reseller_id,
-                            'name' => $item['domain'],
-                            'extension' => $item['extension'],
-                            'status' => 'pending',
-                            'nameserver_1' => $resolvedNs['ns1'],
-                            'nameserver_2' => $resolvedNs['ns2'],
-                            'nameserver_3' => $resolvedNs['ns3'],
-                            'nameserver_4' => $resolvedNs['ns4'],
-                            'cloudflare_dns_enabled' => $cloudflareDns,
-                            'auto_renew' => $this->autoRenewFromCartItem($user, $item, $extension),
-                            'registrant_contact' => $this->registrantContactForCheckout($request, $user),
-                        ]);
+                        $domain = $this->createCheckoutDomain(
+                            $user,
+                            $item,
+                            $request,
+                            $extension,
+                            $resolvedNs,
+                            $cloudflareDns,
+                            $invoice,
+                        );
 
                         $domainsCreatedByCartKey[$item['key']] = $domain->id;
 
@@ -1450,21 +1445,15 @@ class CheckoutController extends Controller
                         $cloudflareDns = ! empty($item['cloudflare_dns'])
                             && app(DomainCloudflareDnsService::class)->isAvailableForCustomer($user);
 
-                        // Create Domain
-                        $domain = Domain::create([
-                            'user_id' => $user->id,
-                            'reseller_id' => $user->reseller_id,
-                            'name' => $item['domain'],
-                            'extension' => $item['extension'],
-                            'status' => 'pending',
-                            'nameserver_1' => $resolvedNs['ns1'],
-                            'nameserver_2' => $resolvedNs['ns2'],
-                            'nameserver_3' => $resolvedNs['ns3'],
-                            'nameserver_4' => $resolvedNs['ns4'],
-                            'cloudflare_dns_enabled' => $cloudflareDns,
-                            'auto_renew' => $this->autoRenewFromCartItem($user, $item, $extension),
-                            'registrant_contact' => $this->registrantContactForCheckout($request, $user),
-                        ]);
+                        $domain = $this->createCheckoutDomain(
+                            $user,
+                            $item,
+                            $request,
+                            $extension,
+                            $resolvedNs,
+                            $cloudflareDns,
+                            $invoice,
+                        );
 
                         $domainsCreatedByCartKey[$item['key']] = $domain->id;
 
@@ -1669,6 +1658,38 @@ class CheckoutController extends Controller
         }
 
         $request->validate(app(DomainRegistrantContactService::class)->rules('registrant'));
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     * @param  array<string, mixed>  $resolvedNs
+     */
+    private function createCheckoutDomain(
+        User $user,
+        array $item,
+        ?Request $request,
+        ?DomainExtension $extension,
+        array $resolvedNs,
+        bool $cloudflareDns,
+        Invoice $invoice,
+    ): Domain {
+        return app(CheckoutDomainRegistrationService::class)->createOrReuse(
+            $user,
+            (string) $item['domain'],
+            (string) $item['extension'],
+            [
+                'reseller_id' => $user->reseller_id,
+                'status' => 'pending',
+                'nameserver_1' => $resolvedNs['ns1'] ?? null,
+                'nameserver_2' => $resolvedNs['ns2'] ?? null,
+                'nameserver_3' => $resolvedNs['ns3'] ?? null,
+                'nameserver_4' => $resolvedNs['ns4'] ?? null,
+                'cloudflare_dns_enabled' => $cloudflareDns,
+                'auto_renew' => $this->autoRenewFromCartItem($user, $item, $extension),
+                'registrant_contact' => $this->registrantContactForCheckout($request, $user),
+            ],
+            $invoice->id,
+        );
     }
 
     /**

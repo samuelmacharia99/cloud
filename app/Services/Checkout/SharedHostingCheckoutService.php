@@ -406,13 +406,16 @@ class SharedHostingCheckoutService
             $pricing = $extension->getRetailPricing($years);
             $amount = $pricing ? (float) $pricing->price : 0.0;
 
-            $domain = Domain::create([
-                'user_id' => $user->id,
-                'name' => $parts['name'],
-                'extension' => $parts['extension'],
-                'status' => 'pending',
-                ...$domainNameservers,
-            ]);
+            $domain = app(CheckoutDomainRegistrationService::class)->createOrReuse(
+                $user,
+                $parts['name'],
+                $parts['extension'],
+                [
+                    'status' => 'pending',
+                    ...$domainNameservers,
+                ],
+                $invoice->id,
+            );
 
             $serviceMeta['domain_id'] = $domain->id;
             $serviceMeta['domain_registration_years'] = $years;
