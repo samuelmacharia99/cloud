@@ -13,6 +13,7 @@ use App\Services\Registrar\RegistrarFulfillmentService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class DomainRenewalService
 {
@@ -407,8 +408,15 @@ class DomainRenewalService
         });
 
         try {
-            app(RegistrarFulfillmentService::class)
+            $result = app(RegistrarFulfillmentService::class)
                 ->fulfillRenewal($renewalOrder->fresh(['domain.domainExtension']));
+
+            if (! ($result['success'] ?? false)) {
+                Log::warning('Automatic registrar renewal did not complete', [
+                    'renewal_order_id' => $renewalOrder->id,
+                    'message' => $result['message'] ?? 'Unknown registrar response',
+                ]);
+            }
         } catch (\Throwable $e) {
             report($e);
         }

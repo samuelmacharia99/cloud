@@ -244,20 +244,46 @@ class RegistrarFulfillmentService
         }
     }
 
-    public function fulfillRenewal(DomainRenewalOrder $renewalOrder): void
+    /**
+     * Submit a paid renewal to the API registrar.
+     *
+     * @return array{success: bool, message: string, completed: bool}
+     */
+    public function fulfillRenewal(DomainRenewalOrder $renewalOrder): array
     {
         $renewalOrder->loadMissing('domain.domainExtension.registrarModel');
         $domain = $renewalOrder->domain;
 
         if (! $domain) {
-            return;
+            return [
+                'success' => false,
+                'completed' => false,
+                'message' => 'No domain record is linked to this renewal.',
+            ];
         }
 
-        $registrar = $this->resolveRegistrar($domain);
+        if (in_array($renewalOrder->status, ['completed', 'expired'], true)) {
+            return [
+                'success' => false,
+                'completed' => $renewalOrder->status === 'completed',
+                'message' => 'This renewal is already '.$renewalOrder->status.'.',
+            ];
+        }
+
+        $registrar = $this->resolveRenewalRegistrar($domain);
         $driver = $this->operationsDriver($registrar);
 
         if (! $driver) {
-            return;
+            Log::info('Domain renewal left for manual registrar work', [
+                'renewal_order_id' => $renewalOrder->id,
+                'domain' => $domain->name.$domain->extension,
+            ]);
+
+            return [
+                'success' => false,
+                'completed' => false,
+                'message' => 'This domain is not linked to an API registrar. Renew it at the registrar, then mark as renewed.',
+            ];
         }
 
         try {
@@ -266,7 +292,11 @@ class RegistrarFulfillmentService
             if (! $result['success']) {
                 app(DomainRenewalService::class)->failRenewal($renewalOrder, $result['message']);
 
-                return;
+                return [
+                    'success' => false,
+                    'completed' => false,
+                    'message' => $result['message'] ?? 'Registrar rejected the renewal.',
+                ];
             }
 
             if (($result['status'] ?? '') === 'ACT') {
@@ -278,14 +308,58 @@ class RegistrarFulfillmentService
                 if ($expiry = OpenproviderRegistrarDriver::parseExpiration($result['expiration_date'] ?? null)) {
                     $domain->update(['expires_at' => $expiry]);
                 }
+
+                return [
+                    'success' => true,
+                    'completed' => true,
+                    'message' => "Domain {$domain->name}{$domain->extension} renewed at {$registrar->name}.",
+                ];
             }
+
+            return [
+                'success' => true,
+                'completed' => false,
+                'message' => "Renewal submitted to {$registrar->name}. Waiting for the registry to confirm.",
+            ];
         } catch (\Throwable $e) {
             Log::error('Registrar renewal failed', [
                 'renewal_order_id' => $renewalOrder->id,
                 'error' => $e->getMessage(),
             ]);
             app(DomainRenewalService::class)->failRenewal($renewalOrder, $e->getMessage());
+
+            return [
+                'success' => false,
+                'completed' => false,
+                'message' => $e->getMessage(),
+            ];
         }
+    }
+
+    /**
+     * @return array{success: bool, message: string, completed: bool}
+     */
+    public function fulfillRenewalManually(DomainRenewalOrder $renewalOrder): array
+    {
+        $renewalOrder->refresh();
+
+        if (! $renewalOrder->canPushToRegistrar()) {
+            return [
+                'success' => false,
+                'completed' => false,
+                'message' => 'This renewal cannot be submitted to the registrar yet. It must be paid and pushed to admin first.',
+            ];
+        }
+
+        if ($renewalOrder->status === 'failed') {
+            $renewalOrder->update([
+                'status' => 'pushed',
+                'failed_at' => null,
+                'failure_reason' => null,
+            ]);
+        }
+
+        return $this->fulfillRenewal($renewalOrder->fresh(['domain.domainExtension.registrarModel']));
     }
 
     public function syncDomain(Domain $domain): bool
@@ -856,6 +930,36 @@ class RegistrarFulfillmentService
                     ->orWhere('name', $order->domain_name.$order->extension);
             })
             ->update(['status' => ServiceStatus::Provisioning->value]);
+    }
+
+    /**
+     * Renewals must use a registrar that can actually renew this domain.
+     * Default Openprovider is not used when the domain has no Openprovider ID —
+     * that path only fails the paid renewal. Prefer Cosmotown (FQDN renew) when live.
+     */
+    private function resolveRenewalRegistrar(Domain $domain): ?Registrar
+    {
+        $assigned = $this->resolveRegistrar($domain);
+        $assignedDriver = $this->operationsDriver($assigned);
+
+        if ($assignedDriver instanceof OpenproviderRegistrarDriver && filled($domain->registrar_external_id)) {
+            return $assigned;
+        }
+
+        if ($assignedDriver instanceof CosmotownRegistrarDriver) {
+            return $assigned;
+        }
+
+        $cosmotown = app(CosmotownInventorySyncService::class)->activeCosmotownRegistrar();
+        if ($cosmotown) {
+            return $cosmotown;
+        }
+
+        if ($assignedDriver instanceof OpenproviderRegistrarDriver) {
+            return null;
+        }
+
+        return $assigned;
     }
 
     private function resolveRegistrar(Domain $domain): ?Registrar

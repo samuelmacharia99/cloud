@@ -168,7 +168,10 @@ class CheckoutController extends Controller
                         'quantity' => 1,
                         'unit_price' => $wholesaleAmount,
                         'domain_id' => $domain->id,
-                        'custom_options' => ['renewal_order_id' => $renewalOrder->id],
+                        'custom_options' => [
+                            'type' => 'domain_renewal',
+                            'renewal_order_id' => $renewalOrder->id,
+                        ],
                     ];
 
                     continue;

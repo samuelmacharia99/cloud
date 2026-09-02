@@ -92,9 +92,19 @@
                                 {{ $renewal->created_at->format('M d, Y') }}
                             </td>
                             <td class="px-6 py-4 text-sm">
-                                <a href="{{ route('admin.domain-renewals.show', $renewal) }}" class="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 font-medium">
-                                    View
-                                </a>
+                                <div class="inline-flex items-center gap-3">
+                                    <a href="{{ route('admin.domain-renewals.show', $renewal) }}" class="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 font-medium">
+                                        View
+                                    </a>
+                                    @if($renewal->canPushToRegistrar())
+                                        <form method="POST" action="{{ route('admin.domain-renewals.push-registrar', $renewal) }}" class="inline" data-confirm="Submit {{ $renewal->domain->name }}{{ $renewal->domain->extension }} renewal to the API registrar?">
+                                            @csrf
+                                            <button type="submit" class="text-violet-600 hover:text-violet-700 dark:text-violet-400 dark:hover:text-violet-300 font-medium">
+                                                Push to registrar
+                                            </button>
+                                        </form>
+                                    @endif
+                                </div>
                             </td>
                         </tr>
                     @empty

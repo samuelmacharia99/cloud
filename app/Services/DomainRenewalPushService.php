@@ -22,6 +22,16 @@ class DomainRenewalPushService
             return;
         }
 
+        try {
+            app(ResellerDomainOrderService::class)
+                ->retractMisclassifiedRenewalRegistrationOrders($invoice);
+        } catch (\Throwable $e) {
+            Log::error('Failed to retract misclassified renewal domain orders', [
+                'invoice_id' => $invoice->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
         DomainRenewalOrder::query()
             ->where(function ($query) use ($invoice) {
                 $query->where('customer_invoice_id', $invoice->id)

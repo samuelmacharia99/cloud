@@ -6,6 +6,7 @@ use App\Enums\ResellerDomainOrderType;
 use App\Models\Domain;
 use App\Models\DomainExtension;
 use App\Models\Invoice;
+use App\Models\InvoiceItem;
 use App\Models\ResellerDomainOrder;
 use App\Models\User;
 
@@ -204,9 +205,67 @@ class ResellerDomainOrderService
      * Create missing domain orders for invoice lines that have a domain but no order link.
      * Repairs hosting-addon checkouts where platform customers did not get a domain order row.
      */
+    public function isRenewalInvoiceLine(InvoiceItem $item): bool
+    {
+        $options = is_array($item->custom_options) ? $item->custom_options : [];
+        $type = $options['type'] ?? null;
+
+        if (! empty($options['renewal_order_id'])) {
+            return true;
+        }
+
+        if (in_array($type, ['domain_renewal', 'domain_renewal_wholesale'], true)) {
+            return true;
+        }
+
+        $description = trim((string) $item->description);
+
+        return str_starts_with($description, 'Renew ')
+            || str_starts_with($description, 'Wholesale renewal:');
+    }
+
+    /**
+     * Cancel registration orders that were spawned from renewal invoice lines
+     * (those belong in /admin/domain-renewals, not /admin/domain-orders).
+     */
+    public function retractMisclassifiedRenewalRegistrationOrders(Invoice $invoice): int
+    {
+        $invoice->loadMissing('items');
+        $retracted = 0;
+
+        foreach ($invoice->items as $item) {
+            if (! $this->isRenewalInvoiceLine($item)) {
+                continue;
+            }
+
+            $orderId = $item->custom_options['domain_order_id'] ?? null;
+            if (! $orderId) {
+                continue;
+            }
+
+            $order = ResellerDomainOrder::query()->find($orderId);
+            if (! $order || $order->isTransfer() || $order->status === 'completed') {
+                continue;
+            }
+
+            if (in_array($order->status, ['queued', 'pushed', 'failed'], true)) {
+                $this->retractMisclassifiedOrder($order);
+            }
+
+            $options = is_array($item->custom_options) ? $item->custom_options : [];
+            unset($options['domain_order_id']);
+            $item->update(['custom_options' => $options]);
+            $retracted++;
+        }
+
+        return $retracted;
+    }
+
     public function ensureOrdersForInvoice(Invoice $invoice): int
     {
         $invoice->loadMissing('items', 'user');
+        $this->retractMisclassifiedRenewalRegistrationOrders($invoice);
+        $invoice->refresh()->loadMissing('items', 'user');
         $customer = $invoice->user;
 
         if (! $customer) {
@@ -216,6 +275,10 @@ class ResellerDomainOrderService
         $created = 0;
 
         foreach ($invoice->items as $item) {
+            if ($this->isRenewalInvoiceLine($item)) {
+                continue;
+            }
+
             if (! empty($item->custom_options['domain_order_id'])) {
                 continue;
             }
@@ -322,5 +385,27 @@ class ResellerDomainOrderService
         }
 
         return $order;
+    }
+
+    private function retractMisclassifiedOrder(ResellerDomainOrder $order): void
+    {
+        if ($order->wallet_transaction_id && $order->reseller) {
+            $transaction = $order->walletTransaction;
+            if ($transaction) {
+                app(ResellerWalletService::class)->refund(
+                    $order->reseller,
+                    (float) $transaction->amount,
+                    'Refund: domain order was created in error from a renewal invoice',
+                    $order->id,
+                );
+            }
+        }
+
+        $order->update([
+            'status' => 'cancelled',
+            'cancelled_at' => now(),
+            'failure_reason' => 'Created in error from a domain renewal invoice. Renewals are fulfilled from Domain Renewals.',
+            'wallet_transaction_id' => null,
+        ]);
     }
 }

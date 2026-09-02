@@ -124,7 +124,22 @@
             <!-- Action Forms -->
             @if(in_array($renewal->status, ['pushed', 'failed'], true))
                 <div class="ui-card p-6 space-y-6">
-                    <div>
+                    @if($renewal->canPushToRegistrar())
+                        <div>
+                            <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-1">Push to registrar</h2>
+                            <p class="text-sm text-slate-600 dark:text-slate-400">
+                                Submit this renewal to the API registrar (Cosmotown / Openprovider). Paid renewals are also sent automatically; use this to retry a failure or a missed auto-submit.
+                            </p>
+                            <form action="{{ route('admin.domain-renewals.push-registrar', $renewal) }}" method="POST" class="mt-4" data-confirm="Submit this renewal to the API registrar?">
+                                @csrf
+                                <button type="submit" class="w-full px-4 py-2.5 bg-violet-600 hover:bg-violet-700 text-white font-medium rounded-lg transition">
+                                    Push renewal to registrar
+                                </button>
+                            </form>
+                        </div>
+                    @endif
+
+                    <div @class(['border-t border-slate-200 dark:border-slate-700 pt-6' => $renewal->canPushToRegistrar()])>
                         <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-1">Mark as renewed (manual)</h2>
                         <p class="text-sm text-slate-600 dark:text-slate-400">
                             Use this after renewing at the registrar outside the API. Expiry updates everywhere this domain is shown.
@@ -179,19 +194,7 @@
                     </form>
 
                     <div class="border-t border-slate-200 dark:border-slate-700 pt-6">
-                        <h3 class="text-sm font-semibold text-slate-900 dark:text-white mb-3">Or retry via registrar API</h3>
-                        <form action="{{ route('admin.domain-renewals.complete', $renewal) }}" method="POST" class="space-y-3">
-                            @csrf
-                            <div>
-                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Admin notes (optional)</label>
-                                <textarea name="admin_notes" rows="2" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"></textarea>
-                            </div>
-                            <button type="submit" class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition">
-                                Renew via API
-                            </button>
-                        </form>
-
-                        <form action="{{ route('admin.domain-renewals.fail', $renewal) }}" method="POST" class="space-y-3 mt-4">
+                        <form action="{{ route('admin.domain-renewals.fail', $renewal) }}" method="POST" class="space-y-3">
                             @csrf
                             <div>
                                 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Failure reason</label>
@@ -269,7 +272,7 @@
             <div class="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-xl p-6">
                 <h3 class="font-bold text-blue-900 dark:text-blue-200 mb-4">Info</h3>
                 <p class="text-sm text-blue-800 dark:text-blue-300">
-                    After the customer pays the invoice, the renewal order will automatically be pushed to the admin panel for processing.
+                    After payment, this renewal is sent to the API registrar automatically. If that fails or the TLD has no API registrar, use Push to registrar or Mark as renewed.
                 </p>
             </div>
         </div>

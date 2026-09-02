@@ -11,6 +11,7 @@ use App\Models\Payment;
 use App\Models\ResellerDomainPricing;
 use App\Models\ResellerPackage;
 use App\Models\User;
+use App\Services\Billing\InvoiceSettlementService;
 use App\Services\DomainRenewalPushService;
 use App\Services\DomainRenewalService;
 use App\Services\Registrar\RegistrarFulfillmentService;
@@ -255,5 +256,62 @@ class DomainRenewalCartTest extends TestCase
         $adminOrder = $renewalOrder->adminOrder;
         $this->assertSame('paid', $adminOrder->payment_status);
         $this->assertSame($renewalOrder->admin_invoice_id, $adminOrder->invoice_id);
+    }
+
+    public function test_settling_paid_reseller_renewal_does_not_create_domain_order(): void
+    {
+        $this->mock(RegistrarFulfillmentService::class, function ($mock) {
+            $mock->shouldReceive('fulfillRenewal')->once()->andReturn([
+                'success' => true,
+                'completed' => false,
+                'message' => 'Submitted',
+            ]);
+        });
+
+        $reseller = $this->createResellerWithPackage();
+
+        $extension = DomainExtension::create([
+            'extension' => '.org',
+            'description' => 'ORG',
+            'enabled' => true,
+        ]);
+
+        DomainPricing::create([
+            'domain_extension_id' => $extension->id,
+            'period_years' => 1,
+            'tier' => 'wholesale',
+            'price' => 1500,
+            'renewal_price' => 800,
+            'enabled' => true,
+        ]);
+
+        $domain = Domain::create([
+            'user_id' => $reseller->id,
+            'name' => 'onlyrenewal',
+            'extension' => '.org',
+            'status' => 'active',
+            'type' => 'registration',
+        ]);
+
+        $renewalService = app(DomainRenewalService::class);
+        $renewalOrder = $renewalService->initiateResellerRenewal($domain, $reseller, 1);
+        $invoice = $renewalService->createInvoice($renewalOrder);
+
+        $payment = Payment::create([
+            'user_id' => $reseller->id,
+            'invoice_id' => $invoice->id,
+            'amount' => $invoice->total,
+            'currency' => 'KES',
+            'payment_method' => 'mpesa',
+            'status' => 'completed',
+            'paid_at' => now(),
+        ]);
+
+        app(InvoiceSettlementService::class)->settleFromPayment($payment);
+
+        $renewalOrder->refresh();
+        $this->assertSame('pushed', $renewalOrder->status);
+        $this->assertDatabaseCount('reseller_domain_orders', 0);
+        $this->assertDatabaseCount('domain_renewal_orders', 1);
     }
 }

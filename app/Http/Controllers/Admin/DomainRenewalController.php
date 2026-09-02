@@ -63,27 +63,33 @@ class DomainRenewalController extends Controller
     }
 
     /**
+     * Submit or retry this renewal at the API registrar.
+     */
+    public function pushToRegistrar(Request $request, DomainRenewalOrder $renewal)
+    {
+        if (! $renewal->canPushToRegistrar()) {
+            return back()->with('error', 'This renewal cannot be submitted to the registrar yet. It must be paid and pushed to admin first.');
+        }
+
+        try {
+            $result = app(RegistrarFulfillmentService::class)->fulfillRenewalManually($renewal);
+
+            return back()->with($result['success'] ? 'success' : 'error', $result['message']);
+        } catch (\Exception $e) {
+            return back()->with('error', $e->getMessage());
+        }
+    }
+
+    /**
      * Complete a domain renewal via registrar API (when available).
      */
     public function complete(Request $request, DomainRenewalOrder $renewal)
     {
-        $validated = $request->validate([
+        $request->validate([
             'admin_notes' => 'nullable|string|max:500',
         ]);
 
-        try {
-            $renewalService = app(DomainRenewalService::class);
-            app(RegistrarFulfillmentService::class)
-                ->fulfillRenewal($renewal->fresh(['domain.domainExtension']));
-            $renewal->refresh();
-            if ($renewal->status === 'pushed') {
-                $renewalService->completeRenewal($renewal, $validated['admin_notes'] ?? '');
-            }
-
-            return back()->with('success', 'Domain renewal completed successfully');
-        } catch (\Exception $e) {
-            return back()->with('error', $e->getMessage());
-        }
+        return $this->pushToRegistrar($request, $renewal);
     }
 
     /**

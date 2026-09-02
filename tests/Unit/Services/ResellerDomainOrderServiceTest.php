@@ -60,4 +60,98 @@ class ResellerDomainOrderServiceTest extends TestCase
         $this->assertTrue($order->isPlatformOrder());
         $this->assertSame('missingorder', $order->domain_name);
     }
+
+    public function test_ensure_orders_skips_renewal_invoice_lines(): void
+    {
+        $reseller = User::factory()->reseller()->create();
+
+        $domain = Domain::create([
+            'user_id' => $reseller->id,
+            'name' => 'renewskip',
+            'extension' => '.com',
+            'status' => 'active',
+            'type' => 'registration',
+        ]);
+
+        $invoice = Invoice::factory()->create([
+            'user_id' => $reseller->id,
+            'status' => 'paid',
+            'total' => 1000,
+        ]);
+
+        InvoiceItem::create([
+            'invoice_id' => $invoice->id,
+            'domain_id' => $domain->id,
+            'product_type' => 'Domain',
+            'description' => 'Renew renewskip.com (1 year)',
+            'quantity' => 1,
+            'unit_price' => 1000,
+            'amount' => 1000,
+            'custom_options' => [
+                'type' => 'domain_renewal',
+                'renewal_order_id' => 99,
+            ],
+        ]);
+
+        $created = app(ResellerDomainOrderService::class)->ensureOrdersForInvoice($invoice);
+
+        $this->assertSame(0, $created);
+        $this->assertDatabaseCount('reseller_domain_orders', 0);
+    }
+
+    public function test_retracts_registration_orders_created_from_renewal_lines(): void
+    {
+        $reseller = User::factory()->reseller()->create();
+
+        $domain = Domain::create([
+            'user_id' => $reseller->id,
+            'name' => 'dualqueue',
+            'extension' => '.com',
+            'status' => 'active',
+            'type' => 'registration',
+        ]);
+
+        $invoice = Invoice::factory()->create([
+            'user_id' => $reseller->id,
+            'status' => 'paid',
+            'total' => 900,
+        ]);
+
+        $order = ResellerDomainOrder::create([
+            'reseller_id' => $reseller->id,
+            'customer_id' => $reseller->id,
+            'domain_id' => $domain->id,
+            'customer_invoice_id' => $invoice->id,
+            'domain_name' => 'dualqueue',
+            'extension' => '.com',
+            'years' => 1,
+            'wholesale_amount' => 900,
+            'retail_amount' => 0,
+            'status' => 'queued',
+            'queued_at' => now(),
+            'expires_at' => now()->addDays(10),
+        ]);
+
+        InvoiceItem::create([
+            'invoice_id' => $invoice->id,
+            'domain_id' => $domain->id,
+            'product_type' => 'Domain',
+            'description' => 'Renew dualqueue.com (1 year)',
+            'quantity' => 1,
+            'unit_price' => 900,
+            'amount' => 900,
+            'custom_options' => [
+                'type' => 'domain_renewal',
+                'renewal_order_id' => 12,
+                'domain_order_id' => $order->id,
+            ],
+        ]);
+
+        $retracted = app(ResellerDomainOrderService::class)
+            ->retractMisclassifiedRenewalRegistrationOrders($invoice);
+
+        $this->assertSame(1, $retracted);
+        $this->assertSame('cancelled', $order->fresh()->status);
+        $this->assertArrayNotHasKey('domain_order_id', $invoice->fresh()->items->first()->custom_options ?? []);
+    }
 }

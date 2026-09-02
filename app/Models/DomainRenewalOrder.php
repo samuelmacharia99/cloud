@@ -201,6 +201,14 @@ class DomainRenewalOrder extends Model
         return $this->status === 'failed' && $this->retry_count < 3;
     }
 
+    /**
+     * Submit or retry this renewal at the linked API registrar.
+     */
+    public function canPushToRegistrar(): bool
+    {
+        return in_array($this->status, ['pushed', 'failed'], true);
+    }
+
     public function isPending(): bool
     {
         return $this->status === 'pending';
