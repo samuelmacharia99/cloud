@@ -122,7 +122,7 @@
             </div>
 
             <!-- Action Forms -->
-            @if(in_array($renewal->status, ['pushed', 'failed'], true))
+            @if($renewal->canCompleteManually())
                 <div class="ui-card p-6 space-y-6">
                     @if($renewal->canPushToRegistrar())
                         <div>
@@ -140,9 +140,9 @@
                     @endif
 
                     <div @class(['border-t border-slate-200 dark:border-slate-700 pt-6' => $renewal->canPushToRegistrar()])>
-                        <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-1">Mark as renewed (manual)</h2>
+                        <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-1">Mark as renewed</h2>
                         <p class="text-sm text-slate-600 dark:text-slate-400">
-                            Use this after renewing at the registrar outside the API. Expiry updates everywhere this domain is shown.
+                            Record the renewal for a chosen period after it is done at the registrar. This updates expiry everywhere the domain is shown.
                         </p>
                     </div>
 
@@ -272,7 +272,7 @@
             <div class="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-xl p-6">
                 <h3 class="font-bold text-blue-900 dark:text-blue-200 mb-4">Info</h3>
                 <p class="text-sm text-blue-800 dark:text-blue-300">
-                    After payment, this renewal is sent to the API registrar automatically. If that fails or the TLD has no API registrar, use Push to registrar or Mark as renewed.
+                    Renewals stay on this page. Use Mark as renewed to set the period after registrar work, or Push to registrar when an API registrar is linked.
                 </p>
             </div>
         </div>

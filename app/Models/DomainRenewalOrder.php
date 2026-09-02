@@ -209,6 +209,14 @@ class DomainRenewalOrder extends Model
         return in_array($this->status, ['pushed', 'failed'], true);
     }
 
+    /**
+     * Admin can record a registrar renewal for a chosen period.
+     */
+    public function canCompleteManually(): bool
+    {
+        return ! in_array($this->status, ['completed', 'expired'], true);
+    }
+
     public function isPending(): bool
     {
         return $this->status === 'pending';

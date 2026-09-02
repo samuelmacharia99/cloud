@@ -436,8 +436,8 @@ class DomainRenewalService
         string $adminNotes = '',
         bool $sendNotification = true,
     ): Domain {
-        if (! in_array($renewalOrder->status, ['pushed', 'failed'], true)) {
-            throw new \InvalidArgumentException('Only pushed or failed renewals can be completed manually.');
+        if (! $renewalOrder->canCompleteManually()) {
+            throw new \InvalidArgumentException('This renewal is already completed or expired.');
         }
 
         $domain = $this->completeRenewal($renewalOrder, $adminNotes, $years);

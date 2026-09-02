@@ -39,8 +39,9 @@ class DomainRenewalController extends Controller
         }
 
         $renewals = $query->paginate(20);
+        $availableYears = range(1, 10);
 
-        return view('admin.domain-renewals.index', compact('renewals'));
+        return view('admin.domain-renewals.index', compact('renewals', 'availableYears'));
     }
 
     /**
@@ -112,7 +113,12 @@ class DomainRenewalController extends Controller
                 $request->boolean('send_notification', true),
             );
 
-            return back()->with('success', 'Domain renewed until '.$domain->expires_at->format('M d, Y').'. Notification sent to account owner.');
+            $message = 'Domain renewed until '.$domain->expires_at->format('M d, Y').'.';
+            if ($request->boolean('send_notification', true)) {
+                $message .= ' Notification sent to the account owner.';
+            }
+
+            return back()->with('success', $message);
         } catch (\InvalidArgumentException $e) {
             return back()->with('error', $e->getMessage());
         } catch (\Exception $e) {

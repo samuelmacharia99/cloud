@@ -82,6 +82,7 @@ class AdminAttentionService
         $seen = $user->settings['admin_seen'] ?? [];
 
         $domainOrdersPending = ResellerDomainOrder::query()
+            ->forRegistrationQueue()
             ->whereIn('status', ['queued', 'pushed', 'failed']);
 
         $renewalsPending = DomainRenewalOrder::query()->whereIn('status', ['queued', 'paid', 'pushed', 'failed']);
@@ -127,6 +128,7 @@ class AdminAttentionService
         $counts['new_total'] = $newTotal;
 
         $counts['domain_order_breakdown'] = ResellerDomainOrder::query()
+            ->forRegistrationQueue()
             ->selectRaw('status, COUNT(*) as aggregate')
             ->whereIn('status', ['queued', 'pushed', 'failed'])
             ->groupBy('status')
@@ -175,6 +177,7 @@ class AdminAttentionService
         $items = collect();
 
         ResellerDomainOrder::query()
+            ->forRegistrationQueue()
             ->with('reseller:id,name')
             ->whereIn('status', ['queued', 'pushed', 'failed'])
             ->latest()

@@ -366,6 +366,32 @@ class ResellerDomainOrder extends Model
     }
 
     /**
+     * Registration and transfer queue only — never renewal backfills.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeForRegistrationQueue(Builder $query): Builder
+    {
+        return $query
+            ->where(function (Builder $reason) {
+                $reason->whereNull('failure_reason')
+                    ->orWhere('failure_reason', 'not like', 'Created in error from a domain renewal invoice%');
+            })
+            ->where(function (Builder $invoice) {
+                $invoice->whereNull('customer_invoice_id')
+                    ->orWhereDoesntHave('customerInvoice.items', function (Builder $items) {
+                        $items->where(function (Builder $line) {
+                            $line->where('description', 'like', 'Renew %')
+                                ->orWhere('description', 'like', 'Wholesale renewal:%')
+                                ->orWhere('custom_options', 'like', '%renewal_order_id%')
+                                ->orWhere('custom_options', 'like', '%domain_renewal%');
+                        });
+                    });
+            });
+    }
+
+    /**
      * Domain registrations placed by customers managed by this reseller (not the reseller's own orders).
      *
      * @param  Builder<self>  $query

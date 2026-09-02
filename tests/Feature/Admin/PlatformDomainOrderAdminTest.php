@@ -4,6 +4,7 @@ namespace Tests\Feature\Admin;
 
 use App\Models\Domain;
 use App\Models\Invoice;
+use App\Models\InvoiceItem;
 use App\Models\ResellerDomainOrder;
 use App\Models\User;
 use App\Services\ResellerDomainOrderService;
@@ -107,5 +108,65 @@ class PlatformDomainOrderAdminTest extends TestCase
             ->assertSee('Domain name is required')
             ->assertSee('Use Push to registrar to retry.')
             ->assertDontSee('Top up Cosmotown funds', false);
+    }
+
+    public function test_domain_orders_index_does_not_list_renewal_backfills(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $reseller = User::factory()->reseller()->create();
+
+        $invoice = Invoice::factory()->create([
+            'user_id' => $reseller->id,
+            'status' => 'paid',
+            'total' => 900,
+        ]);
+
+        $backfill = ResellerDomainOrder::create([
+            'reseller_id' => $reseller->id,
+            'customer_id' => $reseller->id,
+            'domain_name' => 'renewmix',
+            'extension' => '.com',
+            'years' => 1,
+            'wholesale_amount' => 900,
+            'retail_amount' => 0,
+            'status' => 'queued',
+            'customer_invoice_id' => $invoice->id,
+            'queued_at' => now(),
+            'expires_at' => now()->addDays(10),
+        ]);
+
+        InvoiceItem::create([
+            'invoice_id' => $invoice->id,
+            'product_type' => 'Domain',
+            'description' => 'Renew renewmix.com (1 year)',
+            'quantity' => 1,
+            'unit_price' => 900,
+            'amount' => 900,
+            'custom_options' => [
+                'type' => 'domain_renewal',
+                'renewal_order_id' => 7,
+                'domain_order_id' => $backfill->id,
+            ],
+        ]);
+
+        ResellerDomainOrder::create([
+            'reseller_id' => $reseller->id,
+            'customer_id' => $reseller->id,
+            'domain_name' => 'freshreg',
+            'extension' => '.com',
+            'years' => 1,
+            'wholesale_amount' => 1200,
+            'retail_amount' => 0,
+            'status' => 'queued',
+            'queued_at' => now(),
+            'expires_at' => now()->addDays(10),
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('admin.domain-orders.index'))
+            ->assertOk()
+            ->assertSee('freshreg.com')
+            ->assertDontSee('renewmix.com')
+            ->assertSee('Domain Renewals');
     }
 }

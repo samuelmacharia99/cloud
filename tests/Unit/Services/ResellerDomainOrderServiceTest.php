@@ -154,4 +154,71 @@ class ResellerDomainOrderServiceTest extends TestCase
         $this->assertSame('cancelled', $order->fresh()->status);
         $this->assertArrayNotHasKey('domain_order_id', $invoice->fresh()->items->first()->custom_options ?? []);
     }
+
+    public function test_registration_queue_excludes_renewal_backfill_orders(): void
+    {
+        $reseller = User::factory()->reseller()->create();
+
+        $domain = Domain::create([
+            'user_id' => $reseller->id,
+            'name' => 'keepseparate',
+            'extension' => '.com',
+            'status' => 'active',
+            'type' => 'registration',
+        ]);
+
+        $invoice = Invoice::factory()->create([
+            'user_id' => $reseller->id,
+            'status' => 'paid',
+            'total' => 900,
+        ]);
+
+        $backfill = ResellerDomainOrder::create([
+            'reseller_id' => $reseller->id,
+            'customer_id' => $reseller->id,
+            'domain_id' => $domain->id,
+            'customer_invoice_id' => $invoice->id,
+            'domain_name' => 'keepseparate',
+            'extension' => '.com',
+            'years' => 1,
+            'wholesale_amount' => 900,
+            'retail_amount' => 0,
+            'status' => 'queued',
+            'queued_at' => now(),
+            'expires_at' => now()->addDays(10),
+        ]);
+
+        InvoiceItem::create([
+            'invoice_id' => $invoice->id,
+            'domain_id' => $domain->id,
+            'product_type' => 'Domain',
+            'description' => 'Renew keepseparate.com (1 year)',
+            'quantity' => 1,
+            'unit_price' => 900,
+            'amount' => 900,
+            'custom_options' => [
+                'type' => 'domain_renewal',
+                'renewal_order_id' => 44,
+                'domain_order_id' => $backfill->id,
+            ],
+        ]);
+
+        $registration = ResellerDomainOrder::create([
+            'reseller_id' => $reseller->id,
+            'customer_id' => $reseller->id,
+            'domain_name' => 'newreg',
+            'extension' => '.com',
+            'years' => 1,
+            'wholesale_amount' => 1200,
+            'retail_amount' => 0,
+            'status' => 'queued',
+            'queued_at' => now(),
+            'expires_at' => now()->addDays(10),
+        ]);
+
+        $visible = ResellerDomainOrder::query()->forRegistrationQueue()->pluck('id');
+
+        $this->assertTrue($visible->contains($registration->id));
+        $this->assertFalse($visible->contains($backfill->id));
+    }
 }

@@ -16,7 +16,9 @@ class DomainOrderController extends Controller
 
     public function index(Request $request)
     {
-        $query = ResellerDomainOrder::with('reseller', 'customer');
+        $query = ResellerDomainOrder::query()
+            ->forRegistrationQueue()
+            ->with('reseller', 'customer');
 
         if ($request->filled('status') && $request->input('status') !== 'all') {
             $statuses = array_values(array_filter(array_map(

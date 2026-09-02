@@ -17,7 +17,7 @@
     <!-- Header -->
     <div>
         <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Domain Orders</h1>
-        <p class="text-slate-600 dark:text-slate-400 mt-1">View and manage reseller and platform direct domain registration orders.</p>
+        <p class="text-slate-600 dark:text-slate-400 mt-1">Registrations and transfers only. Domain renewals are managed on <a href="{{ route('admin.domain-renewals.index') }}" class="text-purple-600 dark:text-purple-400 hover:underline">Domain Renewals</a>.</p>
     </div>
 
     <!-- Filters -->

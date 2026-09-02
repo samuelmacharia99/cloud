@@ -18,6 +18,7 @@ class DomainPushController extends Controller
         $reseller = auth()->user();
 
         $query = ResellerDomainOrder::query()
+            ->forRegistrationQueue()
             ->forManagedCustomers($reseller)
             ->with(['customer', 'customerInvoice', 'domain']);
 

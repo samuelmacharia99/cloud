@@ -104,7 +104,9 @@ class DomainRenewalManualCompleteTest extends TestCase
 
         $this->assertSame('completed', $renewal->status);
         $this->assertSame(2, $renewal->years);
-        $this->assertTrue($domain->expires_at->equalTo($currentExpiry->copy()->addYears(2)));
+        $this->assertTrue(
+            $domain->expires_at->startOfSecond()->equalTo($currentExpiry->copy()->addYears(2)->startOfSecond())
+        );
 
         Mail::assertSent(DomainRenewalCompletedMail::class, function (DomainRenewalCompletedMail $mail) use ($reseller, $customer) {
             $html = $mail->render();
@@ -117,6 +119,63 @@ class DomainRenewalManualCompleteTest extends TestCase
                 && str_contains($html, 'Talksasa Cloud has renewed')
                 && ! str_contains($html, 'automated email from Digiworld');
         });
+    }
+
+    public function test_renewals_index_offers_mark_renewed_and_hides_registration_copy(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $reseller = $this->createReseller();
+        $domain = Domain::create([
+            'user_id' => $reseller->id,
+            'name' => 'listrenew',
+            'extension' => '.com',
+            'status' => 'active',
+            'type' => 'registration',
+            'expires_at' => now()->addMonths(4),
+        ]);
+
+        $this->createRenewalOrder($reseller, $domain, 'invoiced');
+
+        $this->actingAs($admin)
+            ->get(route('admin.domain-renewals.index'))
+            ->assertOk()
+            ->assertSee('listrenew.com')
+            ->assertSee('Mark renewed')
+            ->assertSee('Renewals only')
+            ->assertSee(route('admin.domain-orders.index', absolute: false));
+    }
+
+    public function test_admin_can_mark_invoiced_renewal_for_a_chosen_period(): void
+    {
+        Mail::fake();
+
+        $admin = User::factory()->admin()->create();
+        $reseller = $this->createReseller();
+        $currentExpiry = now()->addMonths(3)->startOfSecond();
+        $domain = Domain::create([
+            'user_id' => $reseller->id,
+            'name' => 'periodpick',
+            'extension' => '.com',
+            'status' => 'active',
+            'type' => 'registration',
+            'expires_at' => $currentExpiry,
+        ]);
+
+        $renewal = $this->createRenewalOrder($reseller, $domain, 'invoiced');
+
+        $this->actingAs($admin)
+            ->post(route('admin.domain-renewals.complete-manually', $renewal), [
+                'years' => 3,
+                'send_notification' => 0,
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $this->assertSame('completed', $renewal->fresh()->status);
+        $this->assertSame(3, $renewal->fresh()->years);
+        $this->assertTrue(
+            $domain->fresh()->expires_at->startOfSecond()->equalTo($currentExpiry->copy()->addYears(3))
+        );
     }
 
     public function test_manual_complete_rejects_non_actionable_status(): void
