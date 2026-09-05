@@ -30,6 +30,13 @@ class DomainPolicy
         return $this->view($user, $domain);
     }
 
+    public function transfer(User $user, Domain $domain): Response
+    {
+        return $user->is_admin
+            ? Response::allow()
+            : Response::deny('Only administrators can change domain ownership.');
+    }
+
     public function manageDns(User $user, Domain $domain): Response
     {
         return $this->view($user, $domain);

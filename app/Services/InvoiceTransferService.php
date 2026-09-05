@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Models\Domain;
+use App\Models\DomainRenewalOrder;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Order;
@@ -30,6 +32,51 @@ class InvoiceTransferService
         $transferred = [];
 
         foreach ($this->collectTransferableInvoicesForService($service, $fromCustomer) as $invoice) {
+            $this->transferInvoiceRecord($invoice, $fromCustomer, $targetCustomer, transferLineItemServices: false);
+            $transferred[] = $this->invoiceLabel($invoice);
+        }
+
+        return $transferred;
+    }
+
+    /**
+     * @return list<Invoice>
+     */
+    public function invoicesForDomainTransfer(Domain $domain, User $fromCustomer): array
+    {
+        return $this->collectTransferableInvoicesForDomain($domain, $fromCustomer)->values()->all();
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function transferInvoicesForDomain(Domain $domain, User $fromCustomer, User $targetCustomer): array
+    {
+        $transferred = [];
+
+        foreach ($this->collectTransferableInvoicesForDomain($domain, $fromCustomer) as $invoice) {
+            $this->transferInvoiceRecord($invoice, $fromCustomer, $targetCustomer, transferLineItemServices: false);
+            $transferred[] = $this->invoiceLabel($invoice);
+        }
+
+        return $transferred;
+    }
+
+    /**
+     * Invoices whose lines are only this domain and/or the listed services.
+     *
+     * @param  list<int>  $serviceIds
+     * @return list<string>
+     */
+    public function transferInvoicesForDomainAndServices(
+        Domain $domain,
+        User $fromCustomer,
+        User $targetCustomer,
+        array $serviceIds,
+    ): array {
+        $transferred = [];
+
+        foreach ($this->collectTransferableInvoicesForDomainAndServices($domain, $fromCustomer, $serviceIds) as $invoice) {
             $this->transferInvoiceRecord($invoice, $fromCustomer, $targetCustomer, transferLineItemServices: false);
             $transferred[] = $this->invoiceLabel($invoice);
         }
@@ -124,6 +171,136 @@ class InvoiceTransferService
             ->where('user_id', $fromCustomer->id)
             ->get()
             ->filter(fn (Invoice $invoice) => $this->invoiceBelongsToService($invoice, $service));
+    }
+
+    /**
+     * @return Collection<int, Invoice>
+     */
+    private function collectTransferableInvoicesForDomain(Domain $domain, User $fromCustomer): Collection
+    {
+        $candidateIds = InvoiceItem::query()
+            ->where('domain_id', $domain->id)
+            ->pluck('invoice_id');
+
+        $renewalInvoiceIds = DomainRenewalOrder::query()
+            ->where('domain_id', $domain->id)
+            ->whereIn('status', ['pending', 'invoiced', 'queued'])
+            ->get(['invoice_id', 'customer_invoice_id'])
+            ->flatMap(fn (DomainRenewalOrder $order) => [$order->invoice_id, $order->customer_invoice_id]);
+
+        $candidateIds = $candidateIds
+            ->merge($renewalInvoiceIds)
+            ->unique()
+            ->filter()
+            ->values();
+
+        if ($candidateIds->isEmpty()) {
+            return collect();
+        }
+
+        return Invoice::query()
+            ->with('items')
+            ->whereIn('id', $candidateIds)
+            ->where('user_id', $fromCustomer->id)
+            ->get()
+            ->filter(fn (Invoice $invoice) => $this->invoiceBelongsToDomain($invoice, $domain));
+    }
+
+    /**
+     * @param  list<int>  $serviceIds
+     * @return Collection<int, Invoice>
+     */
+    private function collectTransferableInvoicesForDomainAndServices(
+        Domain $domain,
+        User $fromCustomer,
+        array $serviceIds,
+    ): Collection {
+        $serviceIds = array_values(array_unique(array_map('intval', $serviceIds)));
+
+        $candidateIds = InvoiceItem::query()
+            ->where(function ($query) use ($domain, $serviceIds): void {
+                $query->where('domain_id', $domain->id);
+                if ($serviceIds !== []) {
+                    $query->orWhereIn('service_id', $serviceIds);
+                }
+            })
+            ->pluck('invoice_id');
+
+        $renewalInvoiceIds = DomainRenewalOrder::query()
+            ->where('domain_id', $domain->id)
+            ->whereIn('status', ['pending', 'invoiced', 'queued'])
+            ->get(['invoice_id', 'customer_invoice_id'])
+            ->flatMap(fn (DomainRenewalOrder $order) => [$order->invoice_id, $order->customer_invoice_id]);
+
+        $candidateIds = $candidateIds
+            ->merge($renewalInvoiceIds)
+            ->unique()
+            ->filter()
+            ->values();
+
+        if ($candidateIds->isEmpty()) {
+            return collect();
+        }
+
+        return Invoice::query()
+            ->with('items')
+            ->whereIn('id', $candidateIds)
+            ->where('user_id', $fromCustomer->id)
+            ->get()
+            ->filter(fn (Invoice $invoice) => $this->invoiceBelongsToDomainOrServices($invoice, $domain, $serviceIds));
+    }
+
+    /**
+     * @param  list<int>  $serviceIds
+     */
+    private function invoiceBelongsToDomainOrServices(Invoice $invoice, Domain $domain, array $serviceIds): bool
+    {
+        $items = $invoice->items;
+
+        if ($items->isEmpty()) {
+            return $this->invoiceBelongsToDomain($invoice, $domain);
+        }
+
+        return $items->every(function (InvoiceItem $item) use ($domain, $serviceIds): bool {
+            if (filled($item->service_id)) {
+                return in_array((int) $item->service_id, $serviceIds, true);
+            }
+
+            if (filled($item->domain_id)) {
+                return (int) $item->domain_id === (int) $domain->id;
+            }
+
+            return false;
+        });
+    }
+
+    private function invoiceBelongsToDomain(Invoice $invoice, Domain $domain): bool
+    {
+        $items = $invoice->items;
+
+        if ($items->isEmpty()) {
+            return DomainRenewalOrder::query()
+                ->where('domain_id', $domain->id)
+                ->where(function ($query) use ($invoice): void {
+                    $query->where('invoice_id', $invoice->id)
+                        ->orWhere('customer_invoice_id', $invoice->id);
+                })
+                ->exists();
+        }
+
+        if ($items->contains(fn (InvoiceItem $item) => filled($item->service_id))) {
+            return false;
+        }
+
+        $domainItems = $items->whereNotNull('domain_id');
+
+        if ($domainItems->isEmpty()) {
+            return false;
+        }
+
+        return $domainItems->every(
+            fn (InvoiceItem $item) => (int) $item->domain_id === (int) $domain->id
+        );
     }
 
     private function invoiceBelongsToService(Invoice $invoice, Service $service): bool

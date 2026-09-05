@@ -13,7 +13,33 @@
 @endsection
 
 @section('content')
-<div class="space-y-6 max-w-4xl">
+<div class="space-y-6 max-w-4xl"
+     x-data="{
+        transferModal: {{ $errors->hasAny(['target_user_id', 'reason', 'confirmation_email', 'transfer_services']) ? 'true' : 'false' }},
+        transferPreviewLoading: false,
+        transferPreview: null,
+        transferTargetId: '{{ old('target_user_id', '') }}',
+        customerEmails: @js($transferCustomers->pluck('email', 'id')),
+        async loadTransferPreview() {
+            if (!this.transferTargetId) {
+                this.transferPreview = null;
+                return;
+            }
+            this.transferPreviewLoading = true;
+            try {
+                const url = new URL(@js(route('admin.domains.transfer-preview', $domain)));
+                url.searchParams.set('target_user_id', this.transferTargetId);
+                const response = await fetch(url, { headers: { 'Accept': 'application/json' } });
+                const data = await response.json();
+                this.transferPreview = response.ok ? data : { error: data.error || 'Preview failed.' };
+            } catch (error) {
+                this.transferPreview = { error: 'Network error: ' + error.message };
+            } finally {
+                this.transferPreviewLoading = false;
+            }
+        }
+     }"
+     x-init="if (transferTargetId) loadTransferPreview()">
     <!-- Header -->
     <div class="flex items-center justify-between">
         <div>
@@ -97,7 +123,16 @@
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Owner</p>
                     <div class="mt-1"><x-admin.customer-link :user="$domain->user" class="text-slate-900 dark:text-white" /></div>
-                    <p class="text-xs text-slate-500 dark:text-slate-400">{{ $domain->user->email }}</p>
+                    @if ($domain->user)
+                        <p class="text-xs text-slate-500 dark:text-slate-400">{{ $domain->user->email }}</p>
+                    @endif
+                    @can('transfer', $domain)
+                        <button type="button"
+                            @click="transferModal = true; transferPreview = null;"
+                            class="mt-2 text-sm font-medium text-violet-700 dark:text-violet-300 hover:underline">
+                            Change owner
+                        </button>
+                    @endcan
                 </div>
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Auto Renewal</p>
@@ -204,11 +239,35 @@
             'optionsRoute' => route('admin.domains.registry-options', $domain),
         ])
 
-        @if ($domain->notes)
+        @php
+            $domainNotes = $domain->notes;
+            $domainNoteEntries = is_array($domainNotes)
+                ? $domainNotes
+                : (filled($domainNotes) ? [['text' => $domainNotes]] : []);
+        @endphp
+        @if ($domainNoteEntries !== [])
             <hr class="border-slate-200 dark:border-slate-700">
             <div>
                 <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-4">Notes</h2>
-                <p class="text-slate-700 dark:text-slate-300">{{ $domain->notes }}</p>
+                <ul class="space-y-2 text-sm text-slate-700 dark:text-slate-300">
+                    @foreach ($domainNoteEntries as $note)
+                        @if (is_array($note) && ($note['type'] ?? '') === 'admin_ownership_transfer')
+                            <li>
+                                Ownership moved from {{ $note['from'] ?? '—' }} to {{ $note['to'] ?? '—' }}
+                                @if (! empty($note['reason']))
+                                    — {{ $note['reason'] }}
+                                @endif
+                                @if (! empty($note['transferred_at']))
+                                    <span class="text-slate-500"> ({{ \Illuminate\Support\Carbon::parse($note['transferred_at'])->format('M d, Y H:i') }})</span>
+                                @endif
+                            </li>
+                        @elseif (is_array($note))
+                            <li>{{ $note['text'] ?? $note['to'] ?? json_encode($note) }}</li>
+                        @else
+                            <li>{{ $note }}</li>
+                        @endif
+                    @endforeach
+                </ul>
             </div>
         @endif
     </div>
@@ -246,5 +305,138 @@
     <div class="bg-slate-50 dark:bg-slate-800 rounded-xl p-4 text-xs text-slate-600 dark:text-slate-400">
         <p>Created {{ $domain->created_at->diffForHumans() }} • Updated {{ $domain->updated_at->diffForHumans() }}</p>
     </div>
+
+    @can('transfer', $domain)
+    <div x-show="transferModal" x-cloak x-transition
+         class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+         @click.self="transferModal = false">
+        <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden">
+            <div class="p-6 border-b border-slate-200 dark:border-slate-800">
+                <h2 class="text-lg font-bold text-slate-900 dark:text-white">Change domain owner</h2>
+                <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                    Moves {{ $domain->fqdn() }} to another customer in Talksasa. Registry registration stays the same.
+                </p>
+            </div>
+            @if ($transferCustomers->isEmpty())
+                <div class="p-6">
+                    <p class="text-sm text-slate-600 dark:text-slate-400">There is no other customer account to assign this domain to.</p>
+                </div>
+                <div class="p-6 border-t border-slate-200 dark:border-slate-800">
+                    <button type="button" @click="transferModal = false"
+                            class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-white rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 font-medium">
+                        Close
+                    </button>
+                </div>
+            @else
+                <form method="POST" action="{{ route('admin.domains.transfer-ownership', $domain) }}">
+                    @csrf
+                    <div class="p-6 space-y-4">
+                        <div>
+                            <label for="target_user_id" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">New owner</label>
+                            <select id="target_user_id" name="target_user_id" required x-model="transferTargetId" @change="loadTransferPreview()"
+                                    class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-violet-500 focus:border-transparent">
+                                <option value="">Select a customer…</option>
+                                @foreach ($transferCustomers as $customer)
+                                    <option value="{{ $customer->id }}" @selected((string) old('target_user_id') === (string) $customer->id)>
+                                        {{ $customer->name }} ({{ $customer->email }})
+                                    </option>
+                                @endforeach
+                            </select>
+                            @error('target_user_id')
+                                <p class="text-red-600 dark:text-red-400 text-xs mt-1">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        @if ($linkedServices->isNotEmpty())
+                            <fieldset class="rounded-lg border border-slate-200 dark:border-slate-700 p-4 space-y-3">
+                                <legend class="text-sm font-medium text-slate-900 dark:text-white px-1">Also move the hosting service?</legend>
+                                <p class="text-sm text-slate-600 dark:text-slate-400">
+                                    This domain is attached to
+                                    {{ $linkedServices->map(fn ($service) => $service->name.' (#'.$service->id.')')->join(', ') }}.
+                                    Choose one:
+                                </p>
+                                <label class="flex items-start gap-3 cursor-pointer">
+                                    <input type="radio" name="transfer_services" value="1" required
+                                           @checked((string) old('transfer_services') === '1')
+                                           class="mt-1 border-slate-300 dark:border-slate-600 text-violet-600 focus:ring-violet-500">
+                                    <span class="text-sm text-slate-700 dark:text-slate-300">
+                                        Yes — move the service{{ $linkedServices->count() > 1 ? 's' : '' }} to the new owner. Related service invoices that only bill {{ $linkedServices->count() > 1 ? 'these services' : 'this service' }} move too.
+                                    </span>
+                                </label>
+                                <label class="flex items-start gap-3 cursor-pointer">
+                                    <input type="radio" name="transfer_services" value="0" required
+                                           @checked((string) old('transfer_services') === '0')
+                                           class="mt-1 border-slate-300 dark:border-slate-600 text-violet-600 focus:ring-violet-500">
+                                    <span class="text-sm text-slate-700 dark:text-slate-300">
+                                        No — leave the service{{ $linkedServices->count() > 1 ? 's' : '' }} on {{ $domain->user?->name ?? 'the current customer' }}.
+                                    </span>
+                                </label>
+                                @error('transfer_services')
+                                    <p class="text-red-600 dark:text-red-400 text-xs">{{ $message }}</p>
+                                @enderror
+                            </fieldset>
+                        @endif
+
+                        <div>
+                            <label for="reason" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Reason</label>
+                            <input type="text" id="reason" name="reason" value="{{ old('reason') }}" required maxlength="500"
+                                   placeholder="e.g. Customer asked to move this domain to their other account"
+                                   class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-violet-500 focus:border-transparent">
+                            @error('reason')
+                                <p class="text-red-600 dark:text-red-400 text-xs mt-1">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        <div>
+                            <label for="confirmation_email" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Confirm new owner email</label>
+                            <input type="email" id="confirmation_email" name="confirmation_email" value="{{ old('confirmation_email') }}" required
+                                   :placeholder="customerEmails[transferTargetId] || 'Select a customer first'"
+                                   class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-violet-500 focus:border-transparent">
+                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Type the selected customer’s email to confirm. This cannot be undone from here.</p>
+                            @error('confirmation_email')
+                                <p class="text-red-600 dark:text-red-400 text-xs mt-1">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        <div x-show="transferPreviewLoading" class="text-sm text-slate-500 dark:text-slate-400">Loading preview…</div>
+
+                        <div x-show="transferPreview?.error" class="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 px-4 py-3 text-sm text-red-800 dark:text-red-200" x-text="transferPreview?.error"></div>
+
+                        <div x-show="transferPreview && !transferPreview.error" class="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-4 py-3 space-y-2 text-sm">
+                            <p class="text-slate-900 dark:text-white">
+                                <span class="font-medium">From:</span>
+                                <span x-text="transferPreview?.from?.name"></span>
+                                <span class="text-slate-500 dark:text-slate-400" x-show="transferPreview?.from?.reseller" x-text="'(' + transferPreview?.from?.reseller + ')'"></span>
+                            </p>
+                            <p class="text-slate-900 dark:text-white">
+                                <span class="font-medium">To:</span>
+                                <span x-text="transferPreview?.to?.name"></span>
+                                <span class="text-slate-500 dark:text-slate-400" x-show="transferPreview?.to?.reseller" x-text="'(' + transferPreview?.to?.reseller + ')'"></span>
+                            </p>
+                            <template x-if="transferPreview?.warnings?.length">
+                                <ul class="list-disc list-inside text-amber-700 dark:text-amber-300 space-y-1 pt-1">
+                                    <template x-for="warning in transferPreview.warnings" :key="warning">
+                                        <li x-text="warning"></li>
+                                    </template>
+                                </ul>
+                            </template>
+                        </div>
+                    </div>
+                    <div class="p-6 border-t border-slate-200 dark:border-slate-800 flex gap-3">
+                        <button type="button" @click="transferModal = false"
+                                class="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-white rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 font-medium">
+                            Cancel
+                        </button>
+                        <button type="submit"
+                                class="flex-1 px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-lg font-medium"
+                                :disabled="!transferTargetId">
+                            Move ownership
+                        </button>
+                    </div>
+                </form>
+            @endif
+        </div>
+    </div>
+    @endcan
 </div>
 @endsection

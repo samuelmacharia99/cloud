@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\TransferAdminDomainOwnershipRequest;
 use App\Http\Requests\UpdateAdminDomainRequest;
 use App\Models\Domain;
 use App\Models\DomainExtension;
@@ -10,6 +11,7 @@ use App\Models\DomainPricing;
 use App\Models\DomainRenewalOrder;
 use App\Models\User;
 use App\Services\Admin\AdminDomainUpdateService;
+use App\Services\DomainOwnershipTransferService;
 use App\Services\DomainRegistrantContactService;
 use App\Services\DomainRenewalService;
 use App\Services\NotificationService;
@@ -249,7 +251,16 @@ class DomainController extends Controller
     {
         $registry = app(RegistrarFulfillmentService::class)->refreshLiveRegistryDetails($domain);
 
-        $domain->load('user', 'domainExtension', 'dnsZones');
+        $domain->load('user', 'domainExtension', 'dnsZones', 'reseller');
+
+        $transferCustomers = User::query()
+            ->where('is_admin', false)
+            ->where('is_reseller', false)
+            ->where('id', '!=', $domain->user_id)
+            ->orderBy('name')
+            ->get(['id', 'name', 'email', 'reseller_id']);
+
+        $linkedServices = app(DomainOwnershipTransferService::class)->linkedServicesForOwner($domain);
 
         $nameservers = $registry['nameservers'];
         $eppCode = $registry['epp_code'];
@@ -259,7 +270,68 @@ class DomainController extends Controller
                 : ($domain->user ? app(DomainRegistrantContactService::class)->fromUser($domain->user) : [])
         );
 
-        return view('admin.domains.show', compact('domain', 'nameservers', 'eppCode', 'registry', 'registrant'));
+        return view('admin.domains.show', compact(
+            'domain',
+            'nameservers',
+            'eppCode',
+            'registry',
+            'registrant',
+            'transferCustomers',
+            'linkedServices',
+        ));
+    }
+
+    public function transferPreview(Request $request, Domain $domain, DomainOwnershipTransferService $transfers)
+    {
+        $this->authorize('transfer', $domain);
+
+        $validated = $request->validate([
+            'target_user_id' => 'required|exists:users,id',
+        ]);
+
+        $targetCustomer = User::query()->findOrFail($validated['target_user_id']);
+
+        try {
+            return response()->json($transfers->preview($domain, $targetCustomer));
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['error' => $e->getMessage()], 422);
+        }
+    }
+
+    public function transferOwnership(
+        TransferAdminDomainOwnershipRequest $request,
+        Domain $domain,
+        DomainOwnershipTransferService $transfers,
+    ) {
+        $targetCustomer = User::query()->findOrFail($request->integer('target_user_id'));
+
+        try {
+            $result = $transfers->transfer(
+                $domain,
+                $targetCustomer,
+                $request->validated('reason'),
+                $request->user(),
+                $request->boolean('transfer_services'),
+            );
+        } catch (\InvalidArgumentException $e) {
+            return back()->withInput()->with('error', $e->getMessage());
+        }
+
+        $flash = "Ownership of {$domain->fqdn()} moved from {$result['from_customer']} to {$result['to_customer']}.";
+
+        if ($result['services_transferred'] > 0) {
+            $flash .= ' Hosting service(s) moved with the domain.';
+        } elseif ($result['services_left'] > 0) {
+            $flash .= ' Hosting service(s) stayed with the previous customer.';
+        }
+
+        if (! empty($result['invoices_transferred'])) {
+            $flash .= ' Invoices moved: '.implode(', ', $result['invoices_transferred']).'.';
+        }
+
+        return redirect()
+            ->route('admin.domains.show', $domain)
+            ->with('success', $flash);
     }
 
     public function updateNameservers(Request $request, Domain $domain)

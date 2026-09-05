@@ -245,6 +245,8 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::put('admin/domains/{domain}/nameservers', [DomainController::class, 'updateNameservers'])->name('admin.domains.nameservers');
         Route::put('admin/domains/{domain}/registrant', [DomainController::class, 'updateRegistrant'])->name('admin.domains.registrant');
         Route::put('admin/domains/{domain}/registry-options', [DomainController::class, 'updateRegistryOptions'])->name('admin.domains.registry-options');
+        Route::get('admin/domains/{domain}/transfer-preview', [DomainController::class, 'transferPreview'])->name('admin.domains.transfer-preview');
+        Route::post('admin/domains/{domain}/transfer-ownership', [DomainController::class, 'transferOwnership'])->name('admin.domains.transfer-ownership');
         Route::get('admin/domains-pricing', [DomainController::class, 'pricing'])->name('admin.domains.pricing');
         Route::post('admin/domains-pricing', [DomainController::class, 'storePricing'])->name('admin.domains.pricing.store');
         Route::post('admin/domain-extensions', [DomainController::class, 'storeExtension'])->name('admin.domain-extensions.store');
