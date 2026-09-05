@@ -13,12 +13,21 @@ class NginxProxyService
     /**
      * Bump when the generated vhost changes so existing sites are rewritten.
      */
-    public const VHOST_REVISION = 'v5';
+    public const VHOST_REVISION = 'v6';
 
     /**
-     * Bind a domain to a container via nginx reverse proxy
+     * Shared static pages on each container node. Suspended sites stop proxying
+     * to a dead upstream (raw nginx 502) and serve these instead.
      */
-    public function bind(ContainerDomain $domain): void
+    public const EDGE_PAGES_DIR = '/var/www/talksasa-edge';
+
+    /**
+     * Bind a domain to a container via nginx reverse proxy.
+     *
+     * `$suspended` parks the vhost on the shared edge page. Null means detect
+     * from the service status so a bind during billing suspend stays parked.
+     */
+    public function bind(ContainerDomain $domain, ?bool $suspended = null): void
     {
         $deployment = $domain->deployment;
         $node = $deployment->node;
@@ -31,7 +40,8 @@ class NginxProxyService
             // Generate nginx config. Preserve SSL server block when the domain
             // already has certificate paths configured.
             $withSsl = (bool) ($domain->ssl_enabled && $domain->ssl_certificate_path && $domain->ssl_key_path);
-            $config = $this->generateConfig($domain, $withSsl);
+            $suspended ??= $this->domainShouldServeSuspendedPage($domain);
+            $config = $this->generateConfig($domain, $withSsl, $suspended);
 
             // Connect to node via SSH
             $ssh = SSHService::forNode($node);
@@ -42,6 +52,8 @@ class NginxProxyService
                     'Install nginx (and optionally grant sudo for nginx commands) before binding domains.'
                 );
             }
+
+            $this->ensureEdgePages($ssh);
 
             $configDir = $this->resolveNginxConfigDir($ssh);
             $ssh->exec('mkdir -p '.escapeshellarg($configDir));
@@ -221,7 +233,8 @@ class NginxProxyService
                 'error_message' => null,
             ]);
 
-            // Regenerate config with SSL blocks
+            // Regenerate config with SSL blocks (keep a parked page if suspended)
+            $this->ensureEdgePages($ssh);
             $config = $this->generateConfig($domain, true);
             $configPath = $this->resolveNginxConfigDir($ssh)."/{$domain->domain}.conf";
             $ssh->upload($config, $configPath); // configPath is used as upload destination (not in exec)
@@ -284,22 +297,30 @@ class NginxProxyService
     }
 
     /**
-     * Generate nginx configuration for a domain
+     * Generate nginx configuration for a domain.
+     *
+     * Suspended mode serves HTTP 503 from the shared edge page instead of
+     * proxy_pass (a stopped container otherwise becomes the stock nginx 502).
      */
-    public function generateConfig(ContainerDomain $domain, bool $withSsl = false): string
+    public function generateConfig(ContainerDomain $domain, bool $withSsl = false, ?bool $suspended = null): string
     {
         $deployment = $domain->deployment;
-        $node = $deployment->node;
         $port = $deployment->assigned_port;
+
+        $suspended ??= $this->domainShouldServeSuspendedPage($domain);
 
         // Default nginx client_max_body_size is 1m — WordPress media uploads return 413 without this.
         $uploadLimit = $this->clientMaxBodySize();
         $revision = self::VHOST_REVISION;
+        $modeMarker = $suspended ? '# talksasa-edge-suspended' : '# talksasa-edge-proxy';
 
-        $location = $this->proxyPassLocation((int) $port);
+        $location = $suspended
+            ? $this->suspendedLocation()
+            : $this->proxyPassLocation((int) $port)."\n".$this->unavailableErrorPageLocation();
 
         $httpBlock = <<<EOL
 # talksasa-vhost {$revision}
+{$modeMarker}
 server {
     listen 80;
     server_name {$domain->domain};
@@ -319,6 +340,7 @@ EOL;
 
         return <<<EOL
 # talksasa-vhost {$revision}
+{$modeMarker}
 server {
     listen 80;
     server_name {$domain->domain};
@@ -373,21 +395,164 @@ EOL;
     }
 
     /**
+     * Park the hostname: keep TLS, stop proxying, return 503 with the owner CTA.
+     */
+    public function suspendedLocation(): string
+    {
+        $root = self::EDGE_PAGES_DIR;
+
+        return <<<EOL
+    error_page 503 /suspended.html;
+    location = /suspended.html {
+        root {$root};
+        internal;
+        default_type text/html;
+        add_header Retry-After 3600 always;
+        add_header Cache-Control "no-store" always;
+    }
+    location / {
+        return 503;
+    }
+EOL;
+    }
+
+    /**
+     * Replace the stock nginx 502/504 page when the container is down unexpectedly.
+     */
+    public function unavailableErrorPageLocation(): string
+    {
+        $root = self::EDGE_PAGES_DIR;
+
+        return <<<EOL
+    error_page 502 503 504 /unavailable.html;
+    location = /unavailable.html {
+        root {$root};
+        internal;
+        default_type text/html;
+        add_header Cache-Control "no-store" always;
+    }
+EOL;
+    }
+
+    public function domainShouldServeSuspendedPage(ContainerDomain $domain): bool
+    {
+        $domain->loadMissing('deployment.service');
+
+        return $domain->deployment?->service?->isSuspended() === true;
+    }
+
+    /**
+     * Rewrite bound vhosts to the parked 503 page. Called before docker stop so
+     * visitors never see the default nginx 502 while the container is dying.
+     */
+    public function applySuspendedVhosts(Service $service): int
+    {
+        return $this->refreshBoundDomainVhosts($service, force: true, suspended: true, throwOnFailure: true);
+    }
+
+    /**
+     * Restore proxy_pass after the stack is running again.
+     */
+    public function restoreProxyVhosts(Service $service): int
+    {
+        return $this->refreshBoundDomainVhosts($service, force: true, suspended: false, throwOnFailure: true);
+    }
+
+    /**
+     * Upload the shared edge HTML once per node so error_page has a real file.
+     */
+    public function ensureEdgePages($ssh): void
+    {
+        $dir = self::EDGE_PAGES_DIR;
+        $ssh->exec('mkdir -p '.escapeshellarg($dir));
+        $ssh->upload($this->suspendedPageHtml(), $dir.'/suspended.html');
+        $ssh->upload($this->unavailablePageHtml(), $dir.'/unavailable.html');
+    }
+
+    public function suspendedPageHtml(): string
+    {
+        return $this->edgePageHtml(
+            title: 'This website is paused',
+            heading: 'This website is paused',
+            body: 'The hosting account for this site is currently paused. If you are the owner, sign in to see why and restore it.',
+            cta: 'Sign in to restore this site',
+        );
+    }
+
+    public function unavailablePageHtml(): string
+    {
+        return $this->edgePageHtml(
+            title: 'This website is temporarily unavailable',
+            heading: 'This website is temporarily unavailable',
+            body: 'The site could not be reached just now. Please try again shortly. If you are the owner, check the service status in your hosting account.',
+            cta: 'Open your hosting account',
+        );
+    }
+
+    private function edgePageHtml(string $title, string $heading, string $body, string $cta): string
+    {
+        $company = htmlspecialchars((string) config('app.name', 'Talksasa Cloud'), ENT_QUOTES, 'UTF-8');
+        $portal = htmlspecialchars(url('/login'), ENT_QUOTES, 'UTF-8');
+        $title = htmlspecialchars($title, ENT_QUOTES, 'UTF-8');
+        $heading = htmlspecialchars($heading, ENT_QUOTES, 'UTF-8');
+        $body = htmlspecialchars($body, ENT_QUOTES, 'UTF-8');
+        $cta = htmlspecialchars($cta, ENT_QUOTES, 'UTF-8');
+
+        return <<<HTML
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow">
+    <title>{$title}</title>
+    <style>
+        :root { color-scheme: light dark; }
+        body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+            font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+            background: #0f172a; color: #e2e8f0; padding: 24px; }
+        main { max-width: 36rem; width: 100%; background: #111827; border: 1px solid #334155;
+            border-radius: 16px; padding: 2rem 1.75rem; box-shadow: 0 20px 40px rgba(0,0,0,.35); }
+        .mark { display: inline-block; font-size: 11px; letter-spacing: .18em; text-transform: uppercase;
+            color: #5eead4; margin-bottom: 1rem; }
+        h1 { margin: 0 0 .75rem; font-size: 1.5rem; line-height: 1.3; color: #f8fafc; }
+        p { margin: 0 0 1.5rem; line-height: 1.6; color: #cbd5e1; }
+        a.cta { display: inline-block; background: #0f766e; color: #f8fafc; text-decoration: none;
+            font-weight: 600; padding: .7rem 1.1rem; border-radius: 10px; }
+        a.cta:hover { background: #0d9488; }
+        .fine { margin: 1.25rem 0 0; font-size: .85rem; color: #94a3b8; }
+    </style>
+</head>
+<body>
+    <main>
+        <div class="mark">{$company}</div>
+        <h1>{$heading}</h1>
+        <p>{$body}</p>
+        <a class="cta" href="{$portal}">{$cta}</a>
+        <p class="fine">If you reached this page by mistake, try again in a few minutes.</p>
+    </main>
+</body>
+</html>
+HTML;
+    }
+
+    /**
      * Rewrite nginx vhosts generated before the current template. Older files kept the
      * 1m body default (WordPress 413), proxied over HTTP/1.0 with request buffering
      * disabled, or used 4k/8k header buffers that 502 cookie-session login pages.
      *
      * @return bool true when the config was rewritten
      */
-    public function ensureUploadLimit(ContainerDomain $domain, bool $force = false): bool
+    public function ensureUploadLimit(ContainerDomain $domain, bool $force = false, ?bool $suspended = null): bool
     {
-        $domain->loadMissing('deployment.node');
+        $domain->loadMissing('deployment.node', 'deployment.service');
 
         $node = $domain->deployment?->node;
         if (! $node || ! in_array($domain->status, ['active', 'pending'], true)) {
             return false;
         }
 
+        $suspended ??= $this->domainShouldServeSuspendedPage($domain);
         $ssh = SSHService::forNode($node);
 
         try {
@@ -404,11 +569,11 @@ EOL;
                 // Missing file — full bind will recreate it.
             }
 
-            if (! $force && $existing !== '' && $this->vhostIsCurrent($existing)) {
+            if (! $force && $existing !== '' && $this->vhostIsCurrent($existing, $suspended)) {
                 return false;
             }
 
-            $this->bind($domain->fresh(['deployment.node']));
+            $this->bind($domain->fresh(['deployment.node', 'deployment.service']), $suspended);
 
             return true;
         } finally {
@@ -452,7 +617,7 @@ EOL;
      * Rewrite this service's bound vhosts. `$force` rewrites even when the revision
      * marker already matches, so login 502s are not stuck on a silently skipped vhost.
      */
-    public function refreshBoundDomainVhosts(Service $service, bool $force = false): int
+    public function refreshBoundDomainVhosts(Service $service, bool $force = false, ?bool $suspended = null, bool $throwOnFailure = false): int
     {
         $service->loadMissing('containerDeployment.domains');
 
@@ -464,7 +629,7 @@ EOL;
         $updated = 0;
         foreach ($domains as $domain) {
             try {
-                if ($this->ensureUploadLimit($domain, $force)) {
+                if ($this->ensureUploadLimit($domain, $force, $suspended)) {
                     $updated++;
                 }
             } catch (\Throwable $e) {
@@ -473,6 +638,10 @@ EOL;
                     'domain' => $domain->domain,
                     'error' => $e->getMessage(),
                 ]);
+
+                if ($throwOnFailure) {
+                    throw $e;
+                }
             }
         }
 
@@ -489,16 +658,45 @@ EOL;
     }
 
     /**
-     * A vhost is current when it carries this revision marker and the configured body
-     * limit. Anything older is regenerated so long-lived sites pick up proxy fixes.
+     * A vhost is current when it carries this revision marker and matches the
+     * expected mode (proxy vs parked). Leftover parked pages on an active
+     * service must be rewritten back to proxy_pass.
      */
-    public function vhostIsCurrent(string $config): bool
+    public function vhostIsCurrent(string $config, ?bool $expectSuspended = null): bool
     {
-        return str_contains($config, '# talksasa-vhost '.self::VHOST_REVISION)
-            && str_contains($config, 'client_max_body_size '.$this->clientMaxBodySize())
+        if (! str_contains($config, '# talksasa-vhost '.self::VHOST_REVISION)) {
+            return false;
+        }
+
+        $isSuspendedVhost = str_contains($config, '# talksasa-edge-suspended');
+
+        if ($expectSuspended === true) {
+            return $isSuspendedVhost && $this->suspendedVhostHasCurrentDirectives($config);
+        }
+
+        if ($expectSuspended === false) {
+            return ! $isSuspendedVhost && $this->proxyVhostHasCurrentDirectives($config);
+        }
+
+        return $isSuspendedVhost
+            ? $this->suspendedVhostHasCurrentDirectives($config)
+            : $this->proxyVhostHasCurrentDirectives($config);
+    }
+
+    public function proxyVhostHasCurrentDirectives(string $config): bool
+    {
+        return str_contains($config, 'client_max_body_size '.$this->clientMaxBodySize())
             && str_contains($config, 'proxy_buffer_size 128k')
             && str_contains($config, 'proxy_set_header Upgrade')
-            && str_contains($config, 'proxy_set_header Connection "upgrade"');
+            && str_contains($config, 'proxy_set_header Connection "upgrade"')
+            && str_contains($config, 'error_page 502 503 504');
+    }
+
+    public function suspendedVhostHasCurrentDirectives(string $config): bool
+    {
+        return str_contains($config, 'return 503')
+            && str_contains($config, self::EDGE_PAGES_DIR)
+            && str_contains($config, '/suspended.html');
     }
 
     /**

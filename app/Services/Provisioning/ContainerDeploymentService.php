@@ -632,6 +632,17 @@ class ContainerDeploymentService
                 // Ensure docker-compose.yml exists
                 $this->ensureComposeFileExists($ssh, $deployment);
 
+                // Park nginx first so visitors see a 503 page instead of the stock
+                // "502 Bad Gateway / nginx/1.18.0" while the container is stopping.
+                try {
+                    app(NginxProxyService::class)->applySuspendedVhosts($service);
+                } catch (\Throwable $e) {
+                    \Log::warning('Parked nginx page was not applied before container stop', [
+                        'service_id' => $service->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+
                 $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
                 $ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml stop", self::DEPLOY_TIMEOUT);
 
@@ -709,6 +720,17 @@ class ContainerDeploymentService
 
                 $service->update(['status' => 'active']);
                 app(ContainerCronService::class)->resumeForService($service);
+
+                try {
+                    app(NginxProxyService::class)->restoreProxyVhosts($service->fresh());
+                } catch (\Throwable $e) {
+                    \Log::error('Container resumed but nginx vhosts were not restored to proxy', [
+                        'service_id' => $service->id,
+                        'error' => $e->getMessage(),
+                    ]);
+
+                    throw $e;
+                }
 
                 \Log::info("Container resumed for service {$service->id}");
             } finally {
