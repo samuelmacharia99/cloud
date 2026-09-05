@@ -521,6 +521,54 @@ class CosmotownRegistrarDriverTest extends TestCase
         });
     }
 
+    public function test_register_rejects_processed_ack_that_does_not_name_the_domain(): void
+    {
+        Http::fake([
+            'sandbox.cosmotown.com/v1/reseller/registerdomains' => Http::response([
+                'status' => 'processed',
+            ], 200),
+            'sandbox.cosmotown.com/v1/reseller/domaininfo*' => Http::response([
+                'error_message' => 'Domain not found',
+            ], 404),
+        ]);
+
+        $result = (new CosmotownRegistrarDriver)->registerDomain(
+            $this->makeRegistrar(),
+            new Domain(['name' => 'j2finefurniture', 'extension' => '.shop']),
+            1,
+            [['name' => 'ns1.talksasa.com'], ['name' => 'ns2.talksasa.com']]
+        );
+
+        $this->assertFalse($result['success']);
+        $this->assertStringContainsString('j2finefurniture.shop', $result['message']);
+        $this->assertTrue(blank($result['external_id'] ?? null));
+    }
+
+    public function test_register_accepts_processed_ack_when_domaininfo_confirms_the_name(): void
+    {
+        Http::fake([
+            'sandbox.cosmotown.com/v1/reseller/registerdomains' => Http::response([
+                'status' => 'processed',
+            ], 200),
+            'sandbox.cosmotown.com/v1/reseller/domaininfo*' => Http::response([
+                'domain' => 'j2finefurniture.shop',
+                'expiration_date' => '2027-09-02',
+            ], 200),
+            'sandbox.cosmotown.com/v1/reseller/savedomainnameservers' => Http::response(['status' => 'processed'], 200),
+            'sandbox.cosmotown.com/v1/reseller/contactinfo*' => Http::response(['status' => 'processed'], 200),
+        ]);
+
+        $result = (new CosmotownRegistrarDriver)->registerDomain(
+            $this->makeRegistrar(),
+            new Domain(['name' => 'j2finefurniture', 'extension' => '.shop']),
+            1,
+            [['name' => 'ns1.talksasa.com'], ['name' => 'ns2.talksasa.com']]
+        );
+
+        $this->assertTrue($result['success'], $result['message'] ?? '');
+        $this->assertSame('j2finefurniture.shop', $result['external_id']);
+    }
+
     public function test_registrar_manager_resolves_cosmotown_driver(): void
     {
         $registrar = $this->makeRegistrar();

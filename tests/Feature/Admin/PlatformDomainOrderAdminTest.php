@@ -110,6 +110,38 @@ class PlatformDomainOrderAdminTest extends TestCase
             ->assertDontSee('Top up Cosmotown funds', false);
     }
 
+    public function test_platform_order_with_cosmotown_handle_shows_retry_at_registrar(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $customer = User::factory()->customer()->create(['reseller_id' => null]);
+        $domain = Domain::create([
+            'user_id' => $customer->id,
+            'name' => 'j2finefurniture',
+            'extension' => '.shop',
+            'status' => 'pending',
+            'registrar_handle' => 'j2finefurniture.shop',
+        ]);
+
+        $order = ResellerDomainOrder::create([
+            'reseller_id' => null,
+            'customer_id' => $customer->id,
+            'domain_id' => $domain->id,
+            'domain_name' => 'j2finefurniture',
+            'extension' => '.shop',
+            'years' => 1,
+            'wholesale_amount' => 480,
+            'retail_amount' => 0,
+            'status' => 'pushed',
+            'pushed_at' => now(),
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('admin.domain-orders.show', $order))
+            ->assertOk()
+            ->assertSee('Retry at registrar')
+            ->assertSee('If Cosmotown does not list this name');
+    }
+
     public function test_domain_orders_index_does_not_list_renewal_backfills(): void
     {
         $admin = User::factory()->admin()->create();

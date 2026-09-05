@@ -8,6 +8,7 @@ use App\Models\Service;
 use App\Models\User;
 use App\Services\NodeNameserverService;
 use App\Services\Provisioning\MailDnsService;
+use App\Services\Registrar\RegistrarFulfillmentService;
 use Illuminate\Support\Facades\Log;
 
 class DomainCloudflareDnsService
@@ -74,6 +75,9 @@ class DomainCloudflareDnsService
     }
 
     /**
+     * Guess Cloudflare NS before a zone exists (cart only). Never use this after
+     * Cloudflare has assigned a pair to the zone — those can differ from branded settings.
+     *
      * @return array{ns1: string, ns2: ?string, ns3: ?string, ns4: ?string}
      */
     public function nameserversForRegistration(): array
@@ -90,6 +94,27 @@ class DomainCloudflareDnsService
         }
 
         return $this->nameservers->platformDefaults();
+    }
+
+    /**
+     * Nameservers Cloudflare assigned to this domain's zone, else a cart guess.
+     *
+     * @return array{ns1: string, ns2: ?string, ns3: ?string, ns4: ?string}
+     */
+    public function nameserversForDomain(Domain $domain): array
+    {
+        $stored = $this->packNameservers([
+            (string) ($domain->nameserver_1 ?? ''),
+            (string) ($domain->nameserver_2 ?? ''),
+            (string) ($domain->nameserver_3 ?? ''),
+            (string) ($domain->nameserver_4 ?? ''),
+        ]);
+
+        if (filled($stored['ns1']) && filled($stored['ns2'])) {
+            return $stored;
+        }
+
+        return $this->nameserversForRegistration();
     }
 
     /**
@@ -113,7 +138,8 @@ class DomainCloudflareDnsService
         $fqdn = strtolower($domain->fqdn());
 
         if ($domain->cloudflare_zone_id) {
-            $zone = $this->ensureLocalZone($domain, $domain->cloudflare_zone_id);
+            $this->refreshAssignedNameservers($domain, pushToRegistrar: true);
+            $zone = $this->ensureLocalZone($domain->fresh(), $domain->cloudflare_zone_id);
 
             try {
                 app(MailDnsService::class)->applyForDomain($domain->fresh());
@@ -143,6 +169,7 @@ class DomainCloudflareDnsService
         }
 
         $this->applyNameserversToDomain($domain, $created['nameservers'] ?? []);
+        $this->pushAssignedNameserversToRegistrar($domain->fresh());
 
         $domain->update([
             'cloudflare_dns_enabled' => true,
@@ -336,21 +363,69 @@ class DomainCloudflareDnsService
     }
 
     /**
+     * Pull the zone's assigned pair from Cloudflare and store it on the domain.
+     * Branded admin NS are not used once Cloudflare has assigned a pair.
+     */
+    public function refreshAssignedNameservers(Domain $domain, bool $pushToRegistrar = false): void
+    {
+        $zoneId = (string) ($domain->cloudflare_zone_id ?? '');
+        $zone = $zoneId !== '' ? $this->cloudflare->getZone($zoneId) : ['success' => false];
+
+        if (! ($zone['success'] ?? false) || ($zone['nameservers'] ?? []) === []) {
+            $zone = $this->cloudflare->findZoneByName(strtolower($domain->fqdn()));
+        }
+
+        if (! ($zone['success'] ?? false)) {
+            return;
+        }
+
+        $this->applyNameserversToDomain($domain, $zone['nameservers'] ?? []);
+
+        if ($pushToRegistrar) {
+            $this->pushAssignedNameserversToRegistrar($domain->fresh());
+        }
+    }
+
+    /**
      * @param  list<string>  $cloudflareNameservers
      */
     private function applyNameserversToDomain(Domain $domain, array $cloudflareNameservers): void
     {
+        $fromZone = $this->packNameservers($cloudflareNameservers);
         $branded = $this->cloudflare->brandedNameservers();
-        $source = filled($branded['ns1'])
-            ? $branded
-            : $this->packNameservers($cloudflareNameservers);
+        $source = filled($fromZone['ns1']) && filled($fromZone['ns2'])
+            ? $fromZone
+            : (filled($branded['ns1']) ? $branded : $fromZone);
 
         $domain->update([
-            'nameserver_1' => $source['ns1'] ?? null,
+            'nameserver_1' => $source['ns1'] !== '' ? $source['ns1'] : null,
             'nameserver_2' => $source['ns2'] ?? null,
             'nameserver_3' => $source['ns3'] ?? null,
             'nameserver_4' => $source['ns4'] ?? null,
         ]);
+    }
+
+    private function pushAssignedNameserversToRegistrar(Domain $domain): void
+    {
+        $packed = $this->nameserversForDomain($domain);
+        if ($packed['ns1'] === '' || ! filled($packed['ns2'])) {
+            return;
+        }
+
+        try {
+            $result = app(RegistrarFulfillmentService::class)->updateDomainNameservers($domain, $packed);
+            if (! ($result['success'] ?? false)) {
+                Log::warning('Cloudflare assigned nameservers were not pushed to the registrar', [
+                    'domain_id' => $domain->id,
+                    'message' => $result['message'] ?? null,
+                ]);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Cloudflare assigned nameservers were not pushed to the registrar', [
+                'domain_id' => $domain->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**

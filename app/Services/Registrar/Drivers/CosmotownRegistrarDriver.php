@@ -98,19 +98,33 @@ class CosmotownRegistrarDriver implements RegistrarOperationsInterface
             $rows = $client->registerDomains([
                 ['name' => $fqdn, 'years' => max(1, $years)],
             ], $couponId);
-            $row = $this->rowForDomain($rows, $fqdn);
-            $mapped = $this->mapLifecycleRow($row, 'Domain registration submitted to Cosmotown.');
+            $mapped = $this->mapConfirmedLifecycle(
+                $client,
+                $fqdn,
+                $rows,
+                'Domain registration submitted to Cosmotown.',
+            );
 
             if ($mapped['success']) {
                 $this->pushNameserversQuietly($client, $fqdn, $nameServers);
                 $this->pushRegistrantQuietly($client, $registrar, $domain, $fqdn);
                 $mapped = $this->enrichFromDomainInfo($client, $fqdn, $mapped);
+                $mapped['external_id'] = $fqdn;
             }
-
-            $mapped['external_id'] = $fqdn;
 
             return $mapped;
         } catch (CosmotownException $e) {
+            if ($this->isAlreadyAtRegistrarMessage($e->getMessage())) {
+                return [
+                    'success' => true,
+                    'status' => 'REQ',
+                    'external_id' => $this->requireFqdn($domain),
+                    'auth_code' => null,
+                    'expiration_date' => null,
+                    'message' => 'Domain is already at Cosmotown.',
+                ];
+            }
+
             return $this->failedLifecycle($e->getMessage());
         } catch (\Throwable $e) {
             return $this->failedLifecycle($e->getMessage());
@@ -134,15 +148,18 @@ class CosmotownRegistrarDriver implements RegistrarOperationsInterface
                     'authCode' => base64_encode($code),
                 ],
             ]);
-            $row = $this->rowForDomain($rows, $fqdn);
-            $mapped = $this->mapLifecycleRow($row, 'Domain transfer submitted to Cosmotown.');
+            $mapped = $this->mapConfirmedLifecycle(
+                $client,
+                $fqdn,
+                $rows,
+                'Domain transfer submitted to Cosmotown.',
+            );
 
             if ($mapped['success']) {
                 $this->pushNameserversQuietly($client, $fqdn, $nameServers);
                 $this->pushRegistrantQuietly($client, $registrar, $domain, $fqdn);
+                $mapped['external_id'] = $fqdn;
             }
-
-            $mapped['external_id'] = $fqdn;
 
             return $mapped;
         } catch (CosmotownException $e) {
@@ -210,7 +227,7 @@ class CosmotownRegistrarDriver implements RegistrarOperationsInterface
             $fqdn = $this->fqdn($domain);
 
             $statusRows = $client->getDomainStatus([$fqdn]);
-            $statusRow = $this->rowForDomain($statusRows, $fqdn);
+            $statusRow = $this->matchingRowForDomain($statusRows, $fqdn) ?? [];
             $registrationStatus = strtolower((string) (
                 $statusRow['registration_status']
                 ?? $statusRow['status']
@@ -660,10 +677,48 @@ class CosmotownRegistrarDriver implements RegistrarOperationsInterface
     }
 
     /**
+     * Cosmotown often replies `{status: processed}` with no domain name. That is not
+     * proof this FQDN was accepted — require a matching row or a live domaininfo hit.
+     *
      * @param  list<array<string, mixed>>  $rows
-     * @return array<string, mixed>
+     * @return array{success: bool, status: string, external_id: ?string, auth_code: ?string, expiration_date: ?string, message: string}
      */
-    private function rowForDomain(array $rows, string $fqdn): array
+    private function mapConfirmedLifecycle(
+        CosmotownClient $client,
+        string $fqdn,
+        array $rows,
+        string $defaultMessage,
+    ): array {
+        $row = $this->matchingRowForDomain($rows, $fqdn);
+
+        if ($row !== null) {
+            return $this->mapLifecycleRow($row, $defaultMessage);
+        }
+
+        if ($this->domainExistsAtCosmotown($client, $fqdn)) {
+            return [
+                'success' => true,
+                'status' => 'REQ',
+                'external_id' => $fqdn,
+                'auth_code' => null,
+                'expiration_date' => null,
+                'message' => $defaultMessage,
+            ];
+        }
+
+        $apiMessage = $this->rowMessage($rows[0] ?? [], '');
+        if ($apiMessage !== '' && preg_match('/fail|error|reject|invalid|insufficient|not found/i', $apiMessage) === 1) {
+            return $this->failedLifecycle($apiMessage);
+        }
+
+        return $this->failedLifecycle('Cosmotown did not confirm registration for '.$fqdn.'.');
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $rows
+     * @return array<string, mixed>|null
+     */
+    private function matchingRowForDomain(array $rows, string $fqdn): ?array
     {
         foreach ($rows as $row) {
             $name = strtolower(trim((string) ($row['domain'] ?? $row['name'] ?? '')));
@@ -672,7 +727,28 @@ class CosmotownRegistrarDriver implements RegistrarOperationsInterface
             }
         }
 
-        return $rows[0] ?? [];
+        return null;
+    }
+
+    private function domainExistsAtCosmotown(CosmotownClient $client, string $fqdn): bool
+    {
+        try {
+            $info = $client->getDomainInfo($fqdn);
+        } catch (CosmotownException) {
+            return false;
+        }
+
+        $name = strtolower(trim((string) ($info['domain'] ?? $info['name'] ?? $info['fqdn'] ?? '')));
+
+        return $name === $fqdn || $this->expirationFromInfo($info) !== null;
+    }
+
+    private function isAlreadyAtRegistrarMessage(string $message): bool
+    {
+        $message = strtolower($message);
+
+        return str_contains($message, 'already')
+            && (str_contains($message, 'register') || str_contains($message, 'exist'));
     }
 
     /**

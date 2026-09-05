@@ -323,7 +323,7 @@
         @if($order->status === 'failed')
             <strong>Registrar submission failed</strong> — {{ $order->failure_reason ?? 'See logs for details.' }} {{ $order->adminRegistrarRetryHint() }}
         @elseif($order->hasPendingRegistrarSubmission())
-            <strong>Submitted to the registrar</strong> — awaiting registry activation. The order will complete automatically when the domain becomes active (sync cron). No admin action needed unless this stalls.
+            <strong>Marked as submitted</strong> — waiting for the registry to activate the domain. If Cosmotown does not list this name, use <strong>Retry at registrar</strong>. The order completes automatically only after Cosmotown shows it as active.
         @else
             <strong>Processing</strong> — wholesale payment is confirmed. Registration at Cosmotown runs automatically; use <strong>Push to registrar</strong> only if automatic submission failed.
         @endif

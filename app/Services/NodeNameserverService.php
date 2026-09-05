@@ -6,6 +6,7 @@ use App\Models\Domain;
 use App\Models\Node;
 use App\Models\Service;
 use App\Models\Setting;
+use App\Services\Dns\DomainCloudflareDnsService;
 
 class NodeNameserverService
 {
@@ -51,7 +52,8 @@ class NodeNameserverService
     public function forDomain(Domain $domain): array
     {
         if ($domain->cloudflare_dns_enabled) {
-            $fromCloudflare = app(\App\Services\Dns\DomainCloudflareDnsService::class)->nameserversForRegistration();
+            $fromCloudflare = app(DomainCloudflareDnsService::class)
+                ->nameserversForDomain($domain);
             if ($fromCloudflare['ns1'] !== '') {
                 return $this->ensureMinimumNameservers($fromCloudflare);
             }

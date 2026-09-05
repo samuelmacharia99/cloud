@@ -4,8 +4,10 @@ namespace Tests\Feature\Customer;
 
 use App\Models\Domain;
 use App\Models\DomainExtension;
+use App\Models\DomainPricing;
 use App\Models\Setting;
 use App\Models\User;
+use App\Support\SessionCart;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
@@ -54,9 +56,86 @@ class CustomerAddDnsDomainTest extends TestCase
         $this->assertSame('dns', $domain->type);
         $this->assertTrue($domain->cloudflare_dns_enabled);
         $this->assertSame('zone-abc', $domain->cloudflare_zone_id);
+        $this->assertSame('albert.ns.cloudflare.com', $domain->nameserver_1);
+        $this->assertSame('aliza.ns.cloudflare.com', $domain->nameserver_2);
         $this->assertSame($customer->id, $domain->user_id);
 
         $response->assertRedirect(route('customer.domains.dns.index', $domain));
+    }
+
+    public function test_provisioned_zone_stores_cloudflare_assigned_nameservers_not_branded_settings(): void
+    {
+        $this->enableCloudflare();
+
+        DomainExtension::create([
+            'extension' => '.co.ke',
+            'description' => 'Kenya',
+            'enabled' => true,
+        ]);
+
+        Http::fake([
+            'api.cloudflare.com/client/v4/zones' => Http::response([
+                'success' => true,
+                'result' => [
+                    'id' => 'zone-safilu',
+                    'name_servers' => ['ezra.ns.cloudflare.com', 'liberty.ns.cloudflare.com'],
+                ],
+            ], 200),
+        ]);
+
+        $customer = User::factory()->customer()->create();
+
+        $this->actingAs($customer)->post(route('customer.domains.dns.store'), [
+            'domain' => 'safilumecleaners.co.ke',
+        ]);
+
+        $domain = Domain::query()->where('name', 'safilumecleaners')->first();
+        $this->assertNotNull($domain);
+        $this->assertSame('ezra.ns.cloudflare.com', $domain->nameserver_1);
+        $this->assertSame('liberty.ns.cloudflare.com', $domain->nameserver_2);
+    }
+
+    public function test_dns_page_refreshes_assigned_nameservers_from_the_zone(): void
+    {
+        $this->enableCloudflare();
+
+        $customer = User::factory()->customer()->create();
+        $domain = Domain::create([
+            'user_id' => $customer->id,
+            'name' => 'safilumecleaners',
+            'extension' => '.co.ke',
+            'status' => 'active',
+            'type' => 'registration',
+            'cloudflare_dns_enabled' => true,
+            'cloudflare_zone_id' => 'zone-safilu',
+            'nameserver_1' => 'albert.ns.cloudflare.com',
+            'nameserver_2' => 'aliza.ns.cloudflare.com',
+        ]);
+
+        Http::fake([
+            'api.cloudflare.com/client/v4/zones/zone-safilu' => Http::response([
+                'success' => true,
+                'result' => [
+                    'id' => 'zone-safilu',
+                    'name_servers' => ['ezra.ns.cloudflare.com', 'liberty.ns.cloudflare.com'],
+                ],
+            ], 200),
+            'api.cloudflare.com/client/v4/zones/zone-safilu/dns_records*' => Http::response([
+                'success' => true,
+                'result' => [],
+            ], 200),
+        ]);
+
+        $this->actingAs($customer)
+            ->get(route('customer.domains.dns.index', $domain))
+            ->assertOk()
+            ->assertSee('ezra.ns.cloudflare.com')
+            ->assertSee('liberty.ns.cloudflare.com')
+            ->assertDontSee('albert.ns.cloudflare.com', false);
+
+        $domain->refresh();
+        $this->assertSame('ezra.ns.cloudflare.com', $domain->nameserver_1);
+        $this->assertSame('liberty.ns.cloudflare.com', $domain->nameserver_2);
     }
 
     public function test_duplicate_domain_is_rejected(): void
@@ -177,7 +256,7 @@ class CustomerAddDnsDomainTest extends TestCase
             ->assertOk()
             ->assertJson(['success' => true]);
 
-        $item = \App\Support\SessionCart::portal()['domain_example_com'];
+        $item = SessionCart::portal()['domain_example_com'];
         $this->assertTrue($item['cloudflare_dns']);
         $this->assertSame('albert.ns.cloudflare.com', $item['nameservers']['ns1']);
     }
@@ -214,7 +293,7 @@ class CustomerAddDnsDomainTest extends TestCase
             ->assertOk()
             ->assertJson(['success' => true]);
 
-        $item = \App\Support\SessionCart::portal()['domain_example_com'];
+        $item = SessionCart::portal()['domain_example_com'];
         $this->assertFalse($item['cloudflare_dns']);
         $this->assertTrue($item['nameservers']['use_default']);
         $this->assertSame('riv1.talksasa.com', $item['nameservers']['ns1']);
@@ -250,7 +329,7 @@ class CustomerAddDnsDomainTest extends TestCase
             ->assertOk()
             ->assertJson(['success' => true]);
 
-        $item = \App\Support\SessionCart::portal()['domain_example_com'];
+        $item = SessionCart::portal()['domain_example_com'];
         $this->assertFalse($item['cloudflare_dns']);
         $this->assertSame('riv1.talksasa.com', $item['nameservers']['ns1']);
         $this->assertSame('riv2.talksasa.com', $item['nameservers']['ns2']);
@@ -269,7 +348,7 @@ class CustomerAddDnsDomainTest extends TestCase
         );
         $extension->update(['enabled' => true]);
 
-        \App\Models\DomainPricing::query()->updateOrCreate(
+        DomainPricing::query()->updateOrCreate(
             [
                 'domain_extension_id' => $extension->id,
                 'period_years' => 1,
@@ -305,7 +384,7 @@ class CustomerAddDnsDomainTest extends TestCase
             ->assertOk()
             ->assertSee('DNS / Name Servers', false)
             ->assertSee('/my/cart/', false)
-            ->assertDontSee("fetch(`/cart/", false)
+            ->assertDontSee('fetch(`/cart/', false)
             ->assertDontSee('Include managed DNS (Cloudflare)', false);
     }
 }

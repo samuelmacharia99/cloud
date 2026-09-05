@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\Services;
 
+use App\Enums\RegistrarDriver;
 use App\Models\Domain;
 use App\Models\DomainExtension;
 use App\Models\DomainPricing;
@@ -11,7 +12,6 @@ use App\Models\Registrar;
 use App\Models\ResellerDomainOrder;
 use App\Models\ResellerWallet;
 use App\Models\User;
-use App\Enums\RegistrarDriver;
 use App\Services\DomainPushService;
 use App\Services\Registrar\RegistrarFulfillmentService;
 use App\Services\ResellerDomainOrderService;
@@ -115,6 +115,36 @@ class DomainAutoRegistrarFulfillmentTest extends TestCase
 
         $this->assertTrue($order->hasPendingRegistrarSubmission());
         $this->assertFalse($order->canAdminPushToRegistrar());
+    }
+
+    public function test_can_admin_push_to_registrar_when_only_a_cosmotown_fqdn_handle_is_set(): void
+    {
+        $customer = User::factory()->customer()->create(['reseller_id' => null]);
+        $domain = Domain::create([
+            'user_id' => $customer->id,
+            'name' => 'j2finefurniture',
+            'extension' => '.shop',
+            'status' => 'pending',
+            'registrar_handle' => 'j2finefurniture.shop',
+        ]);
+
+        $order = ResellerDomainOrder::create([
+            'reseller_id' => null,
+            'customer_id' => $customer->id,
+            'domain_id' => $domain->id,
+            'domain_name' => 'j2finefurniture',
+            'extension' => '.shop',
+            'years' => 1,
+            'wholesale_amount' => 480,
+            'retail_amount' => 0,
+            'status' => 'pushed',
+            'push_mode' => 'auto',
+            'pushed_at' => now(),
+            'expires_at' => now()->addDays(10),
+        ]);
+
+        $this->assertTrue($order->hasPendingRegistrarSubmission());
+        $this->assertTrue($order->canAdminPushToRegistrar());
     }
 
     public function test_manual_push_mode_skips_automatic_registrar_fulfillment(): void

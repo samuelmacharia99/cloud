@@ -33,6 +33,8 @@ class DnsController extends Controller
         $records = collect();
 
         if ($this->dns->usesCloudflareDns($domain)) {
+            $this->dns->refreshAssignedNameservers($domain, pushToRegistrar: true);
+            $domain->refresh();
             $records = collect($this->dns->listRecords($domain));
         }
 

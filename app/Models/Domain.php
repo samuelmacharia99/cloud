@@ -123,6 +123,15 @@ class Domain extends Model
     }
 
     /**
+     * Openprovider (and similar) persist a remote object id. Cosmotown uses the FQDN
+     * as a handle and may stamp it before the registry actually accepted the name.
+     */
+    public function hasRemoteRegistrarObject(): bool
+    {
+        return filled($this->registrar_external_id);
+    }
+
+    /**
      * Check if domain is a transfer
      */
     public function isTransfer(): bool

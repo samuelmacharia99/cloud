@@ -10,6 +10,7 @@ use App\Models\DomainRenewalOrder;
 use App\Models\Registrar;
 use App\Models\ResellerDomainOrder;
 use App\Models\Service;
+use App\Services\Dns\DomainCloudflareDnsService;
 use App\Services\DomainPushService;
 use App\Services\DomainRegistrantContactService;
 use App\Services\DomainRenewalService;
@@ -93,7 +94,13 @@ class RegistrarFulfillmentService
                 : ['success' => false, 'message' => ''];
         }
 
-        if ($domain->isLinkedToRegistrarApi() && in_array($domain->status, ['pending', 'active'], true)) {
+        if ($domain->status === 'active' && $domain->isLinkedToRegistrarApi()) {
+            return $manual
+                ? ['success' => false, 'message' => 'This domain is already active at the registrar.']
+                : ['success' => false, 'message' => ''];
+        }
+
+        if ($domain->hasRemoteRegistrarObject() && $domain->status === 'pending') {
             if ($manual) {
                 return ['success' => false, 'message' => 'This domain already has an active registrar submission.'];
             }
@@ -115,6 +122,9 @@ class RegistrarFulfillmentService
 
             return ['success' => false, 'message' => $message];
         }
+
+        $this->ensureCloudflareZoneBeforeRegister($domain);
+        $domain->refresh();
 
         $resolvedNameservers = $this->nameserverService->forDomain($domain);
         $nameServers = OpenproviderClient::nameServerRecords($resolvedNameservers);
@@ -990,5 +1000,21 @@ class RegistrarFulfillmentService
         $registrar = $this->registrarManager->forExtension($extension);
 
         return $registrar?->driver === RegistrarDriver::Openprovider && ($registrar?->is_active ?? false);
+    }
+
+    private function ensureCloudflareZoneBeforeRegister(Domain $domain): void
+    {
+        if (! $domain->cloudflare_dns_enabled) {
+            return;
+        }
+
+        try {
+            app(DomainCloudflareDnsService::class)->provisionZone($domain);
+        } catch (\Throwable $e) {
+            Log::warning('Cloudflare zone was not ready before registrar submit', [
+                'domain_id' => $domain->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 }

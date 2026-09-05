@@ -164,6 +164,30 @@ class NodeNameserverServiceTest extends TestCase
         $this->assertSame('ns2.deploy.example', $resolved['ns2']);
     }
 
+    public function test_for_domain_uses_cloudflare_zone_nameservers_not_branded_settings(): void
+    {
+        Setting::setValue('cloudflare_enabled', 'true');
+        Setting::setValue('cloudflare_branded_ns1', 'albert.ns.cloudflare.com');
+        Setting::setValue('cloudflare_branded_ns2', 'aliza.ns.cloudflare.com');
+
+        $user = User::factory()->create();
+        $domain = Domain::create([
+            'user_id' => $user->id,
+            'name' => 'safilumecleaners',
+            'extension' => '.co.ke',
+            'status' => 'pending',
+            'cloudflare_dns_enabled' => true,
+            'cloudflare_zone_id' => 'zone-safilu',
+            'nameserver_1' => 'ezra.ns.cloudflare.com',
+            'nameserver_2' => 'liberty.ns.cloudflare.com',
+        ]);
+
+        $resolved = app(NodeNameserverService::class)->forDomain($domain);
+
+        $this->assertSame('ezra.ns.cloudflare.com', $resolved['ns1']);
+        $this->assertSame('liberty.ns.cloudflare.com', $resolved['ns2']);
+    }
+
     public function test_ensure_minimum_nameservers_fills_ns2_from_platform_settings(): void
     {
         Setting::updateOrCreate(['key' => 'domain_ns2'], ['value' => 'ns2.platform.example']);

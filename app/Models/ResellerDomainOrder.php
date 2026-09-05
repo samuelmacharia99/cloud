@@ -222,7 +222,13 @@ class ResellerDomainOrder extends Model
             return false;
         }
 
-        if ($domain->isLinkedToRegistrarApi() && in_array($domain->status, ['pending', 'active'], true)) {
+        if ($domain->status === 'active' && $domain->isLinkedToRegistrarApi()) {
+            return false;
+        }
+
+        // A numeric registrar id means a real registry object exists (Openprovider).
+        // A Cosmotown FQDN handle alone is not proof of submission — allow retry.
+        if ($domain->hasRemoteRegistrarObject() && $domain->status === 'pending') {
             return false;
         }
 

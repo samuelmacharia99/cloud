@@ -133,14 +133,7 @@ class CloudflareDnsService
             return $response;
         }
 
-        $zone = $response['data'] ?? [];
-
-        return [
-            'success' => true,
-            'message' => 'Zone created.',
-            'zone_id' => (string) ($zone['id'] ?? ''),
-            'nameservers' => array_values(array_filter($zone['name_servers'] ?? [])),
-        ];
+        return $this->zoneResult($response['data'] ?? [], 'Zone created.');
     }
 
     /**
@@ -164,11 +157,37 @@ class CloudflareDnsService
             return ['success' => false, 'message' => 'Zone not found on Cloudflare.'];
         }
 
+        return $this->zoneResult($zone, 'Zone found.');
+    }
+
+    /**
+     * @return array{success: bool, message: string, zone_id?: string, nameservers?: list<string>}
+     */
+    public function getZone(string $zoneId): array
+    {
+        $response = $this->request('GET', '/zones/'.$zoneId);
+
+        if (! $response['success']) {
+            return $response;
+        }
+
+        return $this->zoneResult($response['data'] ?? [], 'Zone loaded.');
+    }
+
+    /**
+     * @param  array<string, mixed>  $zone
+     * @return array{success: bool, message: string, zone_id: string, nameservers: list<string>}
+     */
+    private function zoneResult(array $zone, string $message): array
+    {
         return [
             'success' => true,
-            'message' => 'Zone found.',
+            'message' => $message,
             'zone_id' => (string) ($zone['id'] ?? ''),
-            'nameservers' => array_values(array_filter($zone['name_servers'] ?? [])),
+            'nameservers' => array_values(array_filter(array_map(
+                'strval',
+                $zone['name_servers'] ?? []
+            ))),
         ];
     }
 
