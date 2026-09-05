@@ -681,12 +681,18 @@ class ContainerApplicationRuntimeService
             '@angular/cli',
             'vite',
             'astro',
+            'turbo',
         ];
 
         foreach ($buildPackages as $package) {
             if (isset($dependencies[$package])) {
                 return true;
             }
+        }
+
+        $build = strtolower((string) ($scripts['build'] ?? ''));
+        if (str_contains($build, 'turbo')) {
+            return true;
         }
 
         $start = strtolower((string) ($scripts['start'] ?? ''));
@@ -1035,13 +1041,61 @@ class ContainerApplicationRuntimeService
         );
     }
 
+    public function detectNodePackageManagerFromPackageJson(?string $packageJson): string
+    {
+        if ($packageJson === null || trim($packageJson) === '') {
+            return 'npm';
+        }
+
+        $data = json_decode($packageJson, true);
+        if (! is_array($data)) {
+            return 'npm';
+        }
+
+        $declared = strtolower(trim((string) ($data['packageManager'] ?? '')));
+        if (str_starts_with($declared, 'pnpm@') || $declared === 'pnpm') {
+            return 'pnpm';
+        }
+        if (str_starts_with($declared, 'yarn@') || $declared === 'yarn') {
+            return 'yarn';
+        }
+
+        return 'npm';
+    }
+
+    public function packageJsonUsesTurbo(?string $packageJson): bool
+    {
+        if ($packageJson === null || trim($packageJson) === '') {
+            return false;
+        }
+
+        $data = json_decode($packageJson, true);
+        if (! is_array($data)) {
+            return false;
+        }
+
+        $dependencies = array_merge(
+            is_array($data['dependencies'] ?? null) ? $data['dependencies'] : [],
+            is_array($data['devDependencies'] ?? null) ? $data['devDependencies'] : [],
+        );
+        if (isset($dependencies['turbo'])) {
+            return true;
+        }
+
+        $build = strtolower((string) (($data['scripts'] ?? [])['build'] ?? ''));
+
+        return str_contains($build, 'turbo');
+    }
+
     public function npmBuildShellCommand(
         ?int $containerMemoryLimitMb = null,
         bool $withoutContainerMemoryLimit = false,
         ?string $packageJson = null,
         array $extraEnv = [],
+        ?string $packageManager = null,
     ): string {
-        $extra = [];
+        $extra = $this->corepackEnvironment();
+        $extra['TURBO_TELEMETRY_DISABLED'] = '1';
 
         if ($withoutContainerMemoryLimit) {
             $heapLimit = 4096;
@@ -1067,13 +1121,24 @@ class ContainerApplicationRuntimeService
             $extra[$key] = (string) $value;
         }
 
-        // Prefer the Next CLI via node so bind-mounted installs do not depend on fragile
-        // node_modules/.bin/next shims (common "sh: next: not found" on Alpine volumes).
-        if ($this->packageJsonUsesNext($packageJson)) {
+        $manager = $packageManager ?? $this->detectNodePackageManagerFromPackageJson($packageJson);
+
+        // Turborepo resolves the repo package manager from lockfile / packageManager.
+        // A root Next dependency must not skip `turbo run build` in a monorepo.
+        if ($this->packageJsonUsesNext($packageJson) && ! $this->packageJsonUsesTurbo($packageJson)) {
             return $this->nodeCleanCommand('node ./node_modules/next/dist/bin/next build', 'production', $extra);
         }
 
-        return $this->nodeCleanNpmCommand('run build', 'production', $extra);
+        return $this->nodeCleanCommand($this->nodePackageManagerRunBuildBinary($manager), 'production', $extra);
+    }
+
+    public function nodePackageManagerRunBuildBinary(string $packageManager): string
+    {
+        return match ($packageManager) {
+            'pnpm' => '/usr/local/bin/corepack pnpm run build',
+            'yarn' => '/usr/local/bin/corepack yarn run build',
+            default => self::NODE_NPM_BIN.' run build',
+        };
     }
 
     /**
@@ -1311,9 +1376,14 @@ class ContainerApplicationRuntimeService
     {
         $openssl = 'if command -v apk >/dev/null 2>&1; then apk add --no-cache openssl libc6-compat >/dev/null 2>&1 || true; fi; ';
         $binFix = 'find node_modules/.bin node_modules/next/dist/bin node_modules/vite/bin -type f -exec chmod u+x {} + 2>/dev/null || true';
-        $installForBuild = $this->npmInstallShellCommand();
-        $buildCommand = $this->npmBuildShellCommand(null, false, $packageJson);
-        $pruneCommand = $this->npmPruneShellCommand();
+        $packageManager = $this->detectNodePackageManagerFromPackageJson($packageJson);
+        $installForBuild = match ($packageManager) {
+            'pnpm' => $this->pnpmInstallShellCommand(preferDevDependencies: true, frozenLockfile: false),
+            'yarn' => $this->yarnInstallShellCommand(preferDevDependencies: true, mode: 'loose'),
+            default => $this->npmInstallShellCommand(),
+        };
+        $buildCommand = $this->npmBuildShellCommand(null, false, $packageJson, [], $packageManager);
+        $pruneCommand = $this->nodePruneShellCommand($packageManager);
         $prepareStep = $this->nodeBuildPrepareEnabled()
             ? '[ -f .talksasa/prepare-build.cjs ] && node .talksasa/prepare-build.cjs && '
             : '';

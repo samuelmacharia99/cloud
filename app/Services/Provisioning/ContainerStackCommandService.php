@@ -510,7 +510,13 @@ class ContainerStackCommandService
                     $ssh,
                     $dockerImage,
                     $hostAppPath,
-                    $this->runtimeService->npmBuildShellCommand(null, true, $packageJson, $publicBuildEnv),
+                    $this->runtimeService->npmBuildShellCommand(
+                        null,
+                        true,
+                        $packageJson,
+                        $publicBuildEnv,
+                        $packageManager
+                    ),
                     '/app',
                     $buildTimeout
                 );
@@ -1253,7 +1259,9 @@ class ContainerStackCommandService
         $imageArg = escapeshellarg($dockerImage);
         $volumeArg = escapeshellarg(rtrim($hostAppPath, '/').':'.rtrim($workDir, '/'));
         $workDirArg = escapeshellarg($workDir);
-        $wrapped = $this->alpineOpensslEnsurePrefix($dockerImage).$command;
+        $wrapped = $this->alpineOpensslEnsurePrefix($dockerImage)
+            .$this->corepackEnablePrefix()
+            .$command;
         $commandArg = escapeshellarg($wrapped);
         $network = ContainerDeploymentService::SHARED_DOCKER_NETWORK;
         if (! preg_match('/^[a-z0-9][a-z0-9.-]*$/', $network)) {
@@ -1280,6 +1288,18 @@ class ContainerStackCommandService
         }
 
         return 'if command -v apk >/dev/null 2>&1; then apk add --no-cache openssl libc6-compat >/dev/null 2>&1 || true; fi; ';
+    }
+
+    /**
+     * Ephemeral node:* images have npm only. Turborepo looks up the repo
+     * package manager on PATH (pnpm/yarn), so enable Corepack shims in the
+     * same docker run as install/build.
+     */
+    public function corepackEnablePrefix(): string
+    {
+        return 'export COREPACK_HOME=/tmp/.corepack COREPACK_ENABLE_DOWNLOAD_PROMPT=0; '
+            .'mkdir -p /tmp/.corepack; '
+            .'if command -v corepack >/dev/null 2>&1; then corepack enable >/dev/null 2>&1 || true; fi; ';
     }
 
     private function isSafeDockerImageReference(string $image): bool

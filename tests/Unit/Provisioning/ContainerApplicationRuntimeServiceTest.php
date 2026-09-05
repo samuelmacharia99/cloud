@@ -401,10 +401,11 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
             'env -i HOME=/tmp NPM_CONFIG_CACHE=/tmp/.npm PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin npm_config_production=false NPM_CONFIG_PRODUCTION=false npm_config_omit= NODE_ENV=development /usr/local/bin/npm install --production=false --include=dev --legacy-peer-deps --no-audit --no-fund',
             $runtime->npmInstallShellCommand()
         );
-        $this->assertSame(
-            'env -i HOME=/tmp NPM_CONFIG_CACHE=/tmp/.npm PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin npm_config_production=false NPM_CONFIG_PRODUCTION=false npm_config_omit= NODE_OPTIONS=--max-old-space-size=650 NODE_ENV=production /usr/local/bin/npm run build',
-            $runtime->npmBuildShellCommand(1000)
-        );
+        $npmBuild = $runtime->npmBuildShellCommand(1000);
+        $this->assertStringContainsString('NODE_OPTIONS=--max-old-space-size=650', $npmBuild);
+        $this->assertStringContainsString('COREPACK_HOME=/tmp/.corepack', $npmBuild);
+        $this->assertStringContainsString('TURBO_TELEMETRY_DISABLED=1', $npmBuild);
+        $this->assertStringContainsString('/usr/local/bin/npm run build', $npmBuild);
         $nextPackage = json_encode([
             'dependencies' => ['next' => '14.2.35'],
         ], JSON_THROW_ON_ERROR);
@@ -567,5 +568,45 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
 
         $yarn = $this->service->yarnInstallShellCommand(true, 'immutable');
         $this->assertStringContainsString('/usr/local/bin/corepack yarn install --immutable', $yarn);
+    }
+
+    #[Test]
+    public function it_builds_turbo_monorepos_with_the_declared_package_manager(): void
+    {
+        $pnpmTurbo = json_encode([
+            'packageManager' => 'pnpm@9.15.4',
+            'scripts' => [
+                'build' => 'turbo run build',
+            ],
+            'devDependencies' => [
+                'turbo' => '2.9.18',
+            ],
+        ], JSON_THROW_ON_ERROR);
+
+        $this->assertSame('pnpm', $this->service->detectNodePackageManagerFromPackageJson($pnpmTurbo));
+        $this->assertTrue($this->service->packageJsonUsesTurbo($pnpmTurbo));
+        $this->assertTrue($this->service->packageJsonRequiresProductionBuild($pnpmTurbo));
+
+        $build = $this->service->npmBuildShellCommand(null, true, $pnpmTurbo);
+        $this->assertStringContainsString('/usr/local/bin/corepack pnpm run build', $build);
+        $this->assertStringContainsString('COREPACK_HOME=/tmp/.corepack', $build);
+        $this->assertStringNotContainsString('node ./node_modules/next/dist/bin/next build', $build);
+
+        $nextPlusTurbo = json_encode([
+            'packageManager' => 'pnpm@9.15.4',
+            'scripts' => [
+                'build' => 'turbo run build',
+            ],
+            'dependencies' => [
+                'next' => '14.2.35',
+            ],
+            'devDependencies' => [
+                'turbo' => '2.9.18',
+            ],
+        ], JSON_THROW_ON_ERROR);
+        $this->assertStringContainsString(
+            '/usr/local/bin/corepack pnpm run build',
+            $this->service->npmBuildShellCommand(null, true, $nextPlusTurbo)
+        );
     }
 }

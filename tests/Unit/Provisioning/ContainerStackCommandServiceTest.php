@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\Provisioning;
 
+use App\Services\Provisioning\ContainerApplicationRuntimeService;
 use App\Services\Provisioning\ContainerStackCommandService;
 use App\Services\SSH\SSHService;
 use PHPUnit\Framework\Attributes\Test;
@@ -183,6 +184,38 @@ class ContainerStackCommandServiceTest extends TestCase
             'env -i HOME=/tmp NPM_CONFIG_CACHE=/tmp/.npm PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin npm_config_production=false NPM_CONFIG_PRODUCTION=false npm_config_omit= NODE_ENV=development /usr/local/bin/npm ci --include=dev --legacy-peer-deps --no-audit --no-fund',
             '/app',
             600
+        );
+    }
+
+    #[Test]
+    public function it_enables_corepack_shims_in_ephemeral_node_containers(): void
+    {
+        $service = new ContainerStackCommandService;
+        $this->assertStringContainsString('corepack enable', $service->corepackEnablePrefix());
+
+        $ssh = $this->createMock(SSHService::class);
+        $ssh->expects($this->once())
+            ->method('exec')
+            ->with($this->callback(fn (string $command): bool => str_contains($command, 'corepack enable')
+                && str_contains($command, 'COREPACK_HOME=/tmp/.corepack')
+                && str_contains($command, '/usr/local/bin/corepack pnpm run build')))
+            ->willReturn('');
+
+        $runtime = new ContainerApplicationRuntimeService;
+        $build = $runtime->npmBuildShellCommand(
+            null,
+            true,
+            '{"packageManager":"pnpm@9.15.4","scripts":{"build":"turbo run build"},"devDependencies":{"turbo":"2.9.18"}}'
+        );
+        $this->assertTrue($service->isSafeCommand($build));
+
+        $service->runUnlimitedMemoryNodeCommand(
+            $ssh,
+            'node:20-alpine',
+            '/var/lib/talksasa/containers/user-1-service-1/app',
+            $build,
+            '/app',
+            900
         );
     }
 
