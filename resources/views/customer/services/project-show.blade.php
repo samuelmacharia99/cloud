@@ -113,6 +113,41 @@
         <span class="status-pill bg-ink-100/90 dark:bg-white/10 text-ink-600 dark:text-ink-200">{{ $project->resourceCount() }} {{ Str::plural('Resource', $project->resourceCount()) }}</span>
     </div>
 
+    <div>
+        <div class="mb-4 flex items-center justify-between gap-3">
+            <h2 class="font-display text-lg font-bold text-ink-950 dark:text-white">Services</h2>
+            <a href="{{ route('customer.projects.deploy', $project) }}" class="text-sm font-semibold text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300">
+                {{ $primaryActionLabel }} →
+            </a>
+        </div>
+
+        @if($services->isNotEmpty())
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                @foreach ($services as $service)
+                    @include('customer.services.partials.service-card', [
+                        'service' => $service,
+                        'allProjects' => $projects,
+                        'nestedContainers' => (
+                            $primaryContainer
+                            && $service->id === $primaryContainer->id
+                            && count($containers) >= 2
+                        ) ? $containers : [],
+                    ])
+                @endforeach
+            </div>
+        @else
+            <div class="ui-card rounded-xl border border-dashed border-ink-300/80 dark:border-ink-700/70 px-6 py-10 text-center">
+                <p class="text-sm font-medium text-ink-700 dark:text-ink-200">No services here yet</p>
+                <p class="mt-1 text-xs text-ink-500 dark:text-ink-400">
+                    {{ $canDeployIncluded ? 'Deploy one on this project’s plan, or move an existing service here from My Services.' : 'Choose a plan to deploy your first service.' }}
+                </p>
+                <a href="{{ route('customer.projects.deploy', $project) }}" class="btn-primary btn-sm mt-4 inline-flex">
+                    {{ $primaryActionLabel }}
+                </a>
+            </div>
+        @endif
+    </div>
+
     @if($planLimits)
         <div class="ui-card px-5 py-4">
             <div class="flex flex-wrap items-start justify-between gap-2">
@@ -241,41 +276,6 @@
             </p>
         </div>
     @endif
-
-    <div>
-        <div class="mb-4 flex items-center justify-between gap-3">
-            <h2 class="font-display text-lg font-bold text-ink-950 dark:text-white">Services</h2>
-            <a href="{{ route('customer.projects.deploy', $project) }}" class="text-sm font-semibold text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300">
-                {{ $primaryActionLabel }} →
-            </a>
-        </div>
-
-        @if($services->isNotEmpty())
-            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                @foreach ($services as $service)
-                    @include('customer.services.partials.service-card', [
-                        'service' => $service,
-                        'allProjects' => $projects,
-                        'nestedContainers' => (
-                            $primaryContainer
-                            && $service->id === $primaryContainer->id
-                            && count($containers) >= 2
-                        ) ? $containers : [],
-                    ])
-                @endforeach
-            </div>
-        @else
-            <div class="ui-card rounded-xl border border-dashed border-ink-300/80 dark:border-ink-700/70 px-6 py-10 text-center">
-                <p class="text-sm font-medium text-ink-700 dark:text-ink-200">No services here yet</p>
-                <p class="mt-1 text-xs text-ink-500 dark:text-ink-400">
-                    {{ $canDeployIncluded ? 'Deploy one on the plan above, or move an existing service here from My Services.' : 'Choose a plan to deploy your first service.' }}
-                </p>
-                <a href="{{ route('customer.projects.deploy', $project) }}" class="btn-primary btn-sm mt-4 inline-flex">
-                    {{ $primaryActionLabel }}
-                </a>
-            </div>
-        @endif
-    </div>
 
     <div x-show="showRenameProject" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink-950/60 backdrop-blur-sm" @keydown.escape.window="showRenameProject = false">
         <div class="ui-card w-full max-w-md p-6" @click.outside="showRenameProject = false">

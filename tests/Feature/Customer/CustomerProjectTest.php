@@ -542,7 +542,7 @@ YAML,
         $this->actingAs($customer)
             ->get(route('customer.projects.show', $project))
             ->assertOk()
-            ->assertSee('Plan consumption')
+            ->assertSeeInOrder(['>Services</h2>', 'Plan consumption'], false)
             ->assertSee('Average over the last 6 hours')
             ->assertSee(' / 2 included')
             ->assertSee('this cycle');
