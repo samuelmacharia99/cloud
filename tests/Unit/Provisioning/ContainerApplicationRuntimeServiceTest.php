@@ -554,4 +554,18 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
 
         $this->assertTrue($this->service->supportsTemplate('go'));
     }
+
+    #[Test]
+    public function it_builds_corepack_pnpm_and_yarn_install_commands(): void
+    {
+        $pnpm = $this->service->pnpmInstallShellCommand(true, true);
+        $this->assertStringContainsString('/usr/local/bin/corepack pnpm install --frozen-lockfile', $pnpm);
+        $this->assertStringContainsString('COREPACK_HOME=/tmp/.corepack', $pnpm);
+
+        $npx = $this->service->pnpmInstallShellCommand(true, true, viaNpx: true);
+        $this->assertStringContainsString('/usr/local/bin/npx --yes pnpm@9 install --frozen-lockfile', $npx);
+
+        $yarn = $this->service->yarnInstallShellCommand(true, 'immutable');
+        $this->assertStringContainsString('/usr/local/bin/corepack yarn install --immutable', $yarn);
+    }
 }

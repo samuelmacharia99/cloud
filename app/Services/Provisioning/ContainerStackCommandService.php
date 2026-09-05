@@ -236,9 +236,14 @@ class ContainerStackCommandService
 
         $installScript = 'set -e; '.$npmPrefix
             .'cd '.escapeshellarg($containerDir).'; '
+            .'export COREPACK_HOME=/tmp/.corepack COREPACK_ENABLE_DOWNLOAD_PROMPT=0; '
             .'if [ -f package-lock.json ]; then '
             .'npm ci --legacy-peer-deps --cache /tmp/.npm --no-audit --no-fund '
             .'|| npm install --legacy-peer-deps --cache /tmp/.npm --no-audit --no-fund; '
+            .'elif [ -f pnpm-lock.yaml ]; then '
+            .'corepack pnpm install --frozen-lockfile || corepack pnpm install || npx --yes pnpm@9 install; '
+            .'elif [ -f yarn.lock ]; then '
+            .'corepack yarn install --immutable || corepack yarn install --frozen-lockfile || corepack yarn install; '
             .'else npm install --legacy-peer-deps --cache /tmp/.npm --no-audit --no-fund; fi; '
             .'test -e node_modules/.bin/next -o -e node_modules/next/dist/bin/next -o -d node_modules';
 
@@ -255,7 +260,7 @@ class ContainerStackCommandService
                 $messages[] = 'Frontend dependencies installed in '.$containerDir.' (root fallback).';
             } catch (\Throwable $rootError) {
                 throw new \RuntimeException(
-                    'Frontend npm install failed: '.mb_substr($rootError->getMessage(), 0, 300),
+                    'Frontend dependency install failed: '.mb_substr($rootError->getMessage(), 0, 300),
                     0,
                     $rootError
                 );
@@ -436,7 +441,7 @@ class ContainerStackCommandService
         }
 
         $packageJson = $this->readHostFile($ssh, $packageJsonPath);
-        $this->assertCompatibleNodePackageManager($ssh, $hostAppPath);
+        $packageManager = $this->detectHostNodePackageManager($ssh, $hostAppPath, $packageJson);
         $requiresBuild = $this->runtimeService->packageJsonRequiresProductionBuild($packageJson)
             || ($forceRebuild && $this->runtimeService->packageJsonHasBuildScript($packageJson));
         $buildTimeout = (int) config('containers.node_build.command_timeout_seconds', 900);
@@ -513,7 +518,7 @@ class ContainerStackCommandService
                     $ssh,
                     $dockerImage,
                     $hostAppPath,
-                    $this->runtimeService->npmPruneShellCommand(),
+                    $this->runtimeService->nodePruneShellCommand($packageManager),
                     '/app',
                     $timeout
                 );
@@ -644,27 +649,39 @@ class ContainerStackCommandService
         }
     }
 
-    private function assertCompatibleNodePackageManager(SSHService $ssh, string $hostAppPath): void
-    {
-        $hasNpmLock = $this->hostFileExists($ssh, $hostAppPath.'/package-lock.json');
-        $hasYarnLock = $this->hostFileExists($ssh, $hostAppPath.'/yarn.lock');
-        $hasPnpmLock = $this->hostFileExists($ssh, $hostAppPath.'/pnpm-lock.yaml');
-
-        if ($hasNpmLock || (! $hasYarnLock && ! $hasPnpmLock)) {
-            return;
+    /**
+     * Prefer the lockfile the repo actually committed. npm wins when both exist
+     * so a generated package-lock.json is not ignored.
+     */
+    public function detectHostNodePackageManager(
+        SSHService $ssh,
+        string $hostAppPath,
+        ?string $packageJson = null,
+    ): string {
+        if ($this->hostFileExists($ssh, $hostAppPath.'/package-lock.json')) {
+            return 'npm';
         }
 
-        if ($hasYarnLock && ! $hasPnpmLock) {
-            throw new \RuntimeException(
-                'This repository uses Yarn (yarn.lock) without package-lock.json. '
-                .'Talksasa Git pulls install with npm. Run `npm install` locally, commit package-lock.json, and pull again.'
-            );
+        if ($this->hostFileExists($ssh, $hostAppPath.'/pnpm-lock.yaml')) {
+            return 'pnpm';
         }
 
-        throw new \RuntimeException(
-            'This repository uses pnpm (pnpm-lock.yaml) without package-lock.json. '
-            .'Talksasa Git pulls install with npm. Run `npm install` locally, commit package-lock.json, and pull again.'
-        );
+        if ($this->hostFileExists($ssh, $hostAppPath.'/yarn.lock')) {
+            return 'yarn';
+        }
+
+        $data = is_string($packageJson) && $packageJson !== ''
+            ? json_decode($packageJson, true)
+            : null;
+        $declared = strtolower((string) (is_array($data) ? ($data['packageManager'] ?? '') : ''));
+        if (str_starts_with($declared, 'pnpm@') || $declared === 'pnpm') {
+            return 'pnpm';
+        }
+        if (str_starts_with($declared, 'yarn@') || $declared === 'yarn') {
+            return 'yarn';
+        }
+
+        return 'npm';
     }
 
     private function restoreNodeModuleBinPermissions(
@@ -816,20 +833,27 @@ class ContainerStackCommandService
 
         $missing = $this->missingNodeIntegrityMarkers($ssh, $hostAppPath, $packageJson);
 
-        \Log::warning('Node dependency install is incomplete after npm ci/install; retrying with a clean npm install', [
+        \Log::warning('Node dependency install is incomplete after lockfile install; retrying with a clean install', [
             'missing' => $missing,
             'host_app_path' => $hostAppPath,
         ]);
 
         $this->removeHostNodeInstallArtifacts($ssh, $hostAppPath, []);
 
-        $this->runUnlimitedMemoryNodeCommand(
+        $this->installNodeDependenciesPreferringLockfile(
             $ssh,
-            $nodeDockerImage,
             $hostAppPath,
-            $this->runtimeService->npmInstallShellCommand(true),
-            '/app',
-            $timeout
+            preferDevDependencies: true,
+            runner: function (string $command) use ($ssh, $nodeDockerImage, $hostAppPath, $timeout): void {
+                $this->runUnlimitedMemoryNodeCommand(
+                    $ssh,
+                    $nodeDockerImage,
+                    $hostAppPath,
+                    $command,
+                    '/app',
+                    $timeout
+                );
+            },
         );
 
         if (! $this->hostNodeModulesIntegrityOk($ssh, $hostAppPath, $packageJson)
@@ -856,7 +880,7 @@ class ContainerStackCommandService
 
             throw new \RuntimeException(
                 'Node dependency install is incomplete (missing '.$hint.'). '
-                .'Ensure react and react-dom are listed in package.json, refresh package-lock.json locally with npm install, commit it, and pull again.'
+                .'Ensure react and react-dom are listed in package.json, refresh the lockfile locally, commit it, and pull again.'
             );
         }
     }
@@ -973,7 +997,8 @@ class ContainerStackCommandService
     }
 
     /**
-     * Prefer npm ci when a lockfile exists; fall back to npm install when the lock is out of sync.
+     * Install with the repo's package manager. Frozen/ci first, then a loose install
+     * when the lockfile is out of sync.
      *
      * @param  callable(string): void  $runner
      */
@@ -983,6 +1008,20 @@ class ContainerStackCommandService
         bool $preferDevDependencies,
         callable $runner,
     ): void {
+        $manager = $this->detectHostNodePackageManager($ssh, $hostAppPath);
+
+        if ($manager === 'pnpm') {
+            $this->runPnpmInstallPreferringLockfile($hostAppPath, $preferDevDependencies, $runner);
+
+            return;
+        }
+
+        if ($manager === 'yarn') {
+            $this->runYarnInstallPreferringLockfile($hostAppPath, $preferDevDependencies, $runner);
+
+            return;
+        }
+
         $hasLock = $this->hostFileExists($ssh, $hostAppPath.'/package-lock.json');
 
         if ($preferDevDependencies) {
@@ -1022,6 +1061,102 @@ class ContainerStackCommandService
         }
     }
 
+    /**
+     * @param  callable(string): void  $runner
+     */
+    private function runPnpmInstallPreferringLockfile(
+        string $hostAppPath,
+        bool $preferDevDependencies,
+        callable $runner,
+    ): void {
+        $frozen = $this->runtimeService->pnpmInstallShellCommand($preferDevDependencies, frozenLockfile: true);
+        $loose = $this->runtimeService->pnpmInstallShellCommand($preferDevDependencies, frozenLockfile: false);
+        $npxFrozen = $this->runtimeService->pnpmInstallShellCommand($preferDevDependencies, frozenLockfile: true, viaNpx: true);
+
+        try {
+            $runner($frozen);
+        } catch (\Throwable $e) {
+            if ($this->isMissingCorepackError($e)) {
+                try {
+                    $runner($npxFrozen);
+
+                    return;
+                } catch (\Throwable $npxError) {
+                    $e = $npxError;
+                }
+            }
+
+            if (! $this->isNpmCiRecoverableError($e)) {
+                throw $e;
+            }
+
+            $this->logLockfileFallback('pnpm frozen-lockfile failed; falling back to pnpm install', $hostAppPath, $e);
+            $runner($loose);
+        }
+    }
+
+    /**
+     * @param  callable(string): void  $runner
+     */
+    private function runYarnInstallPreferringLockfile(
+        string $hostAppPath,
+        bool $preferDevDependencies,
+        callable $runner,
+    ): void {
+        $attempts = [
+            $this->runtimeService->yarnInstallShellCommand($preferDevDependencies, 'immutable'),
+            $this->runtimeService->yarnInstallShellCommand($preferDevDependencies, 'frozen'),
+            $this->runtimeService->yarnInstallShellCommand($preferDevDependencies, 'loose'),
+        ];
+
+        foreach ($attempts as $index => $command) {
+            try {
+                $runner($command);
+
+                return;
+            } catch (\Throwable $e) {
+                $canRetry = $index < array_key_last($attempts)
+                    && ($this->isNpmCiRecoverableError($e) || $this->isYarnFlagUnsupportedError($e));
+                if (! $canRetry) {
+                    throw $e;
+                }
+
+                $this->logLockfileFallback('yarn install failed; trying next yarn install mode', $hostAppPath, $e);
+            }
+        }
+    }
+
+    private function isMissingCorepackError(\Throwable $e): bool
+    {
+        $message = strtolower($e->getMessage());
+
+        return str_contains($message, 'corepack')
+            && (str_contains($message, 'not found') || str_contains($message, 'no such file'));
+    }
+
+    private function isYarnFlagUnsupportedError(\Throwable $e): bool
+    {
+        $message = strtolower($e->getMessage());
+
+        return str_contains($message, 'unknown option')
+            || str_contains($message, 'unknown command')
+            || str_contains($message, 'unrecognized option')
+            || str_contains($message, '--immutable')
+            || str_contains($message, '--frozen-lockfile');
+    }
+
+    private function logLockfileFallback(string $message, string $hostAppPath, \Throwable $e): void
+    {
+        try {
+            \Log::warning($message, [
+                'host_app_path' => $hostAppPath,
+                'error' => $e->getMessage(),
+            ]);
+        } catch (\Throwable) {
+            // Unit tests may run without the Log facade bootstrap.
+        }
+    }
+
     public function isNpmLockfileOutOfSyncError(\Throwable $e): bool
     {
         return $this->isNpmCiRecoverableError($e);
@@ -1040,6 +1175,10 @@ class ContainerStackCommandService
             || str_contains($message, 'eresolve')
             || str_contains($message, 'could not resolve')
             || str_contains($message, 'conflicting peer dependency')
+            || str_contains($message, 'err_pnpm_outdated_lockfile')
+            || str_contains($message, 'frozen-lockfile')
+            || str_contains($message, 'lockfile is not up to date')
+            || str_contains($message, 'yn0028')
             || (str_contains($message, 'npm error code eusage') && str_contains($message, 'npm ci'))
             || (str_contains($message, 'eusage') && str_contains($message, 'npm ci') && str_contains($message, 'missing:'));
     }

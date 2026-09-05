@@ -247,11 +247,10 @@ class ContainerStackCommandServiceTest extends TestCase
     {
         $service = new ContainerStackCommandService;
         $ssh = $this->createMock(SSHService::class);
-        $ssh->expects($this->once())
-            ->method('exec')
-            ->with($this->callback(fn (string $command): bool => str_contains($command, '[ -f ')
-                && str_contains($command, 'package-lock.json')))
-            ->willReturn('yes');
+        $ssh->method('exec')
+            ->willReturnCallback(function (string $command): string {
+                return str_contains($command, 'package-lock.json') ? 'yes' : 'no';
+            });
 
         $commands = [];
         $method = (new \ReflectionClass(ContainerStackCommandService::class))
@@ -275,5 +274,87 @@ class ContainerStackCommandServiceTest extends TestCase
         $this->assertCount(2, $commands);
         $this->assertTrue(str_contains($commands[0], 'npm ci') || str_contains($commands[0], '/usr/local/bin/npm ci'));
         $this->assertTrue(str_contains($commands[1], 'npm install') || str_contains($commands[1], '/usr/local/bin/npm install'));
+    }
+
+    #[Test]
+    public function it_detects_pnpm_and_yarn_from_lockfiles(): void
+    {
+        $service = new ContainerStackCommandService;
+
+        $pnpmSsh = $this->createMock(SSHService::class);
+        $pnpmSsh->method('exec')->willReturnCallback(
+            fn (string $command): string => str_contains($command, 'pnpm-lock.yaml') ? 'yes' : 'no'
+        );
+        $this->assertSame('pnpm', $service->detectHostNodePackageManager(
+            $pnpmSsh,
+            '/opt/talksasa/containers/user-1-service-1/app'
+        ));
+
+        $yarnSsh = $this->createMock(SSHService::class);
+        $yarnSsh->method('exec')->willReturnCallback(
+            fn (string $command): string => str_contains($command, 'yarn.lock') ? 'yes' : 'no'
+        );
+        $this->assertSame('yarn', $service->detectHostNodePackageManager(
+            $yarnSsh,
+            '/opt/talksasa/containers/user-1-service-1/app'
+        ));
+
+        $bothSsh = $this->createMock(SSHService::class);
+        $bothSsh->method('exec')->willReturnCallback(
+            fn (string $command): string => (
+                str_contains($command, 'package-lock.json') || str_contains($command, 'pnpm-lock.yaml')
+            ) ? 'yes' : 'no'
+        );
+        $this->assertSame('npm', $service->detectHostNodePackageManager(
+            $bothSsh,
+            '/opt/talksasa/containers/user-1-service-1/app'
+        ));
+
+        $declaredSsh = $this->createMock(SSHService::class);
+        $declaredSsh->method('exec')->willReturn('no');
+        $this->assertSame('pnpm', $service->detectHostNodePackageManager(
+            $declaredSsh,
+            '/opt/talksasa/containers/user-1-service-1/app',
+            '{"packageManager":"pnpm@9.15.4"}'
+        ));
+    }
+
+    #[Test]
+    public function it_installs_pnpm_projects_with_corepack_instead_of_rejecting_them(): void
+    {
+        $service = new ContainerStackCommandService;
+        $ssh = $this->createMock(SSHService::class);
+        $ssh->method('exec')->willReturnCallback(
+            fn (string $command): string => str_contains($command, 'pnpm-lock.yaml') ? 'yes' : 'no'
+        );
+
+        $commands = [];
+        $method = (new \ReflectionClass(ContainerStackCommandService::class))
+            ->getMethod('installNodeDependenciesPreferringLockfile');
+        $method->setAccessible(true);
+        $method->invoke(
+            $service,
+            $ssh,
+            '/opt/talksasa/containers/user-1-service-1/app',
+            true,
+            function (string $command) use (&$commands): void {
+                $commands[] = $command;
+            }
+        );
+
+        $this->assertNotEmpty($commands);
+        $this->assertStringContainsString('corepack pnpm', $commands[0]);
+        $this->assertStringContainsString('--frozen-lockfile', $commands[0]);
+        $this->assertTrue($service->isSafeCommand($commands[0]));
+    }
+
+    #[Test]
+    public function it_treats_pnpm_outdated_lockfile_as_recoverable(): void
+    {
+        $service = new ContainerStackCommandService;
+
+        $this->assertTrue($service->isNpmCiRecoverableError(new \RuntimeException(
+            'ERR_PNPM_OUTDATED_LOCKFILE Cannot install with frozen-lockfile because pnpm-lock.yaml is not up to date'
+        )));
     }
 }

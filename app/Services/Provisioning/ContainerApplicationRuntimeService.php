@@ -903,6 +903,70 @@ class ContainerApplicationRuntimeService
         );
     }
 
+    /**
+     * @return array<string, string>
+     */
+    public function corepackEnvironment(): array
+    {
+        return [
+            'COREPACK_HOME' => '/tmp/.corepack',
+            'COREPACK_ENABLE_DOWNLOAD_PROMPT' => '0',
+        ];
+    }
+
+    public function pnpmInstallShellCommand(bool $preferDevDependencies, bool $frozenLockfile, bool $viaNpx = false): string
+    {
+        $args = 'install';
+        if ($frozenLockfile) {
+            $args .= ' --frozen-lockfile';
+        }
+        if (! $preferDevDependencies) {
+            $args .= ' --prod';
+        }
+
+        $binary = $viaNpx
+            ? '/usr/local/bin/npx --yes pnpm@9'
+            : '/usr/local/bin/corepack pnpm';
+
+        return $this->nodeCleanCommand(
+            $binary.' '.$args,
+            $preferDevDependencies ? 'development' : 'production',
+            $this->corepackEnvironment(),
+        );
+    }
+
+    public function yarnInstallShellCommand(bool $preferDevDependencies, string $mode = 'immutable'): string
+    {
+        $args = match ($mode) {
+            'frozen' => 'install --frozen-lockfile',
+            'loose' => 'install',
+            default => 'install --immutable',
+        };
+
+        if (! $preferDevDependencies) {
+            $args .= ' --production';
+        }
+
+        return $this->nodeCleanCommand(
+            '/usr/local/bin/corepack yarn '.$args,
+            $preferDevDependencies ? 'development' : 'production',
+            $this->corepackEnvironment(),
+        );
+    }
+
+    public function nodePruneShellCommand(string $packageManager = 'npm'): string
+    {
+        return match ($packageManager) {
+            'pnpm' => $this->nodeCleanCommand(
+                '/usr/local/bin/corepack pnpm prune --prod',
+                'production',
+                $this->corepackEnvironment(),
+            ),
+            'yarn' => $this->yarnInstallShellCommand(preferDevDependencies: false, mode: 'loose'),
+            default => $this->npmPruneShellCommand(),
+        };
+    }
+
     public function npmInstallNextPeersShellCommand(): string
     {
         return $this->nodeCleanNpmCommand(
