@@ -11,6 +11,7 @@
                 Mail domain:
                 <span class="font-mono text-slate-900 dark:text-white">{{ $mailDomain ?? '—' }}</span>
                 · Service #{{ $service->id }}
+                <button type="button" @click="tab='manage'" class="ml-2 text-sm text-teal-700 dark:text-teal-300 hover:underline">Change domain</button>
             </p>
         </div>
         <div class="flex gap-2 flex-wrap">
@@ -198,6 +199,64 @@
     </div>
 
     <div x-show="tab==='manage'" x-cloak class="space-y-6">
+        <div class="ui-card p-6" x-data="{ domain: @js(old('domain', '')) }">
+            <h2 class="font-semibold text-lg mb-1">Change mail domain</h2>
+            <p class="text-sm text-slate-500 mb-4">
+                Addresses will use the new domain (for example <span class="font-mono">info@new-domain.com</span>).
+                Mailcow cannot move existing inboxes, so delete mailboxes and aliases on
+                <span class="font-mono">{{ $mailDomain ?? 'the current domain' }}</span> first.
+            </p>
+            @if (empty($canChangeMailDomain))
+                <p class="text-sm text-amber-800 dark:text-amber-200 rounded-lg border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/40 p-3">
+                    Delete every mailbox and alias on this service before changing the domain. Existing mail is not migrated.
+                </p>
+            @else
+                <form method="POST" action="{{ route('customer.services.email.domain.update', $service) }}" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    @csrf
+                    @method('PUT')
+                    @if (! empty($ownedDomains))
+                        <div class="md:col-span-2">
+                            <label class="block text-sm font-medium mb-1">Your domains</label>
+                            <select
+                                class="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm"
+                                @change="domain = $event.target.value"
+                            >
+                                <option value="">Type a domain below, or pick one you already own</option>
+                                @foreach ($ownedDomains as $owned)
+                                    <option value="{{ $owned['fqdn'] }}" @selected(old('domain') === $owned['fqdn'])>{{ $owned['fqdn'] }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                    @endif
+                    <div>
+                        <label class="block text-sm font-medium mb-1">New mail domain</label>
+                        <input
+                            name="domain"
+                            x-model="domain"
+                            required
+                            maxlength="253"
+                            placeholder="shop.example.com"
+                            class="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm font-mono"
+                        >
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Type the domain to confirm</label>
+                        <input
+                            name="domain_confirmation"
+                            value="{{ old('domain_confirmation') }}"
+                            required
+                            maxlength="253"
+                            placeholder="shop.example.com"
+                            class="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm font-mono"
+                        >
+                    </div>
+                    <div class="md:col-span-2">
+                        <button class="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-sm font-medium">Update mail domain</button>
+                    </div>
+                </form>
+            @endif
+        </div>
+
         <div class="ui-card p-6">
             <h2 class="font-semibold text-lg mb-1">Change mailbox password</h2>
             <p class="text-sm text-slate-500 mb-4">Reset a mailbox password without opening SOGo.</p>

@@ -645,6 +645,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
             Route::post('aliases', [EmailHostingController::class, 'storeAlias'])->middleware('throttle:20,1')->name('aliases.store');
             Route::delete('aliases', [EmailHostingController::class, 'destroyAlias'])->middleware('throttle:20,1')->name('aliases.destroy');
             Route::post('dns/apply', [EmailHostingController::class, 'applyDns'])->middleware('throttle:10,1')->name('dns.apply');
+            Route::put('domain', [EmailHostingController::class, 'updateDomain'])->middleware('throttle:5,1')->name('domain.update');
             Route::post('test-delivery', [EmailHostingController::class, 'testDelivery'])->middleware('throttle:5,1')->name('test-delivery');
         });
         Route::post('/my/services/{service}/cancel', [App\Http\Controllers\Customer\ServiceController::class, 'cancel'])->name('customer.services.cancel');

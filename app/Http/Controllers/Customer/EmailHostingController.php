@@ -3,8 +3,11 @@
 namespace App\Http\Controllers\Customer;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Customer\UpdateEmailHostingDomainRequest;
 use App\Models\Service;
+use App\Services\Customer\CustomerNextStepsService;
 use App\Services\Provisioning\MailcowMailboxAccessService;
+use App\Services\Provisioning\MailcowMailboxOpsService;
 use App\Services\Provisioning\MailcowProvisioningService;
 use App\Services\Provisioning\MailDnsService;
 use Illuminate\Http\RedirectResponse;
@@ -34,7 +37,7 @@ class EmailHostingController extends Controller
             $client = $provisioning->clientForService($service);
             $connection = $provisioning->connectionSettings($service);
             $dnsRecords = $dns->recommendedRecords($service);
-            $health = app(\App\Services\Customer\CustomerNextStepsService::class)->emailHealth($service);
+            $health = app(CustomerNextStepsService::class)->emailHealth($service);
 
             $mb = $client->listMailboxes($domain);
             if ($mb['success']) {
@@ -60,6 +63,8 @@ class EmailHostingController extends Controller
             'connection' => $connection,
             'dnsRecords' => $dnsRecords,
             'health' => $health,
+            'ownedDomains' => $provisioning->selectableDomainsForService($service),
+            'canChangeMailDomain' => $error === null && $mailboxes === [] && $aliases === [],
             'limits' => [
                 'mailboxes' => (int) ($meta['mailbox_limit'] ?? $limits['mailboxes']),
                 'aliases' => (int) ($meta['alias_limit'] ?? $limits['aliases']),
@@ -256,7 +261,7 @@ class EmailHostingController extends Controller
     public function updateMailboxPassword(
         Request $request,
         Service $service,
-        \App\Services\Provisioning\MailcowMailboxOpsService $ops
+        MailcowMailboxOpsService $ops
     ): RedirectResponse {
         $this->authorize('manageEmailHosting', $service);
 
@@ -281,7 +286,7 @@ class EmailHostingController extends Controller
     public function updateMailboxName(
         Request $request,
         Service $service,
-        \App\Services\Provisioning\MailcowMailboxOpsService $ops
+        MailcowMailboxOpsService $ops
     ): RedirectResponse {
         $this->authorize('manageEmailHosting', $service);
 
@@ -306,7 +311,7 @@ class EmailHostingController extends Controller
     public function enableVacation(
         Request $request,
         Service $service,
-        \App\Services\Provisioning\MailcowMailboxOpsService $ops
+        MailcowMailboxOpsService $ops
     ): RedirectResponse {
         $this->authorize('manageEmailHosting', $service);
 
@@ -339,7 +344,7 @@ class EmailHostingController extends Controller
     public function disableVacation(
         Request $request,
         Service $service,
-        \App\Services\Provisioning\MailcowMailboxOpsService $ops
+        MailcowMailboxOpsService $ops
     ): RedirectResponse {
         $this->authorize('manageEmailHosting', $service);
 
@@ -358,5 +363,25 @@ class EmailHostingController extends Controller
         }
 
         return back()->with('success', $result['message']);
+    }
+
+    public function updateDomain(
+        UpdateEmailHostingDomainRequest $request,
+        Service $service,
+        MailcowProvisioningService $provisioning
+    ): RedirectResponse {
+        $this->authorize('manageEmailHosting', $service);
+
+        try {
+            $domain = $provisioning->changeMailDomain($service, $request->validated('domain'));
+        } catch (\InvalidArgumentException $e) {
+            return back()->withErrors(['domain' => $e->getMessage()])->withInput();
+        } catch (\Throwable $e) {
+            return back()->withErrors(['error' => $e->getMessage()])->withInput();
+        }
+
+        return redirect()
+            ->route('customer.services.email.show', ['service' => $service, 'tab' => 'manage'])
+            ->with('success', 'Mail domain updated to '.$domain.'. Create mailboxes on the new domain and publish MX, SPF, DKIM, and DMARC.');
     }
 }

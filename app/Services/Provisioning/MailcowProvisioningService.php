@@ -3,11 +3,14 @@
 namespace App\Services\Provisioning;
 
 use App\Enums\ServiceStatus;
+use App\Models\Domain;
 use App\Models\Node;
 use App\Models\Product;
 use App\Models\Service;
+use App\Services\DomainActivationService;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use InvalidArgumentException;
 
 /**
  * Lifecycle for email_hosting services on Mailcow.
@@ -63,12 +66,142 @@ class MailcowProvisioningService
         $domain = explode('/', $domain)[0] ?? $domain;
 
         if ($domain === '' || ! str_contains($domain, '.')) {
-            throw new \InvalidArgumentException(
+            throw new InvalidArgumentException(
                 'Email hosting requires a domain (service_meta.mailcow_domain or domain).'
             );
         }
 
         return $domain;
+    }
+
+    /**
+     * Move this email plan to a different Mailcow domain.
+     * Existing inboxes cannot be renamed, so the current domain must be empty.
+     */
+    public function changeMailDomain(Service $service, string $newFqdn): string
+    {
+        $newFqdn = app(DirectAdminDomainValidator::class)->assertValid($newFqdn);
+
+        $current = null;
+        try {
+            $current = $this->domainForService($service);
+        } catch (InvalidArgumentException) {
+            $current = null;
+        }
+
+        if ($current !== null && $current === $newFqdn) {
+            throw new InvalidArgumentException('That is already the mail domain for this service.');
+        }
+
+        $this->assertMailDomainAvailable($service, $newFqdn);
+
+        $client = $this->clientForService($service);
+
+        if ($current !== null) {
+            $this->assertMailDomainIsEmpty($client, $current);
+        }
+
+        $limits = $this->limitsForProduct($service->product);
+        $this->ensureDomainOnMailcow($client, $service, $newFqdn, $limits);
+
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        if ($current !== null) {
+            $meta['previous_mailcow_domain'] = $current;
+        }
+        $meta['mailcow_domain'] = $newFqdn;
+        $meta['domain'] = $newFqdn;
+        $meta['mailcow_domain_changed_at'] = now()->toIso8601String();
+
+        $additional = $meta['additional_mail_domains'] ?? [];
+        if (is_array($additional)) {
+            $meta['additional_mail_domains'] = array_values(array_filter(
+                $additional,
+                fn ($item): bool => strtolower(trim((string) $item)) !== $newFqdn
+            ));
+        }
+
+        $owned = $this->ownedDomainRecord($service, $newFqdn);
+        if ($owned) {
+            $meta['domain_id'] = $owned->id;
+            $meta['cloudflare_dns'] = (bool) $owned->cloudflare_dns_enabled;
+        } else {
+            unset($meta['domain_id']);
+        }
+
+        $service->update([
+            'external_reference' => $newFqdn,
+            'service_meta' => $meta,
+        ]);
+
+        if ($current !== null && $current !== $newFqdn) {
+            $deleted = $client->deleteDomain($current);
+            if (! $deleted['success']) {
+                Log::warning('Mailcow old domain delete failed after mail domain change', [
+                    'service_id' => $service->id,
+                    'old_domain' => $current,
+                    'new_domain' => $newFqdn,
+                    'message' => $deleted['message'] ?? null,
+                ]);
+            }
+        }
+
+        $fresh = $service->fresh(['node', 'product', 'user']);
+
+        if (! empty($meta['domain_id']) && empty($meta['transfer_pending'])) {
+            try {
+                app(DomainActivationService::class)->activateFromService($fresh);
+                $fresh = $service->fresh(['node', 'product', 'user']);
+            } catch (\Throwable $e) {
+                Log::info('Mailcow linked domain activation skipped after domain change', [
+                    'service_id' => $service->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        try {
+            app(MailDnsService::class)->applyRecommendedRecords($fresh);
+        } catch (\Throwable $e) {
+            Log::info('Mailcow DNS auto-apply skipped after domain change', [
+                'service_id' => $service->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        Log::info('Mailcow mail domain changed', [
+            'service_id' => $service->id,
+            'user_id' => $service->user_id,
+            'from' => $current,
+            'to' => $newFqdn,
+        ]);
+
+        return $newFqdn;
+    }
+
+    /**
+     * @return list<array{id: int, fqdn: string}>
+     */
+    public function selectableDomainsForService(Service $service): array
+    {
+        $current = null;
+        try {
+            $current = $this->domainForService($service);
+        } catch (InvalidArgumentException) {
+            $current = null;
+        }
+
+        return Domain::query()
+            ->where('user_id', $service->user_id)
+            ->orderBy('name')
+            ->get()
+            ->map(fn (Domain $domain): array => [
+                'id' => (int) $domain->id,
+                'fqdn' => strtolower($domain->fqdn()),
+            ])
+            ->filter(fn (array $row): bool => $row['fqdn'] !== '' && $row['fqdn'] !== $current)
+            ->unique('fqdn')
+            ->values()
+            ->all();
     }
 
     public function provision(Service $service): void
@@ -85,48 +218,7 @@ class MailcowProvisioningService
 
         $domain = $this->domainForService($service);
         $limits = $this->limitsForProduct($service->product);
-
-        $existing = $mailcow->getDomain($domain);
-        $domainExists = $existing['success'] && ! empty($existing['data']) && ! $this->isEmptyDomainPayload($existing['data']);
-
-        if (! $domainExists) {
-            $created = $mailcow->addDomain([
-                'domain' => $domain,
-                'description' => 'Talksasa service #'.$service->id,
-                'aliases' => (string) $limits['aliases'],
-                'mailboxes' => (string) $limits['mailboxes'],
-                'defquota' => (string) $limits['mailbox_quota_mb'],
-                'maxquota' => (string) $limits['mailbox_quota_mb'],
-                'quota' => (string) $limits['quota_mb'],
-                'active' => '1',
-                'rl_value' => (string) $limits['msgs_per_day'],
-                'rl_frame' => 'd',
-                'restart_sogo' => '1',
-            ]);
-
-            if (! $created['success']) {
-                throw new \RuntimeException('Mailcow domain create failed: '.$created['message']);
-            }
-        } else {
-            $mailcow->editDomain($domain, [
-                'active' => '1',
-                'mailboxes' => (string) $limits['mailboxes'],
-                'aliases' => (string) $limits['aliases'],
-                'quota' => (string) $limits['quota_mb'],
-                'maxquota' => (string) $limits['mailbox_quota_mb'],
-                'defquota' => (string) $limits['mailbox_quota_mb'],
-            ]);
-        }
-
-        $rl = $mailcow->editDomainRatelimit($domain, $limits['msgs_per_day'], 'd');
-        if (! $rl['success']) {
-            Log::warning('Mailcow domain send limit (msgs/day) update failed', [
-                'service_id' => $service->id,
-                'domain' => $domain,
-                'msgs_per_day' => $limits['msgs_per_day'],
-                'message' => $rl['message'] ?? null,
-            ]);
-        }
+        $this->ensureDomainOnMailcow($mailcow, $service, $domain, $limits);
 
         $meta = is_array($service->service_meta) ? $service->service_meta : [];
         $meta['mailcow_domain'] = $domain;
@@ -150,7 +242,7 @@ class MailcowProvisioningService
 
         if (! empty($meta['domain_id']) && empty($meta['transfer_pending'])) {
             try {
-                app(\App\Services\DomainActivationService::class)->activateFromService($fresh);
+                app(DomainActivationService::class)->activateFromService($fresh);
                 $fresh = $service->fresh(['node', 'product', 'user']);
             } catch (\Throwable $e) {
                 Log::info('Mailcow linked domain activation skipped or partial', [
@@ -271,6 +363,114 @@ class MailcowProvisioningService
         if (! $result['success']) {
             throw new \RuntimeException('Mailcow domain update failed: '.$result['message']);
         }
+    }
+
+    /**
+     * @param  array{mailboxes: int, aliases: int, quota_mb: int, mailbox_quota_mb: int, msgs_per_day: int}  $limits
+     */
+    private function ensureDomainOnMailcow(MailcowService $mailcow, Service $service, string $domain, array $limits): void
+    {
+        $existing = $mailcow->getDomain($domain);
+        $domainExists = $existing['success'] && ! empty($existing['data']) && ! $this->isEmptyDomainPayload($existing['data']);
+
+        if (! $domainExists) {
+            $created = $mailcow->addDomain([
+                'domain' => $domain,
+                'description' => 'Talksasa service #'.$service->id,
+                'aliases' => (string) $limits['aliases'],
+                'mailboxes' => (string) $limits['mailboxes'],
+                'defquota' => (string) $limits['mailbox_quota_mb'],
+                'maxquota' => (string) $limits['mailbox_quota_mb'],
+                'quota' => (string) $limits['quota_mb'],
+                'active' => '1',
+                'rl_value' => (string) $limits['msgs_per_day'],
+                'rl_frame' => 'd',
+                'restart_sogo' => '1',
+            ]);
+
+            if (! $created['success']) {
+                throw new \RuntimeException('Mailcow domain create failed: '.$created['message']);
+            }
+        } else {
+            $mailcow->editDomain($domain, [
+                'active' => '1',
+                'mailboxes' => (string) $limits['mailboxes'],
+                'aliases' => (string) $limits['aliases'],
+                'quota' => (string) $limits['quota_mb'],
+                'maxquota' => (string) $limits['mailbox_quota_mb'],
+                'defquota' => (string) $limits['mailbox_quota_mb'],
+            ]);
+        }
+
+        $rl = $mailcow->editDomainRatelimit($domain, $limits['msgs_per_day'], 'd');
+        if (! $rl['success']) {
+            Log::warning('Mailcow domain send limit (msgs/day) update failed', [
+                'service_id' => $service->id,
+                'domain' => $domain,
+                'msgs_per_day' => $limits['msgs_per_day'],
+                'message' => $rl['message'] ?? null,
+            ]);
+        }
+    }
+
+    private function assertMailDomainAvailable(Service $service, string $fqdn): void
+    {
+        $conflict = Service::query()
+            ->where('id', '!=', $service->id)
+            ->where(function ($query) use ($fqdn): void {
+                $query->where('external_reference', $fqdn)
+                    ->orWhere('service_meta->mailcow_domain', $fqdn)
+                    ->orWhere('service_meta->domain', $fqdn);
+            })
+            ->get()
+            ->first(fn (Service $other): bool => $other->isEmailHosting());
+
+        if ($conflict) {
+            throw new \RuntimeException('Another email service already uses '.$fqdn.'.');
+        }
+
+        $parts = app(DirectAdminDomainValidator::class)->splitFqdn($fqdn);
+        $foreign = Domain::query()
+            ->where('user_id', '!=', $service->user_id)
+            ->whereRaw('LOWER(name) = ? AND LOWER(extension) = ?', [$parts['name'], $parts['extension']])
+            ->exists();
+
+        if ($foreign) {
+            throw new \RuntimeException('That domain is already on another Talksasa account.');
+        }
+    }
+
+    private function assertMailDomainIsEmpty(MailcowService $client, string $domain): void
+    {
+        $mailboxes = $client->listMailboxes($domain);
+        if (! ($mailboxes['success'] ?? false)) {
+            throw new \RuntimeException('Could not list mailboxes on '.$domain.': '.($mailboxes['message'] ?? 'Mailcow error'));
+        }
+        if (count($mailboxes['data'] ?? []) > 0) {
+            throw new \RuntimeException(
+                'Delete all mailboxes on '.$domain.' before changing the mail domain. Mailcow cannot move existing inboxes to a new address.'
+            );
+        }
+
+        $aliases = $client->listAliases($domain);
+        if (! ($aliases['success'] ?? false)) {
+            throw new \RuntimeException('Could not list aliases on '.$domain.': '.($aliases['message'] ?? 'Mailcow error'));
+        }
+        if (count($aliases['data'] ?? []) > 0) {
+            throw new \RuntimeException(
+                'Delete all aliases on '.$domain.' before changing the mail domain.'
+            );
+        }
+    }
+
+    private function ownedDomainRecord(Service $service, string $fqdn): ?Domain
+    {
+        $parts = app(DirectAdminDomainValidator::class)->splitFqdn($fqdn);
+
+        return Domain::query()
+            ->where('user_id', $service->user_id)
+            ->whereRaw('LOWER(name) = ? AND LOWER(extension) = ?', [$parts['name'], $parts['extension']])
+            ->first();
     }
 
     /**
