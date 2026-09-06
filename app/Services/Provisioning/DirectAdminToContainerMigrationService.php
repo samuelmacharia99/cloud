@@ -910,6 +910,7 @@ class DirectAdminToContainerMigrationService
                 $wait['password'],
                 420,
                 $wait['user'],
+                true,
             );
 
             // Extract onto the host bind mount (.../app → /var/www/html) so the customer
@@ -931,6 +932,7 @@ class DirectAdminToContainerMigrationService
                 $wait['password'],
                 420,
                 $wait['user'],
+                true,
             );
 
             $importPass = $db['root_password'] !== '' ? $db['root_password'] : $db['password'];
@@ -1256,6 +1258,7 @@ class DirectAdminToContainerMigrationService
                     $wait['password'],
                     420,
                     $wait['user'],
+                    true,
                 );
 
                 $importPass = $db['root_password'] !== '' ? $db['root_password'] : $db['password'];
@@ -1983,10 +1986,12 @@ class DirectAdminToContainerMigrationService
         string $password,
         int $timeoutSeconds = 420,
         string $user = 'root',
+        bool $repairUnusableDatadir = false,
     ): void {
         $delaySeconds = 5;
         $maxAttempts = max(1, (int) ceil($timeoutSeconds / $delaySeconds));
         $lastError = null;
+        $repairedUnusableDatadir = false;
 
         try {
             $ssh->exec($this->composeMysqlUpCommand($containerPath, $dbService), 180);
@@ -2023,6 +2028,25 @@ class DirectAdminToContainerMigrationService
                     'user' => $user,
                     'error' => $e->getMessage(),
                 ]);
+
+                if ($repairUnusableDatadir && ! $repairedUnusableDatadir) {
+                    $status = $this->composeMysqlStatus($ssh, $containerPath, $dbService);
+                    if ($this->composeMysqlDatadirIsUnusable($e->getMessage().' '.$status)) {
+                        Log::warning('Resetting unusable MySQL sidecar datadir before convert import', [
+                            'service' => $dbService,
+                            'path' => $containerPath,
+                        ]);
+                        try {
+                            $ssh->exec($this->composeMysqlResetUnusableDatadirCommand($containerPath, $dbService), 180);
+                            $repairedUnusableDatadir = true;
+                            sleep(3);
+
+                            continue;
+                        } catch (\Throwable $resetError) {
+                            $lastError = $resetError;
+                        }
+                    }
+                }
             }
 
             if ($attempt < $maxAttempts - 1) {
@@ -2049,7 +2073,28 @@ class DirectAdminToContainerMigrationService
             || str_contains($lower, 'is not running')
             || str_contains($lower, 'cannot connect')
             || str_contains($lower, 'no such service')
-            || str_contains($lower, 'container is not');
+            || str_contains($lower, 'container is not')
+            || str_contains($lower, 'is restarting')
+            || str_contains($lower, 'restarting (');
+    }
+
+    public function composeMysqlDatadirIsUnusable(string $message): bool
+    {
+        $lower = strtolower($message);
+
+        return str_contains($lower, 'data directory has files in it')
+            || str_contains($lower, 'data directory /var/lib/mysql/ is unusable')
+            || (str_contains($lower, 'designated data directory') && str_contains($lower, 'unusable'));
+    }
+
+    public function composeMysqlResetUnusableDatadirCommand(string $containerPath, string $dbService): string
+    {
+        return 'cd '.escapeshellarg($containerPath)
+            .' && docker compose stop '.escapeshellarg($dbService).' 2>/dev/null || true'
+            .' && docker compose rm -f '.escapeshellarg($dbService).' 2>/dev/null || true'
+            .' && project=$(basename "$PWD")'
+            .' && docker volume ls -q | grep -E "^${project}_(db_data|mysql_data)$" | xargs -r docker volume rm'
+            .' && docker compose up -d --no-deps '.escapeshellarg($dbService);
     }
 
     private function composeMysqlStatus(SSHService $ssh, string $containerPath, string $dbService): string
@@ -2177,6 +2222,7 @@ class DirectAdminToContainerMigrationService
                     $password,
                     420,
                     $user,
+                    true,
                 );
                 $ssh->exec($command, 600);
 

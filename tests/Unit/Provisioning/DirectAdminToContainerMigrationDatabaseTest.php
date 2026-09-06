@@ -212,7 +212,95 @@ class DirectAdminToContainerMigrationDatabaseTest extends TestCase
 
         $this->assertTrue($migrator->composeMysqlNeedsStart('service "mysql" is not running'));
         $this->assertTrue($migrator->composeMysqlNeedsStart('Error: No container found'));
+        $this->assertTrue($migrator->composeMysqlNeedsStart('Container is restarting, wait until the container is running'));
         $this->assertFalse($migrator->composeMysqlNeedsStart('Access denied for user'));
+    }
+
+    #[Test]
+    public function compose_mysql_detects_a_half_initialized_datadir_and_rebuilds_only_that_volume(): void
+    {
+        $migrator = app(DirectAdminToContainerMigrationService::class);
+
+        $this->assertTrue($migrator->composeMysqlDatadirIsUnusable(
+            '--initialize specified but the data directory has files in it. Aborting.'
+        ));
+        $this->assertTrue($migrator->composeMysqlDatadirIsUnusable(
+            'The designated data directory /var/lib/mysql/ is unusable.'
+        ));
+        $this->assertFalse($migrator->composeMysqlDatadirIsUnusable('Access denied for user'));
+
+        $cmd = $migrator->composeMysqlResetUnusableDatadirCommand(
+            '/opt/talksasa/containers/user-485-service-370-laravel',
+            'db'
+        );
+        $this->assertStringContainsString('docker compose rm -f', $cmd);
+        $this->assertStringContainsString('user-485-service-370-laravel', $cmd);
+        $this->assertStringContainsString('db_data|mysql_data', $cmd);
+        $this->assertStringContainsString('docker volume rm', $cmd);
+        $this->assertStringNotContainsString('compose down', $cmd);
+    }
+
+    #[Test]
+    public function wait_for_compose_mysql_resets_unusable_datadir_only_when_requested(): void
+    {
+        $migrator = app(DirectAdminToContainerMigrationService::class);
+        $path = '/opt/talksasa/containers/user-485-service-370-laravel';
+        $unusable = 'Restarting --initialize specified but the data directory has files in it. Aborting.';
+
+        $ssh = \Mockery::mock(SSHService::class);
+        $resetSeen = false;
+        $ssh->shouldReceive('exec')->andReturnUsing(function (string $cmd) use ($unusable, &$resetSeen) {
+            if (str_contains($cmd, 'docker volume rm')) {
+                $resetSeen = true;
+
+                return '';
+            }
+            if (str_contains($cmd, 'mysqladmin ping') || str_contains($cmd, 'mariadb-admin ping')) {
+                if ($resetSeen) {
+                    return '';
+                }
+
+                throw new \RuntimeException('Container is restarting, wait until the container is running');
+            }
+            if (str_contains($cmd, 'docker compose logs') || str_contains($cmd, 'docker compose ps')) {
+                return $unusable;
+            }
+
+            return '';
+        });
+
+        $migrator->waitForComposeMysql($ssh, $path, 'db', 'secret', 15, 'root', true);
+        $this->assertTrue($resetSeen);
+    }
+
+    #[Test]
+    public function wait_for_compose_mysql_does_not_wipe_datadir_during_backup_restore(): void
+    {
+        $migrator = app(DirectAdminToContainerMigrationService::class);
+        $path = '/opt/talksasa/containers/user-1-service-1-laravel';
+
+        $ssh = \Mockery::mock(SSHService::class);
+        $ssh->shouldReceive('exec')->andReturnUsing(function (string $cmd) {
+            if (str_contains($cmd, 'docker volume rm')) {
+                throw new \RuntimeException('must not wipe live datadir');
+            }
+            if (str_contains($cmd, 'mysqladmin ping') || str_contains($cmd, 'mariadb-admin ping')) {
+                throw new \RuntimeException('Container is restarting, wait until the container is running');
+            }
+            if (str_contains($cmd, 'docker compose logs')) {
+                return '--initialize specified but the data directory has files in it.';
+            }
+
+            return '';
+        });
+
+        try {
+            $migrator->waitForComposeMysql($ssh, $path, 'db', 'secret', 5, 'root', false);
+            $this->fail('expected wait to time out');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('did not become ready', $e->getMessage());
+            $this->assertStringNotContainsString('must not wipe', $e->getMessage());
+        }
     }
 
     #[Test]
