@@ -56,7 +56,7 @@
                 @forelse ($payments as $payment)
                     <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50">
                         <td class="px-4 py-3 text-slate-600">{{ $payment->created_at?->format('M j, Y') }}</td>
-                        <td class="px-4 py-3">{{ $payment->invoice?->user?->name ?? '—' }}</td>
+                        <td class="px-4 py-3"><x-reseller.customer-link :user="$payment->invoice?->user" /></td>
                         <td class="px-4 py-3">
                             @if ($payment->invoice)
                                 <a href="{{ route('reseller.customer-invoices.show', $payment->invoice) }}" class="text-purple-600 hover:underline">{{ $payment->invoice->invoice_number }}</a>

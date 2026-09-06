@@ -164,7 +164,7 @@
                                         {{ strtoupper(substr($customer->name, 0, 1)) }}
                                     </div>
                                     <div class="min-w-0">
-                                        <p class="font-medium text-slate-900 dark:text-white truncate">{{ $customer->name }}</p>
+                                        <p class="truncate"><x-reseller.customer-link :user="$customer" /></p>
                                         <p class="text-xs text-slate-600 dark:text-slate-400 truncate">{{ $customer->email }}</p>
                                     </div>
                                 </div>

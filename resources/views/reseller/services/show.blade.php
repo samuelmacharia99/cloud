@@ -50,12 +50,86 @@
         </div>
     </div>
 
+    @if (($usageInsight['allocated'] ?? null) || ($usageInsight['consumed'] ?? null))
+        @php
+            $allocated = $usageInsight['allocated'] ?? null;
+            $consumed = $usageInsight['consumed'] ?? null;
+        @endphp
+        <div class="ui-card p-6 space-y-4">
+            <div>
+                <h2 class="font-semibold text-slate-900 dark:text-white">Plan and usage</h2>
+                <p class="text-sm text-slate-500 mt-1">Allocated from the customer plan. Usage is the latest container sample. Runtime controls stay in the customer portal.</p>
+            </div>
+            <dl class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div>
+                    <dt class="text-slate-500">CPU</dt>
+                    <dd class="font-medium text-slate-900 dark:text-white">
+                        {{ $allocated ? rtrim(rtrim(number_format($allocated['cpu'], 2), '0'), '.').' cores' : '—' }}
+                    </dd>
+                    @if ($consumed && $consumed['cpu_percent'] !== null)
+                        <p class="text-xs text-slate-500 mt-1">{{ number_format($consumed['cpu_percent'], 1) }}% now</p>
+                    @endif
+                </div>
+                <div>
+                    <dt class="text-slate-500">Memory</dt>
+                    <dd class="font-medium text-slate-900 dark:text-white">
+                        @if ($allocated)
+                            {{ number_format($allocated['memory_mb'] / 1024, $allocated['memory_mb'] >= 1024 ? 0 : 1) }} GB
+                        @else
+                            —
+                        @endif
+                    </dd>
+                    @if ($consumed && $consumed['memory_mb'] !== null)
+                        <p class="text-xs text-slate-500 mt-1">{{ number_format($consumed['memory_mb']) }} MB used</p>
+                    @endif
+                </div>
+                <div>
+                    <dt class="text-slate-500">Disk</dt>
+                    <dd class="font-medium text-slate-900 dark:text-white">
+                        @if ($consumed && $consumed['disk_gb'] !== null)
+                            {{ number_format($consumed['disk_gb'], 1) }}
+                            @if ($allocated)
+                                / {{ number_format($allocated['disk_gb'], 0) }} GB
+                            @else
+                                GB
+                            @endif
+                        @elseif ($allocated)
+                            {{ number_format($allocated['disk_gb'], 0) }} GB included
+                        @else
+                            No sample yet
+                        @endif
+                    </dd>
+                </div>
+                <div>
+                    <dt class="text-slate-500">Transfer (30 days)</dt>
+                    <dd class="font-medium text-slate-900 dark:text-white">
+                        @if ($consumed)
+                            {{ number_format($consumed['transfer_gb'], 2) }} GB
+                            @if ($allocated && $allocated['bandwidth_gb'] !== null)
+                                / {{ number_format($allocated['bandwidth_gb'], 0) }} GB
+                            @endif
+                        @elseif ($allocated && $allocated['bandwidth_gb'] !== null)
+                            {{ number_format($allocated['bandwidth_gb'], 0) }} GB included
+                        @else
+                            —
+                        @endif
+                    </dd>
+                    @if ($consumed && $consumed['sampled_at'])
+                        <p class="text-xs text-slate-500 mt-1">Sampled {{ $consumed['sampled_at']->diffForHumans() }}</p>
+                    @endif
+                </div>
+            </dl>
+        </div>
+    @endif
+
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div class="ui-card p-6 space-y-3">
             <h2 class="font-semibold">Customer</h2>
-            <p class="text-sm">{{ $service->user?->name }}</p>
+            <p class="text-sm"><x-reseller.customer-link :user="$service->user" /></p>
             <p class="text-sm text-slate-500">{{ $service->user?->email }}</p>
-            <a href="{{ route('reseller.customers.show', $service->user) }}" class="text-sm text-purple-600">Customer profile →</a>
+            @if ($service->user)
+                <a href="{{ route('reseller.customers.show', $service->user) }}" class="text-sm text-purple-600">Customer profile →</a>
+            @endif
         </div>
         <div class="ui-card p-6 space-y-3">
             <h2 class="font-semibold">Billing</h2>

@@ -95,7 +95,7 @@
                 </p>
 
                 <!-- Usage Meters -->
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <!-- Service Slots -->
                     <div>
                         <div class="flex justify-between items-center mb-2">
@@ -143,6 +143,10 @@
                             @endif
                         </p>
                     </div>
+
+                    @if (($diskPool['pool_gb'] ?? 0) > 0)
+                        @include('reseller.partials.disk-pool-meter', ['diskPool' => $diskPool, 'compact' => false])
+                    @endif
                 </div>
 
                 <!-- Subscription Info -->
@@ -237,7 +241,7 @@
                             <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
                         </svg>
                         <div>
-                            <p class="text-sm font-medium text-slate-900 dark:text-white">{{ $package->storage_space }} Service Slots</p>
+                            <p class="text-sm font-medium text-slate-900 dark:text-white">{{ $package->max_services }} service slots</p>
                             <p class="text-xs text-slate-600 dark:text-slate-400">Active services you can manage</p>
                         </div>
                     </div>
@@ -246,8 +250,17 @@
                             <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
                         </svg>
                         <div>
-                            <p class="text-sm font-medium text-slate-900 dark:text-white">{{ $package->max_users }} Customers</p>
+                            <p class="text-sm font-medium text-slate-900 dark:text-white">{{ $package->max_users }} customers</p>
                             <p class="text-xs text-slate-600 dark:text-slate-400">Maximum customer accounts</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <svg class="w-5 h-5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                        </svg>
+                        <div>
+                            <p class="text-sm font-medium text-slate-900 dark:text-white">{{ $package->disk_pool_gb }} GB disk pool</p>
+                            <p class="text-xs text-slate-600 dark:text-slate-400">Shared across DirectAdmin and containers</p>
                         </div>
                     </div>
                     @if ($package->description)

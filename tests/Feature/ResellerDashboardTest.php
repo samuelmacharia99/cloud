@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Models\ContainerDeployment;
+use App\Models\ContainerMetric;
 use App\Models\Invoice;
 use App\Models\Product;
 use App\Models\ResellerPackage;
@@ -87,6 +89,62 @@ class ResellerDashboardTest extends TestCase
         $response->assertSee('Server pulse');
     }
 
+    public function test_reseller_dashboard_shows_disk_pool_in_gigabytes(): void
+    {
+        $reseller = $this->createResellerWithPackage([
+            'max_services' => 10,
+            'disk_pool_gb' => 100,
+            'storage_space' => 100,
+        ]);
+
+        $this->actingAs($reseller)
+            ->get(route('dashboard'))
+            ->assertOk()
+            ->assertSee('0.00 / 100 GB')
+            ->assertSee('100.0 GB remaining')
+            ->assertSee('DirectAdmin 0.0 GB')
+            ->assertSee('Containers 0.0 GB');
+    }
+
+    public function test_reseller_dashboard_shows_container_disk_against_the_package_pool(): void
+    {
+        $reseller = $this->createResellerWithPackage([
+            'max_services' => 25,
+            'disk_pool_gb' => 50,
+            'storage_space' => 50,
+        ]);
+        $customer = $this->createManagedCustomer($reseller);
+        $product = Product::factory()->containerHosting()->create([
+            'resource_limits' => ['cpu' => 2, 'memory' => 4096, 'disk' => 20, 'bandwidth_gb' => 100],
+        ]);
+        $service = Service::factory()->create([
+            'user_id' => $customer->id,
+            'reseller_id' => $reseller->id,
+            'product_id' => $product->id,
+            'provisioning_driver_key' => 'container',
+            'status' => 'active',
+        ]);
+        $deployment = ContainerDeployment::factory()->create([
+            'service_id' => $service->id,
+        ]);
+        ContainerMetric::create([
+            'container_deployment_id' => $deployment->id,
+            'sample_type' => ContainerMetric::SAMPLE_USAGE,
+            'disk_used_gb' => 12.4,
+            'cpu_percentage' => 10,
+            'memory_used_mb' => 512,
+            'recorded_at' => now(),
+        ]);
+
+        $this->actingAs($reseller)
+            ->get(route('dashboard'))
+            ->assertOk()
+            ->assertSee('12.4 / 50 GB')
+            ->assertSee('37.6 GB remaining')
+            ->assertSee('Containers 12.4 GB')
+            ->assertSee('12.4 GB of 50 GB pool');
+    }
+
     public function test_reseller_directadmin_panel_endpoint_returns_json(): void
     {
         $reseller = $this->createResellerWithPackage();
@@ -140,7 +198,9 @@ class ResellerDashboardTest extends TestCase
     public function test_reseller_dashboard_activity_endpoint_returns_paginated_feed(): void
     {
         $reseller = $this->createResellerWithPackage();
-        $customer = $this->createManagedCustomer($reseller);
+        $customer = $this->createManagedCustomer($reseller, [
+            'name' => 'Activity Customer',
+        ]);
 
         foreach (range(1, 12) as $index) {
             Invoice::factory()->create([
@@ -156,6 +216,8 @@ class ResellerDashboardTest extends TestCase
         $firstPage->assertJsonCount(10, 'items');
         $firstPage->assertJsonPath('has_more', true);
         $firstPage->assertJsonPath('next_offset', 10);
+        $firstPage->assertJsonPath('items.0.customer_name', 'Activity Customer');
+        $firstPage->assertJsonPath('items.0.customer_url', route('reseller.customers.show', $customer));
 
         $secondPage = $this->actingAs($reseller)->getJson(route('reseller.dashboard.activity', ['offset' => 10]));
         $secondPage->assertOk();

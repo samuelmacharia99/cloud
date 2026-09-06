@@ -34,7 +34,9 @@
                     @if ($context === 'admin')
                         <x-admin.customer-link :user="$user" />
                     @else
-                        <p class="font-medium text-slate-900 dark:text-white">{{ $row['display_name'] }}</p>
+                        <p class="font-medium text-slate-900 dark:text-white">
+                            <x-reseller.customer-link :user="$user" :label="$row['display_name']" />
+                        </p>
                     @endif
                 @else
                     <p class="font-medium text-slate-900 dark:text-white">{{ $row['display_name'] }}</p>

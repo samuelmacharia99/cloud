@@ -247,8 +247,8 @@
                                     </td>
                                     <td class="text-slate-600 dark:text-slate-400">
                                         @if($domain->user_id !== auth()->id())
-                                            <span class="font-medium text-slate-900 dark:text-white">{{ $domain->user->name }}</span>
-                                            <p class="text-xs text-slate-500">{{ $domain->user->email }}</p>
+                                            <x-reseller.customer-link :user="$domain->user" />
+                                            <p class="text-xs text-slate-500">{{ $domain->user?->email }}</p>
                                         @else
                                             <span class="text-slate-400">My account</span>
                                         @endif

@@ -8,6 +8,7 @@ use App\Models\Service;
 use App\Models\User;
 use App\Services\Provisioning\ProvisioningService;
 use App\Services\ResellerManagedServiceUpdateService;
+use App\Services\ResellerManagedServiceUsageService;
 use App\Services\ResellerScopeService;
 use App\Services\ServiceDeletionService;
 use App\Services\ServiceEnforcementInsightService;
@@ -29,6 +30,7 @@ class ManagedServiceController extends Controller
 
         $applicationServices = (clone $base)
             ->applicationHosting()
+            ->with(['containerDeployment.latestRecordedMetric', 'product.containerTemplate'])
             ->paginate(20, ['*'], 'apps_page')
             ->withQueryString();
 
@@ -42,10 +44,14 @@ class ManagedServiceController extends Controller
             ->paginate(20, ['*'], 'other_page')
             ->withQueryString();
 
+        $applicationUsage = app(ResellerManagedServiceUsageService::class)
+            ->forServices($applicationServices->getCollection());
+
         return view('reseller.services.index', compact(
             'applicationServices',
             'mailServices',
             'otherServices',
+            'applicationUsage',
         ));
     }
 
@@ -79,11 +85,12 @@ class ManagedServiceController extends Controller
     public function show(Service $service)
     {
         $this->ensureManaged($service);
-        $service->load(['user', 'product', 'containerDeployment', 'invoice', 'latestDaAccountSnapshot']);
+        $service->load(['user', 'product.containerTemplate', 'containerDeployment.latestRecordedMetric', 'invoice', 'latestDaAccountSnapshot']);
 
         $actions = $this->serviceActionFlags($service);
 
         $managementLinks = $this->managementLinks($service);
+        $usageInsight = app(ResellerManagedServiceUsageService::class)->forService($service);
         $enforcementInsight = app(ServiceEnforcementInsightService::class)->forService($service);
         $infrastructureAbsent = app(ServiceInfrastructureProbeService::class)->infrastructureAlreadyAbsent($service);
 
@@ -102,6 +109,7 @@ class ManagedServiceController extends Controller
             'canTerminate' => $actions['canTerminate'],
             'canDelete' => $actions['canDelete'],
             'managementLinks' => $managementLinks,
+            'usageInsight' => $usageInsight,
             'enforcementInsight' => $enforcementInsight,
             'infrastructureAbsent' => $infrastructureAbsent,
             'transferTargets' => $transferTargets,

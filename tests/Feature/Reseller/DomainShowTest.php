@@ -6,7 +6,9 @@ use App\Enums\RegistrarDriver;
 use App\Models\Domain;
 use App\Models\DomainExtension;
 use App\Models\Registrar;
+use App\Models\ResellerDomainOrder;
 use App\Models\ResellerPackage;
+use App\Models\Service;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -222,6 +224,108 @@ class DomainShowTest extends TestCase
         $this->assertIsString($message);
         $this->assertStringNotContainsStringIgnoringCase('cosmotown', $message);
         $this->assertStringContainsString('registry', strtolower($message));
+    }
+
+    public function test_reseller_sees_customer_who_owns_domain_on_registry_tab(): void
+    {
+        $reseller = $this->createReseller();
+        $customer = User::factory()->customer()->create([
+            'reseller_id' => $reseller->id,
+            'name' => 'Jane Mwangi',
+            'email' => 'jane@client.test',
+            'company' => 'Mwangi Holdings',
+        ]);
+
+        $domain = Domain::create([
+            'user_id' => $customer->id,
+            'reseller_id' => $reseller->id,
+            'name' => 'shop',
+            'extension' => '.ke',
+            'status' => 'active',
+            'type' => 'registration',
+        ]);
+
+        $this->actingAs($reseller)
+            ->get(route('reseller.domains.show', ['domain' => $domain, 'tab' => 'registry']))
+            ->assertOk()
+            ->assertSee('Jane Mwangi')
+            ->assertSee('jane@client.test')
+            ->assertSee('Mwangi Holdings')
+            ->assertSee('Customer profile →')
+            ->assertSee(route('reseller.customers.show', $customer), false)
+            ->assertDontSee('Your reseller account')
+            ->assertDontSee('On your reseller account');
+    }
+
+    public function test_reseller_sees_service_linked_customer_as_domain_owner(): void
+    {
+        $reseller = $this->createReseller();
+        $customer = User::factory()->customer()->create([
+            'name' => 'Service Linked Owner',
+            'email' => 'linked@client.test',
+        ]);
+
+        Service::factory()->create([
+            'user_id' => $customer->id,
+            'reseller_id' => $reseller->id,
+        ]);
+
+        $domain = Domain::create([
+            'user_id' => $customer->id,
+            'reseller_id' => $reseller->id,
+            'name' => 'linked',
+            'extension' => '.com',
+            'status' => 'active',
+            'type' => 'registration',
+        ]);
+
+        $this->actingAs($reseller)
+            ->get(route('reseller.domains.show', ['domain' => $domain, 'tab' => 'registry']))
+            ->assertOk()
+            ->assertSee('Service Linked Owner')
+            ->assertSee('linked@client.test')
+            ->assertSee(route('reseller.customers.show', $customer), false);
+    }
+
+    public function test_reseller_owned_domain_shows_billed_customer(): void
+    {
+        $reseller = $this->createReseller();
+        $customer = User::factory()->customer()->create([
+            'reseller_id' => $reseller->id,
+            'name' => 'Billed Customer',
+            'email' => 'billed@client.test',
+        ]);
+
+        $domain = Domain::create([
+            'user_id' => $reseller->id,
+            'reseller_id' => $reseller->id,
+            'name' => 'held',
+            'extension' => '.com',
+            'status' => 'active',
+            'type' => 'registration',
+        ]);
+
+        ResellerDomainOrder::create([
+            'reseller_id' => $reseller->id,
+            'customer_id' => $customer->id,
+            'domain_id' => $domain->id,
+            'domain_name' => 'held',
+            'extension' => '.com',
+            'years' => 1,
+            'wholesale_amount' => 1000,
+            'retail_amount' => 1500,
+            'status' => 'completed',
+            'queued_at' => now(),
+            'expires_at' => now()->addDays(10),
+        ]);
+
+        $this->actingAs($reseller)
+            ->get(route('reseller.domains.show', ['domain' => $domain, 'tab' => 'registry']))
+            ->assertOk()
+            ->assertSee('Your reseller account')
+            ->assertSee('Registered for')
+            ->assertSee('Billed Customer')
+            ->assertSee('billed@client.test');
     }
 
     private function attachCosmotown(string $extension, bool $default = true, bool $bindExtension = true): Registrar

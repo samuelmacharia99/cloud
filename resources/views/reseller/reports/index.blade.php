@@ -79,7 +79,7 @@
                     @foreach ($ledgerEntries as $entry)
                         <tr>
                             <td class="px-4 py-3">{{ $entry->created_at->format('M d, Y') }}</td>
-                            <td class="px-4 py-3">{{ $entry->customer?->name }}</td>
+                            <td class="px-4 py-3"><x-reseller.customer-link :user="$entry->customer" /></td>
                             <td class="px-4 py-3">{{ $entry->description }}</td>
                             <td class="px-4 py-3 text-right text-emerald-600 font-medium">KSH {{ number_format($entry->margin_amount, 2) }}</td>
                         </tr>

@@ -124,6 +124,9 @@ class ResellerAnalyticsService
                 : null,
             'diskPoolGb' => $diskPoolGb,
             'diskUsedGb' => $diskUsageSnapshot['total_used_gb'],
+            'diskRemainingGb' => $diskPoolGb > 0
+                ? max(0, round($diskPoolGb - (float) $diskUsageSnapshot['total_used_gb'], 2))
+                : 0.0,
             'diskDirectAdminGb' => $diskUsageSnapshot['directadmin_used_gb'],
             'diskContainerGb' => $diskUsageSnapshot['container_used_gb'],
             'diskPoolPercent' => $diskPoolPercent,
@@ -348,7 +351,7 @@ class ResellerAnalyticsService
 
     /**
      * @param  list<int>  $customerIds
-     * @return list<array{type: string, title: string, subtitle: ?string, url: string, at: string}>
+     * @return list<array{type: string, title: string, subtitle: ?string, url: string, customer_name: ?string, customer_url: ?string, at: string}>
      */
     private function buildActivityFeedItems(User $reseller, array $customerIds): array
     {
@@ -361,14 +364,14 @@ class ResellerAnalyticsService
             ->get();
 
         foreach ($recentInvoices as $invoice) {
-            $items->push([
+            $items->push(array_merge($this->activityCustomerFields($invoice->user, $reseller), [
                 'type' => 'invoice',
                 'title' => "Invoice {$invoice->invoice_number}",
-                'subtitle' => ($invoice->user?->name ?? 'Customer').' · KSH '.number_format((float) $invoice->total, 2),
+                'subtitle' => 'KSH '.number_format((float) $invoice->total, 2),
                 'url' => route('reseller.customer-invoices.show', $invoice),
                 'at' => $invoice->created_at?->toIso8601String() ?? now()->toIso8601String(),
                 'sort' => $invoice->created_at?->timestamp ?? 0,
-            ]);
+            ]));
         }
 
         $recentServices = $this->scope->managedServicesQuery($reseller)
@@ -378,49 +381,51 @@ class ResellerAnalyticsService
             ->get();
 
         foreach ($recentServices as $service) {
-            $items->push([
+            $items->push(array_merge($this->activityCustomerFields($service->user, $reseller), [
                 'type' => 'service',
                 'title' => $service->name ?? 'Service',
-                'subtitle' => $service->user?->name,
+                'subtitle' => null,
                 'url' => route('reseller.services.show', $service),
                 'at' => $service->created_at?->toIso8601String() ?? now()->toIso8601String(),
                 'sort' => $service->created_at?->timestamp ?? 0,
-            ]);
+            ]));
         }
 
         $recentOrders = ResellerDomainOrder::query()
             ->forManagedCustomers($reseller)
+            ->with('customer')
             ->latest()
             ->limit(30)
             ->get();
 
         foreach ($recentOrders as $order) {
-            $items->push([
+            $items->push(array_merge($this->activityCustomerFields($order->customer, $reseller), [
                 'type' => 'domain_order',
                 'title' => "Domain order: {$order->domain}",
                 'subtitle' => ucfirst((string) $order->status),
                 'url' => route('reseller.domain-orders.index'),
                 'at' => $order->created_at?->toIso8601String() ?? now()->toIso8601String(),
                 'sort' => $order->created_at?->timestamp ?? 0,
-            ]);
+            ]));
         }
 
         if ($customerIds !== []) {
             $recentTickets = Ticket::query()
                 ->whereIn('user_id', $customerIds)
+                ->with('user')
                 ->latest()
                 ->limit(30)
                 ->get();
 
             foreach ($recentTickets as $ticket) {
-                $items->push([
+                $items->push(array_merge($this->activityCustomerFields($ticket->user, $reseller), [
                     'type' => 'ticket',
-                    'title' => $ticket->subject,
+                    'title' => $ticket->title ?? $ticket->subject ?? 'Ticket',
                     'subtitle' => ucfirst((string) $ticket->status),
                     'url' => route('reseller.tickets.show', $ticket),
                     'at' => $ticket->created_at?->toIso8601String() ?? now()->toIso8601String(),
                     'sort' => $ticket->created_at?->timestamp ?? 0,
-                ]);
+                ]));
             }
         }
 
@@ -430,6 +435,19 @@ class ResellerAnalyticsService
             ->values()
             ->map(fn (array $item) => collect($item)->except('sort')->all())
             ->all();
+    }
+
+    /**
+     * @return array{customer_name: ?string, customer_url: ?string}
+     */
+    private function activityCustomerFields(?User $customer, User $reseller): array
+    {
+        $owned = $customer && (int) $customer->reseller_id === (int) $reseller->id;
+
+        return [
+            'customer_name' => $customer?->name,
+            'customer_url' => $owned ? route('reseller.customers.show', $customer) : null,
+        ];
     }
 
     /**

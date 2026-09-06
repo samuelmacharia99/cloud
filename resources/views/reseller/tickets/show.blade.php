@@ -9,7 +9,7 @@
             <a href="{{ route('reseller.tickets.index') }}" class="text-sm text-purple-600 hover:text-purple-700">← Back to tickets</a>
             <h1 class="text-2xl font-bold text-slate-900 dark:text-white mt-2">{{ $ticket->title }}</h1>
             <p class="text-sm text-slate-500">
-                Opened by {{ $ticket->user?->name }}
+                Opened by <x-reseller.customer-link :user="$ticket->user" />
                 · {{ $ticket->handled_by?->label() ?? 'Platform support' }}
                 · <x-status-badge :status="$ticket->status" type="ticket" />
             </p>
@@ -65,7 +65,7 @@
     <div class="space-y-4">
         @foreach ($ticket->replies as $reply)
             <div class="ui-card p-4">
-                <p class="text-xs text-slate-500 mb-2">{{ $reply->user?->name }} · {{ $reply->created_at->diffForHumans() }}</p>
+                <p class="text-xs text-slate-500 mb-2"><x-reseller.customer-link :user="$reply->user" /> · {{ $reply->created_at->diffForHumans() }}</p>
                 <p class="text-slate-700 dark:text-slate-300 whitespace-pre-wrap">{{ $reply->message }}</p>
                 <x-ticket-attachments :attachments="$reply->attachments" :ticket="$ticket" route-name="reseller.tickets.attachments.show" />
             </div>

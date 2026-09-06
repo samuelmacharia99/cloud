@@ -7,7 +7,7 @@
     <div>
         <a href="{{ route('reseller.customer-invoices.show', $invoice) }}" class="text-sm text-purple-600">← {{ $invoice->invoice_number }}</a>
         <h1 class="text-3xl font-bold text-slate-900 dark:text-white mt-2">Edit invoice</h1>
-        <p class="text-slate-600 dark:text-slate-400">{{ $invoice->user?->name }}</p>
+        <p class="text-slate-600 dark:text-slate-400"><x-reseller.customer-link :user="$invoice->user" /></p>
     </div>
 
     <form method="POST" action="{{ route('reseller.customer-invoices.update', $invoice) }}" class="ui-card p-6 space-y-6">

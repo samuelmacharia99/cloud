@@ -71,6 +71,11 @@ class ContainerDeployment extends Model
         return $this->hasMany(ContainerMetric::class);
     }
 
+    public function latestRecordedMetric()
+    {
+        return $this->hasOne(ContainerMetric::class)->latestOfMany('recorded_at');
+    }
+
     public function domains()
     {
         return $this->hasMany(ContainerDomain::class);

@@ -12,8 +12,9 @@
 
 @php
     $owner = $domain->user;
-    $ownedByReseller = $owner && (int) $owner->id === (int) auth()->id();
-    $managedCustomer = $owner && ! $ownedByReseller && (int) $owner->reseller_id === (int) auth()->id();
+    $ownedByReseller = $ownedByReseller ?? ($owner && (int) $owner->id === (int) auth()->id());
+    $managedCustomer = $managedCustomer ?? ($owner && ! $ownedByReseller && (int) $owner->reseller_id === (int) auth()->id());
+    $billedCustomer = $billedCustomer ?? null;
     $isLocked = (bool) ($registry['locked'] ?? $domain->registry_locked);
     $privacyOn = (bool) ($registry['whois_privacy'] ?? $domain->whois_privacy);
     $dnsOnly = $domain->isDnsManaged();
@@ -123,7 +124,36 @@
         </div>
     </div>
 
-    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="ui-card p-5">
+            <p class="text-sm text-slate-500">Customer</p>
+            @if($managedCustomer)
+                <p class="text-lg font-semibold mt-2 text-slate-900 dark:text-white break-words">
+                    <a href="{{ route('reseller.customers.show', $owner) }}" class="text-purple-700 dark:text-purple-300 hover:underline">{{ $owner->name }}</a>
+                </p>
+                <p class="text-xs text-slate-500 mt-1 break-all">{{ $owner->email }}</p>
+                @if(filled($owner->company))
+                    <p class="text-xs text-slate-500">{{ $owner->company }}</p>
+                @endif
+                <a href="{{ route('reseller.customers.show', $owner) }}" class="inline-block mt-2 text-sm text-purple-700 dark:text-purple-300 hover:underline">Customer profile →</a>
+            @elseif($ownedByReseller)
+                <p class="text-lg font-semibold mt-2 text-slate-900 dark:text-white">Your reseller account</p>
+                @if($billedCustomer)
+                    <p class="text-xs text-slate-500 mt-1">
+                        Registered for
+                        <a href="{{ route('reseller.customers.show', $billedCustomer) }}" class="font-medium text-purple-700 dark:text-purple-300 hover:underline">{{ $billedCustomer->name }}</a>
+                        <span class="text-slate-400">({{ $billedCustomer->email }})</span>
+                    </p>
+                @else
+                    <p class="text-xs text-slate-500 mt-1">Not assigned to a customer.</p>
+                @endif
+            @elseif($owner)
+                <p class="text-lg font-semibold mt-2 text-slate-900 dark:text-white break-words">{{ $owner->name }}</p>
+                <p class="text-xs text-slate-500 mt-1 break-all">{{ $owner->email }}</p>
+            @else
+                <p class="text-lg font-semibold mt-2 text-slate-500">Not linked</p>
+            @endif
+        </div>
         <div class="ui-card p-5">
             <p class="text-sm text-slate-500">Status</p>
             <div class="mt-2"><x-domain-status-badge :status="$domain->status" /></div>
@@ -254,6 +284,34 @@
         @endunless
 
         <div x-show="tab === 'ownership'" @if($dnsOnly) x-cloak @endif class="p-6 space-y-6">
+            <div>
+                <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-1">Current owner</h2>
+                @if($managedCustomer)
+                    <p class="text-sm text-slate-900 dark:text-white">
+                        <a href="{{ route('reseller.customers.show', $owner) }}" class="font-medium text-purple-700 dark:text-purple-300 hover:underline">{{ $owner->name }}</a>
+                        <span class="text-slate-500">({{ $owner->email }})</span>
+                    </p>
+                    <p class="text-sm text-slate-500 mt-1">This domain is on that customer’s account.</p>
+                @elseif($ownedByReseller)
+                    <p class="text-sm text-slate-900 dark:text-white">Your reseller account</p>
+                    @if($billedCustomer)
+                        <p class="text-sm text-slate-500 mt-1">
+                            Registered for
+                            <a href="{{ route('reseller.customers.show', $billedCustomer) }}" class="font-medium text-purple-700 dark:text-purple-300 hover:underline">{{ $billedCustomer->name }}</a>
+                            ({{ $billedCustomer->email }}).
+                        </p>
+                    @else
+                        <p class="text-sm text-slate-500 mt-1">It is not assigned to a customer yet. Transfer it below to attach it to one.</p>
+                    @endif
+                @elseif($owner)
+                    <p class="text-sm text-slate-900 dark:text-white">{{ $owner->name }} <span class="text-slate-500">({{ $owner->email }})</span></p>
+                @else
+                    <p class="text-sm text-slate-500">Owner is not linked on this platform record.</p>
+                @endif
+            </div>
+
+            <hr class="border-slate-200 dark:border-slate-700">
+
             <div>
                 <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-1">Transfer to another customer</h2>
                 <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">

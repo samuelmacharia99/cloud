@@ -36,6 +36,11 @@
         :customer-count="$customerCount"
         :max-users="$maxUsers"
         :disk-pool-percent="$diskPoolPercent"
+        :disk-pool-gb="$diskPoolGb ?? 0"
+        :disk-used-gb="$diskUsedGb ?? 0"
+        :disk-remaining-gb="$diskRemainingGb ?? 0"
+        :disk-direct-admin-gb="$diskDirectAdminGb ?? 0"
+        :disk-container-gb="$diskContainerGb ?? 0"
     />
 
     <x-reseller-onboarding-checklist :onboarding="$onboarding ?? []" :has-direct-admin="$hasDirectAdmin ?? false" />
@@ -63,6 +68,9 @@
                 <div class="rounded-lg border border-slate-200 dark:border-slate-700 p-3">
                     <p class="text-slate-500">Application Hosting</p>
                     <p class="text-2xl font-bold">{{ $platform['container_count'] }}</p>
+                    @if (($diskPoolGb ?? 0) > 0)
+                        <p class="text-xs text-slate-500 mt-1">{{ number_format((float) ($diskContainerGb ?? 0), 1) }} GB of {{ number_format((int) $diskPoolGb) }} GB pool</p>
+                    @endif
                 </div>
             </div>
             @if (($platform['recent'] ?? collect())->isNotEmpty())
@@ -147,13 +155,21 @@
                     <p class="text-sm text-slate-500 text-center py-8">No recent activity yet. Create a customer or invoice to get started.</p>
                 </template>
                 <template x-for="(item, index) in items" :key="item.at + '-' + item.url + '-' + index">
-                    <a :href="item.url" class="flex items-center justify-between gap-4 py-3 border-b border-slate-100 dark:border-slate-800 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/50 px-2 -mx-2 rounded-lg transition">
+                    <div class="flex items-center justify-between gap-4 py-3 border-b border-slate-100 dark:border-slate-800 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/50 px-2 -mx-2 rounded-lg transition">
                         <div class="min-w-0">
-                            <p class="text-sm font-medium text-slate-900 dark:text-white truncate" x-text="item.title"></p>
-                            <p class="text-xs text-slate-500 truncate" x-show="item.subtitle" x-text="item.subtitle"></p>
+                            <a :href="item.url" class="text-sm font-medium text-slate-900 dark:text-white truncate block hover:underline" x-text="item.title"></a>
+                            <div class="flex flex-wrap items-center gap-x-1 text-xs text-slate-500 min-w-0">
+                                <template x-if="item.customer_url">
+                                    <a :href="item.customer_url" class="font-medium text-purple-700 dark:text-purple-300 hover:underline truncate" x-text="item.customer_name"></a>
+                                </template>
+                                <template x-if="!item.customer_url && item.customer_name">
+                                    <span class="truncate" x-text="item.customer_name"></span>
+                                </template>
+                                <span x-show="item.subtitle" class="truncate" x-text="(item.customer_name ? ' · ' : '') + item.subtitle"></span>
+                            </div>
                         </div>
                         <span class="text-[10px] uppercase tracking-wide text-slate-400 shrink-0" x-text="item.type.replace(/_/g, ' ')"></span>
-                    </a>
+                    </div>
                 </template>
                 <div class="flex justify-center mt-4" x-show="hasMore && !initialLoading">
                     <button

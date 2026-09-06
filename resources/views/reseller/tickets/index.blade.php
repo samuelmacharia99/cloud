@@ -50,7 +50,7 @@
                                 @if ($ticket->user_id === auth()->id())
                                     <span class="text-slate-500">You</span>
                                 @else
-                                    {{ $ticket->user?->name ?? 'N/A' }}
+                                    <x-reseller.customer-link :user="$ticket->user" fallback="N/A" />
                                 @endif
                             </td>
                             <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">

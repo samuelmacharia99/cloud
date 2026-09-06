@@ -41,6 +41,19 @@ class ResellerDiskUsageTest extends TestCase
 
         $this->assertSame(100, app(ResellerDiskUsageService::class)->diskPoolGb($reseller));
         $this->assertNotNull($snapshot->total_used_gb);
+
+        $presentation = app(ResellerDiskUsageService::class)->poolPresentation($reseller, [
+            'directadmin_used_gb' => 8.25,
+            'container_used_gb' => 12.4,
+            'total_used_gb' => 20.65,
+        ]);
+
+        $this->assertSame(100, $presentation['pool_gb']);
+        $this->assertSame(20.65, $presentation['used_gb']);
+        $this->assertSame(79.35, $presentation['remaining_gb']);
+        $this->assertSame(8.25, $presentation['directadmin_gb']);
+        $this->assertSame(12.4, $presentation['container_gb']);
+        $this->assertSame(20.7, $presentation['percent']);
     }
 
     public function test_renewal_subscription_invoice_includes_disk_usage_line_items(): void

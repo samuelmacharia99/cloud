@@ -12,6 +12,11 @@
     'customerCount' => 0,
     'maxUsers' => 0,
     'diskPoolPercent' => null,
+    'diskPoolGb' => 0,
+    'diskUsedGb' => 0,
+    'diskRemainingGb' => 0,
+    'diskDirectAdminGb' => 0,
+    'diskContainerGb' => 0,
 ])
 
 @php
@@ -92,7 +97,7 @@
     </a>
 </div>
 
-@if ($maxServices > 0 || $maxUsers > 0 || ($diskPoolPercent !== null && $diskPoolPercent > 0))
+@if ($maxServices > 0 || $maxUsers > 0 || (int) $diskPoolGb > 0)
 <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
     @if ($maxServices > 0)
         <div class="p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs">
@@ -110,12 +115,20 @@
             </div>
         </div>
     @endif
-    @if ($diskPoolPercent !== null && $diskPoolPercent > 0)
+    @if ((int) $diskPoolGb > 0)
         <div class="p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs">
-            <div class="flex justify-between mb-1"><span class="text-slate-500">Disk pool</span><span>{{ rtrim(rtrim(number_format($diskPoolPercent, 1), '0'), '.') }}%</span></div>
-            <div class="h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                <div class="h-full {{ $diskPoolPercent >= 90 ? 'bg-amber-500' : 'bg-emerald-500' }} rounded-full" style="width: {{ min(100, $diskPoolPercent) }}%"></div>
-            </div>
+            @include('reseller.partials.disk-pool-meter', [
+                'compact' => true,
+                'diskPool' => [
+                    'pool_gb' => $diskPoolGb,
+                    'used_gb' => $diskUsedGb,
+                    'remaining_gb' => $diskRemainingGb,
+                    'over_gb' => max(0, (float) $diskUsedGb - (float) $diskPoolGb),
+                    'directadmin_gb' => $diskDirectAdminGb,
+                    'container_gb' => $diskContainerGb,
+                    'percent' => $diskPoolPercent,
+                ],
+            ])
         </div>
     @endif
 </div>

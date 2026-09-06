@@ -38,6 +38,8 @@
             @include('reseller.services.partials.service-table', [
                 'paginator' => $applicationServices,
                 'empty' => 'No application services match this filter.',
+                'showUsage' => true,
+                'usageByServiceId' => $applicationUsage ?? [],
             ])
         </section>
 

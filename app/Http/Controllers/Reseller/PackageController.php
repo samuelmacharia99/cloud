@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Reseller;
 
 use App\Http\Controllers\Controller;
 use App\Models\ResellerPackage;
+use App\Services\ResellerDiskUsageService;
 use App\Services\ResellerPackageSubscriptionService;
 use Illuminate\Http\Request;
 
@@ -33,6 +34,7 @@ class PackageController extends Controller
         $serviceSlotSource = $user->getServiceSlotCountBreakdown()['source'];
         $currentCustomers = $user->getResellerUserCountForLimits();
         $hostedUserCountSource = $user->getResellerUserCountBreakdown()['source'];
+        $diskPool = app(ResellerDiskUsageService::class)->poolPresentation($user);
         $pendingInvoice = $this->subscriptions->pendingSubscriptionInvoice($user);
         $pendingRenewalInvoice = $user->resellerPackage
             ? $this->subscriptions->pendingRenewalSubscriptionInvoice($user)
@@ -64,6 +66,7 @@ class PackageController extends Controller
             'serviceSlotSource',
             'currentCustomers',
             'hostedUserCountSource',
+            'diskPool',
             'pendingInvoice',
             'pendingRenewalInvoice',
             'renewalTotal',

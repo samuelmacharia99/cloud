@@ -273,4 +273,22 @@ class Product extends Model
             'disk_gb' => $diskGb ?? (float) ($template?->required_storage_gb ?? 0),
         ];
     }
+
+    /**
+     * Included monthly transfer for a customer plan, when the catalog sets one.
+     */
+    public function includedBandwidthGb(): ?float
+    {
+        $limits = is_array($this->resource_limits) ? $this->resource_limits : [];
+
+        if (isset($limits['bandwidth_gb']) && $limits['bandwidth_gb'] !== '' && $limits['bandwidth_gb'] !== null) {
+            return (float) $limits['bandwidth_gb'];
+        }
+
+        if (isset($limits['bandwidth']) && is_numeric($limits['bandwidth'])) {
+            return (float) $limits['bandwidth'];
+        }
+
+        return null;
+    }
 }

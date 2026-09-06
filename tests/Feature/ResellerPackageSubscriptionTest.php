@@ -512,4 +512,28 @@ class ResellerPackageSubscriptionTest extends TestCase
             ->where('notes', 'like', '%Renewal%')
             ->count());
     }
+
+    public function test_packages_page_shows_disk_pool_not_storage_as_slots(): void
+    {
+        $package = $this->createPackage([
+            'max_services' => 25,
+            'disk_pool_gb' => 80,
+            'storage_space' => 80,
+            'max_users' => 12,
+        ]);
+        $reseller = User::factory()->reseller()->create([
+            'reseller_package_id' => $package->id,
+            'package_subscribed_at' => now(),
+            'package_expires_at' => now()->addMonth(),
+        ]);
+
+        $this->actingAs($reseller)
+            ->get(route('reseller.packages.index'))
+            ->assertOk()
+            ->assertSee('25 service slots')
+            ->assertSee('80 GB disk pool')
+            ->assertSee('0.00 / 80 GB')
+            ->assertSee('80.0 GB remaining')
+            ->assertDontSee('80 Service Slots');
+    }
 }

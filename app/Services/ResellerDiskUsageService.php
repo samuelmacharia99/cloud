@@ -102,6 +102,31 @@ class ResellerDiskUsageService
         ];
     }
 
+    /**
+     * Operator-facing pool numbers: used, remaining, and DA vs container split.
+     *
+     * @param  array{directadmin_used_gb?: float, container_used_gb?: float, total_used_gb?: float}|null  $usage
+     * @return array{pool_gb: int, used_gb: float, remaining_gb: float, over_gb: float, directadmin_gb: float, container_gb: float, percent: ?float}
+     */
+    public function poolPresentation(User $reseller, ?array $usage = null): array
+    {
+        $usage ??= $this->collectCurrentUsage($reseller);
+        $pool = $this->diskPoolGb($reseller);
+        $used = round((float) ($usage['total_used_gb'] ?? 0), 2);
+        $directAdmin = round((float) ($usage['directadmin_used_gb'] ?? 0), 2);
+        $container = round((float) ($usage['container_used_gb'] ?? 0), 2);
+
+        return [
+            'pool_gb' => $pool,
+            'used_gb' => $used,
+            'remaining_gb' => $pool > 0 ? max(0, round($pool - $used, 2)) : 0.0,
+            'over_gb' => $pool > 0 ? max(0, round($used - $pool, 2)) : 0.0,
+            'directadmin_gb' => $directAdmin,
+            'container_gb' => $container,
+            'percent' => $this->poolUsagePercent($reseller, $usage),
+        ];
+    }
+
     public function poolUsagePercent(User $reseller, ?array $usage = null): ?float
     {
         $pool = $this->diskPoolGb($reseller);

@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Controllers\Reseller\Concerns\ResellerDomainAccess;
 use App\Models\Domain;
 use App\Models\DomainExtension;
+use App\Models\ResellerDomainOrder;
 use App\Models\Service;
 use App\Models\User;
 use App\Services\DomainAutoRenewService;
@@ -223,12 +224,19 @@ class DomainController extends Controller
 
         $registry = $this->registrarFulfillment->refreshLiveRegistryDetails($domain);
 
-        $domain->load(['user', 'dnsZones.records', 'pendingTransferRecipient']);
+        $domain->load(['user', 'domainOrder.customer', 'dnsZones.records', 'pendingTransferRecipient']);
         $domain->concealUpstreamProviderDetails();
 
-        $resellerId = auth()->id();
+        $reseller = auth()->user();
+        $owner = $domain->user;
+        $ownedByReseller = $owner && (int) $owner->id === (int) $reseller->id;
+        $managedCustomer = $owner && ! $ownedByReseller && $this->scope->ownsCustomer($reseller, $owner);
+        $billedCustomer = $ownedByReseller
+            ? $this->resolveBilledCustomerForResellerOwnedDomain($domain, $reseller)
+            : null;
+
         $transferTargets = User::query()
-            ->where('reseller_id', $resellerId)
+            ->where('reseller_id', $reseller->id)
             ->where('id', '!=', $domain->user_id)
             ->orderBy('name')
             ->get(['id', 'name', 'email']);
@@ -258,6 +266,9 @@ class DomainController extends Controller
             'eppCode',
             'registry',
             'registrant',
+            'ownedByReseller',
+            'managedCustomer',
+            'billedCustomer',
         ));
     }
 
@@ -538,6 +549,37 @@ class DomainController extends Controller
         return redirect()
             ->route('reseller.domains.show', ['domain' => $domain, 'tab' => $tab])
             ->with($flashKey, $message);
+    }
+
+    /**
+     * When the domain sits on the reseller account, surface the customer it was
+     * billed or imported for so the operator can still see who it belongs to.
+     */
+    private function resolveBilledCustomerForResellerOwnedDomain(Domain $domain, User $reseller): ?User
+    {
+        $candidates = collect([
+            $domain->domainOrder?->customer,
+        ]);
+
+        $orderCustomer = ResellerDomainOrder::query()
+            ->where('domain_id', $domain->id)
+            ->where('reseller_id', $reseller->id)
+            ->whereNotNull('customer_id')
+            ->latest('id')
+            ->first()
+            ?->customer;
+        $candidates->push($orderCustomer);
+
+        $serviceId = (int) data_get($domain->notes, 'service_id', 0);
+        if ($serviceId > 0) {
+            $service = Service::query()->with('user')->find($serviceId);
+            $candidates->push($service?->user);
+        }
+
+        return $candidates
+            ->filter()
+            ->first(fn (User $user) => (int) $user->id !== (int) $reseller->id
+                && $this->scope->ownsCustomer($reseller, $user));
     }
 
     private function resolveRenewalBillingCustomer(Domain $domain, User $reseller): ?User

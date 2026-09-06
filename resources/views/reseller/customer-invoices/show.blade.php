@@ -9,7 +9,7 @@
             <a href="{{ route('reseller.customer-invoices.index') }}" class="text-sm text-purple-600">← Customer billing</a>
             <h1 class="text-3xl font-bold text-slate-900 dark:text-white mt-2">{{ $invoice->invoice_number }}</h1>
             <p class="text-slate-600 dark:text-slate-400">
-                <a href="{{ route('reseller.customers.show', $invoice->user) }}" class="text-purple-600 hover:underline">{{ $invoice->user?->name }}</a>
+                <x-reseller.customer-link :user="$invoice->user" />
                 · <x-status-badge :status="$invoice->status" type="invoice" />
             </p>
         </div>

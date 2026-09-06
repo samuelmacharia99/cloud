@@ -48,7 +48,7 @@
                     @foreach ($invoices as $invoice)
                         <tr class="hover:bg-slate-50 dark:hover:bg-slate-800">
                             <td class="px-6 py-4 font-medium">{{ $invoice->invoice_number }}</td>
-                            <td class="px-6 py-4 text-sm">{{ $invoice->user?->name }}</td>
+                            <td class="px-6 py-4 text-sm"><x-reseller.customer-link :user="$invoice->user" /></td>
                             <td class="px-6 py-4 text-right">KSH {{ number_format($invoice->total, 2) }}</td>
                             <td class="px-6 py-4 text-right text-amber-600 font-medium">KSH {{ number_format($invoice->getAmountRemaining(), 2) }}</td>
                             <td class="px-6 py-4"><x-status-badge :status="$invoice->status" type="invoice" /></td>
