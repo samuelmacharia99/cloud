@@ -308,6 +308,34 @@ class AdminDaConvertOfframpTest extends TestCase
             ->assertNotFound();
     }
 
+    public function test_progress_polling_does_not_rate_limit_cut_dns(): void
+    {
+        [$admin, $reseller] = $this->board();
+        $batch = DaConvertBatch::query()->create([
+            'reseller_user_id' => $reseller->id,
+            'admin_user_id' => $admin->id,
+            'product_id' => Product::factory()->containerHosting()->create()->id,
+            'status' => 'ready_for_cutover',
+        ]);
+        $item = DaConvertBatchItem::query()->create([
+            'da_convert_batch_id' => $batch->id,
+            'service_id' => $this->daService($reseller, 'cut.example.com')->id,
+            'status' => 'waiting_dns',
+        ]);
+
+        $this->actingAs($admin);
+
+        for ($i = 0; $i < 15; $i++) {
+            $this->getJson(route('admin.resellers.directadmin-offramp.progress', $reseller))->assertOk();
+        }
+
+        $this->post(route('admin.resellers.directadmin-offramp.cut-dns', [$reseller, $batch]), [
+            'item_ids' => [$item->id],
+        ])
+            ->assertRedirect(route('admin.resellers.directadmin-offramp', $reseller))
+            ->assertSessionHas('success');
+    }
+
     /**
      * @return array{0: User, 1: User, 2: Service, 3: Service, 4: Product}
      */

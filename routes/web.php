@@ -278,10 +278,10 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/resellers/{user}/directadmin/disconnect', [ResellerController::class, 'disconnectDirectAdmin'])->name('admin.resellers.directadmin.disconnect');
         Route::get('admin/resellers/{user}/directadmin/panel-login', [ResellerController::class, 'directAdminPanelLogin'])->middleware('throttle:10,1')->name('admin.resellers.directadmin.panel-login');
         Route::get('admin/resellers/{user}/directadmin-offramp', [DaConvertOfframpController::class, 'show'])->name('admin.resellers.directadmin-offramp');
-        Route::get('admin/resellers/{user}/directadmin-offramp/progress', [DaConvertOfframpController::class, 'progress'])->middleware('throttle:60,1')->name('admin.resellers.directadmin-offramp.progress');
-        Route::post('admin/resellers/{user}/directadmin-offramp/import-packages', [DaConvertOfframpController::class, 'importPackages'])->middleware('throttle:10,1')->name('admin.resellers.directadmin-offramp.import-packages');
-        Route::post('admin/resellers/{user}/directadmin-offramp', [DaConvertOfframpController::class, 'store'])->middleware('throttle:10,1')->name('admin.resellers.directadmin-offramp.store');
-        Route::post('admin/resellers/{user}/directadmin-offramp/{batch}/cut-dns', [DaConvertOfframpController::class, 'cutDns'])->middleware('throttle:10,1')->name('admin.resellers.directadmin-offramp.cut-dns');
+        Route::get('admin/resellers/{user}/directadmin-offramp/progress', [DaConvertOfframpController::class, 'progress'])->middleware('throttle:da-offramp-progress')->name('admin.resellers.directadmin-offramp.progress');
+        Route::post('admin/resellers/{user}/directadmin-offramp/import-packages', [DaConvertOfframpController::class, 'importPackages'])->middleware('throttle:da-offramp-mutate')->name('admin.resellers.directadmin-offramp.import-packages');
+        Route::post('admin/resellers/{user}/directadmin-offramp', [DaConvertOfframpController::class, 'store'])->middleware('throttle:da-offramp-mutate')->name('admin.resellers.directadmin-offramp.store');
+        Route::post('admin/resellers/{user}/directadmin-offramp/{batch}/cut-dns', [DaConvertOfframpController::class, 'cutDns'])->middleware('throttle:da-offramp-cut-dns')->name('admin.resellers.directadmin-offramp.cut-dns');
         Route::get('admin/settings', [SettingController::class, 'index'])->name('admin.settings.index');
         Route::post('admin/settings', [SettingController::class, 'update'])->name('admin.settings.update');
         Route::post('admin/settings/node-nameservers', [SettingController::class, 'updateDirectAdminNameservers'])->name('admin.settings.update-node-nameservers');
