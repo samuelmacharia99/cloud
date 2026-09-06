@@ -67,6 +67,44 @@ TXT;
 
         $this->assertTrue($service->mailcowMailboxAlreadyExists(['success' => false, 'message' => 'Mailbox exists']));
         $this->assertFalse($service->mailcowMailboxAlreadyExists(['success' => false, 'message' => 'quota exceeded']));
+        $this->assertTrue($service->mailcowSyncJobAlreadyExists(['success' => false, 'message' => 'Sync job already exists']));
+        $this->assertFalse($service->mailcowSyncJobAlreadyExists(['success' => false, 'message' => 'quota exceeded']));
+    }
+
+    public function test_mail_pull_operator_message_does_not_cut_mx_when_inboxes_are_empty(): void
+    {
+        $service = app(DirectAdminToMailcowMigrationService::class);
+
+        $empty = $service->mailPullOperatorMessage(0, 0, 0, 8);
+        $this->assertStringContainsString('8 need review', $empty);
+        $this->assertStringContainsString('Do not update MX yet', $empty);
+        $this->assertStringNotContainsString('DirectAdmin can be decommissioned', $empty);
+
+        $ok = $service->mailPullOperatorMessage(4, 4, 4, 0);
+        $this->assertStringContainsString('Update MX, then DirectAdmin can be decommissioned', $ok);
+    }
+
+    public function test_mailcow_sync_job_already_exists_and_operator_message_blocks_mx_when_copy_failed(): void
+    {
+        $service = app(DirectAdminToMailcowMigrationService::class);
+
+        $this->assertTrue($service->mailcowSyncJobAlreadyExists([
+            'success' => false,
+            'message' => 'Sync job already exists',
+        ]));
+        $this->assertFalse($service->mailcowSyncJobAlreadyExists([
+            'success' => false,
+            'message' => 'invalid password',
+        ]));
+
+        $this->assertStringContainsString(
+            'Do not update MX yet',
+            $service->mailPullOperatorMessage(0, 0, 0, 8)
+        );
+        $this->assertStringContainsString(
+            'Update MX, then DirectAdmin can be decommissioned',
+            $service->mailPullOperatorMessage(3, 3, 4, 0)
+        );
     }
 
     public function test_virtual_passwd_hash_and_maildir_commands_are_valid_bash(): void

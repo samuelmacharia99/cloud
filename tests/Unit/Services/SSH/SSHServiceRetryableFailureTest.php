@@ -28,4 +28,16 @@ class SSHServiceRetryableFailureTest extends TestCase
         $this->assertTrue($method->invoke($service, 'SSH connection failed to 88.99.104.138: Connection reset by peer'));
         $this->assertFalse($method->invoke($service, 'SSH authentication failed - invalid credentials or network issue'));
     }
+
+    public function test_ssh_targets_include_hostname_when_it_differs_from_ip(): void
+    {
+        $service = SSHService::forNode(new Node([
+            'ip_address' => '2.28.0.13',
+            'hostname' => 'mail.talksasa.com',
+            'ssh_port' => 22,
+            'ssh_username' => 'root',
+        ]));
+
+        $this->assertSame(['2.28.0.13', 'mail.talksasa.com'], $service->sshTargets());
+    }
 }

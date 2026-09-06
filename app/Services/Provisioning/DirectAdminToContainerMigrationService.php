@@ -887,7 +887,12 @@ class DirectAdminToContainerMigrationService
             $dbService = $db['service'];
 
             // Prefer secrets from the running mysql container (source of truth after compose up).
-            $live = $this->readLiveMysqlSidecarEnv($targetSsh, $containerPath, $dbService);
+            $live = [];
+            try {
+                $live = $this->readLiveMysqlSidecarEnv($targetSsh, $containerPath, $dbService);
+            } catch (\Throwable) {
+                $live = [];
+            }
             if (($live['MYSQL_ROOT_PASSWORD'] ?? '') !== '') {
                 $db['root_password'] = $live['MYSQL_ROOT_PASSWORD'];
             }
@@ -900,6 +905,9 @@ class DirectAdminToContainerMigrationService
             if (($live['MYSQL_DATABASE'] ?? '') !== '') {
                 $db['database'] = $live['MYSQL_DATABASE'];
             }
+
+            $progress('Preparing MySQL sidecar volume for import');
+            $this->resetComposeMysqlDatadirForImport($targetSsh, $containerPath, $dbService);
 
             $progress('Waiting for MySQL sidecar');
             $wait = $this->composeMysqlWaitCredentials($db);
@@ -1235,7 +1243,12 @@ class DirectAdminToContainerMigrationService
                 $db = $this->resolveGenericImportCredentials($target, $targetSsh, $containerPath);
                 $dbService = $db['service'];
 
-                $live = $this->readLiveMysqlSidecarEnv($targetSsh, $containerPath, $dbService);
+                $live = [];
+                try {
+                    $live = $this->readLiveMysqlSidecarEnv($targetSsh, $containerPath, $dbService);
+                } catch (\Throwable) {
+                    $live = [];
+                }
                 if (($live['MYSQL_ROOT_PASSWORD'] ?? '') !== '') {
                     $db['root_password'] = $live['MYSQL_ROOT_PASSWORD'];
                 }
@@ -1248,6 +1261,9 @@ class DirectAdminToContainerMigrationService
                 if (($live['MYSQL_DATABASE'] ?? '') !== '') {
                     $db['database'] = $live['MYSQL_DATABASE'];
                 }
+
+                $progress('Preparing MySQL sidecar volume for import');
+                $this->resetComposeMysqlDatadirForImport($targetSsh, $containerPath, $dbService);
 
                 $progress('Waiting for MySQL sidecar');
                 $wait = $this->composeMysqlWaitCredentials($db);
@@ -2124,6 +2140,26 @@ class DirectAdminToContainerMigrationService
             .' docker volume rm -f "$v" 2>/dev/null || true;'
             .' done'
             .' && docker compose up -d --no-deps --force-recreate '.$svc;
+    }
+
+    /**
+     * Convert import has not written customer data yet. Wipe leftover mysql_data/db_data
+     * so MySQL 8 does not crash-loop on a half-initialized volume from a prior attempt.
+     */
+    public function resetComposeMysqlDatadirForImport(
+        SSHService $ssh,
+        string $containerPath,
+        string $dbService,
+    ): void {
+        try {
+            $ssh->exec($this->composeMysqlResetUnusableDatadirCommand($containerPath, $dbService), 180);
+        } catch (\Throwable $e) {
+            Log::warning('Could not reset convert MySQL sidecar datadir before import wait', [
+                'service' => $dbService,
+                'path' => $containerPath,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     private function tryRepairUnusableComposeMysqlDatadir(

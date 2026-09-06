@@ -249,6 +249,30 @@ class DirectAdminToContainerMigrationDatabaseTest extends TestCase
     }
 
     #[Test]
+    public function reset_compose_mysql_datadir_for_import_runs_the_volume_wipe(): void
+    {
+        $migrator = app(DirectAdminToContainerMigrationService::class);
+        $path = '/opt/talksasa/containers/user-486-service-371-wordpress';
+        $ssh = \Mockery::mock(SSHService::class);
+        $wiped = false;
+        $ssh->shouldReceive('exec')
+            ->once()
+            ->withArgs(function (string $cmd) use ($path) {
+                return str_contains($cmd, $path)
+                    && str_contains($cmd, 'docker volume rm -f')
+                    && str_contains($cmd, '--force-recreate');
+            })
+            ->andReturnUsing(function () use (&$wiped) {
+                $wiped = true;
+
+                return '';
+            });
+
+        $migrator->resetComposeMysqlDatadirForImport($ssh, $path, 'mysql');
+        $this->assertTrue($wiped);
+    }
+
+    #[Test]
     public function wait_for_compose_mysql_resets_a_restarting_sidecar_before_import(): void
     {
         $migrator = app(DirectAdminToContainerMigrationService::class);

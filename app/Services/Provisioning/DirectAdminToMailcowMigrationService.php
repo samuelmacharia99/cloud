@@ -496,6 +496,35 @@ class DirectAdminToMailcowMigrationService
             || str_contains($message, 'object_exists');
     }
 
+    public function mailcowSyncJobAlreadyExists(array $sync): bool
+    {
+        $message = strtolower((string) ($sync['message'] ?? json_encode($sync['data'] ?? [])));
+
+        return str_contains($message, 'object_exists')
+            || str_contains($message, 'already exist')
+            || str_contains($message, 'sync job exists')
+            || (str_contains($message, 'exist') && str_contains($message, 'sync'));
+    }
+
+    public function mailPullOperatorMessage(int $created, int $copied, int $syncJobs, int $failed): string
+    {
+        $summary = 'Mail pulled to Mailcow. Created '.$created.' mailbox(es)'
+            .($copied > 0 ? ', copied maildir for '.$copied : '')
+            .($syncJobs > 0 ? ', IMAP sync on '.$syncJobs : '')
+            .($failed > 0 ? ', '.$failed.' need review' : '')
+            .'.';
+
+        if ($copied === 0 && $syncJobs === 0) {
+            return $summary.' Inbox content is still on DirectAdmin. Fix Mailcow node SSH and retry mail pull. Do not update MX yet.';
+        }
+
+        if ($failed > 0) {
+            return $summary.' Confirm the failed inboxes before updating MX.';
+        }
+
+        return $summary.' Update MX, then DirectAdmin can be decommissioned.';
+    }
+
     public function mailcowMailboxExists(MailcowService $client, string $domain, string $email): bool
     {
         $listed = $client->listMailboxes($domain);
@@ -1024,9 +1053,14 @@ class DirectAdminToMailcowMigrationService
                     'skipcrossduplicates' => '0',
                     'active' => '1',
                 ]);
-                if ($sync['success'] ?? false) {
+                if (($sync['success'] ?? false) || $this->mailcowSyncJobAlreadyExists($sync)) {
                     $syncJobs[] = $email;
-                    $this->mailPullProgress->log($daService, $email.' IMAP sync job created');
+                    $this->mailPullProgress->log(
+                        $daService,
+                        ($sync['success'] ?? false)
+                            ? $email.' IMAP sync job created'
+                            : $email.' IMAP sync job already exists'
+                    );
                 } else {
                     $failed[] = $email.' (sync)';
                     $this->mailPullProgress->log($daService, $email.' IMAP sync job failed');
@@ -1067,11 +1101,12 @@ class DirectAdminToMailcowMigrationService
             }
         }
 
-        $message = 'Mail pulled to Mailcow. Created '.count($created).' mailbox(es)'
-            .($copied !== [] ? ', copied maildir for '.count($copied) : '')
-            .($syncJobs !== [] ? ', IMAP sync on '.count($syncJobs) : '')
-            .($failed !== [] ? ', '.count($failed).' need review' : '')
-            .'. Update MX, then DirectAdmin can be decommissioned.';
+        $message = $this->mailPullOperatorMessage(
+            count($created),
+            count($copied),
+            count($syncJobs),
+            count($failed),
+        );
 
         $this->mailPullProgress->complete($daService, $message, [
             'copied_maildirs' => $copied,

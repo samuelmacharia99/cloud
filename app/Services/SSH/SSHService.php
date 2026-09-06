@@ -74,7 +74,7 @@ class SSHService
                 }
 
                 throw new SSHConnectionException(
-                    $this->node->ip_address,
+                    $this->sshTargetForErrors(),
                     $e->getMessage(),
                     0,
                     $e
@@ -83,23 +83,78 @@ class SSHService
         }
 
         throw new SSHConnectionException(
-            $this->node->ip_address,
+            $this->sshTargetForErrors(),
             $lastError?->getMessage() ?? 'SSH connection failed',
             0,
             $lastError instanceof \Exception ? $lastError : null
         );
     }
 
+    /**
+     * Prefer the node IP, then hostname when they differ (Mailcow API IP vs SSH host).
+     *
+     * @return list<string>
+     */
+    public function sshTargets(): array
+    {
+        $targets = [];
+        foreach ([$this->node->ip_address, $this->node->hostname] as $host) {
+            $host = trim((string) $host);
+            if ($host === '' || in_array($host, $targets, true)) {
+                continue;
+            }
+            if (str_contains($host, '/') || str_contains($host, ' ')) {
+                continue;
+            }
+            $targets[] = $host;
+        }
+
+        return $targets;
+    }
+
+    private function sshTargetForErrors(): string
+    {
+        return $this->sshTargets()[0] ?? (string) $this->node->ip_address;
+    }
+
     private function openAuthenticatedSession(): void
     {
-        $this->ssh = new SSH2($this->node->ip_address, (int) $this->node->ssh_port);
-        $this->ssh->setTimeout($this->timeout);
+        $targets = $this->sshTargets();
+        if ($targets === []) {
+            throw new \Exception('SSH host is missing on this node');
+        }
 
+        $lastError = null;
+        foreach ($targets as $host) {
+            try {
+                $this->ssh = new SSH2($host, (int) $this->node->ssh_port);
+                $this->ssh->setTimeout($this->timeout);
+                if ($this->authenticateSession($this->ssh)) {
+                    return;
+                }
+                $lastError = new \Exception('SSH authentication failed - invalid credentials or network issue');
+            } catch (\Exception $e) {
+                $this->ssh = null;
+                if (str_contains($e->getMessage(), 'SSH key format invalid')) {
+                    throw $e;
+                }
+                $lastError = $e;
+
+                continue;
+            }
+            $this->ssh = null;
+        }
+
+        throw $lastError ?? new \Exception('SSH authentication failed - invalid credentials or network issue');
+    }
+
+    private function authenticateSession(SSH2 $session): bool
+    {
         $authenticated = false;
 
         // NOTE: ssh_password / da_login_key are already decrypted by the encrypted cast.
         if ($this->node->ssh_password) {
-            $authenticated = @$this->ssh->login(
+            $authenticated = @$session->login(
                 $this->node->ssh_username,
                 $this->node->ssh_password
             );
@@ -108,7 +163,7 @@ class SSHService
         if (! $authenticated && $this->node->da_login_key) {
             try {
                 $key = PublicKeyLoader::load($this->node->da_login_key);
-                $authenticated = @$this->ssh->login($this->node->ssh_username, $key);
+                $authenticated = @$session->login($this->node->ssh_username, $key);
             } catch (\Exception $e) {
                 throw new \Exception(
                     'SSH key format invalid: '.$e->getMessage()
@@ -116,9 +171,7 @@ class SSHService
             }
         }
 
-        if (! $authenticated) {
-            throw new \Exception('SSH authentication failed - invalid credentials or network issue');
-        }
+        return (bool) $authenticated;
     }
 
     /**
@@ -615,35 +668,36 @@ class SSHService
             return;
         }
 
-        $this->sftp = new SFTP($this->node->ip_address, (int) $this->node->ssh_port);
-        $this->sftp->setTimeout($this->timeout);
-
-        $authenticated = false;
-
-        // NOTE: $this->node->ssh_password is already decrypted by the Model's 'encrypted' cast
-        // Do NOT call decrypt() on it again
-        if ($this->node->ssh_password) {
-            $authenticated = @$this->sftp->login(
-                $this->node->ssh_username,
-                $this->node->ssh_password
-            );
+        $targets = $this->sshTargets();
+        if ($targets === []) {
+            throw new SSHConnectionException((string) $this->node->ip_address, 'SFTP host is missing on this node');
         }
 
-        if (! $authenticated && $this->node->da_login_key) {
+        $lastError = null;
+        foreach ($targets as $host) {
             try {
-                $key = PublicKeyLoader::load($this->node->da_login_key);
-                $authenticated = @$this->sftp->login($this->node->ssh_username, $key);
+                $this->sftp = new SFTP($host, (int) $this->node->ssh_port);
+                $this->sftp->setTimeout($this->timeout);
+                if ($this->authenticateSession($this->sftp)) {
+                    return;
+                }
+                $lastError = new SSHConnectionException($host, 'SFTP authentication failed - check credentials');
             } catch (\Exception $e) {
-                throw new \Exception(
-                    'SFTP key format invalid: '.$e->getMessage()
-                );
+                $this->sftp = null;
+                if (str_contains($e->getMessage(), 'key format invalid')) {
+                    throw $e;
+                }
+                $lastError = $e instanceof SSHConnectionException
+                    ? $e
+                    : new SSHConnectionException($host, $e->getMessage(), 0, $e);
+
+                continue;
             }
+            $this->sftp = null;
         }
 
-        if (! $authenticated) {
-            $this->sftp = null;
-            throw new SSHConnectionException($this->node->ip_address, 'SFTP authentication failed - check credentials');
-        }
+        $this->sftp = null;
+        throw $lastError ?? new SSHConnectionException($this->sshTargetForErrors(), 'SFTP authentication failed - check credentials');
     }
 
     /**
