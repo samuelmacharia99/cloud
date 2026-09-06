@@ -5,6 +5,8 @@ namespace App\Services\Provisioning;
 use App\Models\ContainerDomain;
 use App\Models\Node;
 use App\Models\Service;
+use App\Models\User;
+use App\Services\ResellerBrandingResolver;
 use App\Services\SSH\SSHService;
 use Exception;
 
@@ -13,7 +15,7 @@ class NginxProxyService
     /**
      * Bump when the generated vhost changes so existing sites are rewritten.
      */
-    public const VHOST_REVISION = 'v6';
+    public const VHOST_REVISION = 'v7';
 
     /**
      * Shared static pages on each container node. Suspended sites stop proxying
@@ -53,7 +55,7 @@ class NginxProxyService
                 );
             }
 
-            $this->ensureEdgePages($ssh);
+            $this->ensureEdgePages($ssh, $this->edgeBrandingForDomain($domain));
 
             $configDir = $this->resolveNginxConfigDir($ssh);
             $ssh->exec('mkdir -p '.escapeshellarg($configDir));
@@ -234,7 +236,7 @@ class NginxProxyService
             ]);
 
             // Regenerate config with SSL blocks (keep a parked page if suspended)
-            $this->ensureEdgePages($ssh);
+            $this->ensureEdgePages($ssh, $this->edgeBrandingForDomain($domain));
             $config = $this->generateConfig($domain, true);
             $configPath = $this->resolveNginxConfigDir($ssh)."/{$domain->domain}.conf";
             $ssh->upload($config, $configPath); // configPath is used as upload destination (not in exec)
@@ -314,9 +316,10 @@ class NginxProxyService
         $revision = self::VHOST_REVISION;
         $modeMarker = $suspended ? '# talksasa-edge-suspended' : '# talksasa-edge-proxy';
 
+        $edgeRoot = $this->edgePagesRoot($this->edgeBrandingForDomain($domain));
         $location = $suspended
-            ? $this->suspendedLocation()
-            : $this->proxyPassLocation((int) $port)."\n".$this->unavailableErrorPageLocation();
+            ? $this->suspendedLocation($edgeRoot)
+            : $this->proxyPassLocation((int) $port)."\n".$this->unavailableErrorPageLocation($edgeRoot);
 
         $httpBlock = <<<EOL
 # talksasa-vhost {$revision}
@@ -397,9 +400,9 @@ EOL;
     /**
      * Park the hostname: keep TLS, stop proxying, return 503 with the owner CTA.
      */
-    public function suspendedLocation(): string
+    public function suspendedLocation(?string $root = null): string
     {
-        $root = self::EDGE_PAGES_DIR;
+        $root = $this->sanitizeEdgeRoot($root);
 
         return <<<EOL
     error_page 503 /suspended.html;
@@ -419,9 +422,9 @@ EOL;
     /**
      * Replace the stock nginx 502/504 page when the container is down unexpectedly.
      */
-    public function unavailableErrorPageLocation(): string
+    public function unavailableErrorPageLocation(?string $root = null): string
     {
-        $root = self::EDGE_PAGES_DIR;
+        $root = $this->sanitizeEdgeRoot($root);
 
         return <<<EOL
     error_page 502 503 504 /unavailable.html;
@@ -459,40 +462,148 @@ EOL;
     }
 
     /**
-     * Upload the shared edge HTML once per node so error_page has a real file.
+     * Upload platform defaults plus a reseller-branded copy when the site owner
+     * is a reseller customer. Nginx serves the branded directory for that vhost.
+     *
+     * @param  array{company_name?: string, portal_url?: string, reseller_id?: int|null}|null  $branding
      */
-    public function ensureEdgePages($ssh): void
+    public function ensureEdgePages($ssh, ?array $branding = null): void
     {
         $dir = self::EDGE_PAGES_DIR;
         $ssh->exec('mkdir -p '.escapeshellarg($dir));
         $ssh->upload($this->suspendedPageHtml(), $dir.'/suspended.html');
         $ssh->upload($this->unavailablePageHtml(), $dir.'/unavailable.html');
+
+        $brandedDir = $this->edgePagesRoot($branding);
+        if ($brandedDir !== $dir) {
+            $ssh->exec('mkdir -p '.escapeshellarg($brandedDir));
+            $ssh->upload($this->suspendedPageHtml($branding), $brandedDir.'/suspended.html');
+            $ssh->upload($this->unavailablePageHtml($branding), $brandedDir.'/unavailable.html');
+        }
     }
 
-    public function suspendedPageHtml(): string
+    /**
+     * @param  array{company_name?: string, portal_url?: string, reseller_id?: int|null}|null  $branding
+     */
+    public function suspendedPageHtml(?array $branding = null): string
     {
         return $this->edgePageHtml(
             title: 'This website is paused',
             heading: 'This website is paused',
             body: 'The hosting account for this site is currently paused. If you are the owner, sign in to see why and restore it.',
             cta: 'Sign in to restore this site',
+            branding: $branding,
         );
     }
 
-    public function unavailablePageHtml(): string
+    /**
+     * @param  array{company_name?: string, portal_url?: string, reseller_id?: int|null}|null  $branding
+     */
+    public function unavailablePageHtml(?array $branding = null): string
     {
         return $this->edgePageHtml(
             title: 'This website is temporarily unavailable',
             heading: 'This website is temporarily unavailable',
             body: 'The site could not be reached just now. Please try again shortly. If you are the owner, check the service status in your hosting account.',
             cta: 'Open your hosting account',
+            branding: $branding,
         );
     }
 
-    private function edgePageHtml(string $title, string $heading, string $body, string $cta): string
+    /**
+     * @param  array{company_name?: string, portal_url?: string, reseller_id?: int|null}|null  $branding
+     */
+    public function edgePagesRoot(?array $branding = null): string
     {
-        $company = htmlspecialchars((string) config('app.name', 'Talksasa Cloud'), ENT_QUOTES, 'UTF-8');
-        $portal = htmlspecialchars(url('/login'), ENT_QUOTES, 'UTF-8');
+        $resellerId = (int) ($branding['reseller_id'] ?? 0);
+
+        return $resellerId > 0
+            ? self::EDGE_PAGES_DIR.'/r'.$resellerId
+            : self::EDGE_PAGES_DIR;
+    }
+
+    /**
+     * @return array{company_name: string, portal_url: string, reseller_id: int|null}
+     */
+    public function edgeBrandingForDomain(ContainerDomain $domain): array
+    {
+        $service = $domain->deployment?->service;
+        $owner = null;
+
+        if ($service?->relationLoaded('user')) {
+            $owner = $service->user;
+        } elseif ($service?->exists) {
+            $service->loadMissing('user.reseller');
+            $owner = $service->user;
+        }
+
+        return $this->edgeBrandingForOwner($owner);
+    }
+
+    /**
+     * @return array{company_name: string, portal_url: string, reseller_id: int|null}
+     */
+    public function edgeBrandingForOwner(?User $owner): array
+    {
+        $defaults = [
+            'company_name' => (string) config('app.name', 'Talksasa Cloud'),
+            'portal_url' => rtrim((string) url('/'), '/'),
+            'reseller_id' => null,
+        ];
+
+        if (! $owner) {
+            return $defaults;
+        }
+
+        $reseller = $owner->is_reseller
+            ? $owner
+            : ($owner->relationLoaded('reseller') ? $owner->reseller : null);
+
+        if (! $reseller && $owner->exists && $owner->reseller_id) {
+            $owner->loadMissing('reseller');
+            $reseller = $owner->reseller;
+        }
+
+        $isReseller = (bool) $reseller?->is_reseller
+            || ((int) $owner->reseller_id > 0 && (int) $reseller?->id === (int) $owner->reseller_id);
+
+        if (! $reseller || ! $isReseller) {
+            return $defaults;
+        }
+
+        try {
+            $branding = app(ResellerBrandingResolver::class)->forReseller($reseller);
+        } catch (\Throwable) {
+            $stored = is_array($reseller->settings['branding'] ?? null) ? $reseller->settings['branding'] : [];
+            $company = filled($stored['company_name'] ?? null)
+                ? (string) $stored['company_name']
+                : (string) ($reseller->company ?: $reseller->name ?: $defaults['company_name']);
+            $custom = trim((string) ($stored['custom_domain'] ?? ''));
+
+            return [
+                'company_name' => $company,
+                'portal_url' => $custom !== ''
+                    ? 'https://'.preg_replace('#^https?://#i', '', strtolower($custom))
+                    : $defaults['portal_url'],
+                'reseller_id' => $reseller->id,
+            ];
+        }
+
+        return [
+            'company_name' => (string) ($branding['company_name'] ?: $defaults['company_name']),
+            'portal_url' => rtrim((string) ($branding['portal_url'] ?: $defaults['portal_url']), '/'),
+            'reseller_id' => $reseller->id,
+        ];
+    }
+
+    /**
+     * @param  array{company_name?: string, portal_url?: string, reseller_id?: int|null}|null  $branding
+     */
+    private function edgePageHtml(string $title, string $heading, string $body, string $cta, ?array $branding = null): string
+    {
+        $company = htmlspecialchars((string) ($branding['company_name'] ?? config('app.name', 'Talksasa Cloud')), ENT_QUOTES, 'UTF-8');
+        $portalBase = rtrim((string) ($branding['portal_url'] ?? url('/')), '/');
+        $portal = htmlspecialchars($portalBase.'/login', ENT_QUOTES, 'UTF-8');
         $title = htmlspecialchars($title, ENT_QUOTES, 'UTF-8');
         $heading = htmlspecialchars($heading, ENT_QUOTES, 'UTF-8');
         $body = htmlspecialchars($body, ENT_QUOTES, 'UTF-8');
@@ -545,7 +656,7 @@ HTML;
      */
     public function ensureUploadLimit(ContainerDomain $domain, bool $force = false, ?bool $suspended = null): bool
     {
-        $domain->loadMissing('deployment.node', 'deployment.service');
+        $domain->loadMissing('deployment.node', 'deployment.service.user.reseller');
 
         $node = $domain->deployment?->node;
         if (! $node || ! in_array($domain->status, ['active', 'pending'], true)) {
@@ -697,6 +808,18 @@ HTML;
         return str_contains($config, 'return 503')
             && str_contains($config, self::EDGE_PAGES_DIR)
             && str_contains($config, '/suspended.html');
+    }
+
+    private function sanitizeEdgeRoot(?string $root): string
+    {
+        $base = self::EDGE_PAGES_DIR;
+        $root = trim((string) $root);
+
+        if ($root === $base || preg_match('#^'.preg_quote($base, '#').'/r\d+$#', $root) === 1) {
+            return $root;
+        }
+
+        return $base;
     }
 
     /**

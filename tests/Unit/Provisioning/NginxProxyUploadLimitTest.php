@@ -7,6 +7,7 @@ use App\Models\ContainerDeployment;
 use App\Models\ContainerDomain;
 use App\Models\Node;
 use App\Models\Service;
+use App\Models\User;
 use App\Services\Provisioning\NginxProxyService;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -233,6 +234,70 @@ CONF;
         $this->assertStringContainsString('temporarily unavailable', $unavailable);
         $this->assertStringContainsString($login, $unavailable);
         $this->assertStringNotContainsString('502 Bad Gateway', $unavailable);
+    }
+
+    #[Test]
+    public function edge_pages_use_reseller_company_name_for_reseller_customers(): void
+    {
+        $nginx = new NginxProxyService;
+        $branding = [
+            'company_name' => 'Acme Hosting',
+            'portal_url' => 'https://portal.acme.test',
+            'reseller_id' => 169,
+        ];
+
+        $unavailable = $nginx->unavailablePageHtml($branding);
+        $suspended = $nginx->suspendedPageHtml($branding);
+
+        $this->assertStringContainsString('Acme Hosting', $unavailable);
+        $this->assertStringContainsString('https://portal.acme.test/login', $unavailable);
+        $this->assertStringNotContainsString('Talksasa Cloud', $unavailable);
+
+        $this->assertStringContainsString('Acme Hosting', $suspended);
+        $this->assertStringNotContainsString('Talksasa Cloud', $suspended);
+        $this->assertSame('/var/www/talksasa-edge/r169', $nginx->edgePagesRoot($branding));
+    }
+
+    #[Test]
+    public function generated_vhost_serves_reseller_branded_edge_pages(): void
+    {
+        $reseller = new User;
+        $reseller->forceFill([
+            'company' => 'Acme Hosting',
+            'settings' => [
+                'branding' => [
+                    'company_name' => 'Acme Hosting',
+                    'custom_domain' => 'portal.acme.test',
+                ],
+            ],
+        ]);
+        $reseller->is_reseller = true;
+        $reseller->id = 169;
+
+        $customer = new User;
+        $customer->forceFill(['reseller_id' => 169]);
+        $customer->id = 42;
+        $customer->setRelation('reseller', $reseller);
+
+        $service = new Service(['status' => ServiceStatus::Active->value]);
+        $service->setRelation('user', $customer);
+
+        $domain = new ContainerDomain(['domain' => 'shop.acme.test', 'ssl_enabled' => false]);
+        $deployment = new ContainerDeployment(['assigned_port' => 30001]);
+        $deployment->setRelation('node', new Node(['ip_address' => '10.0.0.1']));
+        $deployment->setRelation('service', $service);
+        $domain->setRelation('deployment', $deployment);
+
+        $nginx = new NginxProxyService;
+        $config = $nginx->generateConfig($domain, false);
+
+        $this->assertStringContainsString('root /var/www/talksasa-edge/r169;', $config);
+        $this->assertStringContainsString('error_page 502 503 504 /unavailable.html;', $config);
+
+        $branding = $nginx->edgeBrandingForDomain($domain);
+        $this->assertSame('Acme Hosting', $branding['company_name']);
+        $this->assertSame(169, $branding['reseller_id']);
+        $this->assertStringNotContainsStringIgnoringCase('talksasa', $branding['company_name']);
     }
 
     private function exampleDomain(): ContainerDomain
