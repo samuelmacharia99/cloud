@@ -316,8 +316,9 @@ PHP;
 
         $this->assertStringContainsString("cat '/tmp/db.sql'", $cmd);
         $this->assertStringContainsString("docker compose exec -T -e MYSQL_PWD='secret' 'mysql'", $cmd);
-        $this->assertStringContainsString("mysql -u'wordpress' 'wordpress'", $cmd);
-        $this->assertStringNotContainsString('sh -c', $cmd);
+        $this->assertStringContainsString('sh -c', $cmd);
+        $this->assertStringContainsString('mysql -uwordpress', $cmd);
+        $this->assertStringContainsString('mariadb -uwordpress', $cmd);
         $this->assertStringNotContainsString('/tmp/import.sql', $cmd);
     }
 

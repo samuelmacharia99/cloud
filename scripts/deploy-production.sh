@@ -65,12 +65,6 @@ php artisan db:seed --class=EmailTemplateSeeder --force
 php artisan db:seed --class=SmsTemplateSeeder --force
 php artisan db:seed --class=CurrencySeeder --force
 
-if command -v npm >/dev/null 2>&1 && [[ -f package.json ]]; then
-  log "Building frontend assets"
-  npm ci --no-audit --no-fund 2>/dev/null || npm install --no-audit --no-fund
-  npm run build
-fi
-
 log "Installing/updating scheduler and queue worker units"
 sudo env APP_PATH="${APP_PATH}" SERVICE_USER="${DEPLOY_SERVICE_USER:-www-data}" PHP_BIN="$(command -v php)" \
   bash scripts/install-scheduler.sh
@@ -78,7 +72,7 @@ sudo env APP_PATH="${APP_PATH}" SERVICE_USER="${DEPLOY_SERVICE_USER:-www-data}" 
   PLATFORM_CRON_WORKERS="${PLATFORM_CRON_WORKERS}" CONTAINER_CRON_WORKERS="${CONTAINER_CRON_WORKERS}" \
   bash scripts/install-queue-workers.sh
 
-log "Restarting queue workers on the new release"
+log "Restarting queue workers on the new PHP release before the frontend build"
 php artisan queue:restart
 sudo systemctl restart talksasa-queue.service
 sudo systemctl restart talksasa-backup-queue.service
@@ -92,6 +86,12 @@ for ((worker = 1; worker <= CONTAINER_CRON_WORKERS; worker++)); do
   sudo systemctl restart "talksasa-container-cron-queue@${worker}.service"
   sudo systemctl is-active --quiet "talksasa-container-cron-queue@${worker}.service"
 done
+
+if command -v npm >/dev/null 2>&1 && [[ -f package.json ]]; then
+  log "Building frontend assets"
+  npm ci --no-audit --no-fund 2>/dev/null || npm install --no-audit --no-fund
+  npm run build
+fi
 
 log "Running one scheduler tick and verifying runtime health"
 sudo systemctl start talksasa-scheduler.service

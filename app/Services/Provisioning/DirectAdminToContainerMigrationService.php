@@ -908,7 +908,7 @@ class DirectAdminToContainerMigrationService
                 $containerPath,
                 $dbService,
                 $wait['password'],
-                300,
+                420,
                 $wait['user'],
             );
 
@@ -929,7 +929,7 @@ class DirectAdminToContainerMigrationService
                 $containerPath,
                 $dbService,
                 $wait['password'],
-                300,
+                420,
                 $wait['user'],
             );
 
@@ -1254,7 +1254,7 @@ class DirectAdminToContainerMigrationService
                     $containerPath,
                     $dbService,
                     $wait['password'],
-                    300,
+                    420,
                     $wait['user'],
                 );
 
@@ -1981,7 +1981,7 @@ class DirectAdminToContainerMigrationService
         string $containerPath,
         string $dbService,
         string $password,
-        int $timeoutSeconds = 300,
+        int $timeoutSeconds = 420,
         string $user = 'root',
     ): void {
         $delaySeconds = 5;
@@ -2069,6 +2069,42 @@ class DirectAdminToContainerMigrationService
     }
 
     /**
+     * Official MariaDB images often ship `mariadb` without a `mysql` client symlink.
+     */
+    public function composeMysqlClientShell(string $user, ?string $database = null, ?string $sql = null): string
+    {
+        $safeUser = preg_replace('/[^a-zA-Z0-9_]/', '', $user) ?: 'root';
+        $args = '-u'.$safeUser;
+        if ($database !== null && $database !== '') {
+            $args .= ' '.escapeshellarg($database);
+        }
+        if ($sql !== null) {
+            $args .= ' -e '.escapeshellarg($sql);
+        }
+
+        return 'if command -v mysql >/dev/null 2>&1; then mysql '.$args
+            .'; elif command -v mariadb >/dev/null 2>&1; then mariadb '.$args
+            .'; else mysql '.$args.'; fi';
+    }
+
+    public function composeMysqlExecCommand(
+        string $containerPath,
+        string $dbService,
+        string $user,
+        string $password,
+        string $sql,
+        ?string $database = null,
+    ): string {
+        $prefix = 'cd '.escapeshellarg($containerPath).' && docker compose exec -T';
+        if ($password !== '') {
+            $prefix .= ' -e MYSQL_PWD='.escapeshellarg($password);
+        }
+
+        return $prefix.' '.escapeshellarg($dbService)
+            .' sh -c '.escapeshellarg($this->composeMysqlClientShell($user, $database, $sql));
+    }
+
+    /**
      * Run a short SQL statement inside the compose MySQL service (unix socket).
      */
     public function execMysqlInCompose(
@@ -2081,18 +2117,10 @@ class DirectAdminToContainerMigrationService
         ?string $database = null,
         int $timeoutSeconds = 60,
     ): string {
-        $command = 'cd '.escapeshellarg($containerPath)
-            .' && docker compose exec -T -e MYSQL_PWD='.escapeshellarg($password)
-            .' '.escapeshellarg($dbService)
-            .' mysql -u'.escapeshellarg($user);
-
-        if ($database !== null && $database !== '') {
-            $command .= ' '.escapeshellarg($database);
-        }
-
-        $command .= ' -e '.escapeshellarg($sql);
-
-        return $ssh->exec($command, $timeoutSeconds);
+        return $ssh->exec(
+            $this->composeMysqlExecCommand($containerPath, $dbService, $user, $password, $sql, $database),
+            $timeoutSeconds
+        );
     }
 
     /**
@@ -2108,12 +2136,15 @@ class DirectAdminToContainerMigrationService
         string $password,
         string $database,
     ): string {
-        return 'cd '.escapeshellarg($containerPath)
+        $prefix = 'cd '.escapeshellarg($containerPath)
             .' && cat '.escapeshellarg($dumpFile)
-            .' | docker compose exec -T -e MYSQL_PWD='.escapeshellarg($password)
-            .' '.escapeshellarg($dbService)
-            .' mysql -u'.escapeshellarg($user)
-            .' '.escapeshellarg($database);
+            .' | docker compose exec -T';
+        if ($password !== '') {
+            $prefix .= ' -e MYSQL_PWD='.escapeshellarg($password);
+        }
+
+        return $prefix.' '.escapeshellarg($dbService)
+            .' sh -c '.escapeshellarg($this->composeMysqlClientShell($user, $database));
     }
 
     private function importMysqlDumpViaCompose(
@@ -2144,7 +2175,7 @@ class DirectAdminToContainerMigrationService
                     $containerPath,
                     $dbService,
                     $password,
-                    90,
+                    420,
                     $user,
                 );
                 $ssh->exec($command, 600);
@@ -2158,11 +2189,11 @@ class DirectAdminToContainerMigrationService
                 ]);
 
                 if ($attempt < $attempts) {
-                    @$ssh->exec(
-                        'cd '.escapeshellarg($containerPath)
-                        .' && docker compose start '.escapeshellarg($dbService).' 2>/dev/null || true',
-                        30
-                    );
+                    try {
+                        $ssh->exec($this->composeMysqlUpCommand($containerPath, $dbService), 120);
+                    } catch (\Throwable) {
+                        // Next waitForComposeMysql records the probe / compose status.
+                    }
                     sleep(5);
                 }
             }

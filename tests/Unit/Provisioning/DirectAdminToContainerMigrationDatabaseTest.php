@@ -214,4 +214,28 @@ class DirectAdminToContainerMigrationDatabaseTest extends TestCase
         $this->assertTrue($migrator->composeMysqlNeedsStart('Error: No container found'));
         $this->assertFalse($migrator->composeMysqlNeedsStart('Access denied for user'));
     }
+
+    #[Test]
+    public function compose_mysql_client_falls_back_to_mariadb_on_official_images(): void
+    {
+        $migrator = app(DirectAdminToContainerMigrationService::class);
+
+        $shell = $migrator->composeMysqlClientShell('wordpress', 'wordpress', 'SELECT 1');
+        $this->assertStringContainsString('command -v mysql', $shell);
+        $this->assertStringContainsString('command -v mariadb', $shell);
+        $this->assertStringContainsString("mysql -uwordpress 'wordpress' -e 'SELECT 1'", $shell);
+        $this->assertStringContainsString("mariadb -uwordpress 'wordpress' -e 'SELECT 1'", $shell);
+
+        $exec = $migrator->composeMysqlExecCommand(
+            '/opt/talksasa/containers/site-1',
+            'mysql',
+            'root',
+            'secret',
+            'CREATE DATABASE IF NOT EXISTS `appdb`;',
+        );
+        $this->assertStringContainsString('docker compose exec -T', $exec);
+        $this->assertStringContainsString("MYSQL_PWD='secret'", $exec);
+        $this->assertStringContainsString('sh -c', $exec);
+        $this->assertStringContainsString('mariadb', $exec);
+    }
 }

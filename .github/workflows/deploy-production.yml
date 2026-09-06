@@ -31,12 +31,26 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
+      - name: Require production SSH secrets
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+        run: |
+          missing=0
+          [ -n "$PROD_HOST" ] || { echo "PROD_HOST is not set for the production environment"; missing=1; }
+          [ -n "$PROD_USER" ] || { echo "PROD_USER is not set for the production environment"; missing=1; }
+          [ -n "$PROD_SSH_KEY" ] || { echo "PROD_SSH_KEY is not set for the production environment"; missing=1; }
+          exit "$missing"
+
       - name: Deploy to Production Server
-        uses: appleboy/ssh-action@master
+        uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ secrets.PROD_HOST }}
           username: ${{ secrets.PROD_USER }}
           key: ${{ secrets.PROD_SSH_KEY }}
+          port: 22
+          command_timeout: 45m
           script: |
             set -e
             cd /var/www/talksasa-cloud
@@ -44,11 +58,13 @@ jobs:
             APP_PATH=/var/www/talksasa-cloud bash scripts/deploy-production.sh
 
       - name: Verify deployment
-        uses: appleboy/ssh-action@master
+        uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ secrets.PROD_HOST }}
           username: ${{ secrets.PROD_USER }}
           key: ${{ secrets.PROD_SSH_KEY }}
+          port: 22
+          command_timeout: 10m
           script: |
             cd /var/www/talksasa-cloud
 
@@ -85,11 +101,13 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Rollback on failure
-        uses: appleboy/ssh-action@master
+        uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ secrets.PROD_HOST }}
           username: ${{ secrets.PROD_USER }}
           key: ${{ secrets.PROD_SSH_KEY }}
+          port: 22
+          command_timeout: 10m
           script: |
             cd /var/www
 
