@@ -228,28 +228,35 @@ class DirectAdminToContainerMigrationDatabaseTest extends TestCase
             'The designated data directory /var/lib/mysql/ is unusable.'
         ));
         $this->assertFalse($migrator->composeMysqlDatadirIsUnusable('Access denied for user'));
+        $this->assertTrue($migrator->composeMysqlShouldResetDatadir(
+            'Container is restarting, wait until the container is running'
+        ));
+        $this->assertFalse($migrator->composeMysqlShouldResetDatadir('Access denied for user'));
 
         $cmd = $migrator->composeMysqlResetUnusableDatadirCommand(
             '/opt/talksasa/containers/user-485-service-370-laravel',
             'db'
         );
-        $this->assertStringContainsString('docker compose rm -f', $cmd);
+        $this->assertStringContainsString('docker inspect -f', $cmd);
+        $this->assertStringContainsString('/var/lib/mysql', $cmd);
+        $this->assertStringContainsString('docker rm -f', $cmd);
+        $this->assertStringContainsString('${project}_db_data', $cmd);
+        $this->assertStringContainsString('${project}_mysql_data', $cmd);
+        $this->assertStringContainsString('docker volume rm -f', $cmd);
+        $this->assertStringContainsString('--force-recreate', $cmd);
         $this->assertStringContainsString('user-485-service-370-laravel', $cmd);
-        $this->assertStringContainsString('db_data|mysql_data', $cmd);
-        $this->assertStringContainsString('docker volume rm', $cmd);
         $this->assertStringNotContainsString('compose down', $cmd);
     }
 
     #[Test]
-    public function wait_for_compose_mysql_resets_unusable_datadir_only_when_requested(): void
+    public function wait_for_compose_mysql_resets_a_restarting_sidecar_before_import(): void
     {
         $migrator = app(DirectAdminToContainerMigrationService::class);
         $path = '/opt/talksasa/containers/user-485-service-370-laravel';
-        $unusable = 'Restarting --initialize specified but the data directory has files in it. Aborting.';
 
         $ssh = \Mockery::mock(SSHService::class);
         $resetSeen = false;
-        $ssh->shouldReceive('exec')->andReturnUsing(function (string $cmd) use ($unusable, &$resetSeen) {
+        $ssh->shouldReceive('exec')->andReturnUsing(function (string $cmd) use (&$resetSeen) {
             if (str_contains($cmd, 'docker volume rm')) {
                 $resetSeen = true;
 
@@ -263,7 +270,36 @@ class DirectAdminToContainerMigrationDatabaseTest extends TestCase
                 throw new \RuntimeException('Container is restarting, wait until the container is running');
             }
             if (str_contains($cmd, 'docker compose logs') || str_contains($cmd, 'docker compose ps')) {
-                return $unusable;
+                return 'Restarting (1) 54 seconds ago';
+            }
+
+            return '';
+        });
+
+        $migrator->waitForComposeMysql($ssh, $path, 'db', 'secret', 15, 'root', true);
+        $this->assertTrue($resetSeen);
+    }
+
+    #[Test]
+    public function wait_for_compose_mysql_resets_when_probe_says_restarting_even_without_logs(): void
+    {
+        $migrator = app(DirectAdminToContainerMigrationService::class);
+        $path = '/opt/talksasa/containers/user-485-service-370-laravel';
+
+        $ssh = \Mockery::mock(SSHService::class);
+        $resetSeen = false;
+        $ssh->shouldReceive('exec')->andReturnUsing(function (string $cmd) use (&$resetSeen) {
+            if (str_contains($cmd, 'docker volume rm')) {
+                $resetSeen = true;
+
+                return '';
+            }
+            if (str_contains($cmd, 'mysqladmin ping') || str_contains($cmd, 'mariadb-admin ping')) {
+                if ($resetSeen) {
+                    return '';
+                }
+
+                throw new \RuntimeException('Container is restarting, wait until the container is running');
             }
 
             return '';

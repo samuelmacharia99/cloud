@@ -2778,15 +2778,17 @@ class ContainerDeploymentService
 
         try {
             $exists = trim($ssh->exec("[ -f {$composeFile} ] && echo yes || echo no", 10));
-            if ($exists !== 'yes') {
-                return;
+            if ($exists === 'yes') {
+                $volumeFlag = $removeVolumes ? '-v ' : '';
+                @$ssh->exec(
+                    "cd {$pathArg} && docker compose -f docker-compose.yml down {$volumeFlag}--remove-orphans",
+                    self::DEPLOY_TIMEOUT
+                );
             }
 
-            $volumeFlag = $removeVolumes ? '-v ' : '';
-            @$ssh->exec(
-                "cd {$pathArg} && docker compose -f docker-compose.yml down {$volumeFlag}--remove-orphans",
-                self::DEPLOY_TIMEOUT
-            );
+            if ($removeVolumes) {
+                $this->forceRemoveMysqlNamedVolumes($ssh, $containerPath);
+            }
         } catch (\Throwable $e) {
             \Log::warning('Failed to tear down existing compose stack before deploy', [
                 'container_path' => $containerPath,
@@ -2794,6 +2796,29 @@ class ContainerDeploymentService
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    /**
+     * compose down -v can leave a restarting MySQL sidecar's named volume in place.
+     * Convert redeploys then remount the half-initialized datadir and crash-loop again.
+     */
+    private function forceRemoveMysqlNamedVolumes(SSHService $ssh, string $containerPath): void
+    {
+        $pathArg = escapeshellarg($containerPath);
+        $dbName = escapeshellarg(basename($containerPath).'-db');
+        $mysqlName = escapeshellarg(basename($containerPath).'-mysql');
+        $projectGuess = escapeshellarg(basename($containerPath));
+
+        @$ssh->exec(
+            "cd {$pathArg} 2>/dev/null || true"
+            .' ; docker compose -f docker-compose.yml rm -f -v db mysql 2>/dev/null || true'
+            ." ; docker rm -f {$dbName} {$mysqlName} 2>/dev/null || true"
+            .' ; project=$(docker compose -f docker-compose.yml config --format '
+            .escapeshellarg('{{.Name}}')
+            ." 2>/dev/null || echo {$projectGuess})"
+            .' ; docker volume rm -f "${project}_db_data" "${project}_mysql_data" 2>/dev/null || true',
+            120
+        );
     }
 
     private function databaseSidecarIsReady(

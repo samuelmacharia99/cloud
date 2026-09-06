@@ -2003,6 +2003,14 @@ class DirectAdminToContainerMigrationService
             ]);
         }
 
+        if ($repairUnusableDatadir) {
+            $status = $this->composeMysqlStatus($ssh, $containerPath, $dbService);
+            if ($this->composeMysqlShouldResetDatadir($status)
+                && $this->tryRepairUnusableComposeMysqlDatadir($ssh, $containerPath, $dbService)) {
+                $repairedUnusableDatadir = true;
+            }
+        }
+
         for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
             try {
                 if ($attempt > 0 && ($attempt % 3 === 0 || $this->composeMysqlNeedsStart((string) $lastError?->getMessage()))) {
@@ -2031,20 +2039,11 @@ class DirectAdminToContainerMigrationService
 
                 if ($repairUnusableDatadir && ! $repairedUnusableDatadir) {
                     $status = $this->composeMysqlStatus($ssh, $containerPath, $dbService);
-                    if ($this->composeMysqlDatadirIsUnusable($e->getMessage().' '.$status)) {
-                        Log::warning('Resetting unusable MySQL sidecar datadir before convert import', [
-                            'service' => $dbService,
-                            'path' => $containerPath,
-                        ]);
-                        try {
-                            $ssh->exec($this->composeMysqlResetUnusableDatadirCommand($containerPath, $dbService), 180);
-                            $repairedUnusableDatadir = true;
-                            sleep(3);
+                    if ($this->composeMysqlShouldResetDatadir($e->getMessage().' '.$status)
+                        && $this->tryRepairUnusableComposeMysqlDatadir($ssh, $containerPath, $dbService)) {
+                        $repairedUnusableDatadir = true;
 
-                            continue;
-                        } catch (\Throwable $resetError) {
-                            $lastError = $resetError;
-                        }
+                        continue;
                     }
                 }
             }
@@ -2087,14 +2086,70 @@ class DirectAdminToContainerMigrationService
             || (str_contains($lower, 'designated data directory') && str_contains($lower, 'unusable'));
     }
 
+    public function composeMysqlIsCrashLooping(string $message): bool
+    {
+        $lower = strtolower($message);
+
+        return str_contains($lower, 'is restarting')
+            || str_contains($lower, 'restarting (')
+            || str_contains($lower, 'restarting (1)');
+    }
+
+    public function composeMysqlShouldResetDatadir(string $message): bool
+    {
+        return $this->composeMysqlDatadirIsUnusable($message)
+            || $this->composeMysqlIsCrashLooping($message);
+    }
+
+    /**
+     * Convert import only: a crash-looping sidecar has no customer dump yet.
+     * Inspect the mounted /var/lib/mysql volume so we do not miss a renamed project.
+     */
     public function composeMysqlResetUnusableDatadirCommand(string $containerPath, string $dbService): string
     {
-        return 'cd '.escapeshellarg($containerPath)
-            .' && docker compose stop '.escapeshellarg($dbService).' 2>/dev/null || true'
-            .' && docker compose rm -f '.escapeshellarg($dbService).' 2>/dev/null || true'
-            .' && project=$(basename "$PWD")'
-            .' && docker volume ls -q | grep -E "^${project}_(db_data|mysql_data)$" | xargs -r docker volume rm'
-            .' && docker compose up -d --no-deps '.escapeshellarg($dbService);
+        $path = escapeshellarg($containerPath);
+        $svc = escapeshellarg($dbService);
+        $mountTmpl = escapeshellarg('{{range .Mounts}}{{if eq .Destination "/var/lib/mysql"}}{{.Name}}{{end}}{{end}}');
+        $projectTmpl = escapeshellarg('{{.Name}}');
+
+        return 'cd '.$path
+            .' && ids=$(docker compose ps -aq '.$svc.' 2>/dev/null || true)'
+            .' && vols=$(if [ -n "$ids" ]; then echo "$ids" | xargs -r docker inspect -f '.$mountTmpl.' 2>/dev/null; fi | awk NF | sort -u || true)'
+            .' ; docker compose stop '.$svc.' 2>/dev/null || true'
+            .' ; docker compose rm -f -v '.$svc.' 2>/dev/null || true'
+            .' ; echo "$ids" | xargs -r docker rm -f'
+            .' ; project=$(docker compose config --format '.$projectTmpl.' 2>/dev/null || basename "$PWD")'
+            .' ; for v in $vols ${project}_db_data ${project}_mysql_data; do'
+            .' case "$v" in ""|/*) continue ;; esac;'
+            .' docker volume rm -f "$v" 2>/dev/null || true;'
+            .' done'
+            .' && docker compose up -d --no-deps --force-recreate '.$svc;
+    }
+
+    private function tryRepairUnusableComposeMysqlDatadir(
+        SSHService $ssh,
+        string $containerPath,
+        string $dbService,
+    ): bool {
+        Log::warning('Resetting unusable MySQL sidecar datadir before convert import', [
+            'service' => $dbService,
+            'path' => $containerPath,
+        ]);
+
+        try {
+            $ssh->exec($this->composeMysqlResetUnusableDatadirCommand($containerPath, $dbService), 180);
+            sleep(3);
+
+            return true;
+        } catch (\Throwable $resetError) {
+            Log::warning('Failed to reset unusable MySQL sidecar datadir', [
+                'service' => $dbService,
+                'path' => $containerPath,
+                'error' => $resetError->getMessage(),
+            ]);
+
+            return false;
+        }
     }
 
     private function composeMysqlStatus(SSHService $ssh, string $containerPath, string $dbService): string
