@@ -1936,6 +1936,7 @@ class ContainerDeploymentService
         }
 
         $this->ensureNamedVolumesDeclared($compose);
+        $this->applyMysqlSidecarDatadirRepair($compose);
         $this->elasticResources->apply(
             $compose,
             $serveNextFrontend ? LaravelNextGatewayProxy::BACKEND_SERVICE : $containerName,
@@ -1944,6 +1945,42 @@ class ContainerDeploymentService
         );
 
         return Yaml::dump($compose, 10, 2);
+    }
+
+    /**
+     * Official mysql/mariadb images run `mysqld --initialize` when /var/lib/mysql/mysql
+     * is missing. A previous OOM, SSH-killed init, or lost+found leaves other files there,
+     * so initialize aborts and `restart: always` crash-loops forever.
+     *
+     * @param  array<string, mixed>  $compose
+     */
+    public function applyMysqlSidecarDatadirRepair(array &$compose): void
+    {
+        foreach ($compose['services'] ?? [] as $name => $service) {
+            if (! is_array($service)) {
+                continue;
+            }
+
+            $image = strtolower((string) ($service['image'] ?? ''));
+            if (! str_contains($image, 'mysql') && ! str_contains($image, 'mariadb')) {
+                continue;
+            }
+
+            $compose['services'][$name]['entrypoint'] = self::mysqlSidecarRepairEntrypoint();
+        }
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function mysqlSidecarRepairEntrypoint(): array
+    {
+        return [
+            'bash',
+            '-c',
+            'if [ -d /var/lib/mysql ] && [ ! -d /var/lib/mysql/mysql ]; then find /var/lib/mysql -mindepth 1 -exec rm -rf {} + || true; fi; exec docker-entrypoint.sh "$@"',
+            'talksasa-mysql',
+        ];
     }
 
     /**
@@ -5905,7 +5942,8 @@ class ContainerDeploymentService
             || str_contains($existing, "-h', 'localhost'")
             || str_contains($existing, '-h localhost')
             || ! str_contains($existing, 'start_period: 300s')
-            || ! str_contains($existing, 'uploads.ini');
+            || ! str_contains($existing, 'uploads.ini')
+            || ! str_contains($existing, 'talksasa-mysql');
 
         if (! $needsRefresh) {
             return;

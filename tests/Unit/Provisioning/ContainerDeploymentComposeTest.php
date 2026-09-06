@@ -153,9 +153,37 @@ class ContainerDeploymentComposeTest extends TestCase
         $this->assertStringContainsString('elastic-v1', $yaml);
         $this->assertStringContainsString('innodb-buffer-pool-size', $yaml);
         $this->assertStringContainsString('mysql_data:/var/lib/mysql', $yaml);
+        $this->assertStringContainsString('talksasa-mysql', $yaml);
+        $this->assertStringContainsString('/var/lib/mysql/mysql', $yaml);
+        $this->assertStringContainsString('docker-entrypoint.sh', $yaml);
         $this->assertStringContainsString('uploads.ini', $yaml);
         $this->assertStringContainsString('/usr/local/etc/php/conf.d/uploads.ini', $yaml);
         $this->assertMatchesRegularExpression('/volumes:\s*\n(?:.*\n)*?\s+mysql_data:/', $yaml);
+    }
+
+    #[Test]
+    public function mysql_sidecar_repairs_an_unusable_datadir_before_official_entrypoint(): void
+    {
+        $deployer = new ContainerDeploymentService(
+            templateEnvironment: new ContainerTemplateEnvironmentService
+        );
+        $compose = [
+            'services' => [
+                'mysql' => ['image' => 'mysql:8.0'],
+                'db' => ['image' => 'postgres:16'],
+                'app' => ['image' => 'wordpress:latest'],
+            ],
+        ];
+
+        $deployer->applyMysqlSidecarDatadirRepair($compose);
+
+        $this->assertSame(
+            ContainerDeploymentService::mysqlSidecarRepairEntrypoint(),
+            $compose['services']['mysql']['entrypoint']
+        );
+        $this->assertArrayNotHasKey('entrypoint', $compose['services']['db']);
+        $this->assertArrayNotHasKey('entrypoint', $compose['services']['app']);
+        $this->assertStringContainsString('/var/lib/mysql/mysql', $compose['services']['mysql']['entrypoint'][2]);
     }
 
     #[Test]
