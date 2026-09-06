@@ -136,6 +136,85 @@ class DaConvertOfframpServiceTest extends TestCase
     }
 
     #[Test]
+    public function it_keeps_failed_container_converts_visible_for_retry(): void
+    {
+        $reseller = User::factory()->reseller()->create();
+        $customer = User::factory()->customer()->create(['reseller_id' => $reseller->id]);
+        $product = Product::factory()->containerHosting()->create();
+        $service = Service::factory()->create([
+            'user_id' => $customer->id,
+            'reseller_id' => $reseller->id,
+            'product_id' => $product->id,
+            'provisioning_driver_key' => 'container',
+            'status' => 'failed',
+            'name' => 'failed.example.com',
+            'external_reference' => 'faileduser',
+            'service_meta' => [
+                'username' => 'faileduser',
+                'domain' => 'failed.example.com',
+                'da_convert' => [
+                    'status' => 'failed',
+                    'error' => 'MySQL sidecar "mysql" did not become ready within 180 seconds.',
+                ],
+            ],
+        ]);
+        ContainerDeployment::factory()->create([
+            'service_id' => $service->id,
+            'status' => 'running',
+            'domain' => 'failed.example.com',
+        ]);
+
+        $offramp = $this->offramp(
+            Mockery::mock(ContainerDomainBindingService::class),
+            app(DomainCloudflareDnsService::class),
+            Mockery::mock(NginxProxyService::class),
+        );
+
+        $this->assertFalse($offramp->shouldHideFromOfframp($reseller, 'faileduser', 'failed.example.com'));
+        $this->assertTrue($offramp->isFailedConvert($service));
+    }
+
+    #[Test]
+    public function it_restores_directadmin_before_retrying_a_failed_container_convert(): void
+    {
+        $daProduct = Product::factory()->create([
+            'type' => 'shared_hosting',
+            'provisioning_driver_key' => 'directadmin',
+        ]);
+        $container = Product::factory()->containerHosting()->create();
+        $service = Service::factory()->create([
+            'product_id' => $container->id,
+            'provisioning_driver_key' => 'container',
+            'status' => 'failed',
+            'service_meta' => [
+                'da_legacy' => ['username' => 'hardsoft'],
+                'da_convert' => [
+                    'status' => 'failed',
+                    'error' => 'MySQL sidecar "mysql" did not become ready within 180 seconds.',
+                    'previous' => [
+                        'product_id' => $daProduct->id,
+                        'provisioning_driver_key' => 'directadmin',
+                        'status' => 'active',
+                    ],
+                ],
+            ],
+        ]);
+
+        $offramp = $this->offramp(
+            Mockery::mock(ContainerDomainBindingService::class),
+            Mockery::mock(DomainCloudflareDnsService::class),
+            Mockery::mock(NginxProxyService::class),
+        );
+        $offramp->prepareServiceForRetry($service->fresh());
+        $service->refresh();
+
+        $this->assertSame('directadmin', $service->provisioningDriver());
+        $this->assertSame($daProduct->id, (int) $service->product_id);
+        $this->assertArrayNotHasKey('status', $service->service_meta['da_convert'] ?? []);
+        $this->assertSame('active', $service->status?->value ?? (string) $service->status);
+    }
+
+    #[Test]
     public function convert_job_serializes_per_directadmin_node(): void
     {
         $node = Node::factory()->directAdmin()->create();

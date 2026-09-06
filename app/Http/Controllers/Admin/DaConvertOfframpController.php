@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\CutoverDaConvertBatchRequest;
 use App\Http\Requests\Admin\ImportDaResellerPackagesRequest;
 use App\Http\Requests\Admin\QueueDaConvertBatchRequest;
+use App\Http\Requests\Admin\RetryDaConvertAccountRequest;
 use App\Models\DaConvertBatch;
 use App\Models\Product;
 use App\Models\Service;
@@ -28,7 +29,13 @@ class DaConvertOfframpController extends Controller
     ): View {
         abort_if(! $user->is_reseller, 404);
 
-        $accounts = $offramp->eligibleAccounts($user);
+        foreach ($offramp->openConvertItems($user) as $item) {
+            if ($item->service?->containerDeployment) {
+                $offramp->refreshCutoverStatus($item);
+            }
+        }
+
+        $accounts = $offramp->boardAccounts($user);
         $services = $accounts
             ->pluck('service')
             ->filter()
@@ -40,23 +47,6 @@ class DaConvertOfframpController extends Controller
 
             return [$account['key'] => $packages->resolveForPackageName($user, (string) ($account['package'] ?? ''))];
         });
-        $batches = DaConvertBatch::query()
-            ->where('reseller_user_id', $user->id)
-            ->with(['items.service.user', 'items.service.containerDeployment.node', 'items.service.containerDeployment.domains', 'product'])
-            ->latest()
-            ->limit(8)
-            ->get();
-
-        foreach ($batches as $batch) {
-            foreach ($batch->items as $item) {
-                if ($item->service?->containerDeployment) {
-                    $offramp->refreshCutoverStatus($item);
-                }
-            }
-            $offramp->refreshBatchStatus($batch);
-        }
-
-        $batches->load(['items.service.user', 'product']);
 
         $catalog = $convert->applicationHostingCatalog();
         $emailProducts = Product::query()
@@ -72,7 +62,6 @@ class DaConvertOfframpController extends Controller
             'services' => $services,
             'accounts' => $accounts,
             'packageMap' => $packageMap,
-            'batches' => $batches,
             'containerProducts' => $catalog['products'],
             'emailProducts' => $emailProducts,
             'convertProgress' => $offramp->operatorProgress($user),
@@ -146,11 +135,50 @@ class DaConvertOfframpController extends Controller
         return redirect()
             ->route('admin.resellers.directadmin-offramp', $user)
             ->with('success', sprintf(
-                'Batch #%d queued %d account(s) on the da-convert queue (%d skipped as blocked or needing acknowledgement). Run queue:work --queue=da-convert --timeout=2400.',
-                $batch->id,
+                'Queued %d account(s) (%d skipped). Converts run one at a time on this DirectAdmin node.',
                 $queued,
                 max(0, $skipped)
             ));
+    }
+
+    public function retry(
+        RetryDaConvertAccountRequest $request,
+        User $user,
+        DaConvertOfframpService $offramp,
+    ): RedirectResponse {
+        abort_if(! $user->is_reseller, 404);
+
+        try {
+            $batch = $offramp->queueBatch(
+                $user,
+                $request->user(),
+                [],
+                $request->applicationHostingProduct(),
+                $request->emailHostingProduct(),
+                $request->boolean('acknowledge_mail_pull', true),
+                $request->boolean('acknowledge_addon_sites', true),
+                [$request->validated('account_key')],
+            );
+        } catch (\InvalidArgumentException $e) {
+            return back()->withErrors(['error' => $e->getMessage()])->withInput();
+        } catch (\DomainException $e) {
+            return back()->withErrors(['error' => $e->getMessage()])->withInput();
+        } catch (\Throwable $e) {
+            return back()->withErrors(['error' => $e->getMessage()])->withInput();
+        }
+
+        $item = $batch->items->first();
+        $label = $item?->hostname ?: $request->validated('account_key');
+
+        if ($item?->status === DaConvertBatchItemStatus::Queued || $item?->status === DaConvertBatchItemStatus::Converting) {
+            return redirect()
+                ->route('admin.resellers.directadmin-offramp', $user)
+                ->with('success', 'Retry queued for '.$label.'.');
+        }
+
+        return redirect()
+            ->route('admin.resellers.directadmin-offramp', $user)
+            ->withErrors(['error' => $item?->error ?: 'Could not retry this account.']);
     }
 
     public function cutDns(

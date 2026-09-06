@@ -39,7 +39,10 @@ class AdminDaConvertOfframpTest extends TestCase
             ->assertSee('DirectAdmin off-ramp')
             ->assertSee($ready->name)
             ->assertSee('Queue selected converts')
-            ->assertSee('Import DA packages');
+            ->assertSee('Import DA packages')
+            ->assertSee('Accounts')
+            ->assertDontSee('Shared convert settings')
+            ->assertDontSee('Batch #');
     }
 
     public function test_admin_imports_directadmin_packages_into_reseller_catalog(): void
@@ -280,6 +283,7 @@ class AdminDaConvertOfframpTest extends TestCase
             ->assertJsonPath('active_count', 1)
             ->assertJsonPath('current.item_id', $item->id)
             ->assertJsonPath('current.hostname', 'ready.example.com')
+            ->assertJsonPath('accounts.0.status', 'creating')
             ->assertSee('Exporting site files from DirectAdmin', false);
 
         $this->actingAs($admin)
@@ -451,6 +455,49 @@ class AdminDaConvertOfframpTest extends TestCase
         $this->assertSame($reseller->id, $customer->reseller_id);
         $this->assertTrue(Service::query()->where('external_reference', 'jamesk')->exists());
         Bus::assertDispatched(ConvertDirectAdminServiceToContainerJob::class);
+    }
+
+    public function test_admin_can_retry_a_failed_convert_that_already_switched_to_container(): void
+    {
+        Bus::fake();
+        [$admin, $reseller, $ready, , $container] = $this->board();
+        $daProductId = (int) $ready->product_id;
+        $username = (string) $ready->service_meta['username'];
+        $ready->update([
+            'provisioning_driver_key' => 'container',
+            'product_id' => $container->id,
+            'service_meta' => array_merge($ready->service_meta ?? [], [
+                'da_legacy' => ['username' => $username],
+                'da_convert' => [
+                    'status' => 'failed',
+                    'error' => 'MySQL sidecar "mysql" did not become ready within 180 seconds.',
+                    'previous' => [
+                        'product_id' => $daProductId,
+                        'provisioning_driver_key' => 'directadmin',
+                        'status' => 'active',
+                    ],
+                ],
+            ]),
+        ]);
+        $this->bindConvertMock($container, [
+            $ready->id => $this->preflightOk(),
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('admin.resellers.directadmin-offramp.retry', $reseller), [
+                'account_key' => 'da:'.$username,
+                'product_id' => $container->id,
+                'acknowledge_mail_pull' => '1',
+                'acknowledge_addon_sites' => '1',
+            ])
+            ->assertRedirect(route('admin.resellers.directadmin-offramp', $reseller))
+            ->assertSessionHas('success');
+
+        Bus::assertDispatched(ConvertDirectAdminServiceToContainerJob::class, function (ConvertDirectAdminServiceToContainerJob $job) use ($ready): bool {
+            return $job->serviceId === $ready->id;
+        });
+        $ready->refresh();
+        $this->assertSame('queued', $ready->service_meta['da_convert']['status'] ?? null);
     }
 
     /**

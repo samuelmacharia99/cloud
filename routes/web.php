@@ -281,6 +281,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('admin/resellers/{user}/directadmin-offramp/progress', [DaConvertOfframpController::class, 'progress'])->middleware('throttle:da-offramp-progress')->name('admin.resellers.directadmin-offramp.progress');
         Route::post('admin/resellers/{user}/directadmin-offramp/import-packages', [DaConvertOfframpController::class, 'importPackages'])->middleware('throttle:da-offramp-mutate')->name('admin.resellers.directadmin-offramp.import-packages');
         Route::post('admin/resellers/{user}/directadmin-offramp', [DaConvertOfframpController::class, 'store'])->middleware('throttle:da-offramp-mutate')->name('admin.resellers.directadmin-offramp.store');
+        Route::post('admin/resellers/{user}/directadmin-offramp/retry', [DaConvertOfframpController::class, 'retry'])->middleware('throttle:da-offramp-mutate')->name('admin.resellers.directadmin-offramp.retry');
         Route::post('admin/resellers/{user}/directadmin-offramp/{batch}/cut-dns', [DaConvertOfframpController::class, 'cutDns'])->middleware('throttle:da-offramp-cut-dns')->name('admin.resellers.directadmin-offramp.cut-dns');
         Route::get('admin/settings', [SettingController::class, 'index'])->name('admin.settings.index');
         Route::post('admin/settings', [SettingController::class, 'update'])->name('admin.settings.update');
