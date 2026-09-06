@@ -53,50 +53,71 @@ class SSHService
      */
     private function connect(): void
     {
-        try {
-            $this->ssh = new SSH2($this->node->ip_address, (int) $this->node->ssh_port);
-            $this->ssh->setTimeout($this->timeout);
+        $attempts = 3;
+        $lastError = null;
 
-            $authenticated = false;
+        for ($attempt = 1; $attempt <= $attempts; $attempt++) {
+            try {
+                $this->openAuthenticatedSession();
+                $this->connected = true;
 
-            // Try password authentication first
-            // NOTE: $this->node->ssh_password is already decrypted by the Model's 'encrypted' cast
-            // Do NOT call decrypt() on it again - that causes "payload is invalid" errors
-            if ($this->node->ssh_password) {
-                $authenticated = @$this->ssh->login(
-                    $this->node->ssh_username,
-                    $this->node->ssh_password
+                return;
+            } catch (\Exception $e) {
+                $this->connected = false;
+                $this->ssh = null;
+                $lastError = $e;
+
+                if ($attempt < $attempts && $this->isRetryableSshFailure($e->getMessage())) {
+                    usleep(500_000 * $attempt);
+
+                    continue;
+                }
+
+                throw new SSHConnectionException(
+                    $this->node->ip_address,
+                    $e->getMessage(),
+                    0,
+                    $e
                 );
             }
+        }
 
-            // Fallback to login key if available and password failed
-            // NOTE: $this->node->da_login_key is already decrypted by the Model's 'encrypted' cast
-            if (! $authenticated && $this->node->da_login_key) {
-                try {
-                    $key = PublicKeyLoader::load($this->node->da_login_key);
-                    $authenticated = @$this->ssh->login($this->node->ssh_username, $key);
-                } catch (\Exception $e) {
-                    throw new \Exception(
-                        'SSH key format invalid: '.$e->getMessage()
-                    );
-                }
-            }
+        throw new SSHConnectionException(
+            $this->node->ip_address,
+            $lastError?->getMessage() ?? 'SSH connection failed',
+            0,
+            $lastError instanceof \Exception ? $lastError : null
+        );
+    }
 
-            if (! $authenticated) {
-                throw new \Exception('SSH authentication failed - invalid credentials or network issue');
-            }
+    private function openAuthenticatedSession(): void
+    {
+        $this->ssh = new SSH2($this->node->ip_address, (int) $this->node->ssh_port);
+        $this->ssh->setTimeout($this->timeout);
 
-            $this->connected = true;
-        } catch (\Exception $e) {
-            $this->connected = false;
-            $this->ssh = null;
+        $authenticated = false;
 
-            throw new SSHConnectionException(
-                $this->node->ip_address,
-                $e->getMessage(),
-                0,
-                $e
+        // NOTE: ssh_password / da_login_key are already decrypted by the encrypted cast.
+        if ($this->node->ssh_password) {
+            $authenticated = @$this->ssh->login(
+                $this->node->ssh_username,
+                $this->node->ssh_password
             );
+        }
+
+        if (! $authenticated && $this->node->da_login_key) {
+            try {
+                $key = PublicKeyLoader::load($this->node->da_login_key);
+                $authenticated = @$this->ssh->login($this->node->ssh_username, $key);
+            } catch (\Exception $e) {
+                throw new \Exception(
+                    'SSH key format invalid: '.$e->getMessage()
+                );
+            }
+        }
+
+        if (! $authenticated) {
+            throw new \Exception('SSH authentication failed - invalid credentials or network issue');
         }
     }
 

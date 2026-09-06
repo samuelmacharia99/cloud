@@ -579,7 +579,41 @@ class DaConvertOfframpService
 
     public function isFailedConvert(Service $service): bool
     {
+        if ($this->convertLooksComplete($service)) {
+            return false;
+        }
+
         return (string) ($service->service_meta['da_convert']['status'] ?? '') === 'failed';
+    }
+
+    /**
+     * A later batch can record a Failed item (SSH listing flake) after the
+     * primary site already landed on a running container.
+     */
+    public function convertLooksComplete(Service $service): bool
+    {
+        $service->loadMissing('containerDeployment');
+        $running = $service->containerDeployment
+            && in_array((string) $service->containerDeployment->status, ['running', 'active'], true);
+        if (! $running || $service->provisioningDriver() !== 'container') {
+            return false;
+        }
+
+        $convert = is_array($service->service_meta['da_convert'] ?? null)
+            ? $service->service_meta['da_convert']
+            : [];
+        $status = (string) ($convert['status'] ?? '');
+        if ($status === 'completed' || filled($convert['completed_at'] ?? null)) {
+            return true;
+        }
+
+        foreach (is_array($convert['steps'] ?? null) ? $convert['steps'] : [] as $step) {
+            if (str_contains((string) $step, 'Convert complete.')) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -627,7 +661,8 @@ class DaConvertOfframpService
             && $status !== 'completed'
             && $status !== 'queued'
             && $status !== 'running'
-            && is_array($legacy);
+            && is_array($legacy)
+            && ! $this->convertLooksComplete($service);
     }
 
     private function isAlreadyBusy(Service $service): bool
@@ -1042,7 +1077,10 @@ class DaConvertOfframpService
         $convertStatus = (string) ($convert['status'] ?? '');
         $steps = is_array($convert['steps'] ?? null) ? $convert['steps'] : [];
         $step = $steps !== [] ? (string) end($steps) : null;
-        $error = $item?->error ?: (isset($convert['error']) ? (string) $convert['error'] : null);
+        $complete = $service ? $this->convertLooksComplete($service) : false;
+        $error = $complete
+            ? null
+            : ($item?->error ?: (isset($convert['error']) ? (string) $convert['error'] : null));
         $deployment = $service?->containerDeployment;
         $container = 'none';
         if ($deployment) {
@@ -1053,7 +1091,7 @@ class DaConvertOfframpService
             $container = 'creating';
         }
 
-        $board = $this->boardStatus($convertStatus, $item, $container, $error, $step);
+        $board = $this->boardStatus($convertStatus, $item, $container, $error, $step, $complete);
 
         return array_merge($account, [
             'service_id' => $service?->id,
@@ -1088,8 +1126,34 @@ class DaConvertOfframpService
         string $container,
         ?string $error = null,
         ?string $step = null,
+        bool $convertComplete = false,
     ): array {
         $itemStatus = $item?->status;
+
+        if ($convertComplete && $container === 'running') {
+            if ($itemStatus === DaConvertBatchItemStatus::Done) {
+                return [
+                    'key' => 'done',
+                    'label' => 'Done',
+                    'can_queue' => false,
+                    'can_retry' => false,
+                    'can_cut_dns' => false,
+                    'percent' => 100,
+                ];
+            }
+
+            $waitingMx = $itemStatus === DaConvertBatchItemStatus::WaitingMx
+                || (int) ($item?->mailbox_count ?? 0) > 0;
+
+            return [
+                'key' => $waitingMx ? 'waiting_mx' : 'waiting_dns',
+                'label' => $waitingMx ? 'Waiting on MX' : 'Container ready',
+                'can_queue' => false,
+                'can_retry' => false,
+                'can_cut_dns' => true,
+                'percent' => 100,
+            ];
+        }
 
         if ($convertStatus === 'failed' || $itemStatus === DaConvertBatchItemStatus::Failed) {
             return [
@@ -1207,11 +1271,20 @@ class DaConvertOfframpService
 
     public function latestItemForService(User $reseller, Service $service): ?DaConvertBatchItem
     {
-        return DaConvertBatchItem::query()
+        $items = DaConvertBatchItem::query()
             ->where('service_id', $service->id)
             ->whereHas('batch', fn ($query) => $query->where('reseller_user_id', $reseller->id))
             ->latest('id')
-            ->first();
+            ->get();
+
+        return $items->first(fn (DaConvertBatchItem $item): bool => in_array($item->status, [
+            DaConvertBatchItemStatus::WaitingDns,
+            DaConvertBatchItemStatus::WaitingMx,
+            DaConvertBatchItemStatus::Converted,
+            DaConvertBatchItemStatus::Done,
+            DaConvertBatchItemStatus::Converting,
+            DaConvertBatchItemStatus::Queued,
+        ], true)) ?? $items->first();
     }
 
     /**

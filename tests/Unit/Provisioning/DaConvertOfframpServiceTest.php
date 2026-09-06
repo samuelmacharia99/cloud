@@ -215,6 +215,83 @@ class DaConvertOfframpServiceTest extends TestCase
     }
 
     #[Test]
+    public function a_completed_running_site_is_not_failed_because_a_later_ssh_listing_flaked(): void
+    {
+        $reseller = User::factory()->reseller()->create();
+        $customer = User::factory()->customer()->create(['reseller_id' => $reseller->id]);
+        $container = Product::factory()->containerHosting()->create();
+        $host = Node::factory()->containerHost()->create(['ip_address' => '95.217.230.115']);
+        $service = Service::factory()->create([
+            'user_id' => $customer->id,
+            'reseller_id' => $reseller->id,
+            'product_id' => $container->id,
+            'provisioning_driver_key' => 'container',
+            'status' => 'active',
+            'name' => 'jameskahiga.com',
+            'external_reference' => 'jamesk',
+            'service_meta' => [
+                'username' => 'jamesk',
+                'domain' => 'jameskahiga.com',
+                'da_legacy' => ['username' => 'jamesk'],
+                'da_convert' => [
+                    'status' => 'completed',
+                    'completed_at' => now()->toIso8601String(),
+                    'steps' => [
+                        'Convert complete. Next due 2027-07-25 · renewal will bill Application Hosting (~5,400.00). 1 extra site(s) queued as sibling containers on this package. Mail pulled to Mailcow.',
+                    ],
+                ],
+            ],
+        ]);
+        ContainerDeployment::factory()->create([
+            'service_id' => $service->id,
+            'node_id' => $host->id,
+            'status' => 'running',
+            'domain' => 'jameskahiga.com',
+        ]);
+        $batch = DaConvertBatch::query()->create([
+            'reseller_user_id' => $reseller->id,
+            'admin_user_id' => User::factory()->admin()->create()->id,
+            'product_id' => $container->id,
+            'status' => 'failed',
+        ]);
+        DaConvertBatchItem::query()->create([
+            'da_convert_batch_id' => $batch->id,
+            'service_id' => $service->id,
+            'status' => DaConvertBatchItemStatus::WaitingMx,
+            'mailbox_count' => 6,
+            'hostname' => 'jameskahiga.com',
+        ]);
+        DaConvertBatchItem::query()->create([
+            'da_convert_batch_id' => $batch->id,
+            'service_id' => $service->id,
+            'status' => DaConvertBatchItemStatus::Failed,
+            'mailbox_count' => 6,
+            'hostname' => 'jameskahiga.com',
+            'error' => "SSH command failed: if [ -d '/home/jamesk/domains' ]; then find '/home/jamesk/domains'",
+        ]);
+
+        $offramp = $this->offramp(
+            Mockery::mock(ContainerDomainBindingService::class),
+            Mockery::mock(DomainCloudflareDnsService::class),
+            Mockery::mock(NginxProxyService::class),
+        );
+        $row = $offramp->presentBoardAccount($reseller, [
+            'key' => 'da:jamesk',
+            'service' => $service->fresh(['containerDeployment']),
+            'domain' => 'jameskahiga.com',
+        ]);
+
+        $this->assertTrue($offramp->convertLooksComplete($service->fresh(['containerDeployment'])));
+        $this->assertFalse($offramp->isFailedConvert($service->fresh(['containerDeployment'])));
+        $this->assertSame('waiting_mx', $row['status']);
+        $this->assertSame('Waiting on MX', $row['status_label']);
+        $this->assertFalse($row['can_retry']);
+        $this->assertTrue($row['can_cut_dns']);
+        $this->assertNull($row['error']);
+        $this->assertStringContainsString('Convert complete.', (string) $row['step']);
+    }
+
+    #[Test]
     public function convert_job_serializes_per_directadmin_node(): void
     {
         $node = Node::factory()->directAdmin()->create();

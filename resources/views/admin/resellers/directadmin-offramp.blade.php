@@ -136,7 +136,7 @@
                                         ></span>
                                         <p class="text-xs text-slate-500 mt-1" x-show="row(@js($account['key']))?.step" x-text="row(@js($account['key']))?.step"></p>
                                         <p class="text-xs text-red-700 mt-1" x-show="row(@js($account['key']))?.error" x-text="row(@js($account['key']))?.error"></p>
-                                        @if ($map['needs_price'] ?? false)
+                                        @if (($map['needs_price'] ?? false) && ($account['can_queue'] ?? false))
                                             <p class="text-xs text-amber-700 mt-1">Listing has no retail price yet</p>
                                         @endif
                                     </td>
