@@ -33,7 +33,12 @@
 
             <div class="flex flex-wrap gap-3">
                 <a href="{{ route('reseller.dashboard.directadmin.panel-login') }}" class="px-4 py-2 bg-brand-500 hover:bg-brand-400 text-ink-950 text-sm font-semibold rounded-lg">Open DirectAdmin</a>
-                <a href="{{ route('reseller.customers.index') }}" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg">Customer directory</a>
+                <form method="POST" action="{{ route('reseller.catalog.import-directadmin') }}" data-confirm="Import your DirectAdmin packages into your catalog? Existing names and prices are kept. New packages are created at 0 until you set a price.">
+                    @csrf
+                    <button type="submit" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg">Import packages into catalog</button>
+                </form>
+                <a href="{{ route('reseller.catalog.index') }}" class="px-4 py-2 border border-slate-300 dark:border-slate-600 text-sm font-medium rounded-lg">Open catalog</a>
+                <a href="{{ route('reseller.customers.index') }}" class="px-4 py-2 border border-slate-300 dark:border-slate-600 text-sm font-medium rounded-lg">Customer directory</a>
                 <a href="{{ route('reseller.customers.index', ['refresh' => 1]) }}" class="px-4 py-2 border border-slate-300 dark:border-slate-600 text-sm font-medium rounded-lg">Refresh from DirectAdmin</a>
                 <a href="{{ route('dashboard') }}" class="px-4 py-2 border border-slate-300 dark:border-slate-600 text-sm font-medium rounded-lg">Server pulse on dashboard</a>
             </div>

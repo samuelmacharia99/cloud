@@ -39,13 +39,24 @@
         <div class="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{{ $errors->first() }}</div>
     @endif
 
+    <form id="da-import-packages" method="POST" action="{{ route('admin.resellers.directadmin-offramp.import-packages', $reseller) }}">
+        @csrf
+    </form>
     <form method="POST" action="{{ route('admin.resellers.directadmin-offramp.store', $reseller) }}" class="space-y-6">
         @csrf
         <div class="ui-card p-6">
-            <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center justify-between mb-4 gap-3 flex-wrap">
                 <h2 class="font-semibold text-lg">DirectAdmin accounts</h2>
-                <p class="text-sm text-slate-500">{{ $services->count() }} eligible</p>
+                <div class="flex items-center gap-3">
+                    <p class="text-sm text-slate-500">{{ $services->count() }} eligible</p>
+                    <button form="da-import-packages" class="px-3 py-1.5 border border-slate-300 dark:border-slate-600 rounded-lg text-sm">
+                        Import DA packages
+                    </button>
+                </div>
             </div>
+            <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                Customers stay on this reseller’s catalog names and prices. Import pulls their DirectAdmin packages into Application Hosting listings first.
+            </p>
             @if ($services->isEmpty())
                 <p class="text-sm text-slate-500">No DirectAdmin shared hosting services are linked to this reseller.</p>
             @else
@@ -57,6 +68,7 @@
                                 <th class="py-2 pr-4">Service</th>
                                 <th class="py-2 pr-4">Customer</th>
                                 <th class="py-2 pr-4">Domain / node</th>
+                                <th class="py-2 pr-4">DA package → listing</th>
                                 <th class="py-2 pr-4">Captured</th>
                                 <th class="py-2">Convert status</th>
                             </tr>
@@ -80,6 +92,22 @@
                                         <div class="text-slate-500">{{ $service->node?->name ?? 'no node' }}</div>
                                     </td>
                                     <td class="py-3 pr-4 text-xs">
+                                        @php $map = $packageMap[$service->id] ?? null; @endphp
+                                        <div>{{ $map['da_package'] ?: '—' }}</div>
+                                        <div class="text-slate-500">
+                                            {{ $map['listing']?->name ?? 'Import packages first' }}
+                                            @if (! empty($map['retail']))
+                                                · {{ number_format($map['retail'], 2) }}
+                                            @endif
+                                        </div>
+                                        @if ($map['engine'] ?? null)
+                                            <div class="text-slate-400">Size: {{ $map['engine']->name }}</div>
+                                        @endif
+                                        @if ($map['needs_price'] ?? false)
+                                            <div class="text-amber-700">Listing has no retail price yet</div>
+                                        @endif
+                                    </td>
+                                    <td class="py-3 pr-4 text-xs">
                                         @if ($service->latestDaAccountSnapshot?->isCaptured())
                                             {{ $service->latestDaAccountSnapshot->dns_record_count }} DNS
                                             · {{ $service->latestDaAccountSnapshot->mailbox_count }} mail
@@ -101,13 +129,14 @@
             <h2 class="font-semibold text-lg">Shared convert settings</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                    <label class="block text-sm font-medium mb-1">Application Hosting product</label>
+                    <label class="block text-sm font-medium mb-1">Fallback Application Hosting size</label>
                     <select name="product_id" required class="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm">
-                        <option value="">Select a plan</option>
+                        <option value="">Select a size</option>
                         @foreach ($containerProducts as $product)
                             <option value="{{ $product->id }}" @selected(old('product_id') == $product->id)>{{ $product->name }}</option>
                         @endforeach
                     </select>
+                    <p class="text-xs text-slate-500 mt-1">Used only when a listing has no container template yet. Retail price still comes from the reseller catalog.</p>
                 </div>
                 <div>
                     <label class="block text-sm font-medium mb-1">Email Hosting product (if mailboxes exist)</label>

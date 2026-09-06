@@ -681,7 +681,7 @@ class DirectAdminToContainerConvertService
                 $meta['bundled_email_service_id'] = $emailServiceId;
             }
 
-            $steps[] = 'Switching service product to Application Hosting (keeping due date; clearing custom price)';
+            $steps[] = 'Switching service product to Application Hosting (keeping due date and reseller price)';
             $this->appendConvertStep($service, $steps);
 
             $siblingIds = [];
@@ -694,7 +694,7 @@ class DirectAdminToContainerConvertService
                 $service->update([
                     'product_id' => $containerProduct->id,
                     'provisioning_driver_key' => 'container',
-                    'custom_price' => null,
+                    'custom_price' => $service->custom_price,
                     'node_id' => null,
                     'status' => 'provisioning',
                     'name' => $primaryHostname !== '' ? mb_substr($primaryHostname, 0, 100) : $service->name,

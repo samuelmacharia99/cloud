@@ -277,6 +277,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/resellers/{user}/directadmin/disconnect', [ResellerController::class, 'disconnectDirectAdmin'])->name('admin.resellers.directadmin.disconnect');
         Route::get('admin/resellers/{user}/directadmin/panel-login', [ResellerController::class, 'directAdminPanelLogin'])->middleware('throttle:10,1')->name('admin.resellers.directadmin.panel-login');
         Route::get('admin/resellers/{user}/directadmin-offramp', [DaConvertOfframpController::class, 'show'])->name('admin.resellers.directadmin-offramp');
+        Route::post('admin/resellers/{user}/directadmin-offramp/import-packages', [DaConvertOfframpController::class, 'importPackages'])->middleware('throttle:10,1')->name('admin.resellers.directadmin-offramp.import-packages');
         Route::post('admin/resellers/{user}/directadmin-offramp', [DaConvertOfframpController::class, 'store'])->middleware('throttle:10,1')->name('admin.resellers.directadmin-offramp.store');
         Route::post('admin/resellers/{user}/directadmin-offramp/{batch}/cut-dns', [DaConvertOfframpController::class, 'cutDns'])->middleware('throttle:10,1')->name('admin.resellers.directadmin-offramp.cut-dns');
         Route::get('admin/settings', [SettingController::class, 'index'])->name('admin.settings.index');
@@ -558,6 +559,9 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
             Route::post('reseller/directadmin-accounts/bulk-link', [App\Http\Controllers\Reseller\HostedDirectAdminAccountController::class, 'bulkLink'])->name('reseller.directadmin-accounts.bulk-link');
             Route::post('reseller/services/{service}/connect-billing', [App\Http\Controllers\Reseller\HostedDirectAdminAccountController::class, 'connectBilling'])->name('reseller.directadmin-accounts.connect-billing');
             Route::get('reseller/directadmin-accounts/catalog-options', [App\Http\Controllers\Reseller\HostedDirectAdminAccountController::class, 'catalogOptions'])->name('reseller.directadmin-accounts.catalog-options');
+            Route::post('reseller/catalog/import-directadmin', [CatalogController::class, 'importDirectAdmin'])
+                ->middleware('throttle:10,1')
+                ->name('reseller.catalog.import-directadmin');
             Route::resource('reseller/catalog', CatalogController::class)
                 ->parameters(['catalog' => 'catalogItem'])
                 ->names('reseller.catalog');

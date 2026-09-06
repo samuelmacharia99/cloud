@@ -11,6 +11,8 @@ class DaConvertBatchItem extends Model
     protected $fillable = [
         'da_convert_batch_id',
         'service_id',
+        'reseller_product_id',
+        'product_id',
         'status',
         'detected_stack',
         'mailbox_count',
@@ -44,5 +46,15 @@ class DaConvertBatchItem extends Model
     public function service(): BelongsTo
     {
         return $this->belongsTo(Service::class);
+    }
+
+    public function listing(): BelongsTo
+    {
+        return $this->belongsTo(ResellerProduct::class, 'reseller_product_id');
+    }
+
+    public function product(): BelongsTo
+    {
+        return $this->belongsTo(Product::class);
     }
 }

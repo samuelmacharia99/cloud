@@ -44,7 +44,7 @@ class QueueDaConvertBatchRequest extends FormRequest
     {
         return [
             'service_ids.required' => 'Select at least one DirectAdmin account to convert.',
-            'product_id.required' => 'Select the Application Hosting plan these accounts will renew on.',
+            'product_id.required' => 'Select a fallback Application Hosting size. Each account still stays on the reseller’s catalog price.',
             'confirm_silent.accepted' => 'Confirm this silent batch convert before queueing it.',
         ];
     }

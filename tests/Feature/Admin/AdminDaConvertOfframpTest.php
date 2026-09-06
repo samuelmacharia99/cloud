@@ -9,11 +9,13 @@ use App\Models\DaConvertBatch;
 use App\Models\DaConvertBatchItem;
 use App\Models\Product;
 use App\Models\ResellerPackage;
+use App\Models\ResellerProduct;
 use App\Models\Service;
 use App\Models\User;
 use App\Services\Provisioning\DaAccountSnapshotService;
 use App\Services\Provisioning\DaConvertOfframpService;
 use App\Services\Provisioning\DirectAdminToContainerConvertService;
+use App\Services\ResellerDirectAdminService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Bus;
 use Mockery;
@@ -32,7 +34,72 @@ class AdminDaConvertOfframpTest extends TestCase
             ->assertOk()
             ->assertSee('DirectAdmin off-ramp')
             ->assertSee($ready->name)
-            ->assertSee('Queue selected converts');
+            ->assertSee('Queue selected converts')
+            ->assertSee('Import DA packages');
+    }
+
+    public function test_admin_imports_directadmin_packages_into_reseller_catalog(): void
+    {
+        [$admin, $reseller] = $this->board();
+        Product::factory()->containerHosting()->create(['name' => 'App Hosting Medium']);
+        $da = Mockery::mock(ResellerDirectAdminService::class);
+        $da->shouldReceive('listAssignablePackages')->andReturn([
+            'packages' => [['name' => 'Business', 'disk_quota' => 15, 'description' => 'DA']],
+            'error' => null,
+        ]);
+        $this->app->instance(ResellerDirectAdminService::class, $da);
+
+        $this->actingAs($admin)
+            ->post(route('admin.resellers.directadmin-offramp.import-packages', $reseller))
+            ->assertRedirect(route('admin.resellers.directadmin-offramp', $reseller))
+            ->assertSessionHas('success');
+
+        $listing = ResellerProduct::query()->where('reseller_id', $reseller->id)->first();
+        $this->assertNotNull($listing);
+        $this->assertSame('Business', $listing->direct_admin_package_name);
+        $this->assertSame('container_hosting', $listing->type);
+    }
+
+    public function test_queue_uses_the_listing_container_size_and_keeps_reseller_price(): void
+    {
+        Bus::fake();
+        [$admin, $reseller, $ready, , $fallback] = $this->board();
+        $ready->update([
+            'custom_price' => 3200,
+            'billing_cycle' => 'monthly',
+            'service_meta' => array_merge($ready->service_meta ?? [], ['package_name' => 'Business']),
+        ]);
+        $listingEngine = Product::factory()->containerHosting()->create(['name' => 'App Hosting Large']);
+        $listing = ResellerProduct::query()->create([
+            'reseller_id' => $reseller->id,
+            'product_id' => $listingEngine->id,
+            'name' => 'Business',
+            'type' => 'container_hosting',
+            'direct_admin_package_name' => 'Business',
+            'monthly_price' => 3200,
+            'is_active' => true,
+        ]);
+        $this->bindConvertMock($fallback, [
+            $ready->id => $this->preflightOk(),
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('admin.resellers.directadmin-offramp.store', $reseller), [
+                'service_ids' => [$ready->id],
+                'product_id' => $fallback->id,
+                'acknowledge_mail_pull' => '1',
+                'acknowledge_addon_sites' => '1',
+                'confirm_silent' => '1',
+            ])
+            ->assertRedirect(route('admin.resellers.directadmin-offramp', $reseller));
+
+        Bus::assertDispatched(ConvertDirectAdminServiceToContainerJob::class, function (ConvertDirectAdminServiceToContainerJob $job) use ($ready, $listingEngine): bool {
+            return $job->serviceId === $ready->id && $job->productId === $listingEngine->id;
+        });
+        $ready->refresh();
+        $this->assertEquals(3200, (float) $ready->custom_price);
+        $this->assertSame($listing->id, (int) $ready->reseller_product_id);
+        $this->assertSame($listing->id, (int) ($ready->service_meta['reseller_product_id'] ?? 0));
     }
 
     public function test_admin_queues_ready_accounts_and_skips_blockers(): void
@@ -166,6 +233,10 @@ class AdminDaConvertOfframpTest extends TestCase
                 'product_id' => $container->id,
                 'confirm_silent' => '1',
             ])
+            ->assertForbidden();
+
+        $this->actingAs($customer)
+            ->post(route('admin.resellers.directadmin-offramp.import-packages', $reseller))
             ->assertForbidden();
     }
 

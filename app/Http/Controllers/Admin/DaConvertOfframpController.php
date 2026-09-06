@@ -5,11 +5,13 @@ namespace App\Http\Controllers\Admin;
 use App\Enums\DaConvertBatchItemStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\CutoverDaConvertBatchRequest;
+use App\Http\Requests\Admin\ImportDaResellerPackagesRequest;
 use App\Http\Requests\Admin\QueueDaConvertBatchRequest;
 use App\Models\DaConvertBatch;
 use App\Models\Product;
 use App\Models\User;
 use App\Services\Provisioning\DaConvertOfframpService;
+use App\Services\Provisioning\DaResellerPackageImportService;
 use App\Services\Provisioning\DirectAdminToContainerConvertService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\View\View;
@@ -20,10 +22,12 @@ class DaConvertOfframpController extends Controller
         User $user,
         DaConvertOfframpService $offramp,
         DirectAdminToContainerConvertService $convert,
+        DaResellerPackageImportService $packages,
     ): View {
         abort_if(! $user->is_reseller, 404);
 
         $services = $offramp->eligibleServices($user);
+        $packageMap = $packages->mappingForServices($user, $services);
         $batches = DaConvertBatch::query()
             ->where('reseller_user_id', $user->id)
             ->with(['items.service.user', 'items.service.containerDeployment.node', 'items.service.containerDeployment.domains', 'product'])
@@ -54,10 +58,36 @@ class DaConvertOfframpController extends Controller
         return view('admin.resellers.directadmin-offramp', [
             'reseller' => $user,
             'services' => $services,
+            'packageMap' => $packageMap->keyBy(fn (array $row) => (int) $row['service']->id),
             'batches' => $batches,
             'containerProducts' => $catalog['products'],
             'emailProducts' => $emailProducts,
         ]);
+    }
+
+    public function importPackages(
+        ImportDaResellerPackagesRequest $request,
+        User $user,
+        DaResellerPackageImportService $packages,
+    ): RedirectResponse {
+        abort_if(! $user->is_reseller, 404);
+
+        try {
+            $result = $packages->import($user, $request->user());
+        } catch (\InvalidArgumentException $e) {
+            return back()->withErrors(['error' => $e->getMessage()]);
+        } catch (\Throwable $e) {
+            return back()->withErrors(['error' => $e->getMessage()]);
+        }
+
+        return redirect()
+            ->route('admin.resellers.directadmin-offramp', $user)
+            ->with('success', sprintf(
+                'Imported DirectAdmin packages into %s’s catalog: %d created, %d updated. Customer prices were left as they already sell them.',
+                $user->name,
+                $result['created'],
+                $result['updated']
+            ));
     }
 
     public function store(

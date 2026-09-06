@@ -14,15 +14,31 @@
 
 @section('content')
 <div class="space-y-6">
+    @if (session('success'))
+        <div class="rounded-xl border border-emerald-200 bg-emerald-50 dark:bg-emerald-950/40 p-4 text-sm text-emerald-900 dark:text-emerald-100">{{ session('success') }}</div>
+    @endif
+    @if (session('error'))
+        <div class="rounded-xl border border-red-200 bg-red-50 dark:bg-red-950/40 p-4 text-sm text-red-800 dark:text-red-200">{{ session('error') }}</div>
+    @endif
     <!-- Header -->
     <div class="flex items-center justify-between">
         <div>
             <h1 class="text-3xl font-bold text-slate-900 dark:text-white">My Catalog</h1>
             <p class="text-slate-600 dark:text-slate-400 mt-1">Create and manage products for your customers.</p>
         </div>
-        <a href="{{ route('reseller.catalog.create') }}" class="px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition">
-            + Add to Catalog
-        </a>
+        <div class="flex flex-wrap items-center gap-2">
+            @if ($canImportDirectAdmin ?? false)
+                <form method="POST" action="{{ route('reseller.catalog.import-directadmin') }}" data-confirm="Import your DirectAdmin packages into this catalog? Existing names and prices are kept. New packages are created at 0 until you set a price.">
+                    @csrf
+                    <button type="submit" class="px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-slate-100 font-medium rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition">
+                        Import from DirectAdmin
+                    </button>
+                </form>
+            @endif
+            <a href="{{ route('reseller.catalog.create') }}" class="px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition">
+                + Add to Catalog
+            </a>
+        </div>
     </div>
 
     <!-- Table Section -->
@@ -55,12 +71,13 @@
                                 <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
                                     @if ($item->type === 'container_hosting' && $item->adminProduct?->containerTemplate)
                                         {{ $item->adminProduct->containerTemplate->name }}
-                                    @elseif ($item->type === 'shared_hosting')
-                                        @if (filled($item->direct_admin_package_name))
-                                            <span class="font-mono text-xs text-slate-700 dark:text-slate-300">{{ $item->direct_admin_package_name }}</span>
-                                        @else
-                                            <span class="text-amber-600 dark:text-amber-400 text-xs font-medium">DA package not mapped</span>
+                                    @elseif (filled($item->direct_admin_package_name))
+                                        <span class="font-mono text-xs text-slate-700 dark:text-slate-300">{{ $item->direct_admin_package_name }}</span>
+                                        @if ($item->type === 'container_hosting')
+                                            <span class="block text-[11px] text-slate-400">from DirectAdmin</span>
                                         @endif
+                                    @elseif ($item->type === 'shared_hosting')
+                                        <span class="text-amber-600 dark:text-amber-400 text-xs font-medium">DA package not mapped</span>
                                     @else
                                         <span class="text-slate-400">—</span>
                                     @endif
@@ -151,10 +168,18 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4m0 0L4 7m16 0l-8 4m0 0l8 4m-8-4v10m0 0l-8-4m0 0v10"></path>
                 </svg>
                 <h3 class="mt-4 text-lg font-semibold text-slate-900 dark:text-white">No catalog items yet</h3>
-                <p class="mt-1 text-slate-600 dark:text-slate-400">Get started by adding your first product to your catalog.</p>
-                <a href="{{ route('reseller.catalog.create') }}" class="mt-4 inline-block px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition">
-                    Add First Product
-                </a>
+                <p class="mt-1 text-slate-600 dark:text-slate-400">Add a product, or import the packages you already sell on DirectAdmin.</p>
+                <div class="mt-4 flex flex-wrap items-center justify-center gap-2">
+                    @if ($canImportDirectAdmin ?? false)
+                        <form method="POST" action="{{ route('reseller.catalog.import-directadmin') }}" data-confirm="Import your DirectAdmin packages into this catalog? Existing names and prices are kept.">
+                            @csrf
+                            <button type="submit" class="px-6 py-2 border border-slate-300 dark:border-slate-600 font-medium rounded-lg">Import from DirectAdmin</button>
+                        </form>
+                    @endif
+                    <a href="{{ route('reseller.catalog.create') }}" class="inline-block px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition">
+                        Add First Product
+                    </a>
+                </div>
             </div>
         @endif
     </div>

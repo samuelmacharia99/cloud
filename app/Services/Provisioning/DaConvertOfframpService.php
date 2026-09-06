@@ -8,6 +8,7 @@ use App\Jobs\ConvertDirectAdminServiceToContainerJob;
 use App\Models\DaConvertBatch;
 use App\Models\DaConvertBatchItem;
 use App\Models\Product;
+use App\Models\ResellerProduct;
 use App\Models\Service;
 use App\Models\User;
 use App\Services\AdminActivityService;
@@ -28,6 +29,7 @@ class DaConvertOfframpService
         private DomainCloudflareDnsService $cloudflare,
         private NginxProxyService $nginx,
         private DaAccountSnapshotService $snapshots,
+        private DaResellerPackageImportService $packages,
     ) {}
 
     /**
@@ -59,8 +61,8 @@ class DaConvertOfframpService
             throw new InvalidArgumentException('Only a reseller book can be converted in batch.');
         }
 
-        if ($product->type !== 'container_hosting' || ! $product->is_active) {
-            throw new InvalidArgumentException('Select an active Application Hosting product.');
+        if ($product && ($product->type !== 'container_hosting' || ! $product->is_active)) {
+            throw new InvalidArgumentException('Select an active Application Hosting product as the fallback container size.');
         }
 
         $wanted = array_values(array_unique(array_map('intval', $serviceIds)));
@@ -94,6 +96,24 @@ class DaConvertOfframpService
             }
         }
 
+        foreach ($prepared as $index => $row) {
+            if ($row['status'] !== DaConvertBatchItemStatus::Queued) {
+                continue;
+            }
+
+            $mapped = $this->packages->resolveForService($reseller, $row['service'], $product);
+            $prepared[$index]['listing'] = $mapped['listing'];
+            $prepared[$index]['engine'] = $mapped['engine'];
+            $prepared[$index]['retail'] = $mapped['retail'];
+            $prepared[$index]['da_package'] = $mapped['da_package'];
+
+            if (! $mapped['engine']) {
+                $prepared[$index]['status'] = DaConvertBatchItemStatus::Blocked;
+                $prepared[$index]['error'] = 'Import this reseller’s DirectAdmin packages first, or choose a fallback Application Hosting size.';
+                $prepared[$index]['blockers'][] = $prepared[$index]['error'];
+            }
+        }
+
         $toQueue = array_values(array_filter(
             $prepared,
             fn (array $row): bool => $row['status'] === DaConvertBatchItemStatus::Queued
@@ -103,7 +123,8 @@ class DaConvertOfframpService
             $stack = (string) ($row['detected_stack'] ?: 'php');
             $sites = 1 + (int) ($row['addon_site_count'] ?? 0);
             $share = $sites > 1 ? round(1 / $sites, 4) : 1.0;
-            $this->convert->assertHostCapacityForConvert($row['service'], $product, $stack, $share);
+            $engine = $row['engine'] ?? $product;
+            $this->convert->assertHostCapacityForConvert($row['service'], $engine, $stack, $share);
         }
 
         $batch = DB::transaction(function () use (
@@ -132,9 +153,13 @@ class DaConvertOfframpService
 
             foreach ($prepared as $row) {
                 $service = $row['service'];
+                $engine = $row['engine'] ?? $product;
+                $listing = $row['listing'] ?? null;
                 DaConvertBatchItem::query()->create([
                     'da_convert_batch_id' => $batch->id,
                     'service_id' => $service->id,
+                    'reseller_product_id' => $listing?->id,
+                    'product_id' => $engine?->id,
                     'status' => $row['status'],
                     'detected_stack' => $row['detected_stack'],
                     'mailbox_count' => $row['mailbox_count'],
@@ -144,8 +169,8 @@ class DaConvertOfframpService
                     'hostname' => $row['hostname'],
                 ]);
 
-                if ($row['status'] === DaConvertBatchItemStatus::Queued) {
-                    $this->markServiceQueued($service, $product, $row['detected_stack']);
+                if ($row['status'] === DaConvertBatchItemStatus::Queued && $engine) {
+                    $this->markServiceQueued($service, $engine, $row['detected_stack'], $listing, $row['retail'] ?? null);
                 }
             }
 
@@ -159,7 +184,7 @@ class DaConvertOfframpService
 
             ConvertDirectAdminServiceToContainerJob::dispatch(
                 (int) $item->service_id,
-                (int) $product->id,
+                (int) ($item->product_id ?: $product->id),
                 $acknowledgeMailPull,
                 null,
                 $acknowledgeAddonSites,
@@ -485,20 +510,40 @@ class DaConvertOfframpService
         return $service->provisioningDriver() === 'container';
     }
 
-    private function markServiceQueued(Service $service, Product $product, ?string $stack): void
-    {
+    private function markServiceQueued(
+        Service $service,
+        Product $product,
+        ?string $stack,
+        ?ResellerProduct $listing = null,
+        ?float $retail = null,
+    ): void {
         $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        if ($listing) {
+            $meta['reseller_product_id'] = $listing->id;
+        }
         $meta['da_convert'] = [
             'status' => 'queued',
             'mode' => 'convert_in_place',
             'queued_at' => now()->toIso8601String(),
             'target_product_id' => $product->id,
             'target_product_name' => $product->name,
+            'reseller_product_id' => $listing?->id,
+            'reseller_product_name' => $listing?->name,
             'renewal_due_date' => optional($service->next_due_date)->toDateString(),
             'stack' => $stack,
             'quiet' => true,
             'no_invoice' => true,
+            'keep_reseller_price' => true,
         ];
-        $service->update(['service_meta' => $meta]);
+
+        $updates = ['service_meta' => $meta];
+        if ($listing) {
+            $updates['reseller_product_id'] = $listing->id;
+        }
+        if ($service->custom_price === null && $retail !== null && $retail > 0) {
+            $updates['custom_price'] = $retail;
+        }
+
+        $service->update($updates);
     }
 }

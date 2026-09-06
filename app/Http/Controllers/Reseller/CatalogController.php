@@ -3,11 +3,14 @@
 namespace App\Http\Controllers\Reseller;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Reseller\ImportDaPackagesRequest;
 use App\Models\Product;
 use App\Models\ResellerProduct;
 use App\Models\Service;
+use App\Services\Provisioning\DaResellerPackageImportService;
 use App\Services\ResellerDirectAdminService;
 use App\Services\ResellerDiskUsageService;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -30,7 +33,32 @@ class CatalogController extends Controller
             ->with('adminProduct.containerTemplate')
             ->paginate(15);
 
-        return view('reseller.catalog.index', compact('catalogItems'));
+        return view('reseller.catalog.index', [
+            'catalogItems' => $catalogItems,
+            'canImportDirectAdmin' => $this->resellerDirectAdmin->hasDirectAdminBinding(auth()->user()),
+        ]);
+    }
+
+    public function importDirectAdmin(
+        ImportDaPackagesRequest $request,
+        DaResellerPackageImportService $packages,
+    ): RedirectResponse {
+        try {
+            $result = $packages->import($request->user(), $request->user());
+        } catch (\InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage());
+        } catch (\Throwable $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return redirect()
+            ->route('reseller.catalog.index')
+            ->with('success', sprintf(
+                'Imported %d DirectAdmin package(s) into your catalog (%d new, %d updated). Existing prices were kept. Set a price on any listing that shows 0 before customers renew.',
+                $result['listings']->count(),
+                $result['created'],
+                $result['updated']
+            ));
     }
 
     public function create()

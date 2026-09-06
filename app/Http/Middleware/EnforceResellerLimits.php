@@ -20,6 +20,7 @@ class EnforceResellerLimits
         'reseller.catalog.edit',
         'reseller.catalog.update',
         'reseller.catalog.destroy',
+        'reseller.catalog.import-directadmin',
         'reseller.domains.index',
         'reseller.domains.show',
         'reseller.domains.nameservers',

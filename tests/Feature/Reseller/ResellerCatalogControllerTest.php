@@ -7,7 +7,9 @@ use App\Models\Product;
 use App\Models\ResellerPackage;
 use App\Models\ResellerProduct;
 use App\Models\User;
+use App\Services\ResellerDirectAdminService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Mockery;
 use Tests\TestCase;
 
 class ResellerCatalogControllerTest extends TestCase
@@ -201,7 +203,7 @@ class ResellerCatalogControllerTest extends TestCase
         $reseller = $this->reseller();
         $template = ContainerTemplate::factory()->create([
             'name' => 'Go',
-            'slug' => 'go',
+            'slug' => 'go-retail-stack',
             'hosting_type' => 'container',
             'is_active' => true,
         ]);
@@ -226,6 +228,111 @@ class ResellerCatalogControllerTest extends TestCase
             ->get(route('reseller.catalog.index'))
             ->assertOk()
             ->assertSee('Go')
-            ->assertSee('Go Retail Plan');
+            ->assertSee('Go Retail Plan')
+            ->assertDontSee('Import from DirectAdmin');
+    }
+
+    public function test_reseller_imports_directadmin_packages_into_own_catalog(): void
+    {
+        $reseller = $this->reseller();
+        Product::factory()->containerHosting()->create([
+            'name' => 'App Medium',
+            'is_active' => true,
+            'resource_limits' => ['disk' => 20],
+        ]);
+        $da = Mockery::mock(ResellerDirectAdminService::class);
+        $da->shouldReceive('hasDirectAdminBinding')->andReturn(true);
+        $da->shouldReceive('listAssignablePackages')->andReturn([
+            'packages' => [['name' => 'Business', 'disk_quota' => 20, 'description' => 'DA business']],
+            'error' => null,
+        ]);
+        $this->app->instance(ResellerDirectAdminService::class, $da);
+
+        $this->actingAs($reseller)
+            ->get(route('reseller.catalog.index'))
+            ->assertOk()
+            ->assertSee('Import from DirectAdmin');
+
+        $this->actingAs($reseller)
+            ->post(route('reseller.catalog.import-directadmin'))
+            ->assertRedirect(route('reseller.catalog.index'))
+            ->assertSessionHas('success');
+
+        $listing = ResellerProduct::query()->where('reseller_id', $reseller->id)->first();
+        $this->assertNotNull($listing);
+        $this->assertSame('Business', $listing->direct_admin_package_name);
+        $this->assertSame('container_hosting', $listing->type);
+        $this->assertSame(0.0, (float) $listing->monthly_price);
+    }
+
+    public function test_reseller_import_keeps_existing_catalog_prices(): void
+    {
+        $reseller = $this->reseller();
+        Product::factory()->containerHosting()->create([
+            'name' => 'App Medium',
+            'is_active' => true,
+            'resource_limits' => ['disk' => 20],
+        ]);
+        ResellerProduct::query()->create([
+            'reseller_id' => $reseller->id,
+            'name' => 'Business',
+            'type' => 'shared_hosting',
+            'direct_admin_package_name' => 'Business',
+            'monthly_price' => 3200,
+            'yearly_price' => 32000,
+            'is_active' => true,
+        ]);
+        $da = Mockery::mock(ResellerDirectAdminService::class);
+        $da->shouldReceive('hasDirectAdminBinding')->andReturn(true);
+        $da->shouldReceive('listAssignablePackages')->andReturn([
+            'packages' => [['name' => 'Business', 'disk_quota' => 20]],
+            'error' => null,
+        ]);
+        $this->app->instance(ResellerDirectAdminService::class, $da);
+
+        $this->actingAs($reseller)
+            ->post(route('reseller.catalog.import-directadmin'))
+            ->assertRedirect(route('reseller.catalog.index'))
+            ->assertSessionHas('success');
+
+        $listing = ResellerProduct::query()->where('reseller_id', $reseller->id)->first();
+        $this->assertSame('container_hosting', $listing->type);
+        $this->assertSame(3200.0, (float) $listing->monthly_price);
+        $this->assertSame(32000.0, (float) $listing->yearly_price);
+    }
+
+    public function test_customer_cannot_import_directadmin_packages(): void
+    {
+        $customer = User::factory()->customer()->create();
+
+        $this->actingAs($customer)
+            ->post(route('reseller.catalog.import-directadmin'))
+            ->assertForbidden();
+    }
+
+    public function test_over_limit_reseller_can_still_import_directadmin_packages(): void
+    {
+        $reseller = $this->reseller();
+        $reseller->resellerPackage?->update(['max_users' => 1]);
+        User::factory()->customer()->create(['reseller_id' => $reseller->id]);
+        Product::factory()->containerHosting()->create([
+            'name' => 'App Medium',
+            'is_active' => true,
+            'resource_limits' => ['disk' => 10],
+        ]);
+        $da = Mockery::mock(ResellerDirectAdminService::class);
+        $da->shouldReceive('hasDirectAdminBinding')->andReturn(true);
+        $da->shouldReceive('listAssignablePackages')->andReturn([
+            'packages' => [['name' => 'Starter', 'disk_quota' => 10]],
+            'error' => null,
+        ]);
+        $this->app->instance(ResellerDirectAdminService::class, $da);
+
+        $this->actingAs($reseller)
+            ->post(route('reseller.catalog.import-directadmin'))
+            ->assertRedirect(route('reseller.catalog.index'))
+            ->assertSessionHas('success');
+
+        $this->assertSame(1, ResellerProduct::query()->where('reseller_id', $reseller->id)->count());
     }
 }

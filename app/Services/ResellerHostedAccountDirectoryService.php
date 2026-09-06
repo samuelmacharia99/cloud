@@ -434,7 +434,7 @@ class ResellerHostedAccountDirectoryService
         ResellerProduct::query()
             ->where('reseller_id', $reseller->id)
             ->where('is_active', true)
-            ->where('type', 'shared_hosting')
+            ->whereIn('type', ['shared_hosting', 'container_hosting'])
             ->get()
             ->each(function (ResellerProduct $listing) use (&$map) {
                 if (filled($listing->direct_admin_package_name)) {
