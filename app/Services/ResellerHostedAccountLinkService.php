@@ -196,6 +196,90 @@ class ResellerHostedAccountLinkService
     }
 
     /**
+     * Link a DirectAdmin user that was never added on Talksasa, creating a customer
+     * named from the domain stem and using info@{domain} as the login/inbox address.
+     *
+     * @return array{customer: User, service: Service, created_customer: bool}
+     */
+    public function linkForOfframp(User $reseller, string $daUsername): array
+    {
+        $daUsername = strtolower(trim($daUsername));
+        $entry = $this->resolveOwnedAccountEntry($reseller, $daUsername);
+        $domain = strtolower(trim((string) ($entry['domain'] ?? '')));
+        if ($domain === '' || ! str_contains($domain, '.')) {
+            throw new \InvalidArgumentException(
+                "DirectAdmin account \"{$daUsername}\" has no default domain, so a platform customer cannot be created."
+            );
+        }
+
+        $profile = $this->offrampCustomerProfile($domain, $daUsername);
+        $existing = User::query()
+            ->where('reseller_id', $reseller->id)
+            ->where('is_reseller', false)
+            ->whereRaw('LOWER(email) = ?', [strtolower($profile['email'])])
+            ->first();
+
+        $result = $this->linkAccount($reseller, $daUsername, [
+            'customer_id' => $existing?->id,
+            'name' => $profile['name'],
+            'email' => $profile['email'],
+            'country' => $reseller->country ?: 'KE',
+        ]);
+
+        $customer = $result['customer'];
+        $created = $existing === null;
+
+        if ($created) {
+            $settings = is_array($customer->settings) ? $customer->settings : [];
+            $settings['da_offramp_created'] = true;
+            $settings['operator_inbox'] = $profile['email'];
+            $customer->update(['settings' => $settings]);
+        }
+
+        return [
+            'customer' => $customer->fresh() ?? $customer,
+            'service' => $result['service'],
+            'created_customer' => $created,
+        ];
+    }
+
+    /**
+     * @return array{name: string, email: string}
+     */
+    public function offrampCustomerProfile(string $domain, string $username): array
+    {
+        return [
+            'name' => $this->customerNameFromDomain($domain, $username),
+            'email' => $this->infoInboxEmail($domain),
+        ];
+    }
+
+    public function customerNameFromDomain(string $domain, string $username = ''): string
+    {
+        $host = strtolower(trim($domain));
+        $host = preg_replace('/^www\./', '', $host) ?? $host;
+        $label = explode('.', $host)[0] ?? '';
+        $label = preg_replace('/[^a-z0-9]+/', '', $label) ?? '';
+        if ($label === '') {
+            $label = preg_replace('/[^a-z0-9]+/', '', strtolower($username)) ?: 'customer';
+        }
+
+        return Str::title(substr($label, 0, 8));
+    }
+
+    public function infoInboxEmail(string $domain): string
+    {
+        $host = strtolower(trim($domain));
+        $host = preg_replace('/^www\./', '', $host) ?? $host;
+        $host = rtrim($host, '.');
+        if ($host === '' || ! str_contains($host, '.')) {
+            throw new \InvalidArgumentException('A default domain is required to create info@… for this account.');
+        }
+
+        return 'info@'.$host;
+    }
+
+    /**
      * @return array{username: string, domain: ?string, package: ?string, email: ?string, name: ?string, suspended: bool}
      */
     private function resolveOwnedAccountEntry(User $reseller, string $daUsername): array

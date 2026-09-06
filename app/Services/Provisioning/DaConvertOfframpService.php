@@ -7,15 +7,19 @@ use App\Enums\DaConvertBatchStatus;
 use App\Jobs\ConvertDirectAdminServiceToContainerJob;
 use App\Models\DaConvertBatch;
 use App\Models\DaConvertBatchItem;
+use App\Models\Domain;
 use App\Models\Product;
 use App\Models\ResellerProduct;
 use App\Models\Service;
 use App\Models\User;
 use App\Services\AdminActivityService;
 use App\Services\Dns\DomainCloudflareDnsService;
+use App\Services\ResellerDirectAdminService;
+use App\Services\ResellerHostedAccountLinkService;
 use App\Services\ResellerScopeService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 
 class DaConvertOfframpService
@@ -31,6 +35,9 @@ class DaConvertOfframpService
         private DaAccountSnapshotService $snapshots,
         private DaResellerPackageImportService $packages,
         private DirectAdminMailPullProgress $mailPull,
+        private ResellerDirectAdminService $resellerDirectAdmin,
+        private ResellerHostedAccountLinkService $linker,
+        private MailcowProvisioningService $mailcow,
     ) {}
 
     /**
@@ -39,7 +46,7 @@ class DaConvertOfframpService
     public function eligibleServices(User $reseller): Collection
     {
         return $this->scope->managedServicesQuery($reseller)
-            ->with(['user', 'product', 'node', 'latestDaAccountSnapshot'])
+            ->with(['user', 'product', 'node', 'latestDaAccountSnapshot', 'containerDeployment'])
             ->orderBy('id')
             ->get()
             ->filter(fn (Service $service): bool => $service->isSharedHosting())
@@ -47,7 +54,63 @@ class DaConvertOfframpService
     }
 
     /**
+     * DirectAdmin users still to convert: platform-linked services plus live DA
+     * accounts that were never imported. Hide accounts already on a container
+     * with Talksasa Cloudflare nameservers active.
+     *
+     * @return Collection<int, array<string, mixed>>
+     */
+    public function eligibleAccounts(User $reseller): Collection
+    {
+        $managed = $this->scope->managedServicesQuery($reseller)
+            ->with(['user', 'product', 'node', 'latestDaAccountSnapshot', 'containerDeployment'])
+            ->orderBy('id')
+            ->get();
+
+        $rows = [];
+
+        foreach ($managed as $service) {
+            if (! $service->isSharedHosting()) {
+                continue;
+            }
+
+            $username = $this->serviceDaUsername($service);
+            $domain = $this->serviceHostname($service);
+            if ($this->shouldHideFromOfframp($reseller, $username, $domain, $managed)) {
+                continue;
+            }
+
+            $key = $username !== '' ? 'da:'.$username : 'service:'.$service->id;
+            $rows[$key] = $this->accountFromService($service, $key, $username, $domain);
+        }
+
+        foreach ($this->liveDirectAdminEntries($reseller) as $entry) {
+            $username = strtolower(trim((string) ($entry['username'] ?? '')));
+            if ($username === '') {
+                continue;
+            }
+            $domain = strtolower(trim((string) ($entry['domain'] ?? '')));
+            $key = 'da:'.$username;
+            if (isset($rows[$key])) {
+                $rows[$key]['package'] = $rows[$key]['package'] ?: ($entry['package'] ?? null);
+                $rows[$key]['domain'] = $rows[$key]['domain'] ?: ($domain !== '' ? $domain : null);
+                $rows[$key]['suspended_on_da'] = (bool) ($entry['suspended'] ?? false);
+
+                continue;
+            }
+            if ($this->shouldHideFromOfframp($reseller, $username, $domain !== '' ? $domain : null, $managed)) {
+                continue;
+            }
+
+            $rows[$key] = $this->accountFromDaEntry($reseller, $entry, $key);
+        }
+
+        return collect(array_values($rows));
+    }
+
+    /**
      * @param  list<int>  $serviceIds
+     * @param  list<string>  $accountKeys
      */
     public function queueBatch(
         User $reseller,
@@ -57,6 +120,7 @@ class DaConvertOfframpService
         ?Product $emailProduct,
         bool $acknowledgeMailPull,
         bool $acknowledgeAddonSites,
+        array $accountKeys = [],
     ): DaConvertBatch {
         if (! $reseller->is_reseller) {
             throw new InvalidArgumentException('Only a reseller book can be converted in batch.');
@@ -66,13 +130,18 @@ class DaConvertOfframpService
             throw new InvalidArgumentException('Select an active Application Hosting product as the fallback container size.');
         }
 
-        $wanted = array_values(array_unique(array_map('intval', $serviceIds)));
-        $services = $this->eligibleServices($reseller)
-            ->filter(fn (Service $service): bool => in_array((int) $service->id, $wanted, true))
-            ->values();
+        $keys = array_values(array_unique(array_filter(array_map('strval', $accountKeys))));
+        if ($keys === []) {
+            $keys = array_map(
+                fn (int $id): string => 'service:'.$id,
+                array_values(array_unique(array_map('intval', $serviceIds)))
+            );
+        }
+
+        $services = $this->materializeSelectedAccounts($reseller, $keys);
 
         if ($services->isEmpty()) {
-            throw new InvalidArgumentException('Select at least one DirectAdmin service that belongs to this reseller.');
+            throw new InvalidArgumentException('Select at least one DirectAdmin account that belongs to this reseller.');
         }
 
         $prepared = [];
@@ -509,6 +578,305 @@ class DaConvertOfframpService
         }
 
         return $service->provisioningDriver() === 'container';
+    }
+
+    /**
+     * @param  list<string>  $keys
+     * @return Collection<int, Service>
+     */
+    public function materializeSelectedAccounts(User $reseller, array $keys): Collection
+    {
+        $eligible = $this->eligibleAccounts($reseller)->keyBy('key');
+        $services = collect();
+
+        foreach ($keys as $key) {
+            $key = trim($key);
+            if ($key === '') {
+                continue;
+            }
+
+            if (preg_match('/^service:(\d+)$/', $key, $match)) {
+                $service = $this->eligibleServices($reseller)->first(
+                    fn (Service $row): bool => (int) $row->id === (int) $match[1]
+                );
+                if ($service) {
+                    $services->push($service);
+                }
+
+                continue;
+            }
+
+            if (! preg_match('/^da:([a-z0-9._-]+)$/i', $key, $match)) {
+                continue;
+            }
+
+            $account = $eligible->get($key);
+            if (is_array($account) && $account['service'] instanceof Service) {
+                $services->push($account['service']);
+
+                continue;
+            }
+
+            $username = strtolower($match[1]);
+            $linked = $this->linker->linkForOfframp($reseller, $username);
+            if ($linked['created_customer'] ?? false) {
+                $domain = strtolower((string) ($linked['service']->service_meta['domain'] ?? $account['domain'] ?? ''));
+                if ($domain !== '') {
+                    try {
+                        $this->mailcow->ensureInfoMailbox($domain, null);
+                    } catch (\Throwable $e) {
+                        Log::info('Off-ramp info@ inbox was not created yet', [
+                            'username' => $username,
+                            'domain' => $domain,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+                    $this->assignOperatorInboxEmail($linked['customer'], $domain);
+                }
+            }
+            $services->push($linked['service']);
+        }
+
+        return $services->unique('id')->values();
+    }
+
+    public function customerNameFromDomain(string $domain, string $username = ''): string
+    {
+        return $this->linker->customerNameFromDomain($domain, $username);
+    }
+
+    public function shouldHideFromOfframp(
+        User $reseller,
+        string $username,
+        ?string $hostname,
+        ?Collection $managed = null,
+    ): bool {
+        $matches = $this->matchingManagedServices($reseller, $username, $hostname, $managed);
+        if ($matches->isEmpty()) {
+            return false;
+        }
+
+        $leftDa = $matches->contains(function (Service $service): bool {
+            if ($service->provisioningDriver() === 'container') {
+                return true;
+            }
+            $status = (string) ($service->service_meta['da_convert']['status'] ?? '');
+
+            return in_array($status, ['queued', 'running', 'completed'], true);
+        });
+
+        if (! $leftDa) {
+            return false;
+        }
+
+        $host = strtolower(trim((string) $hostname));
+        if ($host === '') {
+            $host = strtolower((string) ($matches->first()?->attachedDomainName() ?: $matches->first()?->name ?: ''));
+        }
+
+        if ($host !== '' && $this->hostnameHasActiveCloudflareNs($reseller, $host)) {
+            return true;
+        }
+
+        return $matches->contains(
+            fn (Service $service): bool => $service->provisioningDriver() === 'container'
+                && $service->containerDeployment !== null
+        );
+    }
+
+    public function hostnameHasActiveCloudflareNs(User $reseller, string $hostname): bool
+    {
+        $hostname = strtolower(trim($hostname));
+        if ($hostname === '') {
+            return false;
+        }
+
+        $domains = Domain::query()
+            ->where(function ($query) use ($reseller) {
+                $query->where('user_id', $reseller->id)
+                    ->orWhereHas('user', fn ($user) => $user->where('reseller_id', $reseller->id));
+            })
+            ->get();
+
+        $domain = $domains->first(function (Domain $row) use ($hostname): bool {
+            $fqdn = strtolower($row->fqdn());
+
+            return $fqdn === $hostname || str_ends_with($hostname, '.'.$fqdn);
+        });
+
+        if (! $domain || ! $domain->cloudflare_dns_enabled || blank($domain->cloudflare_zone_id)) {
+            return false;
+        }
+
+        $ns = strtolower(implode(' ', array_filter([
+            $domain->nameserver_1,
+            $domain->nameserver_2,
+            $domain->nameserver_3,
+            $domain->nameserver_4,
+        ])));
+
+        return $this->cloudflare->usesCloudflareDns($domain)
+            || str_contains($ns, 'cloudflare.com')
+            || str_contains($ns, 'ns.talksasa.');
+    }
+
+    /**
+     * @return Collection<int, Service>
+     */
+    private function matchingManagedServices(
+        User $reseller,
+        string $username,
+        ?string $hostname,
+        ?Collection $managed = null,
+    ): Collection {
+        $managed ??= $this->scope->managedServicesQuery($reseller)
+            ->with(['containerDeployment', 'user'])
+            ->get();
+
+        $username = strtolower(trim($username));
+        $hostname = strtolower(trim((string) $hostname));
+
+        return $managed->filter(function (Service $service) use ($username, $hostname): bool {
+            $meta = is_array($service->service_meta) ? $service->service_meta : [];
+            $serviceUser = strtolower(trim((string) ($meta['username'] ?? $service->external_reference ?? '')));
+            $serviceHost = strtolower(trim((string) ($meta['domain'] ?? $service->attachedDomainName() ?? $service->name ?? '')));
+
+            if ($username !== '' && $serviceUser === $username) {
+                return true;
+            }
+
+            return $hostname !== '' && $serviceHost === $hostname;
+        })->values();
+    }
+
+    /**
+     * @return list<array{username: string, domain: ?string, package: ?string, email: ?string, name: ?string, suspended: bool}>
+     */
+    private function liveDirectAdminEntries(User $reseller): array
+    {
+        if (! $this->resellerDirectAdmin->hasDirectAdminBinding($reseller)) {
+            return [];
+        }
+
+        $da = $this->resellerDirectAdmin->directAdmin($reseller);
+        if (! $da) {
+            return [];
+        }
+
+        $usernames = $da->listUsersOwnedByReseller((string) $reseller->directadmin_username) ?? [];
+        $entries = [];
+        foreach ($usernames as $username) {
+            $username = strtolower(trim((string) $username));
+            if ($username === '') {
+                continue;
+            }
+            $entry = $da->getAccountDirectoryEntry($username);
+            $entries[] = $entry ?? [
+                'username' => $username,
+                'domain' => null,
+                'package' => null,
+                'email' => null,
+                'name' => null,
+                'suspended' => false,
+            ];
+        }
+
+        return $entries;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function accountFromService(Service $service, string $key, string $username, ?string $domain): array
+    {
+        $profile = ($domain && str_contains($domain, '.'))
+            ? $this->linker->offrampCustomerProfile($domain, $username)
+            : ['name' => $service->user?->name, 'email' => $service->user?->email];
+
+        return [
+            'key' => $key,
+            'service' => $service,
+            'da_username' => $username !== '' ? $username : null,
+            'domain' => $domain,
+            'package' => $this->packages->serviceDaPackageName($service) ?: null,
+            'customer' => $service->user,
+            'on_platform' => true,
+            'will_create_customer' => false,
+            'proposed_name' => $profile['name'] ?? $service->user?->name,
+            'proposed_email' => $profile['email'] ?? $service->user?->email,
+            'node' => $service->node,
+            'snapshot' => $service->latestDaAccountSnapshot,
+            'convert_status' => $service->service_meta['da_convert']['status'] ?? 'on DirectAdmin',
+            'suspended_on_da' => false,
+        ];
+    }
+
+    /**
+     * @param  array{username: string, domain: ?string, package: ?string, email: ?string, name: ?string, suspended: bool}  $entry
+     * @return array<string, mixed>
+     */
+    private function accountFromDaEntry(User $reseller, array $entry, string $key): array
+    {
+        $username = strtolower((string) ($entry['username'] ?? ''));
+        $domain = strtolower(trim((string) ($entry['domain'] ?? '')));
+        $domain = $domain !== '' ? $domain : null;
+        $profile = $domain
+            ? $this->linker->offrampCustomerProfile($domain, $username)
+            : ['name' => $this->linker->customerNameFromDomain($username.'.example', $username), 'email' => null];
+
+        return [
+            'key' => $key,
+            'service' => null,
+            'da_username' => $username,
+            'domain' => $domain,
+            'package' => $entry['package'] ?? null,
+            'customer' => null,
+            'on_platform' => false,
+            'will_create_customer' => true,
+            'proposed_name' => $profile['name'],
+            'proposed_email' => $profile['email'],
+            'node' => $this->resellerDirectAdmin->resolveNode($reseller),
+            'snapshot' => null,
+            'convert_status' => 'not on platform',
+            'suspended_on_da' => (bool) ($entry['suspended'] ?? false),
+        ];
+    }
+
+    private function serviceDaUsername(Service $service): string
+    {
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+
+        return strtolower(trim((string) ($meta['username'] ?? $service->external_reference ?? '')));
+    }
+
+    private function serviceHostname(Service $service): ?string
+    {
+        $host = $service->attachedDomainName()
+            ?: (is_string($service->service_meta['domain'] ?? null) ? $service->service_meta['domain'] : null)
+            ?: $service->name;
+
+        $host = strtolower(trim((string) $host));
+
+        return $host !== '' ? $host : null;
+    }
+
+    private function assignOperatorInboxEmail(User $customer, string $domain): void
+    {
+        $email = $this->linker->infoInboxEmail($domain);
+        $taken = User::query()
+            ->whereKeyNot($customer->id)
+            ->whereRaw('LOWER(email) = ?', [strtolower($email)])
+            ->exists();
+        if ($taken) {
+            return;
+        }
+
+        $settings = is_array($customer->settings) ? $customer->settings : [];
+        $settings['operator_inbox'] = $email;
+        $customer->update([
+            'email' => $email,
+            'settings' => $settings,
+        ]);
     }
 
     private function markServiceQueued(

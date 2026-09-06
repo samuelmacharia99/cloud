@@ -5,6 +5,7 @@ namespace Tests\Unit\Services;
 use App\Enums\ServiceStatus;
 use App\Models\Node;
 use App\Models\Product;
+use App\Models\ResellerPackage;
 use App\Models\ResellerProduct;
 use App\Models\Service;
 use App\Models\User;
@@ -139,6 +140,48 @@ class ResellerHostedAccountLinkServiceTest extends TestCase
         $this->assertSame(1, $existingCustomer->fresh()->services()->count());
     }
 
+    public function test_offramp_profile_uses_domain_stem_and_info_inbox(): void
+    {
+        $linker = app(ResellerHostedAccountLinkService::class);
+
+        $this->assertSame('Jameskah', $linker->customerNameFromDomain('jameskahiga.com', 'jamesk'));
+        $this->assertSame('info@jameskahiga.com', $linker->infoInboxEmail('www.jameskahiga.com'));
+        $this->assertSame([
+            'name' => 'Drmichae',
+            'email' => 'info@drmichaelcheruiyotfoundation.org',
+        ], $linker->offrampCustomerProfile('drmichaelcheruiyotfoundation.org', 'drmike'));
+    }
+
+    public function test_link_for_offramp_creates_customer_from_the_default_domain(): void
+    {
+        [$reseller] = $this->mockResellerWithDirectAdmin('jamesk', [
+            'username' => 'jamesk',
+            'domain' => 'jameskahiga.com',
+            'package' => 'starter',
+            'email' => 'old-owner@example.test',
+            'name' => 'Panel Name',
+            'suspended' => false,
+        ]);
+
+        ResellerProduct::query()->create([
+            'reseller_id' => $reseller->id,
+            'type' => 'shared_hosting',
+            'name' => 'Starter',
+            'direct_admin_package_name' => 'starter',
+            'monthly_price' => 1000,
+            'yearly_price' => 10000,
+            'is_active' => true,
+        ]);
+
+        $result = app(ResellerHostedAccountLinkService::class)->linkForOfframp($reseller, 'jamesk');
+
+        $this->assertTrue($result['created_customer']);
+        $this->assertSame('Jameskah', $result['customer']->name);
+        $this->assertSame('info@jameskahiga.com', $result['customer']->email);
+        $this->assertTrue($result['customer']->settings['da_offramp_created'] ?? false);
+        $this->assertSame('jamesk', $result['service']->external_reference);
+    }
+
     /**
      * @return array{0: User, 1: DirectAdminService&MockInterface}
      */
@@ -150,10 +193,23 @@ class ResellerHostedAccountLinkServiceTest extends TestCase
             'is_active' => true,
         ]);
 
+        $package = ResellerPackage::query()->create([
+            'name' => 'Pkg '.uniqid(),
+            'description' => 'Test',
+            'billing_cycle' => 'monthly',
+            'storage_space' => 100,
+            'max_users' => 100,
+            'price' => 1000,
+            'active' => true,
+            'disk_pool_gb' => 100,
+        ]);
+
         $reseller = User::factory()->reseller()->create([
             'directadmin_username' => 'res_acme',
             'directadmin_login_key' => 'login-key',
             'reseller_node_id' => $node->id,
+            'reseller_package_id' => $package->id,
+            'package_expires_at' => now()->addMonth(),
         ]);
 
         $daMock = Mockery::mock(DirectAdminService::class);

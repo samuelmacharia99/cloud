@@ -140,6 +140,32 @@ class DaResellerPackageImportService
         ];
     }
 
+    /**
+     * @return array{da_package: string, listing: ?ResellerProduct, engine: ?Product, retail: ?float, needs_price: bool}
+     */
+    public function resolveForPackageName(User $reseller, string $packageName, ?Product $fallbackEngine = null): array
+    {
+        $daPackage = trim($packageName);
+        $listing = $this->findListing($reseller, $daPackage);
+        $engine = $listing?->adminProduct;
+        if (! $engine || $engine->type !== 'container_hosting') {
+            $engine = $fallbackEngine;
+        }
+        if ($engine && $engine->type !== 'container_hosting') {
+            $engine = null;
+        }
+
+        $retail = $listing ? $listing->priceForBillingCycle('monthly') : null;
+
+        return [
+            'da_package' => $daPackage,
+            'listing' => $listing,
+            'engine' => $engine,
+            'retail' => $retail,
+            'needs_price' => $listing !== null && (float) ($listing->monthly_price ?? 0) <= 0 && (float) ($listing->yearly_price ?? 0) <= 0,
+        ];
+    }
+
     public function serviceDaPackageName(Service $service): string
     {
         $meta = is_array($service->service_meta) ? $service->service_meta : [];

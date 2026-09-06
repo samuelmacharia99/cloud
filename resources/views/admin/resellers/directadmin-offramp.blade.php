@@ -13,14 +13,16 @@
 @endsection
 
 @section('content')
-<div class="space-y-6" x-data="{ selected: {!! json_encode($services->mapWithKeys(fn ($service) => [(string) $service->id => false])->all()) !!} }">
+<div class="space-y-6" x-data="{ selected: {!! json_encode($accounts->mapWithKeys(fn ($account) => [$account['key'] => false])->all()) !!} }">
     <div class="ui-card p-6">
         <div class="flex items-start justify-between gap-4 flex-wrap">
             <div>
                 <h1 class="text-2xl font-bold text-slate-900 dark:text-white">DirectAdmin off-ramp</h1>
                 <p class="text-slate-600 dark:text-slate-400 mt-1">
                     Convert {{ $reseller->name }}'s DirectAdmin accounts to Application Hosting one node at a time.
-                    DNS still serves DirectAdmin until you cut A records.
+                    Every user still on DirectAdmin is listed here, including accounts that were never imported.
+                    Customers who are not on Talksasa yet get a platform login (name from the domain) and an info@ inbox when you queue convert.
+                    Accounts already on a container with Cloudflare nameservers active are hidden.
                 </p>
             </div>
             <a href="{{ route('admin.resellers.show', ['user' => $reseller, 'tab' => 'services']) }}" class="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm">
@@ -48,7 +50,7 @@
             <div class="flex items-center justify-between mb-4 gap-3 flex-wrap">
                 <h2 class="font-semibold text-lg">DirectAdmin accounts</h2>
                 <div class="flex items-center gap-3">
-                    <p class="text-sm text-slate-500">{{ $services->count() }} eligible</p>
+                    <p class="text-sm text-slate-500">{{ $accounts->count() }} eligible</p>
                     <button form="da-import-packages" class="px-3 py-1.5 border border-slate-300 dark:border-slate-600 rounded-lg text-sm">
                         Import DA packages
                     </button>
@@ -57,8 +59,8 @@
             <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">
                 Customers stay on this reseller’s catalog names and prices. Import pulls their DirectAdmin packages into Application Hosting listings first.
             </p>
-            @if ($services->isEmpty())
-                <p class="text-sm text-slate-500">No DirectAdmin shared hosting services are linked to this reseller.</p>
+            @if ($accounts->isEmpty())
+                <p class="text-sm text-slate-500">No DirectAdmin accounts are waiting to convert. Linked container sites that already use Cloudflare nameservers are hidden.</p>
             @else
                 <div class="overflow-x-auto">
                     <table class="min-w-full text-sm">
@@ -74,26 +76,39 @@
                             </tr>
                         </thead>
                         <tbody>
-                            @foreach ($services as $service)
+                            @foreach ($accounts as $account)
                                 @php
-                                    $convertStatus = $service->service_meta['da_convert']['status'] ?? 'on DirectAdmin';
+                                    $service = $account['service'];
+                                    $map = $packageMap[$account['key']] ?? [];
                                 @endphp
                                 <tr class="border-b border-slate-100 dark:border-slate-800">
                                     <td class="py-3 pr-3">
-                                        <input type="checkbox" name="service_ids[]" value="{{ $service->id }}" x-model="selected[{{ $service->id }}]" class="rounded border-slate-300">
+                                        <input type="checkbox" name="account_keys[]" value="{{ $account['key'] }}" x-model="selected['{{ $account['key'] }}']" class="rounded border-slate-300">
                                     </td>
                                     <td class="py-3 pr-4">
-                                        <a href="{{ route('admin.services.migrate-to-container', $service) }}" class="text-blue-600 hover:underline font-medium">#{{ $service->id }} {{ $service->name }}</a>
-                                        <p class="text-xs text-slate-500">{{ $service->product?->name }}</p>
+                                        @if ($service)
+                                            <a href="{{ route('admin.services.migrate-to-container', $service) }}" class="text-blue-600 hover:underline font-medium">#{{ $service->id }} {{ $service->name }}</a>
+                                            <p class="text-xs text-slate-500">{{ $service->product?->name }}</p>
+                                        @else
+                                            <span class="font-medium">{{ $account['da_username'] }}</span>
+                                            <p class="text-xs text-amber-700">Not on Talksasa yet — convert will create the customer</p>
+                                        @endif
                                     </td>
-                                    <td class="py-3 pr-4">{{ $service->user?->name ?? '—' }}</td>
+                                    <td class="py-3 pr-4">
+                                        @if ($account['customer'])
+                                            {{ $account['customer']->name }}
+                                            <div class="text-xs text-slate-500">{{ $account['customer']->email }}</div>
+                                        @else
+                                            <span>{{ $account['proposed_name'] }}</span>
+                                            <div class="text-xs text-slate-500">Will create {{ $account['proposed_email'] ?: 'info@…' }}</div>
+                                        @endif
+                                    </td>
                                     <td class="py-3 pr-4 font-mono text-xs">
-                                        {{ $service->attachedDomainName() ?: '—' }}
-                                        <div class="text-slate-500">{{ $service->node?->name ?? 'no node' }}</div>
+                                        {{ $account['domain'] ?: '—' }}
+                                        <div class="text-slate-500">{{ $account['node']?->name ?? 'no node' }}</div>
                                     </td>
                                     <td class="py-3 pr-4 text-xs">
-                                        @php $map = $packageMap[$service->id] ?? null; @endphp
-                                        <div>{{ $map['da_package'] ?: '—' }}</div>
+                                        <div>{{ $map['da_package'] ?? $account['package'] ?: '—' }}</div>
                                         <div class="text-slate-500">
                                             {{ $map['listing']?->name ?? 'Import packages first' }}
                                             @if (! empty($map['retail']))
@@ -108,15 +123,15 @@
                                         @endif
                                     </td>
                                     <td class="py-3 pr-4 text-xs">
-                                        @if ($service->latestDaAccountSnapshot?->isCaptured())
-                                            {{ $service->latestDaAccountSnapshot->dns_record_count }} DNS
-                                            · {{ $service->latestDaAccountSnapshot->mailbox_count }} mail
-                                            · {{ $service->latestDaAccountSnapshot->database_count }} DB
+                                        @if ($account['snapshot']?->isCaptured())
+                                            {{ $account['snapshot']->dns_record_count }} DNS
+                                            · {{ $account['snapshot']->mailbox_count }} mail
+                                            · {{ $account['snapshot']->database_count }} DB
                                         @else
                                             <span class="text-amber-700">Not captured</span>
                                         @endif
                                     </td>
-                                    <td class="py-3">{{ $convertStatus }}</td>
+                                    <td class="py-3">{{ $account['convert_status'] }}</td>
                                 </tr>
                             @endforeach
                         </tbody>

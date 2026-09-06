@@ -4,9 +4,12 @@ namespace Tests\Feature\Admin;
 
 use App\Enums\DaConvertBatchItemStatus;
 use App\Jobs\ConvertDirectAdminServiceToContainerJob;
+use App\Models\ContainerDeployment;
 use App\Models\DaAccountSnapshot;
 use App\Models\DaConvertBatch;
 use App\Models\DaConvertBatchItem;
+use App\Models\Domain;
+use App\Models\Node;
 use App\Models\Product;
 use App\Models\ResellerPackage;
 use App\Models\ResellerProduct;
@@ -14,6 +17,7 @@ use App\Models\Service;
 use App\Models\User;
 use App\Services\Provisioning\DaAccountSnapshotService;
 use App\Services\Provisioning\DaConvertOfframpService;
+use App\Services\Provisioning\DirectAdminService;
 use App\Services\Provisioning\DirectAdminToContainerConvertService;
 use App\Services\ResellerDirectAdminService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -336,6 +340,119 @@ class AdminDaConvertOfframpTest extends TestCase
             ->assertSessionHas('success');
     }
 
+    public function test_offramp_lists_directadmin_users_that_are_not_on_the_platform(): void
+    {
+        [$admin, $reseller] = $this->board();
+        $this->bindLiveDirectAdmin($reseller, [[
+            'username' => 'jamesk',
+            'domain' => 'jameskahiga.com',
+            'package' => 'Business',
+            'email' => null,
+            'name' => null,
+            'suspended' => false,
+        ]]);
+
+        $this->actingAs($admin)
+            ->get(route('admin.resellers.directadmin-offramp', $reseller))
+            ->assertOk()
+            ->assertSee('jamesk')
+            ->assertSee('jameskahiga.com')
+            ->assertSee('Jameskah')
+            ->assertSee('info@jameskahiga.com')
+            ->assertSee('Not on Talksasa yet');
+    }
+
+    public function test_offramp_hides_accounts_already_on_a_cloudflare_container(): void
+    {
+        [$admin, $reseller] = $this->board();
+        $customer = User::factory()->customer()->create(['reseller_id' => $reseller->id]);
+        $containerProduct = Product::factory()->containerHosting()->create();
+        $service = Service::factory()->create([
+            'user_id' => $customer->id,
+            'reseller_id' => $reseller->id,
+            'product_id' => $containerProduct->id,
+            'provisioning_driver_key' => 'container',
+            'status' => 'active',
+            'name' => 'settled.example.com',
+            'external_reference' => 'settleduser',
+            'service_meta' => ['username' => 'settleduser', 'domain' => 'settled.example.com'],
+        ]);
+        ContainerDeployment::factory()->create([
+            'service_id' => $service->id,
+            'status' => 'running',
+            'domain' => 'settled.example.com',
+        ]);
+        Domain::query()->create([
+            'user_id' => $customer->id,
+            'reseller_id' => $reseller->id,
+            'name' => 'settled.example',
+            'extension' => '.com',
+            'type' => 'registration',
+            'status' => 'active',
+            'expires_at' => now()->addYear(),
+            'cloudflare_dns_enabled' => true,
+            'cloudflare_zone_id' => 'cf-zone-settled',
+            'nameserver_1' => 'ada.ns.cloudflare.com',
+            'nameserver_2' => 'bob.ns.cloudflare.com',
+        ]);
+        $this->bindLiveDirectAdmin($reseller, [[
+            'username' => 'settleduser',
+            'domain' => 'settled.example.com',
+            'package' => 'Business',
+            'email' => null,
+            'name' => null,
+            'suspended' => false,
+        ]]);
+
+        $this->actingAs($admin)
+            ->get(route('admin.resellers.directadmin-offramp', $reseller))
+            ->assertOk()
+            ->assertDontSee('settleduser')
+            ->assertDontSee('settled.example.com');
+    }
+
+    public function test_queue_creates_a_customer_and_service_for_an_unlinked_da_account(): void
+    {
+        Bus::fake();
+        [$admin, $reseller, , , $container] = $this->board();
+        $this->bindLiveDirectAdmin($reseller, [[
+            'username' => 'jamesk',
+            'domain' => 'jameskahiga.com',
+            'package' => 'Business',
+            'email' => 'old@example.test',
+            'name' => 'Panel',
+            'suspended' => false,
+        ]]);
+        ResellerProduct::query()->create([
+            'reseller_id' => $reseller->id,
+            'type' => 'shared_hosting',
+            'name' => 'Business',
+            'direct_admin_package_name' => 'Business',
+            'monthly_price' => 2000,
+            'yearly_price' => 20000,
+            'is_active' => true,
+        ]);
+        $this->bindConvertMock($container, [], true);
+
+        $this->actingAs($admin)
+            ->post(route('admin.resellers.directadmin-offramp.store', $reseller), [
+                'account_keys' => ['da:jamesk'],
+                'product_id' => $container->id,
+                'acknowledge_mail_pull' => '1',
+                'acknowledge_addon_sites' => '1',
+                'confirm_silent' => '1',
+            ])
+            ->assertRedirect(route('admin.resellers.directadmin-offramp', $reseller))
+            ->assertSessionHas('success');
+
+        $customer = User::query()->where('email', 'info@jameskahiga.com')->first();
+        $this->assertNotNull($customer);
+        $this->assertSame('Jameskah', $customer->name);
+        $this->assertSame($reseller->id, $customer->reseller_id);
+        $this->assertTrue(Service::query()->where('external_reference', 'jamesk')->exists());
+        Bus::assertDispatched(ConvertDirectAdminServiceToContainerJob::class);
+    }
+
     /**
      * @return array{0: User, 1: User, 2: Service, 3: Service, 4: Product}
      */
@@ -390,9 +507,47 @@ class AdminDaConvertOfframpTest extends TestCase
     }
 
     /**
+     * @param  list<array{username: string, domain: ?string, package: ?string, email: ?string, name: ?string, suspended: bool}>  $entries
+     */
+    private function bindLiveDirectAdmin(User $reseller, array $entries): void
+    {
+        $node = Node::factory()->create([
+            'type' => 'directadmin',
+            'api_url' => 'https://da.example.test:2222',
+            'is_active' => true,
+        ]);
+        $reseller->forceFill([
+            'directadmin_username' => 'res_acme',
+            'directadmin_login_key' => 'login-key',
+            'reseller_node_id' => $node->id,
+            'country' => 'KE',
+        ])->save();
+
+        $usernames = array_map(fn (array $entry): string => strtolower((string) $entry['username']), $entries);
+        $da = Mockery::mock(DirectAdminService::class);
+        $da->shouldReceive('listUsersOwnedByReseller')->andReturn($usernames);
+        $da->shouldReceive('getAccountDirectoryEntry')->andReturnUsing(function (string $username) use ($entries): ?array {
+            foreach ($entries as $entry) {
+                if (strtolower((string) $entry['username']) === strtolower($username)) {
+                    return $entry;
+                }
+            }
+
+            return null;
+        });
+
+        $this->mock(ResellerDirectAdminService::class, function ($mock) use ($da, $node) {
+            $mock->shouldReceive('hasDirectAdminBinding')->andReturn(true);
+            $mock->shouldReceive('directAdmin')->andReturn($da);
+            $mock->shouldReceive('resolveNode')->andReturn($node);
+            $mock->shouldReceive('listAssignablePackages')->andReturn(['packages' => [], 'error' => null])->byDefault();
+        });
+    }
+
+    /**
      * @param  array<int, array<string, mixed>>  $preflights
      */
-    private function bindConvertMock(Product $container, array $preflights): DirectAdminToContainerConvertService
+    private function bindConvertMock(Product $container, array $preflights, bool $allowAny = false): DirectAdminToContainerConvertService
     {
         $convert = Mockery::mock(DirectAdminToContainerConvertService::class);
         $convert->shouldReceive('applicationHostingCatalog')->andReturn([
@@ -400,8 +555,8 @@ class AdminDaConvertOfframpTest extends TestCase
             'recommended' => collect(),
             'fallback' => true,
         ]);
-        $convert->shouldReceive('preflight')->andReturnUsing(function (Service $service) use ($preflights): array {
-            return $preflights[$service->id] ?? $this->preflightBlocked('Unexpected service.');
+        $convert->shouldReceive('preflight')->andReturnUsing(function (Service $service) use ($preflights, $allowAny): array {
+            return $preflights[$service->id] ?? ($allowAny ? $this->preflightOk() : $this->preflightBlocked('Unexpected service.'));
         });
         $convert->shouldReceive('assertHostCapacityForConvert')->andReturnNull()->byDefault();
         $this->app->instance(DirectAdminToContainerConvertService::class, $convert);

@@ -19,8 +19,10 @@ class QueueDaConvertBatchRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'service_ids' => ['required', 'array', 'min:1'],
+            'service_ids' => ['required_without:account_keys', 'array', 'min:1'],
             'service_ids.*' => ['integer', 'exists:services,id'],
+            'account_keys' => ['required_without:service_ids', 'array', 'min:1'],
+            'account_keys.*' => ['string', 'max:120', 'regex:/^(service:\\d+|da:[A-Za-z0-9._-]+)$/'],
             'product_id' => [
                 'required',
                 'integer',
@@ -44,6 +46,8 @@ class QueueDaConvertBatchRequest extends FormRequest
     {
         return [
             'service_ids.required' => 'Select at least one DirectAdmin account to convert.',
+            'service_ids.required_without' => 'Select at least one DirectAdmin account to convert.',
+            'account_keys.required_without' => 'Select at least one DirectAdmin account to convert.',
             'product_id.required' => 'Select a fallback Application Hosting size. Each account still stays on the reseller’s catalog price.',
             'confirm_silent.accepted' => 'Confirm this silent batch convert before queueing it.',
         ];

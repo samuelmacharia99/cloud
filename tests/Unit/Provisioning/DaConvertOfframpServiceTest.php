@@ -20,7 +20,10 @@ use App\Services\Provisioning\DaConvertOfframpService;
 use App\Services\Provisioning\DaResellerPackageImportService;
 use App\Services\Provisioning\DirectAdminMailPullProgress;
 use App\Services\Provisioning\DirectAdminToContainerConvertService;
+use App\Services\Provisioning\MailcowProvisioningService;
 use App\Services\Provisioning\NginxProxyService;
+use App\Services\ResellerDirectAdminService;
+use App\Services\ResellerHostedAccountLinkService;
 use App\Services\ResellerScopeService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
@@ -85,6 +88,51 @@ class DaConvertOfframpServiceTest extends TestCase
         $this->assertTrue($refreshed->dns_ok);
         $this->assertTrue($refreshed->ssl_ok);
         $this->assertSame(DaConvertBatchItemStatus::Done, $refreshed->status);
+    }
+
+    #[Test]
+    public function it_hides_accounts_already_on_a_cloudflare_backed_container(): void
+    {
+        $reseller = User::factory()->reseller()->create();
+        $customer = User::factory()->customer()->create(['reseller_id' => $reseller->id]);
+        $product = Product::factory()->containerHosting()->create();
+        $service = Service::factory()->create([
+            'user_id' => $customer->id,
+            'reseller_id' => $reseller->id,
+            'product_id' => $product->id,
+            'provisioning_driver_key' => 'container',
+            'status' => 'active',
+            'name' => 'settled.example.com',
+            'external_reference' => 'settleduser',
+            'service_meta' => ['username' => 'settleduser', 'domain' => 'settled.example.com'],
+        ]);
+        ContainerDeployment::factory()->create([
+            'service_id' => $service->id,
+            'status' => 'running',
+            'domain' => 'settled.example.com',
+        ]);
+        Domain::query()->create([
+            'user_id' => $customer->id,
+            'reseller_id' => $reseller->id,
+            'name' => 'settled.example',
+            'extension' => '.com',
+            'type' => 'registration',
+            'status' => 'active',
+            'expires_at' => now()->addYear(),
+            'cloudflare_dns_enabled' => true,
+            'cloudflare_zone_id' => 'cf-zone-1',
+            'nameserver_1' => 'ada.ns.cloudflare.com',
+            'nameserver_2' => 'bob.ns.cloudflare.com',
+        ]);
+
+        $offramp = $this->offramp(
+            Mockery::mock(ContainerDomainBindingService::class),
+            app(DomainCloudflareDnsService::class),
+            Mockery::mock(NginxProxyService::class),
+        );
+
+        $this->assertTrue($offramp->shouldHideFromOfframp($reseller, 'settleduser', 'settled.example.com'));
+        $this->assertFalse($offramp->shouldHideFromOfframp($reseller, 'otheruser', 'other.example.com'));
     }
 
     #[Test]
@@ -171,6 +219,9 @@ class DaConvertOfframpServiceTest extends TestCase
             Mockery::mock(DaAccountSnapshotService::class),
             Mockery::mock(DaResellerPackageImportService::class),
             Mockery::mock(DirectAdminMailPullProgress::class),
+            Mockery::mock(ResellerDirectAdminService::class),
+            Mockery::mock(ResellerHostedAccountLinkService::class),
+            Mockery::mock(MailcowProvisioningService::class),
         );
     }
 }

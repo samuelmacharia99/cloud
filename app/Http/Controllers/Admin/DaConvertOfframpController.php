@@ -9,6 +9,7 @@ use App\Http\Requests\Admin\ImportDaResellerPackagesRequest;
 use App\Http\Requests\Admin\QueueDaConvertBatchRequest;
 use App\Models\DaConvertBatch;
 use App\Models\Product;
+use App\Models\Service;
 use App\Models\User;
 use App\Services\Provisioning\DaConvertOfframpService;
 use App\Services\Provisioning\DaResellerPackageImportService;
@@ -27,8 +28,18 @@ class DaConvertOfframpController extends Controller
     ): View {
         abort_if(! $user->is_reseller, 404);
 
-        $services = $offramp->eligibleServices($user);
-        $packageMap = $packages->mappingForServices($user, $services);
+        $accounts = $offramp->eligibleAccounts($user);
+        $services = $accounts
+            ->pluck('service')
+            ->filter()
+            ->values();
+        $packageMap = $accounts->mapWithKeys(function (array $account) use ($packages, $user): array {
+            if ($account['service'] instanceof Service) {
+                return [$account['key'] => $packages->resolveForService($user, $account['service'])];
+            }
+
+            return [$account['key'] => $packages->resolveForPackageName($user, (string) ($account['package'] ?? ''))];
+        });
         $batches = DaConvertBatch::query()
             ->where('reseller_user_id', $user->id)
             ->with(['items.service.user', 'items.service.containerDeployment.node', 'items.service.containerDeployment.domains', 'product'])
@@ -59,7 +70,8 @@ class DaConvertOfframpController extends Controller
         return view('admin.resellers.directadmin-offramp', [
             'reseller' => $user,
             'services' => $services,
-            'packageMap' => $packageMap->keyBy(fn (array $row) => (int) $row['service']->id),
+            'accounts' => $accounts,
+            'packageMap' => $packageMap,
             'batches' => $batches,
             'containerProducts' => $catalog['products'],
             'emailProducts' => $emailProducts,
@@ -112,11 +124,12 @@ class DaConvertOfframpController extends Controller
             $batch = $offramp->queueBatch(
                 $user,
                 $request->user(),
-                $request->validated('service_ids'),
+                $request->validated('service_ids') ?? [],
                 $request->applicationHostingProduct(),
                 $request->emailHostingProduct(),
                 $request->boolean('acknowledge_mail_pull'),
                 $request->boolean('acknowledge_addon_sites'),
+                $request->validated('account_keys') ?? [],
             );
         } catch (\InvalidArgumentException $e) {
             return back()->withErrors(['error' => $e->getMessage()])->withInput();

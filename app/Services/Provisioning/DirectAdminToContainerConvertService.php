@@ -643,6 +643,22 @@ class DirectAdminToContainerConvertService
                 $this->appendConvertStep($service, $steps);
             }
 
+            $primaryDomain = strtolower(trim((string) ($inventory['domain'] ?? $service->attachedDomainName() ?? '')));
+            if ($primaryDomain !== '' && ($service->user?->settings['da_offramp_created'] ?? false)) {
+                $inbox = app(MailcowProvisioningService::class)->ensureInfoMailbox(
+                    $primaryDomain,
+                    isset($emailServiceId) && $emailServiceId
+                        ? Service::query()->find($emailServiceId)
+                        : null,
+                );
+                if ($inbox['success'] ?? false) {
+                    $steps[] = ($inbox['created'] ?? false)
+                        ? 'Created operator inbox '.$inbox['email']
+                        : 'Operator inbox ready '.$inbox['email'];
+                    $this->appendConvertStep($service, $steps);
+                }
+            }
+
             $creds = $service->getHostingCredentials() ?? [];
             $meta = is_array($service->service_meta) ? $service->service_meta : [];
             $templateSlug = $this->templateSlugForDetectedStack($stack, $containerProduct);

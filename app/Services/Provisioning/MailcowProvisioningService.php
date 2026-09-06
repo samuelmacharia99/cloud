@@ -526,4 +526,117 @@ class MailcowProvisioningService
     {
         return Str::password($length, letters: true, numbers: true, symbols: false);
     }
+
+    /**
+     * Create info@{domain} so platform mail has somewhere to land after MX cutover.
+     *
+     * @return array{success: bool, created: bool, email: string, message: string}
+     */
+    public function ensureInfoMailbox(string $domain, ?Service $emailService = null): array
+    {
+        $domain = strtolower(trim($domain));
+        $domain = preg_replace('/^www\./', '', $domain) ?? $domain;
+        $email = 'info@'.$domain;
+        if ($domain === '' || ! str_contains($domain, '.')) {
+            return ['success' => false, 'created' => false, 'email' => $email, 'message' => 'Domain is missing.'];
+        }
+
+        $node = $this->resolveNode($emailService);
+        if (! $node) {
+            return ['success' => false, 'created' => false, 'email' => $email, 'message' => 'No active Mailcow node is available.'];
+        }
+
+        $mailcow = MailcowService::forNode($node);
+        if (! $mailcow->isConfigured()) {
+            return ['success' => false, 'created' => false, 'email' => $email, 'message' => 'Mailcow is not configured.'];
+        }
+
+        $limits = $this->limitsForProduct($emailService?->product);
+        try {
+            if ($emailService) {
+                $this->ensureDomainOnMailcow($mailcow, $emailService, $domain, $limits);
+            } else {
+                $this->ensureBareMailcowDomain($mailcow, $domain, $limits);
+            }
+        } catch (\Throwable $e) {
+            return ['success' => false, 'created' => false, 'email' => $email, 'message' => $e->getMessage()];
+        }
+
+        $listed = $mailcow->listMailboxes($domain);
+        $already = collect($listed['data'] ?? [])->contains(function ($row) use ($email): bool {
+            $candidate = is_array($row)
+                ? strtolower((string) ($row['username'] ?? $row['email'] ?? ''))
+                : strtolower((string) $row);
+
+            return $candidate === $email;
+        });
+        if ($already) {
+            return ['success' => true, 'created' => false, 'email' => $email, 'message' => 'Inbox already exists.'];
+        }
+
+        $password = $this->generateMailboxPassword();
+        $add = $mailcow->addMailbox([
+            'local_part' => 'info',
+            'domain' => $domain,
+            'name' => 'info',
+            'password' => $password,
+            'password2' => $password,
+            'quota' => (string) $limits['mailbox_quota_mb'],
+            'active' => '1',
+            'force_pw_update' => '1',
+        ]);
+
+        if (! ($add['success'] ?? false)) {
+            $already = str_contains(strtolower((string) ($add['message'] ?? '')), 'exists')
+                || str_contains(strtolower((string) ($add['message'] ?? '')), 'already');
+
+            return [
+                'success' => $already,
+                'created' => false,
+                'email' => $email,
+                'message' => (string) ($add['message'] ?? 'Could not create info@ mailbox.'),
+            ];
+        }
+
+        if ($emailService) {
+            $meta = is_array($emailService->service_meta) ? $emailService->service_meta : [];
+            $meta['operator_inbox'] = $email;
+            $emailService->update(['service_meta' => $meta]);
+        }
+
+        return ['success' => true, 'created' => true, 'email' => $email, 'message' => 'Created '.$email];
+    }
+
+    /**
+     * @param  array{mailboxes: int, aliases: int, quota_mb: int, mailbox_quota_mb: int, msgs_per_day: int}  $limits
+     */
+    private function ensureBareMailcowDomain(MailcowService $mailcow, string $domain, array $limits): void
+    {
+        $existing = $mailcow->getDomain($domain);
+        $domainExists = ($existing['success'] ?? false)
+            && ! empty($existing['data'])
+            && ! $this->isEmptyDomainPayload($existing['data'] ?? []);
+
+        if ($domainExists) {
+            return;
+        }
+
+        $created = $mailcow->addDomain([
+            'domain' => $domain,
+            'description' => 'Talksasa off-ramp operator inbox',
+            'aliases' => (string) $limits['aliases'],
+            'mailboxes' => (string) max($limits['mailboxes'], 2),
+            'defquota' => (string) $limits['mailbox_quota_mb'],
+            'maxquota' => (string) $limits['mailbox_quota_mb'],
+            'quota' => (string) $limits['quota_mb'],
+            'active' => '1',
+            'rl_value' => (string) $limits['msgs_per_day'],
+            'rl_frame' => 'd',
+            'restart_sogo' => '1',
+        ]);
+
+        if (! ($created['success'] ?? false)) {
+            throw new \RuntimeException('Mailcow domain create failed: '.$created['message']);
+        }
+    }
 }
