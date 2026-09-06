@@ -490,6 +490,34 @@ class Service extends Model
             || $this->provisioningDriver() === 'mailcow';
     }
 
+    public function scopeApplicationHosting($query)
+    {
+        return $query->where(function ($q) {
+            $q->where('provisioning_driver_key', 'container')
+                ->orWhereHas('product', function ($product) {
+                    $product->where('type', 'container_hosting')
+                        ->orWhere('provisioning_driver_key', 'container');
+                });
+        });
+    }
+
+    public function scopeEmailHosting($query)
+    {
+        return $query->where(function ($q) {
+            $q->where('provisioning_driver_key', 'mailcow')
+                ->orWhereHas('product', function ($product) {
+                    $product->where('type', 'email_hosting')
+                        ->orWhere('provisioning_driver_key', 'mailcow');
+                });
+        });
+    }
+
+    public function scopeOtherHosting($query)
+    {
+        return $query->whereNot(fn ($q) => $q->applicationHosting())
+            ->whereNot(fn ($q) => $q->emailHosting());
+    }
+
     public function supportsLiveStatusProbe(): bool
     {
         return $this->isSharedHosting() || $this->isContainerHosting();

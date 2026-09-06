@@ -432,6 +432,44 @@ class RegistrarFulfillmentService
     }
 
     /**
+     * Push Cloudflare-assigned nameservers when we already hold the name at the registry.
+     * Cosmotown is checked live; names that are only DNS-hosted stay local.
+     *
+     * @param  array{ns1?: string, ns2?: ?string, ns3?: ?string, ns4?: ?string}|list<string>  $nameservers
+     * @return array{success: bool, message: string, pushed: bool, held: bool}
+     */
+    public function publishNameserversIfHeldAtRegistry(Domain $domain, array $nameservers): array
+    {
+        if ($domain->isDnsManaged()) {
+            return [
+                'success' => true,
+                'pushed' => false,
+                'held' => false,
+                'message' => 'DNS-only names are not published at the registry.',
+            ];
+        }
+
+        $registrar = $this->resolveLiveRegistrar($domain);
+        $driver = $this->operationsDriver($registrar);
+
+        if ($driver instanceof CosmotownRegistrarDriver && $registrar) {
+            if (! $driver->isHeldAtRegistrar($registrar, $domain)) {
+                return [
+                    'success' => true,
+                    'pushed' => false,
+                    'held' => false,
+                    'message' => 'This domain is not in our registry account, so nameservers were saved locally only.',
+                ];
+            }
+        }
+
+        $result = $this->updateDomainNameservers($domain, $nameservers);
+        $result['held'] = $driver instanceof CosmotownRegistrarDriver && $registrar !== null;
+
+        return $result;
+    }
+
+    /**
      * Push nameserver changes to the registrar when the domain is registered there.
      *
      * @param  array{ns1?: string, ns2?: ?string, ns3?: ?string, ns4?: ?string}|list<string>  $nameservers

@@ -3,10 +3,14 @@
 @section('title', 'Customer Services')
 
 @section('content')
+@php
+    $hasAny = $applicationServices->total() || $mailServices->total() || $otherServices->total();
+@endphp
+
 <div class="space-y-6">
     <div>
         <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Customer Services</h1>
-        <p class="text-slate-600 dark:text-slate-400 mt-1">Services provisioned for your customers.</p>
+        <p class="text-slate-600 dark:text-slate-400 mt-1">Application hosting and email are listed separately so you can manage each stack on its own.</p>
     </div>
 
     <form method="GET" class="ui-card p-4 flex flex-wrap gap-4">
@@ -20,37 +24,52 @@
         <button type="submit" class="px-4 py-2 bg-purple-600 text-white rounded-lg">Filter</button>
     </form>
 
-    @if ($services->count())
-        <div class="ui-card overflow-hidden">
-            <table class="w-full">
-                <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800">
-                    <tr>
-                        <th class="px-6 py-4 text-left text-sm font-semibold">Service</th>
-                        <th class="px-6 py-4 text-left text-sm font-semibold">Customer</th>
-                        <th class="px-6 py-4 text-left text-sm font-semibold">Status</th>
-                        <th class="px-6 py-4 text-right text-sm font-semibold">Actions</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
-                    @foreach ($services as $service)
-                        <tr class="hover:bg-slate-50 dark:hover:bg-slate-800">
-                            <td class="px-6 py-4">
-                                <p class="font-medium text-slate-900 dark:text-white">{{ $service->name }}</p>
-                                <p class="text-xs text-slate-500">{{ $service->customerPlanName() }}</p>
-                            </td>
-                            <td class="px-6 py-4 text-sm">{{ $service->user?->name }}</td>
-                            <td class="px-6 py-4"><x-status-badge :status="$service->status" type="service" /></td>
-                            <td class="px-6 py-4 text-right">
-                                @include('reseller.services.partials.row-actions', ['service' => $service])
-                            </td>
-                        </tr>
-                    @endforeach
-                </tbody>
-            </table>
-        </div>
-        {{ $services->links() }}
-    @else
+    @if (! $hasAny)
         <div class="p-12 text-center ui-card text-slate-500">No services found.</div>
+    @else
+        <section class="space-y-3">
+            <div class="flex items-end justify-between gap-3">
+                <div>
+                    <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Application services</h2>
+                    <p class="text-sm text-slate-500 dark:text-slate-400">Container / application hosting sites.</p>
+                </div>
+                <span class="text-sm tabular-nums text-slate-500">{{ $applicationServices->total() }}</span>
+            </div>
+            @include('reseller.services.partials.service-table', [
+                'paginator' => $applicationServices,
+                'empty' => 'No application services match this filter.',
+            ])
+        </section>
+
+        <section class="space-y-3">
+            <div class="flex items-end justify-between gap-3">
+                <div>
+                    <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Mail services</h2>
+                    <p class="text-sm text-slate-500 dark:text-slate-400">Email hosting mailboxes and domains.</p>
+                </div>
+                <span class="text-sm tabular-nums text-slate-500">{{ $mailServices->total() }}</span>
+            </div>
+            @include('reseller.services.partials.service-table', [
+                'paginator' => $mailServices,
+                'empty' => 'No mail services match this filter.',
+            ])
+        </section>
+
+        @if ($otherServices->total() > 0)
+            <section class="space-y-3">
+                <div class="flex items-end justify-between gap-3">
+                    <div>
+                        <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Other services</h2>
+                        <p class="text-sm text-slate-500 dark:text-slate-400">Shared, VPS, and anything that is not application or email hosting.</p>
+                    </div>
+                    <span class="text-sm tabular-nums text-slate-500">{{ $otherServices->total() }}</span>
+                </div>
+                @include('reseller.services.partials.service-table', [
+                    'paginator' => $otherServices,
+                    'empty' => 'No other services match this filter.',
+                ])
+            </section>
+        @endif
     @endif
 </div>
 @endsection

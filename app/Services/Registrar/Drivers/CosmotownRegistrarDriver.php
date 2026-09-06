@@ -730,6 +730,23 @@ class CosmotownRegistrarDriver implements RegistrarOperationsInterface
         return null;
     }
 
+    /**
+     * Whether this FQDN is already in our Cosmotown account (live domaininfo).
+     */
+    public function isHeldAtRegistrar(Registrar $registrar, Domain $domain): bool
+    {
+        try {
+            $fqdn = $this->fqdn($domain);
+            if ($fqdn === '' || ! str_contains($fqdn, '.')) {
+                return false;
+            }
+
+            return $this->domainExistsAtCosmotown(CosmotownClient::forRegistrar($registrar), $fqdn);
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
     private function domainExistsAtCosmotown(CosmotownClient $client, string $fqdn): bool
     {
         try {

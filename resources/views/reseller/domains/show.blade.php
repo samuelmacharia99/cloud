@@ -73,6 +73,7 @@
         </div>
         <div class="flex flex-wrap gap-2">
             <a href="{{ route('reseller.domains.index') }}" class="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-800">Domains</a>
+            <a href="{{ route('reseller.domains.dns.index', $domain) }}" class="px-4 py-2 bg-slate-800 text-white rounded-lg text-sm font-medium hover:bg-slate-700">Manage DNS</a>
             @if($managedCustomer)
                 <form method="POST" action="{{ route('reseller.customers.impersonate', $owner) }}" class="inline">
                     @csrf
@@ -194,7 +195,7 @@
                     Ownership
                 </button>
                 <button type="button" @click="setTab('dns')" :class="tab === 'dns' ? 'border-purple-600 text-slate-900 dark:text-white' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'" class="shrink-0 px-4 py-3 text-sm font-medium border-b-2">
-                    DNS snapshot
+                    DNS
                 </button>
             </nav>
         </div>
@@ -294,14 +295,15 @@
         </div>
 
         <div x-show="tab === 'dns'" class="p-6">
-            <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-1">DNS records</h2>
-            <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">
-                Records stored on Talksasa (imported from DirectAdmin or managed DNS).
-                This is the source of truth after an account leaves DirectAdmin.
-                @if($managedCustomer)
-                    To edit live DNS, <span class="font-medium">view as the customer</span> and use their DNS page.
-                @endif
-            </p>
+            <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
+                <div>
+                    <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-1">DNS records</h2>
+                    <p class="text-sm text-slate-600 dark:text-slate-400">
+                        Live Cloudflare records are edited on the DNS page. The table below is the local snapshot (DirectAdmin import or stored zone).
+                    </p>
+                </div>
+                <a href="{{ route('reseller.domains.dns.index', $domain) }}" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium">Manage DNS</a>
+            </div>
             @if($dnsRecords->isEmpty())
                 <p class="text-sm text-slate-500">No DNS records are stored on this platform yet. Capture the DirectAdmin account before convert so the zone is saved here.</p>
             @else

@@ -294,6 +294,10 @@
                                                         class="block px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800 transition text-sm font-medium text-slate-700 dark:text-slate-300 border-b border-slate-100 dark:border-slate-800">
                                                         Manage domain
                                                     </a>
+                                                    <a href="{{ route('reseller.domains.dns.index', $domain) }}"
+                                                        class="block px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800 transition text-sm font-medium text-slate-700 dark:text-slate-300 border-b border-slate-100 dark:border-slate-800">
+                                                        Manage DNS
+                                                    </a>
                                                     <a href="{{ route('reseller.cart.index') }}"
                                                         class="block px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800 transition text-sm font-medium text-slate-700 dark:text-slate-300 border-b border-slate-100 dark:border-slate-800">
                                                         View cart

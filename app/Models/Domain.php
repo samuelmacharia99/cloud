@@ -153,6 +153,33 @@ class Domain extends Model
     }
 
     /**
+     * Reseller owns the domain, billed it, or manages the customer who owns it.
+     */
+    public function isManagedByReseller(?User $reseller): bool
+    {
+        if (! $reseller?->is_reseller) {
+            return false;
+        }
+
+        if ((int) $this->user_id === (int) $reseller->id || (int) $this->reseller_id === (int) $reseller->id) {
+            return true;
+        }
+
+        if (! $this->user_id) {
+            return false;
+        }
+
+        if (User::query()->whereKey($this->user_id)->where('reseller_id', $reseller->id)->exists()) {
+            return true;
+        }
+
+        return Service::query()
+            ->where('reseller_id', $reseller->id)
+            ->where('user_id', $this->user_id)
+            ->exists();
+    }
+
+    /**
      * Hide upstream provider details from reseller-facing responses.
      *
      * @return $this

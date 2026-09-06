@@ -25,6 +25,32 @@ class ManagedServiceController extends Controller
 
     public function index(Request $request)
     {
+        $base = $this->filteredManagedServices($request);
+
+        $applicationServices = (clone $base)
+            ->applicationHosting()
+            ->paginate(20, ['*'], 'apps_page')
+            ->withQueryString();
+
+        $mailServices = (clone $base)
+            ->emailHosting()
+            ->paginate(20, ['*'], 'mail_page')
+            ->withQueryString();
+
+        $otherServices = (clone $base)
+            ->otherHosting()
+            ->paginate(20, ['*'], 'other_page')
+            ->withQueryString();
+
+        return view('reseller.services.index', compact(
+            'applicationServices',
+            'mailServices',
+            'otherServices',
+        ));
+    }
+
+    private function filteredManagedServices(Request $request)
+    {
         $query = $this->scope->managedServicesQuery(auth()->user())
             ->with(['user', 'product'])
             ->whereNotIn('status', [
@@ -47,9 +73,7 @@ class ManagedServiceController extends Controller
             });
         }
 
-        $services = $query->paginate(20)->withQueryString();
-
-        return view('reseller.services.index', compact('services'));
+        return $query;
     }
 
     public function show(Service $service)

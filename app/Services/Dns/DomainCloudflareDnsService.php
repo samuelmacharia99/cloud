@@ -138,7 +138,8 @@ class DomainCloudflareDnsService
         $fqdn = strtolower($domain->fqdn());
 
         if ($domain->cloudflare_zone_id) {
-            $this->refreshAssignedNameservers($domain, pushToRegistrar: true);
+            $this->refreshAssignedNameservers($domain, pushToRegistrar: false);
+            $push = $this->pushAssignedNameserversToRegistrar($domain->fresh());
             $zone = $this->ensureLocalZone($domain->fresh(), $domain->cloudflare_zone_id);
 
             try {
@@ -150,7 +151,11 @@ class DomainCloudflareDnsService
                 ]);
             }
 
-            return ['success' => true, 'message' => 'DNS zone already provisioned.', 'zone' => $zone];
+            return [
+                'success' => true,
+                'message' => $this->provisionedMessage($domain->fresh(), $push, already: true),
+                'zone' => $zone,
+            ];
         }
 
         $created = $this->cloudflare->createZone($fqdn);
@@ -169,12 +174,14 @@ class DomainCloudflareDnsService
         }
 
         $this->applyNameserversToDomain($domain, $created['nameservers'] ?? []);
-        $this->pushAssignedNameserversToRegistrar($domain->fresh());
 
         $domain->update([
             'cloudflare_dns_enabled' => true,
             'cloudflare_zone_id' => $zoneId,
         ]);
+
+        $this->refreshAssignedNameservers($domain->fresh(), pushToRegistrar: false);
+        $push = $this->pushAssignedNameserversToRegistrar($domain->fresh());
 
         $zone = $this->ensureLocalZone($domain->fresh(), $zoneId);
 
@@ -193,7 +200,11 @@ class DomainCloudflareDnsService
             ]);
         }
 
-        return ['success' => true, 'message' => 'DNS zone provisioned successfully.', 'zone' => $zone];
+        return [
+            'success' => true,
+            'message' => $this->provisionedMessage($domain->fresh(), $push, already: false),
+            'zone' => $zone,
+        ];
     }
 
     public function provisionFromServiceMeta(Domain $domain, array $serviceMeta): void
@@ -405,27 +416,77 @@ class DomainCloudflareDnsService
         ]);
     }
 
-    private function pushAssignedNameserversToRegistrar(Domain $domain): void
+    /**
+     * @return array{success: bool, pushed: bool, held: bool, message: string}
+     */
+    private function pushAssignedNameserversToRegistrar(Domain $domain): array
     {
         $packed = $this->nameserversForDomain($domain);
         if ($packed['ns1'] === '' || ! filled($packed['ns2'])) {
-            return;
+            return [
+                'success' => true,
+                'pushed' => false,
+                'held' => false,
+                'message' => 'Cloudflare has not assigned nameservers yet.',
+            ];
         }
 
         try {
-            $result = app(RegistrarFulfillmentService::class)->updateDomainNameservers($domain, $packed);
-            if (! ($result['success'] ?? false)) {
+            $result = app(RegistrarFulfillmentService::class)->publishNameserversIfHeldAtRegistry($domain, $packed);
+            if (! ($result['success'] ?? false) || (! ($result['pushed'] ?? false) && ($result['held'] ?? false))) {
                 Log::warning('Cloudflare assigned nameservers were not pushed to the registrar', [
                     'domain_id' => $domain->id,
                     'message' => $result['message'] ?? null,
                 ]);
             }
+
+            return [
+                'success' => (bool) ($result['success'] ?? false),
+                'pushed' => (bool) ($result['pushed'] ?? false),
+                'held' => (bool) ($result['held'] ?? false),
+                'message' => (string) ($result['message'] ?? ''),
+            ];
         } catch (\Throwable $e) {
             Log::warning('Cloudflare assigned nameservers were not pushed to the registrar', [
                 'domain_id' => $domain->id,
                 'error' => $e->getMessage(),
             ]);
+
+            return [
+                'success' => false,
+                'pushed' => false,
+                'held' => false,
+                'message' => $e->getMessage(),
+            ];
         }
+    }
+
+    /**
+     * @param  array{success: bool, pushed: bool, held: bool, message: string}  $push
+     */
+    private function provisionedMessage(Domain $domain, array $push, bool $already): string
+    {
+        $prefix = $already ? 'DNS zone already provisioned.' : 'DNS zone provisioned successfully.';
+        $ns = implode(', ', array_filter([
+            $domain->nameserver_1,
+            $domain->nameserver_2,
+            $domain->nameserver_3,
+            $domain->nameserver_4,
+        ]));
+
+        if ($ns === '') {
+            return $prefix;
+        }
+
+        if ($push['pushed'] ?? false) {
+            $message = $prefix.' Registry nameservers were updated to '.$ns.'.';
+        } elseif (($push['held'] ?? false) && ! ($push['success'] ?? false)) {
+            $message = $prefix.' Cloudflare nameservers are '.$ns.', but the registry update did not complete. Save nameservers from the domain page to retry.';
+        } else {
+            $message = $prefix.' Use these Cloudflare nameservers: '.$ns.'.';
+        }
+
+        return app(RegistrarFulfillmentService::class)->concealProviderMessage($message);
     }
 
     /**

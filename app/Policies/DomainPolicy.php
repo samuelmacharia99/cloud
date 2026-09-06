@@ -39,7 +39,11 @@ class DomainPolicy
 
     public function manageDns(User $user, Domain $domain): Response
     {
-        return $this->view($user, $domain);
+        if ($user->id === $domain->user_id || $domain->isManagedByReseller($user)) {
+            return Response::allow();
+        }
+
+        return Response::deny('You can only manage DNS for domains you own or manage.');
     }
 
     public function create(User $user): bool

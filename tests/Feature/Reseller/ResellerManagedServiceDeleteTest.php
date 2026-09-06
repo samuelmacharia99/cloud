@@ -16,7 +16,7 @@ class ResellerManagedServiceDeleteTest extends TestCase
     private function createReseller(): User
     {
         $package = ResellerPackage::create([
-            'name' => 'Starter',
+            'name' => 'Starter-'.uniqid(),
             'description' => 'Test package',
             'billing_cycle' => 'monthly',
             'storage_space' => 100,
@@ -103,7 +103,44 @@ class ResellerManagedServiceDeleteTest extends TestCase
             ->get(route('reseller.services.index'))
             ->assertOk()
             ->assertSee('Active Hosting')
+            ->assertSee('Other services')
             ->assertDontSee('Terminated Hosting');
+    }
+
+    public function test_reseller_services_index_separates_application_and_mail(): void
+    {
+        $reseller = $this->createReseller();
+        $customer = User::factory()->customer()->create(['reseller_id' => $reseller->id]);
+
+        $appProduct = Product::factory()->containerHosting()->create(['name' => 'App Hosting']);
+        $mailProduct = Product::factory()->emailHosting()->create(['name' => 'Email Hosting']);
+
+        Service::factory()->create([
+            'user_id' => $customer->id,
+            'reseller_id' => $reseller->id,
+            'product_id' => $appProduct->id,
+            'provisioning_driver_key' => 'container',
+            'name' => 'Shop App',
+            'status' => 'active',
+        ]);
+
+        Service::factory()->create([
+            'user_id' => $customer->id,
+            'reseller_id' => $reseller->id,
+            'product_id' => $mailProduct->id,
+            'provisioning_driver_key' => 'mailcow',
+            'name' => 'Inbox Mail',
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($reseller)
+            ->get(route('reseller.services.index'))
+            ->assertOk()
+            ->assertSee('Application services')
+            ->assertSee('Mail services')
+            ->assertSee('Shop App')
+            ->assertSee('Inbox Mail')
+            ->assertDontSee('Other services');
     }
 
     public function test_reseller_can_suspend_active_service_from_index_route(): void
