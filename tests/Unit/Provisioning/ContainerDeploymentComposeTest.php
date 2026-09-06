@@ -152,6 +152,7 @@ class ContainerDeploymentComposeTest extends TestCase
         $this->assertStringContainsString('mem_reservation', $yaml);
         $this->assertStringContainsString('elastic-v1', $yaml);
         $this->assertStringContainsString('innodb-buffer-pool-size', $yaml);
+        $this->assertStringContainsString('innodb-use-native-aio=0', $yaml);
         $this->assertStringContainsString('mysql_data:/var/lib/mysql', $yaml);
         $this->assertStringContainsString('talksasa-mysql', $yaml);
         $this->assertStringContainsString('/var/lib/mysql/mysql', $yaml);
@@ -184,6 +185,8 @@ class ContainerDeploymentComposeTest extends TestCase
         $this->assertArrayNotHasKey('entrypoint', $compose['services']['db']);
         $this->assertArrayNotHasKey('entrypoint', $compose['services']['app']);
         $this->assertStringContainsString('/var/lib/mysql/mysql', $compose['services']['mysql']['entrypoint'][2]);
+        $this->assertContains('--innodb-use-native-aio=0', $compose['services']['mysql']['command']);
+        $this->assertArrayNotHasKey('command', $compose['services']['db']);
     }
 
     #[Test]

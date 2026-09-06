@@ -136,6 +136,7 @@ class ContainerTemplateEnvironmentService
             '--max-connections=50',
             '--table-open-cache=200',
             '--performance-schema=OFF',
+            '--innodb-use-native-aio=0',
         ];
 
         // Use TCP (127.0.0.1), not the unix socket — during InnoDB recovery the sock is often missing

@@ -91,6 +91,7 @@ class ContainerTemplateSeeder extends Seeder
                         'cpus' => 1.0,
                         'command' => [
                             '--innodb-buffer-pool-size=256M',
+                            '--innodb-use-native-aio=0',
                             '--max-connections=50',
                             '--table-open-cache=200',
                             '--performance-schema=OFF',

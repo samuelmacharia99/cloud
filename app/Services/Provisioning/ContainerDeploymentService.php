@@ -1967,7 +1967,34 @@ class ContainerDeploymentService
             }
 
             $compose['services'][$name]['entrypoint'] = self::mysqlSidecarRepairEntrypoint();
+            $this->ensureMysqlSidecarDisablesNativeAio($compose['services'][$name]);
         }
+    }
+
+    /**
+     * Many MySQL 8 sidecars on one host exhaust fs.aio-max-nr. io_setup() then
+     * fails with EAGAIN, initialize aborts, and the datadir is left unusable.
+     *
+     * @param  array<string, mixed>  $service
+     */
+    public function ensureMysqlSidecarDisablesNativeAio(array &$service): void
+    {
+        $command = $service['command'] ?? [];
+        if (is_string($command)) {
+            $command = preg_split('/\s+/', trim($command)) ?: [];
+        }
+        if (! is_array($command)) {
+            $command = [];
+        }
+
+        foreach ($command as $part) {
+            if (is_string($part) && str_contains($part, 'innodb-use-native-aio')) {
+                return;
+            }
+        }
+
+        $command[] = '--innodb-use-native-aio=0';
+        $service['command'] = array_values($command);
     }
 
     /**
@@ -5943,7 +5970,8 @@ class ContainerDeploymentService
             || str_contains($existing, '-h localhost')
             || ! str_contains($existing, 'start_period: 300s')
             || ! str_contains($existing, 'uploads.ini')
-            || ! str_contains($existing, 'talksasa-mysql');
+            || ! str_contains($existing, 'talksasa-mysql')
+            || ! str_contains($existing, 'innodb-use-native-aio=0');
 
         if (! $needsRefresh) {
             return;
