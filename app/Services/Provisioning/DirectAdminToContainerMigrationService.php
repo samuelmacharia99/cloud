@@ -902,12 +902,14 @@ class DirectAdminToContainerMigrationService
             }
 
             $progress('Waiting for MySQL sidecar');
+            $wait = $this->composeMysqlWaitCredentials($db);
             $this->waitForComposeMysql(
                 $targetSsh,
                 $containerPath,
                 $dbService,
-                $db['root_password'] !== '' ? $db['root_password'] : $db['password'],
-                180
+                $wait['password'],
+                300,
+                $wait['user'],
             );
 
             // Extract onto the host bind mount (.../app → /var/www/html) so the customer
@@ -926,9 +928,9 @@ class DirectAdminToContainerMigrationService
                 $targetSsh,
                 $containerPath,
                 $dbService,
-                $db['root_password'] !== '' ? $db['root_password'] : $db['password'],
-                180,
-                $db['root_password'] !== '' ? 'root' : ($db['user'] !== '' ? $db['user'] : 'wordpress'),
+                $wait['password'],
+                300,
+                $wait['user'],
             );
 
             $importPass = $db['root_password'] !== '' ? $db['root_password'] : $db['password'];
@@ -1246,12 +1248,14 @@ class DirectAdminToContainerMigrationService
                 }
 
                 $progress('Waiting for MySQL sidecar');
+                $wait = $this->composeMysqlWaitCredentials($db);
                 $this->waitForComposeMysql(
                     $targetSsh,
                     $containerPath,
                     $dbService,
-                    $db['root_password'] !== '' ? $db['root_password'] : $db['password'],
-                    180
+                    $wait['password'],
+                    300,
+                    $wait['user'],
                 );
 
                 $importPass = $db['root_password'] !== '' ? $db['root_password'] : $db['password'];
@@ -1926,55 +1930,97 @@ class DirectAdminToContainerMigrationService
         ];
     }
 
+    /**
+     * @param  array{user?: string, password?: string, root_password?: string}  $db
+     * @return array{user: string, password: string}
+     */
+    public function composeMysqlWaitCredentials(array $db): array
+    {
+        $root = trim((string) ($db['root_password'] ?? ''));
+        if ($root !== '') {
+            return ['user' => 'root', 'password' => $root];
+        }
+
+        $user = trim((string) ($db['user'] ?? ''));
+
+        return [
+            'user' => $user !== '' ? $user : 'root',
+            'password' => (string) ($db['password'] ?? ''),
+        ];
+    }
+
+    public function composeMysqlUpCommand(string $containerPath, string $dbService): string
+    {
+        return 'cd '.escapeshellarg($containerPath)
+            .' && docker compose up -d --no-deps '.escapeshellarg($dbService);
+    }
+
+    public function composeMysqlProbeCommand(
+        string $containerPath,
+        string $dbService,
+        string $user,
+        string $password,
+    ): string {
+        $safeUser = preg_replace('/[^a-zA-Z0-9_]/', '', $user) ?: 'root';
+        $prefix = 'cd '.escapeshellarg($containerPath).' && docker compose exec -T';
+        if ($password !== '') {
+            $prefix .= ' -e MYSQL_PWD='.escapeshellarg($password);
+        }
+
+        $inner = 'if command -v mysqladmin >/dev/null 2>&1; then'
+            .' mysqladmin ping -u'.$safeUser.' --silent && mysql -u'.$safeUser.' -e "SELECT 1";'
+            .' elif command -v mariadb-admin >/dev/null 2>&1; then'
+            .' mariadb-admin ping -u'.$safeUser.' --silent && mariadb -u'.$safeUser.' -e "SELECT 1";'
+            .' else mysqladmin ping -u'.$safeUser.' --silent; fi';
+
+        return $prefix.' '.escapeshellarg($dbService).' sh -c '.escapeshellarg($inner);
+    }
+
     public function waitForComposeMysql(
         SSHService $ssh,
         string $containerPath,
         string $dbService,
         string $password,
-        int $timeoutSeconds = 180,
+        int $timeoutSeconds = 300,
         string $user = 'root',
     ): void {
         $delaySeconds = 5;
         $maxAttempts = max(1, (int) ceil($timeoutSeconds / $delaySeconds));
-        $pathArg = escapeshellarg($containerPath);
-        $serviceArg = escapeshellarg($dbService);
-        $pwdArg = escapeshellarg($password);
-        $safeUser = preg_replace('/[^a-zA-Z0-9_]/', '', $user) ?: 'root';
-        $userArg = escapeshellarg($safeUser);
+        $lastError = null;
+
+        try {
+            $ssh->exec($this->composeMysqlUpCommand($containerPath, $dbService), 180);
+        } catch (\Throwable $e) {
+            $lastError = $e;
+            Log::warning('MySQL sidecar compose up failed; waiting on existing container', [
+                'service' => $dbService,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
             try {
-                // Soft-start the sidecar if extract/IO knocked it over.
-                if ($attempt > 0 && $attempt % 3 === 0) {
-                    @$ssh->exec("cd {$pathArg} && docker compose start {$serviceArg} 2>/dev/null || true", 30);
+                if ($attempt > 0 && ($attempt % 3 === 0 || $this->composeMysqlNeedsStart((string) $lastError?->getMessage()))) {
+                    try {
+                        $ssh->exec($this->composeMysqlUpCommand($containerPath, $dbService), 120);
+                    } catch (\Throwable $e) {
+                        $lastError = $e;
+                    }
                     sleep(3);
                 }
 
-                // Authenticate over the unix socket (not -h 127.0.0.1 / TCP).
-                if ($password !== '') {
-                    $ssh->exec(
-                        "cd {$pathArg} && docker compose exec -T -e MYSQL_PWD={$pwdArg} {$serviceArg}"
-                        ." mysqladmin ping -u{$userArg} --silent",
-                        20
-                    );
-                    $ssh->exec(
-                        "cd {$pathArg} && docker compose exec -T -e MYSQL_PWD={$pwdArg} {$serviceArg}"
-                        ." mysql -u{$userArg} -e 'SELECT 1'",
-                        20
-                    );
-                } else {
-                    $ssh->exec(
-                        "cd {$pathArg} && docker compose exec -T {$serviceArg} mysqladmin ping -u{$userArg} --silent",
-                        20
-                    );
-                }
+                $ssh->exec(
+                    $this->composeMysqlProbeCommand($containerPath, $dbService, $user, $password),
+                    25
+                );
 
                 return;
             } catch (\Throwable $e) {
-                Log::debug('WordPress MySQL sidecar not ready yet', [
+                $lastError = $e;
+                Log::debug('MySQL sidecar not ready yet', [
                     'attempt' => $attempt + 1,
                     'service' => $dbService,
-                    'user' => $safeUser,
+                    'user' => $user,
                     'error' => $e->getMessage(),
                 ]);
             }
@@ -1984,9 +2030,42 @@ class DirectAdminToContainerMigrationService
             }
         }
 
+        $status = $this->composeMysqlStatus($ssh, $containerPath, $dbService);
+        $detail = $lastError?->getMessage() ?: 'no probe output';
+
         throw new \RuntimeException(
             "MySQL sidecar \"{$dbService}\" did not become ready within {$timeoutSeconds} seconds."
+            .' Last error: '.$detail
+            .($status !== '' ? ' Compose: '.$status : '')
         );
+    }
+
+    public function composeMysqlNeedsStart(string $message): bool
+    {
+        $lower = strtolower($message);
+
+        return str_contains($lower, 'not running')
+            || str_contains($lower, 'no container')
+            || str_contains($lower, 'is not running')
+            || str_contains($lower, 'cannot connect')
+            || str_contains($lower, 'no such service')
+            || str_contains($lower, 'container is not');
+    }
+
+    private function composeMysqlStatus(SSHService $ssh, string $containerPath, string $dbService): string
+    {
+        try {
+            return trim($ssh->exec(
+                'cd '.escapeshellarg($containerPath)
+                .' && docker compose ps -a '.escapeshellarg($dbService)
+                .' 2>/dev/null | tail -n 5'
+                .' ; docker compose logs --tail=15 '.escapeshellarg($dbService).' 2>/dev/null | tail -n 15'
+                .' || true',
+                30
+            ));
+        } catch (\Throwable) {
+            return '';
+        }
     }
 
     /**

@@ -159,4 +159,59 @@ class DirectAdminToContainerMigrationDatabaseTest extends TestCase
         $this->assertSame('sigtunaco_db1', $enriched['DB_USER']);
         $this->assertSame('from-da', $enriched['DB_PASSWORD']);
     }
+
+    #[Test]
+    public function compose_mysql_wait_uses_app_user_when_root_password_is_missing(): void
+    {
+        $migrator = app(DirectAdminToContainerMigrationService::class);
+
+        $this->assertSame(
+            ['user' => 'root', 'password' => 'root-secret'],
+            $migrator->composeMysqlWaitCredentials([
+                'user' => 'appuser',
+                'password' => 'app-secret',
+                'root_password' => 'root-secret',
+            ])
+        );
+        $this->assertSame(
+            ['user' => 'appuser', 'password' => 'app-secret'],
+            $migrator->composeMysqlWaitCredentials([
+                'user' => 'appuser',
+                'password' => 'app-secret',
+                'root_password' => '',
+            ])
+        );
+    }
+
+    #[Test]
+    public function compose_mysql_up_creates_the_sidecar_instead_of_starting_a_missing_container(): void
+    {
+        $cmd = app(DirectAdminToContainerMigrationService::class)
+            ->composeMysqlUpCommand('/opt/talksasa/containers/site-1', 'mysql');
+
+        $this->assertStringContainsString('docker compose up -d --no-deps', $cmd);
+        $this->assertStringContainsString('mysql', $cmd);
+        $this->assertStringNotContainsString('docker compose start', $cmd);
+    }
+
+    #[Test]
+    public function compose_mysql_probe_accepts_mariadb_admin_on_official_images(): void
+    {
+        $cmd = app(DirectAdminToContainerMigrationService::class)
+            ->composeMysqlProbeCommand('/opt/talksasa/containers/site-1', 'mysql', 'root', 'secret');
+
+        $this->assertStringContainsString('mysqladmin ping', $cmd);
+        $this->assertStringContainsString('mariadb-admin ping', $cmd);
+        $this->assertStringContainsString('MYSQL_PWD=', $cmd);
+    }
+
+    #[Test]
+    public function compose_mysql_needs_start_detects_a_missing_container(): void
+    {
+        $migrator = app(DirectAdminToContainerMigrationService::class);
+
+        $this->assertTrue($migrator->composeMysqlNeedsStart('service "mysql" is not running'));
+        $this->assertTrue($migrator->composeMysqlNeedsStart('Error: No container found'));
+        $this->assertFalse($migrator->composeMysqlNeedsStart('Access denied for user'));
+    }
 }
