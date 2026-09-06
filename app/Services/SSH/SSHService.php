@@ -157,6 +157,8 @@ class SSHService
             } catch (SSHCommandException $e) {
                 $lastError = $e;
                 if ($attempt < $attempts && $this->isRetryableSshFailure($e->getMessage())) {
+                    usleep(250_000 * $attempt);
+
                     continue;
                 }
 
@@ -164,6 +166,8 @@ class SSHService
             } catch (\Throwable $e) {
                 $lastError = $e;
                 if ($attempt < $attempts && $this->isRetryableSshFailure($e->getMessage())) {
+                    usleep(250_000 * $attempt);
+
                     continue;
                 }
 
@@ -673,7 +677,11 @@ class SSHService
             || str_contains($lower, 'exec returned false')
             || str_contains($lower, 'channel open')
             || str_contains($lower, 'connection timed out')
-            || str_contains($lower, 'timed out whilst');
+            || str_contains($lower, 'timed out whilst')
+            || str_contains($lower, 'identification string')
+            || str_contains($lower, 'connecting to an ssh server')
+            || str_contains($lower, 'connection reset')
+            || str_contains($lower, 'broken pipe');
     }
 
     /**

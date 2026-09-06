@@ -102,12 +102,14 @@ class DirectAdminToContainerConvertService
         $emailWarnings = $email['warnings'] ?? [];
         $dashboardFailed = filled($inventory['account']['dashboard_error'] ?? null);
         $virtualPasswdScanned = (bool) ($email['virtual_passwd_scanned'] ?? false);
+        $maildirsScanned = (bool) ($email['maildirs_scanned'] ?? false);
 
         if ($this->shouldBlockOnMissingMailboxInventory(
             $daEmailCount,
             $mailboxCount,
             $dashboardFailed,
             $virtualPasswdScanned,
+            $maildirsScanned,
         )) {
             $blockers[] = sprintf(
                 'DirectAdmin reports %d email account(s) but mailbox inventory found none. Mail would be left on DirectAdmin if you convert now. Check POP API access on the DA node or verify maildirs under /home/{username}/imap and /etc/virtual/{domain}/passwd before converting.',
@@ -115,8 +117,8 @@ class DirectAdminToContainerConvertService
             );
         } elseif ($daEmailCount > 0 && $mailboxCount === 0) {
             $emailWarnings[] = sprintf(
-                $virtualPasswdScanned
-                    ? 'DirectAdmin usage shows %d email account(s), but POP and /etc/virtual listed none. Convert will not pull mail — confirm on DirectAdmin before decommissioning.'
+                ($virtualPasswdScanned || $maildirsScanned)
+                    ? 'DirectAdmin usage shows %d email account(s), but POP and the live mailbox scan listed none. Convert will not pull mail — confirm on DirectAdmin before decommissioning.'
                     : 'Cached DirectAdmin usage shows %d email account(s), but the live dashboard failed and mailbox inventory found none. Convert will not pull mail — confirm on DirectAdmin before decommissioning.',
                 $daEmailCount
             );
@@ -200,14 +202,16 @@ class DirectAdminToContainerConvertService
         int $mailboxCount,
         bool $dashboardFailed,
         bool $virtualPasswdScanned,
+        bool $maildirsScanned = false,
     ): bool {
         if ($mailboxCount > 0 || $daEmailCount <= 0) {
             return false;
         }
 
-        // Live /etc/virtual is authoritative. A usage counter of 1 with an empty
-        // passwd file is usually the default DA tally, not a mailbox we would leave behind.
-        if ($virtualPasswdScanned) {
+        // Live /etc/virtual and /home/{user}/imap are authoritative. A usage
+        // counter of 1 with empty passwd/maildirs is usually the default DA tally,
+        // not a mailbox we would leave behind.
+        if ($virtualPasswdScanned || $maildirsScanned) {
             return false;
         }
 
@@ -465,6 +469,7 @@ class DirectAdminToContainerConvertService
             'warnings' => $warnings,
             'ssh_scanned' => $sshScanned,
             'virtual_passwd_scanned' => (bool) ($listed['virtual_passwd_scanned'] ?? false),
+            'maildirs_scanned' => (bool) ($listed['maildirs_scanned'] ?? false),
         ];
     }
 
@@ -539,7 +544,7 @@ class DirectAdminToContainerConvertService
         }
 
         $stack = (string) ($preflight['detected_stack'] ?? 'unknown');
-        $snapshot = $this->snapshots->captureOrFail($service);
+        $snapshot = $this->snapshots->captureOrFail($service, reuseRecent: true);
         if ($containerProduct->type !== 'container_hosting') {
             throw new \InvalidArgumentException('Select an Application Hosting product. That plan is billed when the current DirectAdmin term ends.');
         }

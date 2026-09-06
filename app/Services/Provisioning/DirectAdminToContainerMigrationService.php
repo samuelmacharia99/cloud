@@ -119,6 +119,11 @@ class DirectAdminToContainerMigrationService
             is_string($domain) ? $domain : null,
             $apiDomains,
         );
+        $merged = $this->mergeSnapshotSites($source, $sites);
+        if (count($merged) > count($sites)) {
+            $warnings[] = 'SSH did not list every site folder; kept addon sites from the last DirectAdmin snapshot.';
+            $sites = $merged;
+        }
 
         $primarySite = null;
         foreach ($sites as $site) {
@@ -249,76 +254,166 @@ class DirectAdminToContainerMigrationService
      */
     public function listSitesOnDirectAdminUser(Node $node, string $username, ?string $primaryDomain, array $extraDomains = []): array
     {
+        $domainsRoot = '/home/'.trim($username, '/').'/domains';
+        $names = [];
+        $listedViaSsh = false;
         $ssh = SSHService::forNode($node);
-        $sites = [];
 
         try {
-            $domainsRoot = '/home/'.trim($username, '/').'/domains';
-            $listing = trim($ssh->exec(
-                'if [ -d '.escapeshellarg($domainsRoot).' ]; then '
-                .'find '.escapeshellarg($domainsRoot).' -mindepth 1 -maxdepth 1 -type d -exec basename {} \; ; '
-                .'else echo ""; fi'
-            ));
-            $names = array_values(array_filter(array_map('trim', preg_split("/\r\n|\n|\r/", $listing) ?: [])));
-
-            foreach ($extraDomains as $extra) {
-                $extra = strtolower(trim((string) $extra));
-                if ($extra !== '') {
-                    $names[] = $extra;
-                }
+            try {
+                $listing = trim($ssh->exec(
+                    'if [ -d '.escapeshellarg($domainsRoot).' ]; then '
+                    .'find '.escapeshellarg($domainsRoot).' -mindepth 1 -maxdepth 1 -type d -exec basename {} \; ; '
+                    .'else echo ""; fi'
+                ));
+                $names = array_values(array_filter(array_map('trim', preg_split("/\r\n|\n|\r/", $listing) ?: [])));
+                $listedViaSsh = true;
+            } catch (\Throwable $e) {
+                Log::warning('DirectAdmin site folder listing over SSH failed; using API/primary domains.', [
+                    'node_id' => $node->id,
+                    'username' => $username,
+                    'error' => $e->getMessage(),
+                ]);
             }
 
-            if (filled($primaryDomain)) {
-                $names[] = $primaryDomain;
-            }
-
-            $unique = [];
-            foreach ($names as $name) {
-                $name = strtolower(trim((string) $name));
-                if (! $this->isConvertibleDomainLabel($name)) {
-                    continue;
-                }
-                $unique[$name] = $name;
-            }
-            $names = array_values($unique);
-
-            foreach ($names as $name) {
-                $docroot = $domainsRoot.'/'.$name.'/public_html';
-                try {
-                    $detection = $this->detectStackViaSsh($ssh, $docroot);
-                } catch (\Throwable) {
-                    $detection = [
-                        'stack' => 'unknown',
-                        'has_wp_config' => false,
-                        'app_root' => $docroot,
-                        'docroot' => $docroot,
-                    ];
-                }
-
-                $isPrimary = filled($primaryDomain) && strcasecmp($name, $primaryDomain) === 0;
-                $sites[] = [
-                    'domain' => $name,
-                    'docroot' => $docroot,
-                    'app_root' => (string) ($detection['app_root'] ?? $docroot),
-                    'stack' => (string) ($detection['stack'] ?? 'unknown'),
-                    'has_wp_config' => (bool) ($detection['has_wp_config'] ?? false),
-                    'is_primary' => $isPrimary,
-                    'recommended_action' => $isPrimary
-                        ? 'Billing-anchor container on the selected Application Hosting package (this service).'
-                        : 'Launch as a sibling container on the same package (not a second plan). Overage applies if the project exceeds package specs.',
-                ];
-            }
-
-            usort($sites, function (array $a, array $b): int {
-                if (($a['is_primary'] ?? false) === ($b['is_primary'] ?? false)) {
-                    return strcmp($a['domain'], $b['domain']);
-                }
-
-                return ($a['is_primary'] ?? false) ? -1 : 1;
-            });
+            return $this->assembleSitesFromDomainNames(
+                $names,
+                $extraDomains,
+                $primaryDomain,
+                $username,
+                $listedViaSsh ? $ssh : null,
+            );
         } finally {
             $ssh->disconnect();
         }
+    }
+
+    /**
+     * @param  list<string>  $folderNames
+     * @param  list<string>  $extraDomains
+     * @return list<array{
+     *     domain: string,
+     *     docroot: string,
+     *     app_root: string,
+     *     stack: string,
+     *     has_wp_config: bool,
+     *     is_primary: bool,
+     *     recommended_action: string
+     * }>
+     */
+    public function assembleSitesFromDomainNames(
+        array $folderNames,
+        array $extraDomains,
+        ?string $primaryDomain,
+        string $username,
+        ?SSHService $ssh = null,
+    ): array {
+        $domainsRoot = '/home/'.trim($username, '/').'/domains';
+        $names = $folderNames;
+
+        foreach ($extraDomains as $extra) {
+            $extra = strtolower(trim((string) $extra));
+            if ($extra !== '') {
+                $names[] = $extra;
+            }
+        }
+
+        if (filled($primaryDomain)) {
+            $names[] = $primaryDomain;
+        }
+
+        $unique = [];
+        foreach ($names as $name) {
+            $name = strtolower(trim((string) $name));
+            if (! $this->isConvertibleDomainLabel($name)) {
+                continue;
+            }
+            $unique[$name] = $name;
+        }
+
+        $sites = [];
+        foreach (array_values($unique) as $name) {
+            $docroot = $domainsRoot.'/'.$name.'/public_html';
+            $detection = [
+                'stack' => 'unknown',
+                'has_wp_config' => false,
+                'app_root' => $docroot,
+                'docroot' => $docroot,
+            ];
+            if ($ssh) {
+                try {
+                    $detection = $this->detectStackViaSsh($ssh, $docroot);
+                } catch (\Throwable) {
+                }
+            }
+
+            $isPrimary = filled($primaryDomain) && strcasecmp($name, $primaryDomain) === 0;
+            $sites[] = [
+                'domain' => $name,
+                'docroot' => $docroot,
+                'app_root' => (string) ($detection['app_root'] ?? $docroot),
+                'stack' => (string) ($detection['stack'] ?? 'unknown'),
+                'has_wp_config' => (bool) ($detection['has_wp_config'] ?? false),
+                'is_primary' => $isPrimary,
+                'recommended_action' => $isPrimary
+                    ? 'Billing-anchor container on the selected Application Hosting package (this service).'
+                    : 'Launch as a sibling container on the same package (not a second plan). Overage applies if the project exceeds package specs.',
+            ];
+        }
+
+        return $this->sortInventorySites($sites);
+    }
+
+    /**
+     * Keep addon folders from a successful snapshot when live SSH listing is short.
+     *
+     * @param  list<array<string, mixed>>  $sites
+     * @return list<array<string, mixed>>
+     */
+    public function mergeSnapshotSites(Service $source, array $sites): array
+    {
+        $source->loadMissing('latestDaAccountSnapshot');
+        $snap = $source->latestDaAccountSnapshot;
+        $fromSnap = $snap?->isCaptured() ? ($snap->payload['inventory']['sites'] ?? []) : [];
+        if (! is_array($fromSnap) || $fromSnap === []) {
+            return $sites;
+        }
+
+        $byDomain = [];
+        foreach ($sites as $site) {
+            $key = strtolower((string) ($site['domain'] ?? ''));
+            if ($key !== '') {
+                $byDomain[$key] = $site;
+            }
+        }
+
+        foreach ($fromSnap as $site) {
+            if (! is_array($site)) {
+                continue;
+            }
+            $key = strtolower((string) ($site['domain'] ?? ''));
+            if ($key === '' || isset($byDomain[$key])) {
+                continue;
+            }
+            $byDomain[$key] = $site;
+        }
+
+        return $this->sortInventorySites(array_values($byDomain));
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $sites
+     * @return list<array<string, mixed>>
+     */
+    public function sortInventorySites(array $sites): array
+    {
+        usort($sites, function (array $a, array $b): int {
+            if (($a['is_primary'] ?? false) === ($b['is_primary'] ?? false)) {
+                return strcmp((string) ($a['domain'] ?? ''), (string) ($b['domain'] ?? ''));
+            }
+
+            return ($a['is_primary'] ?? false) ? -1 : 1;
+        });
 
         return $sites;
     }

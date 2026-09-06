@@ -24,6 +24,8 @@ class SSHServiceRetryableFailureTest extends TestCase
         $this->assertTrue($method->invoke($service, 'Undefined array key 1'));
         $this->assertTrue($method->invoke($service, 'SSH exec returned false (session channel open or exec request failed)'));
         $this->assertTrue($method->invoke($service, 'Please close the channel (1) before trying to open it again'));
+        $this->assertTrue($method->invoke($service, 'Error reading SSH identification string; are you sure you\'re connecting to an SSH server?'));
+        $this->assertTrue($method->invoke($service, 'SSH connection failed to 88.99.104.138: Connection reset by peer'));
         $this->assertFalse($method->invoke($service, 'SSH authentication failed - invalid credentials or network issue'));
     }
 }

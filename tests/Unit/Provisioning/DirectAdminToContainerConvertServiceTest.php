@@ -3,6 +3,7 @@
 namespace Tests\Unit\Provisioning;
 
 use App\Models\ContainerTemplate;
+use App\Models\DaAccountSnapshot;
 use App\Models\Product;
 use App\Models\Service;
 use App\Models\User;
@@ -403,6 +404,91 @@ class DirectAdminToContainerConvertServiceTest extends TestCase
         $this->assertTrue($migrator->isConvertibleDomainLabel('thnkdigtal.zip'));
     }
 
+    public function test_assembles_sites_from_api_names_when_ssh_listing_is_unavailable(): void
+    {
+        $migrator = app(DirectAdminToContainerMigrationService::class);
+
+        $sites = $migrator->assembleSitesFromDomainNames(
+            [],
+            ['jameskahiga.com', 'booking.jameskahiga.com'],
+            'jameskahiga.com',
+            'jamesk',
+        );
+
+        $this->assertSame('jameskahiga.com', $sites[0]['domain']);
+        $this->assertTrue($sites[0]['is_primary']);
+        $this->assertSame('booking.jameskahiga.com', $sites[1]['domain']);
+        $this->assertFalse($sites[1]['is_primary']);
+        $this->assertSame('unknown', $sites[0]['stack']);
+        $this->assertSame('/home/jamesk/domains/booking.jameskahiga.com/public_html', $sites[1]['docroot']);
+    }
+
+    public function test_merges_addon_sites_from_a_captured_snapshot_when_live_listing_is_short(): void
+    {
+        $customer = User::factory()->customer()->create();
+        $product = Product::factory()->create([
+            'type' => 'shared_hosting',
+            'provisioning_driver_key' => 'directadmin',
+        ]);
+        $service = Service::factory()->create([
+            'user_id' => $customer->id,
+            'product_id' => $product->id,
+            'provisioning_driver_key' => 'directadmin',
+            'status' => 'active',
+            'name' => 'jameskahiga.com',
+        ]);
+        DaAccountSnapshot::query()->create([
+            'service_id' => $service->id,
+            'username' => 'jamesk',
+            'primary_domain' => 'jameskahiga.com',
+            'site_count' => 2,
+            'database_count' => 0,
+            'mailbox_count' => 6,
+            'ftp_count' => 0,
+            'dns_record_count' => 4,
+            'dns_imported' => true,
+            'status' => 'captured',
+            'payload' => [
+                'inventory' => [
+                    'sites' => [
+                        [
+                            'domain' => 'jameskahiga.com',
+                            'is_primary' => true,
+                            'stack' => 'static_or_php',
+                            'docroot' => '/home/jamesk/domains/jameskahiga.com/public_html',
+                            'app_root' => '/home/jamesk/domains/jameskahiga.com/public_html',
+                            'has_wp_config' => false,
+                        ],
+                        [
+                            'domain' => 'booking.jameskahiga.com',
+                            'is_primary' => false,
+                            'stack' => 'static_or_php',
+                            'docroot' => '/home/jamesk/domains/booking.jameskahiga.com/public_html',
+                            'app_root' => '/home/jamesk/domains/booking.jameskahiga.com/public_html',
+                            'has_wp_config' => false,
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+
+        $merged = app(DirectAdminToContainerMigrationService::class)->mergeSnapshotSites($service->fresh(), [
+            [
+                'domain' => 'jameskahiga.com',
+                'is_primary' => true,
+                'stack' => 'unknown',
+                'docroot' => '/home/jamesk/domains/jameskahiga.com/public_html',
+                'app_root' => '/home/jamesk/domains/jameskahiga.com/public_html',
+                'has_wp_config' => false,
+            ],
+        ]);
+
+        $this->assertCount(2, $merged);
+        $this->assertSame('jameskahiga.com', $merged[0]['domain']);
+        $this->assertSame('booking.jameskahiga.com', $merged[1]['domain']);
+        $this->assertSame('unknown', $merged[0]['stack']);
+    }
+
     public function test_application_hosting_catalog_recommends_nodejs_plans(): void
     {
         $nodeTemplate = ContainerTemplate::query()->create([
@@ -789,6 +875,8 @@ class DirectAdminToContainerConvertServiceTest extends TestCase
         $this->assertFalse($convert->shouldBlockOnMissingMailboxInventory(4, 0, false, true));
         $this->assertFalse($convert->shouldBlockOnMissingMailboxInventory(4, 2, true, true));
         $this->assertFalse($convert->shouldBlockOnMissingMailboxInventory(0, 0, false, false));
+        $this->assertFalse($convert->shouldBlockOnMissingMailboxInventory(1, 0, false, false, true));
+        $this->assertTrue($convert->shouldBlockOnMissingMailboxInventory(1, 0, false, false, false));
     }
 
     public function test_generic_tar_command_creates_empty_archive_when_docroot_is_missing(): void

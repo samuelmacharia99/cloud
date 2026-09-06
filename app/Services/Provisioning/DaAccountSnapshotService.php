@@ -135,10 +135,40 @@ class DaAccountSnapshotService
     }
 
     /**
+     * A same-day captured snapshot is enough for convert. Re-listing /home/{user}/domains
+     * over SSH during the job is how a flaky DA banner fails an already-queued account.
+     */
+    public function recentCaptured(Service $service, int $maxAgeMinutes = 720): ?DaAccountSnapshot
+    {
+        $service->loadMissing('latestDaAccountSnapshot');
+        $snapshot = $service->latestDaAccountSnapshot;
+        if (! $snapshot?->isCaptured()) {
+            return null;
+        }
+
+        if ($snapshot->created_at && $snapshot->created_at->lt(now()->subMinutes($maxAgeMinutes))) {
+            return null;
+        }
+
+        return $snapshot;
+    }
+
+    /**
      * Capture or throw so convert/queue cannot proceed without DNS on the platform.
      */
-    public function captureOrFail(Service $service, ?DirectAdminCustomerPanelApi $api = null, ?User $actor = null): DaAccountSnapshot
-    {
+    public function captureOrFail(
+        Service $service,
+        ?DirectAdminCustomerPanelApi $api = null,
+        ?User $actor = null,
+        bool $reuseRecent = false,
+    ): DaAccountSnapshot {
+        if ($reuseRecent) {
+            $existing = $this->recentCaptured($service);
+            if ($existing) {
+                return $existing;
+            }
+        }
+
         $snapshot = $this->capture($service, $api, $actor);
         if (! $snapshot->isCaptured()) {
             throw new RuntimeException($snapshot->error ?: 'DirectAdmin DNS snapshot failed.');

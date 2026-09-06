@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\Provisioning;
 
+use App\Models\DaAccountSnapshot;
 use App\Models\DnsRecord;
 use App\Models\Domain;
 use App\Models\Node;
@@ -156,6 +157,34 @@ class DaAccountSnapshotServiceTest extends TestCase
         $this->assertSame(1, Domain::query()->count());
         $unowned = collect($snapshot->payload['zones'] ?? [])->where('dns_unowned', true)->pluck('hostname')->all();
         $this->assertEqualsCanonicalizing(['api.shop.example.com', 'booking.shop.example.com'], $unowned);
+    }
+
+    #[Test]
+    public function it_reuses_a_recent_captured_snapshot_instead_of_hitting_ssh_again(): void
+    {
+        $service = $this->daService();
+        $existing = DaAccountSnapshot::query()->create([
+            'service_id' => $service->id,
+            'username' => 'da-shop',
+            'primary_domain' => 'shop.example.com',
+            'site_count' => 1,
+            'database_count' => 1,
+            'mailbox_count' => 0,
+            'ftp_count' => 0,
+            'dns_record_count' => 2,
+            'dns_imported' => true,
+            'status' => 'captured',
+            'payload' => ['zones' => []],
+        ]);
+
+        $migrator = Mockery::mock(DirectAdminToContainerMigrationService::class);
+        $migrator->shouldNotReceive('inventory');
+        $this->app->instance(DirectAdminToContainerMigrationService::class, $migrator);
+
+        $reused = app(DaAccountSnapshotService::class)->captureOrFail($service, reuseRecent: true);
+
+        $this->assertTrue($reused->is($existing));
+        $this->assertSame(1, DaAccountSnapshot::query()->count());
     }
 
     private function daService(): Service

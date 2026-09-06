@@ -115,6 +115,7 @@ class DirectAdminToMailcowMigrationService
                 'errors' => ['Missing DirectAdmin username or node for mailbox inventory.'],
                 'ssh_scanned' => false,
                 'virtual_passwd_scanned' => false,
+                'maildirs_scanned' => false,
             ];
         }
 
@@ -174,10 +175,12 @@ class DirectAdminToMailcowMigrationService
 
         $sshScanned = false;
         $virtualPasswdScanned = false;
+        $maildirsScanned = false;
         if ($all === [] && $daService->node) {
             $sshListed = $this->listMailboxesViaSsh($daService->node, $username, $domains);
             $sshScanned = true;
             $virtualPasswdScanned = (bool) ($sshListed['virtual_passwd_scanned'] ?? false);
+            $maildirsScanned = (bool) ($sshListed['maildirs_scanned'] ?? false);
             foreach ($sshListed['errors'] as $error) {
                 $errors[] = $error;
             }
@@ -193,6 +196,7 @@ class DirectAdminToMailcowMigrationService
             'errors' => $errors,
             'ssh_scanned' => $sshScanned,
             'virtual_passwd_scanned' => $virtualPasswdScanned,
+            'maildirs_scanned' => $maildirsScanned,
         ];
     }
 
@@ -204,7 +208,8 @@ class DirectAdminToMailcowMigrationService
      *     by_domain: array<string, list<array{account: string, email: string, domain: string}>>,
      *     all: list<array{account: string, email: string, domain: string}>,
      *     errors: list<string>,
-     *     virtual_passwd_scanned: bool
+     *     virtual_passwd_scanned: bool,
+     *     maildirs_scanned: bool
      * }
      */
     public function listMailboxesViaSsh(Node $node, string $username, array $domains = []): array
@@ -214,6 +219,7 @@ class DirectAdminToMailcowMigrationService
         $all = [];
         $errors = [];
         $virtualPasswdScanned = false;
+        $maildirsScanned = false;
 
         if ($username === '') {
             return [
@@ -221,6 +227,7 @@ class DirectAdminToMailcowMigrationService
                 'all' => [],
                 'errors' => ['Missing DirectAdmin username for SSH mailbox scan.'],
                 'virtual_passwd_scanned' => false,
+                'maildirs_scanned' => false,
             ];
         }
 
@@ -240,6 +247,7 @@ class DirectAdminToMailcowMigrationService
                     .'fi; '
                     .'done; } || true';
                 $raw = trim((string) $ssh->exec($command));
+                $maildirsScanned = true;
 
                 if ($domainsFilter !== []) {
                     try {
@@ -261,6 +269,7 @@ class DirectAdminToMailcowMigrationService
                 'all' => [],
                 'errors' => ['SSH mailbox scan: '.$e->getMessage()],
                 'virtual_passwd_scanned' => $virtualPasswdScanned,
+                'maildirs_scanned' => $maildirsScanned,
             ];
         }
 
@@ -299,6 +308,7 @@ class DirectAdminToMailcowMigrationService
             'all' => $all,
             'errors' => $errors,
             'virtual_passwd_scanned' => $virtualPasswdScanned,
+            'maildirs_scanned' => $maildirsScanned,
         ];
     }
 
