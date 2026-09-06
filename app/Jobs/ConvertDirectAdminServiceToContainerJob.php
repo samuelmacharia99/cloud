@@ -2,13 +2,17 @@
 
 namespace App\Jobs;
 
+use App\Enums\DaConvertBatchItemStatus;
+use App\Models\DaConvertBatchItem;
 use App\Models\Product;
 use App\Models\Service;
+use App\Services\Provisioning\DaConvertOfframpService;
 use App\Services\Provisioning\DirectAdminToContainerConvertService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 
@@ -25,7 +29,24 @@ class ConvertDirectAdminServiceToContainerJob implements ShouldQueue
         public ?string $databaseName = null,
         public bool $acknowledgeAddonSites = false,
         public ?int $emailProductId = null,
+        public ?int $batchItemId = null,
     ) {}
+
+    /**
+     * One convert at a time per DirectAdmin node so tar/mysqldump does not take Apache down.
+     *
+     * @return list<WithoutOverlapping>
+     */
+    public function middleware(): array
+    {
+        $nodeId = (int) (Service::query()->whereKey($this->serviceId)->value('node_id') ?? 0);
+
+        return [
+            (new WithoutOverlapping('da-convert-node-'.$nodeId))
+                ->releaseAfter(90)
+                ->expireAfter($this->timeout + 300),
+        ];
+    }
 
     public function handle(DirectAdminToContainerConvertService $convert): void
     {
@@ -34,6 +55,12 @@ class ConvertDirectAdminServiceToContainerJob implements ShouldQueue
             @set_time_limit(0);
         }
         @ini_set('max_execution_time', '0');
+
+        if ($this->batchItemId) {
+            DaConvertBatchItem::query()->whereKey($this->batchItemId)->update([
+                'status' => DaConvertBatchItemStatus::Converting,
+            ]);
+        }
 
         try {
             $service = Service::with('node', 'product')->findOrFail($this->serviceId);
@@ -55,6 +82,10 @@ class ConvertDirectAdminServiceToContainerJob implements ShouldQueue
             // convertInPlace already records da_convert=failed; keep sync drivers from 500'ing the admin UI.
             $this->failed($e);
             report($e);
+        } finally {
+            if ($this->batchItemId) {
+                app(DaConvertOfframpService::class)->finalizeItem($this->batchItemId);
+            }
         }
     }
 

@@ -13,6 +13,7 @@ return [
             'connection' => env('DB_QUEUE_CONNECTION'),
             'table' => env('DB_QUEUE_TABLE', 'jobs'),
             'queue' => env('DB_QUEUE', 'default'),
+            // Dedicated DirectAdmin off-ramp: php artisan queue:work --queue=da-convert --timeout=2400
             // Must exceed the longest worker timeout (backup queue: 7200s).
             'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 7800),
             'after_commit' => false,

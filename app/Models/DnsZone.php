@@ -11,6 +11,7 @@ class DnsZone extends Model
 
     protected $fillable = [
         'domain_id',
+        'service_id',
         'name',
         'status',
         'provider',
@@ -25,5 +26,10 @@ class DnsZone extends Model
     public function records()
     {
         return $this->hasMany(DnsRecord::class);
+    }
+
+    public function service()
+    {
+        return $this->belongsTo(Service::class);
     }
 }

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\InvoiceStatus;
 use App\Enums\ServiceStatus;
+use App\Models\DaAccountSnapshot;
 use App\Models\Domain;
 use App\Models\Payment;
 use App\Models\ResellerDomainOrder;
@@ -128,6 +129,39 @@ class ResellerAnalyticsService
             'diskPoolPercent' => $diskPoolPercent,
             'directAdminMonitor' => $directAdminMonitor,
             'showStaticDiskBars' => ! ($directAdminMonitor['connected'] ?? false),
+            'platformHosting' => $this->platformHostingSnapshot($reseller),
+        ];
+    }
+
+    /**
+     * Hosting that already lives on Talksasa (captured DA zones + containers).
+     *
+     * @return array{snapshot_count: int, dns_record_count: int, container_count: int, recent: Collection<int, DaAccountSnapshot>}
+     */
+    public function platformHostingSnapshot(User $reseller): array
+    {
+        $serviceIds = $this->scope->managedServicesQuery($reseller)->pluck('id');
+
+        $snapshots = DaAccountSnapshot::query()
+            ->whereIn('service_id', $serviceIds->all() ?: [0])
+            ->where('status', 'captured')
+            ->where('dns_imported', true)
+            ->with('service')
+            ->latest()
+            ->get();
+
+        $latestPerService = $snapshots->unique('service_id')->values();
+
+        return [
+            'snapshot_count' => $latestPerService->count(),
+            'dns_record_count' => (int) $latestPerService->sum('dns_record_count'),
+            'container_count' => $this->scope->managedServicesQuery($reseller)
+                ->where(function ($query) {
+                    $query->where('provisioning_driver_key', 'container')
+                        ->orWhereHas('product', fn ($product) => $product->where('provisioning_driver_key', 'container'));
+                })
+                ->count(),
+            'recent' => $latestPerService->take(6),
         ];
     }
 

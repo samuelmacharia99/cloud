@@ -22,4 +22,9 @@ class DnsRecord extends Model
     {
         return $this->belongsTo(DnsZone::class);
     }
+
+    public function getValueAttribute(): string
+    {
+        return (string) ($this->attributes['content'] ?? '');
+    }
 }

@@ -9,6 +9,7 @@ use App\Http\Controllers\Admin\CreditController;
 use App\Http\Controllers\Admin\CronController;
 use App\Http\Controllers\Admin\CurrencyController;
 use App\Http\Controllers\Admin\CustomerController;
+use App\Http\Controllers\Admin\DaConvertOfframpController;
 use App\Http\Controllers\Admin\DatabaseTemplateController;
 use App\Http\Controllers\Admin\DirectAdminContainerMigrationController;
 use App\Http\Controllers\Admin\DirectAdminMailcowMigrationController;
@@ -275,6 +276,9 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/resellers/{user}/directadmin/connect', [ResellerController::class, 'connectDirectAdmin'])->name('admin.resellers.directadmin.connect');
         Route::post('admin/resellers/{user}/directadmin/disconnect', [ResellerController::class, 'disconnectDirectAdmin'])->name('admin.resellers.directadmin.disconnect');
         Route::get('admin/resellers/{user}/directadmin/panel-login', [ResellerController::class, 'directAdminPanelLogin'])->middleware('throttle:10,1')->name('admin.resellers.directadmin.panel-login');
+        Route::get('admin/resellers/{user}/directadmin-offramp', [DaConvertOfframpController::class, 'show'])->name('admin.resellers.directadmin-offramp');
+        Route::post('admin/resellers/{user}/directadmin-offramp', [DaConvertOfframpController::class, 'store'])->middleware('throttle:10,1')->name('admin.resellers.directadmin-offramp.store');
+        Route::post('admin/resellers/{user}/directadmin-offramp/{batch}/cut-dns', [DaConvertOfframpController::class, 'cutDns'])->middleware('throttle:10,1')->name('admin.resellers.directadmin-offramp.cut-dns');
         Route::get('admin/settings', [SettingController::class, 'index'])->name('admin.settings.index');
         Route::post('admin/settings', [SettingController::class, 'update'])->name('admin.settings.update');
         Route::post('admin/settings/node-nameservers', [SettingController::class, 'updateDirectAdminNameservers'])->name('admin.settings.update-node-nameservers');

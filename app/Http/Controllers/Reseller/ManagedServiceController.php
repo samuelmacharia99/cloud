@@ -55,7 +55,7 @@ class ManagedServiceController extends Controller
     public function show(Service $service)
     {
         $this->ensureManaged($service);
-        $service->load(['user', 'product', 'containerDeployment', 'invoice']);
+        $service->load(['user', 'product', 'containerDeployment', 'invoice', 'latestDaAccountSnapshot']);
 
         $actions = $this->serviceActionFlags($service);
 

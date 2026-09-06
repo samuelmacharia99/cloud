@@ -296,15 +296,14 @@
         <div x-show="tab === 'dns'" class="p-6">
             <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-1">DNS records</h2>
             <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">
-                Read-only snapshot stored on this platform.
+                Records stored on Talksasa (imported from DirectAdmin or managed DNS).
+                This is the source of truth after an account leaves DirectAdmin.
                 @if($managedCustomer)
-                    To edit DNS, <span class="font-medium">view as the customer</span> and use their DNS page.
-                @else
-                    Edit DNS from the customer portal or your DNS provider panel.
+                    To edit live DNS, <span class="font-medium">view as the customer</span> and use their DNS page.
                 @endif
             </p>
             @if($dnsRecords->isEmpty())
-                <p class="text-sm text-slate-500">No DNS zone records stored locally for this domain.</p>
+                <p class="text-sm text-slate-500">No DNS records are stored on this platform yet. Capture the DirectAdmin account before convert so the zone is saved here.</p>
             @else
                 <div class="ui-table-wrap">
                     <table class="ui-table text-sm">
@@ -313,6 +312,7 @@
                                 <th>Name</th>
                                 <th>Type</th>
                                 <th>Value</th>
+                                <th>Priority</th>
                                 <th>TTL</th>
                             </tr>
                         </thead>
@@ -321,7 +321,8 @@
                                 <tr>
                                     <td class="font-mono">{{ $record->name }}</td>
                                     <td>{{ $record->type }}</td>
-                                    <td class="font-mono break-all">{{ $record->value }}</td>
+                                    <td class="font-mono break-all">{{ $record->content }}</td>
+                                    <td>{{ $record->priority ?? '—' }}</td>
                                     <td>{{ $record->ttl }}</td>
                                 </tr>
                             @endforeach

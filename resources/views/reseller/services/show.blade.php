@@ -131,14 +131,37 @@
                 @endif
                 <div><dt class="text-slate-500">Auto-billing</dt><dd>{{ ($managementLinks['billing_ready'] ?? false) ? 'Connected' : 'Needs catalog package' }}</dd></div>
             </dl>
-            @if ($managementLinks['panel_url'])
-                <a href="{{ $managementLinks['panel_url'] }}" target="_blank" rel="noopener" class="inline-block mt-4 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg">Open DirectAdmin panel</a>
+            @if (($managementLinks['driver'] ?? '') === 'directadmin' && $managementLinks['panel_url'])
+                <a href="{{ $managementLinks['panel_url'] }}" target="_blank" rel="noopener" class="inline-block mt-4 px-4 py-2 border border-slate-300 dark:border-slate-600 text-sm font-medium rounded-lg">Open DirectAdmin (legacy)</a>
             @endif
             @if ($managementLinks['container_deployment'])
                 <p class="text-xs text-slate-500 mt-2">Container deployment #{{ $managementLinks['container_deployment'] }} — customer manages via their portal.</p>
             @endif
             @if (! ($managementLinks['billing_ready'] ?? true) && ($managementLinks['driver'] ?? '') === 'directadmin')
                 <p class="text-xs text-amber-600 mt-3">Connect a catalog package from the <a href="{{ route('reseller.customers.index') }}" class="underline">customer directory</a> to enable auto-billing.</p>
+            @endif
+        </div>
+    @endif
+
+    @if ($service->latestDaAccountSnapshot)
+        @php $snap = $service->latestDaAccountSnapshot; @endphp
+        <div class="ui-card p-6 space-y-3">
+            <h2 class="font-semibold text-slate-900 dark:text-white">Captured from DirectAdmin</h2>
+            <p class="text-sm text-slate-600 dark:text-slate-400">
+                Stored on Talksasa {{ $snap->created_at?->timezone(config('app.timezone'))->format('Y-m-d H:i') }}.
+                Manage sites from the customer portal. DNS records live on the domain page.
+            </p>
+            <dl class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                <div><dt class="text-slate-500">Sites</dt><dd>{{ $snap->site_count }}</dd></div>
+                <div><dt class="text-slate-500">Databases</dt><dd>{{ $snap->database_count }}</dd></div>
+                <div><dt class="text-slate-500">Mailboxes</dt><dd>{{ $snap->mailbox_count }}</dd></div>
+                <div><dt class="text-slate-500">DNS records</dt><dd>{{ $snap->dns_record_count }}</dd></div>
+            </dl>
+            @if ($snap->primary_domain)
+                <p class="text-xs font-mono text-slate-500">{{ $snap->primary_domain }}</p>
+            @endif
+            @if (! $snap->isCaptured())
+                <p class="text-sm text-amber-700">{{ $snap->error ?: 'Snapshot is incomplete. Recapture before convert.' }}</p>
             @endif
         </div>
     @endif

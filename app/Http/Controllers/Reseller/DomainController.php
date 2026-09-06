@@ -233,8 +233,13 @@ class DomainController extends Controller
             ->orderBy('name')
             ->get(['id', 'name', 'email']);
 
-        $zone = $domain->dnsZones->first();
-        $dnsRecords = $zone?->records()->orderBy('type')->orderBy('name')->get() ?? collect();
+        $dnsRecords = $domain->dnsZones
+            ->flatMap(fn ($zone) => $zone->records)
+            ->sortBy([
+                fn ($record) => $record->type,
+                fn ($record) => $record->name,
+            ])
+            ->values();
 
         $nameservers = $registry['nameservers'];
         $eppCode = $registry['epp_code'];

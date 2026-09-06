@@ -42,6 +42,47 @@
 
     <x-reseller-action-queue :queue="$actionQueue ?? []" />
 
+    @php $platform = $platformHosting ?? ['snapshot_count' => 0, 'dns_record_count' => 0, 'container_count' => 0, 'recent' => collect()]; @endphp
+    @if (($platform['snapshot_count'] ?? 0) > 0 || ($platform['container_count'] ?? 0) > 0)
+        <div class="ui-card p-6 space-y-4">
+            <div>
+                <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Hosting on Talksasa</h2>
+                <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                    DirectAdmin zones and mailboxes are stored here. Customers manage sites from their portal — you do not need the DirectAdmin panel for captured accounts.
+                </p>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+                <div class="rounded-lg border border-slate-200 dark:border-slate-700 p-3">
+                    <p class="text-slate-500">Captured accounts</p>
+                    <p class="text-2xl font-bold">{{ $platform['snapshot_count'] }}</p>
+                </div>
+                <div class="rounded-lg border border-slate-200 dark:border-slate-700 p-3">
+                    <p class="text-slate-500">DNS records stored</p>
+                    <p class="text-2xl font-bold">{{ $platform['dns_record_count'] }}</p>
+                </div>
+                <div class="rounded-lg border border-slate-200 dark:border-slate-700 p-3">
+                    <p class="text-slate-500">Application Hosting</p>
+                    <p class="text-2xl font-bold">{{ $platform['container_count'] }}</p>
+                </div>
+            </div>
+            @if (($platform['recent'] ?? collect())->isNotEmpty())
+                <ul class="divide-y divide-slate-100 dark:divide-slate-800 text-sm">
+                    @foreach ($platform['recent'] as $snap)
+                        <li class="py-2 flex items-center justify-between gap-3">
+                            <div class="min-w-0">
+                                <p class="font-mono truncate">{{ $snap->primary_domain ?: ($snap->service?->name ?? 'Account') }}</p>
+                                <p class="text-xs text-slate-500">{{ $snap->dns_record_count }} DNS · {{ $snap->mailbox_count }} mail · {{ $snap->database_count }} DB</p>
+                            </div>
+                            @if ($snap->service_id)
+                                <a href="{{ route('reseller.services.show', $snap->service_id) }}" class="text-purple-600 shrink-0">Open</a>
+                            @endif
+                        </li>
+                    @endforeach
+                </ul>
+            @endif
+        </div>
+    @endif
+
     <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         <a href="{{ route('reseller.customers.index') }}" class="block ui-card p-5 hover:border-purple-300 dark:hover:border-purple-700 transition shadow-sm">
             <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Customers</p>

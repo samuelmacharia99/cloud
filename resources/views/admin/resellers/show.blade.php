@@ -70,6 +70,9 @@
                             Impersonate
                         </button>
                     </form>
+                    <a href="{{ route('admin.resellers.directadmin-offramp', $user) }}" class="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-medium rounded-lg transition text-sm">
+                        DirectAdmin off-ramp
+                    </a>
                     <a href="{{ route('admin.resellers.edit', $user) }}" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-sm">
                         Edit Reseller
                     </a>

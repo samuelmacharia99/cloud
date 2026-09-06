@@ -320,6 +320,16 @@ class Service extends Model
         return $this->hasMany(ContainerCronJob::class);
     }
 
+    public function daAccountSnapshots()
+    {
+        return $this->hasMany(DaAccountSnapshot::class);
+    }
+
+    public function latestDaAccountSnapshot()
+    {
+        return $this->hasOne(DaAccountSnapshot::class)->latestOfMany();
+    }
+
     // Status helpers
     public function isActive(): bool
     {

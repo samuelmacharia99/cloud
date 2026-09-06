@@ -29,6 +29,7 @@ class DirectAdminToContainerConvertService
         private ContainerDeploymentService $deployments,
         private ServiceRenewalPricingService $renewalPricing,
         private DirectAdminToMailcowMigrationService $mailMigrator,
+        private DaAccountSnapshotService $snapshots,
     ) {}
 
     /**
@@ -534,6 +535,7 @@ class DirectAdminToContainerConvertService
         }
 
         $stack = (string) ($preflight['detected_stack'] ?? 'unknown');
+        $snapshot = $this->snapshots->captureOrFail($service);
         if ($containerProduct->type !== 'container_hosting') {
             throw new \InvalidArgumentException('Select an Application Hosting product. That plan is billed when the current DirectAdmin term ends.');
         }
@@ -646,6 +648,7 @@ class DirectAdminToContainerConvertService
                 'stack' => $stack,
                 'addon_sites' => $inventory['sites'] ?? [],
                 'databases' => $inventory['databases'] ?? [],
+                'snapshot_id' => $snapshot->id,
                 'converted_at' => now()->toIso8601String(),
                 'keep_email_on_da' => false,
                 'had_extra_mailboxes' => $preflight['email']['has_extra_mailboxes'],
@@ -1002,6 +1005,18 @@ class DirectAdminToContainerConvertService
             ->orderBy('order')
             ->orderBy('name')
             ->first();
+    }
+
+    /**
+     * Fail before the DA export if no container host can take this footprint.
+     */
+    public function assertHostCapacityForConvert(
+        Service $service,
+        Product $product,
+        string $stack,
+        float $share,
+    ): void {
+        $this->assertContainerHostCapacity($service, $product, $stack, $share);
     }
 
     /**
