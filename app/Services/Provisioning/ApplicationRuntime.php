@@ -11,5 +11,6 @@ class ApplicationRuntime
         public readonly array $command,
         public readonly string $source,
         public readonly string $label,
+        public readonly string $containerWorkdir = '/app',
     ) {}
 }

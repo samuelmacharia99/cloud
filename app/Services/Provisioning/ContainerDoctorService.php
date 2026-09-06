@@ -660,7 +660,9 @@ class ContainerDoctorService
                         $ssh,
                         $deployment->container_name,
                         (string) $databaseTemplate->type,
-                        $probeEnv
+                        $probeEnv,
+                        $stack,
+                        ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name
                     );
                     $checks['db_ok'] = $probe['ok'];
                     $checks['db_error'] = $probe['error'];
@@ -726,10 +728,10 @@ class ContainerDoctorService
                                 'evidence' => [mb_substr($error, 0, 300)],
                                 'treat_action' => 'sync_database_credentials',
                                 'treat_label' => 'Repair DB credentials',
-                                'manual_steps' => [
-                                    'Click Repair DB credentials — creates the missing DB, resets the role password, rewrites .env, and writes DB_* into compose so PHP-FPM matches GRANT.',
-                                    'Do not Reset database — that wipes existing tables. Re-scan and Repair again if 1045 persists.',
-                                ],
+                                'manual_steps' => $this->repairDatabaseCredentialsManualSteps(
+                                    $stack,
+                                    (string) $databaseTemplate->type
+                                ),
                                 'source' => 'live',
                             ];
                         }
@@ -738,7 +740,9 @@ class ContainerDoctorService
                             $ssh,
                             $deployment->container_name,
                             (string) $databaseTemplate->type,
-                            $probeEnv
+                            $probeEnv,
+                            $stack,
+                            ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name
                         );
                         $artisanTableCount = $this->countTablesViaArtisan($ssh, $deployment);
                         // Prefer artisan (same connection Laravel uses, including config cache).
@@ -809,6 +813,32 @@ class ContainerDoctorService
 
             $httpStatus = $this->probeHttpStatus($ssh, $deployment);
             $checks['http_status'] = $httpStatus;
+
+            if ($stack === 'nodejs' && $httpStatus !== null && $httpStatus >= 200 && $httpStatus < 400) {
+                $liveUrl = (string) ($deployment->getAccessUrl() ?? '');
+                $html = $liveUrl !== '' ? $this->probeHttpBody($ssh, $liveUrl) : null;
+                if (is_string($html) && str_contains($html, 'Talksasa: add your Node.js app to /app')) {
+                    $findings[] = [
+                        'id' => 'node_placeholder_runtime',
+                        'severity' => 'critical',
+                        'title' => 'Bound URL is still the empty Node placeholder',
+                        'summary' => 'The public site returns HTTP '.$httpStatus.' with “Talksasa: add your Node.js app to /app”. '
+                            .'That text is the platform fallback server — Git pull can succeed while Compose still starts the placeholder. '
+                            .'Restart re-detects package.json (including backend/apps/web and Vite/Next without a start script) and recreates only the app.',
+                        'evidence' => array_values(array_filter([
+                            'HTTP '.$httpStatus,
+                            mb_substr(trim($html), 0, 120),
+                        ])),
+                        'treat_action' => 'restart_application',
+                        'treat_label' => 'Start the Node app',
+                        'manual_steps' => [
+                            'Click Start the Node app — re-detects the start command from /app (or a nested package.json) and recreates the app container. The database volume is kept.',
+                            'Reload the bound URL. Do not Reset database.',
+                        ],
+                        'source' => 'live',
+                    ];
+                }
+            }
 
             if (in_array($stack, ['laravel', 'php'], true)
                 && $httpStatus === 403
@@ -1597,6 +1627,90 @@ PHP;
         }
 
         return $probe;
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function repairDatabaseCredentialsManualSteps(string $stack, string $databaseType): array
+    {
+        if ($stack === 'nodejs' || $databaseType === 'postgresql') {
+            return [
+                'Click Repair DB credentials — creates the missing database, resets the role password, rewrites .env and compose DB_*, and recreates the app (the database volume is kept).',
+                'Do not Reset database — that wipes existing tables. Re-scan and Repair again if authentication still fails.',
+            ];
+        }
+
+        return [
+            'Click Repair DB credentials — creates the missing DB, resets the role password, rewrites .env, and writes DB_* into compose so PHP-FPM matches GRANT.',
+            'Do not Reset database — that wipes existing tables. Re-scan and Repair again if 1045 persists.',
+        ];
+    }
+
+    public function databaseRepairLiveFailureMessage(
+        string $databaseType,
+        string $syncedMessage,
+        string $probeError,
+        string $dbHost,
+        string $hostHint = ''
+    ): string {
+        $suffix = $databaseType === 'postgresql'
+            ? '. App DB_HOST is now '.$dbHost
+                .' (this stack’s sidecar DNS, not the shared-network alias `db`).'
+                .' Official Postgres images with a custom POSTGRES_USER do not create a `postgres` role — repair logs in as that user.'
+                .' Do not Reset database — that wipes existing tables. Re-scan Doctor and click Repair again if authentication still fails.'
+            : '. Host-specific MySQL accounts (user@overlay-ip) were dropped and user@% recreated.'
+                .$hostHint
+                .' App DB_HOST is now '.$dbHost
+                .' (not the shared-network alias `db`).'
+                .' Do not Reset database — that wipes existing tables. Re-scan Doctor and click Repair again if 1045 persists.';
+
+        return $syncedMessage.' Live connection still fails: '.$probeError.$suffix;
+    }
+
+    /**
+     * @param  array<string, mixed>  $envVars
+     */
+    private function mysqlRepairHostHint(
+        ContainerDeploymentService $deploymentService,
+        SSHService $ssh,
+        string $containerPath,
+        array $envVars,
+        string $databaseType
+    ): string {
+        if (! in_array($databaseType, ['mysql', 'mariadb'], true)) {
+            return '';
+        }
+
+        try {
+            $hosts = $deploymentService->mysqlListUserHosts(
+                $ssh,
+                $containerPath,
+                $deploymentService->resolveMysqlComposeServiceName($envVars),
+                (string) ($envVars['MYSQL_ROOT_PASSWORD'] ?? $envVars['DB_PASSWORD'] ?? ''),
+                (string) ($envVars['DB_USERNAME'] ?? $envVars['MYSQL_USER'] ?? '')
+            );
+            if ($hosts !== []) {
+                return ' mysql.user Host values: '.implode(', ', $hosts).'.';
+            }
+        } catch (\Throwable) {
+        }
+
+        return '';
+    }
+
+    private function templateSlugForDeployment($deployment): ?string
+    {
+        $service = $deployment->service ?? null;
+        if ($service instanceof Service) {
+            $slug = strtolower((string) ($service->effectiveContainerTemplate()?->slug ?? ''));
+            if ($slug !== '') {
+                return $slug;
+            }
+        }
+
+        return app(ContainerDeploymentService::class)
+            ->inferTemplateSlugFromContainerName((string) $deployment->container_name);
     }
 
     /**
@@ -3071,6 +3185,22 @@ PHP;
                 ],
             ],
             [
+                'id' => 'node_placeholder_runtime',
+                'severity' => 'critical',
+                'stacks' => ['nodejs', '*'],
+                'patterns' => [
+                    '/Talksasa: add your Node\.js app to \/app/i',
+                ],
+                'title' => 'Bound URL is still the empty Node placeholder',
+                'summary' => 'The container is still running the platform fallback HTTP server. Git pull can succeed while Compose keeps the placeholder start command. Restart re-detects the real app and recreates only the Node container.',
+                'treat_action' => 'restart_application',
+                'treat_label' => 'Start the Node app',
+                'manual_steps' => [
+                    'Click Start the Node app — re-detects package.json and recreates the app (database stays).',
+                    'Reload the bound URL. Do not Reset database.',
+                ],
+            ],
+            [
                 'id' => 'vite_missing_in_production',
                 'severity' => 'critical',
                 'stacks' => ['nodejs', '*'],
@@ -3788,24 +3918,51 @@ PHP;
                     ]);
                 }
 
-                try {
-                    $deploymentService->syncMysqlSidecarCredentials($ssh, $containerPath, $syncEnv);
-                } catch (\Throwable $e) {
-                    \Log::warning('Doctor could not re-GRANT after app recreate', [
-                        'service_id' => $service->id,
-                        'error' => $e->getMessage(),
-                    ]);
+                if (in_array((string) $databaseTemplate->type, ['mysql', 'mariadb'], true)) {
+                    try {
+                        $deploymentService->syncMysqlSidecarCredentials($ssh, $containerPath, $syncEnv);
+                    } catch (\Throwable $e) {
+                        \Log::warning('Doctor could not re-GRANT after app recreate', [
+                            'service_id' => $service->id,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
                 }
             } else {
                 app(ContainerEnvironmentService::class)
                     ->syncDotEnvFile($ssh, $service, $deployment, $envVars);
+
+                try {
+                    $deploymentService->persistLaravelRuntimeDriversOnCompose(
+                        $ssh,
+                        $deployment->fresh(),
+                        $envVars,
+                        $service
+                    );
+                } catch (\Throwable $e) {
+                    \Log::warning('Doctor could not write DB_* into compose after credential repair', [
+                        'service_id' => $service->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+
+                try {
+                    $deploymentService->restartAppService($ssh, $deployment->fresh());
+                } catch (\Throwable $e) {
+                    \Log::warning('Doctor could not recycle app container after DB repair', [
+                        'service_id' => $service->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
             }
 
             $probe = $deploymentService->probeApplicationDatabaseAccess(
                 $ssh,
                 $deployment->container_name,
                 (string) $databaseTemplate->type,
-                $this->envForRuntimeDatabaseProbe($envVars, (string) $databaseTemplate->type)
+                $this->envForRuntimeDatabaseProbe($envVars, (string) $databaseTemplate->type),
+                $stack,
+                $containerPath
             );
 
             $message = 'Database "'.$normalized['database'].'" credentials synced and .env rewritten (including DATABASE_URL).';
@@ -3818,29 +3975,21 @@ PHP;
             }
 
             if (! $probe['ok']) {
-                $hostHint = '';
-                try {
-                    $hosts = $deploymentService->mysqlListUserHosts(
-                        $ssh,
-                        $containerPath,
-                        $deploymentService->resolveMysqlComposeServiceName($envVars),
-                        (string) ($envVars['MYSQL_ROOT_PASSWORD'] ?? $envVars['DB_PASSWORD'] ?? ''),
-                        (string) ($envVars['DB_USERNAME'] ?? $envVars['MYSQL_USER'] ?? '')
-                    );
-                    if ($hosts !== []) {
-                        $hostHint = ' mysql.user Host values: '.implode(', ', $hosts).'.';
-                    }
-                } catch (\Throwable) {
-                }
-
                 return [
                     'success' => false,
-                    'message' => $message.' Live connection still fails: '.($probe['error'] ?? 'unknown error')
-                        .'. Host-specific MySQL accounts (user@overlay-ip) were dropped and user@% recreated.'
-                        .$hostHint
-                        .' App DB_HOST is now '.($envVars['DB_HOST'] ?? 'db')
-                        .' (not the shared-network alias `db`).'
-                        .' Do not Reset database — that wipes existing tables. Re-scan Doctor and click Repair again if 1045 persists.',
+                    'message' => $this->databaseRepairLiveFailureMessage(
+                        (string) $databaseTemplate->type,
+                        $message,
+                        (string) ($probe['error'] ?? 'unknown error'),
+                        (string) ($envVars['DB_HOST'] ?? 'db'),
+                        $this->mysqlRepairHostHint(
+                            $deploymentService,
+                            $ssh,
+                            $containerPath,
+                            $envVars,
+                            (string) $databaseTemplate->type
+                        )
+                    ),
                 ];
             }
 
@@ -3848,7 +3997,9 @@ PHP;
                 $ssh,
                 $deployment->container_name,
                 (string) $databaseTemplate->type,
-                $envVars
+                $envVars,
+                $stack,
+                $containerPath
             );
             if ($tableCount === 0 && in_array($stack, ['laravel', 'php'], true)) {
                 $migrate = $this->runMigrationsQuietly($service, $ssh);
@@ -3923,7 +4074,9 @@ PHP;
                 $ssh,
                 $deployment->container_name,
                 $databaseType,
-                $this->envForRuntimeDatabaseProbe($try, $databaseType)
+                $this->envForRuntimeDatabaseProbe($try, $databaseType),
+                $this->templateSlugForDeployment($deployment),
+                ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name
             );
             if ($probe['ok']) {
                 return $password;
@@ -4008,7 +4161,9 @@ PHP;
                     $ssh,
                     $deployment->container_name,
                     (string) $databaseTemplate->type,
-                    $probeEnv
+                    $probeEnv,
+                    $this->templateSlugForDeployment($deployment),
+                    ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name
                 );
             }
 
@@ -4101,7 +4256,9 @@ PHP;
                     $ssh,
                     $deployment->container_name,
                     (string) $databaseTemplate->type,
-                    $probeEnv
+                    $probeEnv,
+                    $this->templateSlugForDeployment($deployment),
+                    ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name
                 );
             }
 

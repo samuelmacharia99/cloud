@@ -34,17 +34,170 @@ class ContainerApplicationRuntimeService
 
     public function detectNodeRuntime(SSHService $ssh, string $hostAppPath, int $defaultPort): ApplicationRuntime
     {
-        $procfile = $this->readProcfileWebCommand($ssh, $hostAppPath);
-        $packageJson = $this->readHostFile($ssh, $hostAppPath.'/package.json');
+        $relative = $this->discoverNodeProjectRelativeRoot($ssh, $hostAppPath);
+        $projectHost = $relative === '' ? $hostAppPath : $hostAppPath.'/'.$relative;
+        $workdir = $this->sanitizeContainerWorkdir($relative === '' ? '/app' : '/app/'.$relative);
 
         return $this->detectNodeFromContents(
-            $procfile,
-            $packageJson,
-            $this->hostFileExists($ssh, $hostAppPath.'/server.js'),
-            $this->hostFileExists($ssh, $hostAppPath.'/app.js'),
-            $this->hostFileExists($ssh, $hostAppPath.'/index.js'),
-            $defaultPort
+            $this->readProcfileWebCommand($ssh, $projectHost),
+            $this->readHostFile($ssh, $projectHost.'/package.json'),
+            $this->hostFileExists($ssh, $projectHost.'/server.js'),
+            $this->hostFileExists($ssh, $projectHost.'/app.js'),
+            $this->hostFileExists($ssh, $projectHost.'/index.js'),
+            $defaultPort,
+            $workdir
         );
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function nodeProjectRootCandidates(): array
+    {
+        return [
+            '',
+            'backend',
+            'server',
+            'api',
+            'app',
+            'web',
+            'frontend',
+            'src',
+            'apps/web',
+            'apps/api',
+            'apps/app',
+            'packages/web',
+        ];
+    }
+
+    public function sanitizeContainerWorkdir(string $path): string
+    {
+        $path = str_replace('\\', '/', trim($path));
+        if ($path === '' || $path === '/app' || $path === 'app') {
+            return '/app';
+        }
+        if (str_starts_with($path, '/')) {
+            if (! str_starts_with($path, '/app/')) {
+                return '/app';
+            }
+            $path = substr($path, 1);
+        } elseif (! str_starts_with($path, 'app/')) {
+            $path = 'app/'.$path;
+        }
+        if (str_contains($path, '..') || preg_match('#^app(?:/[A-Za-z0-9._-]+)+$#', $path) !== 1) {
+            return '/app';
+        }
+
+        return '/'.$path;
+    }
+
+    public function discoverNodeProjectRelativeRoot(SSHService $ssh, string $hostAppPath): string
+    {
+        $root = $this->inspectNodeProjectAt($ssh, $hostAppPath, '');
+        if ($root['runnable'] && ! $root['workspace_only']) {
+            return '';
+        }
+
+        foreach ($this->nodeProjectRootCandidates() as $relative) {
+            if ($relative === '') {
+                continue;
+            }
+            $candidate = $this->inspectNodeProjectAt($ssh, $hostAppPath, $relative);
+            if ($candidate['runnable']) {
+                return $relative;
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * @return array{runnable: bool, workspace_only: bool}
+     */
+    private function inspectNodeProjectAt(SSHService $ssh, string $hostAppPath, string $relative): array
+    {
+        $path = $relative === '' ? $hostAppPath : $hostAppPath.'/'.$relative;
+        $packageJson = $this->readHostFile($ssh, $path.'/package.json');
+
+        return [
+            'runnable' => $this->packageJsonLooksRunnable(
+                $packageJson,
+                $this->hostFileExists($ssh, $path.'/server.js'),
+                $this->hostFileExists($ssh, $path.'/app.js'),
+                $this->hostFileExists($ssh, $path.'/index.js')
+            ),
+            'workspace_only' => $this->packageJsonIsWorkspaceRoot($packageJson)
+                && ! $this->packageJsonHasDirectStart($packageJson),
+        ];
+    }
+
+    public function packageJsonHasDirectStart(?string $packageJson): bool
+    {
+        if ($this->packageJsonStartScript($packageJson) !== null) {
+            return true;
+        }
+
+        return $this->packageJsonPreviewScript($packageJson) !== null;
+    }
+
+    public function packageJsonPreviewScript(?string $packageJson): ?string
+    {
+        if ($packageJson === null || trim($packageJson) === '') {
+            return null;
+        }
+
+        $data = json_decode($packageJson, true);
+        if (! is_array($data)) {
+            return null;
+        }
+
+        $preview = trim((string) ($data['scripts']['preview'] ?? ''));
+
+        return $preview !== '' ? $preview : null;
+    }
+
+    public function packageJsonIsWorkspaceRoot(?string $packageJson): bool
+    {
+        if ($packageJson === null || trim($packageJson) === '') {
+            return false;
+        }
+
+        $data = json_decode($packageJson, true);
+        if (! is_array($data)) {
+            return false;
+        }
+
+        if (! empty($data['workspaces'])) {
+            return true;
+        }
+
+        $manager = strtolower(trim((string) ($data['packageManager'] ?? '')));
+
+        return str_starts_with($manager, 'pnpm@') || $manager === 'pnpm';
+    }
+
+    public function packageJsonLooksRunnable(
+        ?string $packageJson,
+        bool $hasServerJs = false,
+        bool $hasAppJs = false,
+        bool $hasIndexJs = false
+    ): bool {
+        if ($hasServerJs || $hasAppJs || $hasIndexJs) {
+            return true;
+        }
+        if ($this->packageJsonHasDirectStart($packageJson)) {
+            return true;
+        }
+        if ($packageJson === null || trim($packageJson) === '') {
+            return false;
+        }
+        if ($this->packageJsonUsesNext($packageJson) || $this->packageJsonHasVite($packageJson)) {
+            return true;
+        }
+
+        $data = json_decode($packageJson, true);
+
+        return is_array($data) && ! empty($data['main']) && is_string($data['main']);
     }
 
     public function detectNodeFromContents(
@@ -53,12 +206,15 @@ class ContainerApplicationRuntimeService
         bool $hasServerJs,
         bool $hasAppJs,
         bool $hasIndexJs,
-        int $defaultPort
+        int $defaultPort,
+        string $containerWorkdir = '/app'
     ): ApplicationRuntime {
+        $workdir = $this->sanitizeContainerWorkdir($containerWorkdir);
+
         if ($procfileCommand !== null) {
             $platformCommand = $this->platformNodeListenCommand($procfileCommand, $defaultPort, $packageJson);
             if ($platformCommand !== null) {
-                return $this->platformNodeRuntime($platformCommand, $defaultPort, $packageJson);
+                return $this->platformNodeRuntime($platformCommand, $defaultPort, $packageJson, $workdir);
             }
 
             return $this->shellRuntime(
@@ -66,7 +222,8 @@ class ContainerApplicationRuntimeService
                 $defaultPort,
                 'procfile',
                 'Procfile web process',
-                $this->nodeBootstrap($packageJson)
+                $this->nodeBootstrap($packageJson),
+                $workdir
             );
         }
 
@@ -77,7 +234,7 @@ class ContainerApplicationRuntimeService
                     $start = trim((string) $data['scripts']['start']);
                     $platformCommand = $this->platformNodeListenCommand($start, $defaultPort, $packageJson);
                     if ($platformCommand !== null) {
-                        return $this->platformNodeRuntime($platformCommand, $defaultPort, $packageJson);
+                        return $this->platformNodeRuntime($platformCommand, $defaultPort, $packageJson, $workdir);
                     }
 
                     // Keep custom Vite servers (API + SPA). Install Vite; do not strip to preview.
@@ -88,7 +245,8 @@ class ContainerApplicationRuntimeService
                             $defaultPort,
                             'vite',
                             'Vite app server',
-                            $this->nodeBootstrap($packageJson)
+                            $this->nodeBootstrap($packageJson),
+                            $workdir
                         );
                     }
 
@@ -97,7 +255,20 @@ class ContainerApplicationRuntimeService
                         $defaultPort,
                         'package.json',
                         'npm start',
-                        $this->nodeBootstrap($packageJson)
+                        $this->nodeBootstrap($packageJson),
+                        $workdir
+                    );
+                }
+
+                $inferred = $this->inferNodeStartWithoutScriptsStart($packageJson, $defaultPort);
+                if ($inferred !== null) {
+                    return $this->platformNodeRuntime(
+                        $inferred['command'],
+                        $defaultPort,
+                        $packageJson,
+                        $workdir,
+                        $inferred['source'],
+                        $inferred['label']
                     );
                 }
 
@@ -109,7 +280,8 @@ class ContainerApplicationRuntimeService
                             $defaultPort,
                             'package.json',
                             'node '.$main,
-                            $this->nodeBootstrap($packageJson)
+                            $this->nodeBootstrap($packageJson),
+                            $workdir
                         );
                     }
                 }
@@ -117,18 +289,53 @@ class ContainerApplicationRuntimeService
         }
 
         if ($hasServerJs) {
-            return $this->shellRuntime('node server.js', $defaultPort, 'entrypoint', 'node server.js', $this->nodeBootstrap($packageJson));
+            return $this->shellRuntime('node server.js', $defaultPort, 'entrypoint', 'node server.js', $this->nodeBootstrap($packageJson), $workdir);
         }
 
         if ($hasAppJs) {
-            return $this->shellRuntime('node app.js', $defaultPort, 'entrypoint', 'node app.js', $this->nodeBootstrap($packageJson));
+            return $this->shellRuntime('node app.js', $defaultPort, 'entrypoint', 'node app.js', $this->nodeBootstrap($packageJson), $workdir);
         }
 
         if ($hasIndexJs) {
-            return $this->shellRuntime('node index.js', $defaultPort, 'entrypoint', 'node index.js', $this->nodeBootstrap($packageJson));
+            return $this->shellRuntime('node index.js', $defaultPort, 'entrypoint', 'node index.js', $this->nodeBootstrap($packageJson), $workdir);
         }
 
         return $this->fallbackRuntime('nodejs', $defaultPort);
+    }
+
+    /**
+     * @return array{command: string, source: string, label: string}|null
+     */
+    public function inferNodeStartWithoutScriptsStart(?string $packageJson, int $defaultPort): ?array
+    {
+        $preview = $this->packageJsonPreviewScript($packageJson);
+        if ($preview !== null) {
+            $platform = $this->platformNodeListenCommand($preview, $defaultPort, $packageJson);
+
+            return [
+                'command' => $platform ?? 'npm run preview',
+                'source' => $platform !== null ? 'vite' : 'package.json',
+                'label' => $platform !== null ? 'Vite production preview' : 'npm run preview',
+            ];
+        }
+
+        if ($this->packageJsonUsesNext($packageJson)) {
+            return [
+                'command' => 'npx next start -H 0.0.0.0 -p ${PORT:-'.$defaultPort.'}',
+                'source' => 'next',
+                'label' => 'Next.js server',
+            ];
+        }
+
+        if ($this->packageJsonHasVite($packageJson) && $this->packageJsonHasBuildScript($packageJson)) {
+            return [
+                'command' => 'npx vite preview --host 0.0.0.0 --port ${PORT:-'.$defaultPort.'} --strictPort',
+                'source' => 'vite',
+                'label' => 'Vite production preview',
+            ];
+        }
+
+        return null;
     }
 
     public function detectRubyRuntime(SSHService $ssh, string $hostAppPath, int $defaultPort): ApplicationRuntime
@@ -341,19 +548,22 @@ class ContainerApplicationRuntimeService
         int $defaultPort,
         string $source,
         string $label,
-        ?string $bootstrap = null
+        ?string $bootstrap = null,
+        string $containerWorkdir = '/app'
     ): ApplicationRuntime {
         $innerCommand = $this->sanitizeInnerCommand($innerCommand);
         $prefix = '';
+        $workdir = $this->sanitizeContainerWorkdir($containerWorkdir);
 
         if ($bootstrap !== null && trim($bootstrap) !== '') {
             $prefix = trim($bootstrap).' && ';
         }
 
         return new ApplicationRuntime(
-            ['sh', '-lc', 'cd /app && export PORT=${PORT:-'.$defaultPort.'} && '.$prefix.'exec '.$innerCommand],
+            ['sh', '-lc', 'cd '.$workdir.' && export PORT=${PORT:-'.$defaultPort.'} && '.$prefix.'exec '.$innerCommand],
             $source,
-            $label
+            $label,
+            $workdir
         );
     }
 
@@ -550,16 +760,23 @@ class ContainerApplicationRuntimeService
         return $start !== '' ? $start : null;
     }
 
-    private function platformNodeRuntime(string $platformCommand, int $defaultPort, ?string $packageJson): ApplicationRuntime
-    {
+    private function platformNodeRuntime(
+        string $platformCommand,
+        int $defaultPort,
+        ?string $packageJson,
+        string $containerWorkdir = '/app',
+        ?string $source = null,
+        ?string $label = null
+    ): ApplicationRuntime {
         $isNext = str_contains($platformCommand, 'next start');
 
         return $this->shellRuntime(
             $platformCommand,
             $defaultPort,
-            $isNext ? 'next' : 'vite',
-            $isNext ? 'Next.js server' : 'Vite production preview',
-            $this->nodeBootstrap($packageJson)
+            $source ?? ($isNext ? 'next' : 'vite'),
+            $label ?? ($isNext ? 'Next.js server' : 'Vite production preview'),
+            $this->nodeBootstrap($packageJson),
+            $containerWorkdir
         );
     }
 

@@ -28,6 +28,22 @@ LOG;
     }
 
     #[Test]
+    public function it_detects_the_empty_node_placeholder_from_bound_url_text(): void
+    {
+        $logs = <<<'LOG'
+user-231-service-351-nodejs  | Talksasa: add your Node.js app to /app
+LOG;
+
+        $findings = app(ContainerDoctorService::class)->analyzeLogs($logs, 'nodejs');
+        $finding = collect($findings)->firstWhere('id', 'node_placeholder_runtime');
+
+        $this->assertNotNull($finding);
+        $this->assertSame('restart_application', $finding['treat_action']);
+        $this->assertSame('Start the Node app', $finding['treat_label']);
+        $this->assertSame('critical', $finding['severity']);
+    }
+
+    #[Test]
     public function it_detects_vite_missing_from_bundled_dist_server(): void
     {
         $logs = <<<'LOG'

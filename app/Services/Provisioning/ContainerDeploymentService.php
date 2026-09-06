@@ -13,6 +13,7 @@ use App\Models\Node;
 use App\Models\Service;
 use App\Services\NotificationService;
 use App\Services\SSH\SSHService;
+use App\Services\Terminal\ContainerDockerExecUserResolver;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -852,10 +853,16 @@ class ContainerDeploymentService
                 if (in_array($slug, ['laravel', 'php'], true)) {
                     $this->alignLaravelDocumentRootOnCompose($ssh, $service, $deployment);
                 }
-                // Recreate the app service only. `docker compose restart` does not
-                // reload compose `environment` (SESSION_DRIVER=database stays in
-                // PHP-FPM). Recreating the whole stack also bounces MySQL → HTTP 2002.
-                $this->restartAppService($ssh, $deployment);
+                if (in_array($slug, ['nodejs', 'python', 'ruby', 'go'], true)) {
+                    // Git pull can leave files on disk while compose still runs the
+                    // empty-app placeholder. Re-detect start command, then recreate.
+                    $this->refreshApplicationRuntimeCompose($service, $deployment, $ssh);
+                } else {
+                    // Recreate the app service only. `docker compose restart` does not
+                    // reload compose `environment` (SESSION_DRIVER=database stays in
+                    // PHP-FPM). Recreating the whole stack also bounces MySQL → HTTP 2002.
+                    $this->restartAppService($ssh, $deployment);
+                }
 
                 try {
                     app(NginxProxyService::class)->refreshBoundDomainVhosts($service, force: true);
@@ -1045,8 +1052,11 @@ class ContainerDeploymentService
                 $defaults['ASSET_URL'] = $httpsOrigin;
             }
         }
-        $connection = strtolower((string) ($fromEnv['DB_CONNECTION'] ?? 'mysql'));
-        $databaseType = in_array($connection, ['pgsql', 'postgresql'], true) ? 'postgresql' : 'mysql';
+        $connection = strtolower((string) ($fromEnv['DB_CONNECTION'] ?? ''));
+        $url = strtolower((string) ($fromEnv['DATABASE_URL'] ?? ''));
+        $databaseType = str_starts_with($url, 'postgres') || in_array($connection, ['pgsql', 'postgresql'], true)
+            ? 'postgresql'
+            : 'mysql';
         $pinned = $this->pinApplicationDatabaseHost(
             array_merge($fromEnv, $defaults, $drivers),
             (string) $deployment->container_name,
@@ -1835,7 +1845,7 @@ class ContainerDeploymentService
                 (string) $template->slug,
                 (int) ($template->default_port ?? 3000)
             );
-            $compose['services'][$containerName]['working_dir'] = '/app';
+            $compose['services'][$containerName]['working_dir'] = $runtime->containerWorkdir;
             $compose['services'][$containerName]['command'] = $runtime->command;
 
             if ($runtime->source === 'vite') {
@@ -2501,9 +2511,9 @@ class ContainerDeploymentService
             $env['POSTGRES_PASSWORD'] = $password;
             $env['POSTGRES_DB'] = $database;
             $env['POSTGRES_USER'] = $env['DB_USERNAME'];
-            $env['DB_CONNECTION'] = (string) ($env['DB_CONNECTION'] !== '' ? $env['DB_CONNECTION'] : 'pgsql');
-            $env['DB_HOST'] = (string) ($env['DB_HOST'] !== '' ? $env['DB_HOST'] : 'db');
-            $env['DB_PORT'] = (string) ($env['DB_PORT'] !== '' ? $env['DB_PORT'] : '5432');
+            $env['DB_CONNECTION'] = 'pgsql';
+            $env['DB_HOST'] = (string) (($env['DB_HOST'] ?? '') !== '' ? $env['DB_HOST'] : 'db');
+            $env['DB_PORT'] = (string) (($env['DB_PORT'] ?? '') !== '' ? $env['DB_PORT'] : '5432');
             $env['DATABASE_URL'] = sprintf(
                 'postgresql://%s:%s@%s:%s/%s',
                 rawurlencode($env['DB_USERNAME']),
@@ -2534,9 +2544,9 @@ class ContainerDeploymentService
             }
             $env['MYSQL_DATABASE'] = $database;
             $env['MYSQL_USER'] = $env['DB_USERNAME'];
-            $env['DB_CONNECTION'] = (string) ($env['DB_CONNECTION'] !== '' ? $env['DB_CONNECTION'] : 'mysql');
-            $env['DB_HOST'] = (string) ($env['DB_HOST'] !== '' ? $env['DB_HOST'] : 'db');
-            $env['DB_PORT'] = (string) ($env['DB_PORT'] !== '' ? $env['DB_PORT'] : '3306');
+            $env['DB_CONNECTION'] = (string) (($env['DB_CONNECTION'] ?? '') !== '' ? $env['DB_CONNECTION'] : 'mysql');
+            $env['DB_HOST'] = (string) (($env['DB_HOST'] ?? '') !== '' ? $env['DB_HOST'] : 'db');
+            $env['DB_PORT'] = (string) (($env['DB_PORT'] ?? '') !== '' ? $env['DB_PORT'] : '3306');
             $env['DATABASE_URL'] = sprintf(
                 'mysql://%s:%s@%s:%s/%s',
                 rawurlencode($env['DB_USERNAME']),
@@ -2672,13 +2682,12 @@ class ContainerDeploymentService
     ): void {
         $delaySeconds = 5;
         $maxAttempts = max(1, (int) ceil($timeoutSeconds / $delaySeconds));
-        $containerArg = escapeshellarg($containerName);
         $lastError = null;
         $credentialResyncAttempted = false;
 
         for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
             try {
-                if ($this->applicationDatabaseAccessReady($ssh, $containerArg, $databaseTemplate, $envVars)) {
+                if ($this->applicationDatabaseAccessReady($ssh, $containerName, $databaseTemplate, $envVars, $containerPath)) {
                     return;
                 }
             } catch (\Throwable $e) {
@@ -2817,9 +2826,7 @@ class ContainerDeploymentService
 
     private function postgresqlSidecarIsReady(SSHService $ssh, string $containerPathArg, array $envVars): bool
     {
-        $user = escapeshellarg((string) ($envVars['POSTGRES_USER'] ?? $envVars['DB_USERNAME'] ?? 'appuser'));
-        $password = escapeshellarg((string) ($envVars['POSTGRES_PASSWORD'] ?? $envVars['DB_PASSWORD'] ?? ''));
-        $command = "cd {$containerPathArg} && docker compose exec -T -e PGPASSWORD={$password} db pg_isready -U {$user} -h localhost";
+        $command = "cd {$containerPathArg} && ".$this->postgresqlSidecarReadinessCommand($envVars);
 
         $ssh->exec($command, 20);
 
@@ -2840,53 +2847,32 @@ class ContainerDeploymentService
 
     private function applicationDatabaseAccessReady(
         SSHService $ssh,
-        string $containerArg,
+        string $containerName,
         DatabaseTemplate $databaseTemplate,
-        array $envVars
+        array $envVars,
+        ?string $containerPath = null
     ): bool {
-        return match ($databaseTemplate->type) {
-            'mysql', 'mariadb' => $this->mysqlApplicationAccessReady($ssh, $containerArg, $envVars),
-            'postgresql' => $this->postgresqlApplicationAccessReady($ssh, $containerArg, $envVars),
-            default => true,
-        };
-    }
-
-    private function mysqlApplicationAccessReady(SSHService $ssh, string $containerArg, array $envVars): bool
-    {
-        $database = (string) ($envVars['DB_DATABASE'] ?? $envVars['MYSQL_DATABASE'] ?? 'appdb');
-        $username = (string) ($envVars['DB_USERNAME'] ?? $envVars['MYSQL_USER'] ?? 'appuser');
-        $password = (string) ($envVars['DB_PASSWORD'] ?? $envVars['MYSQL_PASSWORD'] ?? '');
-        $host = $this->applicationDatabaseHost($envVars);
-
-        $script = $this->phpPdoEvalScript(
-            'mysql:host='.$host.';port=3306;dbname='.$database,
-            $username,
-            $password,
-            '$pdo->query("SELECT 1"); exit(0);',
-            'exit(1);'
+        $result = $this->probeApplicationDatabaseAccess(
+            $ssh,
+            $containerName,
+            (string) $databaseTemplate->type,
+            $envVars,
+            $this->inferTemplateSlugFromContainerName($containerName),
+            $containerPath
         );
-
-        $ssh->exec(
-            'docker exec -u www-data '.$containerArg.' php -r '.escapeshellarg($script),
-            20
-        );
-
-        return true;
-    }
-
-    private function postgresqlApplicationAccessReady(SSHService $ssh, string $containerArg, array $envVars): bool
-    {
-        $result = $this->probePostgresqlApplicationAccess($ssh, $containerArg, $envVars);
 
         if (! $result['ok']) {
-            throw new \RuntimeException($result['error'] ?? 'PostgreSQL application access failed');
+            throw new \RuntimeException($result['error'] ?? 'Application database access failed');
         }
 
         return true;
     }
 
     /**
-     * Probe whether the app container can open a PDO connection with the given env.
+     * Probe whether the app can open a database connection with the given env.
+     *
+     * PHP stacks use PDO as www-data. Node/Alpine images have neither — those
+     * probes use `node` and, if `pg`/`mysql2` are missing, sidecar client + TCP.
      *
      * @param  array<string, mixed>  $envVars
      * @return array{ok: bool, error: ?string, driver_missing: bool}
@@ -2895,58 +2881,246 @@ class ContainerDeploymentService
         SSHService $ssh,
         string $containerName,
         string $databaseType,
-        array $envVars
+        array $envVars,
+        ?string $templateSlug = null,
+        ?string $containerPath = null
     ): array {
-        $containerArg = escapeshellarg($containerName);
+        $templateSlug = $templateSlug ?: $this->inferTemplateSlugFromContainerName($containerName);
 
         return match ($databaseType) {
-            'mysql', 'mariadb' => $this->probeMysqlApplicationAccess($ssh, $containerArg, $envVars),
-            'postgresql' => $this->probePostgresqlApplicationAccess($ssh, $containerArg, $envVars),
+            'mysql', 'mariadb' => $this->probeMysqlApplicationAccess(
+                $ssh,
+                $containerName,
+                $envVars,
+                $templateSlug,
+                $containerPath
+            ),
+            'postgresql' => $this->probePostgresqlApplicationAccess(
+                $ssh,
+                $containerName,
+                $envVars,
+                $templateSlug,
+                $containerPath
+            ),
             default => ['ok' => true, 'error' => null, 'driver_missing' => false],
         };
     }
 
+    public function inferTemplateSlugFromContainerName(string $containerName): ?string
+    {
+        if (preg_match('/-(laravel|php|wordpress|nodejs|python|ruby|go)$/', $containerName, $matches) === 1) {
+            return $matches[1];
+        }
+
+        return null;
+    }
+
+    public function applicationDatabaseProbeUsesPhp(?string $templateSlug): bool
+    {
+        return in_array(strtolower((string) $templateSlug), ['laravel', 'php', 'wordpress'], true);
+    }
+
+    public function phpDatabaseProbeCommand(string $containerName, string $script, ?string $templateSlug = null): string
+    {
+        $user = ContainerDockerExecUserResolver::execUser($templateSlug ?: 'laravel') ?? 'www-data';
+
+        return 'docker exec -u '.escapeshellarg($user).' '.escapeshellarg($containerName)
+            .' php -r '.escapeshellarg($script);
+    }
+
+    public function isMissingPhpRuntimeProbeError(?string $error): bool
+    {
+        $message = strtolower((string) $error);
+        if ($message === '') {
+            return false;
+        }
+
+        return str_contains($message, 'unable to find user www-data')
+            || str_contains($message, 'no matching entries in passwd')
+            || (str_contains($message, 'exec:') && str_contains($message, '"php"'))
+            || str_contains($message, 'php: not found')
+            || str_contains($message, 'php: executable file not found');
+    }
+
     /**
      * @param  array<string, mixed>  $envVars
-     * @return array{ok: bool, error: ?string, driver_missing: bool}
      */
-    private function probeMysqlApplicationAccess(SSHService $ssh, string $containerArg, array $envVars): array
+    public function nodeDatabaseClientProbeCommand(string $containerName, string $databaseType, array $envVars): string
     {
-        $database = (string) ($envVars['DB_DATABASE'] ?? $envVars['MYSQL_DATABASE'] ?? 'appdb');
-        $username = (string) ($envVars['DB_USERNAME'] ?? $envVars['MYSQL_USER'] ?? 'appuser');
-        $password = (string) ($envVars['DB_PASSWORD'] ?? $envVars['MYSQL_PASSWORD'] ?? '');
+        return 'docker exec '.escapeshellarg($containerName)
+            .' node -e '.escapeshellarg($this->nodeDatabaseClientProbeScript($databaseType, $envVars));
+    }
 
-        $host = $this->applicationDatabaseHost($envVars);
+    /**
+     * @param  array<string, mixed>  $envVars
+     */
+    public function nodeDatabaseTcpProbeCommand(string $containerName, array $envVars, string $databaseType): string
+    {
+        [$host, $port] = $this->applicationDatabaseEndpoint($envVars, $databaseType);
+        $script = 'const n=require("net");const s=n.connect({host:'.json_encode($host).',port:'.$port.'},()=>{process.stdout.write("ok");s.end();process.exit(0)});'
+            .'s.setTimeout(5000,()=>{process.stderr.write("tcp timeout");process.exit(1)});'
+            .'s.on("error",e=>{process.stderr.write(String(e&&e.message?e.message:e));process.exit(1)});';
 
-        $script = $this->phpPdoEvalScript(
-            'mysql:host='.$host.';port=3306;dbname='.$database,
-            $username,
-            $password,
-            '$pdo->query("SELECT 1"); fwrite(STDOUT, "ok"); exit(0);'
-        );
+        return 'docker exec '.escapeshellarg($containerName).' node -e '.escapeshellarg($script);
+    }
 
-        return $this->runDatabaseProbeScript($ssh, $containerArg, $script);
+    /**
+     * @param  array<string, mixed>  $envVars
+     */
+    public function sidecarApplicationCredentialProbeCommand(
+        string $containerPath,
+        string $databaseType,
+        array $envVars
+    ): string {
+        $pathArg = escapeshellarg($containerPath);
+        $creds = $this->applicationDatabaseCredentials($envVars, $databaseType);
+        $userArg = escapeshellarg($creds['username']);
+        $dbArg = escapeshellarg($creds['database']);
+        $passwordArg = escapeshellarg($creds['password']);
+
+        if ($databaseType === 'postgresql') {
+            return "cd {$pathArg} && docker compose exec -T -e PGPASSWORD={$passwordArg} db "
+                ."psql -h 127.0.0.1 -U {$userArg} -d {$dbArg} -Atc ".escapeshellarg('SELECT 1');
+        }
+
+        $serviceArg = escapeshellarg($this->resolveMysqlComposeServiceName($envVars));
+
+        return "cd {$pathArg} && docker compose exec -T -e MYSQL_PWD={$passwordArg} {$serviceArg} "
+            ."mysql -h 127.0.0.1 -u {$userArg} {$dbArg} -N -e ".escapeshellarg('SELECT 1');
+    }
+
+    /**
+     * @param  array<string, mixed>  $envVars
+     */
+    public function sidecarTableCountCommand(string $containerPath, string $databaseType, array $envVars): string
+    {
+        $pathArg = escapeshellarg($containerPath);
+        $creds = $this->applicationDatabaseCredentials($envVars, $databaseType);
+        $userArg = escapeshellarg($creds['username']);
+        $dbArg = escapeshellarg($creds['database']);
+        $passwordArg = escapeshellarg($creds['password']);
+
+        if ($databaseType === 'postgresql') {
+            $sql = 'SELECT COUNT(*) FROM pg_catalog.pg_tables WHERE schemaname NOT IN (\'pg_catalog\',\'information_schema\')';
+
+            return "cd {$pathArg} && docker compose exec -T -e PGPASSWORD={$passwordArg} db "
+                ."psql -h 127.0.0.1 -U {$userArg} -d {$dbArg} -Atc ".escapeshellarg($sql);
+        }
+
+        $serviceArg = escapeshellarg($this->resolveMysqlComposeServiceName($envVars));
+        $sql = 'SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_type=\'BASE TABLE\'';
+
+        return "cd {$pathArg} && docker compose exec -T -e MYSQL_PWD={$passwordArg} {$serviceArg} "
+            ."mysql -h 127.0.0.1 -u {$userArg} {$dbArg} -N -e ".escapeshellarg($sql);
+    }
+
+    /**
+     * @param  array<string, mixed>  $envVars
+     */
+    public function postgresqlSidecarReadinessCommand(array $envVars): string
+    {
+        $user = escapeshellarg((string) ($envVars['POSTGRES_USER'] ?? $envVars['DB_USERNAME'] ?? 'appuser'));
+        $password = escapeshellarg((string) ($envVars['POSTGRES_PASSWORD'] ?? $envVars['DB_PASSWORD'] ?? ''));
+        $database = escapeshellarg($this->postgresqlAdminDatabaseCandidates($envVars)[0] ?? 'postgres');
+
+        return "docker compose exec -T -e PGPASSWORD={$password} db pg_isready -U {$user} -d {$database} -h localhost";
+    }
+
+    /**
+     * @param  array<string, mixed>  $envVars
+     * @return list<string>
+     */
+    public function postgresqlAdminDatabaseCandidates(array $envVars): array
+    {
+        $candidates = [];
+        foreach ([
+            'postgres',
+            (string) ($envVars['POSTGRES_DB'] ?? ''),
+            (string) ($envVars['DB_DATABASE'] ?? ''),
+            'template1',
+        ] as $name) {
+            $name = trim($name);
+            if ($name !== '') {
+                $candidates[$name] = true;
+            }
+        }
+
+        return array_keys($candidates);
+    }
+
+    /**
+     * @param  array<string, mixed>  $envVars
+     * @return list<string>
+     */
+    public function postgresqlAdminRoleCandidates(array $envVars, ?string $canonical = null): array
+    {
+        $roles = [];
+        foreach ([
+            $envVars['TALKSASA_PLATFORM_DB_USERNAME'] ?? null,
+            $canonical,
+            $envVars['POSTGRES_USER'] ?? null,
+            $envVars['DB_USERNAME'] ?? null,
+            'postgres',
+        ] as $role) {
+            $role = trim((string) $role);
+            if ($role !== '') {
+                $roles[$role] = true;
+            }
+        }
+
+        return array_keys($roles);
     }
 
     /**
      * @param  array<string, mixed>  $envVars
      * @return array{ok: bool, error: ?string, driver_missing: bool}
      */
-    private function probePostgresqlApplicationAccess(SSHService $ssh, string $containerArg, array $envVars): array
-    {
-        $database = (string) ($envVars['DB_DATABASE'] ?? $envVars['POSTGRES_DB'] ?? 'appdb');
-        $username = (string) ($envVars['DB_USERNAME'] ?? $envVars['POSTGRES_USER'] ?? 'appuser');
-        $password = (string) ($envVars['DB_PASSWORD'] ?? $envVars['POSTGRES_PASSWORD'] ?? '');
-        $port = (string) ($envVars['DB_PORT'] ?? '5432');
+    private function probeMysqlApplicationAccess(
+        SSHService $ssh,
+        string $containerName,
+        array $envVars,
+        ?string $templateSlug,
+        ?string $containerPath
+    ): array {
+        $creds = $this->applicationDatabaseCredentials($envVars, 'mysql');
         $host = $this->applicationDatabaseHost($envVars);
-        if ($host === '' || $host === 'localhost' || $host === '127.0.0.1') {
-            $host = 'db';
-        }
 
         $script = $this->phpPdoEvalScript(
-            'pgsql:host='.$host.';port='.$port.';dbname='.$database,
-            $username,
-            $password,
+            'mysql:host='.$host.';port=3306;dbname='.$creds['database'],
+            $creds['username'],
+            $creds['password'],
+            '$pdo->query("SELECT 1"); fwrite(STDOUT, "ok"); exit(0);'
+        );
+
+        return $this->runDatabaseProbeScript(
+            $ssh,
+            $containerName,
+            'mysql',
+            $envVars,
+            $script,
+            $templateSlug,
+            $containerPath
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $envVars
+     * @return array{ok: bool, error: ?string, driver_missing: bool}
+     */
+    private function probePostgresqlApplicationAccess(
+        SSHService $ssh,
+        string $containerName,
+        array $envVars,
+        ?string $templateSlug = null,
+        ?string $containerPath = null
+    ): array {
+        $creds = $this->applicationDatabaseCredentials($envVars, 'postgresql');
+        [$host, $port] = $this->applicationDatabaseEndpoint($envVars, 'postgresql');
+
+        $script = $this->phpPdoEvalScript(
+            'pgsql:host='.$host.';port='.$port.';dbname='.$creds['database'],
+            $creds['username'],
+            $creds['password'],
             '$pdo->query("SELECT 1"); fwrite(STDOUT, "ok"); exit(0);',
             'fwrite(STDERR, $e->getMessage()); exit(1);'
         );
@@ -2955,21 +3129,111 @@ class ContainerDeploymentService
             .' fwrite(STDERR, "missing_pdo_pgsql"); exit(2);'
             .'}';
 
-        $script = $missingDriverGuard.$script;
+        return $this->runDatabaseProbeScript(
+            $ssh,
+            $containerName,
+            'postgresql',
+            $envVars,
+            $missingDriverGuard.$script,
+            $templateSlug,
+            $containerPath
+        );
+    }
 
-        return $this->runDatabaseProbeScript($ssh, $containerArg, $script);
+    /**
+     * @param  array<string, mixed>  $envVars
+     * @return array{ok: bool, error: ?string, driver_missing: bool}
+     */
+    private function runDatabaseProbeScript(
+        SSHService $ssh,
+        string $containerName,
+        string $databaseType,
+        array $envVars,
+        string $phpScript,
+        ?string $templateSlug,
+        ?string $containerPath
+    ): array {
+        if ($this->applicationDatabaseProbeUsesPhp($templateSlug)) {
+            return $this->execProbeCommand(
+                $ssh,
+                $this->phpDatabaseProbeCommand($containerName, $phpScript, $templateSlug)
+            );
+        }
+
+        if ($templateSlug === null || $templateSlug === '' || $templateSlug === 'unknown') {
+            $php = $this->execProbeCommand(
+                $ssh,
+                $this->phpDatabaseProbeCommand($containerName, $phpScript, 'laravel')
+            );
+            if ($php['ok'] || ! $this->isMissingPhpRuntimeProbeError($php['error'])) {
+                return $php;
+            }
+        }
+
+        return $this->probeNonPhpDatabaseAccess(
+            $ssh,
+            $containerName,
+            $databaseType,
+            $envVars,
+            $containerPath
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $envVars
+     * @return array{ok: bool, error: ?string, driver_missing: bool}
+     */
+    private function probeNonPhpDatabaseAccess(
+        SSHService $ssh,
+        string $containerName,
+        string $databaseType,
+        array $envVars,
+        ?string $containerPath
+    ): array {
+        $node = $this->execProbeCommand(
+            $ssh,
+            $this->nodeDatabaseClientProbeCommand($containerName, $databaseType, $envVars)
+        );
+        if ($node['ok'] || ! $this->isMissingNodeDatabaseClientError($node['error'])) {
+            return $node;
+        }
+
+        $tcp = $this->execProbeCommand(
+            $ssh,
+            $this->nodeDatabaseTcpProbeCommand($containerName, $envVars, $databaseType)
+        );
+        if ($containerPath !== null && $containerPath !== '') {
+            $auth = $this->execProbeCommand(
+                $ssh,
+                $this->sidecarApplicationCredentialProbeCommand($containerPath, $databaseType, $envVars)
+            );
+            if ($auth['ok'] && $tcp['ok']) {
+                return ['ok' => true, 'error' => null, 'driver_missing' => false];
+            }
+            if (! $auth['ok']) {
+                return $auth;
+            }
+            if (! $tcp['ok']) {
+                [$host] = $this->applicationDatabaseEndpoint($envVars, $databaseType);
+
+                return [
+                    'ok' => false,
+                    'error' => 'App container cannot reach '.$host.': '.($tcp['error'] ?? 'tcp failed'),
+                    'driver_missing' => false,
+                ];
+            }
+        }
+
+        return $node;
     }
 
     /**
      * @return array{ok: bool, error: ?string, driver_missing: bool}
      */
-    private function runDatabaseProbeScript(SSHService $ssh, string $containerArg, string $script): array
+    private function execProbeCommand(SSHService $ssh, string $command): array
     {
         try {
-            $ssh->exec(
-                'docker exec -u www-data '.$containerArg.' php -r '.escapeshellarg($script),
-                20
-            );
+            $ssh->exec($command, 20);
 
             return ['ok' => true, 'error' => null, 'driver_missing' => false];
         } catch (\Throwable $e) {
@@ -2982,6 +3246,83 @@ class ContainerDeploymentService
                 'driver_missing' => $this->isMissingDatabaseDriverError($message),
             ];
         }
+    }
+
+    public function isMissingNodeDatabaseClientError(?string $error): bool
+    {
+        $message = strtolower((string) $error);
+
+        return str_contains($message, 'missing_node_db_module')
+            || str_contains($message, 'cannot find module')
+            || (str_contains($message, 'exec:') && str_contains($message, '"node"'))
+            || str_contains($message, 'node: not found');
+    }
+
+    /**
+     * @param  array<string, mixed>  $envVars
+     */
+    public function nodeDatabaseClientProbeScript(string $databaseType, array $envVars): string
+    {
+        $creds = $this->applicationDatabaseCredentials($envVars, $databaseType);
+        [$host, $port] = $this->applicationDatabaseEndpoint($envVars, $databaseType);
+        $payload = base64_encode(json_encode([
+            'host' => $host,
+            'port' => $port,
+            'user' => $creds['username'],
+            'pass' => $creds['password'],
+            'db' => $creds['database'],
+            'engine' => $databaseType === 'postgresql' ? 'pg' : 'mysql',
+        ], JSON_THROW_ON_ERROR));
+
+        return 'const c=JSON.parse(Buffer.from('.json_encode($payload).',"base64").toString("utf8"));'
+            .'function load(names){for (const n of names){try{return require(n);}catch(e){}} throw new Error("missing_node_db_module");}'
+            .'if(c.engine==="pg"){const {Client}=load(["pg","/app/node_modules/pg","/app/backend/node_modules/pg"]);'
+            .'const client=new Client({host:c.host,port:c.port,user:c.user,password:c.pass,database:c.db,connectionTimeoutMillis:5000});'
+            .'client.connect().then(()=>client.query("SELECT 1")).then(()=>{process.stdout.write("ok");return client.end();}).then(()=>process.exit(0))'
+            .'.catch(e=>{process.stderr.write(String(e&&e.message?e.message:e));process.exit(1);});}'
+            .'else{const mysql=load(["mysql2/promise","mysql2","mysql","/app/node_modules/mysql2/promise","/app/node_modules/mysql2","/app/node_modules/mysql"]);'
+            .'const fn=mysql.createConnection||mysql;'
+            .'Promise.resolve(fn({host:c.host,port:c.port,user:c.user,password:c.pass,database:c.db,connectTimeout:5000})).then(conn=>{'
+            .'const q=conn&&conn.query?conn.query("SELECT 1"):Promise.resolve();'
+            .'return Promise.resolve(q).then(()=>{process.stdout.write("ok");if(conn&&conn.end)return conn.end();});'
+            .'}).then(()=>process.exit(0)).catch(e=>{process.stderr.write(String(e&&e.message?e.message:e));process.exit(1);});}';
+    }
+
+    /**
+     * @param  array<string, mixed>  $envVars
+     * @return array{database: string, username: string, password: string}
+     */
+    private function applicationDatabaseCredentials(array $envVars, string $databaseType): array
+    {
+        if ($databaseType === 'postgresql') {
+            return [
+                'database' => (string) ($envVars['DB_DATABASE'] ?? $envVars['POSTGRES_DB'] ?? 'appdb'),
+                'username' => (string) ($envVars['DB_USERNAME'] ?? $envVars['POSTGRES_USER'] ?? 'appuser'),
+                'password' => (string) ($envVars['DB_PASSWORD'] ?? $envVars['POSTGRES_PASSWORD'] ?? ''),
+            ];
+        }
+
+        return [
+            'database' => (string) ($envVars['DB_DATABASE'] ?? $envVars['MYSQL_DATABASE'] ?? 'appdb'),
+            'username' => (string) ($envVars['DB_USERNAME'] ?? $envVars['MYSQL_USER'] ?? 'appuser'),
+            'password' => (string) ($envVars['DB_PASSWORD'] ?? $envVars['MYSQL_PASSWORD'] ?? ''),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $envVars
+     * @return array{0: string, 1: int}
+     */
+    private function applicationDatabaseEndpoint(array $envVars, string $databaseType): array
+    {
+        $host = $this->applicationDatabaseHost($envVars);
+        if ($host === '' || $host === 'localhost' || $host === '127.0.0.1') {
+            $host = 'db';
+        }
+        $defaultPort = $databaseType === 'postgresql' ? 5432 : 3306;
+        $port = (int) (($envVars['DB_PORT'] ?? '') !== '' ? $envVars['DB_PORT'] : $defaultPort);
+
+        return [$host, $port > 0 ? $port : $defaultPort];
     }
 
     /**
@@ -3016,32 +3357,28 @@ class ContainerDeploymentService
         SSHService $ssh,
         string $containerName,
         string $databaseType,
-        array $envVars
+        array $envVars,
+        ?string $templateSlug = null,
+        ?string $containerPath = null
     ): ?int {
-        $containerArg = escapeshellarg($containerName);
-        $host = $this->applicationDatabaseHost($envVars);
-        if ($host === '' || $host === 'localhost' || $host === '127.0.0.1') {
-            $host = 'db';
-        }
-        $database = (string) ($envVars['DB_DATABASE'] ?? $envVars['POSTGRES_DB'] ?? $envVars['MYSQL_DATABASE'] ?? 'appdb');
-        $username = (string) ($envVars['DB_USERNAME'] ?? $envVars['POSTGRES_USER'] ?? $envVars['MYSQL_USER'] ?? 'appuser');
-        $password = (string) ($envVars['DB_PASSWORD'] ?? $envVars['POSTGRES_PASSWORD'] ?? $envVars['MYSQL_PASSWORD'] ?? '');
+        $templateSlug = $templateSlug ?: $this->inferTemplateSlugFromContainerName($containerName);
+        $creds = $this->applicationDatabaseCredentials($envVars, $databaseType);
+        [$host, $port] = $this->applicationDatabaseEndpoint($envVars, $databaseType);
 
         if ($databaseType === 'postgresql') {
-            $port = (string) ($envVars['DB_PORT'] ?? '5432');
             // Count all non-system schemas (not only public) so custom schemas aren't reported as empty.
             $script = $this->phpPdoEvalScript(
-                'pgsql:host='.$host.';port='.$port.';dbname='.$database,
-                $username,
-                $password,
+                'pgsql:host='.$host.';port='.$port.';dbname='.$creds['database'],
+                $creds['username'],
+                $creds['password'],
                 '$n=$pdo->query("SELECT COUNT(*) FROM pg_catalog.pg_tables WHERE schemaname NOT IN (\'pg_catalog\',\'information_schema\')")->fetchColumn();'
                 .'fwrite(STDOUT,(string)$n); exit(0);'
             );
         } elseif (in_array($databaseType, ['mysql', 'mariadb'], true)) {
             $script = $this->phpPdoEvalScript(
-                'mysql:host='.$host.';port=3306;dbname='.$database,
-                $username,
-                $password,
+                'mysql:host='.$host.';port=3306;dbname='.$creds['database'],
+                $creds['username'],
+                $creds['password'],
                 '$n=$pdo->query("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_type=\'BASE TABLE\'")->fetchColumn();'
                 .'fwrite(STDOUT,(string)$n); exit(0);'
             );
@@ -3049,16 +3386,36 @@ class ContainerDeploymentService
             return null;
         }
 
-        try {
-            $output = trim($ssh->exec(
-                'docker exec -u www-data '.$containerArg.' php -r '.escapeshellarg($script),
-                20
-            ));
-
-            return is_numeric($output) ? (int) $output : null;
-        } catch (\Throwable) {
-            return null;
+        if ($this->applicationDatabaseProbeUsesPhp($templateSlug) || $templateSlug === null) {
+            try {
+                $output = trim($ssh->exec(
+                    $this->phpDatabaseProbeCommand($containerName, $script, $templateSlug ?: 'laravel'),
+                    20
+                ));
+                if (is_numeric($output)) {
+                    return (int) $output;
+                }
+            } catch (\Throwable $e) {
+                if ($this->applicationDatabaseProbeUsesPhp($templateSlug) && ! $this->isMissingPhpRuntimeProbeError($e->getMessage())) {
+                    return null;
+                }
+            }
         }
+
+        if ($containerPath !== null && $containerPath !== '') {
+            try {
+                $output = trim($ssh->exec(
+                    $this->sidecarTableCountCommand($containerPath, $databaseType, $envVars),
+                    20
+                ));
+
+                return is_numeric($output) ? (int) $output : null;
+            } catch (\Throwable) {
+                return null;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -3879,16 +4236,17 @@ class ContainerDeploymentService
         $adminPasswordArg = escapeshellarg($admin['password']);
         $usePassword = $admin['use_password'];
         $asOsUser = $admin['as_os_user'] ?? null;
+        $catalogDatabase = (string) ($admin['database'] ?? 'postgres');
 
-        $run = function (string $sql, string $databaseName = 'postgres') use ($ssh, $pathArg, $adminUserArg, $adminPasswordArg, $usePassword, $asOsUser): void {
+        $run = function (string $sql, ?string $databaseName = null) use ($ssh, $pathArg, $adminUserArg, $adminPasswordArg, $usePassword, $asOsUser, $catalogDatabase): void {
             $sqlArg = escapeshellarg($sql);
-            $dbArg = escapeshellarg($databaseName);
+            $dbArg = escapeshellarg($databaseName ?? $catalogDatabase);
 
             if (is_string($asOsUser) && $asOsUser !== '') {
                 $osUserArg = escapeshellarg($asOsUser);
                 $ssh->exec(
                     "cd {$pathArg} && docker compose exec -T -u {$osUserArg} db "
-                    ."psql -v ON_ERROR_STOP=1 -d {$dbArg} -c {$sqlArg}",
+                    ."psql -v ON_ERROR_STOP=1 -U {$adminUserArg} -d {$dbArg} -c {$sqlArg}",
                     30
                 );
 
@@ -3919,13 +4277,13 @@ class ContainerDeploymentService
             if (is_string($asOsUser) && $asOsUser !== '') {
                 $osUserArg = escapeshellarg($asOsUser);
                 $checkCmd = "cd {$pathArg} && docker compose exec -T -u {$osUserArg} db "
-                    .'psql -d postgres -Atc '.escapeshellarg($createDbSql);
+                    ."psql -U {$adminUserArg} -d ".escapeshellarg($catalogDatabase).' -Atc '.escapeshellarg($createDbSql);
             } elseif (! $usePassword) {
                 $checkCmd = "cd {$pathArg} && docker compose exec -T db "
-                    ."psql -U {$adminUserArg} -d postgres -Atc ".escapeshellarg($createDbSql);
+                    ."psql -U {$adminUserArg} -d ".escapeshellarg($catalogDatabase).' -Atc '.escapeshellarg($createDbSql);
             } else {
                 $checkCmd = "cd {$pathArg} && docker compose exec -T -e PGPASSWORD={$adminPasswordArg} db "
-                    ."psql -U {$adminUserArg} -d postgres -Atc ".escapeshellarg($createDbSql);
+                    ."psql -U {$adminUserArg} -d ".escapeshellarg($catalogDatabase).' -Atc '.escapeshellarg($createDbSql);
             }
             $output = trim($ssh->exec($checkCmd, 20));
             $exists = $output === '1';
@@ -3949,7 +4307,7 @@ class ContainerDeploymentService
      * ALTER ROLE passwords on modern PostgreSQL.
      *
      * @param  array<string, mixed>  $envVars
-     * @return array{username: string, password: string, use_password: bool, as_os_user: ?string}
+     * @return array{username: string, password: string, use_password: bool, as_os_user: ?string, database: string}
      */
     public function resolvePostgresqlAdminConnection(
         SSHService $ssh,
@@ -3960,22 +4318,8 @@ class ContainerDeploymentService
         $pathArg = escapeshellarg($containerPath);
         $canonical = $service ? $this->defaultDatabaseIdentifiers($service)['username'] : null;
         $appUsername = trim((string) ($envVars['DB_USERNAME'] ?? $envVars['POSTGRES_USER'] ?? ''));
-
-        // Prefer known volume superusers; defer the app role until last and only if it is superuser.
-        $usernames = [];
-        foreach ([
-            $envVars['TALKSASA_PLATFORM_DB_USERNAME'] ?? null,
-            $canonical,
-            'postgres',
-            $envVars['POSTGRES_USER'] ?? null,
-            $envVars['DB_USERNAME'] ?? null,
-        ] as $candidate) {
-            $candidate = trim((string) $candidate);
-            if ($candidate === '') {
-                continue;
-            }
-            $usernames[$candidate] = true;
-        }
+        $usernames = array_fill_keys($this->postgresqlAdminRoleCandidates($envVars, $canonical), true);
+        $databases = $this->postgresqlAdminDatabaseCandidates($envVars);
 
         // Move app username to the end so we don't pick a non-superuser trust login first.
         if ($appUsername !== '' && isset($usernames[$appUsername])) {
@@ -3997,77 +4341,91 @@ class ContainerDeploymentService
         $errors = [];
         $superCheck = escapeshellarg("SELECT current_setting('is_superuser')");
 
-        // Peer auth as the container OS postgres user (works on some images).
-        try {
-            $isSuper = strtolower(trim($ssh->exec(
-                "cd {$pathArg} && docker compose exec -T -u postgres db "
-                ."psql -d postgres -Atc {$superCheck}",
-                15
-            )));
-            if ($isSuper === 'on') {
-                return [
-                    'username' => 'postgres',
-                    'password' => '',
-                    'use_password' => false,
-                    'as_os_user' => 'postgres',
-                ];
+        // Official image with POSTGRES_USER != postgres has no postgres role.
+        // Peer as the OS postgres user, but login as the volume superuser.
+        foreach (array_keys($usernames) as $role) {
+            $roleArg = escapeshellarg($role);
+            foreach ($databases as $database) {
+                $dbArg = escapeshellarg($database);
+                try {
+                    $isSuper = strtolower(trim($ssh->exec(
+                        "cd {$pathArg} && docker compose exec -T -u postgres db "
+                        ."psql -U {$roleArg} -d {$dbArg} -Atc {$superCheck}",
+                        15
+                    )));
+                    if ($isSuper === 'on') {
+                        return [
+                            'username' => $role,
+                            'password' => '',
+                            'use_password' => false,
+                            'as_os_user' => 'postgres',
+                            'database' => $database,
+                        ];
+                    }
+                    $errors[] = 'os:postgres as '.$role.'@'.$database.': connected but not superuser';
+                } catch (\Throwable $e) {
+                    $errors[] = 'os:postgres as '.$role.'@'.$database.': '.$e->getMessage();
+                }
             }
-        } catch (\Throwable $e) {
-            $errors[] = 'os:postgres: '.$e->getMessage();
         }
 
         foreach (array_keys($usernames) as $username) {
             $userArg = escapeshellarg($username);
 
             foreach ($passwords as $password) {
-                try {
-                    if ($password === '') {
+                foreach ($databases as $database) {
+                    $dbArg = escapeshellarg($database);
+                    try {
+                        if ($password === '') {
+                            $isSuper = strtolower(trim($ssh->exec(
+                                "cd {$pathArg} && docker compose exec -T db "
+                                ."psql -U {$userArg} -d {$dbArg} -Atc {$superCheck}",
+                                15
+                            )));
+                            if ($isSuper !== 'on') {
+                                $errors[] = $username.'@'.$database.' socket: connected but not superuser';
+
+                                continue;
+                            }
+
+                            return [
+                                'username' => $username,
+                                'password' => '',
+                                'use_password' => false,
+                                'as_os_user' => null,
+                                'database' => $database,
+                            ];
+                        }
+
+                        $passwordArg = escapeshellarg($password);
                         $isSuper = strtolower(trim($ssh->exec(
-                            "cd {$pathArg} && docker compose exec -T db "
-                            ."psql -U {$userArg} -d postgres -Atc {$superCheck}",
+                            "cd {$pathArg} && docker compose exec -T -e PGPASSWORD={$passwordArg} db "
+                            ."psql -U {$userArg} -d {$dbArg} -Atc {$superCheck}",
                             15
                         )));
                         if ($isSuper !== 'on') {
-                            $errors[] = $username.'@socket: connected but not superuser';
+                            $errors[] = $username.'@'.$database.' password: connected but not superuser';
 
                             continue;
                         }
 
                         return [
                             'username' => $username,
-                            'password' => '',
-                            'use_password' => false,
+                            'password' => $password,
+                            'use_password' => true,
                             'as_os_user' => null,
+                            'database' => $database,
                         ];
+                    } catch (\Throwable $e) {
+                        $errors[] = $username.'@'.$database.' '.($password === '' ? 'socket' : 'password').': '.$e->getMessage();
                     }
-
-                    $passwordArg = escapeshellarg($password);
-                    $isSuper = strtolower(trim($ssh->exec(
-                        "cd {$pathArg} && docker compose exec -T -e PGPASSWORD={$passwordArg} db "
-                        ."psql -U {$userArg} -d postgres -Atc {$superCheck}",
-                        15
-                    )));
-                    if ($isSuper !== 'on') {
-                        $errors[] = $username.'@password: connected but not superuser';
-
-                        continue;
-                    }
-
-                    return [
-                        'username' => $username,
-                        'password' => $password,
-                        'use_password' => true,
-                        'as_os_user' => null,
-                    ];
-                } catch (\Throwable $e) {
-                    $errors[] = $username.'@'.($password === '' ? 'socket' : 'password').': '.$e->getMessage();
                 }
             }
         }
 
         throw new \RuntimeException(
             'Could not connect to Postgres as a superuser to repair credentials. '
-            .'Tried: '.implode(', ', array_keys($usernames)).'. '
+            .'Tried roles: '.implode(', ', array_keys($usernames)).'. '
             .'Last errors: '.mb_substr(implode(' | ', array_slice($errors, -4)), 0, 600)
         );
     }
@@ -4918,11 +5276,19 @@ class ContainerDeploymentService
         $deployment->update(['docker_compose_content' => $composeYaml]);
         $ssh->upload($composeYaml, $containerPath.'/docker-compose.yml');
 
+        if (($template->slug ?? '') === 'nodejs') {
+            $meta = is_array($service->service_meta) ? $service->service_meta : [];
+            $meta['node_project_root'] = $runtime->containerWorkdir === '/app'
+                ? ''
+                : trim(substr($runtime->containerWorkdir, strlen('/app')), '/');
+            $service->update(['service_meta' => $meta]);
+        }
+
         if ($this->runtimeImages->usesRuntimeImage($template)) {
             $this->runtimeImages->ensureImage($ssh, $template, $deployment->selected_version, $service, $deployment);
         }
 
-        $this->composeUp($ssh, $containerPath, $this->runtimeImages->usesRuntimeImage($template));
+        $this->restartAppService($ssh, $deployment->fresh());
 
         return 'Application start command updated ('.$runtime->label.').';
     }

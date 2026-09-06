@@ -609,4 +609,94 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
             $this->service->npmBuildShellCommand(null, true, $nextPlusTurbo)
         );
     }
+
+    #[Test]
+    public function it_infers_vite_preview_when_package_json_has_no_start_script(): void
+    {
+        $packageJson = json_encode([
+            'scripts' => [
+                'dev' => 'vite',
+                'build' => 'vite build',
+                'preview' => 'vite preview',
+            ],
+            'devDependencies' => [
+                'vite' => '5.4.0',
+            ],
+        ], JSON_THROW_ON_ERROR);
+
+        $runtime = $this->service->detectNodeFromContents(null, $packageJson, false, false, false, 3000);
+
+        $this->assertNotSame('fallback', $runtime->source);
+        $this->assertStringContainsString('vite preview', $runtime->command[2]);
+        $this->assertStringContainsString('cd /app &&', $runtime->command[2]);
+    }
+
+    #[Test]
+    public function it_infers_next_start_when_package_json_has_no_start_script(): void
+    {
+        $packageJson = json_encode([
+            'scripts' => [
+                'dev' => 'next dev',
+                'build' => 'next build',
+            ],
+            'dependencies' => [
+                'next' => '14.2.35',
+            ],
+        ], JSON_THROW_ON_ERROR);
+
+        $runtime = $this->service->detectNodeFromContents(null, $packageJson, false, false, false, 3000);
+
+        $this->assertSame('next', $runtime->source);
+        $this->assertStringContainsString('npx next start', $runtime->command[2]);
+    }
+
+    #[Test]
+    public function it_starts_nested_node_apps_from_their_package_root(): void
+    {
+        $packageJson = json_encode([
+            'scripts' => [
+                'start' => 'node server.js',
+            ],
+        ], JSON_THROW_ON_ERROR);
+
+        $runtime = $this->service->detectNodeFromContents(
+            null,
+            $packageJson,
+            false,
+            false,
+            false,
+            3000,
+            '/app/backend'
+        );
+
+        $this->assertSame('/app/backend', $runtime->containerWorkdir);
+        $this->assertStringContainsString('cd /app/backend &&', $runtime->command[2]);
+        $this->assertStringContainsString('exec npm start', $runtime->command[2]);
+    }
+
+    #[Test]
+    public function it_rejects_unsafe_node_workdirs(): void
+    {
+        $this->assertSame('/app', $this->service->sanitizeContainerWorkdir('/etc/passwd'));
+        $this->assertSame('/app', $this->service->sanitizeContainerWorkdir('app/foo/../../etc'));
+        $this->assertSame('/app/apps/web', $this->service->sanitizeContainerWorkdir('apps/web'));
+    }
+
+    #[Test]
+    public function workspace_root_without_start_is_not_a_direct_app(): void
+    {
+        $root = json_encode([
+            'private' => true,
+            'packageManager' => 'pnpm@9.15.4',
+            'workspaces' => ['apps/*'],
+            'scripts' => [
+                'dev' => 'turbo run dev',
+                'build' => 'turbo run build',
+            ],
+        ], JSON_THROW_ON_ERROR);
+
+        $this->assertTrue($this->service->packageJsonIsWorkspaceRoot($root));
+        $this->assertFalse($this->service->packageJsonHasDirectStart($root));
+        $this->assertFalse($this->service->packageJsonLooksRunnable($root));
+    }
 }
