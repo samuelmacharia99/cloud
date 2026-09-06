@@ -37,15 +37,26 @@ class ContainerApplicationRuntimeService
         $relative = $this->discoverNodeProjectRelativeRoot($ssh, $hostAppPath);
         $projectHost = $relative === '' ? $hostAppPath : $hostAppPath.'/'.$relative;
         $workdir = $this->sanitizeContainerWorkdir($relative === '' ? '/app' : '/app/'.$relative);
+        $rootPackageJson = $this->readHostFile($ssh, $hostAppPath.'/package.json');
+        $projectPackageJson = $this->readHostFile($ssh, $projectHost.'/package.json');
+        $isWorkspace = $this->isNodeWorkspaceLayout(
+            $ssh,
+            $hostAppPath,
+            $relative,
+            $rootPackageJson,
+            $projectPackageJson
+        );
 
         return $this->detectNodeFromContents(
             $this->readProcfileWebCommand($ssh, $projectHost),
-            $this->readHostFile($ssh, $projectHost.'/package.json'),
+            $projectPackageJson,
             $this->hostFileExists($ssh, $projectHost.'/server.js'),
             $this->hostFileExists($ssh, $projectHost.'/app.js'),
             $this->hostFileExists($ssh, $projectHost.'/index.js'),
             $defaultPort,
-            $workdir
+            $workdir,
+            $isWorkspace ? $rootPackageJson : null,
+            $isWorkspace ? '/app' : $workdir
         );
     }
 
@@ -176,6 +187,81 @@ class ContainerApplicationRuntimeService
         return str_starts_with($manager, 'pnpm@') || $manager === 'pnpm';
     }
 
+    public function packageJsonUsesWorkspaceProtocol(?string $packageJson): bool
+    {
+        if ($packageJson === null || trim($packageJson) === '') {
+            return false;
+        }
+
+        $data = json_decode($packageJson, true);
+        if (! is_array($data)) {
+            return false;
+        }
+
+        foreach (['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'] as $key) {
+            $deps = $data[$key] ?? null;
+            if (! is_array($deps)) {
+                continue;
+            }
+
+            foreach ($deps as $spec) {
+                if (is_string($spec) && str_starts_with($spec, 'workspace:')) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    public function packageJsonIndicatesWorkspaceLayout(
+        ?string $rootPackageJson,
+        ?string $projectPackageJson,
+        string $relative = ''
+    ): bool {
+        if ($this->packageJsonUsesWorkspaceProtocol($projectPackageJson)
+            || $this->packageJsonUsesWorkspaceProtocol($rootPackageJson)) {
+            return true;
+        }
+
+        return $relative !== '' && $this->packageJsonIsWorkspaceRoot($rootPackageJson);
+    }
+
+    public function isNodeWorkspaceLayout(
+        SSHService $ssh,
+        string $hostAppPath,
+        string $relative,
+        ?string $rootPackageJson,
+        ?string $projectPackageJson
+    ): bool {
+        if ($this->packageJsonIndicatesWorkspaceLayout($rootPackageJson, $projectPackageJson, $relative)) {
+            return true;
+        }
+
+        return $relative !== ''
+            && $this->hostFileExists($ssh, $hostAppPath.'/pnpm-workspace.yaml');
+    }
+
+    public function relativeDirUnderApp(string $containerWorkdir): string
+    {
+        $dir = $this->sanitizeContainerWorkdir($containerWorkdir);
+        if ($dir === '/app') {
+            return '';
+        }
+
+        return ltrim(substr($dir, strlen('/app/')), '/');
+    }
+
+    public function sanitizeArtifactRelativeDir(string $dir): string
+    {
+        $dir = trim(str_replace('\\', '/', $dir), '/');
+        if ($dir === '' || str_contains($dir, '..') || preg_match('#^[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*$#', $dir) !== 1) {
+            return '';
+        }
+
+        return $dir;
+    }
+
     public function packageJsonLooksRunnable(
         ?string $packageJson,
         bool $hasServerJs = false,
@@ -207,14 +293,31 @@ class ContainerApplicationRuntimeService
         bool $hasAppJs,
         bool $hasIndexJs,
         int $defaultPort,
-        string $containerWorkdir = '/app'
+        string $containerWorkdir = '/app',
+        ?string $workspaceRootPackageJson = null,
+        ?string $bootstrapWorkdir = null
     ): ApplicationRuntime {
         $workdir = $this->sanitizeContainerWorkdir($containerWorkdir);
+        $bootDir = $this->sanitizeContainerWorkdir(
+            $bootstrapWorkdir
+            ?? ($workspaceRootPackageJson !== null ? '/app' : $containerWorkdir)
+        );
+        $artifactRel = $bootDir !== $workdir ? $this->relativeDirUnderApp($workdir) : '';
+        $bootstrap = $this->nodeBootstrap($packageJson, $workspaceRootPackageJson, $artifactRel);
 
         if ($procfileCommand !== null) {
             $platformCommand = $this->platformNodeListenCommand($procfileCommand, $defaultPort, $packageJson);
             if ($platformCommand !== null) {
-                return $this->platformNodeRuntime($platformCommand, $defaultPort, $packageJson, $workdir);
+                return $this->platformNodeRuntime(
+                    $platformCommand,
+                    $defaultPort,
+                    $packageJson,
+                    $workdir,
+                    null,
+                    null,
+                    $workspaceRootPackageJson,
+                    $bootDir
+                );
             }
 
             return $this->shellRuntime(
@@ -222,8 +325,9 @@ class ContainerApplicationRuntimeService
                 $defaultPort,
                 'procfile',
                 'Procfile web process',
-                $this->nodeBootstrap($packageJson),
-                $workdir
+                $bootstrap,
+                $workdir,
+                $bootDir
             );
         }
 
@@ -234,7 +338,16 @@ class ContainerApplicationRuntimeService
                     $start = trim((string) $data['scripts']['start']);
                     $platformCommand = $this->platformNodeListenCommand($start, $defaultPort, $packageJson);
                     if ($platformCommand !== null) {
-                        return $this->platformNodeRuntime($platformCommand, $defaultPort, $packageJson, $workdir);
+                        return $this->platformNodeRuntime(
+                            $platformCommand,
+                            $defaultPort,
+                            $packageJson,
+                            $workdir,
+                            null,
+                            null,
+                            $workspaceRootPackageJson,
+                            $bootDir
+                        );
                     }
 
                     // Keep custom Vite servers (API + SPA). Install Vite; do not strip to preview.
@@ -245,8 +358,9 @@ class ContainerApplicationRuntimeService
                             $defaultPort,
                             'vite',
                             'Vite app server',
-                            $this->nodeBootstrap($packageJson),
-                            $workdir
+                            $bootstrap,
+                            $workdir,
+                            $bootDir
                         );
                     }
 
@@ -255,8 +369,9 @@ class ContainerApplicationRuntimeService
                         $defaultPort,
                         'package.json',
                         'npm start',
-                        $this->nodeBootstrap($packageJson),
-                        $workdir
+                        $bootstrap,
+                        $workdir,
+                        $bootDir
                     );
                 }
 
@@ -268,7 +383,9 @@ class ContainerApplicationRuntimeService
                         $packageJson,
                         $workdir,
                         $inferred['source'],
-                        $inferred['label']
+                        $inferred['label'],
+                        $workspaceRootPackageJson,
+                        $bootDir
                     );
                 }
 
@@ -280,8 +397,9 @@ class ContainerApplicationRuntimeService
                             $defaultPort,
                             'package.json',
                             'node '.$main,
-                            $this->nodeBootstrap($packageJson),
-                            $workdir
+                            $bootstrap,
+                            $workdir,
+                            $bootDir
                         );
                     }
                 }
@@ -289,15 +407,15 @@ class ContainerApplicationRuntimeService
         }
 
         if ($hasServerJs) {
-            return $this->shellRuntime('node server.js', $defaultPort, 'entrypoint', 'node server.js', $this->nodeBootstrap($packageJson), $workdir);
+            return $this->shellRuntime('node server.js', $defaultPort, 'entrypoint', 'node server.js', $bootstrap, $workdir, $bootDir);
         }
 
         if ($hasAppJs) {
-            return $this->shellRuntime('node app.js', $defaultPort, 'entrypoint', 'node app.js', $this->nodeBootstrap($packageJson), $workdir);
+            return $this->shellRuntime('node app.js', $defaultPort, 'entrypoint', 'node app.js', $bootstrap, $workdir, $bootDir);
         }
 
         if ($hasIndexJs) {
-            return $this->shellRuntime('node index.js', $defaultPort, 'entrypoint', 'node index.js', $this->nodeBootstrap($packageJson), $workdir);
+            return $this->shellRuntime('node index.js', $defaultPort, 'entrypoint', 'node index.js', $bootstrap, $workdir, $bootDir);
         }
 
         return $this->fallbackRuntime('nodejs', $defaultPort);
@@ -549,21 +667,27 @@ class ContainerApplicationRuntimeService
         string $source,
         string $label,
         ?string $bootstrap = null,
-        string $containerWorkdir = '/app'
+        string $containerWorkdir = '/app',
+        ?string $bootstrapWorkdir = null
     ): ApplicationRuntime {
         $innerCommand = $this->sanitizeInnerCommand($innerCommand);
         $prefix = '';
-        $workdir = $this->sanitizeContainerWorkdir($containerWorkdir);
+        $startDir = $this->sanitizeContainerWorkdir($containerWorkdir);
+        $bootDir = $this->sanitizeContainerWorkdir($bootstrapWorkdir ?? $containerWorkdir);
 
         if ($bootstrap !== null && trim($bootstrap) !== '') {
             $prefix = trim($bootstrap).' && ';
         }
 
+        $script = $bootDir !== $startDir
+            ? 'cd '.$bootDir.' && export PORT=${PORT:-'.$defaultPort.'} && '.$prefix.'cd '.$startDir.' && exec '.$innerCommand
+            : 'cd '.$startDir.' && export PORT=${PORT:-'.$defaultPort.'} && '.$prefix.'exec '.$innerCommand;
+
         return new ApplicationRuntime(
-            ['sh', '-lc', 'cd '.$workdir.' && export PORT=${PORT:-'.$defaultPort.'} && '.$prefix.'exec '.$innerCommand],
+            ['sh', '-lc', $script],
             $source,
             $label,
-            $workdir
+            $startDir
         );
     }
 
@@ -766,17 +890,23 @@ class ContainerApplicationRuntimeService
         ?string $packageJson,
         string $containerWorkdir = '/app',
         ?string $source = null,
-        ?string $label = null
+        ?string $label = null,
+        ?string $workspaceRootPackageJson = null,
+        ?string $bootstrapWorkdir = null
     ): ApplicationRuntime {
         $isNext = str_contains($platformCommand, 'next start');
+        $startDir = $this->sanitizeContainerWorkdir($containerWorkdir);
+        $bootDir = $this->sanitizeContainerWorkdir($bootstrapWorkdir ?? $containerWorkdir);
+        $artifactRel = $bootDir !== $startDir ? $this->relativeDirUnderApp($startDir) : '';
 
         return $this->shellRuntime(
             $platformCommand,
             $defaultPort,
             $source ?? ($isNext ? 'next' : 'vite'),
             $label ?? ($isNext ? 'Next.js server' : 'Vite production preview'),
-            $this->nodeBootstrap($packageJson),
-            $containerWorkdir
+            $this->nodeBootstrap($packageJson, $workspaceRootPackageJson, $artifactRel),
+            $startDir,
+            $bootDir
         );
     }
 
@@ -1005,15 +1135,18 @@ class ContainerApplicationRuntimeService
     /**
      * Shell test that is true when a production build artifact is missing or incomplete.
      */
-    public function packageJsonBuildArtifactMissingCheck(?string $packageJson): string
+    public function packageJsonBuildArtifactMissingCheck(?string $packageJson, string $relativeDir = ''): string
     {
+        $prefix = $this->sanitizeArtifactRelativeDir($relativeDir);
+        $base = $prefix === '' ? '' : $prefix.'/';
+
         if ($packageJson === null || trim($packageJson) === '') {
-            return '[ ! -d dist ]';
+            return '[ ! -d '.$base.'dist ]';
         }
 
         $data = json_decode($packageJson, true);
         if (! is_array($data)) {
-            return '[ ! -d dist ]';
+            return '[ ! -d '.$base.'dist ]';
         }
 
         $dependencies = array_merge(
@@ -1022,16 +1155,16 @@ class ContainerApplicationRuntimeService
         );
 
         if (isset($dependencies['next'])) {
-            return '[ ! -f .next/BUILD_ID ]';
+            return '[ ! -f '.$base.'.next/BUILD_ID ]';
         }
 
         if (isset($dependencies['nuxt'])) {
-            return '[ ! -d .output/server ]';
+            return '[ ! -d '.$base.'.output/server ]';
         }
 
         $artifactDir = $this->packageJsonBuildOutputDir($packageJson);
 
-        return '[ ! -d '.$artifactDir.' ]';
+        return '[ ! -d '.$base.$artifactDir.' ]';
     }
 
     private const NODE_NPM_BIN = '/usr/local/bin/npm';
@@ -1275,6 +1408,10 @@ class ContainerApplicationRuntimeService
         }
         if (str_starts_with($declared, 'yarn@') || $declared === 'yarn') {
             return 'yarn';
+        }
+
+        if ($this->packageJsonUsesWorkspaceProtocol($packageJson)) {
+            return 'pnpm';
         }
 
         return 'npm';
@@ -1589,38 +1726,85 @@ class ContainerApplicationRuntimeService
         return $this->nodeNpmProductionOffPrefix();
     }
 
-    public function nodeBootstrap(?string $packageJson = null): string
-    {
-        $openssl = 'if command -v apk >/dev/null 2>&1; then apk add --no-cache openssl libc6-compat >/dev/null 2>&1 || true; fi; ';
-        $binFix = 'find node_modules/.bin node_modules/next/dist/bin node_modules/vite/bin -type f -exec chmod u+x {} + 2>/dev/null || true';
-        $packageManager = $this->detectNodePackageManagerFromPackageJson($packageJson);
+    public function nodeBootstrap(
+        ?string $packageJson = null,
+        ?string $workspaceRootPackageJson = null,
+        string $artifactRelativeDir = ''
+    ): string {
+        $isWorkspace = $workspaceRootPackageJson !== null
+            || $this->packageJsonUsesWorkspaceProtocol($packageJson);
+        $managerJson = $workspaceRootPackageJson ?? $packageJson;
+        $packageManager = $this->detectNodePackageManagerFromPackageJson($managerJson);
+        if ($isWorkspace && $packageManager === 'npm') {
+            $packageManager = 'pnpm';
+        }
+
+        $openssl = 'if command -v apk >/dev/null 2>&1; then apk add --no-cache openssl libc6-compat >/dev/null 2>&1 || true; fi && ';
+        $binFix = $isWorkspace
+            ? 'find node_modules/.bin apps/*/node_modules/.bin packages/*/node_modules/.bin node_modules/next/dist/bin apps/*/node_modules/next/dist/bin node_modules/vite/bin apps/*/node_modules/vite/bin -type f -exec chmod u+x {} + 2>/dev/null || true'
+            : 'find node_modules/.bin node_modules/next/dist/bin node_modules/vite/bin -type f -exec chmod u+x {} + 2>/dev/null || true';
+
         $installForBuild = match ($packageManager) {
             'pnpm' => $this->pnpmInstallShellCommand(preferDevDependencies: true, frozenLockfile: false),
             'yarn' => $this->yarnInstallShellCommand(preferDevDependencies: true, mode: 'loose'),
             default => $this->npmInstallShellCommand(),
         };
-        $buildCommand = $this->npmBuildShellCommand(null, false, $packageJson, [], $packageManager);
+        $buildJson = ($workspaceRootPackageJson !== null && $this->packageJsonUsesTurbo($workspaceRootPackageJson))
+            ? $workspaceRootPackageJson
+            : $packageJson;
+        $artifactRel = $this->sanitizeArtifactRelativeDir($artifactRelativeDir);
+        $buildCommand = $this->workspaceAwareBuildCommand($buildJson, $packageManager, $artifactRel, $isWorkspace);
         $pruneCommand = $this->nodePruneShellCommand($packageManager);
         $prepareStep = $this->nodeBuildPrepareEnabled()
             ? '[ -f .talksasa/prepare-build.cjs ] && node .talksasa/prepare-build.cjs && '
             : '';
-        // `vite preview` and Vite custom servers (tsx / dist/server.cjs) import vite + plugins
-        // from devDependencies. Pruning them crash-loops the container, so keep the full tree.
-        $keepDevDependencies = $this->productionStartRequiresVite($packageJson);
-        $steadyStateInstall = $keepDevDependencies
-            ? $this->npmDevInstallShellCommand($packageJson)
-            : $this->npmOmitDevInstallCommand($packageJson);
+        // Workspace links and Vite preview both need the full tree. Pruning
+        // `workspace:*` packages (or Vite) crash-loops the container.
+        $keepDevDependencies = $isWorkspace || $this->productionStartRequiresVite($packageJson);
+        $steadyStateInstall = $isWorkspace
+            ? $installForBuild
+            : ($keepDevDependencies
+                ? $this->npmDevInstallShellCommand($packageJson)
+                : $this->npmOmitDevInstallCommand($packageJson));
 
-        if (! $this->packageJsonRequiresProductionBuild($packageJson)) {
+        if (! $this->packageJsonRequiresProductionBuild($packageJson)
+            && ! ($isWorkspace && $this->packageJsonRequiresProductionBuild($workspaceRootPackageJson))) {
             return $openssl.'[ -f package.json ] && '.$steadyStateInstall.' && '.$binFix;
         }
 
-        $artifactMissingCheck = $this->packageJsonBuildArtifactMissingCheck($packageJson);
+        $artifactMissingCheck = $this->packageJsonBuildArtifactMissingCheck($packageJson, $artifactRel);
         $pruneStep = $keepDevDependencies ? '' : $pruneCommand;
         $buildBranch = $installForBuild.' && '.$binFix.' && '.$prepareStep.$buildCommand
             .($pruneStep !== '' ? ' && '.$pruneStep : '');
 
         return $openssl.'[ -f package.json ] && { if '.$artifactMissingCheck.'; then rm -rf node_modules && '.$buildBranch.'; else '.$steadyStateInstall.' && '.$binFix.'; fi; }';
+    }
+
+    private function workspaceAwareBuildCommand(
+        ?string $packageJson,
+        string $packageManager,
+        string $artifactRelativeDir,
+        bool $isWorkspace
+    ): string {
+        if ($isWorkspace
+            && $artifactRelativeDir !== ''
+            && ! $this->packageJsonUsesTurbo($packageJson)) {
+            $dir = $this->sanitizeArtifactRelativeDir($artifactRelativeDir);
+            if ($dir !== '') {
+                $binary = match ($packageManager) {
+                    'yarn' => '/usr/local/bin/corepack yarn --cwd '.$dir.' run build',
+                    default => '/usr/local/bin/corepack pnpm --dir '.$dir.' run build',
+                };
+
+                return $this->nodeCleanCommand(
+                    $binary,
+                    'production',
+                    $this->corepackEnvironment() + ['TURBO_TELEMETRY_DISABLED' => '1']
+                );
+            }
+        }
+
+        return $this->npmBuildShellCommand(null, false, $packageJson, [], $packageManager);
     }
 
     private function rubyBootstrap(): string

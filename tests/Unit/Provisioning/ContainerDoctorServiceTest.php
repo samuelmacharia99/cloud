@@ -28,6 +28,60 @@ LOG;
     }
 
     #[Test]
+    public function it_detects_npm_workspace_protocol_failures(): void
+    {
+        $logs = <<<'LOG'
+npm warn config production Use `--omit=dev` instead.
+npm error code EUNSUPPORTEDPROTOCOL
+npm error Unsupported URL Type "workspace:": workspace:*
+sh: next: Permission denied
+LOG;
+
+        $doctor = app(ContainerDoctorService::class);
+        $finding = collect($doctor->analyzeLogs($logs, 'nodejs'))->firstWhere('id', 'npm_workspace_protocol');
+
+        $this->assertNotNull($finding);
+        $this->assertSame('restart_application', $finding['treat_action']);
+        $this->assertSame('Start the Node app', $finding['treat_label']);
+        $this->assertSame('critical', $finding['severity']);
+        $this->assertTrue($doctor->bootstrapLogsLookFatal($logs));
+        $this->assertNull($doctor->recentLogsIndicateBootstrapProgress($logs));
+    }
+
+    #[Test]
+    public function workspace_protocol_finding_replaces_false_bootstrap_progress(): void
+    {
+        $merged = app(ContainerDoctorService::class)->mergeLogAndLiveFindings(
+            [[
+                'id' => 'npm_workspace_protocol',
+                'severity' => 'critical',
+                'title' => 'npm cannot install a pnpm/yarn workspace',
+                'treat_action' => 'restart_application',
+            ]],
+            [
+                'findings' => [
+                    [
+                        'id' => 'live_bootstrap_in_progress',
+                        'severity' => 'warning',
+                        'title' => 'Live check: the app is still installing and building',
+                    ],
+                    [
+                        'id' => 'container_crash_loop',
+                        'severity' => 'critical',
+                        'title' => 'Application container is crash-looping',
+                    ],
+                ],
+                'checks' => ['http_status' => 502, 'db_ok' => null],
+            ]
+        );
+
+        $ids = array_column($merged, 'id');
+        $this->assertContains('npm_workspace_protocol', $ids);
+        $this->assertNotContains('live_bootstrap_in_progress', $ids);
+        $this->assertNotContains('container_crash_loop', $ids);
+    }
+
+    #[Test]
     public function it_detects_the_empty_node_placeholder_from_bound_url_text(): void
     {
         $logs = <<<'LOG'

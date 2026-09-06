@@ -699,4 +699,95 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
         $this->assertFalse($this->service->packageJsonHasDirectStart($root));
         $this->assertFalse($this->service->packageJsonLooksRunnable($root));
     }
+
+    #[Test]
+    public function workspace_protocol_selects_pnpm_not_npm(): void
+    {
+        $app = json_encode([
+            'name' => 'web',
+            'dependencies' => [
+                'next' => '14.2.35',
+                '@repo/ui' => 'workspace:*',
+            ],
+        ], JSON_THROW_ON_ERROR);
+
+        $this->assertTrue($this->service->packageJsonUsesWorkspaceProtocol($app));
+        $this->assertSame('pnpm', $this->service->detectNodePackageManagerFromPackageJson($app));
+        $this->assertTrue($this->service->packageJsonIndicatesWorkspaceLayout(
+            '{"private":true,"packageManager":"pnpm@9.15.4"}',
+            $app,
+            'apps/web'
+        ));
+    }
+
+    #[Test]
+    public function nested_workspace_app_installs_from_repo_root_with_pnpm(): void
+    {
+        $app = json_encode([
+            'name' => 'web',
+            'scripts' => [
+                'build' => 'next build',
+                'start' => 'next start',
+            ],
+            'dependencies' => [
+                'next' => '14.2.35',
+                '@repo/ui' => 'workspace:*',
+            ],
+        ], JSON_THROW_ON_ERROR);
+        $root = json_encode([
+            'private' => true,
+            'packageManager' => 'pnpm@9.15.4',
+            'scripts' => [
+                'build' => 'turbo run build',
+            ],
+            'devDependencies' => [
+                'turbo' => '2.9.18',
+            ],
+        ], JSON_THROW_ON_ERROR);
+
+        $runtime = $this->service->detectNodeFromContents(
+            null,
+            $app,
+            false,
+            false,
+            false,
+            3000,
+            '/app/apps/web',
+            $root,
+            '/app'
+        );
+
+        $command = $runtime->command[2];
+        $this->assertSame('/app/apps/web', $runtime->containerWorkdir);
+        $this->assertSame('next', $runtime->source);
+        $this->assertStringContainsString('cd /app &&', $command);
+        $this->assertStringContainsString('cd /app/apps/web && exec npx next start', $command);
+        $this->assertStringContainsString('/usr/local/bin/corepack pnpm install', $command);
+        $this->assertStringContainsString('[ ! -f apps/web/.next/BUILD_ID ]', $command);
+        $this->assertStringContainsString('/usr/local/bin/corepack pnpm run build', $command);
+        $this->assertStringNotContainsString('npm install --omit=dev', $command);
+        $this->assertStringNotContainsString('EUNSUPPORTEDPROTOCOL', $command);
+        $this->assertStringNotContainsString('prune --prod', $command);
+    }
+
+    #[Test]
+    public function workspace_next_without_turbo_builds_the_package_dir(): void
+    {
+        $app = json_encode([
+            'scripts' => [
+                'build' => 'next build',
+                'start' => 'next start',
+            ],
+            'dependencies' => [
+                'next' => '14.2.35',
+                '@repo/ui' => 'workspace:*',
+            ],
+        ], JSON_THROW_ON_ERROR);
+
+        $bootstrap = $this->service->nodeBootstrap($app, '{"private":true}', 'apps/web');
+
+        $this->assertStringContainsString('/usr/local/bin/corepack pnpm --dir apps/web run build', $bootstrap);
+        $this->assertStringContainsString('[ ! -f apps/web/.next/BUILD_ID ]', $bootstrap);
+        $this->assertStringNotContainsString('npm install --omit=dev', $bootstrap);
+    }
 }

@@ -950,6 +950,7 @@ class ContainerDoctorService
                     'live_stale_proxy_vhost',
                     'laravel_docroot_not_public',
                     'mysql_unix_socket_missing',
+                    'npm_workspace_protocol',
                 ]);
 
                 $appErrors = $containerReady ? $this->readRecentApplicationErrors($ssh, $deployment) : [];
@@ -1161,6 +1162,8 @@ class ContainerDoctorService
             $drop = ['php_builtin_dev_server', 'container_crash_loop', 'live_upstream_unreachable', 'stale_php_runtime_image'];
         } elseif (in_array('mysql_unix_socket_missing', $ids, true)) {
             $drop = ['mysql_connection_refused', 'live_db_connection_failed'];
+        } elseif (in_array('npm_workspace_protocol', $ids, true)) {
+            $drop = ['live_bootstrap_in_progress', 'live_upstream_unreachable', 'container_crash_loop'];
         } elseif (array_intersect($ids, [
             'php_builtin_dev_server',
             'php_fpm_sock_missing',
@@ -2853,18 +2856,26 @@ PHP;
         '/(bundle|gem) install|fetching gem/i',
     ];
 
-    /**
-     * @return string|null the log line that proves work is in progress
-     */
-    private function detectBootstrapActivity(SSHService $ssh, $deployment): ?string
+    private const BOOTSTRAP_FATAL_PATTERNS = [
+        '/EUNSUPPORTEDPROTOCOL/i',
+        '/Unsupported URL Type "workspace:"/i',
+        '/sh:\s+next:\s+Permission denied/i',
+    ];
+
+    public function bootstrapLogsLookFatal(string $logs): bool
     {
-        try {
-            $logs = trim($ssh->exec(
-                'docker logs --since 120s --tail 20 '
-                .escapeshellarg((string) $deployment->container_name).' 2>&1 || true',
-                20
-            ));
-        } catch (\Throwable) {
+        foreach (self::BOOTSTRAP_FATAL_PATTERNS as $pattern) {
+            if (preg_match($pattern, $logs) === 1) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public function recentLogsIndicateBootstrapProgress(string $logs): ?string
+    {
+        if ($this->bootstrapLogsLookFatal($logs)) {
             return null;
         }
 
@@ -2882,6 +2893,24 @@ PHP;
         }
 
         return null;
+    }
+
+    /**
+     * @return string|null the log line that proves work is in progress
+     */
+    private function detectBootstrapActivity(SSHService $ssh, $deployment): ?string
+    {
+        try {
+            $logs = trim($ssh->exec(
+                'docker logs --since 120s --tail 20 '
+                .escapeshellarg((string) $deployment->container_name).' 2>&1 || true',
+                20
+            ));
+        } catch (\Throwable) {
+            return null;
+        }
+
+        return $this->recentLogsIndicateBootstrapProgress($logs);
     }
 
     /**
@@ -3198,6 +3227,25 @@ PHP;
                 'manual_steps' => [
                     'Click Start the Node app — re-detects package.json and recreates the app (database stays).',
                     'Reload the bound URL. Do not Reset database.',
+                ],
+            ],
+            [
+                'id' => 'npm_workspace_protocol',
+                'severity' => 'critical',
+                'stacks' => ['nodejs', '*'],
+                'patterns' => [
+                    '/EUNSUPPORTEDPROTOCOL/i',
+                    '/Unsupported URL Type "workspace:"/i',
+                    '/workspace:\*/i',
+                    '/sh:\s+next:\s+Permission denied/i',
+                ],
+                'title' => 'npm cannot install a pnpm/yarn workspace',
+                'summary' => 'The app package uses the workspace:* protocol (pnpm or Yarn). npm install inside the nested package fails, then `next` is missing or not executable (exit 126). Start the Node app re-detects the repo root, installs with pnpm/Yarn from /app, and starts the nested app. The database volume is kept.',
+                'treat_action' => 'restart_application',
+                'treat_label' => 'Start the Node app',
+                'manual_steps' => [
+                    'Click Start the Node app — installs from the workspace root (not npm inside apps/web) and recreates only the app container.',
+                    'The first pnpm install and production build can take several minutes. Watch Logs. Do not Reset database.',
                 ],
             ],
             [
