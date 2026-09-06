@@ -205,6 +205,7 @@
                                         <div class="text-xs text-slate-500">{{ $item->service?->user?->name }}</div>
                                         <div class="font-mono text-xs">{{ $item->hostname ?: '—' }}</div>
                                         <a href="{{ route('admin.services.migrate-to-container', $item->service_id) }}" class="text-xs text-blue-600 hover:underline">Open existing wizard</a>
+                                        <button type="button" class="block text-xs text-teal-700 hover:underline" @click.prevent="window.dispatchEvent(new CustomEvent('da-convert-watch', { detail: { itemId: {{ $item->id }} } }))">Watch convert</button>
                                     </td>
                                     <td class="py-3 pr-4">
                                         {{ $item->status?->label() }}
@@ -246,5 +247,10 @@
             </form>
         </div>
     @endforeach
+
+    @include('admin.resellers.partials.da-convert-progress-terminal', [
+        'reseller' => $reseller,
+        'convertProgress' => $convertProgress ?? ['is_active' => false, 'active_count' => 0, 'items' => [], 'current' => null],
+    ])
 </div>
 @endsection

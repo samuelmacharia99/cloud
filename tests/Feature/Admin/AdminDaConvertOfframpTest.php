@@ -238,6 +238,51 @@ class AdminDaConvertOfframpTest extends TestCase
         $this->actingAs($customer)
             ->post(route('admin.resellers.directadmin-offramp.import-packages', $reseller))
             ->assertForbidden();
+
+        $this->actingAs($customer)
+            ->getJson(route('admin.resellers.directadmin-offramp.progress', $reseller))
+            ->assertForbidden();
+    }
+
+    public function test_admin_can_poll_live_convert_progress(): void
+    {
+        [$admin, $reseller, $ready] = $this->board();
+        $batch = DaConvertBatch::query()->create([
+            'reseller_user_id' => $reseller->id,
+            'admin_user_id' => $admin->id,
+            'product_id' => Product::factory()->containerHosting()->create()->id,
+            'status' => 'converting',
+        ]);
+        $item = DaConvertBatchItem::query()->create([
+            'da_convert_batch_id' => $batch->id,
+            'service_id' => $ready->id,
+            'hostname' => 'ready.example.com',
+            'status' => DaConvertBatchItemStatus::Converting,
+        ]);
+        $ready->update([
+            'service_meta' => array_merge($ready->service_meta ?? [], [
+                'da_convert' => [
+                    'status' => 'running',
+                    'steps' => ['Exporting site files from DirectAdmin', 'Provisioning container'],
+                    'heartbeat_at' => now()->toIso8601String(),
+                ],
+            ]),
+        ]);
+
+        $this->actingAs($admin)
+            ->getJson(route('admin.resellers.directadmin-offramp.progress', $reseller))
+            ->assertOk()
+            ->assertJsonPath('is_active', true)
+            ->assertJsonPath('active_count', 1)
+            ->assertJsonPath('current.item_id', $item->id)
+            ->assertJsonPath('current.hostname', 'ready.example.com')
+            ->assertSee('Exporting site files from DirectAdmin', false);
+
+        $this->actingAs($admin)
+            ->get(route('admin.resellers.directadmin-offramp', $reseller))
+            ->assertOk()
+            ->assertSee('da-convert')
+            ->assertSee('Watch convert');
     }
 
     public function test_cut_web_dns_rejects_items_from_another_reseller_batch(): void

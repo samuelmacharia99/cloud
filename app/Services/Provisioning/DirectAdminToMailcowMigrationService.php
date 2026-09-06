@@ -1085,7 +1085,9 @@ class DirectAdminToMailcowMigrationService
         $message = strtolower($message);
 
         return str_contains($message, 'you do not own that domain')
-            || str_contains($message, 'you do not own this domain');
+            || str_contains($message, 'you do not own this domain')
+            || str_contains($message, 'domain does not belong to you')
+            || str_contains($message, 'does not belong to you');
     }
 
     /**

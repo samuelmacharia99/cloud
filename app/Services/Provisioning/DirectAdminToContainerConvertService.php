@@ -115,7 +115,9 @@ class DirectAdminToContainerConvertService
             );
         } elseif ($daEmailCount > 0 && $mailboxCount === 0) {
             $emailWarnings[] = sprintf(
-                'Cached DirectAdmin usage shows %d email account(s), but the live dashboard failed and /etc/virtual listed none. Convert will not pull mail — confirm on DirectAdmin before decommissioning.',
+                $virtualPasswdScanned
+                    ? 'DirectAdmin usage shows %d email account(s), but POP and /etc/virtual listed none. Convert will not pull mail — confirm on DirectAdmin before decommissioning.'
+                    : 'Cached DirectAdmin usage shows %d email account(s), but the live dashboard failed and mailbox inventory found none. Convert will not pull mail — confirm on DirectAdmin before decommissioning.',
                 $daEmailCount
             );
         } elseif ($daEmailCount > $mailboxCount && $mailboxCount > 0) {
@@ -203,7 +205,9 @@ class DirectAdminToContainerConvertService
             return false;
         }
 
-        if ($dashboardFailed && $virtualPasswdScanned) {
+        // Live /etc/virtual is authoritative. A usage counter of 1 with an empty
+        // passwd file is usually the default DA tally, not a mailbox we would leave behind.
+        if ($virtualPasswdScanned) {
             return false;
         }
 

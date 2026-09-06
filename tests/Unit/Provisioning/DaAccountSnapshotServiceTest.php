@@ -106,6 +106,58 @@ class DaAccountSnapshotServiceTest extends TestCase
         app(DaAccountSnapshotService::class)->captureOrFail($service, $api);
     }
 
+    #[Test]
+    public function it_captures_the_parent_zone_when_subdomain_folders_are_not_da_zones(): void
+    {
+        $service = $this->daService();
+        $migrator = Mockery::mock(DirectAdminToContainerMigrationService::class);
+        $migrator->shouldReceive('inventory')->andReturn([
+            'username' => 'da-shop',
+            'domain' => 'shop.example.com',
+            'databases' => [],
+            'sites' => [
+                ['domain' => 'shop.example.com', 'is_primary' => true, 'stack' => 'wordpress'],
+                ['domain' => 'api.shop.example.com', 'is_primary' => false, 'stack' => 'nodejs'],
+                ['domain' => 'booking.shop.example.com', 'is_primary' => false, 'stack' => 'static_or_php'],
+            ],
+            'account' => ['nameservers' => []],
+        ]);
+        $this->app->instance(DirectAdminToContainerMigrationService::class, $migrator);
+
+        $api = Mockery::mock(DirectAdminCustomerPanelApi::class);
+        $api->shouldReceive('listDnsRecords')->with('da-shop', 'shop.example.com')->andReturn([
+            'success' => true,
+            'message' => 'OK',
+            'data' => [
+                ['name' => '@', 'type' => 'A', 'value' => '198.51.100.10', 'ttl' => 14400],
+                ['name' => 'api', 'type' => 'A', 'value' => '198.51.100.11', 'ttl' => 14400],
+            ],
+        ]);
+        $api->shouldReceive('listDnsRecords')->with('da-shop', 'api.shop.example.com')->andReturn([
+            'success' => false,
+            'message' => 'DirectAdmin API HTTP 500: { "error": "Cannot View Dns Record", "result": "Domain does not belong to you" }',
+            'data' => [],
+        ]);
+        $api->shouldReceive('listDnsRecords')->with('da-shop', 'booking.shop.example.com')->andReturn([
+            'success' => false,
+            'message' => 'DirectAdmin API HTTP 500: { "error": "Cannot View Dns Record", "result": "Domain does not belong to you" }',
+            'data' => [],
+        ]);
+        $api->shouldReceive('listEmailAccounts')->andReturn(['success' => true, 'data' => [], 'message' => 'OK']);
+        $api->shouldReceive('listSubdomains')->andReturn(['success' => true, 'data' => [], 'message' => 'OK']);
+        $api->shouldReceive('listFtpAccounts')->andReturn(['success' => true, 'data' => [], 'message' => 'OK']);
+        $api->shouldReceive('getSslInfo')->andReturn(['success' => true, 'data' => [], 'message' => 'OK']);
+
+        $snapshot = app(DaAccountSnapshotService::class)->captureOrFail($service, $api);
+
+        $this->assertTrue($snapshot->isCaptured());
+        $this->assertSame(2, $snapshot->dns_record_count);
+        $this->assertTrue(DnsRecord::query()->where('type', 'A')->where('content', '198.51.100.10')->exists());
+        $this->assertSame(1, Domain::query()->count());
+        $unowned = collect($snapshot->payload['zones'] ?? [])->where('dns_unowned', true)->pluck('hostname')->all();
+        $this->assertEqualsCanonicalizing(['api.shop.example.com', 'booking.shop.example.com'], $unowned);
+    }
+
     private function daService(): Service
     {
         $customer = User::factory()->customer()->create();

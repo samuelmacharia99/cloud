@@ -28,6 +28,7 @@ class DaAccountSnapshotService
     public function __construct(
         private DirectAdminToContainerMigrationService $migrator,
         private DomainInputParser $parser,
+        private DirectAdminToMailcowMigrationService $mail,
     ) {}
 
     public function capture(Service $service, ?DirectAdminCustomerPanelApi $api = null, ?User $actor = null): DaAccountSnapshot
@@ -51,10 +52,17 @@ class DaAccountSnapshotService
         $domains = $this->hostnamesFromInventory($inventory);
         $zones = [];
         $dnsFailures = [];
+        $ownedZones = 0;
 
         foreach ($domains as $hostname) {
             $zone = $this->collectZone($api, $username, $hostname);
-            if (! ($zone['dns_ok'] ?? false)) {
+            if ($zone['dns_ok'] ?? false) {
+                $ownedZones++;
+            } elseif ($this->mail->isUnownedDirectAdminDomain((string) ($zone['dns_error'] ?? ''))) {
+                $zone['dns_unowned'] = true;
+                $zone['unowned_reason'] = $zone['dns_error'];
+                $zone['dns_error'] = null;
+            } else {
                 $dnsFailures[] = $hostname.': '.($zone['dns_error'] ?? 'DNS list failed.');
             }
             $zones[] = $zone;
@@ -62,6 +70,8 @@ class DaAccountSnapshotService
 
         if ($domains === []) {
             $dnsFailures[] = 'DirectAdmin returned no domains to snapshot.';
+        } elseif ($ownedZones === 0 && $dnsFailures === []) {
+            $dnsFailures[] = 'DirectAdmin listed site folders but none are DNS zones this user can read.';
         }
 
         $payload = [
@@ -90,6 +100,9 @@ class DaAccountSnapshotService
         return DB::transaction(function () use ($service, $actor, $username, $inventory, $domains, $zones, $payload, $counts): DaAccountSnapshot {
             $imported = 0;
             foreach ($zones as $zone) {
+                if (! ($zone['dns_ok'] ?? false) || ($zone['dns_unowned'] ?? false)) {
+                    continue;
+                }
                 $imported += $this->importZone($service, $zone);
             }
 
@@ -169,6 +182,7 @@ class DaAccountSnapshotService
         return [
             'hostname' => $hostname,
             'dns_ok' => (bool) ($dns['success'] ?? false),
+            'dns_unowned' => false,
             'dns_error' => ($dns['success'] ?? false) ? null : (string) ($dns['message'] ?? 'Failed to list DNS records.'),
             'records' => array_values($dns['data'] ?? []),
             'mailboxes' => array_values($mail['data'] ?? []),

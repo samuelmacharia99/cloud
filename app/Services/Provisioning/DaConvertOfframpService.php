@@ -30,6 +30,7 @@ class DaConvertOfframpService
         private NginxProxyService $nginx,
         private DaAccountSnapshotService $snapshots,
         private DaResellerPackageImportService $packages,
+        private DirectAdminMailPullProgress $mailPull,
     ) {}
 
     /**
@@ -545,5 +546,73 @@ class DaConvertOfframpService
         }
 
         $service->update($updates);
+    }
+
+    /**
+     * Live operator payload for the off-ramp terminal: convert steps + mail pull.
+     *
+     * @return array{
+     *     is_active: bool,
+     *     active_count: int,
+     *     items: list<array<string, mixed>>,
+     *     current: ?array<string, mixed>
+     * }
+     */
+    public function operatorProgress(User $reseller): array
+    {
+        $batches = DaConvertBatch::query()
+            ->where('reseller_user_id', $reseller->id)
+            ->with(['items.service.user'])
+            ->latest()
+            ->limit(4)
+            ->get();
+
+        $items = [];
+        foreach ($batches as $batch) {
+            foreach ($batch->items as $item) {
+                $service = $item->service?->fresh();
+                if (! $service) {
+                    continue;
+                }
+
+                $view = $this->mailPull->operatorView($service);
+                $itemActive = $item->status?->isActiveConvert() || (bool) $view['is_active'];
+                $convertStatus = (string) ($service->service_meta['da_convert']['status'] ?? '');
+                $keepQuiet = $itemActive
+                    || in_array($convertStatus, ['queued', 'running', 'completed', 'failed'], true)
+                    || in_array($item->status, [
+                        DaConvertBatchItemStatus::Queued,
+                        DaConvertBatchItemStatus::Converting,
+                        DaConvertBatchItemStatus::Failed,
+                    ], true);
+
+                if (! $keepQuiet && $batch->id !== $batches->first()?->id) {
+                    continue;
+                }
+
+                $items[] = [
+                    'batch_id' => $batch->id,
+                    'item_id' => $item->id,
+                    'service_id' => $service->id,
+                    'hostname' => $item->hostname ?: $service->name,
+                    'customer' => $service->user?->name,
+                    'item_status' => $item->status?->value,
+                    'item_label' => $item->status?->label(),
+                    'service_url' => route('admin.services.show', $service),
+                    'wizard_url' => route('admin.services.migrate-to-container', $service),
+                    ...$view,
+                    'is_active' => $itemActive,
+                ];
+            }
+        }
+
+        $active = collect($items)->firstWhere('is_active', true) ?? ($items[0] ?? null);
+
+        return [
+            'is_active' => collect($items)->contains(fn (array $row): bool => (bool) ($row['is_active'] ?? false)),
+            'active_count' => collect($items)->where('is_active', true)->count(),
+            'items' => $items,
+            'current' => $active,
+        ];
     }
 }

@@ -514,4 +514,68 @@
         </button>
     </form>
 </div>
+
+@php
+    $liveConvert = app(\App\Services\Provisioning\DirectAdminMailPullProgress::class)->operatorView($service);
+@endphp
+<div
+    class="fixed z-40 bottom-4 right-4 w-[min(28rem,calc(100vw-1.5rem))]"
+    x-data="daWizardProgress(@js($liveConvert), @js(route('admin.services.mail-pull-status', $service)))"
+>
+    <button
+        type="button"
+        class="ml-auto block px-3 py-2 rounded-lg bg-slate-900 text-teal-200 text-xs font-mono border border-slate-700 shadow-lg"
+        x-show="!open && view.is_active"
+        x-cloak
+        @click="open = true"
+    >Convert log</button>
+    <div class="rounded-2xl border border-slate-800 bg-slate-950 text-slate-100 shadow-2xl overflow-hidden" x-show="open" x-cloak>
+        <div class="flex items-center gap-2 px-3 py-2 border-b border-slate-800 bg-slate-900">
+            <span class="h-2.5 w-2.5 rounded-full bg-red-500/80"></span>
+            <span class="h-2.5 w-2.5 rounded-full bg-amber-500/80"></span>
+            <span class="h-2.5 w-2.5 rounded-full bg-emerald-500/80"></span>
+            <p class="ml-1 text-[11px] font-mono text-slate-400">da-convert · {{ $service->name }}</p>
+            <span class="ml-auto text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border border-teal-400/40 text-teal-300" x-text="view.status"></span>
+            <button type="button" class="text-slate-500 hover:text-white text-xs px-1" @click="open = false">×</button>
+        </div>
+        <div class="p-3 space-y-2">
+            <div class="flex items-start justify-between gap-2">
+                <p class="text-[11px] text-slate-400 truncate" x-text="view.label"></p>
+                <p class="text-xl font-bold tabular-nums text-teal-300" x-text="`${view.percent || 0}%`"></p>
+            </div>
+            <div class="h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                <div class="h-full rounded-full bg-gradient-to-r from-teal-400 to-sky-400" :style="`width: ${view.percent || 0}%`"></div>
+            </div>
+            <pre x-ref="logEl" class="text-[11px] leading-relaxed font-mono text-teal-100/90 p-3 h-40 overflow-auto whitespace-pre-wrap rounded-xl bg-[#050508] border border-slate-800" x-text="view.log"></pre>
+        </div>
+    </div>
+</div>
+@push('scripts')
+<script>
+function daWizardProgress(initial, url) {
+    return {
+        view: initial || { percent: 0, label: 'Idle', log: 'Waiting for worker steps…', is_active: false, status: 'idle' },
+        open: Boolean(initial?.is_active),
+        url,
+        init() {
+            this.scrollLog();
+            setInterval(() => this.refresh(), this.view.is_active ? 2000 : 8000);
+        },
+        scrollLog() {
+            this.$nextTick(() => { const el = this.$refs.logEl; if (el) el.scrollTop = el.scrollHeight; });
+        },
+        async refresh() {
+            try {
+                const response = await fetch(this.url, { headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' } });
+                if (!response.ok) return;
+                const previous = this.view.log;
+                this.view = await response.json();
+                if (this.view.is_active) this.open = true;
+                if (this.view.log !== previous) this.scrollLog();
+            } catch (error) {}
+        },
+    };
+}
+</script>
+@endpush
 @endsection

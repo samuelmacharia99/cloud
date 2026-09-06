@@ -40,6 +40,9 @@ class DirectAdminToContainerConvertServiceTest extends TestCase
         $this->assertTrue($mail->isUnownedDirectAdminDomain(
             'DirectAdmin API HTTP 500: {"error":"Could not execute your request","result":"You do not own that domain"}'
         ));
+        $this->assertTrue($mail->isUnownedDirectAdminDomain(
+            'DirectAdmin API HTTP 500: { "error": "Cannot View Dns Record", "result": "Domain does not belong to you" }'
+        ));
         $this->assertFalse($mail->isUnownedDirectAdminDomain('CMD_API_POP failed'));
     }
 
@@ -783,6 +786,7 @@ class DirectAdminToContainerConvertServiceTest extends TestCase
         $this->assertTrue($convert->shouldBlockOnMissingMailboxInventory(4, 0, false, false));
         $this->assertTrue($convert->shouldBlockOnMissingMailboxInventory(4, 0, true, false));
         $this->assertFalse($convert->shouldBlockOnMissingMailboxInventory(4, 0, true, true));
+        $this->assertFalse($convert->shouldBlockOnMissingMailboxInventory(4, 0, false, true));
         $this->assertFalse($convert->shouldBlockOnMissingMailboxInventory(4, 2, true, true));
         $this->assertFalse($convert->shouldBlockOnMissingMailboxInventory(0, 0, false, false));
     }

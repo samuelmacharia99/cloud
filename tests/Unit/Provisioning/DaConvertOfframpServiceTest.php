@@ -18,6 +18,7 @@ use App\Services\Provisioning\ContainerDomainBindingService;
 use App\Services\Provisioning\DaAccountSnapshotService;
 use App\Services\Provisioning\DaConvertOfframpService;
 use App\Services\Provisioning\DaResellerPackageImportService;
+use App\Services\Provisioning\DirectAdminMailPullProgress;
 use App\Services\Provisioning\DirectAdminToContainerConvertService;
 use App\Services\Provisioning\NginxProxyService;
 use App\Services\ResellerScopeService;
@@ -169,6 +170,7 @@ class DaConvertOfframpServiceTest extends TestCase
             $nginx,
             Mockery::mock(DaAccountSnapshotService::class),
             Mockery::mock(DaResellerPackageImportService::class),
+            Mockery::mock(DirectAdminMailPullProgress::class),
         );
     }
 }

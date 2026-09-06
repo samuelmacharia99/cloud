@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Services\Provisioning\DaConvertOfframpService;
 use App\Services\Provisioning\DaResellerPackageImportService;
 use App\Services\Provisioning\DirectAdminToContainerConvertService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\View\View;
 
@@ -62,7 +63,17 @@ class DaConvertOfframpController extends Controller
             'batches' => $batches,
             'containerProducts' => $catalog['products'],
             'emailProducts' => $emailProducts,
+            'convertProgress' => $offramp->operatorProgress($user),
         ]);
+    }
+
+    public function progress(
+        User $user,
+        DaConvertOfframpService $offramp,
+    ): JsonResponse {
+        abort_if(! $user->is_reseller, 404);
+
+        return response()->json($offramp->operatorProgress($user));
     }
 
     public function importPackages(
