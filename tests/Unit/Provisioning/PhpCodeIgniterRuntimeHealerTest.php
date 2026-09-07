@@ -33,4 +33,16 @@ class PhpCodeIgniterRuntimeHealerTest extends TestCase
 
         $this->assertSame($env, $healer->healEnv($env, 'https://other.example.com'));
     }
+
+    #[Test]
+    public function it_treats_stock_codeigniter_as_mysqli(): void
+    {
+        $healer = new PhpCodeIgniterRuntimeHealer;
+
+        $this->assertTrue($healer->usesMysqliDriver('', ''));
+        $this->assertTrue($healer->usesMysqliDriver("public array \$default = [\n    'DBDriver' => 'MySQLi',\n];"));
+        $this->assertFalse($healer->usesMysqliDriver("public array \$default = [\n    'DBDriver' => 'Postgre',\n];"));
+        $this->assertTrue($healer->usesMysqliDriver('', "database.default.DBDriver = MySQLi\n"));
+        $this->assertFalse($healer->usesMysqliDriver('', "database.default.DBDriver = SQLite3\n"));
+    }
 }

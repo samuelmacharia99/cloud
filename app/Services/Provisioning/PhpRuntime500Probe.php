@@ -24,7 +24,10 @@ class PhpRuntime500Probe
      *     ci_log: ?string,
      *     ci_db_name: ?string,
      *     ci_db_user: ?string,
-     *     ci_pdo_error: ?string
+     *     ci_pdo_error: ?string,
+     *     ci_mysqli: bool,
+     *     ci_db_driver: ?string,
+     *     ci_http_body: ?string
      * }
      */
     public function capture(SSHService $ssh, ContainerDeployment $deployment): array
@@ -47,6 +50,9 @@ class PhpRuntime500Probe
             'ci_db_name' => null,
             'ci_db_user' => null,
             'ci_pdo_error' => null,
+            'ci_mysqli' => false,
+            'ci_db_driver' => null,
+            'ci_http_body' => null,
         ];
 
         try {
@@ -115,6 +121,13 @@ class PhpRuntime500Probe
             'ci_pdo_error' => isset($decoded['ci_pdo_error']) && is_string($decoded['ci_pdo_error']) && $decoded['ci_pdo_error'] !== ''
                 ? mb_substr($decoded['ci_pdo_error'], 0, 220)
                 : null,
+            'ci_mysqli' => (bool) ($decoded['ci_mysqli'] ?? false),
+            'ci_db_driver' => isset($decoded['ci_db_driver']) && is_string($decoded['ci_db_driver']) && $decoded['ci_db_driver'] !== ''
+                ? mb_substr($decoded['ci_db_driver'], 0, 32)
+                : null,
+            'ci_http_body' => isset($decoded['ci_http_body']) && is_string($decoded['ci_http_body']) && $decoded['ci_http_body'] !== ''
+                ? mb_substr($decoded['ci_http_body'], 0, 200)
+                : null,
         ];
 
         if ($result['fatal'] === null && is_string($result['ci_pdo_error'])) {
@@ -125,10 +138,23 @@ class PhpRuntime500Probe
             $result['fatal'] = $result['ci_log'];
         }
 
-        if ($result['fatal'] === null) {
-            $front = $this->preferredFrontController($result['index_files']);
-            if ($front !== null) {
-                $result['fatal'] = $this->captureFrontControllerFatal($ssh, $deployment, $front);
+        $httpException = is_string($result['ci_http_body'])
+            ? $this->extractExceptionFromOutput($result['ci_http_body'])
+            : null;
+        if ($result['fatal'] === null && $httpException !== null && ! $this->isGenericServerError($httpException)) {
+            $result['fatal'] = $httpException;
+        }
+
+        if ($result['fatal'] === null || $this->isGenericServerError((string) $result['fatal'])) {
+            foreach ($this->preferredFrontControllers($result['index_files']) as $front) {
+                $cliFatal = $this->captureFrontControllerFatal($ssh, $deployment, $front);
+                if ($cliFatal !== null && ! $this->isGenericServerError($cliFatal)) {
+                    $result['fatal'] = $cliFatal;
+                    break;
+                }
+                if ($result['fatal'] === null && $cliFatal !== null) {
+                    $result['fatal'] = $cliFatal;
+                }
             }
         }
 
@@ -136,19 +162,24 @@ class PhpRuntime500Probe
     }
 
     /**
+     * nginx on this image defaults to /app/public; DA public_html lands at /app/index.php.
+     *
      * @param  list<string>  $indexFiles
+     * @return list<string>
      */
-    private function preferredFrontController(array $indexFiles): ?string
+    private function preferredFrontControllers(array $indexFiles): array
     {
-        foreach (['/app/index.php', '/app/public/index.php', '/app/public_html/index.php'] as $path) {
+        $found = [];
+        foreach (['/app/public/index.php', '/app/index.php', '/app/public_html/index.php'] as $path) {
             foreach ($indexFiles as $listed) {
                 if (str_starts_with($listed, $path)) {
-                    return $path;
+                    $found[] = $path;
+                    break;
                 }
             }
         }
 
-        return null;
+        return $found;
     }
 
     private function captureFrontControllerFatal(
@@ -165,9 +196,11 @@ class PhpRuntime500Probe
                 .' sh -lc '.escapeshellarg(
                     'PREPEND=""; if [ -f /app/.talksasa-mysql-shim.php ]; then '
                     .'PREPEND="-d auto_prepend_file=/app/.talksasa-mysql-shim.php"; fi; '
-                    .'export REQUEST_METHOD=GET REQUEST_URI=/ SCRIPT_NAME=/index.php HTTP_HOST=localhost; '
+                    .'export CI_ENVIRONMENT=development CI_DEBUG=true '
+                    .'REQUEST_METHOD=GET REQUEST_URI=/ SCRIPT_NAME=/index.php '
+                    .'HTTP_HOST=localhost SERVER_NAME=localhost SERVER_PORT=80; '
                     .'timeout 8 php -d display_errors=1 -d error_reporting=32767 $PREPEND '
-                    .escapeshellarg($front).' 2>&1 | tail -n 40 || true'
+                    .escapeshellarg($front).' 2>&1 | tail -n 80 || true'
                 ),
                 20
             ));
@@ -175,11 +208,51 @@ class PhpRuntime500Probe
             return null;
         }
 
-        if (preg_match('/(Fatal error:|Uncaught |Call to undefined function|Failed opening required|DatabaseException)[^\n]{0,240}/i', $raw, $matches) !== 1) {
+        return $this->extractExceptionFromOutput($raw);
+    }
+
+    public function isGenericServerError(string $text): bool
+    {
+        return preg_match('/^\s*server error\.?\s*$/i', trim(strip_tags($text))) === 1;
+    }
+
+    public function extractExceptionFromOutput(string $raw): ?string
+    {
+        $raw = trim($raw);
+        if ($raw === '') {
             return null;
         }
 
-        return trim($matches[0]);
+        if (preg_match(
+            '/(Fatal error:|Uncaught |Call to undefined function|Failed opening required|DatabaseException|Class "[^"]+" not found|Unable to connect to the database|Access denied for user|The encryption key|intl extension|mysqli)[^\n<]{0,240}/i',
+            $raw,
+            $matches
+        ) === 1) {
+            $hit = trim(html_entity_decode(strip_tags($matches[0]), ENT_QUOTES));
+
+            return $hit !== '' ? $hit : null;
+        }
+
+        if (preg_match('/class="(?:exception-message|message)"[^>]*>([^<]{3,240})/i', $raw, $matches) === 1) {
+            $message = trim(html_entity_decode(strip_tags($matches[1]), ENT_QUOTES));
+            if ($message !== '') {
+                return $message;
+            }
+        }
+
+        if (preg_match('/<title>([^<]{3,160})<\/title>/i', $raw, $matches) === 1) {
+            $title = trim(html_entity_decode(strip_tags($matches[1]), ENT_QUOTES));
+            if ($title !== '' && ! preg_match('/^(error|exception)$/i', $title)) {
+                return $title;
+            }
+        }
+
+        $text = trim(preg_replace('/\s+/', ' ', strip_tags($raw)) ?? '');
+        if ($this->isGenericServerError($text)) {
+            return 'Server Error';
+        }
+
+        return null;
     }
 
     public function summary(array $probe): string
@@ -212,6 +285,14 @@ class PhpRuntime500Probe
         }
         if (trim((string) ($probe['ci_pdo_error'] ?? '')) !== '') {
             $parts[] = 'App PDO: '.$probe['ci_pdo_error'];
+        }
+        $driver = trim((string) ($probe['ci_db_driver'] ?? ''));
+        if (($probe['ci_mysqli'] ?? true) !== true && ($driver === '' || str_contains(strtolower($driver), 'mysqli') || strcasecmp($driver, 'mysql') === 0)) {
+            $parts[] = 'mysqli is not loaded (CodeIgniter’s default DBDriver). Doctor PDO can still succeed.';
+        }
+        $httpBody = trim((string) ($probe['ci_http_body'] ?? ''));
+        if ($httpBody !== '') {
+            $parts[] = 'HTTP body: '.$httpBody;
         }
         if (($probe['ci_system'] ?? false) !== true && ($probe['ci_vendor_system'] ?? false) !== true
             && $paths !== []) {
@@ -340,12 +421,33 @@ foreach (['/app/.env', '/app/app/.env'] as $envFile) {
 if (preg_match('/^encryption\\.key[ \\t]*=[ \\t]*(.+)$/m', $envText, $match) === 1) {
     $encryptionSet = trim($match[1], " \t\"'") !== '' && strcasecmp(trim($match[1], " \t\"'"), 'hex2bin:') !== 0;
 }
+$driver = null;
+if (isset($dbSrc) && is_string($dbSrc) && preg_match('/[\'"]DBDriver[\'"]\\s*=>\\s*[\'"]([^\'"]+)/', $dbSrc, $match) === 1) {
+    $driver = $match[1];
+}
+foreach (preg_split('/\\r\\n|\\r|\\n/', $envText) ?: [] as $line) {
+    if (preg_match('/^database\\.default\\.DBDriver[ \\t]*=[ \\t]*(.+)$/', trim($line), $match) === 1) {
+        $driver = trim($match[1], " \t\"'");
+    }
+}
+$httpBody = null;
+$ctx = stream_context_create(['http' => ['timeout' => 6, 'ignore_errors' => true, 'header' => "Host: localhost\r\n"]]);
+$origin = @file_get_contents('http://127.0.0.1:8080/', false, $ctx);
+if (is_string($origin) && $origin !== '') {
+    $httpBody = trim(preg_replace('/\\s+/', ' ', strip_tags($origin)) ?? '');
+    $httpBody = $httpBody !== '' ? substr($httpBody, 0, 160) : substr(trim($origin), 0, 32);
+}
 $ciLog = null;
-$logFiles = array_merge(glob('/app/writable/logs/log-*.log') ?: [], glob('/app/writable/logs/log-*.php') ?: []);
+$logFiles = array_merge(
+    glob('/app/writable/logs/log-*.log') ?: [],
+    glob('/app/writable/logs/log-*.php') ?: [],
+    glob('/app/app/writable/logs/log-*.log') ?: [],
+    glob('/app/app/writable/logs/log-*.php') ?: []
+);
 rsort($logFiles);
 if ($logFiles !== []) {
     $tail = (string) @file_get_contents($logFiles[0]);
-    if (preg_match('/(CRITICAL|ERROR|ErrorException|ParseError|Unable to write|encryption key|Access denied|1045|Unable to connect)[^\\n]{0,240}/i', $tail, $match) === 1) {
+    if (preg_match('/(CRITICAL|ERROR|ErrorException|ParseError|Unable to write|encryption key|Access denied|1045|Unable to connect|Class .* not found|mysqli|DatabaseException)[^\\n]{0,240}/i', $tail, $match) === 1) {
         $ciLog = trim($match[0]);
     }
 }
@@ -367,6 +469,9 @@ echo 'TALKSASA_PHP500='.json_encode([
     'ci_db_name' => $ciName,
     'ci_db_user' => $ciUser,
     'ci_pdo_error' => $pdoError,
+    'ci_mysqli' => extension_loaded('mysqli'),
+    'ci_db_driver' => $driver,
+    'ci_http_body' => $httpBody,
 ]);
 PHP;
     }

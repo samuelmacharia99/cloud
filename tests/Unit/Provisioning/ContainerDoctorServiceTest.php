@@ -1668,6 +1668,33 @@ LOG;
     }
 
     #[Test]
+    public function http_500_with_sidecar_creds_and_missing_mysqli_still_heals(): void
+    {
+        $treat = app(ContainerDoctorService::class)->resolveHttp500Treatment(
+            [
+                'db_ok' => true,
+                'table_count' => 39,
+                'http_status' => 500,
+                'php_index_require' => "require __DIR__ . '/app/Config/Paths.php';",
+                'php_paths_php' => ['/app/app/Config/Paths.php'],
+                'php_ci_system' => true,
+                'php_ci_vendor_system' => true,
+                'php_ci_db_host' => 'user-483-service-426-static-site-db',
+                'php_ci_db_user' => 'u483_s426',
+                'php_ci_mysqli' => false,
+                'da_can_import_ci_app' => true,
+            ],
+            [],
+            'php'
+        );
+
+        $this->assertSame('heal_codeigniter_runtime', $treat['treat_action']);
+        $this->assertStringContainsString('MySQLi', $treat['summary']);
+        $this->assertStringNotContainsString('DirectAdmin DB user/password', $treat['summary']);
+        $this->assertStringNotContainsString('recreates the app', $treat['summary']);
+    }
+
+    #[Test]
     public function http_500_with_live_pdo_and_mysql_ext_installs_the_shim_on_restart(): void
     {
         $treat = app(ContainerDoctorService::class)->resolveHttp500Treatment(

@@ -75,5 +75,40 @@ class PhpRuntime500ProbeTest extends TestCase
             'ci_encryption_key' => true,
             'ci_autoload' => true,
         ]));
+        $this->assertStringContainsString('mysqli is not loaded', $probe->summary([
+            'fatal' => null,
+            'uses_mysql_ext' => false,
+            'index_files' => ['/app/index.php (800 bytes)'],
+            'lint' => [],
+            'paths_php' => ['/app/app/Config/Paths.php'],
+            'index_require' => "require __DIR__ . '/app/Config/Paths.php';",
+            'ci_db_host' => 'user-483-service-426-static-site-db',
+            'ci_db_user' => 'u483_s426',
+            'ci_db_name' => 's426_db',
+            'ci_system' => true,
+            'ci_vendor_system' => true,
+            'ci_encryption_key' => true,
+            'ci_autoload' => true,
+            'ci_mysqli' => false,
+            'ci_db_driver' => 'MySQLi',
+            'ci_http_body' => 'Server Error',
+        ]));
+    }
+
+    #[Test]
+    public function it_extracts_the_real_ci4_exception_not_the_production_server_error(): void
+    {
+        $probe = new PhpRuntime500Probe;
+
+        $this->assertSame('Server Error', $probe->extractExceptionFromOutput('Server Error'));
+        $this->assertTrue($probe->isGenericServerError('Server Error'));
+        $this->assertSame(
+            'Uncaught Error: Class "mysqli" not found in /app/system/Database/MySQLi/Connection.php:89',
+            $probe->extractExceptionFromOutput('Uncaught Error: Class "mysqli" not found in /app/system/Database/MySQLi/Connection.php:89')
+        );
+        $this->assertSame(
+            'Call to undefined function mysqli_connect()',
+            $probe->extractExceptionFromOutput('<title>ErrorException</title><div class="exception-message">Call to undefined function mysqli_connect()</div>')
+        );
     }
 }

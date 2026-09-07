@@ -63,6 +63,23 @@ class PhpCodeIgniterRuntimeHealer
         return rtrim($url, '/').'/';
     }
 
+    /**
+     * Stock CodeIgniter uses MySQLi, not PDO. Doctor’s live PDO probe can
+     * succeed while GET / 500s because ext-mysqli is optional on php-runtime.
+     */
+    public function usesMysqliDriver(string $databasePhp = '', string $env = ''): bool
+    {
+        $haystack = $databasePhp."\n".$env;
+        if (preg_match('/(?:database\.default\.DBDriver|[\'"]DBDriver[\'"]\s*=>)\s*[\'"]\s*([^\'"]+)/i', $haystack, $matches) === 1
+            || preg_match('/^database\.default\.DBDriver[ \t]*=[ \t]*(.+)$/m', $env, $matches) === 1) {
+            $driver = strtolower(trim($matches[1], " \t\"'"));
+
+            return $driver === '' || str_contains($driver, 'mysqli') || $driver === 'mysql';
+        }
+
+        return true;
+    }
+
     public function applyOnHost(SSHService $ssh, string $hostAppPath, string $publicUrl = ''): int
     {
         $changed = 0;

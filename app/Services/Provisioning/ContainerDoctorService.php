@@ -1176,6 +1176,8 @@ class ContainerDoctorService
                         $checks['php_ci_db_host'] = $phpProbe['ci_db_host'] ?? null;
                         $checks['php_ci_encryption_key'] = $phpProbe['ci_encryption_key'] ?? null;
                         $checks['php_ci_autoload'] = $phpProbe['ci_autoload'] ?? null;
+                        $checks['php_ci_mysqli'] = $phpProbe['ci_mysqli'] ?? null;
+                        $checks['php_ci_db_driver'] = $phpProbe['ci_db_driver'] ?? null;
                         $checks['da_can_import_ci_app'] = app(DirectAdminToContainerMigrationService::class)
                             ->canImportDirectAdminCodeIgniterSiblings($service);
                         if (is_string($phpProbe['fatal']) && $phpProbe['fatal'] !== '') {
@@ -1206,6 +1208,12 @@ class ContainerDoctorService
                         }
                         if (($phpProbe['ci_encryption_key'] ?? true) !== true && ($phpProbe['paths_php'] ?? []) !== []) {
                             $phpProbeLines[] = 'encryption.key is empty';
+                        }
+                        if (($phpProbe['ci_mysqli'] ?? true) !== true && ($phpProbe['paths_php'] ?? []) !== []) {
+                            $phpProbeLines[] = 'mysqli not loaded';
+                        }
+                        if (is_string($phpProbe['ci_http_body'] ?? null) && $phpProbe['ci_http_body'] !== '') {
+                            $phpProbeLines[] = 'HTTP body: '.$phpProbe['ci_http_body'];
                         }
                         if (is_string($phpProbe['ci_log'] ?? null) && $phpProbe['ci_log'] !== '') {
                             $phpProbeLines[] = $phpProbe['ci_log'];
@@ -2233,7 +2241,7 @@ PHP;
                     if ($line === '') {
                         continue;
                     }
-                    if (preg_match('/(SQLSTATE|\.ERROR:|local\.ERROR|Exception|FATAL|CRITICAL|ErrorException|ParseError|relation .* does not exist|Base table or view not found|No application encryption key|APP_KEY|encryption key|Unable to write)/i', $line)) {
+                    if (preg_match('/(SQLSTATE|\.ERROR:|local\.ERROR|Exception|FATAL|CRITICAL|ErrorException|ParseError|relation .* does not exist|Base table or view not found|No application encryption key|APP_KEY|encryption key|Unable to write|mysqli|Class .* not found)/i', $line)) {
                         $lines[] = mb_substr($line, 0, 280);
                         // Capture the following message line when present.
                         $next = trim((string) ($rawLines[$i + 1] ?? ''));
@@ -2248,7 +2256,8 @@ PHP;
         }
 
         if ($lines === []) {
-            $bodyHint = $this->probeHttpErrorSnippet($ssh, $deployment);
+            $bodyHint = $this->probeContainerHttpSnippet($ssh, $deployment)
+                ?? $this->probeHttpErrorSnippet($ssh, $deployment);
             if ($bodyHint !== null) {
                 $lines[] = $bodyHint;
             }
@@ -2319,6 +2328,38 @@ PHP;
         }
 
         return $lines;
+    }
+
+    private function probeContainerHttpSnippet(SSHService $ssh, $deployment): ?string
+    {
+        $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+        $php = <<<'PHP'
+$c = stream_context_create(['http' => ['timeout' => 6, 'ignore_errors' => true, 'header' => "Host: localhost\r\n"]]);
+$b = @file_get_contents('http://127.0.0.1:8080/', false, $c);
+echo is_string($b) ? $b : '';
+PHP;
+
+        try {
+            $body = trim($ssh->exec(
+                'cd '.escapeshellarg($containerPath)
+                .' && docker compose exec -T '.escapeshellarg($deployment->container_name)
+                .' php -r '.escapeshellarg($php),
+                15
+            ));
+        } catch (\Throwable) {
+            return null;
+        }
+
+        if ($body === '') {
+            return null;
+        }
+
+        $text = trim(preg_replace('/\s+/', ' ', strip_tags($body)) ?? '');
+        if ($text === '') {
+            return null;
+        }
+
+        return 'HTTP body: '.mb_substr($text, 0, 200);
     }
 
     private function probeHttpErrorSnippet(SSHService $ssh, $deployment): ?string
@@ -5113,6 +5154,16 @@ PHP;
             app(PhpCodeIgniterPathFixer::class)->ensureWritableOnHost($ssh, $hostAppPath);
 
             try {
+                app(ContainerPhpExtensionsService::class)->applyExtensionPreference($service, 'mysqli', true);
+                app(ContainerPhpExtensionsService::class)->ensureExtensionInstalled($ssh, $deployment, 'mysqli');
+            } catch (\Throwable $e) {
+                \Log::warning('Doctor could not enable mysqli for CodeIgniter', [
+                    'service_id' => $service->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            try {
                 $ssh->exec(
                     'cd '.escapeshellarg($containerPath)
                     .' && docker compose exec -T '.escapeshellarg($deployment->container_name)
@@ -5134,7 +5185,7 @@ PHP;
 
                 return [
                     'success' => false,
-                    'message' => 'Wrote sidecar DB credentials, encryption.key / app.baseURL / writable/, and reloaded php-fpm, but GET / still returns HTTP '.$httpStatus.'. '
+                    'message' => 'Wrote sidecar DB credentials, enabled mysqli, encryption.key / app.baseURL / writable/, and reloaded php-fpm, but GET / still returns HTTP '.$httpStatus.'. '
                         .app(PhpRuntime500Probe::class)->summary($phpProbe)
                         .($logLines === [] ? '' : ' Log: '.implode(' | ', array_slice($logLines, 0, 2)))
                         .' MySQL was left running.',
@@ -5143,7 +5194,7 @@ PHP;
 
             return [
                 'success' => true,
-                'message' => 'Healed CodeIgniter encryption.key, app.baseURL, and writable/. php-fpm was reloaded. The container was not recreated. MySQL was left running. Reload the site.',
+                'message' => 'Healed CodeIgniter sidecar credentials, mysqli, encryption.key, app.baseURL, and writable/. php-fpm was reloaded. The container was not recreated. MySQL was left running. Reload the site.',
             ];
         } catch (\Throwable $e) {
             return [
@@ -5510,14 +5561,23 @@ PHP;
                     ];
                 }
 
+                $mysqliMissing = ($checks['php_ci_mysqli'] ?? true) === false;
+                $sidecarUser = trim((string) ($checks['php_ci_db_user'] ?? ''));
+                $alreadySidecarCreds = preg_match('/^u\d+_s\d+$/', $sidecarUser) === 1;
+
                 return [
                     'treat_action' => 'heal_codeigniter_runtime',
                     'treat_label' => 'Heal CodeIgniter runtime',
                     'summary' => 'Live PDO works (tables: '.(string) ($checks['table_count'] ?? '?')
                         .') and Paths.php, the sidecar hostname, and system/ are already in place'
                         .($requireAlreadyResolved ? '; the front-controller require is correct' : '')
-                        .'. The empty HTTP 500 is usually CodeIgniter still using DirectAdmin DB user/password against the sidecar, or a missing encryption.key/writable/. '
-                        .'Heal rewrites sidecar credentials, encryption.key, app.baseURL, and writable/, then reloads php-fpm. It does not recreate the container or touch MySQL.',
+                        .'. '
+                        .($mysqliMissing
+                            ? 'Doctor PDO uses PDO; CodeIgniter’s default DBDriver is MySQLi, which is not loaded on this runtime. '
+                            : ($alreadySidecarCreds
+                                ? 'Sidecar user/name are already written; the 12-byte HTTP 500 is CodeIgniter’s production “Server Error” (writable/logs or a later boot exception). '
+                                : 'The empty HTTP 500 is usually CodeIgniter still using DirectAdmin DB user/password against the sidecar, or a missing encryption.key/writable/. '))
+                        .'Heal installs mysqli if needed, rewrites sidecar credentials, encryption.key, app.baseURL, and writable/, then reloads php-fpm. It does not recreate the container or touch MySQL.',
                 ];
             }
 
