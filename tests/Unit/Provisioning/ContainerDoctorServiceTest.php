@@ -1643,6 +1643,31 @@ LOG;
     }
 
     #[Test]
+    public function http_500_with_loaded_ci_runtime_heals_env_instead_of_restart(): void
+    {
+        $treat = app(ContainerDoctorService::class)->resolveHttp500Treatment(
+            [
+                'db_ok' => true,
+                'table_count' => 39,
+                'http_status' => 500,
+                'php_index_require' => "require __DIR__ . '/app/Config/Paths.php';",
+                'php_paths_php' => ['/app/app/Config/Paths.php'],
+                'php_ci_system' => true,
+                'php_ci_vendor_system' => true,
+                'php_ci_db_host' => 'user-483-service-426-static-site-db',
+                'da_can_import_ci_app' => true,
+            ],
+            [],
+            'php'
+        );
+
+        $this->assertSame('heal_codeigniter_runtime', $treat['treat_action']);
+        $this->assertSame('Heal CodeIgniter runtime', $treat['treat_label']);
+        $this->assertStringContainsString('encryption.key', $treat['summary']);
+        $this->assertStringNotContainsString('recreates the app', $treat['summary']);
+    }
+
+    #[Test]
     public function http_500_with_live_pdo_and_mysql_ext_installs_the_shim_on_restart(): void
     {
         $treat = app(ContainerDoctorService::class)->resolveHttp500Treatment(

@@ -18,7 +18,10 @@ class PhpRuntime500Probe
      *     ci_system: bool,
      *     ci_vendor_system: bool,
      *     ci_writable: bool,
-     *     ci_db_host: ?string
+     *     ci_db_host: ?string,
+     *     ci_encryption_key: bool,
+     *     ci_autoload: bool,
+     *     ci_log: ?string
      * }
      */
     public function capture(SSHService $ssh, ContainerDeployment $deployment): array
@@ -35,6 +38,9 @@ class PhpRuntime500Probe
             'ci_vendor_system' => false,
             'ci_writable' => false,
             'ci_db_host' => null,
+            'ci_encryption_key' => false,
+            'ci_autoload' => false,
+            'ci_log' => null,
         ];
 
         try {
@@ -89,7 +95,16 @@ class PhpRuntime500Probe
             'ci_db_host' => isset($decoded['ci_db_host']) && is_string($decoded['ci_db_host']) && $decoded['ci_db_host'] !== ''
                 ? mb_substr($decoded['ci_db_host'], 0, 80)
                 : null,
+            'ci_encryption_key' => (bool) ($decoded['ci_encryption_key'] ?? false),
+            'ci_autoload' => (bool) ($decoded['ci_autoload'] ?? false),
+            'ci_log' => isset($decoded['ci_log']) && is_string($decoded['ci_log']) && $decoded['ci_log'] !== ''
+                ? mb_substr($decoded['ci_log'], 0, 280)
+                : null,
         ];
+
+        if ($result['fatal'] === null && is_string($result['ci_log'])) {
+            $result['fatal'] = $result['ci_log'];
+        }
 
         if ($result['fatal'] === null) {
             $front = $this->preferredFrontController($result['index_files']);
@@ -177,6 +192,12 @@ class PhpRuntime500Probe
         } elseif (($probe['ci_system'] ?? false) !== true && ($probe['ci_vendor_system'] ?? false) === true) {
             $parts[] = 'system/ is missing; vendor/codeigniter4 is present.';
         }
+        if (($probe['ci_encryption_key'] ?? true) !== true && $paths !== []) {
+            $parts[] = 'encryption.key is empty.';
+        }
+        if (($probe['ci_autoload'] ?? true) !== true && $paths !== []) {
+            $parts[] = 'vendor/autoload.php is missing.';
+        }
         if (($probe['index_files'] ?? []) === []) {
             $parts[] = 'No index.php was found under /app or /app/public.';
         }
@@ -255,8 +276,27 @@ if ($ciHost === null && is_file('/app/app/Config/Database.php')) {
         $ciHost = $match[1];
     }
 }
+$encryptionSet = false;
+$envText = '';
+foreach (['/app/.env', '/app/app/.env'] as $envFile) {
+    if (is_file($envFile)) {
+        $envText .= "\n".(string) file_get_contents($envFile);
+    }
+}
+if (preg_match('/^encryption\\.key[ \\t]*=[ \\t]*(.+)$/m', $envText, $match) === 1) {
+    $encryptionSet = trim($match[1], " \t\"'") !== '' && strcasecmp(trim($match[1], " \t\"'"), 'hex2bin:') !== 0;
+}
+$ciLog = null;
+$logFiles = array_merge(glob('/app/writable/logs/log-*.log') ?: [], glob('/app/writable/logs/log-*.php') ?: []);
+rsort($logFiles);
+if ($logFiles !== []) {
+    $tail = (string) @file_get_contents($logFiles[0]);
+    if (preg_match('/(CRITICAL|ERROR|ErrorException|ParseError|Unable to write|encryption key)[^\\n]{0,240}/i', $tail, $match) === 1) {
+        $ciLog = trim($match[0]);
+    }
+}
 echo 'TALKSASA_PHP500='.json_encode([
-    'fatal' => null,
+    'fatal' => $ciLog,
     'uses_mysql_ext' => $uses,
     'index_files' => $indexes,
     'lint' => $lint,
@@ -267,6 +307,9 @@ echo 'TALKSASA_PHP500='.json_encode([
         || is_file('/app/vendor/codeigniter4/framework/system/CodeIgniter.php'),
     'ci_writable' => is_dir('/app/writable'),
     'ci_db_host' => $ciHost,
+    'ci_encryption_key' => $encryptionSet,
+    'ci_autoload' => is_file('/app/vendor/autoload.php'),
+    'ci_log' => $ciLog,
 ]);
 PHP;
     }

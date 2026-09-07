@@ -85,6 +85,7 @@ class ContainerDoctorService
                 'import_da_database',
                 'import_da_codeigniter_app',
                 'link_codeigniter_system',
+                'heal_codeigniter_runtime',
             ], true)) {
             return ['success' => false, 'message' => 'Application must be running before applying a fix.'];
         }
@@ -131,13 +132,14 @@ class ContainerDoctorService
             'import_da_database' => $this->treatImportDaDatabase($service),
             'import_da_codeigniter_app' => $this->treatImportDaCodeIgniterApp($service),
             'link_codeigniter_system' => $this->treatLinkCodeIgniterSystem($service),
+            'heal_codeigniter_runtime' => $this->treatHealCodeIgniterRuntime($service),
             'use_file_cache' => $this->treatUseFileCache($service),
             'tune_request_concurrency' => $this->treatTuneRequestConcurrency($service),
             'fix_compose_interpolation' => $this->treatFixComposeInterpolation($service),
             default => ['success' => false, 'message' => 'Unknown treatment action.'],
         };
 
-        if ($result['success'] || in_array($action, ['restart_application', 'link_codeigniter_system'], true)) {
+        if ($result['success'] || in_array($action, ['restart_application', 'link_codeigniter_system', 'heal_codeigniter_runtime'], true)) {
             try {
                 $result['diagnosis'] = $this->diagnose($service->fresh([
                     'product.containerTemplate',
@@ -1172,6 +1174,8 @@ class ContainerDoctorService
                         $checks['php_ci_vendor_system'] = $phpProbe['ci_vendor_system'] ?? false;
                         $checks['php_ci_writable'] = $phpProbe['ci_writable'] ?? false;
                         $checks['php_ci_db_host'] = $phpProbe['ci_db_host'] ?? null;
+                        $checks['php_ci_encryption_key'] = $phpProbe['ci_encryption_key'] ?? null;
+                        $checks['php_ci_autoload'] = $phpProbe['ci_autoload'] ?? null;
                         $checks['da_can_import_ci_app'] = app(DirectAdminToContainerMigrationService::class)
                             ->canImportDirectAdminCodeIgniterSiblings($service);
                         if (is_string($phpProbe['fatal']) && $phpProbe['fatal'] !== '') {
@@ -1193,6 +1197,12 @@ class ContainerDoctorService
                             $phpProbeLines[] = (($phpProbe['ci_vendor_system'] ?? false) === true)
                                 ? 'system/ missing (vendor present)'
                                 : 'system/ and vendor/codeigniter4 missing';
+                        }
+                        if (($phpProbe['ci_encryption_key'] ?? true) !== true && ($phpProbe['paths_php'] ?? []) !== []) {
+                            $phpProbeLines[] = 'encryption.key is empty';
+                        }
+                        if (is_string($phpProbe['ci_log'] ?? null) && $phpProbe['ci_log'] !== '') {
+                            $phpProbeLines[] = $phpProbe['ci_log'];
                         }
                         if ($phpProbe['uses_mysql_ext']) {
                             $phpProbeLines[] = 'Source still calls mysql_* (removed in PHP 8)';
@@ -2193,7 +2203,9 @@ PHP;
     {
         $scripts = [
             'for f in /app/backend/storage/logs/laravel.log /app/storage/logs/laravel.log '
-                .'/app/backend/storage/logs/laravel-*.log /app/storage/logs/laravel-*.log; do '
+                .'/app/backend/storage/logs/laravel-*.log /app/storage/logs/laravel-*.log '
+                .'/app/writable/logs/log-*.log /app/writable/logs/log-*.php '
+                .'/app/app/writable/logs/log-*.log /app/app/writable/logs/log-*.php; do '
                 .'if [ -f "$f" ]; then echo "=== $f"; tail -n 120 "$f"; fi; done',
         ];
 
@@ -2215,7 +2227,7 @@ PHP;
                     if ($line === '') {
                         continue;
                     }
-                    if (preg_match('/(SQLSTATE|\.ERROR:|local\.ERROR|Exception|FATAL|CRITICAL|relation .* does not exist|Base table or view not found|No application encryption key|APP_KEY)/i', $line)) {
+                    if (preg_match('/(SQLSTATE|\.ERROR:|local\.ERROR|Exception|FATAL|CRITICAL|ErrorException|ParseError|relation .* does not exist|Base table or view not found|No application encryption key|APP_KEY|encryption key|Unable to write)/i', $line)) {
                         $lines[] = mb_substr($line, 0, 280);
                         // Capture the following message line when present.
                         $next = trim((string) ($rawLines[$i + 1] ?? ''));
@@ -5055,6 +5067,70 @@ PHP;
     }
 
     /**
+     * Paths.php + sidecar + system/ are already correct. Fill encryption.key / baseURL / writable.
+     *
+     * @return array{success: bool, message: string}
+     */
+    private function treatHealCodeIgniterRuntime(Service $service): array
+    {
+        $deployment = $service->containerDeployment;
+        if (! $deployment?->node) {
+            return ['success' => false, 'message' => 'Application is not deployed.'];
+        }
+
+        $ssh = SSHService::forNode($deployment->node);
+        $hostAppPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name.'/app';
+        $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+        $publicUrl = (string) ($deployment->getAccessUrl() ?? '');
+
+        try {
+            app(PhpCodeIgniterRuntimeHealer::class)->applyOnHost($ssh, $hostAppPath, $publicUrl);
+            app(PhpCodeIgniterPathFixer::class)->linkVendorSystemOnHost($ssh, $hostAppPath);
+
+            try {
+                $ssh->exec(
+                    'cd '.escapeshellarg($containerPath)
+                    .' && docker compose exec -T '.escapeshellarg($deployment->container_name)
+                    .' sh -lc '.escapeshellarg($this->phpFpmReloadScript()),
+                    15
+                );
+            } catch (\Throwable) {
+            }
+
+            $httpStatus = $this->probeHttpStatus($ssh, $deployment);
+            $phpProbe = [];
+            if ($httpStatus !== null && $httpStatus >= 500) {
+                try {
+                    $phpProbe = app(PhpRuntime500Probe::class)->capture($ssh, $deployment);
+                } catch (\Throwable) {
+                    $phpProbe = [];
+                }
+                $logLines = $this->readRecentApplicationErrors($ssh, $deployment);
+
+                return [
+                    'success' => false,
+                    'message' => 'Wrote CodeIgniter encryption.key / app.baseURL / writable/ and reloaded php-fpm, but GET / still returns HTTP '.$httpStatus.'. '
+                        .app(PhpRuntime500Probe::class)->summary($phpProbe)
+                        .($logLines === [] ? '' : ' Log: '.implode(' | ', array_slice($logLines, 0, 2)))
+                        .' MySQL was left running.',
+                ];
+            }
+
+            return [
+                'success' => true,
+                'message' => 'Healed CodeIgniter encryption.key, app.baseURL, and writable/. php-fpm was reloaded. The container was not recreated. MySQL was left running. Reload the site.',
+            ];
+        } catch (\Throwable $e) {
+            return [
+                'success' => false,
+                'message' => $e->getMessage(),
+            ];
+        } finally {
+            $ssh->disconnect();
+        }
+    }
+
+    /**
      * Rebuild schema with migrate:fresh. Only allowed when the DB has 0 app tables.
      *
      * @return array{success: bool, message: string}
@@ -5410,13 +5486,13 @@ PHP;
                 }
 
                 return [
-                    'treat_action' => 'restart_application',
-                    'treat_label' => 'Restart application',
+                    'treat_action' => 'heal_codeigniter_runtime',
+                    'treat_label' => 'Heal CodeIgniter runtime',
                     'summary' => 'Live PDO works (tables: '.(string) ($checks['table_count'] ?? '?')
-                        .') and Paths.php is already under /app'
-                        .($requireAlreadyResolved ? '; the ../app require is already rewritten' : '')
-                        .'. Restart now points $systemDirectory at vendor/codeigniter4 when system/ is missing, '
-                        .'rewrites CodeIgniter Database.php / database.default.* to the sidecar, creates writable/, and recreates the app only. MySQL stays up.',
+                        .') and Paths.php, the sidecar hostname, and system/ are already in place'
+                        .($requireAlreadyResolved ? '; the front-controller require is correct' : '')
+                        .'. The empty HTTP 500 is the next CI4 boot step (encryption.key, app.baseURL, or writable/). '
+                        .'Heal writes those and reloads php-fpm. It does not recreate the container or touch MySQL.',
                 ];
             }
 
