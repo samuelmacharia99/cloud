@@ -5,7 +5,6 @@ namespace App\Services\Provisioning;
 use App\Models\ContainerDeployment;
 use App\Services\SSH\SSHService;
 use Illuminate\Http\UploadedFile;
-use Symfony\Component\Yaml\Yaml;
 
 /**
  * Load an operator-uploaded .sql dump into this service's sidecar database.
@@ -389,27 +388,195 @@ class ContainerSqlDumpImportService
     }
 
     /**
-     * PDO runs in the app container and connects over the compose network.
-     * Official MySQL images reject root@<app-ip>; the sidecar app user is granted from '%'.
-     *
-     * @return array{user: string, password: string}
+     * Rewrite a dump so the mysql CLI can import it from stdin inside the db container.
+     * Each statement is one physical line: a line starting with `\` is never a client command.
      */
-    public function mysqlNetworkImportCredentials(string $user, string $password): array
+    public function mysqlClientDump(string $sql): string
     {
-        $user = trim($user);
-        if ($user === '' || strcasecmp($user, 'root') === 0) {
-            throw new \RuntimeException(
-                'SQL import connects from the app container, so it needs the sidecar application user, not root. Repair DB credentials, then retry.'
-            );
+        $sql = $this->sanitizeDumpForSidecar($sql);
+        $this->assertSafeSqlImport($sql);
+
+        $statements = $this->splitSqlStatements($sql);
+        $lines = ['SET NAMES utf8mb4'];
+        foreach ($statements as $statement) {
+            $flat = $this->flattenSqlStatementForMysqlClient($statement);
+            if ($flat !== '') {
+                $lines[] = $flat;
+            }
         }
 
-        if ($password === '') {
-            throw new \RuntimeException(
-                'Database password is missing from the sidecar. Repair DB credentials, then retry the import.'
-            );
+        if (count($lines) < 2) {
+            throw new \RuntimeException('SQL dump contained no executable statements after cleanup.');
         }
 
-        return ['user' => $user, 'password' => $password];
+        return implode(";\n", $lines).";\n";
+    }
+
+    public function rewriteLocalDumpForMysqlClient(string $path): void
+    {
+        $sql = file_get_contents($path);
+        if ($sql === false || trim($sql) === '') {
+            throw new \RuntimeException('SQL dump file is missing or empty.');
+        }
+
+        if (file_put_contents($path, $this->mysqlClientDump($sql)) === false) {
+            throw new \RuntimeException('Could not rewrite the SQL dump for the MySQL client.');
+        }
+    }
+
+    /**
+     * Put one statement on one line without changing string data except encoding real newlines as \n.
+     */
+    public function flattenSqlStatementForMysqlClient(string $sql): string
+    {
+        $sql = str_replace(["\r\n", "\r"], "\n", $sql);
+        $out = '';
+        $length = strlen($sql);
+        $i = 0;
+        $state = 'code';
+
+        while ($i < $length) {
+            $ch = $sql[$i];
+            $next = $i + 1 < $length ? $sql[$i + 1] : '';
+
+            if ($state === 'code') {
+                if ($ch === '#' || ($ch === '-' && $next === '-')) {
+                    $state = 'linecomment';
+                    $i++;
+
+                    continue;
+                }
+                if ($ch === '/' && $next === '*') {
+                    $state = 'blockcomment';
+                    $out .= '/*';
+                    $i += 2;
+
+                    continue;
+                }
+                if ($ch === "'") {
+                    $state = 'single';
+                    $out .= $ch;
+                    $i++;
+
+                    continue;
+                }
+                if ($ch === '"') {
+                    $state = 'double';
+                    $out .= $ch;
+                    $i++;
+
+                    continue;
+                }
+                if ($ch === '`') {
+                    $state = 'backtick';
+                    $out .= $ch;
+                    $i++;
+
+                    continue;
+                }
+                if ($ch === "\n" || $ch === "\t") {
+                    if ($out !== '' && ! str_ends_with($out, ' ')) {
+                        $out .= ' ';
+                    }
+                    $i++;
+
+                    continue;
+                }
+                $out .= $ch;
+                $i++;
+
+                continue;
+            }
+
+            if ($state === 'single' || $state === 'double') {
+                $quote = $state === 'single' ? "'" : '"';
+                if ($ch === "\n") {
+                    $out .= '\\n';
+                    $i++;
+
+                    continue;
+                }
+                if ($ch === '\\') {
+                    if ($next === "\n") {
+                        $out .= '\\n';
+                        $i += 2;
+
+                        continue;
+                    }
+                    $out .= $ch.$next;
+                    $i += $next === '' ? 1 : 2;
+
+                    continue;
+                }
+                if ($ch === $quote && $next === $quote) {
+                    $out .= $quote.$quote;
+                    $i += 2;
+
+                    continue;
+                }
+                if ($ch === $quote) {
+                    $state = 'code';
+                }
+                $out .= $ch;
+                $i++;
+
+                continue;
+            }
+
+            if ($state === 'backtick') {
+                if ($ch === '`' && $next === '`') {
+                    $out .= '``';
+                    $i += 2;
+
+                    continue;
+                }
+                if ($ch === '`') {
+                    $state = 'code';
+                }
+                if ($ch === "\n" || $ch === "\t") {
+                    $out .= ' ';
+                    $i++;
+
+                    continue;
+                }
+                $out .= $ch;
+                $i++;
+
+                continue;
+            }
+
+            if ($state === 'linecomment') {
+                if ($ch === "\n") {
+                    $state = 'code';
+                    if ($out !== '' && ! str_ends_with($out, ' ')) {
+                        $out .= ' ';
+                    }
+                }
+                $i++;
+
+                continue;
+            }
+
+            if ($ch === '*' && $next === '/') {
+                $out .= '*/';
+                $i += 2;
+                $state = 'code';
+
+                continue;
+            }
+            if ($ch === "\n" || $ch === "\t") {
+                if (! str_ends_with($out, ' ')) {
+                    $out .= ' ';
+                }
+                $i++;
+
+                continue;
+            }
+            $out .= $ch;
+            $i++;
+        }
+
+        return trim($out);
     }
 
     /**
@@ -475,6 +642,8 @@ class ContainerSqlDumpImportService
         $database = (string) ($databaseContext['database'] ?? 'appdb');
         $user = (string) ($databaseContext['username'] ?? 'appuser');
         $password = (string) ($databaseContext['password'] ?? '');
+        $env = is_array($deployment->env_values) ? $deployment->env_values : [];
+        $rootPassword = (string) ($env['MYSQL_ROOT_PASSWORD'] ?? '');
 
         try {
             $live = $this->migrator->readLiveMysqlSidecarEnv($ssh, $containerPath, $dbService);
@@ -487,137 +656,123 @@ class ContainerSqlDumpImportService
             if (($live['MYSQL_DATABASE'] ?? '') !== '') {
                 $database = $live['MYSQL_DATABASE'];
             }
+            if (($live['MYSQL_ROOT_PASSWORD'] ?? '') !== '') {
+                $rootPassword = $live['MYSQL_ROOT_PASSWORD'];
+            }
         } catch (\Throwable) {
         }
 
-        $credentials = $this->mysqlNetworkImportCredentials($user, $password);
-        $importUser = $credentials['user'];
-        $importPass = $credentials['password'];
-
-        $statements = $this->splitSqlStatements($sql);
-        if ($statements === []) {
-            throw new \RuntimeException('SQL dump contained no executable statements after cleanup.');
+        // mysql runs inside the db container over the unix socket (root@localhost).
+        // Connecting from the app container 1045s: official images reject root@<overlay-ip>
+        // and often the app user@<overlay-ip> until GRANT % is applied after import.
+        $importUser = $rootPassword !== '' ? 'root' : $user;
+        $importPass = $rootPassword !== '' ? $rootPassword : $password;
+        if ($importPass === '') {
+            throw new \RuntimeException(
+                'Database password is missing from the sidecar. Repair DB credentials, then retry the import.'
+            );
         }
 
-        $appRoot = $containerPath.'/app';
-        $ssh->mkdirp($appRoot);
-        $localJsonl = tempnam(sys_get_temp_dir(), 'ts-sql-jsonl-');
-        if ($localJsonl === false) {
-            throw new \RuntimeException('Could not create a temporary file for SQL statements.');
+        $clientSql = $this->mysqlClientDump($sql);
+        $statementCount = max(0, substr_count($clientSql, ";\n"));
+
+        $importDir = $containerPath.'/.db-imports';
+        $ssh->mkdirp($importDir);
+        $localDump = tempnam(sys_get_temp_dir(), 'ts-sql-import-');
+        if ($localDump === false) {
+            throw new \RuntimeException('Could not create a temporary file for the SQL dump.');
         }
-        $handle = fopen($localJsonl, 'wb');
-        if ($handle === false) {
-            @unlink($localJsonl);
-            throw new \RuntimeException('Could not write SQL statements for import.');
+        $localDump .= '.sql';
+        if (file_put_contents($localDump, $clientSql) === false) {
+            throw new \RuntimeException('Could not write the SQL dump to a temporary file.');
         }
+
+        $remotePath = $importDir.'/import_'.time().'_'.bin2hex(random_bytes(4)).'.sql';
+
         try {
-            foreach ($statements as $statement) {
-                fwrite($handle, json_encode($statement, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)."\n");
+            $ssh->uploadFromLocal($localDump, $remotePath);
+            $this->migrator->waitForComposeMysql(
+                $ssh,
+                $containerPath,
+                $dbService,
+                $importPass,
+                180,
+                $importUser,
+                false,
+            );
+
+            $output = $ssh->exec(
+                $this->migrator->buildMysqlDumpImportCommand(
+                    $containerPath,
+                    $dbService,
+                    $remotePath,
+                    $importUser,
+                    $importPass,
+                    $database,
+                ),
+                600
+            );
+
+            $grantWarning = $this->grantAppUserAfterImport(
+                $ssh,
+                $containerPath,
+                $dbService,
+                $database,
+                $user,
+                $password,
+                $rootPassword !== '' ? $rootPassword : $importPass,
+            );
+
+            $message = 'Imported '.$statementCount.' SQL statements into '.$database
+                .' as '.$importUser.' via the sidecar mysql client.';
+            if ($grantWarning !== null) {
+                $message .= ' '.$grantWarning;
             }
+            if (trim($output) !== '') {
+                $message .= ' '.$output;
+            }
+
+            return $message;
         } finally {
-            fclose($handle);
-        }
-
-        $token = bin2hex(random_bytes(4));
-        $remoteJsonl = $appRoot.'/.talksasa-import-'.$token.'.jsonl';
-        $remotePhp = $appRoot.'/.talksasa-import-'.$token.'.php';
-        $localPhp = $localJsonl.'.php';
-        file_put_contents($localPhp, $this->pdoDumpImporterScript());
-
-        try {
-            $ssh->uploadFromLocal($localJsonl, $remoteJsonl);
-            $ssh->uploadFromLocal($localPhp, $remotePhp);
-            $appService = $this->composeAppService($ssh, $deployment, $containerPath);
-
-            $command = 'cd '.escapeshellarg($containerPath)
-                .' && docker compose exec -T'
-                .' -e TS_IMPORT_HOST='.escapeshellarg($dbService)
-                .' -e TS_IMPORT_DB='.escapeshellarg($database)
-                .' -e TS_IMPORT_USER='.escapeshellarg($importUser)
-                .' -e TS_IMPORT_PASS='.escapeshellarg($importPass)
-                .' '.escapeshellarg($appService)
-                .' php '.escapeshellarg('/app/.talksasa-import-'.$token.'.php')
-                .' '.escapeshellarg('/app/.talksasa-import-'.$token.'.jsonl');
-
-            return $ssh->exec($command, 600);
-        } finally {
-            @unlink($localJsonl);
-            @unlink($localPhp);
+            @unlink($localDump);
             try {
-                $ssh->exec(
-                    'rm -f '.escapeshellarg($remoteJsonl).' '.escapeshellarg($remotePhp),
-                    10
-                );
+                $ssh->exec('rm -f '.escapeshellarg($remotePath), 10);
             } catch (\Throwable) {
             }
         }
     }
 
-    public function pdoDumpImporterScript(): string
-    {
-        return <<<'PHP'
-<?php
-$host = (string) getenv('TS_IMPORT_HOST');
-$db = (string) getenv('TS_IMPORT_DB');
-$user = (string) getenv('TS_IMPORT_USER');
-$pass = (string) getenv('TS_IMPORT_PASS');
-$file = $argv[1] ?? '';
-if ($host === '' || $db === '' || $user === '' || $file === '' || ! is_file($file)) {
-    fwrite(STDERR, "Import script is missing database settings or the statement file.\n");
-    exit(1);
-}
-$pdo = new PDO(
-    'mysql:host='.$host.';port=3306;dbname='.$db.';charset=utf8mb4',
-    $user,
-    $pass,
-    [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
-);
-$pdo->exec('SET NAMES utf8mb4');
-$handle = fopen($file, 'rb');
-if ($handle === false) {
-    fwrite(STDERR, "Could not read import statements.\n");
-    exit(1);
-}
-$count = 0;
-try {
-    while (($line = fgets($handle)) !== false) {
-        $line = trim($line);
-        if ($line === '') {
-            continue;
-        }
-        $statement = json_decode($line, true);
-        if (! is_string($statement) || trim($statement) === '') {
-            throw new RuntimeException('Invalid statement payload at statement '.($count + 1));
-        }
-        $pdo->exec($statement);
-        $count++;
-    }
-} finally {
-    fclose($handle);
-}
-fwrite(STDOUT, 'Imported '.$count." SQL statements via PDO.\n");
-PHP;
-    }
-
-    private function composeAppService(
+    private function grantAppUserAfterImport(
         SSHService $ssh,
-        ContainerDeployment $deployment,
         string $containerPath,
-    ): string {
-        try {
-            $yaml = trim($ssh->exec('cat '.escapeshellarg($containerPath.'/docker-compose.yml'), 15));
-            $compose = Yaml::parse($yaml);
-            if (is_array($compose)) {
-                $key = app(ContainerDeploymentService::class)
-                    ->resolveComposeAppServiceKey($compose, $deployment->container_name);
-                if (is_string($key) && $key !== '') {
-                    return $key;
-                }
-            }
-        } catch (\Throwable) {
+        string $dbService,
+        string $database,
+        string $user,
+        string $password,
+        string $rootPassword,
+    ): ?string {
+        $user = trim($user);
+        if ($user === '' || strcasecmp($user, 'root') === 0 || $password === '' || $rootPassword === '') {
+            return null;
         }
 
-        return $deployment->container_name;
+        try {
+            app(ContainerDeploymentService::class)->syncMysqlSidecarCredentials($ssh, $containerPath, [
+                'DB_HOST' => $dbService,
+                'DB_DATABASE' => $database,
+                'DB_USERNAME' => $user,
+                'DB_PASSWORD' => $password,
+                'MYSQL_ROOT_PASSWORD' => $rootPassword,
+                'MYSQL_DATABASE' => $database,
+                'MYSQL_USER' => $user,
+                'MYSQL_PASSWORD' => $password,
+            ]);
+        } catch (\Throwable $e) {
+            return 'Dump loaded, but the application user could not be granted from Docker IPs: '
+                .$e->getMessage();
+        }
+
+        return null;
     }
 
     /**

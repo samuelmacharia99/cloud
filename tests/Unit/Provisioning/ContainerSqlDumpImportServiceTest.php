@@ -90,21 +90,34 @@ SQL;
     }
 
     #[Test]
-    public function it_uses_the_sidecar_app_user_for_network_pdo_import(): void
+    public function it_flattens_statements_so_mysql_client_never_sees_a_backslash_command_line(): void
     {
-        $credentials = $this->importer()->mysqlNetworkImportCredentials('u483_s426', 'app-secret');
+        $dump = "INSERT INTO `t` VALUES ('foo\n\\bar');\nINSERT INTO `u` VALUES (1);\n";
 
-        $this->assertSame('u483_s426', $credentials['user']);
-        $this->assertSame('app-secret', $credentials['password']);
+        $prepared = $this->importer()->mysqlClientDump($dump);
+        $lines = preg_split('/\n/', trim($prepared)) ?: [];
+
+        $this->assertGreaterThanOrEqual(2, count($lines));
+        foreach ($lines as $line) {
+            $this->assertFalse(
+                str_starts_with(ltrim($line), '\\'),
+                'mysql client command line: '.$line
+            );
+        }
+        $this->assertStringContainsString("VALUES ('foo\\n", $prepared);
+        $this->assertStringContainsString('INSERT INTO `u` VALUES (1)', $prepared);
     }
 
     #[Test]
-    public function it_refuses_root_for_network_pdo_import(): void
+    public function it_keeps_create_table_columns_when_flattening_line_comments(): void
     {
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('application user, not root');
+        $sql = "CREATE TABLE `t` (\n  -- ignore\n  `id` int NOT NULL\n)";
 
-        $this->importer()->mysqlNetworkImportCredentials('root', 'root-secret');
+        $flat = $this->importer()->flattenSqlStatementForMysqlClient($sql);
+
+        $this->assertStringNotContainsString("\n", $flat);
+        $this->assertStringContainsString('`id` int NOT NULL', $flat);
+        $this->assertStringNotContainsString('ignore', $flat);
     }
 
     #[Test]

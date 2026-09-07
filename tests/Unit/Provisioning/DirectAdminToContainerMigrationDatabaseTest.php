@@ -413,8 +413,8 @@ class DirectAdminToContainerMigrationDatabaseTest extends TestCase
         $shell = app(DirectAdminToContainerMigrationService::class)
             ->composeMysqlClientShell('root', 's426_db', null, true);
 
-        $this->assertStringContainsString('mysql -uroot --binary-mode --default-character-set=utf8mb4', $shell);
-        $this->assertStringContainsString('mariadb -uroot --binary-mode --default-character-set=utf8mb4', $shell);
+        $this->assertStringContainsString('mysql -uroot --binary-mode --default-character-set=utf8mb4 --max-allowed-packet=1073741824', $shell);
+        $this->assertStringContainsString('mariadb -uroot --binary-mode --default-character-set=utf8mb4 --max-allowed-packet=1073741824', $shell);
     }
 
     #[Test]

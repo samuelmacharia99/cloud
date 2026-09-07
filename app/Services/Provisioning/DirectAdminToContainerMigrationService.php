@@ -880,7 +880,7 @@ class DirectAdminToContainerMigrationService
         try {
             $progress('Uploading export archives to container node');
             $targetSsh->exec('mkdir -p '.escapeshellarg($remoteWork));
-            $targetSsh->uploadFromLocal($localDump, $dumpFile);
+            $this->uploadPreparedMysqlDump($targetSsh, $localDump, $dumpFile);
             $targetSsh->uploadFromLocal($localTar, $filesTar);
 
             $db = $this->resolveWordpressImportCredentials($target, $targetSsh, $containerPath);
@@ -1220,7 +1220,7 @@ class DirectAdminToContainerMigrationService
             $targetSsh->exec('mkdir -p '.escapeshellarg($remoteWork));
             $targetSsh->uploadFromLocal($localTar, $filesTar);
             if (is_string($localDump) && is_file($localDump)) {
-                $targetSsh->uploadFromLocal($localDump, $dumpFile);
+                $this->uploadPreparedMysqlDump($targetSsh, $localDump, $dumpFile);
             }
 
             $progress('Extracting site files onto host bind mount');
@@ -2024,7 +2024,7 @@ class DirectAdminToContainerMigrationService
 
             $progress('Uploading DirectAdmin dump to the container host');
             $targetSsh->exec('mkdir -p '.escapeshellarg($remoteWork));
-            $targetSsh->uploadFromLocal($localDump, $dumpFile);
+            $this->uploadPreparedMysqlDump($targetSsh, $localDump, $dumpFile);
 
             $wait = $this->composeMysqlWaitCredentials($db);
             $progress('Waiting for MySQL sidecar');
@@ -2617,7 +2617,7 @@ class DirectAdminToContainerMigrationService
         if ($binaryMode) {
             // DirectAdmin / mysqldump files often contain `\` in PHP serialized data.
             // Without --binary-mode the client treats those as commands (Unknown command '\\').
-            $args .= ' --binary-mode --default-character-set=utf8mb4';
+            $args .= ' --binary-mode --default-character-set=utf8mb4 --max-allowed-packet=1073741824';
         }
         if ($database !== null && $database !== '') {
             $args .= ' '.escapeshellarg($database);
@@ -2665,6 +2665,16 @@ class DirectAdminToContainerMigrationService
             $this->composeMysqlExecCommand($containerPath, $dbService, $user, $password, $sql, $database),
             $timeoutSeconds
         );
+    }
+
+    /**
+     * Flatten DirectAdmin dumps locally so mysql inside the db container never
+     * sees a line starting with `\`, then upload to the container host.
+     */
+    private function uploadPreparedMysqlDump(SSHService $ssh, string $localDump, string $remoteDump): void
+    {
+        app(ContainerSqlDumpImportService::class)->rewriteLocalDumpForMysqlClient($localDump);
+        $ssh->uploadFromLocal($localDump, $remoteDump);
     }
 
     /**
