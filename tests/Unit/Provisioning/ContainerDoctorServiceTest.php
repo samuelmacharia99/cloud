@@ -1565,4 +1565,69 @@ LOG;
         $this->assertSame('s163_db', $env['DB_DATABASE']);
         $this->assertSame('postgresql://u:p@db:5432/s163_db', $env['DATABASE_URL']);
     }
+
+    #[Test]
+    public function empty_database_finding_imports_from_directadmin_when_legacy_exists(): void
+    {
+        $service = new Service;
+        $service->provisioning_driver_key = 'container';
+        $service->service_meta = [
+            'da_legacy' => [
+                'username' => 'u483',
+                'da_node_id' => 9,
+                'domain' => 'roadtrip.example.com',
+                'stack' => 'static_or_php',
+                'databases' => [['name' => 'roadtrip_db']],
+            ],
+        ];
+
+        $finding = app(ContainerDoctorService::class)->emptyDatabaseFinding(
+            $service,
+            's426_db',
+            true,
+            'php',
+            0
+        );
+
+        $this->assertNotNull($finding);
+        $this->assertSame('live_empty_database', $finding['id']);
+        $this->assertSame('import_da_database', $finding['treat_action']);
+        $this->assertSame('Import DirectAdmin database', $finding['treat_label']);
+        $this->assertStringContainsString('converted from DirectAdmin', $finding['summary']);
+    }
+
+    #[Test]
+    public function empty_database_finding_uses_migrate_fresh_without_directadmin_legacy(): void
+    {
+        $service = new Service;
+        $service->provisioning_driver_key = 'container';
+        $service->service_meta = [];
+
+        $finding = app(ContainerDoctorService::class)->emptyDatabaseFinding(
+            $service,
+            's426_db',
+            true,
+            'php',
+            0
+        );
+
+        $this->assertSame('migrate_fresh', $finding['treat_action']);
+        $this->assertSame('Rebuild schema (migrate:fresh)', $finding['treat_label']);
+    }
+
+    #[Test]
+    public function empty_database_finding_without_artisan_is_null_unless_directadmin_legacy(): void
+    {
+        $service = new Service;
+        $service->provisioning_driver_key = 'container';
+        $service->service_meta = [];
+
+        $this->assertNull(app(ContainerDoctorService::class)->emptyDatabaseFinding(
+            $service,
+            's426_db',
+            false,
+            'php',
+            null
+        ));
+    }
 }

@@ -1344,7 +1344,7 @@ class DirectAdminToContainerConvertService
     public function exportIncludesDatabaseMessage(string $stack): string
     {
         return match ($stack) {
-            'wordpress', 'laravel', 'php', 'nodejs' => ' and database (when credentials resolve)',
+            'wordpress', 'laravel', 'php', 'nodejs', 'static_or_php' => ' and database (when credentials resolve)',
             default => '',
         };
     }

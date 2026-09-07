@@ -1251,7 +1251,7 @@ class DirectAdminToContainerMigrationService
                 }
             }
 
-            if (is_string($localDump) && is_file($localDump) && in_array($stack, ['laravel', 'php', 'nodejs'], true)) {
+            if (is_string($localDump) && is_file($localDump) && $this->stackImportsDatabaseDump($stack)) {
                 $db = $this->resolveGenericImportCredentials($target, $targetSsh, $containerPath);
                 $dbService = $db['service'];
 
@@ -1672,16 +1672,22 @@ class DirectAdminToContainerMigrationService
             return true;
         }
 
-        return ! blank($dbCreds['DB_NAME'] ?? null) && in_array($stack, ['php', 'nodejs'], true);
+        return ! blank($dbCreds['DB_NAME'] ?? null) && in_array($stack, ['php', 'nodejs', 'static_or_php'], true);
     }
 
     public function directAdminUsername(Service $source): string
     {
         $source->loadMissing('user');
-        $creds = $source->getHostingCredentials() ?? [];
         $meta = is_array($source->service_meta) ? $source->service_meta : [];
+        $legacy = is_array($meta['da_legacy'] ?? null) ? $meta['da_legacy'] : [];
 
-        return (string) ($creds['username'] ?? $source->external_reference ?? ($meta['username'] ?? ''));
+        if ($source->isContainerHosting() && filled($legacy['username'] ?? null)) {
+            return (string) $legacy['username'];
+        }
+
+        $creds = $source->getHostingCredentials() ?? [];
+
+        return (string) ($creds['username'] ?? $source->external_reference ?? ($meta['username'] ?? ($legacy['username'] ?? '')));
     }
 
     /**
@@ -1715,7 +1721,384 @@ class DirectAdminToContainerMigrationService
 
     public function stackMayExportDatabase(string $stack): bool
     {
-        return in_array($stack, ['laravel', 'php', 'nodejs'], true);
+        return in_array($stack, ['laravel', 'php', 'nodejs', 'static_or_php'], true);
+    }
+
+    public function stackImportsDatabaseDump(string $stack): bool
+    {
+        return in_array($stack, ['laravel', 'php', 'nodejs', 'static_or_php'], true);
+    }
+
+    /**
+     * @return list<array{name: string}>
+     */
+    public function normalizeDatabaseNameRows(mixed $rows): array
+    {
+        if (! is_array($rows)) {
+            return [];
+        }
+
+        return array_values(array_filter(array_map(function ($row) {
+            $name = is_array($row) ? (string) ($row['name'] ?? '') : (string) $row;
+
+            return $name !== '' ? ['name' => $name] : null;
+        }, $rows)));
+    }
+
+    /**
+     * Rebuild enough inventory to dump MySQL after an in-place convert (service is no longer shared hosting).
+     *
+     * @return array{
+     *     username: string,
+     *     domain: ?string,
+     *     databases: list<array{name: string}>,
+     *     stack: string,
+     *     docroot: ?string,
+     *     app_root: ?string,
+     *     has_wp_config: bool,
+     *     da_node_id: int
+     * }|null
+     */
+    public function inventoryFromDirectAdminLegacy(Service $service): ?array
+    {
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        $legacy = is_array($meta['da_legacy'] ?? null) ? $meta['da_legacy'] : [];
+        if ($legacy === []) {
+            return null;
+        }
+
+        $username = trim((string) ($legacy['username'] ?? ''));
+        $nodeId = (int) ($legacy['da_node_id'] ?? 0);
+        if ($username === '' || $nodeId <= 0) {
+            return null;
+        }
+
+        $domain = is_string($legacy['domain'] ?? null) ? trim((string) $legacy['domain']) : '';
+        $docroot = trim((string) ($legacy['docroot'] ?? ''));
+        $appRoot = trim((string) ($legacy['app_root'] ?? $docroot));
+        if ($docroot === '' && $domain !== '') {
+            $docroot = '/home/'.$username.'/domains/'.$domain.'/public_html';
+            $appRoot = $appRoot !== '' ? $appRoot : $docroot;
+        }
+
+        $stack = trim((string) ($legacy['stack'] ?? 'static_or_php'));
+
+        return [
+            'username' => $username,
+            'domain' => $domain !== '' ? $domain : null,
+            'databases' => $this->normalizeDatabaseNameRows($legacy['databases'] ?? []),
+            'stack' => $stack !== '' ? $stack : 'static_or_php',
+            'docroot' => $docroot !== '' ? $docroot : null,
+            'app_root' => $appRoot !== '' ? $appRoot : null,
+            'has_wp_config' => $stack === 'wordpress' || ! empty($legacy['has_wp_config']),
+            'da_node_id' => $nodeId,
+        ];
+    }
+
+    public function canRepullDirectAdminDatabase(Service $service): bool
+    {
+        $inventory = $this->inventoryFromDirectAdminLegacy($service);
+        if ($inventory === null) {
+            return false;
+        }
+
+        return ($inventory['databases'] ?? []) !== []
+            || filled($inventory['docroot'] ?? null)
+            || filled($inventory['app_root'] ?? null);
+    }
+
+    /**
+     * Dump MySQL only from the still-live DirectAdmin account (no files tar).
+     *
+     * @param  array<string, mixed>|null  $inventory
+     * @return array{local_dump: string, remote_work: string, db_name: string, da_node_id: int}
+     */
+    public function exportDatabaseDumpFromDirectAdmin(
+        Service $source,
+        ?array $inventory = null,
+        ?string $databaseName = null,
+    ): array {
+        $inventory ??= $this->inventoryFromDirectAdminLegacy($source);
+        if ($inventory === null) {
+            throw new \RuntimeException(
+                'This container has no DirectAdmin convert record (da_legacy). Cannot pull a dump from DirectAdmin.'
+            );
+        }
+
+        $daNode = $this->resolveDirectAdminNode($source, $inventory);
+        $stack = (string) ($inventory['stack'] ?? 'static_or_php');
+        $docroot = (string) ($inventory['app_root'] ?? $inventory['docroot'] ?? '');
+        $daUsername = $this->directAdminUsername($source);
+        if ($daUsername === '') {
+            $daUsername = (string) ($inventory['username'] ?? '');
+        }
+
+        $workId = 'da-db-repull-'.$source->id.'-'.Str::lower(Str::random(6));
+        $remoteWork = self::WORK_BASE.'/'.$workId;
+        $dumpFile = $remoteWork.'/db.sql';
+        $localDump = storage_path('app/migrations/'.$workId.'-db.sql');
+
+        if (! is_dir(dirname($localDump))) {
+            mkdir(dirname($localDump), 0755, true);
+        }
+
+        $daSsh = SSHService::forNode($daNode);
+        try {
+            $daSsh->exec('mkdir -p '.escapeshellarg($remoteWork));
+
+            $isWordpress = $stack === 'wordpress' || ($inventory['has_wp_config'] ?? false);
+            $dbCreds = [
+                'DB_NAME' => null,
+                'DB_USER' => null,
+                'DB_PASSWORD' => null,
+                'DB_HOST' => 'localhost',
+            ];
+
+            if ($isWordpress && $docroot !== '') {
+                $dbCreds = $this->parseWpDatabaseCredentials($daSsh, $docroot, $daUsername);
+            } elseif ($docroot !== '') {
+                $dbCreds = match ($stack) {
+                    'laravel' => $this->parseEnvDatabaseCredentials($daSsh, $docroot),
+                    'nodejs' => $this->parseEnvDatabaseCredentials($daSsh, $docroot, true),
+                    default => $this->parseGenericPhpDatabaseCredentials($daSsh, $docroot, $inventory),
+                };
+            }
+
+            $fromDisk = $this->listDirectAdminUserMysqlDatabaseNames($daSsh, $daUsername);
+            $fromAdmin = $this->listMysqlDatabaseNamesViaDaAdmin($daSsh, $daUsername, $remoteWork);
+            $candidates = array_values(array_unique(array_filter([
+                ...$fromDisk,
+                ...$fromAdmin,
+                ...array_column($inventory['databases'] ?? [], 'name'),
+                $dbCreds['DB_NAME'] ?? null,
+            ], fn ($name) => is_string($name) && $name !== '')));
+
+            $dbName = $databaseName
+                ?: ($dbCreds['DB_NAME'] ?? null)
+                ?: $this->pickPreferredMysqlDatabaseName($candidates, $daUsername, $dbCreds);
+
+            if ($dbName) {
+                $dbCreds = $this->enrichDatabaseCredentialsFromDirectAdmin(
+                    $daSsh,
+                    $daUsername,
+                    (string) $dbName,
+                    array_merge($dbCreds, ['DB_NAME' => (string) $dbName])
+                );
+                $dbCreds['DB_NAME'] = (string) $dbName;
+            }
+
+            if (! $dbName || blank($dbCreds['DB_USER'] ?? null)) {
+                throw new \RuntimeException(
+                    'Could not resolve DirectAdmin MySQL credentials'
+                    .($dbName ? ' for '.$dbName : '')
+                    .'. The DA account must still exist, and .env / wp-config / mysql.conf on that host must list the user.'
+                );
+            }
+
+            $defaultsFile = $remoteWork.'/mysqldump.cnf';
+            $this->writeRemoteMysqlDefaultsFile($daSsh, $defaultsFile, $dbCreds);
+            try {
+                $daSsh->exec(
+                    $this->buildMysqlDumpCommand($dbCreds, (string) $dbName, $dumpFile, $defaultsFile),
+                    600
+                );
+                $daSsh->downloadToLocal($dumpFile, $localDump);
+            } finally {
+                @$daSsh->exec('rm -f '.escapeshellarg($defaultsFile));
+            }
+        } finally {
+            $daSsh->disconnect();
+        }
+
+        try {
+            $this->cleanupDaWork($daNode, $remoteWork);
+        } catch (\Throwable) {
+        }
+
+        if (! is_file($localDump) || filesize($localDump) < 1) {
+            throw new \RuntimeException(
+                'DirectAdmin mysqldump produced an empty file. Confirm the DA database still exists and retry.'
+            );
+        }
+
+        return [
+            'local_dump' => $localDump,
+            'remote_work' => $remoteWork,
+            'db_name' => (string) $dbName,
+            'da_node_id' => (int) $daNode->id,
+        ];
+    }
+
+    /**
+     * Import a SQL dump into the existing sidecar. Refuses if application tables already exist.
+     * Does not extract site files and does not wipe the MySQL volume.
+     *
+     * @param  (callable(string): void)|null  $onProgress
+     */
+    public function importDatabaseDumpIntoSidecar(
+        Service $target,
+        string $localDump,
+        ?callable $onProgress = null,
+        ?int $knownTableCount = null,
+    ): void {
+        if (! is_file($localDump) || filesize($localDump) < 1) {
+            throw new \InvalidArgumentException('MySQL dump file is missing or empty.');
+        }
+
+        $progress = static function (string $detail) use ($onProgress): void {
+            if ($onProgress) {
+                $onProgress($detail);
+            }
+        };
+
+        $target->loadMissing('containerDeployment.node', 'product.containerTemplate');
+        $deployment = $target->containerDeployment;
+        if (! $deployment?->node) {
+            throw new \InvalidArgumentException('Target container is not deployed.');
+        }
+
+        if (! $this->deployments->composeDefinesDatabaseSidecar((string) $deployment->docker_compose_content)) {
+            throw new \RuntimeException(
+                'This stack has no MySQL sidecar yet. Add the sidecar first, then import the DirectAdmin dump.'
+            );
+        }
+
+        if ($knownTableCount !== null && $knownTableCount > 0) {
+            throw new \RuntimeException(
+                'Refusing DirectAdmin import: sidecar already has '.$knownTableCount
+                .' tables. This treatment only fills an empty database. Do not Reset database.'
+            );
+        }
+
+        $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+        $hostAppPath = $containerPath.'/app';
+        $workId = 'da-db-import-'.$target->id.'-'.Str::lower(Str::random(6));
+        $remoteWork = self::WORK_BASE.'/'.$workId;
+        $dumpFile = $remoteWork.'/db.sql';
+
+        $targetSsh = SSHService::forNode($deployment->node);
+        try {
+            $db = $this->resolveGenericImportCredentials($target, $targetSsh, $containerPath);
+            $live = [];
+            try {
+                $live = $this->readLiveMysqlSidecarEnv($targetSsh, $containerPath, $db['service']);
+            } catch (\Throwable) {
+                $live = [];
+            }
+            if (($live['MYSQL_ROOT_PASSWORD'] ?? '') !== '') {
+                $db['root_password'] = $live['MYSQL_ROOT_PASSWORD'];
+            }
+            if (($live['MYSQL_PASSWORD'] ?? '') !== '') {
+                $db['password'] = $live['MYSQL_PASSWORD'];
+            }
+            if (($live['MYSQL_USER'] ?? '') !== '') {
+                $db['user'] = $live['MYSQL_USER'];
+            }
+            if (($live['MYSQL_DATABASE'] ?? '') !== '') {
+                $db['database'] = $live['MYSQL_DATABASE'];
+            }
+
+            $tableCount = $knownTableCount;
+            if ($tableCount === null) {
+                $env = is_array($deployment->env_values) ? $deployment->env_values : [];
+                $tableCount = $this->deployments->countApplicationDatabaseTables(
+                    $targetSsh,
+                    $deployment->container_name,
+                    'mysql',
+                    $env,
+                    (string) ($target->effectiveContainerTemplate()?->slug ?? 'php'),
+                    $containerPath
+                );
+            }
+            if ($tableCount === null) {
+                throw new \RuntimeException(
+                    'Could not confirm the sidecar schema is empty. Re-scan Doctor, then retry Import DirectAdmin database.'
+                );
+            }
+            if ($tableCount > 0) {
+                throw new \RuntimeException(
+                    'Refusing DirectAdmin import: sidecar already has '.$tableCount
+                    .' tables. This treatment only fills an empty database. Do not Reset database.'
+                );
+            }
+
+            $progress('Uploading DirectAdmin dump to the container host');
+            $targetSsh->exec('mkdir -p '.escapeshellarg($remoteWork));
+            $targetSsh->uploadFromLocal($localDump, $dumpFile);
+
+            $wait = $this->composeMysqlWaitCredentials($db);
+            $progress('Waiting for MySQL sidecar');
+            $this->waitForComposeMysql(
+                $targetSsh,
+                $containerPath,
+                $db['service'],
+                $wait['password'],
+                420,
+                $wait['user'],
+                false,
+            );
+
+            $importPass = $db['root_password'] !== '' ? $db['root_password'] : $db['password'];
+            $importUser = $db['root_password'] !== '' ? 'root' : $db['user'];
+            if ($importPass === '') {
+                throw new \RuntimeException(
+                    'Container MySQL password is missing (check deployment env_values / MYSQL_ROOT_PASSWORD).'
+                );
+            }
+
+            $safeUser = preg_replace('/[^a-zA-Z0-9_]/', '', $importUser) ?: 'root';
+            $safeDatabase = preg_replace('/[^a-zA-Z0-9_]/', '', $db['database']) ?: 'appdb';
+
+            $createDbSql = 'CREATE DATABASE IF NOT EXISTS `'.$safeDatabase.'`;';
+            $this->execMysqlInCompose(
+                $targetSsh,
+                $containerPath,
+                $db['service'],
+                $safeUser,
+                $importPass,
+                $createDbSql,
+                null,
+                60
+            );
+
+            $progress('Importing DirectAdmin dump into '.$safeDatabase);
+            $this->importMysqlDumpViaCompose(
+                $targetSsh,
+                $containerPath,
+                $db['service'],
+                $dumpFile,
+                $safeUser,
+                $importPass,
+                $safeDatabase,
+            );
+
+            $progress('Granting the app MySQL user');
+            $this->grantImportedMysqlUser($targetSsh, $containerPath, $db['service'], $db, $safeDatabase, $importPass);
+
+            $slug = (string) ($target->effectiveContainerTemplate()?->slug ?? '');
+            if ($slug !== 'wordpress') {
+                $progress('Rewriting application database settings');
+                $this->rewriteAppEnvDatabase(
+                    $targetSsh,
+                    $hostAppPath,
+                    [
+                        'DB_CONNECTION' => 'mysql',
+                        'DB_HOST' => $db['service'],
+                        'DB_PORT' => '3306',
+                        'DB_DATABASE' => $safeDatabase,
+                        'DB_USERNAME' => $db['user'] !== '' ? $db['user'] : 'appuser',
+                        'DB_PASSWORD' => $db['password'] !== '' ? $db['password'] : $importPass,
+                    ]
+                );
+            }
+
+            $progress('Restarting application container');
+            $this->deployments->restartAppService($targetSsh, $deployment);
+            $this->deployments->waitForContainerRunning($targetSsh, $deployment->container_name, 120);
+            $targetSsh->exec('rm -rf '.escapeshellarg($remoteWork));
+        } finally {
+            $targetSsh->disconnect();
+        }
     }
 
     /**

@@ -3,6 +3,7 @@
 namespace App\Services\Provisioning;
 
 use App\Models\Service;
+use App\Services\AdminActivityService;
 use App\Services\SSH\SSHService;
 
 class ContainerDoctorService
@@ -81,6 +82,7 @@ class ContainerDoctorService
                 'fix_vite_production_runtime',
                 'switch_php_production_runtime',
                 'restart_application',
+                'import_da_database',
             ], true)) {
             return ['success' => false, 'message' => 'Application must be running before applying a fix.'];
         }
@@ -124,6 +126,7 @@ class ContainerDoctorService
             'switch_php_production_runtime' => $this->treatSwitchPhpProductionRuntime($service),
             'run_migrations' => $this->treatRunMigrations($service),
             'migrate_fresh' => $this->treatMigrateFresh($service),
+            'import_da_database' => $this->treatImportDaDatabase($service),
             'use_file_cache' => $this->treatUseFileCache($service),
             'tune_request_concurrency' => $this->treatTuneRequestConcurrency($service),
             'fix_compose_interpolation' => $this->treatFixComposeInterpolation($service),
@@ -847,27 +850,17 @@ class ContainerDoctorService
                                 ],
                                 'source' => 'live',
                             ];
-                        } elseif ($tableCount === 0 && $hasArtisan && in_array($stack, ['laravel', 'php'], true)) {
-                            $findings[] = [
-                                'id' => 'live_empty_database',
-                                'severity' => 'critical',
-                                'title' => 'Live check: database has no tables',
-                                'summary' => 'DB credentials work for "'.($probeEnv['DB_DATABASE'] ?? '').'", but the schema is empty. '
-                                    .'HTTP 500 will continue until migrations (or a SQL import) create tables.',
-                                'evidence' => [
-                                    'table_count=0',
-                                    'DB_DATABASE='.($probeEnv['DB_DATABASE'] ?? ''),
-                                    $artisanTableCount === null ? 'artisan_count=unavailable' : 'artisan_tables=0',
-                                ],
-                                'treat_action' => 'migrate_fresh',
-                                'treat_label' => 'Rebuild schema (migrate:fresh)',
-                                'manual_steps' => [
-                                    'Click Rebuild schema — runs php artisan migrate:fresh --force (safe while tables=0).',
-                                    'Or in Terminal: php artisan config:clear && php artisan migrate:fresh --force',
-                                    'Then: php artisan db:seed --force',
-                                ],
-                                'source' => 'live',
-                            ];
+                        } elseif ($tableCount === 0) {
+                            $empty = $this->emptyDatabaseFinding(
+                                $service,
+                                (string) ($probeEnv['DB_DATABASE'] ?? ''),
+                                $hasArtisan,
+                                $stack,
+                                $artisanTableCount
+                            );
+                            if ($empty !== null) {
+                                $findings[] = $empty;
+                            }
                         }
                     }
                 }
@@ -4643,6 +4636,151 @@ PHP;
             return $result;
         } finally {
             $ssh->disconnect();
+        }
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function emptyDatabaseFinding(
+        Service $service,
+        string $databaseName,
+        bool $hasArtisan,
+        string $stack,
+        ?int $artisanTableCount,
+    ): ?array {
+        $migrator = app(DirectAdminToContainerMigrationService::class);
+        $canRepull = $migrator->canRepullDirectAdminDatabase($service);
+        $inventory = $canRepull ? $migrator->inventoryFromDirectAdminLegacy($service) : null;
+        $daNames = array_column($inventory['databases'] ?? [], 'name');
+
+        if ($canRepull) {
+            $sourceLabel = $daNames !== [] ? implode(', ', $daNames) : 'the DirectAdmin account';
+
+            return [
+                'id' => 'live_empty_database',
+                'severity' => 'critical',
+                'title' => 'Live check: database has no tables',
+                'summary' => 'Sidecar credentials work for "'.$databaseName.'", but the schema is empty. '
+                    .'This site was converted from DirectAdmin and that convert did not import MySQL. '
+                    .'Import the still-live DA dump into this sidecar — do not Rebuild schema (migrate:fresh) if you need the customer data.',
+                'evidence' => array_values(array_filter([
+                    'table_count=0',
+                    'DB_DATABASE='.$databaseName,
+                    $artisanTableCount === null ? 'artisan_count=unavailable' : 'artisan_tables=0',
+                    'da_user='.((string) ($inventory['username'] ?? '')),
+                    $daNames !== [] ? 'da_databases='.implode(',', $daNames) : null,
+                ])),
+                'treat_action' => 'import_da_database',
+                'treat_label' => 'Import DirectAdmin database',
+                'manual_steps' => [
+                    'Click Import DirectAdmin database — dumps '.$sourceLabel.' from the still-live DA account and loads it into this sidecar.',
+                    'The DA user is not deleted. Do not Reset database. Do not Rebuild schema if you need the original tables.',
+                    'If DirectAdmin was already decommissioned, restore from a backup SQL file instead.',
+                ],
+                'source' => 'live',
+            ];
+        }
+
+        if ($hasArtisan && in_array($stack, ['laravel', 'php'], true)) {
+            return [
+                'id' => 'live_empty_database',
+                'severity' => 'critical',
+                'title' => 'Live check: database has no tables',
+                'summary' => 'DB credentials work for "'.$databaseName.'", but the schema is empty. '
+                    .'HTTP 500 will continue until migrations (or a SQL import) create tables.',
+                'evidence' => [
+                    'table_count=0',
+                    'DB_DATABASE='.$databaseName,
+                    $artisanTableCount === null ? 'artisan_count=unavailable' : 'artisan_tables=0',
+                ],
+                'treat_action' => 'migrate_fresh',
+                'treat_label' => 'Rebuild schema (migrate:fresh)',
+                'manual_steps' => [
+                    'Click Rebuild schema — runs php artisan migrate:fresh --force (safe while tables=0).',
+                    'Or in Terminal: php artisan config:clear && php artisan migrate:fresh --force',
+                    'Then: php artisan db:seed --force',
+                ],
+                'source' => 'live',
+            ];
+        }
+
+        return null;
+    }
+
+    private function treatImportDaDatabase(Service $service): array
+    {
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(0);
+        }
+        @ini_set('max_execution_time', '0');
+
+        $migrator = app(DirectAdminToContainerMigrationService::class);
+        if (! $migrator->canRepullDirectAdminDatabase($service)) {
+            return [
+                'success' => false,
+                'message' => 'This container has no DirectAdmin convert record (da_legacy username + node). Cannot pull a dump from DirectAdmin.',
+            ];
+        }
+
+        $deployment = $service->containerDeployment;
+        $deploymentService = app(ContainerDeploymentService::class);
+        if (! $deploymentService->composeDefinesDatabaseSidecar((string) ($deployment?->docker_compose_content ?? ''))) {
+            return [
+                'success' => false,
+                'message' => 'Add the MySQL sidecar first (Repair DB credentials), then Import DirectAdmin database.',
+            ];
+        }
+
+        $localDump = null;
+
+        try {
+            $export = $migrator->exportDatabaseDumpFromDirectAdmin($service);
+            $localDump = $export['local_dump'] ?? null;
+            $migrator->importDatabaseDumpIntoSidecar($service, (string) $localDump);
+
+            $meta = is_array($service->service_meta) ? $service->service_meta : [];
+            $legacy = is_array($meta['da_legacy'] ?? null) ? $meta['da_legacy'] : [];
+            $legacy['database_reimported_at'] = now()->toIso8601String();
+            $legacy['database_reimported_name'] = $export['db_name'] ?? null;
+            $meta['da_legacy'] = $legacy;
+            $service->update(['service_meta' => $meta]);
+            $service->service_meta = $meta;
+
+            $user = auth()->user();
+            if ($user?->isAdmin()) {
+                AdminActivityService::log(
+                    'container.import_da_database',
+                    'Imported DirectAdmin MySQL dump into service #'.$service->id
+                        .' ('.(string) ($export['db_name'] ?? 'unknown').')',
+                    $service,
+                    [
+                        'service_id' => $service->id,
+                        'da_database' => $export['db_name'] ?? null,
+                    ],
+                );
+            }
+
+            \Log::info('Doctor imported DirectAdmin database', [
+                'service_id' => $service->id,
+                'da_database' => $export['db_name'] ?? null,
+            ]);
+
+            return [
+                'success' => true,
+                'message' => 'Imported DirectAdmin database '
+                    .(string) ($export['db_name'] ?? '')
+                    .' into this sidecar. Reload the site. DirectAdmin was not deleted.',
+            ];
+        } catch (\Throwable $e) {
+            return [
+                'success' => false,
+                'message' => $e->getMessage(),
+            ];
+        } finally {
+            if (is_string($localDump) && is_file($localDump)) {
+                @unlink($localDump);
+            }
         }
     }
 

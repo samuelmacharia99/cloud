@@ -2,10 +2,13 @@
 
 namespace Tests\Unit\Provisioning;
 
+use App\Models\ContainerDeployment;
 use App\Models\DatabaseTemplate;
+use App\Models\Node;
 use App\Models\Product;
 use App\Models\Service;
 use App\Models\User;
+use App\Services\Provisioning\ContainerDoctorService;
 use App\Services\Provisioning\DirectAdminToContainerMigrationService;
 use App\Services\SSH\SSHService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -29,7 +32,9 @@ class DirectAdminToContainerMigrationDatabaseTest extends TestCase
 
         $this->assertTrue($service->stackMayExportDatabase('nodejs'));
         $this->assertTrue($service->stackMayExportDatabase('laravel'));
-        $this->assertFalse($service->stackMayExportDatabase('static_or_php'));
+        $this->assertTrue($service->stackMayExportDatabase('static_or_php'));
+        $this->assertTrue($service->stackImportsDatabaseDump('static_or_php'));
+        $this->assertFalse($service->stackMayExportDatabase('unknown'));
     }
 
     #[Test]
@@ -117,6 +122,20 @@ class DirectAdminToContainerMigrationDatabaseTest extends TestCase
             'DB_PASSWORD' => null,
             'DB_HOST' => 'localhost',
         ], 'sigtunaco_db1'));
+
+        $this->assertTrue($migrator->shouldDumpDatabaseForExport('static_or_php', [
+            'DB_NAME' => 'roadtrip_db',
+            'DB_USER' => null,
+            'DB_PASSWORD' => null,
+            'DB_HOST' => 'localhost',
+        ], null));
+
+        $this->assertFalse($migrator->shouldDumpDatabaseForExport('static_or_php', [
+            'DB_NAME' => null,
+            'DB_USER' => null,
+            'DB_PASSWORD' => null,
+            'DB_HOST' => 'localhost',
+        ], null));
     }
 
     #[Test]
@@ -385,5 +404,113 @@ class DirectAdminToContainerMigrationDatabaseTest extends TestCase
         $this->assertStringContainsString("MYSQL_PWD='secret'", $exec);
         $this->assertStringContainsString('sh -c', $exec);
         $this->assertStringContainsString('mariadb', $exec);
+    }
+
+    #[Test]
+    public function inventory_from_directadmin_legacy_reads_converted_service_meta(): void
+    {
+        $migrator = app(DirectAdminToContainerMigrationService::class);
+        $service = new Service;
+        $service->provisioning_driver_key = 'container';
+        $service->service_meta = [
+            'da_legacy' => [
+                'username' => 'u483',
+                'da_node_id' => 12,
+                'domain' => 'roadtrip.example.com',
+                'stack' => 'static_or_php',
+                'docroot' => '/home/u483/domains/roadtrip.example.com/public_html',
+                'databases' => [['name' => 'roadtrip_db'], 'also_string'],
+            ],
+        ];
+
+        $inventory = $migrator->inventoryFromDirectAdminLegacy($service);
+
+        $this->assertSame('u483', $inventory['username']);
+        $this->assertSame(12, $inventory['da_node_id']);
+        $this->assertSame('static_or_php', $inventory['stack']);
+        $this->assertSame(
+            [['name' => 'roadtrip_db'], ['name' => 'also_string']],
+            $inventory['databases']
+        );
+        $this->assertTrue($migrator->canRepullDirectAdminDatabase($service));
+        $this->assertSame('u483', $migrator->directAdminUsername($service));
+    }
+
+    #[Test]
+    public function cannot_repull_directadmin_database_without_legacy_node(): void
+    {
+        $migrator = app(DirectAdminToContainerMigrationService::class);
+        $service = new Service;
+        $service->provisioning_driver_key = 'container';
+        $service->service_meta = ['da_legacy' => ['username' => 'u483']];
+
+        $this->assertNull($migrator->inventoryFromDirectAdminLegacy($service));
+        $this->assertFalse($migrator->canRepullDirectAdminDatabase($service));
+    }
+
+    #[Test]
+    public function import_dump_refuses_when_sidecar_already_has_tables(): void
+    {
+        $user = User::factory()->customer()->create();
+        $product = Product::factory()->containerHosting()->create();
+        $node = Node::factory()->create(['type' => 'container_host']);
+        $service = Service::factory()->create([
+            'user_id' => $user->id,
+            'product_id' => $product->id,
+            'node_id' => $node->id,
+            'provisioning_driver_key' => 'container',
+        ]);
+        ContainerDeployment::factory()->create([
+            'service_id' => $service->id,
+            'node_id' => $node->id,
+            'status' => 'running',
+            'docker_compose_content' => "services:\n  app:\n    image: php\n  db:\n    image: mysql:8.0\n",
+        ]);
+
+        $dump = tempnam(sys_get_temp_dir(), 'da-dump');
+        file_put_contents($dump, "-- dump\n");
+
+        try {
+            app(DirectAdminToContainerMigrationService::class)->importDatabaseDumpIntoSidecar(
+                $service->fresh(['containerDeployment.node']),
+                $dump,
+                null,
+                12
+            );
+            $this->fail('expected refuse when tables exist');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('already has 12 tables', $e->getMessage());
+            $this->assertStringContainsString('Do not Reset database', $e->getMessage());
+        } finally {
+            @unlink($dump);
+        }
+    }
+
+    #[Test]
+    public function doctor_refuses_directadmin_import_without_legacy(): void
+    {
+        $user = User::factory()->customer()->create();
+        $product = Product::factory()->containerHosting()->create();
+        $node = Node::factory()->create(['type' => 'container_host']);
+        $service = Service::factory()->create([
+            'user_id' => $user->id,
+            'product_id' => $product->id,
+            'node_id' => $node->id,
+            'provisioning_driver_key' => 'container',
+            'service_meta' => [],
+        ]);
+        ContainerDeployment::factory()->create([
+            'service_id' => $service->id,
+            'node_id' => $node->id,
+            'status' => 'running',
+        ]);
+
+        $result = app(ContainerDoctorService::class)->treat(
+            $service->fresh(['product.containerTemplate', 'containerDeployment.node']),
+            'import_da_database'
+        );
+
+        $this->assertFalse($result['success']);
+        $this->assertStringContainsString('da_legacy', $result['message']);
     }
 }

@@ -891,4 +891,15 @@ class DirectAdminToContainerConvertServiceTest extends TestCase
         $this->assertStringContainsString('mktemp -d', $cmd);
         $this->assertStringContainsString($filesTar, $cmd);
     }
+
+    public function test_static_or_php_convert_includes_database_when_credentials_resolve(): void
+    {
+        $convert = app(DirectAdminToContainerConvertService::class);
+
+        $this->assertSame(
+            ' and database (when credentials resolve)',
+            $convert->exportIncludesDatabaseMessage('static_or_php')
+        );
+        $this->assertSame('', $convert->exportIncludesDatabaseMessage('unknown'));
+    }
 }
