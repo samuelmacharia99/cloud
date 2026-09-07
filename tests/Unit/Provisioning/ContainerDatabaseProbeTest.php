@@ -181,4 +181,34 @@ class ContainerDatabaseProbeTest extends TestCase
         $this->assertStringContainsString('@user-231-service-351-nodejs-db:5432/s351_db', $overrides['DATABASE_URL']);
         $this->assertStringNotContainsString('mysql://', $overrides['DATABASE_URL']);
     }
+
+    #[Test]
+    public function wordpress_probe_uses_mysqli_and_the_mysql_sidecar_host(): void
+    {
+        $service = app(ContainerDeploymentService::class);
+        $env = [
+            'DB_HOST' => 'db',
+            'WORDPRESS_DB_HOST' => 'mysql:3306',
+            'WORDPRESS_DB_NAME' => 'wordpress',
+            'WORDPRESS_DB_USER' => 'wordpress',
+            'WORDPRESS_DB_PASSWORD' => 'secret',
+        ];
+
+        $this->assertSame('mysql', $service->applicationDatabaseHost($env));
+        $this->assertSame(
+            'user-488-service-373-wordpress-mysql',
+            $service->sidecarDnsHost('user-488-service-373-wordpress')
+        );
+        $this->assertSame(
+            'user-488-service-373-wordpress-mysql',
+            $service->applicationDatabaseHost(['WORDPRESS_DB_HOST' => 'localhost'], 'user-488-service-373-wordpress')
+        );
+        $this->assertSame('mysql', $service->defaultMysqlSidecarHost($env));
+        $this->assertSame('db', $service->defaultMysqlSidecarHost(['DB_DATABASE' => 'appdb']));
+
+        $script = $service->phpWordpressMysqliEvalScript('mysql', 3306, 'wordpress', 'wordpress', 'secret');
+        $this->assertStringContainsString('mysqli', $script);
+        $this->assertStringNotContainsString('new PDO', $script);
+        $this->assertStringNotContainsString('secret', $script);
+    }
 }

@@ -85,6 +85,22 @@ class ContainerDoctorService
             return ['success' => false, 'message' => 'Application must be running before applying a fix.'];
         }
 
+        if ($this->isWordPressStack($service) && in_array($action, [
+            'tune_request_concurrency',
+            'use_file_cache',
+            'clear_laravel_caches',
+            'run_migrations',
+            'migrate_fresh',
+            'ensure_storage_link',
+            'fix_storage_permissions',
+            'fix_laravel_app_url',
+        ], true)) {
+            return [
+                'success' => false,
+                'message' => 'That repair is for Laravel (.env / artisan). This site is WordPress — use a WordPress treatment or Restart application. Session/cache locking does not apply.',
+            ];
+        }
+
         $result = match ($action) {
             'sync_database_credentials' => $this->treatSyncDatabaseCredentials($service),
             'ensure_pdo_pgsql' => $this->treatEnsurePdoPgsql($service),
@@ -224,7 +240,10 @@ class ContainerDoctorService
             return ($order[$a['severity']] ?? 9) <=> ($order[$b['severity']] ?? 9);
         });
 
-        return $findings;
+        return array_map(
+            fn (array $finding): array => $this->normalizeFindingForStack($finding, $stack),
+            $findings
+        );
     }
 
     /**
@@ -1034,7 +1053,8 @@ class ContainerDoctorService
                     'SESSION_DRIVER' => (string) ($checks['session_driver'] ?? ''),
                     'CACHE_STORE' => (string) ($checks['cache_store'] ?? ''),
                 ],
-                $checks['session_driver_runtime'] ?? null
+                $checks['session_driver_runtime'] ?? null,
+                $stack
             );
             $accessSummary = $this->summarizeAccessLogs($logs);
             $checks['http_2xx_count'] = $accessSummary['status_2xx'];
@@ -1043,6 +1063,7 @@ class ContainerDoctorService
                 'live_http_5xx',
                 'live_db_connection_failed',
                 'live_env_credential_drift',
+                'live_missing_pdo',
             ])) {
                 $findings[] = $accessFinding;
             }
@@ -1069,6 +1090,11 @@ class ContainerDoctorService
 
             return ($order[$a['severity']] ?? 9) <=> ($order[$b['severity']] ?? 9);
         });
+
+        $findings = array_map(
+            fn (array $finding): array => $this->normalizeFindingForStack($finding, $stack),
+            $findings
+        );
 
         return ['findings' => $findings, 'checks' => $checks];
     }
@@ -1264,13 +1290,14 @@ class ContainerDoctorService
      * @param  array<string, string>  $env
      * @return array<string, mixed>|null
      */
-    public function intermittentAccessLogFinding(string $logs, array $env = [], ?string $runtimeSession = null): ?array
+    public function intermittentAccessLogFinding(string $logs, array $env = [], ?string $runtimeSession = null, ?string $stack = null): ?array
     {
         $summary = $this->summarizeAccessLogs($logs);
         if ($summary['mixed_paths'] === []) {
             return null;
         }
 
+        $stack = strtolower(trim((string) $stack));
         $runtimeSession = strtolower(trim((string) $runtimeSession));
         if (in_array($runtimeSession, ['cookie', 'array'], true)) {
             return null;
@@ -1307,12 +1334,21 @@ class ContainerDoctorService
             ? 'Relax session/cache locking'
             : 'Restart application';
 
+        if ($stack === 'wordpress') {
+            $treatAction = 'restart_application';
+            $treatLabel = 'Restart application';
+        }
+
         $summaryText = $pollish
             ? 'The same routes return both HTTP 200 and HTTP 500 (often /get-total-unread while other tabs are open). '
                 .'File or database sessions lock the worker, so Ultimate POS polling 500s while a DataTables query runs.'
             : 'Access logs show the same path succeeding and 500ing. That is worker exhaustion, a stale config cache, or session/cache locking — not a down database.';
 
-        if ($relaxed) {
+        if ($stack === 'wordpress') {
+            $summaryText = 'Access logs show the same path succeeding and 500ing. On WordPress that is usually a plugin fatal, a down MySQL sidecar, or wp-config credentials — not Laravel session/cache locking.';
+        }
+
+        if ($relaxed && $stack !== 'wordpress') {
             $summaryText = $fpmStillDatabase
                 ? '`.env` already has SESSION_DRIVER=cookie and file cache, but PHP-FPM / config cache still use database sessions. '
                     .'Dotenv does not override compose `environment`, so Restart must write cookie/file into compose, delete bootstrap/cache/config.php, and recreate the app (MySQL stays up).'
@@ -1327,10 +1363,17 @@ class ContainerDoctorService
         }
 
         $manualSteps = $treatAction === 'restart_application'
-            ? [
-                'Click Restart application — writes SESSION_DRIVER=file into compose, deletes config cache, recreates the app, and leaves MySQL running.',
-                'Re-scan. Live checks should show runtime session.driver=file. Older /login 500s in the 6h log window are leftover from the DB outage.',
-            ]
+            ? (
+                $stack === 'wordpress'
+                    ? [
+                        'Click Restart application — recreates the WordPress container and leaves MySQL running.',
+                        'If HTTP 500 continues, confirm WORDPRESS_DB_HOST is the mysql sidecar (not db) and re-scan.',
+                    ]
+                    : [
+                        'Click Restart application — writes SESSION_DRIVER=file into compose, deletes config cache, recreates the app, and leaves MySQL running.',
+                        'Re-scan. Live checks should show runtime session.driver=file. Older /login 500s in the 6h log window are leftover from the DB outage.',
+                    ]
+            )
             : [
                 'Click Relax session/cache locking — writes cookie sessions + file cache into compose and recreates the app (MySQL stays up).',
                 'If PHP-FPM still logs pm.max_children, upgrade the plan for more workers.',
@@ -1731,6 +1774,7 @@ PHP;
         foreach ([
             'DB_CONNECTION', 'DB_HOST', 'DB_PORT', 'DB_DATABASE', 'DB_USERNAME', 'DB_PASSWORD',
             'MYSQL_DATABASE', 'MYSQL_USER', 'MYSQL_PASSWORD', 'MYSQL_ROOT_PASSWORD',
+            'WORDPRESS_DB_HOST', 'WORDPRESS_DB_NAME', 'WORDPRESS_DB_USER', 'WORDPRESS_DB_PASSWORD',
             'POSTGRES_DB', 'POSTGRES_USER', 'POSTGRES_PASSWORD', 'DATABASE_URL', 'TALKSASA_DB_DNS',
         ] as $key) {
             if (isset($panelEnv[$key]) && (string) $panelEnv[$key] !== '') {
@@ -4597,6 +4641,54 @@ PHP;
             .'CACHE_STORE=file CACHE_DRIVER=file php artisan route:clear --no-interaction || true; '
             .'CACHE_STORE=file CACHE_DRIVER=file php artisan cache:clear --no-interaction || true; '
             .'echo ok';
+    }
+
+    private function isWordPressStack(Service $service): bool
+    {
+        $service->loadMissing('product.containerTemplate');
+
+        $slug = strtolower((string) (
+            $service->effectiveContainerTemplate()?->slug
+            ?? $service->product?->containerTemplate?->slug
+            ?? ''
+        ));
+
+        return $slug === 'wordpress'
+            || str_ends_with((string) $service->containerDeployment?->container_name, '-wordpress');
+    }
+
+    /**
+     * @param  array<string, mixed>  $finding
+     * @return array<string, mixed>
+     */
+    public function normalizeFindingForStack(array $finding, string $stack): array
+    {
+        if (strtolower($stack) !== 'wordpress') {
+            return $finding;
+        }
+
+        $laravelOnly = [
+            'tune_request_concurrency',
+            'use_file_cache',
+            'clear_laravel_caches',
+            'run_migrations',
+            'migrate_fresh',
+            'ensure_storage_link',
+            'fix_storage_permissions',
+            'fix_laravel_app_url',
+        ];
+        if (! in_array((string) ($finding['treat_action'] ?? ''), $laravelOnly, true)) {
+            return $finding;
+        }
+
+        $finding['treat_action'] = 'restart_application';
+        $finding['treat_label'] = 'Restart application';
+        $finding['manual_steps'] = [
+            'This is WordPress, not Laravel. Session/cache .env and artisan do not apply.',
+            'Click Restart application. If HTTP 500 continues, check the MySQL sidecar and WORDPRESS_DB_HOST (should be mysql, not db).',
+        ];
+
+        return $finding;
     }
 
     private function resolveArtisanProjectRoot(SSHService $ssh, $deployment): string

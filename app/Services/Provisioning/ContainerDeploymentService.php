@@ -3173,13 +3173,18 @@ class ContainerDeploymentService
     ): array {
         $creds = $this->applicationDatabaseCredentials($envVars, 'mysql');
         $host = $this->applicationDatabaseHost($envVars);
+        if ($host === '' || $host === 'localhost' || $host === '127.0.0.1') {
+            $host = $this->defaultMysqlSidecarHost($envVars);
+        }
 
-        $script = $this->phpPdoEvalScript(
-            'mysql:host='.$host.';port=3306;dbname='.$creds['database'],
-            $creds['username'],
-            $creds['password'],
-            '$pdo->query("SELECT 1"); fwrite(STDOUT, "ok"); exit(0);'
-        );
+        $script = $templateSlug === 'wordpress'
+            ? $this->phpWordpressMysqliEvalScript($host, 3306, $creds['database'], $creds['username'], $creds['password'])
+            : $this->phpPdoEvalScript(
+                'mysql:host='.$host.';port=3306;dbname='.$creds['database'],
+                $creds['username'],
+                $creds['password'],
+                '$pdo->query("SELECT 1"); fwrite(STDOUT, "ok"); exit(0);'
+            );
 
         return $this->runDatabaseProbeScript(
             $ssh,
@@ -3392,9 +3397,9 @@ class ContainerDeploymentService
         }
 
         return [
-            'database' => (string) ($envVars['DB_DATABASE'] ?? $envVars['MYSQL_DATABASE'] ?? 'appdb'),
-            'username' => (string) ($envVars['DB_USERNAME'] ?? $envVars['MYSQL_USER'] ?? 'appuser'),
-            'password' => (string) ($envVars['DB_PASSWORD'] ?? $envVars['MYSQL_PASSWORD'] ?? ''),
+            'database' => (string) ($envVars['DB_DATABASE'] ?? $envVars['MYSQL_DATABASE'] ?? $envVars['WORDPRESS_DB_NAME'] ?? 'appdb'),
+            'username' => (string) ($envVars['DB_USERNAME'] ?? $envVars['MYSQL_USER'] ?? $envVars['WORDPRESS_DB_USER'] ?? 'appuser'),
+            'password' => (string) ($envVars['DB_PASSWORD'] ?? $envVars['MYSQL_PASSWORD'] ?? $envVars['WORDPRESS_DB_PASSWORD'] ?? ''),
         ];
     }
 
@@ -3406,7 +3411,7 @@ class ContainerDeploymentService
     {
         $host = $this->applicationDatabaseHost($envVars);
         if ($host === '' || $host === 'localhost' || $host === '127.0.0.1') {
-            $host = 'db';
+            $host = $this->defaultMysqlSidecarHost($envVars);
         }
         $defaultPort = $databaseType === 'postgresql' ? 5432 : 3306;
         $port = (int) (($envVars['DB_PORT'] ?? '') !== '' ? $envVars['DB_PORT'] : $defaultPort);
@@ -4044,8 +4049,13 @@ class ContainerDeploymentService
     public function sidecarDnsHost(string $appContainerName): string
     {
         $appContainerName = trim($appContainerName);
+        if ($appContainerName === '') {
+            return 'db';
+        }
 
-        return $appContainerName === '' ? 'db' : $appContainerName.'-db';
+        return preg_match('/-wordpress(?:-|$)/', $appContainerName) === 1
+            ? $appContainerName.'-mysql'
+            : $appContainerName.'-db';
     }
 
     public function isAmbiguousSharedNetworkDatabaseHost(?string $host): bool
@@ -4130,7 +4140,13 @@ class ContainerDeploymentService
      */
     public function applicationDatabaseHost(array $envVars, ?string $appContainerName = null): string
     {
-        $host = trim((string) ($envVars['DB_HOST'] ?? $envVars['MYSQL_HOST'] ?? ''));
+        $wordpressHost = trim((string) ($envVars['WORDPRESS_DB_HOST'] ?? ''));
+        $host = $wordpressHost !== ''
+            ? $wordpressHost
+            : trim((string) ($envVars['DB_HOST'] ?? $envVars['MYSQL_HOST'] ?? ''));
+        if (preg_match('/^(.+):(\d+)$/', $host, $matched) === 1) {
+            $host = $matched[1];
+        }
 
         if ($appContainerName && $this->isAmbiguousSharedNetworkDatabaseHost($host)) {
             return $this->sidecarDnsHost($appContainerName);
@@ -4144,10 +4160,53 @@ class ContainerDeploymentService
         }
 
         if ($this->hostLooksLikeMysqlUnixSocket($host)) {
-            return 'db';
+            return $this->defaultMysqlSidecarHost($envVars);
         }
 
-        return $host !== '' ? $host : 'db';
+        return $host !== '' ? $host : $this->defaultMysqlSidecarHost($envVars);
+    }
+
+    /**
+     * WordPress compose names the sidecar `mysql`; Laravel injects `db`.
+     *
+     * @param  array<string, mixed>  $envVars
+     */
+    public function defaultMysqlSidecarHost(array $envVars): string
+    {
+        if (trim((string) ($envVars['WORDPRESS_DB_NAME'] ?? '')) !== ''
+            || trim((string) ($envVars['WORDPRESS_DB_USER'] ?? '')) !== ''
+            || trim((string) ($envVars['WORDPRESS_DB_HOST'] ?? '')) !== '') {
+            return 'mysql';
+        }
+
+        return 'db';
+    }
+
+    /**
+     * Official wordpress images speak mysqli. PDO `could not find driver` is a false critical.
+     */
+    public function phpWordpressMysqliEvalScript(
+        string $host,
+        int $port,
+        string $database,
+        string $username,
+        string $password
+    ): string {
+        $payload = base64_encode(json_encode([
+            'host' => $host,
+            'port' => $port,
+            'db' => $database,
+            'user' => $username,
+            'pass' => $password,
+        ], JSON_THROW_ON_ERROR));
+
+        return '$c=json_decode(base64_decode('.json_encode($payload).'), true);'
+            .'if (!function_exists("mysqli_connect")) { fwrite(STDERR, "could not find driver"); exit(2); }'
+            .'$m=@mysqli_init();'
+            .'if (!$m || !@$m->real_connect($c["host"], $c["user"], $c["pass"], $c["db"], (int) $c["port"])) {'
+            .' fwrite(STDERR, ($m && $m->connect_error) ? $m->connect_error : "mysqli connect failed"); exit(1);'
+            .'}'
+            .'fwrite(STDOUT, "ok"); exit(0);';
     }
 
     /**
@@ -4221,6 +4280,14 @@ class ContainerDeploymentService
         $username = (string) ($env['DB_USERNAME'] ?? $env['MYSQL_USER'] ?? $env['POSTGRES_USER'] ?? '');
         $password = (string) ($env['DB_PASSWORD'] ?? $env['MYSQL_PASSWORD'] ?? $env['POSTGRES_PASSWORD'] ?? '');
         $database = (string) ($env['DB_DATABASE'] ?? $env['MYSQL_DATABASE'] ?? $env['POSTGRES_DB'] ?? '');
+        if (trim((string) ($env['WORDPRESS_DB_NAME'] ?? '')) !== ''
+            || trim((string) ($env['WORDPRESS_DB_USER'] ?? '')) !== ''
+            || trim((string) ($env['WORDPRESS_DB_HOST'] ?? '')) !== '') {
+            $env['WORDPRESS_DB_HOST'] = $host;
+            $username = (string) ($env['WORDPRESS_DB_USER'] ?? $username);
+            $password = (string) ($env['WORDPRESS_DB_PASSWORD'] ?? $password);
+            $database = (string) ($env['WORDPRESS_DB_NAME'] ?? $database);
+        }
 
         if (in_array($databaseType, ['mysql', 'mariadb'], true)) {
             $port = (string) (($env['DB_PORT'] ?? '') !== '' ? $env['DB_PORT'] : '3306');

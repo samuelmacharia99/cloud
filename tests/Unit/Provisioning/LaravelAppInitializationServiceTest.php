@@ -99,4 +99,17 @@ ENV;
         $missingKey = $service->ensureAppKeyInEnvContent("APP_NAME=Demo\n");
         $this->assertMatchesRegularExpression('/^APP_KEY=base64:[A-Za-z0-9+\/=]+$/m', $missingKey);
     }
+
+    #[Test]
+    public function docker_exec_workdir_is_html_for_wordpress_and_app_for_laravel(): void
+    {
+        $this->assertSame(
+            '/var/www/html',
+            LaravelAppInitializationService::dockerExecWorkDir('user-488-service-373-wordpress')
+        );
+        $this->assertSame(
+            '/app',
+            LaravelAppInitializationService::dockerExecWorkDir('user-485-service-370-laravel')
+        );
+    }
 }

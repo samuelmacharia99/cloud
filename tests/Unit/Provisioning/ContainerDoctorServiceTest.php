@@ -560,6 +560,25 @@ LOG;
             'SESSION_DRIVER' => 'cookie',
             'CACHE_STORE' => 'file',
         ], 'cookie'));
+
+        $wordpress = app(ContainerDoctorService::class)->intermittentAccessLogFinding($logs, [], null, 'wordpress');
+        $this->assertNotNull($wordpress);
+        $this->assertSame('restart_application', $wordpress['treat_action']);
+        $this->assertStringContainsString('WordPress', $wordpress['summary']);
+        $this->assertSame('restart_application', app(ContainerDoctorService::class)->normalizeFindingForStack([
+            'treat_action' => 'tune_request_concurrency',
+            'treat_label' => 'Relax session/cache locking',
+            'manual_steps' => ['artisan'],
+        ], 'wordpress')['treat_action']);
+
+        $fromWordpressLogs = app(ContainerDoctorService::class)->analyzeLogs(
+            "PHP Fatal error:  Maximum execution time of 30 seconds exceeded\n",
+            'wordpress'
+        );
+        $timeout = collect($fromWordpressLogs)->firstWhere('id', 'php_max_execution_time');
+        $this->assertNotNull($timeout);
+        $this->assertSame('restart_application', $timeout['treat_action']);
+        $this->assertStringContainsString('WordPress', $timeout['manual_steps'][0]);
     }
 
     #[Test]
@@ -881,6 +900,22 @@ LOG;
         $this->assertSame('grant-password', $overlay['DB_PASSWORD']);
         $this->assertStringContainsString('grant-password', $overlay['DATABASE_URL']);
         $this->assertStringNotContainsString('stale-url-password', $overlay['DATABASE_URL']);
+
+        $wordpress = app(ContainerDoctorService::class)->overlayPanelDatabaseCredentials(
+            [
+                'WORDPRESS_DB_HOST' => 'mysql',
+                'WORDPRESS_DB_NAME' => 'wordpress',
+                'WORDPRESS_DB_USER' => 'wordpress',
+                'WORDPRESS_DB_PASSWORD' => 'wp-secret',
+            ],
+            [
+                'DB_HOST' => 'db',
+                'WORDPRESS_DB_HOST' => 'db',
+                'WORDPRESS_DB_PASSWORD' => 'stale',
+            ]
+        );
+        $this->assertSame('mysql', $wordpress['WORDPRESS_DB_HOST']);
+        $this->assertSame('wp-secret', $wordpress['WORDPRESS_DB_PASSWORD']);
     }
 
     #[Test]

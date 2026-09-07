@@ -649,9 +649,17 @@ class LaravelAppInitializationService
         string $containerName,
         string $script,
         int $timeout,
-        bool $asRoot = false
+        bool $asRoot = false,
+        ?string $workDir = null
     ): string {
-        return $this->dockerExec($ssh, $containerName, $script, $timeout, $asRoot);
+        return $this->dockerExec($ssh, $containerName, $script, $timeout, $asRoot, $workDir);
+    }
+
+    public static function dockerExecWorkDir(string $containerName): string
+    {
+        return preg_match('/-wordpress(?:-|$)/', $containerName) === 1
+            ? '/var/www/html'
+            : '/app';
     }
 
     private function runMigrationsWithRetry(SSHService $ssh, ContainerDeployment $deployment, int $timeout, Service $service): void
@@ -1229,15 +1237,17 @@ class LaravelAppInitializationService
         string $containerName,
         string $script,
         int $timeout,
-        bool $asRoot = false
+        bool $asRoot = false,
+        ?string $workDir = null
     ): string {
         app(ContainerDeploymentService::class)->waitForContainerRunning($ssh, $containerName);
 
         $userFlag = $asRoot ? '-u 0' : '-u www-data';
+        $workDir = $workDir ?: self::dockerExecWorkDir($containerName);
         $script = $this->wrapContainerScript($script);
 
         return $ssh->exec(
-            'docker exec '.$userFlag.' -w /app '.escapeshellarg($containerName).' sh -lc '.escapeshellarg($script),
+            'docker exec '.$userFlag.' -w '.escapeshellarg($workDir).' '.escapeshellarg($containerName).' sh -lc '.escapeshellarg($script),
             $timeout
         );
     }
