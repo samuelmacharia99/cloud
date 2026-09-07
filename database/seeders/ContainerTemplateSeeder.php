@@ -333,50 +333,7 @@ class ContainerTemplateSeeder extends Seeder
         );
 
         // 6. PHP Application
-        ContainerTemplate::firstOrCreate(
-            ['slug' => 'php'],
-            [
-                'name' => 'PHP Application',
-                'description' => 'Generic PHP runtime for modern apps and APIs.',
-                'category' => 'web',
-                'docker_image' => 'talksasa/php-runtime:8.3',
-                'default_port' => 8080,
-                'required_ram_mb' => 256,
-                'required_cpu_cores' => 0.5,
-                'required_storage_gb' => 2,
-                'versions' => [
-                    '8.1-cli',
-                    '8.2-cli',
-                    '8.3-cli',
-                    '8.4-cli',
-                ],
-                'environment_variables' => [
-                    [
-                        'key' => 'APP_ENV',
-                        'label' => 'Application Environment',
-                        'default' => 'production',
-                        'required' => false,
-                        'secret' => false,
-                    ],
-                    [
-                        'key' => 'APP_PORT',
-                        'label' => 'Application Port',
-                        'default' => '8080',
-                        'required' => false,
-                        'secret' => false,
-                    ],
-                ],
-                'volume_paths' => [
-                    'app_data' => '/app',
-                ],
-                'compose_services' => [],
-                'setup_commands' => [],
-                'strict_health_check' => true,
-                'health_check_timeout_seconds' => 120,
-                'is_active' => true,
-                'order' => 6,
-            ]
-        );
+        ContainerTemplate::ensurePhpRuntime();
 
         // 7. Laravel Application
         ContainerTemplate::firstOrCreate(

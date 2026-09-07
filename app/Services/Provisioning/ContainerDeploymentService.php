@@ -6040,21 +6040,12 @@ class ContainerDeploymentService
         ContainerDeployment $deployment,
         SSHService $ssh
     ): string {
-        $phpTemplate = ContainerTemplate::query()
-            ->where('slug', 'php')
-            ->orderByRaw('is_active DESC')
-            ->first();
-        if (! $phpTemplate) {
-            throw new \RuntimeException(
-                'The PHP container template is not configured. Add it under Admin → Container templates.'
-            );
-        }
-
+        $phpTemplate = ContainerTemplate::ensurePhpRuntime();
         $this->persistProvisionTemplateSlug($service, 'php');
         $service->refresh();
         $template = $this->resolveContainerTemplate($service);
         if (($template->slug ?? '') !== 'php') {
-            throw new \RuntimeException('Could not switch this service onto the PHP template.');
+            $template = $phpTemplate;
         }
 
         $hostAppPath = $this->resolveHostAppPath($template, $deployment->container_name)

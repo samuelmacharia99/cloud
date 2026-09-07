@@ -71,6 +71,93 @@ class ContainerTemplate extends Model
         return $this->is_active && $this->slug !== 'ollama';
     }
 
+    /**
+     * Catalog row the PHP runtime image and Doctor “Switch to PHP” treatment need.
+     * Production hosts that were seeded before this stack existed have no `php` row.
+     *
+     * @return array<string, mixed>
+     */
+    public static function phpRuntimeAttributes(): array
+    {
+        return [
+            'name' => 'PHP Application',
+            'description' => 'Generic PHP runtime for modern apps and APIs.',
+            'category' => 'web',
+            'docker_image' => 'talksasa/php-runtime:8.3',
+            'default_port' => 8080,
+            'required_ram_mb' => 256,
+            'required_cpu_cores' => 0.5,
+            'required_storage_gb' => 2,
+            'versions' => [
+                '8.1-cli',
+                '8.2-cli',
+                '8.3-cli',
+                '8.4-cli',
+            ],
+            'environment_variables' => [
+                [
+                    'key' => 'APP_ENV',
+                    'label' => 'Application Environment',
+                    'default' => 'production',
+                    'required' => false,
+                    'secret' => false,
+                ],
+                [
+                    'key' => 'APP_PORT',
+                    'label' => 'Application Port',
+                    'default' => '8080',
+                    'required' => false,
+                    'secret' => false,
+                ],
+            ],
+            'volume_paths' => [
+                'app_data' => '/app',
+            ],
+            'compose_services' => [],
+            'setup_commands' => [],
+            'strict_health_check' => true,
+            'health_check_timeout_seconds' => 120,
+            'is_active' => true,
+            'order' => 6,
+        ];
+    }
+
+    public static function ensurePhpRuntime(): self
+    {
+        $defaults = self::phpRuntimeAttributes();
+        $template = static::query()
+            ->where('slug', 'php')
+            ->orderByRaw('is_active DESC')
+            ->first();
+
+        if (! $template) {
+            return static::query()->create(array_merge(['slug' => 'php'], $defaults));
+        }
+
+        $dirty = false;
+        if (! $template->is_active) {
+            $template->is_active = true;
+            $dirty = true;
+        }
+
+        $paths = is_array($template->volume_paths) ? $template->volume_paths : [];
+        if (! array_key_exists('app_data', $paths)) {
+            $template->volume_paths = array_merge($paths, $defaults['volume_paths']);
+            $dirty = true;
+        }
+
+        if ((int) $template->default_port <= 0) {
+            $template->default_port = $defaults['default_port'];
+            $dirty = true;
+        }
+
+        if ($dirty) {
+            $template->save();
+        }
+
+        return $template;
+    }
+
     // Accessors & Helpers
     public function getRequiredEnvVars(): array
     {
