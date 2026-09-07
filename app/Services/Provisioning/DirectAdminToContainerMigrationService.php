@@ -2606,10 +2606,19 @@ class DirectAdminToContainerMigrationService
     /**
      * Official MariaDB images often ship `mariadb` without a `mysql` client symlink.
      */
-    public function composeMysqlClientShell(string $user, ?string $database = null, ?string $sql = null): string
-    {
+    public function composeMysqlClientShell(
+        string $user,
+        ?string $database = null,
+        ?string $sql = null,
+        bool $binaryMode = false,
+    ): string {
         $safeUser = preg_replace('/[^a-zA-Z0-9_]/', '', $user) ?: 'root';
         $args = '-u'.$safeUser;
+        if ($binaryMode) {
+            // DirectAdmin / mysqldump files often contain `\` in PHP serialized data.
+            // Without --binary-mode the client treats those as commands (Unknown command '\\').
+            $args .= ' --binary-mode --default-character-set=utf8mb4';
+        }
         if ($database !== null && $database !== '') {
             $args .= ' '.escapeshellarg($database);
         }
@@ -2679,7 +2688,7 @@ class DirectAdminToContainerMigrationService
         }
 
         return $prefix.' '.escapeshellarg($dbService)
-            .' sh -c '.escapeshellarg($this->composeMysqlClientShell($user, $database));
+            .' sh -c '.escapeshellarg($this->composeMysqlClientShell($user, $database, null, true));
     }
 
     private function importMysqlDumpViaCompose(

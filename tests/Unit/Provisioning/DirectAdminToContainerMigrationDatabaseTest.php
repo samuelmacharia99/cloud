@@ -392,6 +392,7 @@ class DirectAdminToContainerMigrationDatabaseTest extends TestCase
         $this->assertStringContainsString('command -v mariadb', $shell);
         $this->assertStringContainsString("mysql -uwordpress 'wordpress' -e 'SELECT 1'", $shell);
         $this->assertStringContainsString("mariadb -uwordpress 'wordpress' -e 'SELECT 1'", $shell);
+        $this->assertStringNotContainsString('--binary-mode', $shell);
 
         $exec = $migrator->composeMysqlExecCommand(
             '/opt/talksasa/containers/site-1',
@@ -404,6 +405,16 @@ class DirectAdminToContainerMigrationDatabaseTest extends TestCase
         $this->assertStringContainsString("MYSQL_PWD='secret'", $exec);
         $this->assertStringContainsString('sh -c', $exec);
         $this->assertStringContainsString('mariadb', $exec);
+    }
+
+    #[Test]
+    public function dump_import_uses_binary_mode_so_backslashes_are_not_client_commands(): void
+    {
+        $shell = app(DirectAdminToContainerMigrationService::class)
+            ->composeMysqlClientShell('root', 's426_db', null, true);
+
+        $this->assertStringContainsString('mysql -uroot --binary-mode --default-character-set=utf8mb4', $shell);
+        $this->assertStringContainsString('mariadb -uroot --binary-mode --default-character-set=utf8mb4', $shell);
     }
 
     #[Test]

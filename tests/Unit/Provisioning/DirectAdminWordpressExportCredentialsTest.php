@@ -319,6 +319,8 @@ PHP;
         $this->assertStringContainsString('sh -c', $cmd);
         $this->assertStringContainsString('mysql -uwordpress', $cmd);
         $this->assertStringContainsString('mariadb -uwordpress', $cmd);
+        $this->assertStringContainsString('--binary-mode', $cmd);
+        $this->assertStringContainsString('--default-character-set=utf8mb4', $cmd);
         $this->assertStringNotContainsString('/tmp/import.sql', $cmd);
     }
 
