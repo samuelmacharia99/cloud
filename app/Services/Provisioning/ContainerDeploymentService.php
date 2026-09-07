@@ -511,6 +511,41 @@ class ContainerDeploymentService
                     }
                 }
 
+                if ($options->replaceApplication && ($template->slug ?? '') === 'php') {
+                    try {
+                        $hostAppPath = $containerPath.'/app';
+                        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+                        $repoUrl = strtolower((string) ($meta['source_repo_url'] ?? ''));
+                        $hostLooksLikeOspos = trim($ssh->exec(
+                            'test -f '.escapeshellarg($hostAppPath.'/app/Config/OSPOS.php').' && echo yes || echo no',
+                            10
+                        )) === 'yes';
+                        if (! $hostLooksLikeOspos && ! str_contains($repoUrl, 'opensourcepos/opensourcepos')) {
+                            throw new \RuntimeException(
+                                'Replace application files on PHP only installs Open Source POS when app/Config/OSPOS.php exists or the Git repo is opensourcepos/opensourcepos.'
+                            );
+                        }
+
+                        $osposResult = app(PhpOsposAppInstaller::class)->installKeepingDatabase(
+                            $service->fresh(['product.containerTemplate', 'user', 'containerDeployment.node']),
+                            $deployment->fresh(['node']),
+                            $ssh,
+                        );
+                        $this->recordDeploymentEvent($service, $deployment, 'ospos_application_installed', [
+                            'message' => $osposResult['message'],
+                            'database_reset' => $options->resetDatabase,
+                        ]);
+                    } catch (\Throwable $installError) {
+                        \Log::warning('Open Source POS install after redeploy failed', [
+                            'service_id' => $service->id,
+                            'error' => $installError->getMessage(),
+                        ]);
+                        $this->recordDeploymentEvent($service, $deployment, 'ospos_application_install_failed', [
+                            'error' => $installError->getMessage(),
+                        ]);
+                    }
+                }
+
                 if ($options->shouldPrepareLaravelApplication((string) ($template->slug ?? ''))) {
                     try {
                         $laravelDatabaseSyncMessage = app(LaravelDatabaseSyncService::class)

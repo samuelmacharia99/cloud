@@ -27,7 +27,8 @@ class PhpRuntime500Probe
      *     ci_pdo_error: ?string,
      *     ci_mysqli: bool,
      *     ci_db_driver: ?string,
-     *     ci_http_body: ?string
+     *     ci_http_body: ?string,
+     *     ci_ospos: bool
      * }
      */
     public function capture(SSHService $ssh, ContainerDeployment $deployment): array
@@ -53,6 +54,7 @@ class PhpRuntime500Probe
             'ci_mysqli' => false,
             'ci_db_driver' => null,
             'ci_http_body' => null,
+            'ci_ospos' => false,
         ];
 
         try {
@@ -128,6 +130,7 @@ class PhpRuntime500Probe
             'ci_http_body' => isset($decoded['ci_http_body']) && is_string($decoded['ci_http_body']) && $decoded['ci_http_body'] !== ''
                 ? mb_substr($decoded['ci_http_body'], 0, 200)
                 : null,
+            'ci_ospos' => (bool) ($decoded['ci_ospos'] ?? false),
         ];
 
         if ($result['fatal'] === null && is_string($result['ci_pdo_error'])) {
@@ -306,6 +309,9 @@ class PhpRuntime500Probe
         if (($probe['ci_autoload'] ?? true) !== true && $paths !== []) {
             $parts[] = 'vendor/autoload.php is missing.';
         }
+        if (($probe['ci_ospos'] ?? false) === true) {
+            $parts[] = 'This tree is Open Source POS (app/Config/OSPOS.php).';
+        }
         if (($probe['index_files'] ?? []) === []) {
             $parts[] = 'No index.php was found under /app or /app/public.';
         }
@@ -472,6 +478,7 @@ echo 'TALKSASA_PHP500='.json_encode([
     'ci_mysqli' => extension_loaded('mysqli'),
     'ci_db_driver' => $driver,
     'ci_http_body' => $httpBody,
+    'ci_ospos' => is_file('/app/app/Config/OSPOS.php'),
 ]);
 PHP;
     }

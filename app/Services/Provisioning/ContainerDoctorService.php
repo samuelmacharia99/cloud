@@ -86,6 +86,7 @@ class ContainerDoctorService
                 'import_da_codeigniter_app',
                 'link_codeigniter_system',
                 'heal_codeigniter_runtime',
+                'install_ospos_application',
             ], true)) {
             return ['success' => false, 'message' => 'Application must be running before applying a fix.'];
         }
@@ -133,13 +134,14 @@ class ContainerDoctorService
             'import_da_codeigniter_app' => $this->treatImportDaCodeIgniterApp($service),
             'link_codeigniter_system' => $this->treatLinkCodeIgniterSystem($service),
             'heal_codeigniter_runtime' => $this->treatHealCodeIgniterRuntime($service),
+            'install_ospos_application' => $this->treatInstallOsposApplication($service),
             'use_file_cache' => $this->treatUseFileCache($service),
             'tune_request_concurrency' => $this->treatTuneRequestConcurrency($service),
             'fix_compose_interpolation' => $this->treatFixComposeInterpolation($service),
             default => ['success' => false, 'message' => 'Unknown treatment action.'],
         };
 
-        if ($result['success'] || in_array($action, ['restart_application', 'link_codeigniter_system', 'heal_codeigniter_runtime'], true)) {
+        if ($result['success'] || in_array($action, ['restart_application', 'link_codeigniter_system', 'heal_codeigniter_runtime', 'install_ospos_application'], true)) {
             try {
                 $result['diagnosis'] = $this->diagnose($service->fresh([
                     'product.containerTemplate',
@@ -1178,6 +1180,7 @@ class ContainerDoctorService
                         $checks['php_ci_autoload'] = $phpProbe['ci_autoload'] ?? null;
                         $checks['php_ci_mysqli'] = $phpProbe['ci_mysqli'] ?? null;
                         $checks['php_ci_db_driver'] = $phpProbe['ci_db_driver'] ?? null;
+                        $checks['php_ci_ospos'] = $phpProbe['ci_ospos'] ?? null;
                         $checks['da_can_import_ci_app'] = app(DirectAdminToContainerMigrationService::class)
                             ->canImportDirectAdminCodeIgniterSiblings($service);
                         if (is_string($phpProbe['fatal']) && $phpProbe['fatal'] !== '') {
@@ -1211,6 +1214,9 @@ class ContainerDoctorService
                         }
                         if (($phpProbe['ci_mysqli'] ?? true) !== true && ($phpProbe['paths_php'] ?? []) !== []) {
                             $phpProbeLines[] = 'mysqli not loaded';
+                        }
+                        if (($phpProbe['ci_ospos'] ?? false) === true) {
+                            $phpProbeLines[] = 'Open Source POS (app/Config/OSPOS.php)';
                         }
                         if (is_string($phpProbe['ci_http_body'] ?? null) && $phpProbe['ci_http_body'] !== '') {
                             $phpProbeLines[] = 'HTTP body: '.$phpProbe['ci_http_body'];
@@ -5207,6 +5213,51 @@ PHP;
     }
 
     /**
+     * Replace the broken DirectAdmin OSPOS tree with the official Git checkout.
+     * MySQL stays up.
+     *
+     * @return array{success: bool, message: string}
+     */
+    private function treatInstallOsposApplication(Service $service): array
+    {
+        $deployment = $service->containerDeployment;
+        if (! $deployment?->node) {
+            return ['success' => false, 'message' => 'Application is not deployed.'];
+        }
+
+        $ssh = SSHService::forNode($deployment->node);
+
+        try {
+            $result = app(PhpOsposAppInstaller::class)->installKeepingDatabase($service, $deployment, $ssh);
+            $httpStatus = $this->probeHttpStatus($ssh, $deployment);
+            if ($httpStatus !== null && $httpStatus >= 500) {
+                $phpProbe = [];
+                try {
+                    $phpProbe = app(PhpRuntime500Probe::class)->capture($ssh, $deployment);
+                } catch (\Throwable) {
+                    $phpProbe = [];
+                }
+
+                return [
+                    'success' => false,
+                    'message' => $result['message'].' GET / still returns HTTP '.$httpStatus.'. '
+                        .app(PhpRuntime500Probe::class)->summary($phpProbe)
+                        .' MySQL was left running.',
+                ];
+            }
+
+            return $result;
+        } catch (\Throwable $e) {
+            return [
+                'success' => false,
+                'message' => $e->getMessage(),
+            ];
+        } finally {
+            $ssh->disconnect();
+        }
+    }
+
+    /**
      * Rebuild schema with migrate:fresh. Only allowed when the DB has 0 app tables.
      *
      * @return array{success: bool, message: string}
@@ -5514,6 +5565,20 @@ PHP;
 
                 $hasSystem = (bool) ($checks['php_ci_system'] ?? false);
                 $hasVendorSystem = (bool) ($checks['php_ci_vendor_system'] ?? false);
+                $looksLikeOspos = app(PhpOsposAppInstaller::class)->looksLikeOspos(
+                    $phpFatal,
+                    ($checks['php_ci_ospos'] ?? false) === true,
+                );
+                if (! $missingApp && $looksLikeOspos) {
+                    return [
+                        'treat_action' => 'install_ospos_application',
+                        'treat_label' => 'Install Open Source POS (keep database)',
+                        'summary' => 'This is Open Source POS, not a generic PHP site. Live PDO works (tables: '.(string) ($checks['table_count'] ?? '?')
+                            .') — that is the shop data, not the 500. The DirectAdmin tree is missing CodeIgniter Config classes (for example Config\\Locale) because public_html + a partial app/ were copied next to a newer vendor system/. '
+                            .'Install clones https://github.com/opensourcepos/opensourcepos.git into /app, runs Composer, rewrites sidecar credentials, and keeps MySQL. It does not recreate the container or wipe the database. '
+                            .'Redeploy stack can do the same: check Replace application files and leave Reset database unchecked.',
+                    ];
+                }
                 if (! $missingApp && ! $hasSystem && $hasVendorSystem) {
                     return [
                         'treat_action' => 'link_codeigniter_system',

@@ -393,13 +393,17 @@ class ContainerController extends Controller
                 }
             }
 
+            $replaceApplication = $request->boolean('replace_application');
             $containerService = app(ContainerDeploymentService::class);
             $result = $containerService->deploy(
                 $service,
-                ContainerDeployOptions::redeploy($resetDatabase)
+                ContainerDeployOptions::redeploy($resetDatabase, $replaceApplication)
             );
 
             $message = 'Container stack redeployed successfully.';
+            if ($replaceApplication) {
+                $message .= ' Application files were replaced from Git (Open Source POS on PHP stacks).';
+            }
             if ($result->databaseReset) {
                 $message .= ' Database volume was reset to a fresh empty database.';
             }

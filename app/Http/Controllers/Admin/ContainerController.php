@@ -137,13 +137,17 @@ class ContainerController extends Controller
             }
 
             $resetDatabase = $request->boolean('reset_database');
+            $replaceApplication = $request->boolean('replace_application');
             $containerService = new ContainerDeploymentService;
             $result = $containerService->deploy(
                 $service,
-                ContainerDeployOptions::redeploy($resetDatabase)
+                ContainerDeployOptions::redeploy($resetDatabase, $replaceApplication)
             );
 
             $message = 'Container redeployed successfully.';
+            if ($replaceApplication) {
+                $message .= ' Application files were replaced from the connected Git repository (Open Source POS when detected).';
+            }
             if ($result->databaseReset) {
                 $message .= ' Database volume was reset.';
             }

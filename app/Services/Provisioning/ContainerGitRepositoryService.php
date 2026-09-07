@@ -1217,7 +1217,7 @@ class ContainerGitRepositoryService
     {
         // Preserve conventional customer-upload/runtime directories while
         // intentionally rebuilding vendor, node_modules and compiled assets.
-        return 'for rel in storage uploads public/uploads media data; do '
+        return 'for rel in storage uploads public/uploads media data writable/uploads app/writable/uploads; do '
             .'source='.$previousArg.'/"$rel"; target='.$pathArg.'/"$rel"; '
             .'if [ -e "$source" ]; then rm -rf -- "$target"; mkdir -p "$(dirname "$target")"; '
             .'cp -a --reflink=auto "$source" "$target"; fi; done; ';

@@ -75,4 +75,17 @@ class ContainerDeployOptionsTest extends TestCase
         $quiet = ContainerDeployOptions::quietConvert();
         $this->assertFalse($quiet->shouldInstallLaravelApplication('laravel'));
     }
+
+    #[Test]
+    public function redeploy_can_replace_application_files_without_wiping_mysql(): void
+    {
+        $keepDb = ContainerDeployOptions::redeploy(resetDatabase: false, replaceApplication: true);
+
+        $this->assertTrue($keepDb->replaceApplication);
+        $this->assertFalse($keepDb->shouldResetDatabase(true));
+
+        $wipeBoth = ContainerDeployOptions::redeploy(resetDatabase: true, replaceApplication: true);
+        $this->assertTrue($wipeBoth->replaceApplication);
+        $this->assertTrue($wipeBoth->shouldResetDatabase(true));
+    }
 }

@@ -1668,6 +1668,35 @@ LOG;
     }
 
     #[Test]
+    public function http_500_for_ospos_installs_official_app_and_keeps_mysql(): void
+    {
+        $treat = app(ContainerDoctorService::class)->resolveHttp500Treatment(
+            [
+                'db_ok' => true,
+                'table_count' => 39,
+                'http_status' => 500,
+                'php_fatal' => 'Class "Config\\Locale" not found',
+                'php_index_require' => "require __DIR__ . '/app/Config/Paths.php';",
+                'php_paths_php' => ['/app/app/Config/Paths.php'],
+                'php_ci_system' => true,
+                'php_ci_vendor_system' => true,
+                'php_ci_db_host' => 'user-483-service-426-static-site-db',
+                'php_ci_db_user' => 'u483_s426',
+                'php_ci_ospos' => true,
+                'da_can_import_ci_app' => true,
+            ],
+            [],
+            'php'
+        );
+
+        $this->assertSame('install_ospos_application', $treat['treat_action']);
+        $this->assertSame('Install Open Source POS (keep database)', $treat['treat_label']);
+        $this->assertStringContainsString('opensourcepos', $treat['summary']);
+        $this->assertStringContainsString('keeps MySQL', $treat['summary']);
+        $this->assertStringContainsString('leave Reset database unchecked', $treat['summary']);
+    }
+
+    #[Test]
     public function http_500_with_sidecar_creds_and_missing_mysqli_still_heals(): void
     {
         $treat = app(ContainerDoctorService::class)->resolveHttp500Treatment(

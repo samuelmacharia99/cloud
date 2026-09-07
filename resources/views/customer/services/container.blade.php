@@ -154,6 +154,10 @@
                                                 </template>
                                             @endif
 
+                                            <label class="flex items-start gap-2 text-sm text-slate-600 dark:text-slate-300 mb-2">
+                                                <input type="checkbox" name="replace_application" value="1" class="rounded border-slate-300 dark:border-slate-600 mt-0.5">
+                                                <span>Replace application files (clones the connected Git repo / Open Source POS into /app; keeps uploads)</span>
+                                            </label>
                                             <label class="flex items-start gap-2 text-sm text-slate-600 dark:text-slate-300 mb-4">
                                                 <input type="checkbox" name="reset_database" value="1" x-model="resetDatabase" :disabled="databaseChanged" class="rounded border-slate-300 dark:border-slate-600 mt-0.5">
                                                 <span>Reset database (deletes all DB data)</span>

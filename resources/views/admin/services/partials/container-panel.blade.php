@@ -186,12 +186,16 @@
             </a>
         </div>
 
-        <form method="POST" action="{{ route('admin.services.container.redeploy', $service) }}" class="flex flex-col sm:flex-row sm:items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700" data-confirm="Redeploy this container? Files in /app are kept unless you reset the database." data-confirm-title="Redeploy stack">
+        <form method="POST" action="{{ route('admin.services.container.redeploy', $service) }}" class="flex flex-col sm:flex-row sm:items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700" data-confirm="Redeploy this container? Leave Reset database unchecked to keep MySQL. Replace application files clones official Open Source POS (or the connected Git repo) into /app." data-confirm-title="Redeploy stack">
             @csrf
             <div class="flex-1">
                 <p class="text-sm font-medium text-slate-900 dark:text-white">Redeploy stack</p>
-                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Recreate the runtime from the current Git source and compose file.</p>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Recreate the runtime. Reset database wipes MySQL. Replace application files refreshes /app from Git (Open Source POS on PHP) and keeps uploads.</p>
             </div>
+            <label class="inline-flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+                <input type="checkbox" name="replace_application" value="1" class="rounded border-slate-300 dark:border-slate-600">
+                Replace application files
+            </label>
             <label class="inline-flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
                 <input type="checkbox" name="reset_database" value="1" class="rounded border-slate-300 dark:border-slate-600">
                 Reset database

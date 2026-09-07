@@ -8,11 +8,16 @@ final class ContainerDeployOptions
         public readonly bool $isRedeploy = false,
         public readonly bool $resetDatabase = false,
         public readonly bool $quiet = false,
+        public readonly bool $replaceApplication = false,
     ) {}
 
-    public static function redeploy(bool $resetDatabase = false): self
+    public static function redeploy(bool $resetDatabase = false, bool $replaceApplication = false): self
     {
-        return new self(isRedeploy: true, resetDatabase: $resetDatabase);
+        return new self(
+            isRedeploy: true,
+            resetDatabase: $resetDatabase,
+            replaceApplication: $replaceApplication,
+        );
     }
 
     /**
