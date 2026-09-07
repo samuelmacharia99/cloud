@@ -444,6 +444,7 @@ class DirectAdminToContainerMigrationDatabaseTest extends TestCase
             $inventory['databases']
         );
         $this->assertTrue($migrator->canRepullDirectAdminDatabase($service));
+        $this->assertTrue($migrator->canImportDirectAdminCodeIgniterSiblings($service));
         $this->assertSame('u483', $migrator->directAdminUsername($service));
     }
 
@@ -523,5 +524,32 @@ class DirectAdminToContainerMigrationDatabaseTest extends TestCase
 
         $this->assertFalse($result['success']);
         $this->assertStringContainsString('da_legacy', $result['message']);
+    }
+
+    #[Test]
+    public function it_locates_codeigniter_app_next_to_public_html(): void
+    {
+        $migrator = app(DirectAdminToContainerMigrationService::class);
+        $docroot = '/home/u483/domains/roadtrip.example.com/public_html';
+
+        $this->assertContains(
+            '/home/u483/domains/roadtrip.example.com/app/Config/Paths.php',
+            $migrator->codeIgniterSiblingProbePaths($docroot)
+        );
+
+        $located = $migrator->locateCodeIgniterProjectRoot([
+            '/home/u483/domains/roadtrip.example.com/app/Config/Paths.php',
+        ]);
+        $this->assertSame('/home/u483/domains/roadtrip.example.com', $located['project_root'] ?? null);
+
+        $tar = $migrator->buildCodeIgniterSiblingTarCommand(
+            '/home/u483/domains/roadtrip.example.com',
+            '/tmp/ci.tar.gz',
+            ['app', 'writable', 'vendor']
+        );
+        $this->assertStringContainsString("-C '/home/u483/domains/roadtrip.example.com'", $tar);
+        $this->assertStringContainsString("'app'", $tar);
+        $this->assertStringContainsString("'writable'", $tar);
+        $this->assertStringNotContainsString('public_html', $tar);
     }
 }

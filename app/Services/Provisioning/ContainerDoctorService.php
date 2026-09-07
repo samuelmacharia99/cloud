@@ -83,6 +83,7 @@ class ContainerDoctorService
                 'switch_php_production_runtime',
                 'restart_application',
                 'import_da_database',
+                'import_da_codeigniter_app',
             ], true)) {
             return ['success' => false, 'message' => 'Application must be running before applying a fix.'];
         }
@@ -127,6 +128,7 @@ class ContainerDoctorService
             'run_migrations' => $this->treatRunMigrations($service),
             'migrate_fresh' => $this->treatMigrateFresh($service),
             'import_da_database' => $this->treatImportDaDatabase($service),
+            'import_da_codeigniter_app' => $this->treatImportDaCodeIgniterApp($service),
             'use_file_cache' => $this->treatUseFileCache($service),
             'tune_request_concurrency' => $this->treatTuneRequestConcurrency($service),
             'fix_compose_interpolation' => $this->treatFixComposeInterpolation($service),
@@ -1164,6 +1166,8 @@ class ContainerDoctorService
                         $checks['php_fatal'] = $phpProbe['fatal'];
                         $checks['php_paths_php'] = $phpProbe['paths_php'] ?? [];
                         $checks['php_index_require'] = $phpProbe['index_require'] ?? null;
+                        $checks['da_can_import_ci_app'] = app(DirectAdminToContainerMigrationService::class)
+                            ->canImportDirectAdminCodeIgniterSiblings($service);
                         if (is_string($phpProbe['fatal']) && $phpProbe['fatal'] !== '') {
                             $phpProbeLines[] = $phpProbe['fatal'];
                         }
@@ -4853,6 +4857,72 @@ PHP;
     }
 
     /**
+     * Convert copied public_html only. CodeIgniter’s app/ folder stays next to it on DirectAdmin.
+     *
+     * @return array{success: bool, message: string}
+     */
+    private function treatImportDaCodeIgniterApp(Service $service): array
+    {
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(0);
+        }
+        @ini_set('max_execution_time', '0');
+
+        $migrator = app(DirectAdminToContainerMigrationService::class);
+        if (! $migrator->canImportDirectAdminCodeIgniterSiblings($service)) {
+            return [
+                'success' => false,
+                'message' => 'This container has no DirectAdmin convert record (da_legacy username + node). Cannot pull app/ from DirectAdmin.',
+            ];
+        }
+
+        $localTar = null;
+        try {
+            $export = $migrator->exportCodeIgniterSiblingsFromDirectAdmin($service);
+            $localTar = $export['local_tar'] ?? null;
+            $migrator->importCodeIgniterSiblingsIntoContainer($service, (string) $localTar);
+            app(ContainerDeploymentService::class)->restart($service);
+
+            $meta = is_array($service->service_meta) ? $service->service_meta : [];
+            $legacy = is_array($meta['da_legacy'] ?? null) ? $meta['da_legacy'] : [];
+            $legacy['codeigniter_app_imported_at'] = now()->toIso8601String();
+            $legacy['codeigniter_app_entries'] = $export['entries'] ?? [];
+            $meta['da_legacy'] = $legacy;
+            $service->update(['service_meta' => $meta]);
+
+            $user = auth()->user();
+            if ($user?->isAdmin()) {
+                AdminActivityService::log(
+                    'container.import_da_codeigniter_app',
+                    'Imported CodeIgniter app folder from DirectAdmin into service #'.$service->id,
+                    $service,
+                    [
+                        'service_id' => $service->id,
+                        'entries' => $export['entries'] ?? [],
+                        'project_root' => $export['project_root'] ?? null,
+                    ],
+                );
+            }
+
+            $copied = implode(', ', $export['entries'] ?? ['app']);
+
+            return [
+                'success' => true,
+                'message' => 'Copied '.$copied.' from DirectAdmin (next to public_html) into this container. Reload the site. MySQL was left running. DirectAdmin was not deleted.',
+            ];
+        } catch (\Throwable $e) {
+            return [
+                'success' => false,
+                'message' => $e->getMessage(),
+            ];
+        } finally {
+            if (is_string($localTar) && is_file($localTar)) {
+                @unlink($localTar);
+            }
+        }
+    }
+
+    /**
      * Rebuild schema with migrate:fresh. Only allowed when the DB has 0 app tables.
      *
      * @return array{success: bool, message: string}
@@ -5147,6 +5217,15 @@ PHP;
             $indexRequire = trim((string) ($checks['php_index_require'] ?? ''));
             if (str_contains($phpFatal, 'Config/Paths.php') || str_contains($indexRequire, 'Config/Paths.php')) {
                 $missingApp = $pathsFiles === [] || (is_array($pathsFiles) && $pathsFiles === []);
+                if ($missingApp && ($checks['da_can_import_ci_app'] ?? false) === true) {
+                    return [
+                        'treat_action' => 'import_da_codeigniter_app',
+                        'treat_label' => 'Import CodeIgniter app folder',
+                        'summary' => 'Live PDO works (tables: '.(string) ($checks['table_count'] ?? '?')
+                            .') but Config/Paths.php is not under /app. The convert only copied public_html; CodeIgniter’s app/ folder usually sits next to it on DirectAdmin. '
+                            .'Import copies app/ (and writable/system/vendor if present) into this container. MySQL stays up.',
+                    ];
+                }
 
                 return [
                     'treat_action' => 'restart_application',
@@ -5154,7 +5233,7 @@ PHP;
                     'summary' => $missingApp
                         ? 'Live PDO works (tables: '.(string) ($checks['table_count'] ?? '?')
                             .') but CodeIgniter cannot load Config/Paths.php — that file is not under /app. '
-                            .'DirectAdmin often kept the app/ folder next to public_html. Restart searches the container and rewrites /app/index.php to the real path. MySQL stays up.'
+                            .'DirectAdmin often kept the app/ folder next to public_html, and this service has no da_legacy record to pull it from. Restart cannot invent those files.'
                         : 'Live PDO works (tables: '.(string) ($checks['table_count'] ?? '?')
                             .') but CodeIgniter is bootstrapping from /app/index.php with a ../app/Config/Paths.php require. '
                             .'Restart rewrites that require to the Paths.php file that is already in this container and recreates the app only. MySQL stays up.',

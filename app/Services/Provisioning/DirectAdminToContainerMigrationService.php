@@ -1807,6 +1807,199 @@ class DirectAdminToContainerMigrationService
             || filled($inventory['app_root'] ?? null);
     }
 
+    public function canImportDirectAdminCodeIgniterSiblings(Service $service): bool
+    {
+        $inventory = $this->inventoryFromDirectAdminLegacy($service);
+        if ($inventory === null) {
+            return false;
+        }
+
+        return filled($inventory['docroot'] ?? null) || filled($inventory['domain'] ?? null);
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function codeIgniterSiblingNames(): array
+    {
+        return ['app', 'writable', 'system', 'vendor'];
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function codeIgniterSiblingProbePaths(string $docroot): array
+    {
+        $docroot = rtrim(str_replace('\\', '/', $docroot), '/');
+        $parent = dirname($docroot);
+
+        return array_values(array_unique([
+            $parent.'/app/Config/Paths.php',
+            $docroot.'/app/Config/Paths.php',
+            $parent.'/core/app/Config/Paths.php',
+        ]));
+    }
+
+    /**
+     * @param  list<string>  $existingPaths
+     * @return array{project_root: string, paths_php: string}|null
+     */
+    public function locateCodeIgniterProjectRoot(array $existingPaths): ?array
+    {
+        foreach ($existingPaths as $path) {
+            $path = rtrim(str_replace('\\', '/', (string) $path), '/');
+            if (preg_match('#^(.*)/app/Config/Paths\\.php$#', $path, $matches) === 1) {
+                return [
+                    'project_root' => $matches[1],
+                    'paths_php' => $path,
+                ];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  list<string>  $entries
+     */
+    public function buildCodeIgniterSiblingTarCommand(string $projectRoot, string $filesTar, array $entries): string
+    {
+        $safe = [];
+        foreach ($entries as $entry) {
+            $entry = trim((string) $entry, '/');
+            if ($entry !== '' && ! str_contains($entry, '/') && ! str_contains($entry, '..')) {
+                $safe[] = escapeshellarg($entry);
+            }
+        }
+        if ($safe === []) {
+            throw new \InvalidArgumentException('No CodeIgniter sibling folders to archive.');
+        }
+
+        return 'tar -czf '.escapeshellarg($filesTar)
+            .' -C '.escapeshellarg($projectRoot)
+            .' '.implode(' ', $safe)
+            .' ; status=$?'
+            .' ; if [ "$status" -eq 0 ] || [ "$status" -eq 1 ]; then'
+            .'   if [ -s '.escapeshellarg($filesTar).' ]; then exit 0; fi'
+            .' ; fi'
+            .' ; exit "$status"';
+    }
+
+    /**
+     * Pull app/ (and writable/system/vendor) from beside public_html on DirectAdmin.
+     *
+     * @return array{local_tar: string, entries: list<string>, project_root: string, paths_php: string, da_node_id: int}
+     */
+    public function exportCodeIgniterSiblingsFromDirectAdmin(Service $source): array
+    {
+        $inventory = $this->inventoryFromDirectAdminLegacy($source);
+        if ($inventory === null) {
+            throw new \RuntimeException(
+                'This container has no DirectAdmin convert record (da_legacy). Cannot pull CodeIgniter files from DirectAdmin.'
+            );
+        }
+
+        $docroot = trim((string) ($inventory['docroot'] ?? ''));
+        if ($docroot === '') {
+            throw new \RuntimeException('DirectAdmin docroot is missing from da_legacy.');
+        }
+
+        $daNode = $this->resolveDirectAdminNode($source, $inventory);
+        $workId = 'ci4-siblings-'.$source->id.'-'.Str::lower(Str::random(6));
+        $remoteWork = self::WORK_BASE.'/'.$workId;
+        $filesTar = $remoteWork.'/ci-siblings.tar.gz';
+        $localTar = storage_path('app/migrations/'.$workId.'-ci-siblings.tar.gz');
+        if (! is_dir(dirname($localTar))) {
+            mkdir(dirname($localTar), 0755, true);
+        }
+
+        $daSsh = SSHService::forNode($daNode);
+        $projectRoot = '';
+        $pathsPhp = '';
+        $entries = [];
+        try {
+            $existing = [];
+            foreach ($this->codeIgniterSiblingProbePaths($docroot) as $path) {
+                $hit = trim($daSsh->exec('test -f '.escapeshellarg($path).' && echo yes || echo no', 10));
+                if ($hit === 'yes') {
+                    $existing[] = $path;
+                }
+            }
+            $located = $this->locateCodeIgniterProjectRoot($existing);
+            if ($located === null) {
+                throw new \RuntimeException(
+                    'DirectAdmin has no app/Config/Paths.php next to public_html ('
+                    .dirname($docroot).'). The CodeIgniter app/ folder is not on that node.'
+                );
+            }
+            $projectRoot = $located['project_root'];
+            $pathsPhp = $located['paths_php'];
+
+            $daSsh->exec('mkdir -p '.escapeshellarg($remoteWork));
+            foreach ($this->codeIgniterSiblingNames() as $name) {
+                $hit = trim($daSsh->exec(
+                    'test -e '.escapeshellarg($projectRoot.'/'.$name).' && echo yes || echo no',
+                    10
+                ));
+                if ($hit === 'yes') {
+                    $entries[] = $name;
+                }
+            }
+            if (! in_array('app', $entries, true)) {
+                throw new \RuntimeException('Found Paths.php but the app/ directory is not readable on DirectAdmin.');
+            }
+
+            $daSsh->exec($this->buildCodeIgniterSiblingTarCommand($projectRoot, $filesTar, $entries), 600);
+            $daSsh->downloadToLocal($filesTar, $localTar);
+        } finally {
+            $daSsh->disconnect();
+            $this->cleanupDaWork($daNode, $remoteWork);
+        }
+
+        return [
+            'local_tar' => $localTar,
+            'entries' => $entries,
+            'project_root' => $projectRoot,
+            'paths_php' => $pathsPhp,
+            'da_node_id' => $daNode->id,
+        ];
+    }
+
+    /**
+     * Extract sibling folders onto the existing public_html bind mount. Does not wipe index.php or MySQL.
+     */
+    public function importCodeIgniterSiblingsIntoContainer(Service $target, string $localTar): void
+    {
+        $target->loadMissing('containerDeployment.node');
+        $deployment = $target->containerDeployment;
+        if (! $deployment?->node) {
+            throw new \RuntimeException('Application is not deployed.');
+        }
+        if (! is_file($localTar)) {
+            throw new \RuntimeException('CodeIgniter export archive is missing.');
+        }
+
+        $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+        $hostAppPath = $containerPath.'/app';
+        $remoteTar = $containerPath.'/ci-siblings.tar.gz';
+        $ssh = SSHService::forNode($deployment->node);
+        try {
+            $ssh->uploadFromLocal($localTar, $remoteTar);
+            $ssh->exec($this->buildGenericHostExtractCommand($remoteTar, $hostAppPath), 300);
+            @$ssh->exec('rm -f '.escapeshellarg($remoteTar), 10);
+            @$ssh->exec(
+                'if [ -d '.escapeshellarg($hostAppPath.'/writable').' ]; then '
+                .'chmod -R ug+rwX '.escapeshellarg($hostAppPath.'/writable').'; fi',
+                30
+            );
+            app(PhpCodeIgniterPathFixer::class)->applyOnHost($ssh, $hostAppPath);
+            app(PhpCodeIgniterPathFixer::class)->applyInContainer($ssh, $deployment);
+            app(PhpSidecarDatabaseRewriter::class)->applyForDeployment($ssh, $target, $deployment);
+        } finally {
+            $ssh->disconnect();
+        }
+    }
+
     /**
      * Dump MySQL only from the still-live DirectAdmin account (no files tar).
      *
