@@ -88,8 +88,10 @@ PHP;
         $cmd = (new PhpCodeIgniterPathFixer)->buildLinkVendorSystemCommand('/app');
 
         $this->assertStringContainsString('ln -sfn', $cmd);
-        $this->assertStringContainsString("'/app/vendor/codeigniter4/framework/system'", $cmd);
-        $this->assertStringContainsString("'/app/system'", $cmd);
+        $this->assertStringContainsString("cd '/app'", $cmd);
+        $this->assertStringContainsString("'vendor/codeigniter4/framework/system'", $cmd);
+        $this->assertStringContainsString('cp -a', $cmd);
+        $this->assertStringNotContainsString('/opt/talksasa', $cmd);
         $this->assertStringNotContainsString('docker compose', $cmd);
     }
 }

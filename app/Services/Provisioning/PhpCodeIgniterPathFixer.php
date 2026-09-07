@@ -233,19 +233,22 @@ class PhpCodeIgniterPathFixer
     public function buildLinkVendorSystemCommand(string $appRoot): string
     {
         $root = rtrim(str_replace('\\', '/', $appRoot), '/');
-        $system = $root.'/system';
-        $sources = [];
+        $relatives = [];
         foreach ($this->vendorSystemRelatives() as $relative) {
-            $sources[] = escapeshellarg($root.'/'.$relative);
+            $relatives[] = escapeshellarg($relative);
         }
 
-        return 'if [ -f '.escapeshellarg($system.'/Boot.php')
-            .' ] || [ -f '.escapeshellarg($system.'/CodeIgniter.php').' ]; then echo exists; exit 0; fi; '
-            .'for src in '.implode(' ', $sources).'; do '
-            .'  if [ -f "$src/Boot.php" ] || [ -f "$src/CodeIgniter.php" ]; then '
-            .'    rm -rf '.escapeshellarg($system).'; '
-            .'    ln -sfn "$src" '.escapeshellarg($system).'; '
-            .'    echo linked; exit 0; '
+        return 'cd '.escapeshellarg($root).' || exit 1; '
+            .'if [ -L system ] && [ ! -f system/Boot.php ] && [ ! -f system/CodeIgniter.php ]; then rm -f system; fi; '
+            .'if [ -f system/Boot.php ] || [ -f system/CodeIgniter.php ]; then echo exists; exit 0; fi; '
+            .'for rel in '.implode(' ', $relatives).'; do '
+            .'  if [ -f "$rel/Boot.php" ] || [ -f "$rel/CodeIgniter.php" ]; then '
+            .'    rm -rf system; '
+            .'    ln -sfn "$rel" system; '
+            .'    if [ -f system/Boot.php ] || [ -f system/CodeIgniter.php ]; then echo linked; exit 0; fi; '
+            .'    rm -f system; '
+            .'    cp -a "$rel" system; '
+            .'    if [ -f system/Boot.php ] || [ -f system/CodeIgniter.php ]; then echo copied; exit 0; fi; '
             .'  fi; '
             .'done; echo missing';
     }
@@ -258,7 +261,7 @@ class PhpCodeIgniterPathFixer
             return false;
         }
 
-        return $out === 'linked' || $out === 'exists';
+        return in_array($out, ['linked', 'copied', 'exists'], true);
     }
 
     /**

@@ -5001,7 +5001,7 @@ PHP;
         $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
 
         try {
-            $hostResult = $fixer->linkVendorSystemOnHost($ssh, $hostAppPath);
+            $fixer->linkVendorSystemOnHost($ssh, $hostAppPath);
             $fixer->healSystemDirectoryOnHost($ssh, $hostAppPath);
             $fixer->ensureWritableOnHost($ssh, $hostAppPath);
 
@@ -5017,6 +5017,22 @@ PHP;
                 $inContainer = '';
             }
 
+            $bootOk = $this->codeIgniterSystemBootExistsInContainer($ssh, $deployment, $containerPath);
+            if (! $bootOk) {
+                return [
+                    'success' => false,
+                    'message' => 'Could not make /app/system/Boot.php visible inside the container (host/container: '
+                        .($inContainer !== '' ? $inContainer : 'no-exec')
+                        .'). A host absolute symlink is invisible to PHP-FPM. Try Import CodeIgniter app folder. MySQL was left running.',
+                ];
+            }
+
+            app(PhpCodeIgniterRuntimeHealer::class)->applyOnHost(
+                $ssh,
+                $hostAppPath,
+                (string) ($deployment->getAccessUrl() ?? '')
+            );
+
             try {
                 $ssh->exec(
                     'cd '.escapeshellarg($containerPath)
@@ -5027,14 +5043,6 @@ PHP;
             } catch (\Throwable) {
             }
 
-            $linked = $hostResult || in_array($inContainer, ['linked', 'exists'], true);
-            if (! $linked) {
-                return [
-                    'success' => false,
-                    'message' => 'Could not create /app/system → vendor/codeigniter4. Host and container both lack vendor/codeigniter4/framework/system/Boot.php. Try Import CodeIgniter app folder. MySQL was left running.',
-                ];
-            }
-
             $httpStatus = $this->probeHttpStatus($ssh, $deployment);
             $phpProbe = [];
             if ($httpStatus !== null && $httpStatus >= 500) {
@@ -5043,18 +5051,20 @@ PHP;
                 } catch (\Throwable) {
                     $phpProbe = [];
                 }
+                $logLines = $this->readRecentApplicationErrors($ssh, $deployment);
 
                 return [
                     'success' => false,
-                    'message' => 'Linked /app/system to vendor/codeigniter4 and reloaded php-fpm, but GET / still returns HTTP '.$httpStatus.'. '
+                    'message' => 'Made /app/system/Boot.php visible ('.$inContainer.'), healed encryption.key/baseURL, and reloaded php-fpm, but GET / still returns HTTP '.$httpStatus.'. '
                         .app(PhpRuntime500Probe::class)->summary($phpProbe)
+                        .($logLines === [] ? '' : ' Log: '.implode(' | ', array_slice($logLines, 0, 2)))
                         .' MySQL was left running.',
                 ];
             }
 
             return [
                 'success' => true,
-                'message' => 'Linked /app/system → vendor/codeigniter4 and reloaded php-fpm. The container was not recreated. MySQL was left running. Reload the site.',
+                'message' => 'Pointed /app/system at vendor/codeigniter4 with a relative link (or copy), healed encryption.key/baseURL, and reloaded php-fpm. The container was not recreated. MySQL was left running. Reload the site.',
             ];
         } catch (\Throwable $e) {
             return [
@@ -5445,7 +5455,7 @@ PHP;
                         'summary' => 'Live PDO works (tables: '.(string) ($checks['table_count'] ?? '?')
                             .') and Paths.php plus the sidecar hostname are already correct. '
                             .'Stock CodeIgniter still loads /app/system, which is missing, while vendor/codeigniter4 is present. '
-                            .'Link creates /app/system → vendor/codeigniter4/framework/system and reloads php-fpm. It does not recreate the container or touch MySQL.',
+                            .'Link uses a relative system → vendor/codeigniter4/framework/system (or copies that tree if the symlink would be invisible inside the container) and reloads php-fpm. It does not recreate the container or touch MySQL.',
                     ];
                 }
                 if (! $missingApp && ! $hasSystem && ! $hasVendorSystem && $canImportCi) {
@@ -5672,6 +5682,27 @@ PHP;
         return 'master=$(pgrep -o php-fpm 2>/dev/null || true); '
             .'if [ -n "$master" ]; then kill -USR2 "$master"; echo php-fpm-reloaded; '
             .'else echo no-php-fpm; fi';
+    }
+
+    public function codeIgniterSystemBootExistsInContainer(
+        SSHService $ssh,
+        $deployment,
+        string $containerPath,
+    ): bool {
+        try {
+            $out = trim($ssh->exec(
+                'cd '.escapeshellarg($containerPath)
+                .' && docker compose exec -T '.escapeshellarg($deployment->container_name)
+                .' sh -lc '.escapeshellarg(
+                    'if [ -f /app/system/Boot.php ] || [ -f /app/system/CodeIgniter.php ]; then echo yes; else echo no; fi'
+                ),
+                15
+            ));
+        } catch (\Throwable) {
+            return false;
+        }
+
+        return $out === 'yes';
     }
 
     /**
