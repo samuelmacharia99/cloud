@@ -5131,6 +5131,17 @@ PHP;
                 ];
             }
 
+            $phpFatal = trim((string) ($checks['php_fatal'] ?? ''));
+            if (str_contains($phpFatal, 'Config/Paths.php')) {
+                return [
+                    'treat_action' => 'restart_application',
+                    'treat_label' => 'Restart application',
+                    'summary' => 'Live PDO works (tables: '.(string) ($checks['table_count'] ?? '?')
+                        .') but CodeIgniter is bootstrapping from /app/index.php, so ../app/Config/Paths.php resolves outside the project. '
+                        .'Restart rewrites that require to app/Config/Paths.php and recreates the app only. MySQL stays up.',
+                ];
+            }
+
             if (($checks['php_uses_mysql_ext'] ?? false) === true) {
                 return [
                     'treat_action' => 'restart_application',
@@ -5141,7 +5152,6 @@ PHP;
                 ];
             }
 
-            $phpFatal = trim((string) ($checks['php_fatal'] ?? ''));
             if ($phpFatal !== '') {
                 return [
                     'treat_action' => 'restart_application',

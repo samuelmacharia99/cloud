@@ -874,6 +874,14 @@ class ContainerDeploymentService
                                 'error' => $e->getMessage(),
                             ]);
                         }
+                        try {
+                            app(PhpCodeIgniterPathFixer::class)->applyOnHost($ssh, $containerPath.'/app');
+                        } catch (\Throwable $e) {
+                            Log::warning('Could not flatten CodeIgniter Paths.php require before restart', [
+                                'service_id' => $service->id,
+                                'error' => $e->getMessage(),
+                            ]);
+                        }
                     }
                 }
                 if (in_array($slug, ['nodejs', 'python', 'ruby', 'go'], true)) {
@@ -1267,17 +1275,27 @@ class ContainerDeploymentService
         if ($documentRoot === '' || $documentRoot === '/app') {
             $found = null;
             foreach ($resolver->webRootRelativeCandidates() as $web) {
+                $index = $hostAppPath.'/'.$web.'/index.php';
                 try {
-                    $ssh->exec('sh -lc '.escapeshellarg('test -f '.escapeshellarg($hostAppPath.'/'.$web.'/index.php')), 15);
+                    $hit = trim($ssh->exec(
+                        'test -f '.escapeshellarg($index)
+                        .' && grep -Eq '.escapeshellarg('vendor/autoload.php|Config/Paths.php').' '.escapeshellarg($index)
+                        .' && echo yes || echo no',
+                        15
+                    ));
+                } catch (\Throwable) {
+                    continue;
+                }
+                if ($hit === 'yes') {
                     $found = '/app/'.$web;
                     break;
-                } catch (\Throwable) {
                 }
             }
-            if ($found === null) {
+            if ($found !== null) {
+                $documentRoot = $found;
+            } elseif ($documentRoot !== '/app') {
                 return;
             }
-            $documentRoot = $found;
         }
 
         $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;

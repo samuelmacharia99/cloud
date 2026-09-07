@@ -1530,6 +1530,26 @@ LOG;
     }
 
     #[Test]
+    public function http_500_with_codeigniter_paths_fatal_rewrites_the_front_controller(): void
+    {
+        $treat = app(ContainerDoctorService::class)->resolveHttp500Treatment(
+            [
+                'db_ok' => true,
+                'table_count' => 39,
+                'http_status' => 500,
+                'php_uses_mysql_ext' => true,
+                'php_fatal' => 'Fatal error: Uncaught Error: Failed opening required \'/app/../app/Config/Paths.php\' in /app/index.php:48',
+            ],
+            [],
+            'php'
+        );
+
+        $this->assertSame('restart_application', $treat['treat_action']);
+        $this->assertStringContainsString('CodeIgniter', $treat['summary']);
+        $this->assertStringContainsString('app/Config/Paths.php', $treat['summary']);
+    }
+
+    #[Test]
     public function http_500_with_live_pdo_and_mysql_ext_installs_the_shim_on_restart(): void
     {
         $treat = app(ContainerDoctorService::class)->resolveHttp500Treatment(

@@ -92,4 +92,61 @@ class LaravelProjectPathResolverTest extends TestCase
             @rmdir($tmp);
         }
     }
+
+    #[Test]
+    public function php_document_root_command_prefers_codeigniter_public_when_it_is_the_front_controller(): void
+    {
+        $tmp = sys_get_temp_dir().'/php-docroot-'.bin2hex(random_bytes(4));
+        mkdir($tmp.'/public', 0777, true);
+        mkdir($tmp.'/app/Config', 0777, true);
+        file_put_contents($tmp.'/index.php', '<?php echo "stay out";');
+        file_put_contents($tmp.'/public/index.php', "<?php define('FCPATH', __DIR__); require FCPATH . '../app/Config/Paths.php';");
+        file_put_contents($tmp.'/app/Config/Paths.php', '<?php class Paths {}');
+
+        try {
+            $cmd = (new LaravelProjectPathResolver)->phpDocumentRootCommand($tmp);
+            $output = [];
+            exec('sh -lc '.escapeshellarg($cmd), $output, $code);
+            $this->assertSame(0, $code);
+            $this->assertSame('/app/public', trim(implode("\n", $output)));
+        } finally {
+            @unlink($tmp.'/app/Config/Paths.php');
+            @rmdir($tmp.'/app/Config');
+            @rmdir($tmp.'/app');
+            @unlink($tmp.'/public/index.php');
+            @rmdir($tmp.'/public');
+            @unlink($tmp.'/index.php');
+            @rmdir($tmp);
+        }
+    }
+
+    #[Test]
+    public function php_document_root_command_keeps_root_for_flattened_codeigniter(): void
+    {
+        $tmp = sys_get_temp_dir().'/php-docroot-'.bin2hex(random_bytes(4));
+        mkdir($tmp.'/public', 0777, true);
+        mkdir($tmp.'/app/Config', 0777, true);
+        file_put_contents(
+            $tmp.'/index.php',
+            str_repeat("<?php\n", 20)."define('FCPATH', __DIR__);\nrequire FCPATH . '../app/Config/Paths.php';\n"
+        );
+        file_put_contents($tmp.'/public/index.php', '<?php echo "stub";');
+        file_put_contents($tmp.'/app/Config/Paths.php', '<?php class Paths {}');
+
+        try {
+            $cmd = (new LaravelProjectPathResolver)->phpDocumentRootCommand($tmp);
+            $output = [];
+            exec('sh -lc '.escapeshellarg($cmd), $output, $code);
+            $this->assertSame(0, $code);
+            $this->assertSame('/app', trim(implode("\n", $output)));
+        } finally {
+            @unlink($tmp.'/app/Config/Paths.php');
+            @rmdir($tmp.'/app/Config');
+            @rmdir($tmp.'/app');
+            @unlink($tmp.'/public/index.php');
+            @rmdir($tmp.'/public');
+            @unlink($tmp.'/index.php');
+            @rmdir($tmp);
+        }
+    }
 }

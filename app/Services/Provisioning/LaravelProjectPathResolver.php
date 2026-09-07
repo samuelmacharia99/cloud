@@ -91,10 +91,16 @@ class LaravelProjectPathResolver
         $names = implode(' ', array_map('escapeshellarg', $this->phpWebRootRelativeCandidates()));
 
         return 'ROOT='.$root.'; '
+            .'looks_framework() { grep -Eq "vendor/autoload.php|Config/Paths.php" "$1" 2>/dev/null; }; '
             .'if [ -f "$ROOT/index.php" ]; then '
             .'  for d in '.$names.'; do '
             .'    if [ ! -f "$ROOT/$d/index.php" ]; then continue; fi; '
-            .'    if grep -q "vendor/autoload.php" "$ROOT/$d/index.php" 2>/dev/null; then echo /app/$d; exit 0; fi; '
+            .'    if looks_framework "$ROOT/$d/index.php"; then echo /app/$d; exit 0; fi; '
+            .'  done; '
+            .'  if grep -q "Config/Paths.php" "$ROOT/index.php" 2>/dev/null '
+            .'     && [ -f "$ROOT/app/Config/Paths.php" ]; then echo /app; exit 0; fi; '
+            .'  for d in '.$names.'; do '
+            .'    if [ ! -f "$ROOT/$d/index.php" ]; then continue; fi; '
             .'    rs=$(wc -c < "$ROOT/index.php"); ps=$(wc -c < "$ROOT/$d/index.php"); '
             .'    if [ "$ps" -ge 400 ] || [ "$ps" -ge "$rs" ]; then echo /app/$d; exit 0; fi; '
             .'  done; '
