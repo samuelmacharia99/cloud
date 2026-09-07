@@ -7,6 +7,7 @@ use App\Models\ContainerDomain;
 use App\Models\Service;
 use App\Services\SSH\SSHService;
 use Illuminate\Support\Facades\Log;
+use Symfony\Component\Yaml\Yaml;
 
 /**
  * Production hardening for official wordpress:* Apache images.
@@ -203,6 +204,16 @@ SNIP;
         $this->ensureUploadsIniFile($ssh, $containerName);
         $this->ensureWpConfigHardening($ssh, $containerPath, $containerName);
         $hostAppPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$containerName.'/app';
+        $this->wrapHtaccessOnHost($ssh, $hostAppPath);
+        $this->persistApacheModulesOnCompose($ssh, $containerPath, $containerName);
+        try {
+            $this->enableApacheModulesInContainer($ssh, $containerPath, $containerName);
+        } catch (\Throwable $e) {
+            Log::warning('WordPress Apache module enable skipped', [
+                'container' => $containerName,
+                'error' => $e->getMessage(),
+            ]);
+        }
         $this->ensureWritableFilesystem($ssh, $hostAppPath, $containerPath, $containerName);
         $this->ensureSystemCronJob($service);
         $this->ensureNginxUploadLimits($service);
@@ -281,6 +292,181 @@ SNIP;
             .' && chmod 640 /var/www/html/wp-config.php 2>/dev/null || true'
             .' && find /var/www/html/wp-content -type d -exec chmod 775 {} + 2>/dev/null || true'
             .' && find /var/www/html/wp-content -type f -exec chmod 664 {} + 2>/dev/null || true';
+    }
+
+    /**
+     * Official wordpress:apache does not enable mod_headers. DirectAdmin .htaccess
+     * `Header always set …` then 500s every request (Apache "Invalid command Header").
+     *
+     * @return list<string>
+     */
+    public function apacheForegroundWithModulesCommand(): array
+    {
+        return [
+            'bash',
+            '-lc',
+            'a2enmod headers rewrite expires >/dev/null 2>&1 || true; exec apache2-foreground',
+        ];
+    }
+
+    /**
+     * Wrap bare Header/Expires lines so Apache can start even if a module is missing.
+     */
+    public function wrapHtaccessOptionalApacheDirectives(string $htaccess): string
+    {
+        $htaccess = $this->wrapHtaccessDirectiveRuns($htaccess, 'Header', 'mod_headers.c');
+        $htaccess = $this->wrapHtaccessDirectiveRuns($htaccess, 'ExpiresActive', 'mod_expires.c');
+        $htaccess = $this->wrapHtaccessDirectiveRuns($htaccess, 'ExpiresDefault', 'mod_expires.c');
+        $htaccess = $this->wrapHtaccessDirectiveRuns($htaccess, 'ExpiresByType', 'mod_expires.c');
+
+        return $htaccess;
+    }
+
+    public function patchComposeApacheModuleCommand(string $yaml, string $serviceName): string
+    {
+        $compose = Yaml::parse($yaml);
+        if (! is_array($compose) || ! is_array($compose['services'] ?? null)) {
+            return $yaml;
+        }
+
+        $key = app(ContainerDeploymentService::class)->resolveComposeAppServiceKey($compose, $serviceName);
+        if ($key === null || ! is_array($compose['services'][$key] ?? null)) {
+            return $yaml;
+        }
+
+        $command = $compose['services'][$key]['command'] ?? null;
+        if (is_array($command) && ($command[0] ?? '') === 'talksasa-php-server') {
+            return $yaml;
+        }
+        if (is_string($command) && str_contains($command, 'talksasa-php-server')) {
+            return $yaml;
+        }
+
+        $joined = is_array($command) ? implode(' ', $command) : (string) $command;
+        if (str_contains($joined, 'a2enmod headers')) {
+            return $yaml;
+        }
+
+        $compose['services'][$key]['command'] = $this->apacheForegroundWithModulesCommand();
+
+        return Yaml::dump($compose, 10, 2);
+    }
+
+    public function enableApacheModulesInContainer(
+        SSHService $ssh,
+        string $containerPath,
+        string $appService
+    ): void {
+        $enable = 'a2enmod headers rewrite expires >/dev/null 2>&1 || true; '
+            .'apache2ctl graceful >/dev/null 2>&1 || kill -USR1 1 2>/dev/null || true';
+        $ssh->exec(
+            'cd '.escapeshellarg($containerPath)
+            .' && docker compose exec -u 0 -T '.escapeshellarg($appService)
+            .' bash -lc '.escapeshellarg($enable),
+            30
+        );
+    }
+
+    public function persistApacheModulesOnCompose(
+        SSHService $ssh,
+        string $containerPath,
+        string $containerName
+    ): void {
+        $composePath = $containerPath.'/docker-compose.yml';
+        try {
+            $yaml = trim((string) $ssh->exec('cat '.escapeshellarg($composePath), 15));
+        } catch (\Throwable) {
+            return;
+        }
+        if ($yaml === '') {
+            return;
+        }
+
+        $patched = $this->patchComposeApacheModuleCommand($yaml, $containerName);
+        if ($patched === $yaml) {
+            return;
+        }
+
+        $ssh->upload($patched, $composePath);
+    }
+
+    public function wrapHtaccessOnHost(SSHService $ssh, string $hostAppPath): bool
+    {
+        $path = rtrim($hostAppPath, '/').'/.htaccess';
+        try {
+            $exists = trim($ssh->exec('test -f '.escapeshellarg($path).' && echo yes || echo no', 10));
+            if ($exists !== 'yes') {
+                return false;
+            }
+            $raw = (string) $ssh->exec('cat '.escapeshellarg($path), 20);
+        } catch (\Throwable) {
+            return false;
+        }
+
+        $updated = $this->wrapHtaccessOptionalApacheDirectives($raw);
+        if ($updated === $raw) {
+            return false;
+        }
+
+        $ssh->upload($updated, $path);
+
+        return true;
+    }
+
+    private function wrapHtaccessDirectiveRuns(string $text, string $directive, string $module): string
+    {
+        if (! preg_match('/^\s*'.preg_quote($directive, '/').'\b/mi', $text)) {
+            return $text;
+        }
+
+        $lines = preg_split("/\r\n|\n|\r/", $text) ?: [];
+        $out = [];
+        $inModule = false;
+        $pending = [];
+        $moduleOpen = '/<IfModule\s+'.preg_quote($module, '/').'\s*>/i';
+
+        $flush = function () use (&$out, &$pending, $module): void {
+            if ($pending === []) {
+                return;
+            }
+            $out[] = '<IfModule '.$module.'>';
+            foreach ($pending as $line) {
+                $out[] = $line;
+            }
+            $out[] = '</IfModule>';
+            $pending = [];
+        };
+
+        foreach ($lines as $line) {
+            if (preg_match($moduleOpen, $line) === 1) {
+                $flush();
+                $inModule = true;
+                $out[] = $line;
+
+                continue;
+            }
+            if ($inModule && preg_match('/<\s*\/IfModule\s*>/i', $line) === 1) {
+                $inModule = false;
+                $out[] = $line;
+
+                continue;
+            }
+            if (! $inModule && preg_match('/^\s*'.preg_quote($directive, '/').'\b/i', $line) === 1) {
+                $pending[] = $line;
+
+                continue;
+            }
+            $flush();
+            $out[] = $line;
+        }
+        $flush();
+
+        $joined = implode("\n", $out);
+        if (str_ends_with($text, "\n") && ! str_ends_with($joined, "\n")) {
+            $joined .= "\n";
+        }
+
+        return $joined;
     }
 
     /**

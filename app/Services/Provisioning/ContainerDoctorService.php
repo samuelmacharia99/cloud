@@ -111,6 +111,7 @@ class ContainerDoctorService
             'fix_storage_permissions' => $this->treatFixStoragePermissions($service),
             'ensure_storage_link' => $this->treatEnsureStorageLink($service),
             'fix_wordpress_permissions' => $this->treatFixWordPressPermissions($service),
+            'fix_wordpress_apache_modules' => $this->treatFixWordPressApacheModules($service),
             'fix_wordpress_media_processing' => $this->treatFixWordPressMediaProcessing($service),
             'regenerate_wordpress_thumbnails' => $this->treatRegenerateWordPressThumbnails($service),
             'fix_wordpress_site_url' => $this->treatFixWordPressSiteUrl($service),
@@ -3590,6 +3591,25 @@ PHP;
                 ],
             ],
             [
+                'id' => 'wordpress_htaccess_header_module_missing',
+                'severity' => 'critical',
+                'stacks' => ['wordpress'],
+                'patterns' => [
+                    '/Invalid command [\'"]Header[\'"]/i',
+                    '/\.htaccess: Invalid command [\'"]Header[\'"]/i',
+                    '/Invalid command [\'"]ExpiresByType[\'"]/i',
+                    '/Invalid command [\'"]ExpiresActive[\'"]/i',
+                ],
+                'title' => 'Apache .htaccess needs mod_headers',
+                'summary' => 'DirectAdmin .htaccess uses `Header` / `Expires*` but the official wordpress:apache image does not enable those modules. Apache then 500s every request, including GET /. Enable headers/rewrite/expires and wrap bare Header lines in IfModule — MySQL stays up.',
+                'treat_action' => 'fix_wordpress_apache_modules',
+                'treat_label' => 'Enable Apache Header module',
+                'manual_steps' => [
+                    'Click Enable Apache Header module — enables mod_headers/rewrite/expires, wraps .htaccess Header lines, and reloads Apache (MySQL stays up).',
+                    'Reload the site. Do not Reset database.',
+                ],
+            ],
+            [
                 'id' => 'wordpress_upload_permission_denied',
                 'severity' => 'warning',
                 'stacks' => ['wordpress'],
@@ -4617,6 +4637,15 @@ PHP;
         $looksLikeMissingTable = (bool) preg_match('/relation .* does not exist|Base table or view not found|no such table/i', $haystack);
         $looksLikeMissingViewCache = (bool) preg_match('/Please provide a valid cache path/i', $haystack);
         $looksLikeDbAuth = ! $dbOk && $this->looksLikeDatabaseAuthFailure($haystack);
+        $looksLikeHtaccessHeader = (bool) preg_match('/Invalid command [\'"]Header[\'"]|Invalid command [\'"]Expires/i', $haystack);
+
+        if ($stack === 'wordpress' && $looksLikeHtaccessHeader) {
+            return [
+                'treat_action' => 'fix_wordpress_apache_modules',
+                'treat_label' => 'Enable Apache Header module',
+                'summary' => 'Apache is 500ing because .htaccess uses `Header` (DirectAdmin / security plugins) and wordpress:apache does not load mod_headers. Enable the module and wrap those lines — MySQL stays up.',
+            ];
+        }
 
         if ($looksLikeDbAuth) {
             return [
@@ -5434,6 +5463,47 @@ PHP;
             ];
         } catch (\Throwable $e) {
             return ['success' => false, 'message' => 'Failed to fix WordPress permissions: '.$e->getMessage()];
+        } finally {
+            $ssh->disconnect();
+        }
+    }
+
+    /**
+     * @return array{success: bool, message: string}
+     */
+    private function treatFixWordPressApacheModules(Service $service): array
+    {
+        $deployment = $service->containerDeployment;
+        if (! $deployment?->node) {
+            return ['success' => false, 'message' => 'Application is not deployed.'];
+        }
+
+        $ssh = SSHService::forNode($deployment->node);
+        $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+        $hostAppPath = $containerPath.'/app';
+        $hardening = app(WordPressContainerHardeningService::class);
+
+        try {
+            $wrapped = $hardening->wrapHtaccessOnHost($ssh, $hostAppPath);
+            $hardening->persistApacheModulesOnCompose($ssh, $containerPath, $deployment->container_name);
+            try {
+                $hardening->enableApacheModulesInContainer($ssh, $containerPath, $deployment->container_name);
+            } catch (\Throwable $e) {
+                \Log::warning('Doctor a2enmod failed; recreating the app so compose command can enable modules', [
+                    'service_id' => $service->id,
+                    'error' => $e->getMessage(),
+                ]);
+                app(ContainerDeploymentService::class)->restartAppService($ssh, $deployment);
+            }
+
+            return [
+                'success' => true,
+                'message' => $wrapped
+                    ? 'Enabled Apache headers/rewrite/expires and wrapped .htaccess Header lines. Reload the site — MySQL was not restarted.'
+                    : 'Enabled Apache headers/rewrite/expires. Reload the site — MySQL was not restarted.',
+            ];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'message' => 'Failed to enable Apache Header module: '.$e->getMessage()];
         } finally {
             $ssh->disconnect();
         }

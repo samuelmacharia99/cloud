@@ -1154,6 +1154,27 @@ LOG;
     }
 
     #[Test]
+    public function wordpress_htaccess_header_module_offers_apache_repair(): void
+    {
+        $logs = <<<'LOG'
+[core:alert] /var/www/html/.htaccess: Invalid command 'Header', perhaps misspelled or defined by a module not included in the server configuration
+GET /dashboard HTTP/1.1" 500 860
+LOG;
+        $findings = app(ContainerDoctorService::class)->analyzeLogs($logs, 'wordpress');
+        $finding = collect($findings)->firstWhere('id', 'wordpress_htaccess_header_module_missing');
+
+        $this->assertNotNull($finding);
+        $this->assertSame('fix_wordpress_apache_modules', $finding['treat_action']);
+
+        $treat = app(ContainerDoctorService::class)->resolveHttp500Treatment(
+            ['db_ok' => true, 'http_status' => 500],
+            [$logs],
+            'wordpress'
+        );
+        $this->assertSame('fix_wordpress_apache_modules', $treat['treat_action']);
+    }
+
+    #[Test]
     public function attachments_without_sizes_are_offered_a_thumbnail_rebuild(): void
     {
         $findings = $this->callPrivate('wordPressMediaFindings', [

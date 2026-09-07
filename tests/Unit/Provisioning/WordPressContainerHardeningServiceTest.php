@@ -103,4 +103,54 @@ class WordPressContainerHardeningServiceTest extends TestCase
             'slug' => 'wordpress',
         ]));
     }
+
+    #[Test]
+    public function it_wraps_bare_header_directives_and_leaves_existing_ifmodule_alone(): void
+    {
+        $service = new WordPressContainerHardeningService;
+        $raw = <<<'HTA'
+# BEGIN WordPress
+RewriteEngine On
+Header always set X-Frame-Options "SAMEORIGIN"
+Header always set X-Content-Type-Options "nosniff"
+RewriteRule . /index.php [L]
+<IfModule mod_headers.c>
+Header set X-XSS-Protection "1; mode=block"
+</IfModule>
+# END WordPress
+HTA;
+
+        $wrapped = $service->wrapHtaccessOptionalApacheDirectives($raw);
+
+        $this->assertStringContainsString('<IfModule mod_headers.c>', $wrapped);
+        $this->assertStringContainsString('Header always set X-Frame-Options "SAMEORIGIN"', $wrapped);
+        $this->assertSame(2, substr_count($wrapped, '<IfModule mod_headers.c>'));
+        $this->assertSame($wrapped, $service->wrapHtaccessOptionalApacheDirectives($wrapped));
+    }
+
+    #[Test]
+    public function it_injects_a2enmod_into_official_wordpress_compose_command(): void
+    {
+        $yaml = <<<'YAML'
+services:
+  user-483-service-420-wordpress:
+    image: wordpress:latest
+    container_name: user-483-service-420-wordpress
+  mysql:
+    image: mysql:8.0
+YAML;
+
+        $patched = (new WordPressContainerHardeningService)
+            ->patchComposeApacheModuleCommand($yaml, 'user-483-service-420-wordpress');
+
+        $this->assertStringContainsString('a2enmod headers rewrite expires', $patched);
+        $this->assertStringContainsString('apache2-foreground', $patched);
+        $this->assertSame(
+            $patched,
+            (new WordPressContainerHardeningService)->patchComposeApacheModuleCommand(
+                $patched,
+                'user-483-service-420-wordpress'
+            )
+        );
+    }
 }
