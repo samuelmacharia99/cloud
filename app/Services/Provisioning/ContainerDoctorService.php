@@ -1156,9 +1156,28 @@ class ContainerDoctorService
                 ]);
 
                 $appErrors = $containerReady ? $this->readRecentApplicationErrors($ssh, $deployment) : [];
+                $phpProbeLines = [];
+                if ($containerReady && in_array($stack, ['laravel', 'php'], true)) {
+                    try {
+                        $phpProbe = app(PhpRuntime500Probe::class)->capture($ssh, $deployment);
+                        $checks['php_uses_mysql_ext'] = $phpProbe['uses_mysql_ext'];
+                        $checks['php_fatal'] = $phpProbe['fatal'];
+                        if (is_string($phpProbe['fatal']) && $phpProbe['fatal'] !== '') {
+                            $phpProbeLines[] = $phpProbe['fatal'];
+                        }
+                        if ($phpProbe['uses_mysql_ext']) {
+                            $phpProbeLines[] = 'Source still calls mysql_* (removed in PHP 8)';
+                        }
+                        foreach ($phpProbe['lint'] as $lint) {
+                            $phpProbeLines[] = $lint;
+                        }
+                    } catch (\Throwable) {
+                    }
+                }
                 $evidence = array_values(array_filter([
                     'HTTP '.$httpStatus,
                     (string) ($deployment->getAccessUrl() ?? ''),
+                    ...$phpProbeLines,
                     ...$appErrors,
                 ]));
 
@@ -5112,6 +5131,27 @@ PHP;
                 ];
             }
 
+            if (($checks['php_uses_mysql_ext'] ?? false) === true) {
+                return [
+                    'treat_action' => 'restart_application',
+                    'treat_label' => 'Restart application',
+                    'summary' => 'Live PDO works (tables: '.(string) ($checks['table_count'] ?? '?')
+                        .') but the site still calls mysql_* (removed in PHP 8), which fatals with an empty HTTP '.$httpStatus
+                        .'. Restart installs a mysqli shim and recreates the app only. MySQL stays up.',
+                ];
+            }
+
+            $phpFatal = trim((string) ($checks['php_fatal'] ?? ''));
+            if ($phpFatal !== '') {
+                return [
+                    'treat_action' => 'restart_application',
+                    'treat_label' => 'Restart application',
+                    'summary' => 'Live PDO works (tables: '.(string) ($checks['table_count'] ?? '?')
+                        .') but PHP fatals: '.$phpFatal
+                        .'. Restart rewrites config.php to this sidecar and recreates the app only. MySQL stays up.',
+                ];
+            }
+
             return [
                 'treat_action' => 'restart_application',
                 'treat_label' => 'Restart application',
@@ -5142,6 +5182,30 @@ PHP;
                 .' (tables: '.((string) ($checks['table_count'] ?? '?')).'). '
                 .'This is an application exception — this card stays until the URL returns 2xx/3xx.',
         ];
+    }
+
+    /**
+     * Port-up is not enough: DirectAdmin PHP can 500 with an empty body while
+     * nginx is listening. Restart must fail until GET / is below 500.
+     *
+     * @param  array{fatal?: ?string, uses_mysql_ext?: bool, index_files?: list<string>, lint?: list<string>}  $phpProbe
+     * @return array{success: bool, message: string}
+     */
+    public function phpRestartTreatmentOutcome(string $slug, ?int $httpStatus, array $phpProbe = []): array
+    {
+        if (in_array($slug, ['laravel', 'php'], true) && $httpStatus !== null && $httpStatus >= 500) {
+            return [
+                'success' => false,
+                'message' => 'The app port answers but GET / still returns HTTP '.$httpStatus.'. '
+                    .app(PhpRuntime500Probe::class)->summary($phpProbe),
+            ];
+        }
+
+        $message = in_array($slug, ['laravel', 'php'], true)
+            ? 'Application container recreated with cookie/file drivers (database sidecar left running). Reload the site.'
+            : 'Application container recreated (database sidecar left running). Reload the site.';
+
+        return ['success' => true, 'message' => $message];
     }
 
     /**
@@ -6364,11 +6428,19 @@ PHP;
                     ?? $service->product?->containerTemplate?->slug
                     ?? ''
                 ));
-                $message = in_array($slug, ['laravel', 'php'], true)
-                    ? 'Application container recreated with cookie/file drivers (database sidecar left running). Reload the site.'
-                    : 'Application container recreated (database sidecar left running). Reload the site.';
+                $httpStatus = null;
+                $phpProbe = ['fatal' => null, 'uses_mysql_ext' => false, 'index_files' => [], 'lint' => []];
+                if (in_array($slug, ['laravel', 'php'], true)) {
+                    $httpStatus = $this->probeHttpStatus($ssh, $deployment);
+                    if ($httpStatus !== null && $httpStatus >= 500) {
+                        try {
+                            $phpProbe = app(PhpRuntime500Probe::class)->capture($ssh, $deployment);
+                        } catch (\Throwable) {
+                        }
+                    }
+                }
 
-                return ['success' => true, 'message' => $message];
+                return $this->phpRestartTreatmentOutcome($slug, $httpStatus, $phpProbe);
             }
 
             if (is_string($probe['bootstrapping'])) {

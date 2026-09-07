@@ -865,6 +865,16 @@ class ContainerDeploymentService
                             'error' => $e->getMessage(),
                         ]);
                     }
+                    if ($slug === 'php') {
+                        try {
+                            app(PhpLegacyMysqlShim::class)->installOnHost($ssh, $containerPath.'/app');
+                        } catch (\Throwable $e) {
+                            Log::warning('Could not install legacy mysql_* shim before restart', [
+                                'service_id' => $service->id,
+                                'error' => $e->getMessage(),
+                            ]);
+                        }
+                    }
                 }
                 if (in_array($slug, ['nodejs', 'python', 'ruby', 'go'], true)) {
                     // Git pull can leave files on disk while compose still runs the

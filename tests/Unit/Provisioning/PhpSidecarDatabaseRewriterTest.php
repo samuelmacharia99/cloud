@@ -81,4 +81,16 @@ PHP;
         $this->assertStringNotContainsString('DB_SOCKET=', $rewritten);
         $this->assertStringContainsString('APP_NAME=Roadtrip', $rewritten);
     }
+
+    #[Test]
+    public function it_parses_quoted_env_assignments_from_a_host_dotenv(): void
+    {
+        $parsed = (new PhpSidecarDatabaseRewriter)->parseEnvAssignments(
+            "APP_NAME=Roadtrip\n# comment\nDB_PASSWORD=\"p@ss word\"\nMYSQL_USER=u483_s426\n"
+        );
+
+        $this->assertSame('p@ss word', $parsed['DB_PASSWORD']);
+        $this->assertSame('u483_s426', $parsed['MYSQL_USER']);
+        $this->assertSame('Roadtrip', $parsed['APP_NAME']);
+    }
 }

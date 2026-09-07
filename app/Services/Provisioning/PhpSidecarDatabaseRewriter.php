@@ -179,6 +179,41 @@ class PhpSidecarDatabaseRewriter
     {
         $deployments = app(ContainerDeploymentService::class);
         $env = is_array($deployment->env_values) ? $deployment->env_values : [];
+        $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+        $dbService = $deployments->resolveMysqlComposeServiceName($env);
+
+        try {
+            $live = app(DirectAdminToContainerMigrationService::class)
+                ->readLiveMysqlSidecarEnv($ssh, $containerPath, $dbService);
+            if (($live['MYSQL_PASSWORD'] ?? '') !== '') {
+                $env['MYSQL_PASSWORD'] = $live['MYSQL_PASSWORD'];
+                $env['DB_PASSWORD'] = $live['MYSQL_PASSWORD'];
+            }
+            if (($live['MYSQL_USER'] ?? '') !== '') {
+                $env['MYSQL_USER'] = $live['MYSQL_USER'];
+                $env['DB_USERNAME'] = $live['MYSQL_USER'];
+            }
+            if (($live['MYSQL_DATABASE'] ?? '') !== '') {
+                $env['MYSQL_DATABASE'] = $live['MYSQL_DATABASE'];
+                $env['DB_DATABASE'] = $live['MYSQL_DATABASE'];
+            }
+        } catch (\Throwable) {
+        }
+
+        $hostAppPath = $containerPath.'/app';
+        try {
+            $exists = trim($ssh->exec('test -f '.escapeshellarg($hostAppPath.'/.env').' && echo yes || echo no', 10));
+            if ($exists === 'yes') {
+                $parsed = $this->parseEnvAssignments($ssh->downloadFile($hostAppPath.'/.env'));
+                foreach (['DB_PASSWORD', 'MYSQL_PASSWORD', 'DB_USERNAME', 'MYSQL_USER', 'DB_DATABASE', 'MYSQL_DATABASE'] as $key) {
+                    if (($parsed[$key] ?? '') !== '') {
+                        $env[$key] = $parsed[$key];
+                    }
+                }
+            }
+        } catch (\Throwable) {
+        }
+
         $host = $deployments->sidecarDnsHost((string) $deployment->container_name);
         $credentials = [
             'host' => $host,
@@ -200,8 +235,6 @@ class PhpSidecarDatabaseRewriter
         $oldUsers = array_values(array_filter([
             (string) ($legacy['username'] ?? ''),
         ]));
-
-        $hostAppPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name.'/app';
 
         return $this->applyOnHost($ssh, $hostAppPath, $credentials, $oldDatabases, $oldUsers);
     }
@@ -252,6 +285,29 @@ class PhpSidecarDatabaseRewriter
     private function phpSingleQuoted(string $value): string
     {
         return "'".str_replace(['\\', "'"], ['\\\\', "\\'"], $value)."'";
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function parseEnvAssignments(string $content): array
+    {
+        $env = [];
+        foreach (preg_split('/\r\n|\r|\n/', $content) ?: [] as $line) {
+            $line = trim($line);
+            if ($line === '' || str_starts_with($line, '#') || ! str_contains($line, '=')) {
+                continue;
+            }
+            [$key, $value] = explode('=', $line, 2);
+            $key = trim($key);
+            $value = trim($value);
+            $value = trim($value, "\"'");
+            if ($key !== '') {
+                $env[$key] = $value;
+            }
+        }
+
+        return $env;
     }
 
     private function encodeEnvValue(string $value): string

@@ -114,6 +114,8 @@ decorate_workers_output = no
 php_admin_value[upload_max_filesize] = 100M
 php_admin_value[post_max_size] = 100M
 php_admin_flag[display_errors] = off
+php_admin_flag[log_errors] = on
+php_admin_value[error_log] = /proc/self/fd/2
 EOF
 
 # nginx -c uses the config directory as prefix, so a relative "include fastcgi_params"

@@ -1530,6 +1530,48 @@ LOG;
     }
 
     #[Test]
+    public function http_500_with_live_pdo_and_mysql_ext_installs_the_shim_on_restart(): void
+    {
+        $treat = app(ContainerDoctorService::class)->resolveHttp500Treatment(
+            [
+                'db_ok' => true,
+                'table_count' => 39,
+                'http_status' => 500,
+                'php_uses_mysql_ext' => true,
+            ],
+            [],
+            'php'
+        );
+
+        $this->assertSame('restart_application', $treat['treat_action']);
+        $this->assertStringContainsString('mysql_*', $treat['summary']);
+        $this->assertStringContainsString('shim', $treat['summary']);
+    }
+
+    #[Test]
+    public function php_restart_is_not_treatment_success_while_get_still_500s(): void
+    {
+        $doctor = app(ContainerDoctorService::class);
+
+        $failed = $doctor->phpRestartTreatmentOutcome('php', 500, [
+            'fatal' => 'Fatal error: Call to undefined function mysql_connect()',
+            'uses_mysql_ext' => true,
+            'index_files' => ['/app/index.php (800 bytes)'],
+            'lint' => [],
+        ]);
+        $this->assertFalse($failed['success']);
+        $this->assertStringContainsString('HTTP 500', $failed['message']);
+        $this->assertStringContainsString('mysql_connect', $failed['message']);
+
+        $ok = $doctor->phpRestartTreatmentOutcome('php', 200, []);
+        $this->assertTrue($ok['success']);
+        $this->assertStringContainsString('sidecar left running', $ok['message']);
+
+        $portOnly = $doctor->phpRestartTreatmentOutcome('nodejs', 500, []);
+        $this->assertTrue($portOnly['success']);
+    }
+
+    #[Test]
     public function newest_unique_lines_keep_the_latest_error_not_the_oldest_unique_mix(): void
     {
         $lines = app(ContainerDoctorService::class)->newestUniqueLines([
