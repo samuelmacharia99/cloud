@@ -90,6 +90,24 @@ SQL;
     }
 
     #[Test]
+    public function it_uses_the_sidecar_app_user_for_network_pdo_import(): void
+    {
+        $credentials = $this->importer()->mysqlNetworkImportCredentials('u483_s426', 'app-secret');
+
+        $this->assertSame('u483_s426', $credentials['user']);
+        $this->assertSame('app-secret', $credentials['password']);
+    }
+
+    #[Test]
+    public function it_refuses_root_for_network_pdo_import(): void
+    {
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('application user, not root');
+
+        $this->importer()->mysqlNetworkImportCredentials('root', 'root-secret');
+    }
+
+    #[Test]
     public function it_parses_php_ini_size_values(): void
     {
         $importer = $this->importer();

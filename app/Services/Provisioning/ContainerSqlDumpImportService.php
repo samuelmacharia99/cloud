@@ -389,6 +389,30 @@ class ContainerSqlDumpImportService
     }
 
     /**
+     * PDO runs in the app container and connects over the compose network.
+     * Official MySQL images reject root@<app-ip>; the sidecar app user is granted from '%'.
+     *
+     * @return array{user: string, password: string}
+     */
+    public function mysqlNetworkImportCredentials(string $user, string $password): array
+    {
+        $user = trim($user);
+        if ($user === '' || strcasecmp($user, 'root') === 0) {
+            throw new \RuntimeException(
+                'SQL import connects from the app container, so it needs the sidecar application user, not root. Repair DB credentials, then retry.'
+            );
+        }
+
+        if ($password === '') {
+            throw new \RuntimeException(
+                'Database password is missing from the sidecar. Repair DB credentials, then retry the import.'
+            );
+        }
+
+        return ['user' => $user, 'password' => $password];
+    }
+
+    /**
      * @param  array{type: string, service?: string, database?: string, username?: string, password?: string}  $databaseContext
      */
     public function importIntoSidecar(
@@ -451,7 +475,6 @@ class ContainerSqlDumpImportService
         $database = (string) ($databaseContext['database'] ?? 'appdb');
         $user = (string) ($databaseContext['username'] ?? 'appuser');
         $password = (string) ($databaseContext['password'] ?? '');
-        $rootPassword = (string) ($deployment->env_values['MYSQL_ROOT_PASSWORD'] ?? '');
 
         try {
             $live = $this->migrator->readLiveMysqlSidecarEnv($ssh, $containerPath, $dbService);
@@ -464,19 +487,12 @@ class ContainerSqlDumpImportService
             if (($live['MYSQL_DATABASE'] ?? '') !== '') {
                 $database = $live['MYSQL_DATABASE'];
             }
-            if (($live['MYSQL_ROOT_PASSWORD'] ?? '') !== '') {
-                $rootPassword = $live['MYSQL_ROOT_PASSWORD'];
-            }
         } catch (\Throwable) {
         }
 
-        $importUser = $rootPassword !== '' ? 'root' : $user;
-        $importPass = $rootPassword !== '' ? $rootPassword : $password;
-        if ($importPass === '') {
-            throw new \RuntimeException(
-                'Database password is missing from the sidecar. Repair DB credentials, then retry the import.'
-            );
-        }
+        $credentials = $this->mysqlNetworkImportCredentials($user, $password);
+        $importUser = $credentials['user'];
+        $importPass = $credentials['password'];
 
         $statements = $this->splitSqlStatements($sql);
         if ($statements === []) {
