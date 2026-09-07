@@ -8,7 +8,18 @@ use App\Services\SSH\SSHService;
 class PhpRuntime500Probe
 {
     /**
-     * @return array{fatal: ?string, uses_mysql_ext: bool, index_files: list<string>, lint: list<string>, paths_php: list<string>, index_require: ?string}
+     * @return array{
+     *     fatal: ?string,
+     *     uses_mysql_ext: bool,
+     *     index_files: list<string>,
+     *     lint: list<string>,
+     *     paths_php: list<string>,
+     *     index_require: ?string,
+     *     ci_system: bool,
+     *     ci_vendor_system: bool,
+     *     ci_writable: bool,
+     *     ci_db_host: ?string
+     * }
      */
     public function capture(SSHService $ssh, ContainerDeployment $deployment): array
     {
@@ -20,6 +31,10 @@ class PhpRuntime500Probe
             'lint' => [],
             'paths_php' => [],
             'index_require' => null,
+            'ci_system' => false,
+            'ci_vendor_system' => false,
+            'ci_writable' => false,
+            'ci_db_host' => null,
         ];
 
         try {
@@ -68,6 +83,12 @@ class PhpRuntime500Probe
             'index_require' => isset($decoded['index_require']) && is_string($decoded['index_require'])
                 ? mb_substr($decoded['index_require'], 0, 200)
                 : null,
+            'ci_system' => (bool) ($decoded['ci_system'] ?? false),
+            'ci_vendor_system' => (bool) ($decoded['ci_vendor_system'] ?? false),
+            'ci_writable' => (bool) ($decoded['ci_writable'] ?? false),
+            'ci_db_host' => isset($decoded['ci_db_host']) && is_string($decoded['ci_db_host']) && $decoded['ci_db_host'] !== ''
+                ? mb_substr($decoded['ci_db_host'], 0, 80)
+                : null,
         ];
 
         if ($result['fatal'] === null) {
@@ -110,8 +131,9 @@ class PhpRuntime500Probe
                 .' sh -lc '.escapeshellarg(
                     'PREPEND=""; if [ -f /app/.talksasa-mysql-shim.php ]; then '
                     .'PREPEND="-d auto_prepend_file=/app/.talksasa-mysql-shim.php"; fi; '
+                    .'export REQUEST_METHOD=GET REQUEST_URI=/ SCRIPT_NAME=/index.php HTTP_HOST=localhost; '
                     .'timeout 8 php -d display_errors=1 -d error_reporting=32767 $PREPEND '
-                    .escapeshellarg($front).' 2>&1 | tail -n 30 || true'
+                    .escapeshellarg($front).' 2>&1 | tail -n 40 || true'
                 ),
                 20
             ));
@@ -119,7 +141,7 @@ class PhpRuntime500Probe
             return null;
         }
 
-        if (preg_match('/(Fatal error:|Uncaught |Call to undefined function)[^\n]{0,240}/i', $raw, $matches) !== 1) {
+        if (preg_match('/(Fatal error:|Uncaught |Call to undefined function|Failed opening required|DatabaseException)[^\n]{0,240}/i', $raw, $matches) !== 1) {
             return null;
         }
 
@@ -144,6 +166,16 @@ class PhpRuntime500Probe
             $parts[] = 'Config/Paths.php was not found under /app — DirectAdmin often kept the CodeIgniter app/ folder next to public_html.';
         } elseif ($paths !== []) {
             $parts[] = 'Paths.php at '.implode(', ', array_slice($paths, 0, 3)).'.';
+        }
+        $ciHost = trim((string) ($probe['ci_db_host'] ?? ''));
+        if ($ciHost !== '') {
+            $parts[] = 'CodeIgniter DB hostname: '.$ciHost.'.';
+        }
+        if (($probe['ci_system'] ?? false) !== true && ($probe['ci_vendor_system'] ?? false) !== true
+            && $paths !== []) {
+            $parts[] = 'system/ and vendor/codeigniter4 are missing — CodeIgniter cannot boot.';
+        } elseif (($probe['ci_system'] ?? false) !== true && ($probe['ci_vendor_system'] ?? false) === true) {
+            $parts[] = 'system/ is missing; vendor/codeigniter4 is present.';
         }
         if (($probe['index_files'] ?? []) === []) {
             $parts[] = 'No index.php was found under /app or /app/public.';
@@ -206,6 +238,23 @@ if (is_file('/app/index.php')) {
         }
     }
 }
+$ciHost = null;
+foreach (['/app/.env', '/app/app/.env'] as $envFile) {
+    if (! is_file($envFile)) {
+        continue;
+    }
+    foreach (preg_split('/\r\n|\r|\n/', (string) file_get_contents($envFile)) ?: [] as $line) {
+        if (preg_match('/^(?:database\\.default\\.(?:hostname|host)|DB_HOST)\\s*=\\s*(.+)$/', trim($line), $match) === 1) {
+            $ciHost = trim($match[1], " \t\"'");
+        }
+    }
+}
+if ($ciHost === null && is_file('/app/app/Config/Database.php')) {
+    $dbSrc = (string) file_get_contents('/app/app/Config/Database.php');
+    if (preg_match('/[\'"]hostname[\'"]\\s*=>\\s*[\'"]([^\'"]+)/', $dbSrc, $match) === 1) {
+        $ciHost = $match[1];
+    }
+}
 echo 'TALKSASA_PHP500='.json_encode([
     'fatal' => null,
     'uses_mysql_ext' => $uses,
@@ -213,6 +262,11 @@ echo 'TALKSASA_PHP500='.json_encode([
     'lint' => $lint,
     'paths_php' => $pathsPhp,
     'index_require' => $indexRequire,
+    'ci_system' => is_file('/app/system/Boot.php') || is_file('/app/system/CodeIgniter.php'),
+    'ci_vendor_system' => is_file('/app/vendor/codeigniter4/framework/system/Boot.php')
+        || is_file('/app/vendor/codeigniter4/framework/system/CodeIgniter.php'),
+    'ci_writable' => is_dir('/app/writable'),
+    'ci_db_host' => $ciHost,
 ]);
 PHP;
     }

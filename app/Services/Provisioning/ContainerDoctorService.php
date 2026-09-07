@@ -1166,6 +1166,10 @@ class ContainerDoctorService
                         $checks['php_fatal'] = $phpProbe['fatal'];
                         $checks['php_paths_php'] = $phpProbe['paths_php'] ?? [];
                         $checks['php_index_require'] = $phpProbe['index_require'] ?? null;
+                        $checks['php_ci_system'] = $phpProbe['ci_system'] ?? false;
+                        $checks['php_ci_vendor_system'] = $phpProbe['ci_vendor_system'] ?? false;
+                        $checks['php_ci_writable'] = $phpProbe['ci_writable'] ?? false;
+                        $checks['php_ci_db_host'] = $phpProbe['ci_db_host'] ?? null;
                         $checks['da_can_import_ci_app'] = app(DirectAdminToContainerMigrationService::class)
                             ->canImportDirectAdminCodeIgniterSiblings($service);
                         if (is_string($phpProbe['fatal']) && $phpProbe['fatal'] !== '') {
@@ -1179,6 +1183,14 @@ class ContainerDoctorService
                         }
                         if (($phpProbe['paths_php'] ?? []) === [] && is_string($phpProbe['index_require'] ?? null)) {
                             $phpProbeLines[] = 'Config/Paths.php not found under /app';
+                        }
+                        if (is_string($phpProbe['ci_db_host'] ?? null) && $phpProbe['ci_db_host'] !== '') {
+                            $phpProbeLines[] = 'CI hostname '.$phpProbe['ci_db_host'];
+                        }
+                        if (($phpProbe['ci_system'] ?? false) !== true && ($phpProbe['paths_php'] ?? []) !== []) {
+                            $phpProbeLines[] = (($phpProbe['ci_vendor_system'] ?? false) === true)
+                                ? 'system/ missing (vendor present)'
+                                : 'system/ and vendor/codeigniter4 missing';
                         }
                         if ($phpProbe['uses_mysql_ext']) {
                             $phpProbeLines[] = 'Source still calls mysql_* (removed in PHP 8)';
@@ -5251,7 +5263,8 @@ PHP;
             $indexRequire = trim((string) ($checks['php_index_require'] ?? ''));
             if (str_contains($phpFatal, 'Config/Paths.php') || str_contains($indexRequire, 'Config/Paths.php')) {
                 $missingApp = $pathsFiles === [] || (is_array($pathsFiles) && $pathsFiles === []);
-                if ($missingApp && ($checks['da_can_import_ci_app'] ?? false) === true) {
+                $canImportCi = ($checks['da_can_import_ci_app'] ?? false) === true;
+                if ($missingApp && $canImportCi) {
                     return [
                         'treat_action' => 'import_da_codeigniter_app',
                         'treat_label' => 'Import CodeIgniter app folder',
@@ -5261,16 +5274,53 @@ PHP;
                     ];
                 }
 
+                $hasSystem = (bool) ($checks['php_ci_system'] ?? false);
+                $hasVendorSystem = (bool) ($checks['php_ci_vendor_system'] ?? false);
+                if (! $missingApp && ! $hasSystem && ! $hasVendorSystem && $canImportCi) {
+                    return [
+                        'treat_action' => 'import_da_codeigniter_app',
+                        'treat_label' => 'Import CodeIgniter app folder',
+                        'summary' => 'Live PDO works (tables: '.(string) ($checks['table_count'] ?? '?')
+                            .') and Paths.php is already at '.implode(', ', array_slice(is_array($pathsFiles) ? $pathsFiles : [], 0, 2))
+                            .', but system/ and vendor/codeigniter4 are missing so CodeIgniter cannot boot. '
+                            .'Import pulls those siblings from DirectAdmin or container leftovers. MySQL stays up.',
+                    ];
+                }
+
+                $ciHost = strtolower(trim((string) ($checks['php_ci_db_host'] ?? '')));
+                $staleCiDb = $ciHost === 'mysql' || $this->isAmbiguousLaravelDatabaseHost($ciHost);
+                $requireAlreadyResolved = $indexRequire !== '' && ! str_contains($indexRequire, '..');
+
+                if ($missingApp) {
+                    return [
+                        'treat_action' => 'restart_application',
+                        'treat_label' => 'Restart application',
+                        'summary' => 'Live PDO works (tables: '.(string) ($checks['table_count'] ?? '?')
+                            .') but CodeIgniter cannot load Config/Paths.php — that file is not under /app. '
+                            .'DirectAdmin often kept the app/ folder next to public_html, and this service has no da_legacy record to pull it from. Restart cannot invent those files.',
+                    ];
+                }
+
+                if ($staleCiDb) {
+                    return [
+                        'treat_action' => 'restart_application',
+                        'treat_label' => 'Restart application',
+                        'summary' => 'Live PDO works (tables: '.(string) ($checks['table_count'] ?? '?')
+                            .') and Paths.php is already loaded'
+                            .($requireAlreadyResolved ? ' (the front-controller require is correct)' : '')
+                            .', but CodeIgniter still uses hostname `'.$ciHost.'`. Doctor PDO uses the sidecar; GET / 500s. '
+                            .'Restart writes database.default.* and app/Config/Database.php to this stack’s unique *-db name. MySQL stays up.',
+                    ];
+                }
+
                 return [
                     'treat_action' => 'restart_application',
                     'treat_label' => 'Restart application',
-                    'summary' => $missingApp
-                        ? 'Live PDO works (tables: '.(string) ($checks['table_count'] ?? '?')
-                            .') but CodeIgniter cannot load Config/Paths.php — that file is not under /app. '
-                            .'DirectAdmin often kept the app/ folder next to public_html, and this service has no da_legacy record to pull it from. Restart cannot invent those files.'
-                        : 'Live PDO works (tables: '.(string) ($checks['table_count'] ?? '?')
-                            .') but CodeIgniter is bootstrapping from /app/index.php with a ../app/Config/Paths.php require. '
-                            .'Restart rewrites that require to the Paths.php file that is already in this container and recreates the app only. MySQL stays up.',
+                    'summary' => 'Live PDO works (tables: '.(string) ($checks['table_count'] ?? '?')
+                        .') and Paths.php is already under /app'
+                        .($requireAlreadyResolved ? '; the ../app require is already rewritten' : '')
+                        .'. Restart now points $systemDirectory at vendor/codeigniter4 when system/ is missing, '
+                        .'rewrites CodeIgniter Database.php / database.default.* to the sidecar, creates writable/, and recreates the app only. MySQL stays up.',
                 ];
             }
 

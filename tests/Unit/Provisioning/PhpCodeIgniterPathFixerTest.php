@@ -59,4 +59,26 @@ PHP;
         $this->assertFalse($fixer->needsFlattenedPathsRequire($source, true, true));
         $this->assertFalse($fixer->looksLikeCodeIgniterFrontController('<?php echo "hello";'));
     }
+
+    #[Test]
+    public function it_points_system_directory_at_composer_vendor_when_system_is_missing(): void
+    {
+        $fixer = new PhpCodeIgniterPathFixer;
+        $source = "public string \$systemDirectory = __DIR__ . '/../../system';\n";
+
+        $this->assertSame(
+            '../../vendor/codeigniter4/framework/system',
+            $fixer->relativePathBetween('/app/app/Config', '/app/vendor/codeigniter4/framework/system')
+        );
+
+        $rewritten = $fixer->rewriteSystemDirectory(
+            $source,
+            '../../vendor/codeigniter4/framework/system'
+        );
+        $this->assertStringContainsString(
+            "public string \$systemDirectory = __DIR__ . '/../../vendor/codeigniter4/framework/system';",
+            $rewritten
+        );
+        $this->assertSame($source, $fixer->rewriteSystemDirectory($source, '../../system'));
+    }
 }

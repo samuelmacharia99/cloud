@@ -48,5 +48,16 @@ class PhpRuntime500ProbeTest extends TestCase
             'paths_php' => [],
             'index_require' => "require FCPATH . '../app/Config/Paths.php';",
         ]));
+        $this->assertStringContainsString('localhost', $probe->summary([
+            'fatal' => null,
+            'uses_mysql_ext' => false,
+            'index_files' => ['/app/index.php (800 bytes)'],
+            'lint' => [],
+            'paths_php' => ['/app/app/Config/Paths.php'],
+            'index_require' => "require __DIR__ . '/app/Config/Paths.php';",
+            'ci_db_host' => 'localhost',
+            'ci_system' => true,
+            'ci_vendor_system' => false,
+        ]));
     }
 }

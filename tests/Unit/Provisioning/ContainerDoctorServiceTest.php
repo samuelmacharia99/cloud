@@ -1571,6 +1571,53 @@ LOG;
     }
 
     #[Test]
+    public function http_500_with_loaded_ci_paths_rewrites_stale_database_hostname(): void
+    {
+        $treat = app(ContainerDoctorService::class)->resolveHttp500Treatment(
+            [
+                'db_ok' => true,
+                'table_count' => 39,
+                'http_status' => 500,
+                'php_index_require' => "require __DIR__ . '/app/Config/Paths.php';",
+                'php_paths_php' => ['/app/app/Config/Paths.php'],
+                'php_ci_system' => true,
+                'php_ci_vendor_system' => false,
+                'php_ci_db_host' => 'localhost',
+                'da_can_import_ci_app' => true,
+            ],
+            [],
+            'php'
+        );
+
+        $this->assertSame('restart_application', $treat['treat_action']);
+        $this->assertStringContainsString('hostname', $treat['summary']);
+        $this->assertStringContainsString('localhost', $treat['summary']);
+        $this->assertStringNotContainsString('../app/Config/Paths.php require', $treat['summary']);
+    }
+
+    #[Test]
+    public function http_500_with_loaded_ci_paths_but_no_system_imports_siblings(): void
+    {
+        $treat = app(ContainerDoctorService::class)->resolveHttp500Treatment(
+            [
+                'db_ok' => true,
+                'table_count' => 39,
+                'http_status' => 500,
+                'php_index_require' => "require __DIR__ . '/app/Config/Paths.php';",
+                'php_paths_php' => ['/app/app/Config/Paths.php'],
+                'php_ci_system' => false,
+                'php_ci_vendor_system' => false,
+                'da_can_import_ci_app' => true,
+            ],
+            [],
+            'php'
+        );
+
+        $this->assertSame('import_da_codeigniter_app', $treat['treat_action']);
+        $this->assertStringContainsString('system/', $treat['summary']);
+    }
+
+    #[Test]
     public function http_500_with_live_pdo_and_mysql_ext_installs_the_shim_on_restart(): void
     {
         $treat = app(ContainerDoctorService::class)->resolveHttp500Treatment(

@@ -48,6 +48,9 @@ class PhpSidecarDatabaseRewriter
             }
         }
 
+        if ($this->looksLikeDatabaseConfig($source)) {
+            $source = $this->rewriteCodeIgniterDatabaseAssignments($source, $credentials);
+        }
         $source = $this->replaceMysqlHostLiterals($source, $credentials['host']);
         $source = preg_replace(
             '/mysql:host=(?:127\.0\.0\.1|localhost|db|mysql)(?:\:\d+)?/i',
@@ -89,7 +92,7 @@ class PhpSidecarDatabaseRewriter
      */
     public function rewriteEnv(string $text, array $credentials): string
     {
-        $text = (string) preg_replace('/^(DB_SOCKET|MYSQL_UNIX_SOCKET)=.*\n?/m', '', $text);
+        $text = (string) preg_replace('/^(DB_SOCKET|MYSQL_UNIX_SOCKET)\s*=.*\n?/m', '', $text);
 
         $values = [
             'DB_CONNECTION' => 'mysql',
@@ -102,11 +105,17 @@ class PhpSidecarDatabaseRewriter
             'MYSQL_DATABASE' => $credentials['database'],
             'MYSQL_USER' => $credentials['username'],
             'MYSQL_PASSWORD' => $credentials['password'],
+            'database.default.hostname' => $credentials['host'],
+            'database.default.host' => $credentials['host'],
+            'database.default.database' => $credentials['database'],
+            'database.default.username' => $credentials['username'],
+            'database.default.password' => $credentials['password'],
+            'database.default.port' => (string) ($credentials['port'] ?? '3306'),
         ];
 
         foreach ($values as $key => $value) {
             $line = $key.'='.$this->encodeEnvValue($value);
-            $pattern = '/^'.preg_quote($key, '/').'=.*$/m';
+            $pattern = '/^'.preg_quote($key, '/').'\s*=.*$/m';
             if (preg_match($pattern, $text) === 1) {
                 $text = (string) preg_replace($pattern, $line, $text, 1);
             } else {
@@ -147,23 +156,35 @@ class PhpSidecarDatabaseRewriter
         try {
             $list = trim($ssh->exec(
                 'find '.escapeshellarg($hostAppPath)
-                .' -maxdepth 4 -type f \( -name \'*.php\' -o -name \'*.inc\' \)'
-                .' ! -path \'*/vendor/*\' ! -path \'*/node_modules/*\' ! -path \'*/storage/*\''
-                .' -size -1024k | head -n 80',
+                .' -maxdepth 6 -type f \( -name \'*.php\' -o -name \'*.inc\' -o -name \'.env\' -o -name \'.env.*\' \)'
+                .' ! -path \'*/vendor/*\' ! -path \'*/node_modules/*\' ! -path \'*/storage/*\' ! -path \'*/writable/*\''
+                .' -size -1024k | head -n 120',
                 30
             ));
         } catch (\Throwable) {
-            return $changed;
+            $list = '';
         }
 
-        foreach (preg_split('/\r\n|\r|\n/', $list) ?: [] as $path) {
-            $path = trim($path);
-            if ($path === '' || ! str_starts_with($path, rtrim($hostAppPath, '/'))) {
+        $root = rtrim($hostAppPath, '/');
+        $paths = array_merge(
+            [
+                $root.'/app/Config/Database.php',
+                $root.'/application/config/database.php',
+            ],
+            preg_split('/\r\n|\r|\n/', $list) ?: []
+        );
+
+        foreach ($paths as $path) {
+            $path = trim((string) $path);
+            if ($path === '' || ! str_starts_with($path, $root)) {
                 continue;
             }
             try {
                 $original = $ssh->downloadFile($path);
-                $updated = $this->rewritePhpSource($original, $credentials, $oldDatabaseNames, $oldUsernames);
+                $base = basename($path);
+                $updated = str_starts_with($base, '.env')
+                    ? $this->rewriteEnv($original, $credentials)
+                    : $this->rewritePhpSource($original, $credentials, $oldDatabaseNames, $oldUsernames);
                 if ($updated !== $original) {
                     $ssh->upload($updated, $path);
                     $changed++;
@@ -237,6 +258,60 @@ class PhpSidecarDatabaseRewriter
         ]));
 
         return $this->applyOnHost($ssh, $hostAppPath, $credentials, $oldDatabases, $oldUsers);
+    }
+
+    public function looksLikeDatabaseConfig(string $source): bool
+    {
+        return str_contains($source, "'hostname'")
+            || str_contains($source, '"hostname"')
+            || str_contains($source, "['hostname']")
+            || str_contains($source, '["hostname"]')
+            || str_contains($source, 'DBDriver')
+            || str_contains($source, 'database.default');
+    }
+
+    /**
+     * CodeIgniter 4 uses 'hostname' => 'localhost' and $db['default']['hostname'].
+     *
+     * @param  array{host: string, database: string, username: string, password: string, port?: string}  $credentials
+     */
+    public function rewriteCodeIgniterDatabaseAssignments(string $source, array $credentials): string
+    {
+        $map = [
+            'hostname' => $credentials['host'],
+            'username' => $credentials['username'],
+            'password' => $credentials['password'],
+            'database' => $credentials['database'],
+            'port' => (string) ($credentials['port'] ?? '3306'),
+        ];
+
+        foreach ($map as $key => $value) {
+            $quoted = $this->phpSingleQuoted($value);
+            $source = preg_replace(
+                '/([\'"]'.$key.'[\'"])\s*=>\s*env\s*\([^)]+\)/',
+                '$1 => '.$quoted,
+                $source
+            ) ?? $source;
+            $source = preg_replace(
+                '/([\'"]'.$key.'[\'"])\s*=>\s*[\'"][^\'"]*[\'"]/',
+                '$1 => '.$quoted,
+                $source
+            ) ?? $source;
+            $source = preg_replace(
+                '/(\[[\'"]'.$key.'[\'"]\]\s*=\s*)[\'"][^\'"]*[\'"]/',
+                '$1'.$quoted,
+                $source
+            ) ?? $source;
+            if ($key === 'port') {
+                $source = preg_replace(
+                    '/([\'"]port[\'"])\s*=>\s*\d+/',
+                    '$1 => '.$quoted,
+                    $source
+                ) ?? $source;
+            }
+        }
+
+        return $source;
     }
 
     /**

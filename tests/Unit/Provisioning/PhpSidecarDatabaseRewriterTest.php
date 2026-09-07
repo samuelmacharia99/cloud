@@ -80,6 +80,44 @@ PHP;
         $this->assertStringContainsString('DB_USERNAME=u483_s426', $rewritten);
         $this->assertStringNotContainsString('DB_SOCKET=', $rewritten);
         $this->assertStringContainsString('APP_NAME=Roadtrip', $rewritten);
+        $this->assertStringContainsString('database.default.hostname=site-db', $rewritten);
+    }
+
+    #[Test]
+    public function it_rewrites_codeigniter_env_and_database_php_assignments(): void
+    {
+        $rewriter = new PhpSidecarDatabaseRewriter;
+        $env = "CI_ENVIRONMENT = production\ndatabase.default.hostname = localhost\ndatabase.default.database = digiworl_roadtrip\n";
+        $rewrittenEnv = $rewriter->rewriteEnv($env, [
+            'host' => 'user-483-service-426-static-site-db',
+            'database' => 's426_db',
+            'username' => 'u483_s426',
+            'password' => 'sidecar-secret',
+        ]);
+        $this->assertStringContainsString('database.default.hostname=user-483-service-426-static-site-db', $rewrittenEnv);
+        $this->assertStringContainsString('database.default.database=s426_db', $rewrittenEnv);
+        $this->assertStringNotContainsString('database.default.hostname = localhost', $rewrittenEnv);
+
+        $source = <<<'PHP'
+public array $default = [
+    'hostname' => 'localhost',
+    'username' => 'digiworl',
+    'password' => 'old',
+    'database' => 'digiworl_roadtrip',
+    'port'     => 3306,
+];
+PHP;
+        $rewritten = $rewriter->rewriteCodeIgniterDatabaseAssignments($source, [
+            'host' => 'user-483-service-426-static-site-db',
+            'database' => 's426_db',
+            'username' => 'u483_s426',
+            'password' => 'sidecar-secret',
+            'port' => '3306',
+        ]);
+        $this->assertStringContainsString("'hostname' => 'user-483-service-426-static-site-db'", $rewritten);
+        $this->assertStringContainsString("'database' => 's426_db'", $rewritten);
+        $this->assertStringNotContainsString('localhost', $rewritten);
+        $this->assertStringNotContainsString('digiworl_roadtrip', $rewritten);
     }
 
     #[Test]

@@ -93,40 +93,35 @@ class PhpCodeIgniterPathFixer
     public function applyOnHost(SSHService $ssh, string $hostAppPath): int
     {
         $root = rtrim($hostAppPath, '/');
+        $rewritten = 0;
         $candidates = $this->findPathsPhp($ssh, $root);
         $best = $this->preferPathsCandidate($candidates);
-        if ($best === null) {
-            return 0;
-        }
 
-        $index = $root.'/index.php';
-        try {
-            $hasIndex = trim($ssh->exec('test -f '.escapeshellarg($index).' && echo yes || echo no', 10));
-            if ($hasIndex !== 'yes') {
-                return 0;
+        if ($best !== null) {
+            $index = $root.'/index.php';
+            try {
+                $hasIndex = trim($ssh->exec('test -f '.escapeshellarg($index).' && echo yes || echo no', 10));
+                if ($hasIndex === 'yes') {
+                    $original = $ssh->downloadFile($index);
+                    $resolvedExists = in_array($root.'/Config/Paths.php', $candidates, true);
+                    $shouldRewrite = $this->frontControllerHasRelativePathsRequire($original)
+                        && ($this->needsFlattenedPathsRequire($original, true, $resolvedExists) || ! $resolvedExists);
+                    if ($shouldRewrite) {
+                        $updated = $this->rewriteFrontController($original, $this->relativeFromAppRoot($best, $root));
+                        if ($updated !== $original) {
+                            $ssh->upload($updated, $index);
+                            $rewritten++;
+                        }
+                    }
+                }
+            } catch (\Throwable) {
             }
-            $original = $ssh->downloadFile($index);
-        } catch (\Throwable) {
-            return 0;
         }
 
-        $resolvedExists = in_array($root.'/Config/Paths.php', $candidates, true);
-        if (! $this->needsFlattenedPathsRequire($original, true, $resolvedExists)
-            && ! $this->frontControllerHasRelativePathsRequire($original)) {
-            return 0;
-        }
-        if ($resolvedExists && ! $this->frontControllerHasRelativePathsRequire($original)) {
-            return 0;
-        }
+        $rewritten += $this->healSystemDirectoryOnHost($ssh, $root);
+        $this->ensureWritableOnHost($ssh, $root);
 
-        $updated = $this->rewriteFrontController($original, $this->relativeFromAppRoot($best, $root));
-        if ($updated === $original) {
-            return 0;
-        }
-
-        $ssh->upload($updated, $index);
-
-        return 1;
+        return $rewritten;
     }
 
     /**
@@ -186,6 +181,99 @@ class PhpCodeIgniterPathFixer
         }
 
         return 1;
+    }
+
+    public function rewriteSystemDirectory(string $source, string $relativeFromPathsDir): string
+    {
+        $relativeFromPathsDir = ltrim(str_replace('\\', '/', $relativeFromPathsDir), '/');
+        if ($relativeFromPathsDir === '' || ! preg_match('/\$systemDirectory\s*=/', $source)) {
+            return $source;
+        }
+        if (str_contains($source, $relativeFromPathsDir)) {
+            return $source;
+        }
+
+        $expr = "__DIR__ . '/".$this->escapePhpSingle($relativeFromPathsDir)."'";
+        $updated = preg_replace(
+            '/((?:public\s+)?(?:string\s+)?\$systemDirectory\s*=\s*)[^;]+;/',
+            '$1'.$expr.';',
+            $source,
+            1
+        );
+
+        return is_string($updated) ? $updated : $source;
+    }
+
+    public function relativePathBetween(string $fromDir, string $toPath): string
+    {
+        $from = array_values(array_filter(explode('/', trim(str_replace('\\', '/', $fromDir), '/')), 'strlen'));
+        $to = array_values(array_filter(explode('/', trim(str_replace('\\', '/', $toPath), '/')), 'strlen'));
+        while ($from !== [] && $to !== [] && $from[0] === $to[0]) {
+            array_shift($from);
+            array_shift($to);
+        }
+
+        return str_repeat('../', count($from)).implode('/', $to);
+    }
+
+    /**
+     * Composer CodeIgniter keeps system/ under vendor; stock Paths.php still points at ../../system.
+     */
+    public function healSystemDirectoryOnHost(SSHService $ssh, string $hostAppPath): int
+    {
+        $root = rtrim($hostAppPath, '/');
+        $vendorSystem = $root.'/vendor/codeigniter4/framework/system';
+        try {
+            $legacy = trim($ssh->exec(
+                'test -f '.escapeshellarg($root.'/system/Boot.php')
+                .' -o -f '.escapeshellarg($root.'/system/CodeIgniter.php')
+                .' && echo yes || echo no',
+                10
+            ));
+            $vendor = trim($ssh->exec(
+                'test -f '.escapeshellarg($vendorSystem.'/Boot.php')
+                .' -o -f '.escapeshellarg($vendorSystem.'/CodeIgniter.php')
+                .' && echo yes || echo no',
+                10
+            ));
+        } catch (\Throwable) {
+            return 0;
+        }
+        if ($legacy === 'yes' || $vendor !== 'yes') {
+            return 0;
+        }
+
+        $changed = 0;
+        foreach ($this->findPathsPhp($ssh, $root) as $pathsPhp) {
+            try {
+                $original = $ssh->downloadFile($pathsPhp);
+                $relative = $this->relativePathBetween(dirname($pathsPhp), $vendorSystem);
+                $updated = $this->rewriteSystemDirectory($original, $relative);
+                if ($updated !== $original) {
+                    $ssh->upload($updated, $pathsPhp);
+                    $changed++;
+                }
+            } catch (\Throwable) {
+            }
+        }
+
+        return $changed;
+    }
+
+    public function ensureWritableOnHost(SSHService $ssh, string $hostAppPath): void
+    {
+        $writable = rtrim($hostAppPath, '/').'/writable';
+        try {
+            $ssh->exec(
+                'mkdir -p '.escapeshellarg($writable.'/cache')
+                .' '.escapeshellarg($writable.'/logs')
+                .' '.escapeshellarg($writable.'/session')
+                .' '.escapeshellarg($writable.'/uploads')
+                .' && chmod -R ug+rwX '.escapeshellarg($writable),
+                20
+            );
+        } catch (\Throwable) {
+        }
     }
 
     /**
