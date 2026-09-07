@@ -937,6 +937,18 @@ LOG;
     }
 
     #[Test]
+    public function wordpress_repair_steps_rewrite_wp_config_not_laravel_env(): void
+    {
+        $steps = app(ContainerDoctorService::class)
+            ->repairDatabaseCredentialsManualSteps('wordpress', 'mysql');
+
+        $this->assertStringContainsString('wp-config.php', $steps[0]);
+        $this->assertStringContainsString('WORDPRESS_DB_', $steps[0]);
+        $this->assertStringContainsString('mysql_native_password', $steps[0]);
+        $this->assertStringNotContainsString('PHP-FPM', $steps[0]);
+    }
+
+    #[Test]
     public function it_drops_stale_log_findings_when_live_critical_exists(): void
     {
         $merged = app(ContainerDoctorService::class)->mergeLogAndLiveFindings(

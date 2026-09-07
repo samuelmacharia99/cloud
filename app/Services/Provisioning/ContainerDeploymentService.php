@@ -3678,20 +3678,84 @@ class ContainerDeploymentService
                 $password
             );
 
-            return;
+            if ($this->mysqlUserLoginWorks($ssh, $containerPath, $dbService, $username, $password, $database)) {
+                return;
+            }
+
+            Log::warning('MySQL GRANT applied but application user still cannot log in; resetting via skip-grant-tables', [
+                'container_path' => $containerPath,
+                'username' => $username,
+                'database' => $database,
+            ]);
         }
 
         // Taking the sidecar down causes HTTP 2002 for every live request. Only do
         // that when root cannot log in at all — not when GRANT SQL had a warning.
-        if (! $rootLoginFailed) {
+        // Exception: GRANT "succeeded" (mysql --force) but the app user still 1045s.
+        if (! $applied && ! $rootLoginFailed) {
             throw new \RuntimeException(
                 'Could not apply MySQL GRANTs as root. The database was left running. '.$sql
             );
         }
 
-        // Attempt 3: use --skip-grant-tables to reset both root and user passwords.
-        // With skip-grant-tables, must FLUSH PRIVILEGES first to re-enable the grant system.
-        // The cleanup block ALWAYS runs (no set -e) to ensure db is restarted even on failure.
+        $this->resetMysqlSidecarWithSkipGrantTables(
+            $ssh,
+            $pathArg,
+            $dbServiceArg,
+            $rootPwArg,
+            $rootPassword,
+            $sql
+        );
+    }
+
+    /**
+     * Confirm the application role can authenticate over TCP (user@%), not only
+     * the unix-socket localhost account. Overlay-IP 1045s are user@% failures.
+     */
+    public function mysqlUserLoginWorks(
+        SSHService $ssh,
+        string $containerPath,
+        string $dbService,
+        string $username,
+        string $password,
+        string $database
+    ): bool {
+        $pathArg = escapeshellarg($containerPath);
+        $dbServiceArg = escapeshellarg($dbService);
+        $userArg = escapeshellarg($username);
+        $passArg = escapeshellarg($password);
+        $dbArg = escapeshellarg($database);
+        $sqlArg = escapeshellarg('SELECT 1');
+
+        $commands = [
+            "cd {$pathArg} && docker compose exec -T -e MYSQL_PWD={$passArg} {$dbServiceArg} "
+                ."mysql --protocol=TCP -h 127.0.0.1 -N -B -u {$userArg} {$dbArg} -e {$sqlArg} 2>/dev/null",
+            "cd {$pathArg} && docker compose exec -T -e MYSQL_PWD={$passArg} {$dbServiceArg} "
+                ."mysql -N -B -u {$userArg} {$dbArg} -e {$sqlArg} 2>/dev/null",
+        ];
+
+        foreach ($commands as $command) {
+            try {
+                $out = trim($ssh->exec($command, 15));
+            } catch (\Throwable) {
+                $out = '';
+            }
+            if ($out !== '' && preg_match('/^1\\b/m', $out)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function resetMysqlSidecarWithSkipGrantTables(
+        SSHService $ssh,
+        string $pathArg,
+        string $dbServiceArg,
+        string $rootPwArg,
+        string $rootPassword,
+        string $sql
+    ): void {
         $skipGrantSql = sprintf(
             'FLUSH PRIVILEGES; '
             ."ALTER USER 'root'@'%%' IDENTIFIED BY '%s'; "
@@ -3767,8 +3831,10 @@ class ContainerDeploymentService
             $statements[] = "CREATE USER '{$user}'@'{$h}' IDENTIFIED WITH mysql_native_password BY '{$pass}'";
             // ALTER still runs under mysql --force when DROP is skipped because
             // the account is connected — that is what actually sets the hash.
+            // Do not follow with ALTER USER … IDENTIFIED BY (no plugin): MySQL 8
+            // then switches the account to caching_sha2_password and WordPress
+            // mysqli from an overlay IP 1045s even when the password is correct.
             $statements[] = "ALTER USER '{$user}'@'{$h}' IDENTIFIED WITH mysql_native_password BY '{$pass}'";
-            $statements[] = "ALTER USER '{$user}'@'{$h}' IDENTIFIED BY '{$pass}'";
             $statements[] = "GRANT ALL PRIVILEGES ON {$dbIdent}.* TO '{$user}'@'{$h}'";
         }
 
@@ -3932,7 +3998,6 @@ class ContainerDeploymentService
             }
             $h = $this->mysqlQuoteString($host);
             $statements[] = "ALTER USER '{$user}'@'{$h}' IDENTIFIED WITH mysql_native_password BY '{$pass}'";
-            $statements[] = "ALTER USER '{$user}'@'{$h}' IDENTIFIED BY '{$pass}'";
             $statements[] = "GRANT ALL PRIVILEGES ON {$dbIdent}.* TO '{$user}'@'{$h}'";
         }
         if ($statements === []) {
@@ -4274,6 +4339,201 @@ class ContainerDeploymentService
             .' fwrite(STDERR, ($m && $m->connect_error) ? $m->connect_error : "mysqli connect failed"); exit(1);'
             .'}'
             .'fwrite(STDOUT, "ok"); exit(0);';
+    }
+
+    /**
+     * @return array{
+     *     DB_NAME: ?string,
+     *     DB_USER: ?string,
+     *     DB_PASSWORD: ?string,
+     *     DB_HOST: ?string,
+     *     password_uses_env: bool
+     * }
+     */
+    public function extractWordPressConfigDatabaseDefines(string $wpConfig): array
+    {
+        $out = [
+            'DB_NAME' => null,
+            'DB_USER' => null,
+            'DB_PASSWORD' => null,
+            'DB_HOST' => null,
+            'password_uses_env' => false,
+        ];
+
+        foreach (['DB_NAME', 'DB_USER', 'DB_PASSWORD', 'DB_HOST'] as $key) {
+            if (preg_match(
+                "/define\\s*\\(\\s*['\"]{$key}['\"]\\s*,\\s*getenv_docker\\s*\\(\\s*['\"][^'\"]+['\"]\\s*,\\s*['\"]([^'\"]*)['\"]/i",
+                $wpConfig,
+                $m
+            ) === 1) {
+                $out[$key] = $m[1];
+                if ($key === 'DB_PASSWORD') {
+                    $out['password_uses_env'] = true;
+                }
+
+                continue;
+            }
+
+            if (preg_match(
+                "/define\\s*\\(\\s*['\"]{$key}['\"]\\s*,\\s*['\"]([^'\"]*)['\"]/i",
+                $wpConfig,
+                $m
+            ) === 1) {
+                $out[$key] = $m[1];
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Official wordpress:* images generate getenv_docker() defines once. Later
+     * compose / .env changes never update wp-config.php, so Repair must rewrite
+     * the defines to the password GRANT just set.
+     *
+     * @param  array{DB_NAME?: string, DB_USER?: string, DB_PASSWORD?: string, DB_HOST?: string}  $credentials
+     */
+    public function rewriteWordPressConfigDatabaseDefines(string $wpConfig, array $credentials): string
+    {
+        $map = [
+            'DB_NAME' => (string) ($credentials['DB_NAME'] ?? ''),
+            'DB_USER' => (string) ($credentials['DB_USER'] ?? ''),
+            'DB_PASSWORD' => (string) ($credentials['DB_PASSWORD'] ?? ''),
+            'DB_HOST' => (string) ($credentials['DB_HOST'] ?? ''),
+        ];
+
+        $text = $wpConfig;
+        foreach ($map as $key => $value) {
+            if ($value === '') {
+                continue;
+            }
+            $repl = 'define(\''.$key.'\', '.$this->phpSingleQuotedString($value).')';
+            $pattern = "/define\\s*\\(\\s*['\"]{$key}['\"]\\s*,\\s*(?:getenv_docker\\s*\\([^;]+\\)|['\"].*?['\"])\\s*\\)/i";
+            if (preg_match($pattern, $text) === 1) {
+                $text = preg_replace($pattern, $repl, $text, 1) ?? $text;
+
+                continue;
+            }
+
+            $text = preg_replace('/<\\?php\\b/', "<?php\n".$repl.';', $text, 1) ?? $text;
+        }
+
+        return $text;
+    }
+
+    /**
+     * Credentials WordPress is actually using: container WORDPRESS_DB_* and
+     * wp-config.php (literal defines win over getenv_docker fallbacks).
+     *
+     * @return array<string, string>
+     */
+    public function readWordPressRuntimeDatabaseCredentials(SSHService $ssh, string $containerName): array
+    {
+        $fromFile = $this->extractWordPressConfigDatabaseDefines(
+            $this->readWordPressConfigFile($ssh, $containerName)
+        );
+        $fromEnv = [];
+        foreach ([
+            'WORDPRESS_DB_HOST' => 'DB_HOST',
+            'WORDPRESS_DB_NAME' => 'DB_NAME',
+            'WORDPRESS_DB_USER' => 'DB_USER',
+            'WORDPRESS_DB_PASSWORD' => 'DB_PASSWORD',
+        ] as $envKey => $dbKey) {
+            try {
+                $value = trim($ssh->exec(
+                    'docker exec '.escapeshellarg($containerName)
+                    .' printenv '.escapeshellarg($envKey).' 2>/dev/null || true',
+                    10
+                ));
+            } catch (\Throwable) {
+                $value = '';
+            }
+            if ($value !== '') {
+                $fromEnv[$envKey] = $value;
+                $fromEnv[$dbKey] = $value;
+            }
+        }
+
+        $password = '';
+        if ($fromFile['password_uses_env']) {
+            $password = (string) ($fromEnv['WORDPRESS_DB_PASSWORD'] ?? $fromFile['DB_PASSWORD'] ?? '');
+        } else {
+            $password = (string) ($fromFile['DB_PASSWORD'] ?? $fromEnv['WORDPRESS_DB_PASSWORD'] ?? '');
+        }
+
+        $merged = [
+            'WORDPRESS_DB_HOST' => (string) ($fromEnv['WORDPRESS_DB_HOST'] ?? $fromFile['DB_HOST'] ?? ''),
+            'WORDPRESS_DB_NAME' => (string) ($fromEnv['WORDPRESS_DB_NAME'] ?? $fromFile['DB_NAME'] ?? ''),
+            'WORDPRESS_DB_USER' => (string) ($fromEnv['WORDPRESS_DB_USER'] ?? $fromFile['DB_USER'] ?? ''),
+            'WORDPRESS_DB_PASSWORD' => $password,
+        ];
+        if ($password !== '') {
+            $merged['WORDPRESS_CONFIG_DB_PASSWORD'] = $password;
+        }
+
+        return array_filter($merged, static fn ($value) => $value !== '');
+    }
+
+    public function rewriteWordPressConfigDatabaseCredentials(
+        SSHService $ssh,
+        string $containerName,
+        array $credentials
+    ): void {
+        $raw = $this->readWordPressConfigFile($ssh, $containerName);
+        if ($raw === '') {
+            return;
+        }
+
+        $updated = $this->rewriteWordPressConfigDatabaseDefines($raw, $credentials);
+        if ($updated === $raw) {
+            return;
+        }
+
+        $hostPath = self::CONTAINER_BASE_PATH.'/'.$containerName.'/app/wp-config.php';
+        try {
+            $ssh->upload($updated, $hostPath);
+
+            return;
+        } catch (\Throwable $e) {
+            Log::warning('Could not write wp-config.php on the host; trying in-container write', [
+                'container' => $containerName,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        $payload = base64_encode($updated);
+        $php = 'file_put_contents("/var/www/html/wp-config.php", base64_decode('.json_encode($payload).'));';
+        $ssh->exec(
+            'docker exec '.escapeshellarg($containerName).' php -r '.escapeshellarg($php),
+            20
+        );
+    }
+
+    private function readWordPressConfigFile(SSHService $ssh, string $containerName): string
+    {
+        $hostPath = self::CONTAINER_BASE_PATH.'/'.$containerName.'/app/wp-config.php';
+        try {
+            $exists = trim($ssh->exec('test -f '.escapeshellarg($hostPath).' && echo yes || echo no', 10));
+            if ($exists === 'yes') {
+                return (string) $ssh->exec('cat '.escapeshellarg($hostPath), 20);
+            }
+        } catch (\Throwable) {
+        }
+
+        try {
+            return (string) $ssh->exec(
+                'docker exec '.escapeshellarg($containerName)
+                .' cat /var/www/html/wp-config.php 2>/dev/null || true',
+                20
+            );
+        } catch (\Throwable) {
+            return '';
+        }
+    }
+
+    private function phpSingleQuotedString(string $value): string
+    {
+        return "'".str_replace(['\\', "'"], ['\\\\', "\\'"], $value)."'";
     }
 
     /**

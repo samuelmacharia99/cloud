@@ -28,7 +28,8 @@ class MysqlSidecarCredentialsTest extends TestCase
         $this->assertStringContainsString("CREATE USER 'u74_s24'@'%' IDENTIFIED WITH mysql_native_password BY 'secret'", $sql);
         $this->assertStringContainsString("CREATE USER 'u74_s24'@'localhost' IDENTIFIED WITH mysql_native_password BY 'secret'", $sql);
         $this->assertStringContainsString("ALTER USER 'u74_s24'@'%' IDENTIFIED WITH mysql_native_password BY 'secret'", $sql);
-        $this->assertStringContainsString("ALTER USER 'u74_s24'@'%' IDENTIFIED BY 'secret'", $sql);
+        $this->assertStringNotContainsString("ALTER USER 'u74_s24'@'%' IDENTIFIED BY 'secret'", $sql);
+        $this->assertStringNotContainsString("ALTER USER 'u74_s24'@'localhost' IDENTIFIED BY 'secret'", $sql);
         $this->assertStringContainsString("GRANT ALL PRIVILEGES ON `s24_db`.* TO 'u74_s24'@'%'", $sql);
         $this->assertStringContainsString("GRANT ALL PRIVILEGES ON `s24_db`.* TO 'u74_s24'@'localhost'", $sql);
         $this->assertStringContainsString("DROP USER IF EXISTS ''@'%'", $sql);
@@ -195,7 +196,8 @@ YAML;
             ['10.%', '%', 'localhost']
         );
 
-        $this->assertStringContainsString("ALTER USER 'u74_s24'@'10.%' IDENTIFIED BY 'secret'", $sql);
+        $this->assertStringContainsString("ALTER USER 'u74_s24'@'10.%' IDENTIFIED WITH mysql_native_password BY 'secret'", $sql);
+        $this->assertStringNotContainsString("ALTER USER 'u74_s24'@'10.%' IDENTIFIED BY 'secret'", $sql);
         $this->assertStringContainsString("GRANT ALL PRIVILEGES ON `s24_db`.* TO 'u74_s24'@'10.%'", $sql);
         $this->assertStringNotContainsString("ALTER USER 'u74_s24'@'%'", $sql);
         $this->assertSame('KILL 12; KILL 15;', app(ContainerDeploymentService::class)->mysqlKillIdsSql([12, '15', 0, 'x']));

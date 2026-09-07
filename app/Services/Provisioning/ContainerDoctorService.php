@@ -1460,6 +1460,52 @@ class ContainerDoctorService
     }
 
     /**
+     * Official WordPress ignores host .env. Prefer the password PHP is using
+     * (wp-config.php / container WORDPRESS_DB_*) so GRANT matches HTTP 500s.
+     *
+     * @param  array<string, mixed>  $rawEnv
+     * @return array<string, mixed>
+     */
+    private function mergeWordPressLiveDatabaseCredentials(
+        SSHService $ssh,
+        $deployment,
+        ?Service $service,
+        array $rawEnv
+    ): array {
+        $subject = $service ?? $deployment->service ?? null;
+        $looksWordPress = $subject instanceof Service && $this->isWordPressStack($subject);
+        if (! $looksWordPress && ! str_ends_with((string) $deployment->container_name, '-wordpress')) {
+            return $rawEnv;
+        }
+
+        try {
+            $live = app(ContainerDeploymentService::class)
+                ->readWordPressRuntimeDatabaseCredentials($ssh, (string) $deployment->container_name);
+        } catch (\Throwable) {
+            return $rawEnv;
+        }
+
+        foreach ([
+            'WORDPRESS_DB_HOST',
+            'WORDPRESS_DB_NAME',
+            'WORDPRESS_DB_USER',
+            'WORDPRESS_DB_PASSWORD',
+            'WORDPRESS_CONFIG_DB_PASSWORD',
+        ] as $key) {
+            $value = trim((string) ($live[$key] ?? ''));
+            if ($value === '') {
+                continue;
+            }
+            if ($key === 'WORDPRESS_CONFIG_DB_PASSWORD'
+                || trim((string) ($rawEnv[$key] ?? '')) === '') {
+                $rawEnv[$key] = $value;
+            }
+        }
+
+        return $rawEnv;
+    }
+
+    /**
      * What Laravel actually uses after bootstrap (config cache), not just .env.
      */
     public function probeLaravelSessionDriver(SSHService $ssh, $deployment): ?string
@@ -1702,6 +1748,13 @@ PHP;
      */
     public function repairDatabaseCredentialsManualSteps(string $stack, string $databaseType): array
     {
+        if ($stack === 'wordpress') {
+            return [
+                'Click Repair DB credentials — creates the missing DB, resets the WordPress role password with mysql_native_password, rewrites wp-config.php and compose WORDPRESS_DB_*, and recreates the app (the database volume is kept).',
+                'Do not Reset database — that wipes existing tables. Re-scan and Repair again if 1045 persists.',
+            ];
+        }
+
         if ($stack === 'nodejs' || $databaseType === 'postgresql') {
             return [
                 'Click Repair DB credentials — creates the missing database, resets the role password, rewrites .env and compose DB_*, and recreates the app (the database volume is kept).',
@@ -1756,7 +1809,7 @@ PHP;
                 $containerPath,
                 $deploymentService->resolveMysqlComposeServiceName($envVars),
                 (string) ($envVars['MYSQL_ROOT_PASSWORD'] ?? $envVars['DB_PASSWORD'] ?? ''),
-                (string) ($envVars['DB_USERNAME'] ?? $envVars['MYSQL_USER'] ?? '')
+                (string) ($envVars['WORDPRESS_DB_USER'] ?? $envVars['DB_USERNAME'] ?? $envVars['MYSQL_USER'] ?? '')
             );
             if ($hosts !== []) {
                 return ' mysql.user Host values: '.implode(', ', $hosts).'.';
@@ -3895,6 +3948,7 @@ PHP;
             $platformEnv = is_array($deployment->env_values) ? $deployment->env_values : [];
             $liveEnv = $this->readLiveAppEnvironment($ssh, $deployment, $service);
             $rawEnv = $liveEnv === [] ? $platformEnv : array_merge($platformEnv, $liveEnv);
+            $rawEnv = $this->mergeWordPressLiveDatabaseCredentials($ssh, $deployment, $service, $rawEnv);
 
             // Keep a handle on the volume's original platform role for admin bootstrap.
             $canonical = $deploymentService->canonicalDatabaseIdentifiers($service);
@@ -4046,16 +4100,34 @@ PHP;
                 app(ContainerEnvironmentService::class)
                     ->syncDotEnvFile($ssh, $service, $deployment, $envVars);
 
-                if ($stack !== 'wordpress') {
+                try {
+                    $deploymentService->persistLaravelRuntimeDriversOnCompose(
+                        $ssh,
+                        $deployment->fresh(),
+                        $envVars,
+                        $service
+                    );
+                } catch (\Throwable $e) {
+                    \Log::warning('Doctor could not write DB_* into compose after credential repair', [
+                        'service_id' => $service->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+
+                if ($stack === 'wordpress') {
                     try {
-                        $deploymentService->persistLaravelRuntimeDriversOnCompose(
+                        $deploymentService->rewriteWordPressConfigDatabaseCredentials(
                             $ssh,
-                            $deployment->fresh(),
-                            $envVars,
-                            $service
+                            (string) $deployment->container_name,
+                            [
+                                'DB_NAME' => (string) ($envVars['WORDPRESS_DB_NAME'] ?? $envVars['DB_DATABASE'] ?? 'wordpress'),
+                                'DB_USER' => (string) ($envVars['WORDPRESS_DB_USER'] ?? $envVars['DB_USERNAME'] ?? 'wordpress'),
+                                'DB_PASSWORD' => (string) ($envVars['WORDPRESS_DB_PASSWORD'] ?? $envVars['DB_PASSWORD'] ?? ''),
+                                'DB_HOST' => (string) ($envVars['WORDPRESS_DB_HOST'] ?? $envVars['DB_HOST'] ?? 'mysql'),
+                            ]
                         );
                     } catch (\Throwable $e) {
-                        \Log::warning('Doctor could not write DB_* into compose after credential repair', [
+                        \Log::warning('Doctor could not rewrite wp-config.php after credential repair', [
                             'service_id' => $service->id,
                             'error' => $e->getMessage(),
                         ]);
@@ -4070,6 +4142,17 @@ PHP;
                         'error' => $e->getMessage(),
                     ]);
                 }
+
+                if ($stack === 'wordpress' && in_array((string) $databaseTemplate->type, ['mysql', 'mariadb'], true)) {
+                    try {
+                        $deploymentService->syncMysqlSidecarCredentials($ssh, $containerPath, $syncEnv);
+                    } catch (\Throwable $e) {
+                        \Log::warning('Doctor could not re-GRANT after WordPress recreate', [
+                            'service_id' => $service->id,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+                }
             }
 
             $probe = $deploymentService->probeApplicationDatabaseAccess(
@@ -4081,7 +4164,9 @@ PHP;
                 $containerPath
             );
 
-            $message = 'Database "'.$normalized['database'].'" credentials synced and .env rewritten (including DATABASE_URL).';
+            $message = $stack === 'wordpress'
+                ? 'Database "'.$normalized['database'].'" credentials synced. wp-config.php and compose WORDPRESS_DB_* now match GRANT.'
+                : 'Database "'.$normalized['database'].'" credentials synced and .env rewritten (including DATABASE_URL).';
             if ($normalized['corrected'] && $normalized['previous_database'] && $normalized['previous_database'] !== $normalized['database']) {
                 $message = 'Fixed DB_DATABASE from "'.$normalized['previous_database'].'" to "'
                     .$normalized['database'].'". '.$message;
@@ -4159,6 +4244,7 @@ PHP;
 
         $candidates = [];
         foreach ([
+            (string) ($env['WORDPRESS_CONFIG_DB_PASSWORD'] ?? ''),
             (string) ($env['WORDPRESS_DB_PASSWORD'] ?? ''),
             (string) ($env['DB_PASSWORD'] ?? ''),
             (string) ($env['POSTGRES_PASSWORD'] ?? ''),
