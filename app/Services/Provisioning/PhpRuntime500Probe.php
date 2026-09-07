@@ -21,7 +21,10 @@ class PhpRuntime500Probe
      *     ci_db_host: ?string,
      *     ci_encryption_key: bool,
      *     ci_autoload: bool,
-     *     ci_log: ?string
+     *     ci_log: ?string,
+     *     ci_db_name: ?string,
+     *     ci_db_user: ?string,
+     *     ci_pdo_error: ?string
      * }
      */
     public function capture(SSHService $ssh, ContainerDeployment $deployment): array
@@ -41,6 +44,9 @@ class PhpRuntime500Probe
             'ci_encryption_key' => false,
             'ci_autoload' => false,
             'ci_log' => null,
+            'ci_db_name' => null,
+            'ci_db_user' => null,
+            'ci_pdo_error' => null,
         ];
 
         try {
@@ -100,7 +106,20 @@ class PhpRuntime500Probe
             'ci_log' => isset($decoded['ci_log']) && is_string($decoded['ci_log']) && $decoded['ci_log'] !== ''
                 ? mb_substr($decoded['ci_log'], 0, 280)
                 : null,
+            'ci_db_name' => isset($decoded['ci_db_name']) && is_string($decoded['ci_db_name']) && $decoded['ci_db_name'] !== ''
+                ? mb_substr($decoded['ci_db_name'], 0, 64)
+                : null,
+            'ci_db_user' => isset($decoded['ci_db_user']) && is_string($decoded['ci_db_user']) && $decoded['ci_db_user'] !== ''
+                ? mb_substr($decoded['ci_db_user'], 0, 64)
+                : null,
+            'ci_pdo_error' => isset($decoded['ci_pdo_error']) && is_string($decoded['ci_pdo_error']) && $decoded['ci_pdo_error'] !== ''
+                ? mb_substr($decoded['ci_pdo_error'], 0, 220)
+                : null,
         ];
+
+        if ($result['fatal'] === null && is_string($result['ci_pdo_error'])) {
+            $result['fatal'] = $result['ci_pdo_error'];
+        }
 
         if ($result['fatal'] === null && is_string($result['ci_log'])) {
             $result['fatal'] = $result['ci_log'];
@@ -186,6 +205,14 @@ class PhpRuntime500Probe
         if ($ciHost !== '') {
             $parts[] = 'CodeIgniter DB hostname: '.$ciHost.'.';
         }
+        $ciUser = trim((string) ($probe['ci_db_user'] ?? ''));
+        $ciName = trim((string) ($probe['ci_db_name'] ?? ''));
+        if ($ciUser !== '' || $ciName !== '') {
+            $parts[] = 'CodeIgniter DB user/name: '.trim($ciUser.' / '.$ciName, ' /').'.';
+        }
+        if (trim((string) ($probe['ci_pdo_error'] ?? '')) !== '') {
+            $parts[] = 'App PDO: '.$probe['ci_pdo_error'];
+        }
         if (($probe['ci_system'] ?? false) !== true && ($probe['ci_vendor_system'] ?? false) !== true
             && $paths !== []) {
             $parts[] = 'system/ and vendor/codeigniter4 are missing — CodeIgniter cannot boot.';
@@ -260,20 +287,47 @@ if (is_file('/app/index.php')) {
     }
 }
 $ciHost = null;
+$ciName = null;
+$ciUser = null;
+$ciPass = null;
 foreach (['/app/.env', '/app/app/.env'] as $envFile) {
     if (! is_file($envFile)) {
         continue;
     }
     foreach (preg_split('/\r\n|\r|\n/', (string) file_get_contents($envFile)) ?: [] as $line) {
-        if (preg_match('/^(?:database\\.default\\.(?:hostname|host)|DB_HOST)\\s*=\\s*(.+)$/', trim($line), $match) === 1) {
+        $line = trim($line);
+        if (preg_match('/^(?:database\\.default\\.(?:hostname|host)|DB_HOST)[ \\t]*=[ \\t]*(.+)$/', $line, $match) === 1) {
             $ciHost = trim($match[1], " \t\"'");
+        } elseif (preg_match('/^(?:database\\.default\\.database|DB_DATABASE)[ \\t]*=[ \\t]*(.+)$/', $line, $match) === 1) {
+            $ciName = trim($match[1], " \t\"'");
+        } elseif (preg_match('/^(?:database\\.default\\.username|DB_USERNAME)[ \\t]*=[ \\t]*(.+)$/', $line, $match) === 1) {
+            $ciUser = trim($match[1], " \t\"'");
+        } elseif (preg_match('/^(?:database\\.default\\.password|DB_PASSWORD)[ \\t]*=[ \\t]*(.*)$/', $line, $match) === 1) {
+            $ciPass = trim($match[1], " \t\"'");
         }
     }
 }
-if ($ciHost === null && is_file('/app/app/Config/Database.php')) {
+if (is_file('/app/app/Config/Database.php')) {
     $dbSrc = (string) file_get_contents('/app/app/Config/Database.php');
-    if (preg_match('/[\'"]hostname[\'"]\\s*=>\\s*[\'"]([^\'"]+)/', $dbSrc, $match) === 1) {
+    if ($ciHost === null && preg_match('/[\'"]hostname[\'"]\\s*=>\\s*[\'"]([^\'"]+)/', $dbSrc, $match) === 1) {
         $ciHost = $match[1];
+    }
+    if ($ciName === null && preg_match('/[\'"]database[\'"]\\s*=>\\s*[\'"]([^\'"]+)/', $dbSrc, $match) === 1) {
+        $ciName = $match[1];
+    }
+    if ($ciUser === null && preg_match('/[\'"]username[\'"]\\s*=>\\s*[\'"]([^\'"]+)/', $dbSrc, $match) === 1) {
+        $ciUser = $match[1];
+    }
+}
+$pdoError = null;
+if (is_string($ciHost) && $ciHost !== '' && is_string($ciUser) && $ciUser !== '' && is_string($ciName) && $ciName !== '') {
+    try {
+        new PDO('mysql:host='.$ciHost.';dbname='.$ciName.';charset=utf8mb4', $ciUser, (string) $ciPass, [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_TIMEOUT => 4,
+        ]);
+    } catch (Throwable $e) {
+        $pdoError = $e->getMessage();
     }
 }
 $encryptionSet = false;
@@ -291,12 +345,12 @@ $logFiles = array_merge(glob('/app/writable/logs/log-*.log') ?: [], glob('/app/w
 rsort($logFiles);
 if ($logFiles !== []) {
     $tail = (string) @file_get_contents($logFiles[0]);
-    if (preg_match('/(CRITICAL|ERROR|ErrorException|ParseError|Unable to write|encryption key)[^\\n]{0,240}/i', $tail, $match) === 1) {
+    if (preg_match('/(CRITICAL|ERROR|ErrorException|ParseError|Unable to write|encryption key|Access denied|1045|Unable to connect)[^\\n]{0,240}/i', $tail, $match) === 1) {
         $ciLog = trim($match[0]);
     }
 }
 echo 'TALKSASA_PHP500='.json_encode([
-    'fatal' => $ciLog,
+    'fatal' => $pdoError ?: $ciLog,
     'uses_mysql_ext' => $uses,
     'index_files' => $indexes,
     'lint' => $lint,
@@ -310,6 +364,9 @@ echo 'TALKSASA_PHP500='.json_encode([
     'ci_encryption_key' => $encryptionSet,
     'ci_autoload' => is_file('/app/vendor/autoload.php'),
     'ci_log' => $ciLog,
+    'ci_db_name' => $ciName,
+    'ci_db_user' => $ciUser,
+    'ci_pdo_error' => $pdoError,
 ]);
 PHP;
     }

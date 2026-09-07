@@ -59,5 +59,21 @@ class PhpRuntime500ProbeTest extends TestCase
             'ci_system' => true,
             'ci_vendor_system' => false,
         ]));
+        $this->assertStringContainsString('1045', $probe->summary([
+            'fatal' => null,
+            'uses_mysql_ext' => false,
+            'index_files' => ['/app/index.php (800 bytes)'],
+            'lint' => [],
+            'paths_php' => ['/app/app/Config/Paths.php'],
+            'index_require' => "require __DIR__ . '/app/Config/Paths.php';",
+            'ci_db_host' => 'user-483-service-426-static-site-db',
+            'ci_db_user' => 'digiworl',
+            'ci_db_name' => 'digiworl_roadtrip',
+            'ci_pdo_error' => "SQLSTATE[HY000] [1045] Access denied for user 'digiworl'@'10.201.0.2'",
+            'ci_system' => true,
+            'ci_vendor_system' => true,
+            'ci_encryption_key' => true,
+            'ci_autoload' => true,
+        ]));
     }
 }

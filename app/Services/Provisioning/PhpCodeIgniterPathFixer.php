@@ -317,7 +317,8 @@ class PhpCodeIgniterPathFixer
                 .' '.escapeshellarg($writable.'/logs')
                 .' '.escapeshellarg($writable.'/session')
                 .' '.escapeshellarg($writable.'/uploads')
-                .' && chmod -R ug+rwX '.escapeshellarg($writable),
+                .' && chmod -R a+rwX '.escapeshellarg($writable)
+                .' && (chown -R www-data:www-data '.escapeshellarg($writable).' 2>/dev/null || true)',
                 20
             );
         } catch (\Throwable) {

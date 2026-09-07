@@ -1193,6 +1193,12 @@ class ContainerDoctorService
                         if (is_string($phpProbe['ci_db_host'] ?? null) && $phpProbe['ci_db_host'] !== '') {
                             $phpProbeLines[] = 'CI hostname '.$phpProbe['ci_db_host'];
                         }
+                        if (is_string($phpProbe['ci_db_user'] ?? null) && $phpProbe['ci_db_user'] !== '') {
+                            $phpProbeLines[] = 'CI user '.$phpProbe['ci_db_user'];
+                        }
+                        if (is_string($phpProbe['ci_pdo_error'] ?? null) && $phpProbe['ci_pdo_error'] !== '') {
+                            $phpProbeLines[] = 'App PDO '.$phpProbe['ci_pdo_error'];
+                        }
                         if (($phpProbe['ci_system'] ?? false) !== true && ($phpProbe['paths_php'] ?? []) !== []) {
                             $phpProbeLines[] = (($phpProbe['ci_vendor_system'] ?? false) === true)
                                 ? 'system/ missing (vendor present)'
@@ -2293,7 +2299,7 @@ PHP;
                 'cd '.escapeshellarg($containerPath)
                 .' && docker compose logs --no-color --since 30m --tail=120 '
                 .escapeshellarg($deployment->container_name)
-                .' 2>/dev/null | grep -E "PHP (Fatal|Parse)|Uncaught |SQLSTATE" | tail -n 8 || true',
+                .' 2>/dev/null | grep -E "PHP (Fatal|Parse)|Uncaught |SQLSTATE|Access denied|1045" | tail -n 8 || true',
                 25
             ));
         } catch (\Throwable) {
@@ -5027,6 +5033,10 @@ PHP;
                 ];
             }
 
+            try {
+                app(PhpSidecarDatabaseRewriter::class)->applyForDeployment($ssh, $service, $deployment);
+            } catch (\Throwable) {
+            }
             app(PhpCodeIgniterRuntimeHealer::class)->applyOnHost(
                 $ssh,
                 $hostAppPath,
@@ -5094,8 +5104,13 @@ PHP;
         $publicUrl = (string) ($deployment->getAccessUrl() ?? '');
 
         try {
+            try {
+                app(PhpSidecarDatabaseRewriter::class)->applyForDeployment($ssh, $service, $deployment);
+            } catch (\Throwable) {
+            }
             app(PhpCodeIgniterRuntimeHealer::class)->applyOnHost($ssh, $hostAppPath, $publicUrl);
             app(PhpCodeIgniterPathFixer::class)->linkVendorSystemOnHost($ssh, $hostAppPath);
+            app(PhpCodeIgniterPathFixer::class)->ensureWritableOnHost($ssh, $hostAppPath);
 
             try {
                 $ssh->exec(
@@ -5119,7 +5134,7 @@ PHP;
 
                 return [
                     'success' => false,
-                    'message' => 'Wrote CodeIgniter encryption.key / app.baseURL / writable/ and reloaded php-fpm, but GET / still returns HTTP '.$httpStatus.'. '
+                    'message' => 'Wrote sidecar DB credentials, encryption.key / app.baseURL / writable/, and reloaded php-fpm, but GET / still returns HTTP '.$httpStatus.'. '
                         .app(PhpRuntime500Probe::class)->summary($phpProbe)
                         .($logLines === [] ? '' : ' Log: '.implode(' | ', array_slice($logLines, 0, 2)))
                         .' MySQL was left running.',
@@ -5501,8 +5516,8 @@ PHP;
                     'summary' => 'Live PDO works (tables: '.(string) ($checks['table_count'] ?? '?')
                         .') and Paths.php, the sidecar hostname, and system/ are already in place'
                         .($requireAlreadyResolved ? '; the front-controller require is correct' : '')
-                        .'. The empty HTTP 500 is the next CI4 boot step (encryption.key, app.baseURL, or writable/). '
-                        .'Heal writes those and reloads php-fpm. It does not recreate the container or touch MySQL.',
+                        .'. The empty HTTP 500 is usually CodeIgniter still using DirectAdmin DB user/password against the sidecar, or a missing encryption.key/writable/. '
+                        .'Heal rewrites sidecar credentials, encryption.key, app.baseURL, and writable/, then reloads php-fpm. It does not recreate the container or touch MySQL.',
                 ];
             }
 
