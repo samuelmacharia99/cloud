@@ -4307,6 +4307,148 @@ class ContainerDeploymentService
             : $appContainerName.'-db';
     }
 
+    public function composeDefinesDatabaseSidecar(?string $yaml): bool
+    {
+        if (! is_string($yaml) || trim($yaml) === '') {
+            return false;
+        }
+
+        try {
+            $compose = Yaml::parse($yaml);
+        } catch (\Throwable) {
+            return false;
+        }
+
+        if (! is_array($compose['services'] ?? null)) {
+            return false;
+        }
+
+        foreach ($compose['services'] as $name => $service) {
+            if (! is_array($service)) {
+                continue;
+            }
+
+            $key = strtolower((string) $name);
+            if (in_array($key, ['db', 'mysql', 'mariadb', 'postgres', 'postgresql'], true)) {
+                return true;
+            }
+
+            $cname = strtolower((string) ($service['container_name'] ?? ''));
+            if (str_ends_with($cname, '-db') || str_ends_with($cname, '-mysql') || str_ends_with($cname, '_db')) {
+                return true;
+            }
+
+            $image = strtolower((string) ($service['image'] ?? ''));
+            if (str_contains($image, 'mysql') || str_contains($image, 'mariadb') || str_contains($image, 'postgres')) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  array<string, string>  $envVars
+     */
+    public function patchComposeMysqlSidecar(
+        string $yaml,
+        string $containerName,
+        DatabaseTemplate $databaseTemplate,
+        array $envVars
+    ): string {
+        if ($this->composeDefinesDatabaseSidecar($yaml)) {
+            return $yaml;
+        }
+
+        $compose = Yaml::parse($yaml);
+        if (! is_array($compose) || ! is_array($compose['services'] ?? null)) {
+            return $yaml;
+        }
+
+        $key = $this->resolveComposeAppServiceKey($compose, $containerName) ?? $containerName;
+        $this->injectDatabaseSidecar($compose, $databaseTemplate, $envVars, $key);
+
+        $dns = $this->sidecarDnsHost($containerName);
+        if (is_array($compose['services']['db'] ?? null)) {
+            $compose['services']['db']['container_name'] = $dns;
+            $compose['services']['db']['networks']['default']['aliases'] = [$dns];
+        }
+
+        $this->applyMysqlSidecarDatadirRepair($compose);
+
+        return Yaml::dump($compose, 10, 2);
+    }
+
+    /**
+     * PHP apps switched off static nginx have no MySQL container. Repair used to
+     * rewrite DB_HOST to unique sidecar DNS anyway, which cannot resolve.
+     */
+    public function ensureMysqlSidecarForDeployment(
+        SSHService $ssh,
+        Service $service,
+        ContainerDeployment $deployment,
+        DatabaseTemplate $databaseTemplate
+    ): string {
+        $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+        try {
+            $yaml = trim((string) $ssh->exec('cat '.escapeshellarg($containerPath.'/docker-compose.yml'), 15));
+        } catch (\Throwable) {
+            $yaml = (string) ($deployment->docker_compose_content ?? '');
+        }
+
+        if ($this->composeDefinesDatabaseSidecar($yaml)) {
+            return 'MySQL sidecar is already in compose.';
+        }
+
+        $envVars = is_array($deployment->env_values) ? $deployment->env_values : [];
+        $dbEnv = $this->mysqlEnvironmentVariables($envVars, $service, $deployment->container_name);
+        $envVars = array_merge($envVars, $dbEnv);
+        $envVars = $this->pinApplicationDatabaseHost($envVars, $deployment->container_name, 'mysql');
+
+        $patched = $this->patchComposeMysqlSidecar($yaml, $deployment->container_name, $databaseTemplate, $envVars);
+        if ($patched === $yaml) {
+            throw new \RuntimeException('Could not add a MySQL sidecar to docker-compose.yml.');
+        }
+
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        if ((int) ($databaseTemplate->id ?? 0) > 0) {
+            $meta['database_id'] = (int) $databaseTemplate->id;
+        }
+        $meta['env_values'] = array_merge(is_array($meta['env_values'] ?? null) ? $meta['env_values'] : [], $envVars);
+        $service->update(['service_meta' => $meta]);
+        $deployment->update([
+            'docker_compose_content' => $patched,
+            'env_values' => $envVars,
+        ]);
+        $ssh->upload($patched, $containerPath.'/docker-compose.yml');
+
+        $this->ensureSharedDockerNetwork($ssh);
+        $ssh->exec(
+            'cd '.escapeshellarg($containerPath).' && docker compose -f docker-compose.yml up -d --no-deps db',
+            180
+        );
+
+        $dns = $this->sidecarDnsHost($deployment->container_name);
+        $this->attachSidecarNetworkAlias($ssh, $dns, $dns);
+
+        app(DirectAdminToContainerMigrationService::class)->waitForComposeMysql(
+            $ssh,
+            $containerPath,
+            'db',
+            (string) ($envVars['MYSQL_ROOT_PASSWORD'] ?? $envVars['DB_PASSWORD'] ?? ''),
+            180,
+            'root',
+            false,
+        );
+
+        $this->syncMysqlSidecarCredentials($ssh, $containerPath, $envVars);
+        app(ContainerEnvironmentService::class)->syncDotEnvFile($ssh, $service, $deployment->fresh(), $envVars);
+        $this->restartAppService($ssh, $deployment->fresh());
+
+        return 'Added a MySQL sidecar at '.$dns.' and pointed the app at s'
+            .max(1, (int) $service->id).'_db. Files were kept. This volume is new and empty — import the DirectAdmin dump if the site needs existing tables.';
+    }
+
     public function isAmbiguousSharedNetworkDatabaseHost(?string $host): bool
     {
         $host = strtolower(trim((string) $host));

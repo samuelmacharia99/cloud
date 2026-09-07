@@ -501,6 +501,22 @@ class ContainerDoctorService
             }
 
             if ($containerReady) {
+                $composeYaml = (string) ($deployment->docker_compose_content ?? '');
+                try {
+                    $liveYaml = trim((string) $ssh->exec(
+                        'cat '.escapeshellarg(
+                            ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name.'/docker-compose.yml'
+                        ),
+                        15
+                    ));
+                    if ($liveYaml !== '') {
+                        $composeYaml = $liveYaml;
+                    }
+                } catch (\Throwable) {
+                }
+                $hasDbSidecar = $deploymentService->composeDefinesDatabaseSidecar($composeYaml);
+                $checks['db_sidecar'] = $hasDbSidecar;
+
                 $platformEnv = is_array($deployment->env_values) ? $deployment->env_values : [];
                 $liveEnv = $this->readLiveAppEnvironment($ssh, $deployment, $service);
                 $checks['env_source'] = $liveEnv === [] ? 'platform' : 'app_dotenv';
@@ -511,8 +527,8 @@ class ContainerDoctorService
                 $checks['cache_store'] = strtolower(trim((string) (
                     $mergedEnv['CACHE_STORE'] ?? $mergedEnv['CACHE_DRIVER'] ?? ''
                 )));
-                if ($deploymentService->envUsesMysqlUnixSocket($mergedEnv)
-                    || $this->findingsContain($findings, ['mysql_unix_socket_missing'])) {
+                if ($hasDbSidecar && ($deploymentService->envUsesMysqlUnixSocket($mergedEnv)
+                    || $this->findingsContain($findings, ['mysql_unix_socket_missing']))) {
                     $unique = $deploymentService->sidecarDnsHost((string) $deployment->container_name);
                     $envStillSocket = $deploymentService->envUsesMysqlUnixSocket($mergedEnv);
                     $summary = $envStillSocket
@@ -566,7 +582,7 @@ class ContainerDoctorService
                     $checks['laravel_db_host'] = $runtimeDbHost;
                 }
 
-                if (in_array($stack, ['laravel', 'php'], true)
+                if ($hasDbSidecar && in_array($stack, ['laravel', 'php'], true)
                     && $this->isAmbiguousLaravelDatabaseHost($runtimeDbHost)) {
                     $unique = app(ContainerDeploymentService::class)
                         ->sidecarDnsHost((string) $deployment->container_name);
@@ -664,7 +680,7 @@ class ContainerDoctorService
                     }
                 }
 
-                if ($databaseTemplate) {
+                if ($databaseTemplate && $hasDbSidecar) {
                     $probeEnv = $this->envForRuntimeDatabaseProbe(
                         $this->overlayPanelDatabaseCredentials($platformEnv, $mergedEnv),
                         (string) $databaseTemplate->type
@@ -853,6 +869,41 @@ class ContainerDoctorService
                                 'source' => 'live',
                             ];
                         }
+                    }
+                }
+
+                if ($databaseTemplate && ! $hasDbSidecar && in_array($stack, ['laravel', 'php'], true)
+                    && ! $this->findingsContain($findings, ['missing_database_sidecar'])) {
+                    $configuredDbHost = (string) (
+                        $mergedEnv['DB_HOST']
+                        ?? $platformEnv['DB_HOST']
+                        ?? ''
+                    );
+                    $unique = $deploymentService->sidecarDnsHost((string) $deployment->container_name);
+                    $hostName = strtolower(trim(explode(':', $configuredDbHost, 2)[0]));
+                    $needsSidecar = $deploymentService->isAmbiguousSharedNetworkDatabaseHost($configuredDbHost)
+                        || $hostName === strtolower($unique);
+                    if ($needsSidecar) {
+                        $findings[] = [
+                            'id' => 'missing_database_sidecar',
+                            'severity' => 'critical',
+                            'title' => 'This PHP app has no MySQL sidecar',
+                            'summary' => 'Compose has no database container, but Repair previously pointed DB_HOST at `'
+                                .($hostName !== '' ? $hostName : $unique)
+                                .'`, which cannot resolve on talksasa-net. Add a MySQL sidecar — files stay; the new volume is empty (import the DirectAdmin dump if you need existing tables).',
+                            'evidence' => array_values(array_filter([
+                                $configuredDbHost !== '' ? 'DB_HOST='.$configuredDbHost : 'DB_HOST=(empty)',
+                                'sidecar DNS='.$unique,
+                                'compose has no db/mysql service',
+                            ])),
+                            'treat_action' => 'sync_database_credentials',
+                            'treat_label' => 'Add MySQL sidecar',
+                            'manual_steps' => [
+                                'Click Add MySQL sidecar — creates this stack’s MySQL container, writes s{id}_db into .env, and recreates only the app. Files are kept.',
+                                'This volume is new. Import a SQL dump if the site needs DirectAdmin data. Do not Reset database on other sites.',
+                            ],
+                            'source' => 'live',
+                        ];
                     }
                 }
 
@@ -1346,6 +1397,13 @@ class ContainerDoctorService
             $drop = array_values(array_unique(array_merge($drop, [
                 'static_site_empty_docroot',
                 'static_site_placeholder_homepage',
+            ])));
+        }
+
+        if (in_array('missing_database_sidecar', $ids, true)) {
+            $drop = array_values(array_unique(array_merge($drop, [
+                'live_env_credential_drift',
+                'live_db_connection_failed',
             ])));
         }
 
@@ -4151,6 +4209,53 @@ PHP;
         }
 
         try {
+            $liveCompose = '';
+            try {
+                $liveCompose = trim((string) $ssh->exec(
+                    'cat '.escapeshellarg($containerPath.'/docker-compose.yml'),
+                    15
+                ));
+            } catch (\Throwable) {
+                $liveCompose = (string) ($deployment->docker_compose_content ?? '');
+            }
+            if (! $deploymentService->composeDefinesDatabaseSidecar($liveCompose)) {
+                if (! in_array((string) $databaseTemplate->type, ['mysql', 'mariadb'], true)) {
+                    return [
+                        'success' => false,
+                        'message' => 'This stack has no database container. Repair cannot invent a '.$databaseTemplate->type.' sidecar from here.',
+                    ];
+                }
+                $message = $deploymentService->ensureMysqlSidecarForDeployment(
+                    $ssh,
+                    $service,
+                    $deployment,
+                    $databaseTemplate
+                );
+                $deployment->refresh();
+                $envVars = is_array($deployment->env_values) ? $deployment->env_values : [];
+                $probe = $deploymentService->probeApplicationDatabaseAccess(
+                    $ssh,
+                    $deployment->container_name,
+                    (string) $databaseTemplate->type,
+                    $this->envForRuntimeDatabaseProbe($envVars, (string) $databaseTemplate->type),
+                    $this->resolveStackSlug($service),
+                    $containerPath
+                );
+                if (! $probe['ok']) {
+                    return [
+                        'success' => false,
+                        'message' => $message.' Live connection still fails: '
+                            .(string) ($probe['error'] ?? 'unknown error')
+                            .'. Re-scan and click Add MySQL sidecar / Repair again if MySQL is still starting.',
+                    ];
+                }
+
+                return [
+                    'success' => true,
+                    'message' => $message,
+                ];
+            }
+
             $platformEnv = is_array($deployment->env_values) ? $deployment->env_values : [];
             $liveEnv = $this->readLiveAppEnvironment($ssh, $deployment, $service);
             $rawEnv = $liveEnv === [] ? $platformEnv : array_merge($platformEnv, $liveEnv);

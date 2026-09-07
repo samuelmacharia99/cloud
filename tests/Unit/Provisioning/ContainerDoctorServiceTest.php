@@ -354,6 +354,35 @@ LOG;
     }
 
     #[Test]
+    public function missing_mysql_sidecar_finding_replaces_credential_drift(): void
+    {
+        $merged = app(ContainerDoctorService::class)->mergeLogAndLiveFindings(
+            [],
+            [
+                'findings' => [
+                    [
+                        'id' => 'live_env_credential_drift',
+                        'severity' => 'critical',
+                        'title' => 'Live .env database credentials are inconsistent',
+                        'treat_action' => 'sync_database_credentials',
+                    ],
+                    [
+                        'id' => 'missing_database_sidecar',
+                        'severity' => 'critical',
+                        'title' => 'This PHP app has no MySQL sidecar',
+                        'treat_action' => 'sync_database_credentials',
+                    ],
+                ],
+                'checks' => ['http_status' => 500, 'db_ok' => false],
+            ]
+        );
+
+        $ids = array_column($merged, 'id');
+        $this->assertContains('missing_database_sidecar', $ids);
+        $this->assertNotContains('live_env_credential_drift', $ids);
+    }
+
+    #[Test]
     public function production_php_server_does_not_route_static_files_through_index_php(): void
     {
         $script = (string) file_get_contents(base_path('deploy/docker/runtimes/common/php-production-server.sh'));

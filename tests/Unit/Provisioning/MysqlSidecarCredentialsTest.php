@@ -3,6 +3,7 @@
 namespace Tests\Unit\Provisioning;
 
 use App\Models\ContainerDeployment;
+use App\Models\DatabaseTemplate;
 use App\Services\Provisioning\ContainerDeploymentService;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -259,6 +260,47 @@ YAML;
         $this->assertSame('user-488-service-373-wordpress-mysql', $pinned['DB_HOST']);
         $this->assertStringContainsString('@user-488-service-373-wordpress-mysql:3306/', $pinned['DATABASE_URL']);
         $this->assertStringNotContainsString('@mysql:', $pinned['DATABASE_URL']);
+    }
+
+    #[Test]
+    public function compose_without_a_db_service_is_not_treated_as_having_a_sidecar(): void
+    {
+        $yaml = <<<'YAML'
+services:
+  user-483-service-426-static-site:
+    image: talksasa/php-runtime:8.3-r8
+    container_name: user-483-service-426-static-site
+YAML;
+
+        $deployer = app(ContainerDeploymentService::class);
+        $this->assertFalse($deployer->composeDefinesDatabaseSidecar($yaml));
+
+        $db = new DatabaseTemplate([
+            'type' => 'mysql',
+            'docker_image' => 'mysql:8.0',
+        ]);
+        $patched = $deployer->patchComposeMysqlSidecar(
+            $yaml,
+            'user-483-service-426-static-site',
+            $db,
+            [
+                'MYSQL_ROOT_PASSWORD' => 'root-secret',
+                'MYSQL_DATABASE' => 's426_db',
+                'MYSQL_USER' => 'u483_s426',
+                'MYSQL_PASSWORD' => 'app-secret',
+            ]
+        );
+
+        $this->assertTrue($deployer->composeDefinesDatabaseSidecar($patched));
+        $this->assertStringContainsString('user-483-service-426-static-site-db', $patched);
+        $this->assertStringContainsString('mysql:8.0', $patched);
+        $this->assertStringContainsString('s426_db', $patched);
+        $this->assertSame($patched, $deployer->patchComposeMysqlSidecar(
+            $patched,
+            'user-483-service-426-static-site',
+            $db,
+            []
+        ));
     }
 
     #[Test]
