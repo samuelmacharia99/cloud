@@ -63,7 +63,20 @@ class PhpOsposAppInstaller
             app(PhpSidecarDatabaseRewriter::class)->applyForDeployment($ssh, $service, $deployment);
         } catch (\Throwable) {
         }
+
+        try {
+            $ssh->exec(
+                'if [ ! -f '.escapeshellarg($hostAppPath.'/.env')
+                .' ] && [ -f '.escapeshellarg($hostAppPath.'/.env.example')
+                .' ]; then cp '.escapeshellarg($hostAppPath.'/.env.example')
+                .' '.escapeshellarg($hostAppPath.'/.env').'; fi',
+                10
+            );
+        } catch (\Throwable) {
+        }
+
         app(PhpCodeIgniterRuntimeHealer::class)->applyOnHost($ssh, $hostAppPath, $publicUrl);
+        app(PhpCodeIgniterPathFixer::class)->linkVendorSystemOnHost($ssh, $hostAppPath);
         app(PhpCodeIgniterPathFixer::class)->ensureWritableOnHost($ssh, $hostAppPath);
 
         try {

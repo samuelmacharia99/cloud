@@ -23,15 +23,30 @@ class PhpCodeIgniterRuntimeHealerTest extends TestCase
         $this->assertStringContainsString('app.baseURL=https://roadtrip.digiworldmediasln.com/', $healed);
         $this->assertStringNotContainsString('localhost:8080', $healed);
         $this->assertFalse($healer->encryptionKeyIsMissing($healed));
+        $this->assertStringContainsString('app.allowedHostnames=roadtrip.digiworldmediasln.com', $healed);
     }
 
     #[Test]
     public function it_leaves_a_real_key_and_public_url_alone(): void
     {
         $healer = new PhpCodeIgniterRuntimeHealer;
-        $env = 'encryption.key=hex2bin:'.str_repeat('ab', 32)."\napp.baseURL=https://roadtrip.digiworldmediasln.com/\n";
+        $env = 'encryption.key=hex2bin:'.str_repeat('ab', 32)."\napp.baseURL=https://roadtrip.digiworldmediasln.com/\napp.allowedHostnames=roadtrip.digiworldmediasln.com\n";
 
         $this->assertSame($env, $healer->healEnv($env, 'https://other.example.com'));
+    }
+
+    #[Test]
+    public function it_writes_ospos_allowed_hostnames_from_the_public_url(): void
+    {
+        $healer = new PhpCodeIgniterRuntimeHealer;
+        $env = "CI_ENVIRONMENT = production\napp.allowedHostnames =\n";
+
+        $this->assertTrue($healer->allowedHostnamesMissing($env));
+        $this->assertSame('roadtrip.digiworldmediasln.com', $healer->hostnamesFromPublicUrl('https://roadtrip.digiworldmediasln.com/'));
+        $this->assertStringContainsString(
+            'app.allowedHostnames=roadtrip.digiworldmediasln.com',
+            $healer->healEnv($env, 'https://roadtrip.digiworldmediasln.com')
+        );
     }
 
     #[Test]

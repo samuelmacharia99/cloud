@@ -1697,6 +1697,45 @@ LOG;
     }
 
     #[Test]
+    public function http_500_after_official_ospos_heals_allowed_hostnames_instead_of_restart(): void
+    {
+        $treat = app(ContainerDoctorService::class)->resolveHttp500Treatment(
+            [
+                'db_ok' => true,
+                'table_count' => 39,
+                'http_status' => 500,
+                'php_paths_php' => ['/app/app/Config/Paths.php'],
+                'php_ci_system' => true,
+                'php_ci_vendor_system' => true,
+                'php_ci_db_host' => 'user-483-service-426-static-site-db',
+                'php_ci_db_user' => 'u483_s426',
+                'php_ci_ospos' => true,
+                'php_ci_allowed_hostnames' => false,
+                'da_can_import_ci_app' => true,
+            ],
+            [],
+            'php'
+        );
+
+        $this->assertSame('heal_codeigniter_runtime', $treat['treat_action']);
+        $this->assertStringContainsString('allowedHostnames', $treat['summary']);
+        $this->assertStringNotContainsString('recreates the app', $treat['summary']);
+        $this->assertSame('install_ospos_application', app(ContainerDoctorService::class)->resolveHttp500Treatment(
+            [
+                'db_ok' => true,
+                'table_count' => 39,
+                'http_status' => 500,
+                'php_fatal' => 'Class "Config\\Locale" not found',
+                'php_paths_php' => ['/app/app/Config/Paths.php'],
+                'php_ci_ospos' => true,
+                'php_ci_vendor_system' => true,
+            ],
+            [],
+            'php'
+        )['treat_action']);
+    }
+
+    #[Test]
     public function http_500_with_sidecar_creds_and_missing_mysqli_still_heals(): void
     {
         $treat = app(ContainerDoctorService::class)->resolveHttp500Treatment(

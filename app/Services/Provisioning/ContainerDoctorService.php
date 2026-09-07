@@ -1181,6 +1181,7 @@ class ContainerDoctorService
                         $checks['php_ci_mysqli'] = $phpProbe['ci_mysqli'] ?? null;
                         $checks['php_ci_db_driver'] = $phpProbe['ci_db_driver'] ?? null;
                         $checks['php_ci_ospos'] = $phpProbe['ci_ospos'] ?? null;
+                        $checks['php_ci_allowed_hostnames'] = $phpProbe['ci_allowed_hostnames'] ?? null;
                         $checks['da_can_import_ci_app'] = app(DirectAdminToContainerMigrationService::class)
                             ->canImportDirectAdminCodeIgniterSiblings($service);
                         if (is_string($phpProbe['fatal']) && $phpProbe['fatal'] !== '') {
@@ -1217,6 +1218,9 @@ class ContainerDoctorService
                         }
                         if (($phpProbe['ci_ospos'] ?? false) === true) {
                             $phpProbeLines[] = 'Open Source POS (app/Config/OSPOS.php)';
+                        }
+                        if (($phpProbe['ci_ospos'] ?? false) === true && ($phpProbe['ci_allowed_hostnames'] ?? true) !== true) {
+                            $phpProbeLines[] = 'app.allowedHostnames is empty';
                         }
                         if (is_string($phpProbe['ci_http_body'] ?? null) && $phpProbe['ci_http_body'] !== '') {
                             $phpProbeLines[] = 'HTTP body: '.$phpProbe['ci_http_body'];
@@ -5550,7 +5554,12 @@ PHP;
             $phpFatal = trim((string) ($checks['php_fatal'] ?? ''));
             $pathsFiles = $checks['php_paths_php'] ?? [];
             $indexRequire = trim((string) ($checks['php_index_require'] ?? ''));
-            if (str_contains($phpFatal, 'Config/Paths.php') || str_contains($indexRequire, 'Config/Paths.php')) {
+            $isCodeIgniter = $pathsFiles !== []
+                || str_contains($indexRequire, 'Config/Paths.php')
+                || str_contains($phpFatal, 'Config/Paths.php')
+                || str_contains($phpFatal, 'Config\\')
+                || ($checks['php_ci_ospos'] ?? false) === true;
+            if ($isCodeIgniter) {
                 $missingApp = $pathsFiles === [] || (is_array($pathsFiles) && $pathsFiles === []);
                 $canImportCi = ($checks['da_can_import_ci_app'] ?? false) === true;
                 if ($missingApp && $canImportCi) {
@@ -5569,7 +5578,11 @@ PHP;
                     $phpFatal,
                     ($checks['php_ci_ospos'] ?? false) === true,
                 );
-                if (! $missingApp && $looksLikeOspos) {
+                $osposNeedsFreshTree = $looksLikeOspos && (
+                    ! $hasVendorSystem
+                    || str_contains($phpFatal, 'Config\\Locale')
+                );
+                if (! $missingApp && $osposNeedsFreshTree) {
                     return [
                         'treat_action' => 'install_ospos_application',
                         'treat_label' => 'Install Open Source POS (keep database)',
@@ -5577,6 +5590,15 @@ PHP;
                             .') — that is the shop data, not the 500. The DirectAdmin tree is missing CodeIgniter Config classes (for example Config\\Locale) because public_html + a partial app/ were copied next to a newer vendor system/. '
                             .'Install clones https://github.com/opensourcepos/opensourcepos.git into /app, runs Composer, rewrites sidecar credentials, and keeps MySQL. It does not recreate the container or wipe the database. '
                             .'Redeploy stack can do the same: check Replace application files and leave Reset database unchecked.',
+                    ];
+                }
+                if (! $missingApp && $looksLikeOspos && $hasVendorSystem) {
+                    return [
+                        'treat_action' => 'heal_codeigniter_runtime',
+                        'treat_label' => 'Heal CodeIgniter runtime',
+                        'summary' => 'Official Open Source POS is already in /app (vendor/codeigniter4 present, '.((string) ($checks['table_count'] ?? '?')).' tables kept). '
+                            .'Stock Paths.php already points at vendor — a missing /app/system is not the 500. Production OSPOS fatals when app.allowedHostnames is empty. '
+                            .'Heal writes the public hostname, encryption.key, sidecar credentials, and writable/, then reloads php-fpm. It does not recreate the container or wipe MySQL.',
                     ];
                 }
                 if (! $missingApp && ! $hasSystem && $hasVendorSystem) {
@@ -5629,6 +5651,8 @@ PHP;
                 $mysqliMissing = ($checks['php_ci_mysqli'] ?? true) === false;
                 $sidecarUser = trim((string) ($checks['php_ci_db_user'] ?? ''));
                 $alreadySidecarCreds = preg_match('/^u\d+_s\d+$/', $sidecarUser) === 1;
+                $allowedMissing = ($checks['php_ci_ospos'] ?? false) === true
+                    && ($checks['php_ci_allowed_hostnames'] ?? true) === false;
 
                 return [
                     'treat_action' => 'heal_codeigniter_runtime',
@@ -5637,12 +5661,14 @@ PHP;
                         .') and Paths.php, the sidecar hostname, and system/ are already in place'
                         .($requireAlreadyResolved ? '; the front-controller require is correct' : '')
                         .'. '
-                        .($mysqliMissing
-                            ? 'Doctor PDO uses PDO; CodeIgniter’s default DBDriver is MySQLi, which is not loaded on this runtime. '
-                            : ($alreadySidecarCreds
-                                ? 'Sidecar user/name are already written; the 12-byte HTTP 500 is CodeIgniter’s production “Server Error” (writable/logs or a later boot exception). '
-                                : 'The empty HTTP 500 is usually CodeIgniter still using DirectAdmin DB user/password against the sidecar, or a missing encryption.key/writable/. '))
-                        .'Heal installs mysqli if needed, rewrites sidecar credentials, encryption.key, app.baseURL, and writable/, then reloads php-fpm. It does not recreate the container or touch MySQL.',
+                        .($allowedMissing
+                            ? 'Official Open Source POS fatals in production when app.allowedHostnames is empty. '
+                            : ($mysqliMissing
+                                ? 'Doctor PDO uses PDO; CodeIgniter’s default DBDriver is MySQLi, which is not loaded on this runtime. '
+                                : ($alreadySidecarCreds
+                                    ? 'Sidecar user/name are already written; the 12-byte HTTP 500 is CodeIgniter’s production “Server Error” (writable/logs or a later boot exception). '
+                                    : 'The empty HTTP 500 is usually CodeIgniter still using DirectAdmin DB user/password against the sidecar, or a missing encryption.key/writable/. ')))
+                        .'Heal writes app.allowedHostnames from the public URL, installs mysqli if needed, rewrites sidecar credentials, encryption.key, app.baseURL, and writable/, then reloads php-fpm. It does not recreate the container or touch MySQL.',
                 ];
             }
 

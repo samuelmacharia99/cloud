@@ -28,7 +28,8 @@ class PhpRuntime500Probe
      *     ci_mysqli: bool,
      *     ci_db_driver: ?string,
      *     ci_http_body: ?string,
-     *     ci_ospos: bool
+     *     ci_ospos: bool,
+     *     ci_allowed_hostnames: bool
      * }
      */
     public function capture(SSHService $ssh, ContainerDeployment $deployment): array
@@ -55,6 +56,7 @@ class PhpRuntime500Probe
             'ci_db_driver' => null,
             'ci_http_body' => null,
             'ci_ospos' => false,
+            'ci_allowed_hostnames' => false,
         ];
 
         try {
@@ -131,6 +133,7 @@ class PhpRuntime500Probe
                 ? mb_substr($decoded['ci_http_body'], 0, 200)
                 : null,
             'ci_ospos' => (bool) ($decoded['ci_ospos'] ?? false),
+            'ci_allowed_hostnames' => (bool) ($decoded['ci_allowed_hostnames'] ?? false),
         ];
 
         if ($result['fatal'] === null && is_string($result['ci_pdo_error'])) {
@@ -312,6 +315,9 @@ class PhpRuntime500Probe
         if (($probe['ci_ospos'] ?? false) === true) {
             $parts[] = 'This tree is Open Source POS (app/Config/OSPOS.php).';
         }
+        if (($probe['ci_allowed_hostnames'] ?? true) !== true && ($probe['ci_ospos'] ?? false) === true) {
+            $parts[] = 'app.allowedHostnames is empty — official OSPOS fatals in production.';
+        }
         if (($probe['index_files'] ?? []) === []) {
             $parts[] = 'No index.php was found under /app or /app/public.';
         }
@@ -365,14 +371,24 @@ foreach ($iterator as $file) {
 $pathsPhp = [];
 exec('find /app -maxdepth 6 -type f \\( -path "*/Config/Paths.php" -o -path "*/config/Paths.php" \\) ! -path "*/vendor/*" 2>/dev/null', $pathsPhp);
 $indexRequire = null;
-if (is_file('/app/index.php')) {
-    foreach (preg_split('/\r\n|\r|\n/', (string) file_get_contents('/app/index.php')) ?: [] as $line) {
+foreach (['/app/public/index.php', '/app/index.php'] as $front) {
+    if (! is_file($front)) {
+        continue;
+    }
+    foreach (preg_split('/\r\n|\r|\n/', (string) file_get_contents($front)) ?: [] as $line) {
         if (str_contains($line, 'Config/Paths.php')) {
             $indexRequire = trim($line);
-            break;
+            break 2;
         }
     }
 }
+$pathsSrc = '';
+foreach ($pathsPhp as $pathsFile) {
+    if (is_file($pathsFile)) {
+        $pathsSrc .= (string) file_get_contents($pathsFile);
+    }
+}
+$systemViaVendor = str_contains($pathsSrc, 'vendor/codeigniter4');
 $ciHost = null;
 $ciName = null;
 $ciUser = null;
@@ -464,7 +480,10 @@ echo 'TALKSASA_PHP500='.json_encode([
     'lint' => $lint,
     'paths_php' => $pathsPhp,
     'index_require' => $indexRequire,
-    'ci_system' => is_file('/app/system/Boot.php') || is_file('/app/system/CodeIgniter.php'),
+    'ci_system' => $systemViaVendor
+        ? (is_file('/app/vendor/codeigniter4/framework/system/Boot.php')
+            || is_file('/app/vendor/codeigniter4/framework/system/CodeIgniter.php'))
+        : (is_file('/app/system/Boot.php') || is_file('/app/system/CodeIgniter.php')),
     'ci_vendor_system' => is_file('/app/vendor/codeigniter4/framework/system/Boot.php')
         || is_file('/app/vendor/codeigniter4/framework/system/CodeIgniter.php'),
     'ci_writable' => is_dir('/app/writable'),
@@ -479,6 +498,10 @@ echo 'TALKSASA_PHP500='.json_encode([
     'ci_db_driver' => $driver,
     'ci_http_body' => $httpBody,
     'ci_ospos' => is_file('/app/app/Config/OSPOS.php'),
+    'ci_allowed_hostnames' => (preg_match('/^app\\.allowedHostnames[ \\t]*=[ \\t]*(.+)$/m', $envText, $allowedMatch) === 1
+        && trim($allowedMatch[1], " \t\"'") !== '')
+        || (preg_match('/^ALLOWED_HOSTNAMES[ \\t]*=[ \\t]*(.+)$/m', $envText, $allowedMatch) === 1
+        && trim($allowedMatch[1], " \t\"'") !== ''),
 ]);
 PHP;
     }

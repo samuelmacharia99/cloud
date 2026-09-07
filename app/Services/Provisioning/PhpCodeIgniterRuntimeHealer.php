@@ -50,7 +50,34 @@ class PhpCodeIgniterRuntimeHealer
             $env = $this->upsertEnv($env, 'app.baseURL', $base);
         }
 
+        $hosts = $this->hostnamesFromPublicUrl($publicUrl);
+        if ($hosts !== '' && $this->allowedHostnamesMissing($env)) {
+            $env = $this->upsertEnv($env, 'app.allowedHostnames', $hosts);
+        }
+
         return $env === '' || str_ends_with($env, "\n") ? $env : $env."\n";
+    }
+
+    /**
+     * Official Open Source POS fatals in production when this whitelist is empty
+     * (GHSA-jchf-7hr6-h4f3 / “Server Error” with an empty HTTP body).
+     */
+    public function allowedHostnamesMissing(string $env): bool
+    {
+        foreach (['app.allowedHostnames', 'ALLOWED_HOSTNAMES'] as $key) {
+            if (preg_match('/^'.preg_quote($key, '/').'[ \t]*=[ \t]*(.*)$/m', $env, $matches) === 1) {
+                return trim($matches[1], " \t\"'") === '';
+            }
+        }
+
+        return true;
+    }
+
+    public function hostnamesFromPublicUrl(string $url): string
+    {
+        $host = parse_url(trim($url), PHP_URL_HOST);
+
+        return is_string($host) && $host !== '' ? strtolower($host) : '';
     }
 
     public function normalizeBaseUrl(string $url): string
