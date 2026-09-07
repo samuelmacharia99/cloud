@@ -7,6 +7,7 @@ use App\Models\Node;
 use App\Models\Product;
 use App\Models\Service;
 use App\Models\User;
+use App\Services\Provisioning\ContainerSqlDumpImportService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Tests\TestCase;
@@ -63,5 +64,28 @@ class ContainerDatabaseImportTest extends TestCase
             ])
             ->assertStatus(422)
             ->assertJsonPath('error', 'Only .sql files are supported for database import.');
+    }
+
+    public function test_import_chunk_returns_pending_until_the_dump_is_complete(): void
+    {
+        $customer = User::factory()->customer()->create();
+        $service = $this->runningServiceWithMysql($customer);
+        $uploadId = str_repeat('cd', 16);
+
+        $this->actingAs($customer)
+            ->postJson(route('customer.services.container.database.import', $service), [
+                'file' => UploadedFile::fake()->createWithContent('dump.sql', "CREATE TABLE t;\n"),
+                'filename' => 'dump.sql',
+                'upload_id' => $uploadId,
+                'chunk_index' => 0,
+                'chunk_total' => 2,
+            ])
+            ->assertOk()
+            ->assertJsonPath('pending', true)
+            ->assertJsonPath('received', 1)
+            ->assertJsonPath('total', 2);
+
+        app(ContainerSqlDumpImportService::class)
+            ->forgetUpload((int) $service->id, $uploadId);
     }
 }

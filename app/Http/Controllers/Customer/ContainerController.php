@@ -141,7 +141,8 @@ class ContainerController extends Controller
             $resolvedTemplate ?? $service->product->containerTemplate,
             $deployment
         );
-        $dbImportMaxMb = (int) config('security.container_db_import.max_size_mb', 50);
+        $dbImportMaxMb = (int) config('security.container_db_import.max_size_mb', 100);
+        $dbImportPhpLimitLabel = app(ContainerSqlDumpImportService::class)->phpUploadLimitLabel();
 
         $latestBackup = null;
         $domainCount = 0;
@@ -206,6 +207,7 @@ class ContainerController extends Controller
             'gitRepository',
             'containerLimits',
             'dbImportMaxMb',
+            'dbImportPhpLimitLabel',
             'latestBackup',
             'domainCount',
             'domainsMissingSsl',
@@ -1168,9 +1170,42 @@ class ContainerController extends Controller
             return response()->json(['error' => 'SQL import is only supported for MySQL, MariaDB, and PostgreSQL'], 400);
         }
 
+        $importer = app(ContainerSqlDumpImportService::class);
         $file = $request->file('file');
-        $sql = file_get_contents($file->getRealPath());
-        if ($sql === false || trim($sql) === '') {
+        $uploadId = (string) $request->input('upload_id', '');
+        $assembledPath = null;
+        $sql = '';
+        $originalName = (string) ($request->input('filename') ?: $file->getClientOriginalName());
+        $bytes = (int) $file->getSize();
+
+        if ($request->filled('chunk_index')) {
+            $stored = $importer->storeChunk(
+                (int) $service->id,
+                $uploadId,
+                (int) $request->input('chunk_index'),
+                (int) $request->input('chunk_total'),
+                $file,
+            );
+            if (! $stored['complete']) {
+                return response()->json([
+                    'success' => true,
+                    'pending' => true,
+                    'received' => $stored['received'],
+                    'total' => $stored['total'],
+                ]);
+            }
+            $assembledPath = $stored['path'] ?? null;
+            $sql = is_string($assembledPath) ? (string) file_get_contents($assembledPath) : '';
+            $bytes = is_string($assembledPath) && is_file($assembledPath) ? (int) filesize($assembledPath) : $bytes;
+        } else {
+            $sql = (string) file_get_contents($file->getRealPath());
+        }
+
+        if (trim($sql) === '') {
+            if ($uploadId !== '') {
+                $importer->forgetUpload((int) $service->id, $uploadId);
+            }
+
             return response()->json(['error' => 'SQL file is empty or unreadable'], 422);
         }
 
@@ -1181,9 +1216,8 @@ class ContainerController extends Controller
 
         try {
             $ssh = SSHService::forNode($deployment->node);
-            $output = app(ContainerSqlDumpImportService::class)
-                ->importIntoSidecar($ssh, $deployment, $databaseContext, $sql);
-            $this->logDatabaseImport($service, $file->getClientOriginalName(), (int) $file->getSize(), true);
+            $output = $importer->importIntoSidecar($ssh, $deployment, $databaseContext, $sql);
+            $this->logDatabaseImport($service, $originalName, $bytes, true);
 
             return response()->json([
                 'success' => true,
@@ -1191,14 +1225,18 @@ class ContainerController extends Controller
                 'output' => $output !== '' ? $output : 'Import finished with no output.',
             ]);
         } catch (\InvalidArgumentException $e) {
-            $this->logDatabaseImport($service, $file->getClientOriginalName(), (int) $file->getSize(), false);
+            $this->logDatabaseImport($service, $originalName, $bytes, false);
 
             return response()->json(['error' => $e->getMessage()], 422);
         } catch (\Exception $e) {
             \Log::warning("Database import failed for service {$service->id}: ".$e->getMessage());
-            $this->logDatabaseImport($service, $file->getClientOriginalName(), (int) $file->getSize(), false);
+            $this->logDatabaseImport($service, $originalName, $bytes, false);
 
             return response()->json(['error' => 'Import failed: '.$e->getMessage()], 500);
+        } finally {
+            if ($uploadId !== '') {
+                $importer->forgetUpload((int) $service->id, $uploadId);
+            }
         }
     }
 

@@ -87,11 +87,14 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withExceptions(function (Exceptions $exceptions) {
         $exceptions->render(function (PostTooLargeException $e, Request $request) {
-            if (! $request->is('my/services/*/container/files/upload')) {
+            if (! $request->is('my/services/*/container/files/upload')
+                && ! $request->is('my/services/*/container/database/import')) {
                 return null;
             }
 
-            $maxMb = (int) config('security.container_file_upload.max_size_mb', 100);
+            $maxMb = $request->is('my/services/*/container/database/import')
+                ? (int) config('security.container_db_import.max_size_mb', 100)
+                : (int) config('security.container_file_upload.max_size_mb', 100);
 
             return response()->json([
                 'error' => "File exceeds the server upload limit ({$maxMb} MB). "

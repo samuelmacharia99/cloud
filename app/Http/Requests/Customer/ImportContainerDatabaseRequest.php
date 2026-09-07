@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Customer;
 
+use App\Services\Provisioning\ContainerSqlDumpImportService;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\Exceptions\HttpResponseException;
@@ -15,8 +16,9 @@ class ImportContainerDatabaseRequest extends FormRequest
 
     public function rules(): array
     {
-        $maxMb = (int) config('security.container_db_import.max_size_mb', 50);
-        $maxKb = max(1, $maxMb) * 1024;
+        $chunking = $this->filled('chunk_index');
+        $maxMb = (int) config('security.container_db_import.max_size_mb', 100);
+        $maxKb = $chunking ? 2048 : max(1, $maxMb) * 1024;
 
         return [
             'file' => [
@@ -24,6 +26,10 @@ class ImportContainerDatabaseRequest extends FormRequest
                 'file',
                 'max:'.$maxKb,
             ],
+            'upload_id' => ['required_with:chunk_index', 'nullable', 'regex:/^[a-f0-9]{16,64}$/'],
+            'chunk_index' => ['nullable', 'integer', 'min:0', 'max:400'],
+            'chunk_total' => ['required_with:chunk_index', 'nullable', 'integer', 'min:1', 'max:400'],
+            'filename' => ['required_with:chunk_index', 'nullable', 'string', 'max:180'],
         ];
     }
 
@@ -35,7 +41,10 @@ class ImportContainerDatabaseRequest extends FormRequest
                 return;
             }
 
-            $ext = strtolower((string) $file->getClientOriginalExtension());
+            $ext = strtolower((string) ($this->input('filename') ?: $file->getClientOriginalExtension()));
+            if (str_contains($ext, '.')) {
+                $ext = strtolower((string) pathinfo($ext, PATHINFO_EXTENSION));
+            }
             if (! in_array($ext, ['sql', 'txt'], true)) {
                 $validator->errors()->add('file', 'Only .sql files are supported for database import.');
             }
@@ -44,9 +53,17 @@ class ImportContainerDatabaseRequest extends FormRequest
 
     public function messages(): array
     {
+        $importer = app(ContainerSqlDumpImportService::class);
+        $phpLimit = $importer->phpUploadLimitLabel();
+        $uploadError = $importer->describePhpUploadFailure($this->file('file'));
+
         return [
             'file.required' => 'Choose a .sql file to import.',
-            'file.max' => 'SQL file cannot exceed '.(int) config('security.container_db_import.max_size_mb', 50).' MB.',
+            'file.uploaded' => $uploadError ?: (
+                'The file failed to upload. PHP on this panel allows '.$phpLimit
+                .'. Retry Import SQL — large dumps are sent in small chunks.'
+            ),
+            'file.max' => 'SQL file cannot exceed '.(int) config('security.container_db_import.max_size_mb', 100).' MB.',
             'file.mimes' => 'Only .sql files are supported for database import.',
         ];
     }

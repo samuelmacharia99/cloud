@@ -712,7 +712,7 @@
                                 <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/50">
                                     <h3 class="text-sm font-semibold text-slate-900 dark:text-white mb-2">Import SQL dump</h3>
                                     <p class="text-sm text-slate-600 dark:text-slate-400 mb-3">
-                                        Upload a <code class="font-mono">.sql</code> file to load tables and data into this service database (max {{ $dbImportMaxMb }} MB). DirectAdmin dumps that <code class="font-mono">CREATE DATABASE</code> / <code class="font-mono">USE</code> another name are rewritten into this sidecar. Existing tables with the same names may be overwritten.
+                                        Upload a <code class="font-mono">.sql</code> file to load tables and data into this service database (max {{ $dbImportMaxMb }} MB). Large dumps are uploaded in small chunks so they are not blocked by PHP’s {{ $dbImportPhpLimitLabel ?? 'upload' }} limit. DirectAdmin dumps that <code class="font-mono">CREATE DATABASE</code> / <code class="font-mono">USE</code> another name are rewritten into this sidecar. Existing tables with the same names may be overwritten.
                                     </p>
                                     <div class="flex flex-wrap items-center gap-3">
                                         <input type="file" id="db-import-file" accept=".sql,text/plain" class="text-sm text-slate-700 dark:text-slate-300">
@@ -1529,41 +1529,64 @@ async function importDatabaseSql() {
         outEl.textContent = '';
     }
 
-    const formData = new FormData();
-    formData.append('file', file);
+    const chunkSize = 512 * 1024;
+    const chunkTotal = Math.max(1, Math.ceil(file.size / chunkSize));
+    const uploadId = Array.from(crypto.getRandomValues(new Uint8Array(16)))
+        .map((byte) => byte.toString(16).padStart(2, '0'))
+        .join('');
+    const csrf = document.head.querySelector('meta[name="csrf-token"]').content;
+    const importUrl = '{{ route("customer.services.container.database.import", $service) }}';
 
     try {
-        const response = await fetch('{{ route("customer.services.container.database.import", $service) }}', {
-            method: 'POST',
-            headers: {
-                'X-CSRF-TOKEN': document.head.querySelector('meta[name="csrf-token"]').content,
-                'Accept': 'application/json',
-            },
-            body: formData,
-        });
-
         let data = {};
-        try {
-            data = await response.json();
-        } catch {
-            statusEl.textContent = 'Import failed';
-            if (outEl) {
-                outEl.classList.remove('hidden');
-                outEl.textContent = 'The server did not return JSON. The upload may have exceeded PHP/nginx size limits.';
+        for (let index = 0; index < chunkTotal; index++) {
+            statusEl.textContent = chunkTotal === 1
+                ? 'Importing...'
+                : `Uploading dump ${index + 1}/${chunkTotal}…`;
+            const chunk = file.slice(index * chunkSize, Math.min(file.size, (index + 1) * chunkSize));
+            const formData = new FormData();
+            formData.append('file', chunk, file.name);
+            formData.append('filename', file.name);
+            formData.append('upload_id', uploadId);
+            formData.append('chunk_index', String(index));
+            formData.append('chunk_total', String(chunkTotal));
+
+            const response = await fetch(importUrl, {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': csrf,
+                    'Accept': 'application/json',
+                },
+                body: formData,
+            });
+
+            try {
+                data = await response.json();
+            } catch {
+                statusEl.textContent = 'Import failed';
+                if (outEl) {
+                    outEl.classList.remove('hidden');
+                    outEl.textContent = 'The server did not return JSON. The upload may have exceeded PHP/nginx size limits.';
+                }
+                return;
             }
-            return;
-        }
-        if (!response.ok) {
-            const detail = data.error
-                || data.message
-                || Object.values(data.errors || {}).flat().join(' ')
-                || 'Import failed';
-            statusEl.textContent = 'Import failed';
-            if (outEl) {
-                outEl.classList.remove('hidden');
-                outEl.textContent = detail;
+
+            if (!response.ok) {
+                const detail = data.error
+                    || data.message
+                    || Object.values(data.errors || {}).flat().join(' ')
+                    || 'Import failed';
+                statusEl.textContent = 'Import failed';
+                if (outEl) {
+                    outEl.classList.remove('hidden');
+                    outEl.textContent = detail;
+                }
+                return;
             }
-            return;
+
+            if (data.pending && index < chunkTotal - 1) {
+                continue;
+            }
         }
 
         statusEl.textContent = 'Import complete';
