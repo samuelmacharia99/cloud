@@ -133,14 +133,14 @@ class ContainerDoctorService
             default => ['success' => false, 'message' => 'Unknown treatment action.'],
         };
 
-        if ($result['success']) {
+        if ($result['success'] || $action === 'restart_application') {
             try {
                 $result['diagnosis'] = $this->diagnose($service->fresh([
                     'product.containerTemplate',
                     'containerDeployment.node',
                 ]));
             } catch (\Throwable) {
-                // Treatment already succeeded; diagnosis refresh is optional.
+                // Diagnosis refresh is optional; the treat result still stands.
             }
         }
 
@@ -1162,8 +1162,19 @@ class ContainerDoctorService
                         $phpProbe = app(PhpRuntime500Probe::class)->capture($ssh, $deployment);
                         $checks['php_uses_mysql_ext'] = $phpProbe['uses_mysql_ext'];
                         $checks['php_fatal'] = $phpProbe['fatal'];
+                        $checks['php_paths_php'] = $phpProbe['paths_php'] ?? [];
+                        $checks['php_index_require'] = $phpProbe['index_require'] ?? null;
                         if (is_string($phpProbe['fatal']) && $phpProbe['fatal'] !== '') {
                             $phpProbeLines[] = $phpProbe['fatal'];
+                        }
+                        if (is_string($phpProbe['index_require'] ?? null) && $phpProbe['index_require'] !== '') {
+                            $phpProbeLines[] = $phpProbe['index_require'];
+                        }
+                        foreach ($phpProbe['paths_php'] ?? [] as $pathFile) {
+                            $phpProbeLines[] = 'Paths.php '.$pathFile;
+                        }
+                        if (($phpProbe['paths_php'] ?? []) === [] && is_string($phpProbe['index_require'] ?? null)) {
+                            $phpProbeLines[] = 'Config/Paths.php not found under /app';
                         }
                         if ($phpProbe['uses_mysql_ext']) {
                             $phpProbeLines[] = 'Source still calls mysql_* (removed in PHP 8)';
@@ -5132,13 +5143,21 @@ PHP;
             }
 
             $phpFatal = trim((string) ($checks['php_fatal'] ?? ''));
-            if (str_contains($phpFatal, 'Config/Paths.php')) {
+            $pathsFiles = $checks['php_paths_php'] ?? [];
+            $indexRequire = trim((string) ($checks['php_index_require'] ?? ''));
+            if (str_contains($phpFatal, 'Config/Paths.php') || str_contains($indexRequire, 'Config/Paths.php')) {
+                $missingApp = $pathsFiles === [] || (is_array($pathsFiles) && $pathsFiles === []);
+
                 return [
                     'treat_action' => 'restart_application',
                     'treat_label' => 'Restart application',
-                    'summary' => 'Live PDO works (tables: '.(string) ($checks['table_count'] ?? '?')
-                        .') but CodeIgniter is bootstrapping from /app/index.php, so ../app/Config/Paths.php resolves outside the project. '
-                        .'Restart rewrites that require to app/Config/Paths.php and recreates the app only. MySQL stays up.',
+                    'summary' => $missingApp
+                        ? 'Live PDO works (tables: '.(string) ($checks['table_count'] ?? '?')
+                            .') but CodeIgniter cannot load Config/Paths.php — that file is not under /app. '
+                            .'DirectAdmin often kept the app/ folder next to public_html. Restart searches the container and rewrites /app/index.php to the real path. MySQL stays up.'
+                        : 'Live PDO works (tables: '.(string) ($checks['table_count'] ?? '?')
+                            .') but CodeIgniter is bootstrapping from /app/index.php with a ../app/Config/Paths.php require. '
+                            .'Restart rewrites that require to the Paths.php file that is already in this container and recreates the app only. MySQL stays up.',
                 ];
             }
 
@@ -6439,7 +6458,14 @@ PHP;
                     ?? ''
                 ));
                 $httpStatus = null;
-                $phpProbe = ['fatal' => null, 'uses_mysql_ext' => false, 'index_files' => [], 'lint' => []];
+                $phpProbe = [
+                    'fatal' => null,
+                    'uses_mysql_ext' => false,
+                    'index_files' => [],
+                    'lint' => [],
+                    'paths_php' => [],
+                    'index_require' => null,
+                ];
                 if (in_array($slug, ['laravel', 'php'], true)) {
                     $httpStatus = $this->probeHttpStatus($ssh, $deployment);
                     if ($httpStatus !== null && $httpStatus >= 500) {

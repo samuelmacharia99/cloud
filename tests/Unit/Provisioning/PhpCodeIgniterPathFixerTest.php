@@ -24,8 +24,30 @@ PHP;
         $this->assertFalse($fixer->needsFlattenedPathsRequire($source, false, false));
 
         $rewritten = $fixer->rewriteFrontController($source);
-        $this->assertStringContainsString("FCPATH . 'app/Config/Paths.php'", $rewritten);
+        $this->assertStringContainsString("require __DIR__ . '/app/Config/Paths.php'", $rewritten);
         $this->assertStringNotContainsString('../app/Config/Paths.php', $rewritten);
+    }
+
+    #[Test]
+    public function it_points_the_require_at_a_discovered_paths_file(): void
+    {
+        $fixer = new PhpCodeIgniterPathFixer;
+        $source = "require __DIR__ . '/../app/Config/Paths.php';\n";
+
+        $this->assertSame(
+            '/app/core/app/Config/Paths.php',
+            $fixer->preferPathsCandidate([
+                '/app/writable/Config/Paths.php',
+                '/app/core/app/Config/Paths.php',
+            ])
+        );
+        $this->assertSame(
+            'core/app/Config/Paths.php',
+            $fixer->relativeFromAppRoot('/app/core/app/Config/Paths.php')
+        );
+
+        $rewritten = $fixer->rewriteFrontController($source, 'core/app/Config/Paths.php');
+        $this->assertStringContainsString("require __DIR__ . '/core/app/Config/Paths.php'", $rewritten);
     }
 
     #[Test]

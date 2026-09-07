@@ -8,12 +8,19 @@ use App\Services\SSH\SSHService;
 class PhpRuntime500Probe
 {
     /**
-     * @return array{fatal: ?string, uses_mysql_ext: bool, index_files: list<string>, lint: list<string>}
+     * @return array{fatal: ?string, uses_mysql_ext: bool, index_files: list<string>, lint: list<string>, paths_php: list<string>, index_require: ?string}
      */
     public function capture(SSHService $ssh, ContainerDeployment $deployment): array
     {
         $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
-        $empty = ['fatal' => null, 'uses_mysql_ext' => false, 'index_files' => [], 'lint' => []];
+        $empty = [
+            'fatal' => null,
+            'uses_mysql_ext' => false,
+            'index_files' => [],
+            'lint' => [],
+            'paths_php' => [],
+            'index_require' => null,
+        ];
 
         try {
             $raw = trim($ssh->exec(
@@ -54,6 +61,13 @@ class PhpRuntime500Probe
                 is_array($decoded['lint'] ?? null) ? $decoded['lint'] : [],
                 'is_string'
             )),
+            'paths_php' => array_values(array_filter(
+                is_array($decoded['paths_php'] ?? null) ? $decoded['paths_php'] : [],
+                'is_string'
+            )),
+            'index_require' => isset($decoded['index_require']) && is_string($decoded['index_require'])
+                ? mb_substr($decoded['index_require'], 0, 200)
+                : null,
         ];
 
         if ($result['fatal'] === null) {
@@ -94,7 +108,9 @@ class PhpRuntime500Probe
                 'cd '.escapeshellarg($containerPath)
                 .' && docker compose exec -T '.escapeshellarg($deployment->container_name)
                 .' sh -lc '.escapeshellarg(
-                    'timeout 8 php -d display_errors=1 -d error_reporting=32767 '
+                    'PREPEND=""; if [ -f /app/.talksasa-mysql-shim.php ]; then '
+                    .'PREPEND="-d auto_prepend_file=/app/.talksasa-mysql-shim.php"; fi; '
+                    .'timeout 8 php -d display_errors=1 -d error_reporting=32767 $PREPEND '
                     .escapeshellarg($front).' 2>&1 | tail -n 30 || true'
                 ),
                 20
@@ -118,6 +134,16 @@ class PhpRuntime500Probe
         }
         if (($probe['uses_mysql_ext'] ?? false) === true) {
             $parts[] = 'The site still calls mysql_* (removed in PHP 8). Restart now preloads a mysqli shim.';
+        }
+        $indexRequire = trim((string) ($probe['index_require'] ?? ''));
+        if ($indexRequire !== '') {
+            $parts[] = 'Front controller: '.$indexRequire;
+        }
+        $paths = $probe['paths_php'] ?? [];
+        if ($paths === [] && str_contains($indexRequire, 'Paths.php')) {
+            $parts[] = 'Config/Paths.php was not found under /app — DirectAdmin often kept the CodeIgniter app/ folder next to public_html.';
+        } elseif ($paths !== []) {
+            $parts[] = 'Paths.php at '.implode(', ', array_slice($paths, 0, 3)).'.';
         }
         if (($probe['index_files'] ?? []) === []) {
             $parts[] = 'No index.php was found under /app or /app/public.';
@@ -169,11 +195,37 @@ foreach ($iterator as $file) {
         break;
     }
 }
+$pathsPhp = [];
+$it2 = new RecursiveIteratorIterator(new RecursiveDirectoryIterator('/app', FilesystemIterator::SKIP_DOTS));
+$n2 = 0;
+foreach ($it2 as $file) {
+    if ($n2++ > 800) {
+        break;
+    }
+    $path = $file->getPathname();
+    if ((str_ends_with($path, '/Config/Paths.php') || str_ends_with($path, '/config/Paths.php')) && ! str_contains($path, '/vendor/')) {
+        $pathsPhp[] = $path;
+        if (count($pathsPhp) >= 5) {
+            break;
+        }
+    }
+}
+$indexRequire = null;
+if (is_file('/app/index.php')) {
+    foreach (preg_split('/\r\n|\r|\n/', (string) file_get_contents('/app/index.php')) ?: [] as $line) {
+        if (str_contains($line, 'Config/Paths.php')) {
+            $indexRequire = trim($line);
+            break;
+        }
+    }
+}
 echo 'TALKSASA_PHP500='.json_encode([
     'fatal' => null,
     'uses_mysql_ext' => $uses,
     'index_files' => $indexes,
     'lint' => $lint,
+    'paths_php' => $pathsPhp,
+    'index_require' => $indexRequire,
 ]);
 PHP;
     }

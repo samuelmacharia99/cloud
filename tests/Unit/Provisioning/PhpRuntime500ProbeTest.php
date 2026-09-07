@@ -40,5 +40,13 @@ class PhpRuntime500ProbeTest extends TestCase
             'index_files' => ['/app/index.php (1200 bytes)'],
             'lint' => [],
         ]));
+        $this->assertStringContainsString('not found under /app', $probe->summary([
+            'fatal' => null,
+            'uses_mysql_ext' => false,
+            'index_files' => ['/app/index.php (800 bytes)'],
+            'lint' => [],
+            'paths_php' => [],
+            'index_require' => "require FCPATH . '../app/Config/Paths.php';",
+        ]));
     }
 }

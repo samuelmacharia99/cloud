@@ -1546,7 +1546,7 @@ LOG;
 
         $this->assertSame('restart_application', $treat['treat_action']);
         $this->assertStringContainsString('CodeIgniter', $treat['summary']);
-        $this->assertStringContainsString('app/Config/Paths.php', $treat['summary']);
+        $this->assertStringContainsString('Config/Paths.php', $treat['summary']);
     }
 
     #[Test]

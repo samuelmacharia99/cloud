@@ -855,7 +855,7 @@ class ContainerDeploymentService
                 if ($hasDatabase || in_array($slug, ['laravel', 'php', 'nodejs', 'wordpress'], true)) {
                     $this->persistLaravelRuntimeDriversOnCompose($ssh, $deployment, [], $service);
                 }
-                if (in_array($slug, ['laravel', 'php'], true)) {
+                if ($this->deploymentNeedsPhpHeal($deployment, $slug)) {
                     $this->alignLaravelDocumentRootOnCompose($ssh, $service, $deployment);
                     try {
                         app(PhpSidecarDatabaseRewriter::class)->applyForDeployment($ssh, $service, $deployment);
@@ -865,23 +865,23 @@ class ContainerDeploymentService
                             'error' => $e->getMessage(),
                         ]);
                     }
-                    if ($slug === 'php') {
-                        try {
-                            app(PhpLegacyMysqlShim::class)->installOnHost($ssh, $containerPath.'/app');
-                        } catch (\Throwable $e) {
-                            Log::warning('Could not install legacy mysql_* shim before restart', [
-                                'service_id' => $service->id,
-                                'error' => $e->getMessage(),
-                            ]);
-                        }
-                        try {
-                            app(PhpCodeIgniterPathFixer::class)->applyOnHost($ssh, $containerPath.'/app');
-                        } catch (\Throwable $e) {
-                            Log::warning('Could not flatten CodeIgniter Paths.php require before restart', [
-                                'service_id' => $service->id,
-                                'error' => $e->getMessage(),
-                            ]);
-                        }
+                    try {
+                        app(PhpLegacyMysqlShim::class)->installOnHost($ssh, $containerPath.'/app');
+                    } catch (\Throwable $e) {
+                        Log::warning('Could not install legacy mysql_* shim before restart', [
+                            'service_id' => $service->id,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+                    try {
+                        $fixer = app(PhpCodeIgniterPathFixer::class);
+                        $fixer->applyOnHost($ssh, $containerPath.'/app');
+                        $fixer->applyInContainer($ssh, $deployment);
+                    } catch (\Throwable $e) {
+                        Log::warning('Could not flatten CodeIgniter Paths.php require before restart', [
+                            'service_id' => $service->id,
+                            'error' => $e->getMessage(),
+                        ]);
                     }
                 }
                 if (in_array($slug, ['nodejs', 'python', 'ruby', 'go'], true)) {
@@ -1263,15 +1263,15 @@ class ContainerDeploymentService
     public function alignLaravelDocumentRootOnCompose(SSHService $ssh, Service $service, ContainerDeployment $deployment): void
     {
         $slug = strtolower((string) ($this->resolveContainerTemplate($service)?->slug ?? ''));
-        if (! in_array($slug, ['laravel', 'php'], true)) {
+        if (! $this->deploymentNeedsPhpHeal($deployment, $slug)) {
             return;
         }
 
         $hostAppPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name.'/app';
         $resolver = app(LaravelProjectPathResolver::class);
-        $documentRoot = $slug === 'php'
-            ? $this->phpDocumentRootOnHost($ssh, $hostAppPath)
-            : $resolver->resolveDocumentRoot($ssh, $hostAppPath);
+        $documentRoot = $slug === 'laravel'
+            ? $resolver->resolveDocumentRoot($ssh, $hostAppPath)
+            : $this->phpDocumentRootOnHost($ssh, $hostAppPath);
         if ($documentRoot === '' || $documentRoot === '/app') {
             $found = null;
             foreach ($resolver->webRootRelativeCandidates() as $web) {
@@ -6193,6 +6193,19 @@ class ContainerDeploymentService
         $meta['provision_template_slug'] = $slug;
         $service->update(['service_meta' => $meta]);
         $service->unsetRelation('product');
+    }
+
+    public function deploymentNeedsPhpHeal(ContainerDeployment $deployment, string $slug): bool
+    {
+        if (in_array($slug, ['laravel', 'php'], true)) {
+            return true;
+        }
+
+        $yaml = (string) ($deployment->docker_compose_content ?? '');
+
+        return str_contains($yaml, 'talksasa-php-server')
+            || str_contains($yaml, 'talksasa/php-runtime')
+            || str_contains($yaml, 'php-fpm');
     }
 
     public function phpDocumentRootOnHost(SSHService $ssh, string $hostAppPath): string
