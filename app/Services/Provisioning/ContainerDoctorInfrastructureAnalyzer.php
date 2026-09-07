@@ -202,6 +202,26 @@ class ContainerDoctorInfrastructureAnalyzer
                 ],
             ],
             [
+                'id' => 'static_site_empty_docroot',
+                'severity' => 'critical',
+                'stacks' => ['static-site'],
+                'patterns' => [
+                    '/directory index of "\/usr\/share\/nginx\/html\/" is forbidden/i',
+                    '/GET \/\.env HTTP\/1\.1" 200 /',
+                ],
+                'match' => function (string $haystack): bool {
+                    return preg_match('/directory index of "\/usr\/share\/nginx\/html\/" is forbidden/i', $haystack) === 1
+                        || preg_match('/GET \/\.env HTTP\/1\.1" 200 /', $haystack) === 1;
+                },
+                'title' => 'nginx has no index.html at the web root',
+                'summary' => 'Official nginx:alpine 403s GET / when the bind-mounted web root has no index.html. DirectAdmin files often sit in public_html/ or dist/. The same mount can publish .env.',
+                'treat_action' => 'fix_static_site_docroot',
+                'treat_label' => 'Fix static web root',
+                'manual_steps' => [
+                    'Click Fix static web root — hoists nested public_html/dist into nginx html, denies /.env, and recreates only the app.',
+                ],
+            ],
+            [
                 'id' => 'stale_php_runtime_image',
                 'severity' => 'warning',
                 'stacks' => ['laravel', 'php'],

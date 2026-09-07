@@ -193,4 +193,15 @@ LOG;
         $this->assertSame('restart_application', $finding['treat_action']);
         $this->assertSame('Point nginx at public/', $finding['treat_label']);
     }
+
+    #[Test]
+    public function it_flags_nginx_directory_index_on_static_html_root(): void
+    {
+        $logs = '2026/09/07 07:18:02 [error] 31#31: *26 directory index of "/usr/share/nginx/html/" is forbidden, client: 10.201.0.1, request: "GET / HTTP/1.1"';
+        $finding = collect($this->analyzer()->findings($logs, 'static-site'))->firstWhere('id', 'static_site_empty_docroot');
+
+        $this->assertNotNull($finding);
+        $this->assertSame('fix_static_site_docroot', $finding['treat_action']);
+        $this->assertSame('Fix static web root', $finding['treat_label']);
+    }
 }

@@ -112,6 +112,7 @@ class ContainerDoctorService
             'ensure_storage_link' => $this->treatEnsureStorageLink($service),
             'fix_wordpress_permissions' => $this->treatFixWordPressPermissions($service),
             'fix_wordpress_apache_modules' => $this->treatFixWordPressApacheModules($service),
+            'fix_static_site_docroot' => $this->treatFixStaticSiteDocroot($service),
             'fix_wordpress_media_processing' => $this->treatFixWordPressMediaProcessing($service),
             'regenerate_wordpress_thumbnails' => $this->treatRegenerateWordPressThumbnails($service),
             'fix_wordpress_site_url' => $this->treatFixWordPressSiteUrl($service),
@@ -917,6 +918,28 @@ class ContainerDoctorService
                         'source' => 'live',
                     ];
                 }
+            }
+
+            if ($stack === 'static-site'
+                && $httpStatus === 403
+                && ! $this->findingsContain($findings, ['static_site_empty_docroot'])) {
+                $findings[] = [
+                    'id' => 'static_site_empty_docroot',
+                    'severity' => 'critical',
+                    'title' => 'nginx has no index.html at the web root',
+                    'summary' => 'GET / returns HTTP 403 because the official nginx image is serving /usr/share/nginx/html and there is no index.html there. DirectAdmin tars often leave files in public_html/ or dist/. Lift those files to the web root and stop publishing .env as a static file.',
+                    'evidence' => array_values(array_filter([
+                        'HTTP 403',
+                        (string) ($deployment->getAccessUrl() ?? ''),
+                    ])),
+                    'treat_action' => 'fix_static_site_docroot',
+                    'treat_label' => 'Fix static web root',
+                    'manual_steps' => [
+                        'Click Fix static web root — hoists nested public_html/dist into nginx html, denies /.env, and recreates only the app.',
+                        'If the site is actually PHP or Node (index.php / package.json), convert it on that stack instead. Static nginx cannot run those apps.',
+                    ],
+                    'source' => 'live',
+                ];
             }
 
             if (in_array($stack, ['laravel', 'php'], true)
@@ -3258,6 +3281,23 @@ PHP;
                 ],
             ],
             [
+                'id' => 'static_site_empty_docroot',
+                'severity' => 'critical',
+                'stacks' => ['static-site'],
+                'patterns' => [
+                    '/directory index of "\/usr\/share\/nginx\/html\/" is forbidden/i',
+                    '/GET \/\.env HTTP\/1\.1" 200 /',
+                ],
+                'title' => 'nginx has no index.html at the web root',
+                'summary' => 'Official nginx:alpine 403s GET / when the bind-mounted web root has no index.html (DirectAdmin files often sit in public_html/ or dist/). The same mis-mount can publish .env as a static file. Lift the nested web files and deny dotfiles.',
+                'treat_action' => 'fix_static_site_docroot',
+                'treat_label' => 'Fix static web root',
+                'manual_steps' => [
+                    'Click Fix static web root — hoists nested public_html/dist into nginx html, denies /.env, and recreates only the app.',
+                    'If the tree is a PHP or Node app, convert on that stack. nginx:alpine will not execute index.php.',
+                ],
+            ],
+            [
                 'id' => 'postgres_password_auth_failed',
                 'severity' => 'critical',
                 'stacks' => ['laravel', 'php', 'nodejs', 'python', 'ruby', '*'],
@@ -5504,6 +5544,37 @@ PHP;
             ];
         } catch (\Throwable $e) {
             return ['success' => false, 'message' => 'Failed to enable Apache Header module: '.$e->getMessage()];
+        } finally {
+            $ssh->disconnect();
+        }
+    }
+
+    /**
+     * @return array{success: bool, message: string}
+     */
+    private function treatFixStaticSiteDocroot(Service $service): array
+    {
+        $deployment = $service->containerDeployment;
+        if (! $deployment?->node) {
+            return ['success' => false, 'message' => 'Application is not deployed.'];
+        }
+
+        $ssh = SSHService::forNode($deployment->node);
+        $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+        $hostAppPath = $containerPath.'/app';
+        $static = app(StaticSiteDocrootService::class);
+
+        try {
+            $static->flattenWebRoot($ssh, $hostAppPath);
+            $static->persistNginxConfigOnCompose($ssh, $containerPath, $deployment->container_name);
+            app(ContainerDeploymentService::class)->restartAppService($ssh, $deployment);
+
+            return [
+                'success' => true,
+                'message' => 'Lifted nested web files into the nginx html root and blocked /.env. Reload the site. If it is still 403, this tree has no index.html (often a PHP/Node app that should not be on the static-site image).',
+            ];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'message' => 'Failed to fix static web root: '.$e->getMessage()];
         } finally {
             $ssh->disconnect();
         }

@@ -1230,6 +1230,18 @@ class DirectAdminToContainerMigrationService
                 900
             );
 
+            $importedSlug = (string) ($target->effectiveContainerTemplate()?->slug ?? '');
+            if ($importedSlug === 'static-site' || in_array($stack, ['static_or_php', 'static'], true)) {
+                $progress('Flattening nested public_html/dist so nginx can serve GET /');
+                $staticDocroot = app(StaticSiteDocrootService::class);
+                $staticDocroot->flattenWebRoot($targetSsh, $hostAppPath);
+                $staticDocroot->persistNginxConfigOnCompose(
+                    $targetSsh,
+                    $containerPath,
+                    $deployment->container_name
+                );
+            }
+
             if (in_array($stack, ['laravel', 'php', 'nodejs'], true)) {
                 $progress('Creating Laravel storage and view-cache directories');
                 $appDirectory = app(ContainerAppDirectoryService::class);
@@ -1332,10 +1344,14 @@ class DirectAdminToContainerMigrationService
             }
 
             $progress('Restarting application container');
-            $targetSsh->exec(
-                'cd '.escapeshellarg($containerPath).' && docker compose restart '.escapeshellarg($appService),
-                120
-            );
+            if ($importedSlug === 'static-site' || in_array($stack, ['static_or_php', 'static'], true)) {
+                $this->deployments->restartAppService($targetSsh, $deployment);
+            } else {
+                $targetSsh->exec(
+                    'cd '.escapeshellarg($containerPath).' && docker compose restart '.escapeshellarg($appService),
+                    120
+                );
+            }
             $this->deployments->waitForContainerRunning($targetSsh, $deployment->container_name, 120);
             $targetSsh->exec('rm -rf '.escapeshellarg($remoteWork));
         } finally {

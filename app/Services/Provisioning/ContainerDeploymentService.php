@@ -312,6 +312,10 @@ class ContainerDeploymentService
                     $this->wordpressHardening->ensureUploadsIniFile($ssh, $containerName);
                 }
 
+                if (($template->slug ?? '') === 'static-site') {
+                    app(StaticSiteDocrootService::class)->ensureNginxConfigFile($ssh, $containerName);
+                }
+
                 // Deploy container
                 $composeTimeout = $this->composeUpTimeoutSeconds($template);
                 $this->recordDeploymentEvent($service, $deployment, 'compose_up_started', [
@@ -1989,6 +1993,14 @@ class ContainerDeploymentService
             $uploadsMount = $this->wordpressHardening->uploadsIniVolumeMount($containerName);
             if (! in_array($uploadsMount, $compose['services'][$containerName]['volumes'], true)) {
                 $compose['services'][$containerName]['volumes'][] = $uploadsMount;
+            }
+        }
+
+        if (($template->slug ?? '') === 'static-site') {
+            $compose['services'][$containerName]['volumes'] ??= [];
+            $nginxMount = app(StaticSiteDocrootService::class)->nginxConfigVolumeMount($containerName);
+            if (! in_array($nginxMount, $compose['services'][$containerName]['volumes'], true)) {
+                $compose['services'][$containerName]['volumes'][] = $nginxMount;
             }
         }
 

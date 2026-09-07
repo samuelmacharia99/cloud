@@ -302,6 +302,22 @@ LOG;
     }
 
     #[Test]
+    public function it_detects_nginx_directory_index_forbidden_on_static_html_root(): void
+    {
+        $logs = <<<'LOG'
+user-483-service-426-static-site  | 2026/09/07 07:18:02 [error] 31#31: *26 directory index of "/usr/share/nginx/html/" is forbidden, client: 10.201.0.1, server: localhost, request: "GET / HTTP/1.1", host: "roadtrip.digiworldmediasln.com"
+user-483-service-426-static-site  | 10.201.0.1 - - [07/Sep/2026:07:21:23 +0000] "GET /.env HTTP/1.1" 200 3181 "-" "Mozilla/5.0"
+LOG;
+
+        $finding = collect(app(ContainerDoctorService::class)->analyzeLogs($logs, 'static-site'))
+            ->firstWhere('id', 'static_site_empty_docroot');
+
+        $this->assertNotNull($finding);
+        $this->assertSame('fix_static_site_docroot', $finding['treat_action']);
+        $this->assertSame('Fix static web root', $finding['treat_label']);
+    }
+
+    #[Test]
     public function production_php_server_does_not_route_static_files_through_index_php(): void
     {
         $script = (string) file_get_contents(base_path('deploy/docker/runtimes/common/php-production-server.sh'));
