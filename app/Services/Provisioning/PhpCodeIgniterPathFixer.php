@@ -119,6 +119,9 @@ class PhpCodeIgniterPathFixer
         }
 
         $rewritten += $this->healSystemDirectoryOnHost($ssh, $root);
+        if ($this->linkVendorSystemOnHost($ssh, $root)) {
+            $rewritten++;
+        }
         $this->ensureWritableOnHost($ssh, $root);
 
         return $rewritten;
@@ -214,6 +217,48 @@ class PhpCodeIgniterPathFixer
         }
 
         return str_repeat('../', count($from)).implode('/', $to);
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function vendorSystemRelatives(): array
+    {
+        return [
+            'vendor/codeigniter4/framework/system',
+            'vendor/codeigniter4/system',
+        ];
+    }
+
+    public function buildLinkVendorSystemCommand(string $appRoot): string
+    {
+        $root = rtrim(str_replace('\\', '/', $appRoot), '/');
+        $system = $root.'/system';
+        $sources = [];
+        foreach ($this->vendorSystemRelatives() as $relative) {
+            $sources[] = escapeshellarg($root.'/'.$relative);
+        }
+
+        return 'if [ -f '.escapeshellarg($system.'/Boot.php')
+            .' ] || [ -f '.escapeshellarg($system.'/CodeIgniter.php').' ]; then echo exists; exit 0; fi; '
+            .'for src in '.implode(' ', $sources).'; do '
+            .'  if [ -f "$src/Boot.php" ] || [ -f "$src/CodeIgniter.php" ]; then '
+            .'    rm -rf '.escapeshellarg($system).'; '
+            .'    ln -sfn "$src" '.escapeshellarg($system).'; '
+            .'    echo linked; exit 0; '
+            .'  fi; '
+            .'done; echo missing';
+    }
+
+    public function linkVendorSystemOnHost(SSHService $ssh, string $hostAppPath): bool
+    {
+        try {
+            $out = trim($ssh->exec($this->buildLinkVendorSystemCommand($hostAppPath), 20));
+        } catch (\Throwable) {
+            return false;
+        }
+
+        return $out === 'linked' || $out === 'exists';
     }
 
     /**

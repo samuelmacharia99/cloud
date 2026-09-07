@@ -81,4 +81,15 @@ PHP;
         );
         $this->assertSame($source, $fixer->rewriteSystemDirectory($source, '../../system'));
     }
+
+    #[Test]
+    public function it_links_app_system_to_the_composer_vendor_tree(): void
+    {
+        $cmd = (new PhpCodeIgniterPathFixer)->buildLinkVendorSystemCommand('/app');
+
+        $this->assertStringContainsString('ln -sfn', $cmd);
+        $this->assertStringContainsString("'/app/vendor/codeigniter4/framework/system'", $cmd);
+        $this->assertStringContainsString("'/app/system'", $cmd);
+        $this->assertStringNotContainsString('docker compose', $cmd);
+    }
 }

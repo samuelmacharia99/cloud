@@ -84,6 +84,7 @@ class ContainerDoctorService
                 'restart_application',
                 'import_da_database',
                 'import_da_codeigniter_app',
+                'link_codeigniter_system',
             ], true)) {
             return ['success' => false, 'message' => 'Application must be running before applying a fix.'];
         }
@@ -129,13 +130,14 @@ class ContainerDoctorService
             'migrate_fresh' => $this->treatMigrateFresh($service),
             'import_da_database' => $this->treatImportDaDatabase($service),
             'import_da_codeigniter_app' => $this->treatImportDaCodeIgniterApp($service),
+            'link_codeigniter_system' => $this->treatLinkCodeIgniterSystem($service),
             'use_file_cache' => $this->treatUseFileCache($service),
             'tune_request_concurrency' => $this->treatTuneRequestConcurrency($service),
             'fix_compose_interpolation' => $this->treatFixComposeInterpolation($service),
             default => ['success' => false, 'message' => 'Unknown treatment action.'],
         };
 
-        if ($result['success'] || $action === 'restart_application') {
+        if ($result['success'] || in_array($action, ['restart_application', 'link_codeigniter_system'], true)) {
             try {
                 $result['diagnosis'] = $this->diagnose($service->fresh([
                     'product.containerTemplate',
@@ -4969,6 +4971,90 @@ PHP;
     }
 
     /**
+     * Stock CI4 Paths.php loads /app/system. Composer installs live under vendor/.
+     * A symlink avoids another container recreate.
+     *
+     * @return array{success: bool, message: string}
+     */
+    private function treatLinkCodeIgniterSystem(Service $service): array
+    {
+        $deployment = $service->containerDeployment;
+        if (! $deployment?->node) {
+            return ['success' => false, 'message' => 'Application is not deployed.'];
+        }
+
+        $ssh = SSHService::forNode($deployment->node);
+        $fixer = app(PhpCodeIgniterPathFixer::class);
+        $hostAppPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name.'/app';
+        $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+
+        try {
+            $hostResult = $fixer->linkVendorSystemOnHost($ssh, $hostAppPath);
+            $fixer->healSystemDirectoryOnHost($ssh, $hostAppPath);
+            $fixer->ensureWritableOnHost($ssh, $hostAppPath);
+
+            $inContainer = '';
+            try {
+                $inContainer = trim($ssh->exec(
+                    'cd '.escapeshellarg($containerPath)
+                    .' && docker compose exec -T '.escapeshellarg($deployment->container_name)
+                    .' sh -lc '.escapeshellarg($fixer->buildLinkVendorSystemCommand('/app')),
+                    25
+                ));
+            } catch (\Throwable) {
+                $inContainer = '';
+            }
+
+            try {
+                $ssh->exec(
+                    'cd '.escapeshellarg($containerPath)
+                    .' && docker compose exec -T '.escapeshellarg($deployment->container_name)
+                    .' sh -lc '.escapeshellarg($this->phpFpmReloadScript()),
+                    15
+                );
+            } catch (\Throwable) {
+            }
+
+            $linked = $hostResult || in_array($inContainer, ['linked', 'exists'], true);
+            if (! $linked) {
+                return [
+                    'success' => false,
+                    'message' => 'Could not create /app/system → vendor/codeigniter4. Host and container both lack vendor/codeigniter4/framework/system/Boot.php. Try Import CodeIgniter app folder. MySQL was left running.',
+                ];
+            }
+
+            $httpStatus = $this->probeHttpStatus($ssh, $deployment);
+            $phpProbe = [];
+            if ($httpStatus !== null && $httpStatus >= 500) {
+                try {
+                    $phpProbe = app(PhpRuntime500Probe::class)->capture($ssh, $deployment);
+                } catch (\Throwable) {
+                    $phpProbe = [];
+                }
+
+                return [
+                    'success' => false,
+                    'message' => 'Linked /app/system to vendor/codeigniter4 and reloaded php-fpm, but GET / still returns HTTP '.$httpStatus.'. '
+                        .app(PhpRuntime500Probe::class)->summary($phpProbe)
+                        .' MySQL was left running.',
+                ];
+            }
+
+            return [
+                'success' => true,
+                'message' => 'Linked /app/system → vendor/codeigniter4 and reloaded php-fpm. The container was not recreated. MySQL was left running. Reload the site.',
+            ];
+        } catch (\Throwable $e) {
+            return [
+                'success' => false,
+                'message' => $e->getMessage(),
+            ];
+        } finally {
+            $ssh->disconnect();
+        }
+    }
+
+    /**
      * Rebuild schema with migrate:fresh. Only allowed when the DB has 0 app tables.
      *
      * @return array{success: bool, message: string}
@@ -5276,6 +5362,16 @@ PHP;
 
                 $hasSystem = (bool) ($checks['php_ci_system'] ?? false);
                 $hasVendorSystem = (bool) ($checks['php_ci_vendor_system'] ?? false);
+                if (! $missingApp && ! $hasSystem && $hasVendorSystem) {
+                    return [
+                        'treat_action' => 'link_codeigniter_system',
+                        'treat_label' => 'Link system/ to vendor',
+                        'summary' => 'Live PDO works (tables: '.(string) ($checks['table_count'] ?? '?')
+                            .') and Paths.php plus the sidecar hostname are already correct. '
+                            .'Stock CodeIgniter still loads /app/system, which is missing, while vendor/codeigniter4 is present. '
+                            .'Link creates /app/system → vendor/codeigniter4/framework/system and reloads php-fpm. It does not recreate the container or touch MySQL.',
+                    ];
+                }
                 if (! $missingApp && ! $hasSystem && ! $hasVendorSystem && $canImportCi) {
                     return [
                         'treat_action' => 'import_da_codeigniter_app',
