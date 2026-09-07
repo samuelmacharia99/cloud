@@ -552,4 +552,74 @@ class DirectAdminToContainerMigrationDatabaseTest extends TestCase
         $this->assertStringContainsString("'writable'", $tar);
         $this->assertStringNotContainsString('public_html', $tar);
     }
+
+    #[Test]
+    public function it_finds_codeigniter_under_the_da_user_home_not_only_beside_public_html(): void
+    {
+        $migrator = app(DirectAdminToContainerMigrationService::class);
+        $docroot = '/home/digiworl/domains/roadtrip.digiworldmediasln.com/public_html';
+
+        $this->assertContains('/home/digiworl', $migrator->codeIgniterSearchRoots($docroot, 'digiworl'));
+        $this->assertContains(
+            '/home/digiworl/domains/roadtrip.digiworldmediasln.com',
+            $migrator->codeIgniterSearchRoots($docroot, 'digiworl')
+        );
+        $this->assertContains('/home/digiworl/public_html', $migrator->codeIgniterSearchRoots($docroot, 'digiworl'));
+        $this->assertContains('/opt/talksasa/da-migrations', $migrator->codeIgniterSearchRoots($docroot, 'digiworl'));
+
+        $cmd = $migrator->buildCodeIgniterSearchCommand('/home/digiworl');
+        $this->assertStringContainsString("find -L '/home/digiworl'", $cmd);
+        $this->assertStringContainsString('Config/Paths.php', $cmd);
+        $this->assertStringContainsString('-iname spark', $cmd);
+
+        $this->assertSame(
+            ['roadtrip.digiworldmediasln.com', 'roadtrip'],
+            $migrator->codeIgniterDomainNeedles($docroot)
+        );
+
+        $this->assertSame(
+            '/home/digiworl/roadtrip/app/Config/Paths.php',
+            $migrator->preferCodeIgniterHit([
+                '/home/digiworl/old-backup/app/Config/Paths.php',
+                '/home/digiworl/roadtrip/app/Config/Paths.php',
+            ], $docroot)
+        );
+
+        $this->assertNull(
+            $migrator->preferCodeIgniterHit([
+                '/home/other/site-a/app/Config/Paths.php',
+                '/home/other/site-b/app/Config/Paths.php',
+            ], $docroot)
+        );
+
+        $fromSpark = $migrator->locateCodeIgniterProjectRoot([
+            '/home/digiworl/ci4/spark',
+        ]);
+        $this->assertSame('/home/digiworl/ci4', $fromSpark['project_root'] ?? null);
+
+        $fromLower = $migrator->locateCodeIgniterProjectRoot([
+            '/home/digiworl/ci4/app/config/Paths.php',
+        ]);
+        $this->assertSame('/home/digiworl/ci4', $fromLower['project_root'] ?? null);
+
+        $merged = $migrator->mergeDiscoveredSearchRoots(
+            [$docroot],
+            '/home/digiworl',
+            "/home/digiworl/domains/roadtrip.digiworldmediasln.com\n/etc/passwd"
+        );
+        $this->assertContains('/home/digiworl', $merged);
+        $this->assertContains('/home/digiworl/domains/roadtrip.digiworldmediasln.com', $merged);
+        $this->assertNotContains('/etc/passwd', $merged);
+
+        $targeted = $migrator->buildCodeIgniterTargetedSearchCommand('/home/digiworl', 'roadtrip');
+        $this->assertStringContainsString('*roadtrip*/Config/Paths.php', $targeted);
+
+        $bake = $migrator->buildBakeCodeIgniterSiblingsIntoTarCommand(
+            '/tmp/files.tar.gz',
+            '/home/digiworl/domains/roadtrip.digiworldmediasln.com',
+            ['app', 'writable']
+        );
+        $this->assertStringContainsString('cp -a', $bake);
+        $this->assertStringContainsString("'/home/digiworl/domains/roadtrip.digiworldmediasln.com/app'", $bake);
+    }
 }

@@ -196,20 +196,7 @@ foreach ($iterator as $file) {
     }
 }
 $pathsPhp = [];
-$it2 = new RecursiveIteratorIterator(new RecursiveDirectoryIterator('/app', FilesystemIterator::SKIP_DOTS));
-$n2 = 0;
-foreach ($it2 as $file) {
-    if ($n2++ > 800) {
-        break;
-    }
-    $path = $file->getPathname();
-    if ((str_ends_with($path, '/Config/Paths.php') || str_ends_with($path, '/config/Paths.php')) && ! str_contains($path, '/vendor/')) {
-        $pathsPhp[] = $path;
-        if (count($pathsPhp) >= 5) {
-            break;
-        }
-    }
-}
+exec('find /app -maxdepth 6 -type f \\( -path "*/Config/Paths.php" -o -path "*/config/Paths.php" \\) ! -path "*/vendor/*" 2>/dev/null', $pathsPhp);
 $indexRequire = null;
 if (is_file('/app/index.php')) {
     foreach (preg_split('/\r\n|\r|\n/', (string) file_get_contents('/app/index.php')) ?: [] as $line) {

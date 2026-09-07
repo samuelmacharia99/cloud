@@ -4869,18 +4869,47 @@ PHP;
         @ini_set('max_execution_time', '0');
 
         $migrator = app(DirectAdminToContainerMigrationService::class);
-        if (! $migrator->canImportDirectAdminCodeIgniterSiblings($service)) {
-            return [
-                'success' => false,
-                'message' => 'This container has no DirectAdmin convert record (da_legacy username + node). Cannot pull app/ from DirectAdmin.',
-            ];
-        }
+        $inventory = $migrator->inventoryFromDirectAdminLegacy($service);
+        $domain = trim((string) ($inventory['domain'] ?? $service->attachedDomainName() ?? ''));
 
         $localTar = null;
+        $errors = [];
         try {
-            $export = $migrator->exportCodeIgniterSiblingsFromDirectAdmin($service);
-            $localTar = $export['local_tar'] ?? null;
-            $migrator->importCodeIgniterSiblingsIntoContainer($service, (string) $localTar);
+            $export = [];
+            $deployment = $service->containerDeployment;
+            if ($deployment?->node) {
+                $ssh = SSHService::forNode($deployment->node);
+                try {
+                    $recovered = $migrator->recoverCodeIgniterSiblingsOnContainer($ssh, $deployment, $domain);
+                    if (is_array($recovered)) {
+                        $export = $recovered;
+                    } else {
+                        $errors[] = 'No Config/Paths.php leftover on the container host.';
+                    }
+                } catch (\Throwable $e) {
+                    $errors[] = 'Container leftover search: '.$e->getMessage();
+                } finally {
+                    $ssh->disconnect();
+                }
+            }
+
+            if ($export === []) {
+                if (! $migrator->canImportDirectAdminCodeIgniterSiblings($service)) {
+                    $errors[] = 'No DirectAdmin convert record (da_legacy username + node) to pull app/ from.';
+
+                    return [
+                        'success' => false,
+                        'message' => implode(' ', $errors) !== ''
+                            ? implode(' ', $errors)
+                            : 'Cannot find CodeIgniter app/ on this container host, and there is no da_legacy record to search DirectAdmin.',
+                    ];
+                }
+
+                $export = $migrator->exportCodeIgniterSiblingsFromDirectAdmin($service);
+                $localTar = $export['local_tar'] ?? null;
+                $migrator->importCodeIgniterSiblingsIntoContainer($service, (string) $localTar);
+            }
+
             app(ContainerDeploymentService::class)->restart($service);
 
             $meta = is_array($service->service_meta) ? $service->service_meta : [];
@@ -4905,15 +4934,20 @@ PHP;
             }
 
             $copied = implode(', ', $export['entries'] ?? ['app']);
+            $from = ($export['source'] ?? '') === 'container'
+                ? 'this container host (left over from convert/flatten)'
+                : 'DirectAdmin ('.$copied.' from '.($export['project_root'] ?? 'the account home').')';
 
             return [
                 'success' => true,
-                'message' => 'Copied '.$copied.' from DirectAdmin (next to public_html) into this container. Reload the site. MySQL was left running. DirectAdmin was not deleted.',
+                'message' => 'Copied '.$copied.' from '.$from.'. Reload the site. MySQL was left running. DirectAdmin was not deleted.',
             ];
         } catch (\Throwable $e) {
+            $prefix = $errors === [] ? '' : implode(' ', $errors).' ';
+
             return [
                 'success' => false,
-                'message' => $e->getMessage(),
+                'message' => $prefix.$e->getMessage(),
             ];
         } finally {
             if (is_string($localTar) && is_file($localTar)) {
@@ -5222,8 +5256,8 @@ PHP;
                         'treat_action' => 'import_da_codeigniter_app',
                         'treat_label' => 'Import CodeIgniter app folder',
                         'summary' => 'Live PDO works (tables: '.(string) ($checks['table_count'] ?? '?')
-                            .') but Config/Paths.php is not under /app. The convert only copied public_html; CodeIgniter’s app/ folder usually sits next to it on DirectAdmin. '
-                            .'Import copies app/ (and writable/system/vendor if present) into this container. MySQL stays up.',
+                            .') but Config/Paths.php is not under /app. The convert only copied public_html; CodeIgniter’s app/ folder is often next to it, under the DA user home, or left on this container host after flatten. '
+                            .'Import searches those trees (not just three sibling guesses) and copies app/ (and writable/system/vendor if present). MySQL stays up.',
                     ];
                 }
 

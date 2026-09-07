@@ -3,6 +3,7 @@
 namespace App\Services\Provisioning;
 
 use App\Exceptions\SSH\SSHCommandException;
+use App\Models\ContainerDeployment;
 use App\Models\DatabaseTemplate;
 use App\Models\Node;
 use App\Models\Service;
@@ -1146,6 +1147,15 @@ class DirectAdminToContainerMigrationService
                 $this->buildGenericDocrootTarCommand($docroot, $filesTar, $stack),
                 900
             );
+            if (in_array($stack, ['php', 'static_or_php', 'static', 'unknown', ''], true)) {
+                $this->bakeCodeIgniterSiblingsIntoExportTar(
+                    $daSsh,
+                    $filesTar,
+                    $docroot,
+                    $daUsername,
+                    (string) ($inventory['domain'] ?? ''),
+                );
+            }
             $daSsh->downloadToLocal($filesTar, $localTar);
         } finally {
             $daSsh->disconnect();
@@ -1822,7 +1832,7 @@ class DirectAdminToContainerMigrationService
      */
     public function codeIgniterSiblingNames(): array
     {
-        return ['app', 'writable', 'system', 'vendor'];
+        return ['app', 'writable', 'system', 'vendor', 'spark'];
     }
 
     /**
@@ -1848,7 +1858,7 @@ class DirectAdminToContainerMigrationService
     {
         foreach ($existingPaths as $path) {
             $path = rtrim(str_replace('\\', '/', (string) $path), '/');
-            if (preg_match('#^(.*)/app/Config/Paths\\.php$#', $path, $matches) === 1) {
+            if (preg_match('#^(.*)/app/[Cc]onfig/Paths\\.php$#i', $path, $matches) === 1) {
                 return [
                     'project_root' => $matches[1],
                     'paths_php' => $path,
@@ -1856,7 +1866,260 @@ class DirectAdminToContainerMigrationService
             }
         }
 
+        foreach ($existingPaths as $path) {
+            $path = rtrim(str_replace('\\', '/', (string) $path), '/');
+            if ($path !== '' && strcasecmp(basename($path), 'spark') === 0) {
+                return [
+                    'project_root' => dirname($path),
+                    'paths_php' => dirname($path).'/app/Config/Paths.php',
+                ];
+            }
+        }
+
         return null;
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function codeIgniterDomainNeedles(string $docroot, string $domain = ''): array
+    {
+        $needles = [];
+        $domain = strtolower(trim($domain));
+        $docroot = rtrim(str_replace('\\', '/', $docroot), '/');
+        if ($domain === '' && $docroot !== '') {
+            $base = basename($docroot);
+            $domain = in_array($base, ['public_html', 'private_html', 'public', 'httpdocs'], true)
+                ? strtolower(basename(dirname($docroot)))
+                : strtolower($base);
+        }
+        if ($domain !== '' && $domain !== '.' && $domain !== '/') {
+            $needles[] = $domain;
+            $short = explode('.', $domain)[0] ?? '';
+            if ($short !== '' && $short !== $domain && strlen($short) >= 4) {
+                $needles[] = $short;
+            }
+        }
+
+        return array_values(array_unique($needles));
+    }
+
+    /**
+     * @param  list<string>  $hits
+     * @return list<string>
+     */
+    public function orderedCodeIgniterHits(array $hits, string $docroot, string $domain = ''): array
+    {
+        $normalized = [];
+        foreach ($hits as $hit) {
+            $hit = trim(str_replace('\\', '/', (string) $hit));
+            if ($hit !== '') {
+                $normalized[$hit] = $hit;
+            }
+        }
+        $normalized = array_values($normalized);
+        if ($normalized === []) {
+            return [];
+        }
+
+        $docroot = rtrim(str_replace('\\', '/', $docroot), '/');
+        $domainDir = dirname($docroot);
+        $needles = $this->codeIgniterDomainNeedles($docroot, $domain);
+        $rank = function (string $path) use ($docroot, $domainDir, $needles): int {
+            if ($docroot !== '' && (str_starts_with($path, $docroot.'/') || $path === $docroot)) {
+                return 0;
+            }
+            if ($domainDir !== '/' && $domainDir !== '.' && str_starts_with($path, $domainDir.'/')) {
+                return 1;
+            }
+            $lower = strtolower($path);
+            foreach ($needles as $index => $needle) {
+                if ($needle !== '' && str_contains($lower, strtolower($needle))) {
+                    return 2 + $index;
+                }
+            }
+
+            return 20;
+        };
+
+        $paths = array_values(array_filter(
+            $normalized,
+            static fn (string $path): bool => (bool) preg_match('#/[Cc]onfig/Paths\\.php$#', $path)
+        ));
+        $sparks = array_values(array_filter(
+            $normalized,
+            static fn (string $path): bool => strcasecmp(basename($path), 'spark') === 0
+        ));
+        $sorted = array_merge($paths, $sparks);
+        usort($sorted, static function (string $a, string $b) use ($rank): int {
+            return $rank($a) <=> $rank($b) ?: strlen($a) <=> strlen($b);
+        });
+
+        if ($sorted === []) {
+            return [];
+        }
+
+        if ($rank($sorted[0]) >= 20 && count($sorted) > 1) {
+            $projectRoots = [];
+            foreach ($sorted as $hit) {
+                $located = $this->locateCodeIgniterProjectRoot([$hit]);
+                if ($located !== null) {
+                    $projectRoots[$located['project_root']] = $hit;
+                }
+            }
+            if (count($projectRoots) === 1) {
+                return [array_values($projectRoots)[0]];
+            }
+
+            return [];
+        }
+
+        return array_values($sorted);
+    }
+
+    /**
+     * @param  list<string>  $hits
+     */
+    public function preferCodeIgniterHit(array $hits, string $docroot, string $domain = ''): ?string
+    {
+        $ordered = $this->orderedCodeIgniterHits($hits, $docroot, $domain);
+
+        return $ordered[0] ?? null;
+    }
+
+    public function isSafeCodeIgniterSearchRoot(string $root): bool
+    {
+        $root = rtrim(str_replace('\\', '/', trim($root)), '/');
+        if ($root === '' || $root === '/' || $root === '/home' || str_contains($root, '..')) {
+            return false;
+        }
+
+        return str_starts_with($root, '/home/')
+            || str_starts_with($root, self::WORK_BASE)
+            || str_starts_with($root, self::CONTAINER_BASE_PATH);
+    }
+
+    /**
+     * @param  list<string>  $roots
+     * @return list<string>
+     */
+    public function mergeDiscoveredSearchRoots(array $roots, string $passwdHome = '', string $listedPaths = ''): array
+    {
+        $unique = [];
+        foreach ($roots as $root) {
+            $root = rtrim(str_replace('\\', '/', trim((string) $root)), '/');
+            if ($this->isSafeCodeIgniterSearchRoot($root)) {
+                $unique[$root] = $root;
+            }
+        }
+
+        $home = rtrim(str_replace('\\', '/', trim($passwdHome)), '/');
+        if ($this->isSafeCodeIgniterSearchRoot($home)) {
+            $unique[$home] = $home;
+        }
+
+        foreach (preg_split('/\r\n|\r|\n/', $listedPaths) ?: [] as $line) {
+            $line = rtrim(str_replace('\\', '/', trim($line)), '/');
+            if ($this->isSafeCodeIgniterSearchRoot($line)) {
+                $unique[$line] = $line;
+            }
+        }
+
+        return array_values($unique);
+    }
+
+    public function buildCodeIgniterSearchCommand(string $searchRoot, int $maxDepth = 8): string
+    {
+        $depth = max(2, min(10, $maxDepth));
+
+        return 'find -L '.escapeshellarg($searchRoot)
+            .' -maxdepth '.$depth
+            .' \( -type f -o -type l \) \( '
+            .' -path \'*/Config/Paths.php\' -o -path \'*/config/Paths.php\' -o -iname spark '
+            .' \) ! -path \'*/mail/*\' ! -path \'*/imap/*\''
+            .' ! -path \'*/vendor/*\' ! -path \'*/node_modules/*\''
+            .' 2>/dev/null | awk \'!seen[$0]++\' | head -n 80';
+    }
+
+    public function buildCodeIgniterTargetedSearchCommand(string $searchRoot, string $needle, int $maxDepth = 10): string
+    {
+        $needle = preg_replace('/[^a-zA-Z0-9.-]/', '', $needle) ?? '';
+        if ($needle === '' || strlen($needle) < 4) {
+            return 'true';
+        }
+
+        $depth = max(2, min(12, $maxDepth));
+
+        return 'find -L '.escapeshellarg($searchRoot)
+            .' -maxdepth '.$depth
+            .' \( -type f -o -type l \) \( '
+            .' -path '.escapeshellarg('*'.$needle.'*/Config/Paths.php')
+            .' -o -path '.escapeshellarg('*'.$needle.'*/config/Paths.php')
+            .' -o -iname spark '
+            .' \) ! -path \'*/vendor/*\' ! -path \'*/node_modules/*\''
+            .' 2>/dev/null | awk \'!seen[$0]++\' | head -n 40';
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function codeIgniterSearchRoots(string $docroot, string $username = ''): array
+    {
+        $docroot = rtrim(str_replace('\\', '/', $docroot), '/');
+        $domainDir = $docroot !== '' ? dirname($docroot) : '';
+        $roots = array_filter([
+            $docroot,
+            $domainDir !== '/' && $domainDir !== '.' ? $domainDir : null,
+            $domainDir !== '/' && $domainDir !== '.' ? $domainDir.'/private_html' : null,
+            $domainDir !== '/' && $domainDir !== '.' ? dirname($domainDir) : null,
+            $username !== '' ? '/home/'.$username : null,
+            $username !== '' ? '/home/'.$username.'/public_html' : null,
+            $username !== '' ? '/home/'.$username.'/domains' : null,
+            self::WORK_BASE,
+        ]);
+
+        return $this->mergeDiscoveredSearchRoots(array_values($roots));
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function discoverDirectAdminSearchRoots(
+        SSHService $ssh,
+        string $docroot,
+        string $username,
+        string $domain = '',
+    ): array {
+        $passwdHome = '';
+        if ($username !== '' && preg_match('/^[A-Za-z0-9._-]+$/', $username) === 1) {
+            try {
+                $passwdHome = trim($ssh->exec('getent passwd '.escapeshellarg($username).' | cut -d: -f6', 10));
+            } catch (\Throwable) {
+                $passwdHome = '';
+            }
+        }
+
+        $listed = '';
+        $safeDomain = preg_replace('/[^a-zA-Z0-9.-]/', '', $domain) ?? '';
+        if (strlen($safeDomain) >= 4) {
+            try {
+                $listed = trim($ssh->exec(
+                    'ls -d /home/*/domains/'.$safeDomain
+                    .' /home/*/domains/'.$safeDomain.'/public_html'
+                    .' /home/*/domains/'.$safeDomain.'/private_html'
+                    .' 2>/dev/null | head -n 20',
+                    15
+                ));
+            } catch (\Throwable) {
+                $listed = '';
+            }
+        }
+
+        return $this->mergeDiscoveredSearchRoots(
+            $this->codeIgniterSearchRoots($docroot, $username),
+            $passwdHome,
+            $listed
+        );
     }
 
     /**
@@ -1886,9 +2149,160 @@ class DirectAdminToContainerMigrationService
     }
 
     /**
-     * Pull app/ (and writable/system/vendor) from beside public_html on DirectAdmin.
+     * @param  list<string>  $roots
+     * @return list<string>
+     */
+    public function collectCodeIgniterHits(SSHService $ssh, array $roots, string $docroot = '', string $domain = ''): array
+    {
+        $hits = [];
+        $needles = $this->codeIgniterDomainNeedles($docroot, $domain);
+        foreach ($roots as $root) {
+            $root = rtrim(str_replace('\\', '/', trim((string) $root)), '/');
+            if (! $this->isSafeCodeIgniterSearchRoot($root) && ! str_starts_with($root, self::CONTAINER_BASE_PATH)) {
+                continue;
+            }
+            $depth = 8;
+            if ($root === self::WORK_BASE || str_starts_with($root, self::WORK_BASE.'/')) {
+                $depth = 6;
+            } elseif (preg_match('#^/home/[^/]+$#', $root) === 1) {
+                $depth = 10;
+            }
+            try {
+                $this->appendCodeIgniterHitLines($hits, $ssh->exec($this->buildCodeIgniterSearchCommand($root, $depth), 60));
+            } catch (\Throwable) {
+                // Keep searching other roots; one missing tree must not abort the treat.
+            }
+            if (! in_array($root, [$docroot, dirname($docroot)], true) && $needles !== []) {
+                foreach ($needles as $needle) {
+                    try {
+                        $this->appendCodeIgniterHitLines(
+                            $hits,
+                            $ssh->exec($this->buildCodeIgniterTargetedSearchCommand($root, $needle), 40)
+                        );
+                    } catch (\Throwable) {
+                        continue;
+                    }
+                }
+            }
+        }
+
+        return array_values(array_unique($hits));
+    }
+
+    /**
+     * @param  list<string>  $hits
+     */
+    private function appendCodeIgniterHitLines(array &$hits, string $output): void
+    {
+        foreach (preg_split('/\r\n|\r|\n/', $output) ?: [] as $line) {
+            $line = trim($line);
+            if ($line !== '' && $line !== 'true') {
+                $hits[] = $line;
+            }
+        }
+    }
+
+    /**
+     * @param  list<string>  $roots
+     * @return array{project_root: string, paths_php: string, hits: list<string>}|null
+     */
+    public function findCodeIgniterProjectOnHost(
+        SSHService $ssh,
+        array $roots,
+        string $docroot,
+        string $domain = '',
+    ): ?array {
+        $hits = $this->collectCodeIgniterHits($ssh, $roots, $docroot, $domain);
+        foreach ($this->orderedCodeIgniterHits($hits, $docroot, $domain) as $hit) {
+            $located = $this->locateCodeIgniterProjectRoot([$hit]);
+            if ($located !== null) {
+                return [
+                    'project_root' => $located['project_root'],
+                    'paths_php' => $located['paths_php'],
+                    'hits' => $hits,
+                ];
+            }
+        }
+
+        return $hits === [] ? null : [
+            'project_root' => '',
+            'paths_php' => '',
+            'hits' => $hits,
+        ];
+    }
+
+    public function buildBakeCodeIgniterSiblingsIntoTarCommand(string $filesTar, string $projectRoot, array $entries): string
+    {
+        $copies = [];
+        foreach ($entries as $entry) {
+            $entry = trim((string) $entry, '/');
+            if ($entry === '' || str_contains($entry, '/') || str_contains($entry, '..')) {
+                continue;
+            }
+            $src = rtrim($projectRoot, '/').'/'.$entry;
+            $copies[] = 'if [ -e '.escapeshellarg($src).' ]; then cp -a '.escapeshellarg($src).' "$stage"/; fi';
+        }
+        if ($copies === []) {
+            return 'true';
+        }
+
+        return 'stage=$(mktemp -d) && '
+            .'tar -xzf '.escapeshellarg($filesTar).' -C "$stage" && '
+            .implode(' && ', $copies).' && '
+            .'tar -czf '.escapeshellarg($filesTar).' -C "$stage" . && '
+            .'rm -rf "$stage"';
+    }
+
+    /**
+     * Convert used to pack public_html only. Fold CodeIgniter’s sibling app/ into the same tar.
+     */
+    public function bakeCodeIgniterSiblingsIntoExportTar(
+        SSHService $daSsh,
+        string $filesTar,
+        string $docroot,
+        string $username,
+        string $domain = '',
+    ): void {
+        $docroot = rtrim(str_replace('\\', '/', $docroot), '/');
+        $found = $this->findCodeIgniterProjectOnHost(
+            $daSsh,
+            $this->discoverDirectAdminSearchRoots($daSsh, $docroot, $username, $domain),
+            $docroot,
+            $domain
+        );
+        if ($found === null) {
+            return;
+        }
+        $projectRoot = rtrim($found['project_root'], '/');
+        if ($projectRoot === '' || $projectRoot === $docroot || str_starts_with($projectRoot, $docroot.'/')) {
+            return;
+        }
+
+        $entries = [];
+        foreach ($this->codeIgniterSiblingNames() as $name) {
+            try {
+                $exists = trim($daSsh->exec(
+                    'test -e '.escapeshellarg($projectRoot.'/'.$name).' && echo yes || echo no',
+                    10
+                ));
+            } catch (\Throwable) {
+                continue;
+            }
+            if ($exists === 'yes') {
+                $entries[] = $name;
+            }
+        }
+        if (! in_array('app', $entries, true)) {
+            return;
+        }
+
+        $daSsh->exec($this->buildBakeCodeIgniterSiblingsIntoTarCommand($filesTar, $projectRoot, $entries), 300);
+    }
+
+    /**
+     * Pull app/ (and writable/system/vendor) from DirectAdmin — not only the three sibling guesses.
      *
-     * @return array{local_tar: string, entries: list<string>, project_root: string, paths_php: string, da_node_id: int}
+     * @return array{local_tar: string, entries: list<string>, project_root: string, paths_php: string, da_node_id: int, hits: list<string>}
      */
     public function exportCodeIgniterSiblingsFromDirectAdmin(Service $source): array
     {
@@ -1904,6 +2318,8 @@ class DirectAdminToContainerMigrationService
             throw new \RuntimeException('DirectAdmin docroot is missing from da_legacy.');
         }
 
+        $username = (string) ($inventory['username'] ?? '');
+        $domain = (string) ($inventory['domain'] ?? '');
         $daNode = $this->resolveDirectAdminNode($source, $inventory);
         $workId = 'ci4-siblings-'.$source->id.'-'.Str::lower(Str::random(6));
         $remoteWork = self::WORK_BASE.'/'.$workId;
@@ -1917,23 +2333,23 @@ class DirectAdminToContainerMigrationService
         $projectRoot = '';
         $pathsPhp = '';
         $entries = [];
+        $hits = [];
+        $roots = [];
         try {
-            $existing = [];
-            foreach ($this->codeIgniterSiblingProbePaths($docroot) as $path) {
-                $hit = trim($daSsh->exec('test -f '.escapeshellarg($path).' && echo yes || echo no', 10));
-                if ($hit === 'yes') {
-                    $existing[] = $path;
-                }
-            }
-            $located = $this->locateCodeIgniterProjectRoot($existing);
-            if ($located === null) {
+            $roots = $this->discoverDirectAdminSearchRoots($daSsh, $docroot, $username, $domain);
+            $found = $this->findCodeIgniterProjectOnHost($daSsh, $roots, $docroot, $domain)
+                ?? ['project_root' => '', 'paths_php' => '', 'hits' => []];
+            $hits = $found['hits'];
+            if ($found['project_root'] === '') {
                 throw new \RuntimeException(
-                    'DirectAdmin has no app/Config/Paths.php next to public_html ('
-                    .dirname($docroot).'). The CodeIgniter app/ folder is not on that node.'
+                    'Searched DirectAdmin for Config/Paths.php under '
+                    .implode(', ', $roots)
+                    .'. Hits: '.($hits === [] ? 'none' : implode(', ', array_slice($hits, 0, 12)))
+                    .'. The CodeIgniter app/ folder is not on that node (it may have been removed after convert).'
                 );
             }
-            $projectRoot = $located['project_root'];
-            $pathsPhp = $located['paths_php'];
+            $projectRoot = $found['project_root'];
+            $pathsPhp = $found['paths_php'];
 
             $daSsh->exec('mkdir -p '.escapeshellarg($remoteWork));
             foreach ($this->codeIgniterSiblingNames() as $name) {
@@ -1962,6 +2378,7 @@ class DirectAdminToContainerMigrationService
             'project_root' => $projectRoot,
             'paths_php' => $pathsPhp,
             'da_node_id' => $daNode->id,
+            'hits' => $hits,
         ];
     }
 
@@ -1998,6 +2415,68 @@ class DirectAdminToContainerMigrationService
         } finally {
             $ssh->disconnect();
         }
+    }
+
+    /**
+     * Convert/flatten can leave app/ next to a nested public_html on the container host.
+     *
+     * @return array{source: string, project_root: string, entries: list<string>, paths_php: string}|null
+     */
+    public function recoverCodeIgniterSiblingsOnContainer(
+        SSHService $ssh,
+        ContainerDeployment $deployment,
+        string $domain = '',
+    ): ?array {
+        $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+        $hostAppPath = rtrim($containerPath.'/app', '/');
+        $found = $this->findCodeIgniterProjectOnHost(
+            $ssh,
+            [$hostAppPath, $containerPath, self::WORK_BASE],
+            $hostAppPath,
+            $domain
+        );
+        if (! is_array($found) || $found['project_root'] === '') {
+            return null;
+        }
+
+        $projectRoot = rtrim($found['project_root'], '/');
+        $copied = [];
+        foreach ($this->codeIgniterSiblingNames() as $name) {
+            $src = $projectRoot.'/'.$name;
+            $dst = $hostAppPath.'/'.$name;
+            try {
+                $exists = trim($ssh->exec('test -e '.escapeshellarg($src).' && echo yes || echo no', 10));
+            } catch (\Throwable) {
+                continue;
+            }
+            if ($exists !== 'yes' || $src === $dst) {
+                if ($exists === 'yes' && $src === $dst) {
+                    $copied[] = $name;
+                }
+
+                continue;
+            }
+            $ssh->exec(
+                'if [ -d '.escapeshellarg($dst).' ]; then '
+                .'cp -a '.escapeshellarg($src.'/.').' '.escapeshellarg($dst).'; '
+                .'else cp -a '.escapeshellarg($src).' '.escapeshellarg($dst).'; fi',
+                120
+            );
+            $copied[] = $name;
+        }
+        if ($copied === []) {
+            return null;
+        }
+
+        app(PhpCodeIgniterPathFixer::class)->applyOnHost($ssh, $hostAppPath);
+        app(PhpCodeIgniterPathFixer::class)->applyInContainer($ssh, $deployment);
+
+        return [
+            'source' => 'container',
+            'project_root' => $projectRoot,
+            'entries' => $copied,
+            'paths_php' => $found['paths_php'],
+        ];
     }
 
     /**
