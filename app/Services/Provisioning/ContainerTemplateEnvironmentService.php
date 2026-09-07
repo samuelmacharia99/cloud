@@ -139,6 +139,12 @@ class ContainerTemplateEnvironmentService
             '--innodb-use-native-aio=0',
         ];
 
+        $compose['services']['mysql']['networks'] = [
+            'default' => [
+                'aliases' => [$appServiceName.'-mysql'],
+            ],
+        ];
+
         // Use TCP (127.0.0.1), not the unix socket — during InnoDB recovery the sock is often missing
         // and healthchecks fail with "Can't connect ... mysqld.sock". Long start_period covers reboot recovery.
         $compose['services']['mysql']['healthcheck'] = [

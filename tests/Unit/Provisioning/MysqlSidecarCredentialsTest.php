@@ -262,6 +262,46 @@ YAML;
     }
 
     #[Test]
+    public function wordpress_mysql_sidecar_gets_a_talksasa_net_dns_alias(): void
+    {
+        $yaml = <<<'YAML'
+services:
+  user-483-service-420-wordpress:
+    image: wordpress:latest
+  mysql:
+    image: mysql:8.0
+    container_name: user-483-service-420-wordpress-mysql
+YAML;
+
+        $patched = app(ContainerDeploymentService::class)->patchComposeSidecarNetworkAlias(
+            $yaml,
+            'mysql',
+            'user-483-service-420-wordpress-mysql'
+        );
+
+        $this->assertStringContainsString('user-483-service-420-wordpress-mysql', $patched);
+        $this->assertStringContainsString('aliases:', $patched);
+        $this->assertStringContainsString('mysql:', $patched);
+    }
+
+    #[Test]
+    public function skip_grant_repair_execs_the_compose_run_id_not_a_vanished_name(): void
+    {
+        $script = app(ContainerDeploymentService::class)->mysqlSkipGrantRepairScript(
+            "'/opt/talksasa/containers/user-483-service-420-wordpress'",
+            "'mysql'",
+            "'root-secret'",
+            "'FLUSH PRIVILEGES;'",
+        );
+
+        $this->assertStringContainsString('REPAIR_CID=$(docker compose run --no-deps -d', $script);
+        $this->assertStringContainsString('docker exec "$REPAIR_CID"', $script);
+        $this->assertStringNotContainsString('--rm', $script);
+        $this->assertStringNotContainsString('--name db_credential_repair', $script);
+        $this->assertStringNotContainsString('docker exec db_credential_repair', $script);
+    }
+
+    #[Test]
     public function directadmin_mysql_unix_socket_is_pinned_to_unique_sidecar_tcp(): void
     {
         $service = app(ContainerDeploymentService::class);

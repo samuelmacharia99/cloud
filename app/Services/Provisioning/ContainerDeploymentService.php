@@ -965,6 +965,11 @@ class ContainerDeploymentService
                 $deployment->container_name,
                 $this->mysqlUnixSocketEnvKeys()
             );
+            $patched = $this->patchComposeSidecarNetworkAlias(
+                $patched,
+                $this->resolveMysqlComposeServiceName($fromEnv),
+                $this->sidecarDnsHost((string) $deployment->container_name)
+            );
         } catch (\Throwable $e) {
             Log::warning('Could not patch compose runtime drivers', [
                 'container' => $deployment->container_name,
@@ -1024,6 +1029,17 @@ class ContainerDeploymentService
                     'error' => $e->getMessage(),
                 ]);
             }
+        }
+
+        $unique = $this->sidecarDnsHost((string) $deployment->container_name);
+        try {
+            $this->attachSidecarNetworkAlias($ssh, $unique, $unique);
+        } catch (\Throwable $e) {
+            Log::warning('Could not attach unique sidecar DNS alias on talksasa-net', [
+                'container' => $deployment->container_name,
+                'alias' => $unique,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 
@@ -1103,6 +1119,73 @@ class ContainerDeploymentService
         );
 
         return Yaml::dump($compose, 10, 2);
+    }
+
+    /**
+     * container_name is not a DNS record on the shared talksasa-net overlay.
+     * Laravel sidecars already set networks.default.aliases; WordPress mysql did not.
+     */
+    public function patchComposeSidecarNetworkAlias(string $yaml, string $serviceKey, string $alias): string
+    {
+        $alias = trim($alias);
+        $serviceKey = trim($serviceKey);
+        if ($alias === '' || $serviceKey === '') {
+            return $yaml;
+        }
+
+        $compose = Yaml::parse($yaml);
+        if (! is_array($compose) || ! is_array($compose['services'][$serviceKey] ?? null)) {
+            return $yaml;
+        }
+
+        $networks = $compose['services'][$serviceKey]['networks'] ?? ['default' => []];
+        if (is_array($networks) && array_is_list($networks)) {
+            $mapped = [];
+            foreach ($networks as $name) {
+                if (is_string($name) && $name !== '') {
+                    $mapped[$name] = [];
+                }
+            }
+            $networks = $mapped === [] ? ['default' => []] : $mapped;
+        }
+        if (! is_array($networks)) {
+            $networks = ['default' => []];
+        }
+        if (! isset($networks['default']) || ! is_array($networks['default'])) {
+            $networks['default'] = [];
+        }
+
+        $aliases = $networks['default']['aliases'] ?? [];
+        if (! is_array($aliases)) {
+            $aliases = [];
+        }
+        if (! in_array($alias, $aliases, true)) {
+            $aliases[] = $alias;
+        }
+        $networks['default']['aliases'] = array_values($aliases);
+        $compose['services'][$serviceKey]['networks'] = $networks;
+
+        return Yaml::dump($compose, 10, 2);
+    }
+
+    /**
+     * Re-attach the sidecar on talksasa-net with a unique DNS alias without
+     * skip-grant-tables. Volume stays mounted.
+     */
+    public function attachSidecarNetworkAlias(SSHService $ssh, string $sidecarContainerName, string $alias): void
+    {
+        $sidecarContainerName = trim($sidecarContainerName);
+        $alias = trim($alias);
+        if ($sidecarContainerName === '' || $alias === '') {
+            return;
+        }
+
+        $net = escapeshellarg(self::SHARED_DOCKER_NETWORK);
+        $name = escapeshellarg($sidecarContainerName);
+        $aliasArg = escapeshellarg($alias);
+
+        $ssh->exec("docker network disconnect {$net} {$name} 2>/dev/null || true", 15);
+        $ssh->exec("docker network connect --alias {$aliasArg} {$net} {$name}", 20);
     }
 
     /**
@@ -3683,17 +3766,19 @@ class ContainerDeploymentService
                 return;
             }
 
-            Log::warning('MySQL GRANT applied but application user still cannot log in; resetting via skip-grant-tables', [
+            Log::warning('MySQL GRANT applied but application user still cannot log in; leaving the sidecar running', [
                 'container_path' => $containerPath,
                 'username' => $username,
                 'database' => $database,
             ]);
+
+            return;
         }
 
         // Taking the sidecar down causes HTTP 2002 for every live request. Only do
-        // that when root cannot log in at all — not when GRANT SQL had a warning.
-        // Exception: GRANT "succeeded" (mysql --force) but the app user still 1045s.
-        if (! $applied && ! $rootLoginFailed) {
+        // that when root cannot log in at all — not when GRANT SQL had a warning
+        // or the app user still 1045s (that is a password/plugin issue, not skip-grant).
+        if (! $rootLoginFailed) {
             throw new \RuntimeException(
                 'Could not apply MySQL GRANTs as root. The database was left running. '.$sql
             );
@@ -3768,21 +3853,39 @@ class ContainerDeploymentService
         );
         $skipGrantSqlArg = escapeshellarg($skipGrantSql);
 
-        $resetScript = implode("\n", [
+        $ssh->exec($this->mysqlSkipGrantRepairScript(
+            $pathArg,
+            $dbServiceArg,
+            $rootPwArg,
+            $skipGrantSqlArg
+        ), 120);
+    }
+
+    /**
+     * One-off mysqld with skip-grant-tables. Capture the compose run ID —
+     * `--name db_credential_repair` is ignored when the service already has
+     * container_name, and `--rm` deletes the container before exec.
+     */
+    public function mysqlSkipGrantRepairScript(
+        string $pathArg,
+        string $dbServiceArg,
+        string $rootPwArg,
+        string $skipGrantSqlArg
+    ): string {
+        return implode("\n", [
             "cd {$pathArg}",
             'docker rm -f db_credential_repair 2>/dev/null || true',
             "docker compose stop {$dbServiceArg} 2>/dev/null || true",
-            "docker compose run --rm -d --name db_credential_repair --entrypoint \"\" {$dbServiceArg} sh -c \"exec mysqld --skip-grant-tables --skip-networking=false --user=mysql\"",
-            'for i in $(seq 1 25); do if docker exec db_credential_repair mysqladmin ping --silent 2>/dev/null; then break; fi; sleep 1; done',
-            "REPAIR_RESULT=0; docker exec db_credential_repair mysql --force -u root -e {$skipGrantSqlArg} || REPAIR_RESULT=1",
-            'docker stop db_credential_repair 2>/dev/null || true',
-            'docker rm -f db_credential_repair 2>/dev/null || true',
+            "REPAIR_CID=$(docker compose run --no-deps -d --entrypoint \"\" {$dbServiceArg} sh -c \"exec mysqld --skip-grant-tables --skip-networking=false --user=mysql\")",
+            'if [ -z "$REPAIR_CID" ]; then docker compose start '.$dbServiceArg.'; exit 1; fi',
+            'for i in $(seq 1 25); do if docker exec "$REPAIR_CID" mysqladmin ping --silent 2>/dev/null; then break; fi; sleep 1; done',
+            "REPAIR_RESULT=0; docker exec \"\$REPAIR_CID\" mysql --force -u root -e {$skipGrantSqlArg} || REPAIR_RESULT=1",
+            'docker stop "$REPAIR_CID" 2>/dev/null || true',
+            'docker rm -f "$REPAIR_CID" 2>/dev/null || true',
             "docker compose start {$dbServiceArg}",
             "for i in \$(seq 1 15); do if docker compose exec -T -e MYSQL_PWD={$rootPwArg} {$dbServiceArg} mysqladmin ping --silent 2>/dev/null; then break; fi; sleep 1; done",
             'exit $REPAIR_RESULT',
         ]);
-
-        $ssh->exec($resetScript, 120);
     }
 
     /**

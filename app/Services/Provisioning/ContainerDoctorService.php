@@ -760,24 +760,31 @@ class ContainerDoctorService
                             $error = (string) ($probe['error'] ?? 'Connection failed');
                             $isAuth = (bool) preg_match('/password authentication failed|access denied/i', $error);
                             $isMissingDb = (bool) preg_match('/database ".*" does not exist|unknown database/i', $error);
+                            $isNameResolution = (bool) preg_match(
+                                '/getaddrinfo|name resolution|unknown host|not known/i',
+                                $error
+                            );
 
-                            $findings[] = [
-                                'id' => 'live_db_connection_failed',
-                                'severity' => 'critical',
-                                'title' => $isMissingDb
-                                    ? 'Live check: database does not exist'
-                                    : ($isAuth ? 'Live check: database authentication failed' : 'Live check: database connection failed'),
-                                'summary' => 'A real connection from the app container to the database sidecar failed right now. '
-                                    .'This is why the site can still return HTTP 500 even when older log lines look stale.',
-                                'evidence' => [mb_substr($error, 0, 300)],
-                                'treat_action' => 'sync_database_credentials',
-                                'treat_label' => 'Repair DB credentials',
-                                'manual_steps' => $this->repairDatabaseCredentialsManualSteps(
-                                    $stack,
-                                    (string) $databaseTemplate->type
-                                ),
-                                'source' => 'live',
-                            ];
+                            if (! ($isNameResolution
+                                && $this->findingsContain($findings, ['live_shared_mysql_hostname']))) {
+                                $findings[] = [
+                                    'id' => 'live_db_connection_failed',
+                                    'severity' => 'critical',
+                                    'title' => $isMissingDb
+                                        ? 'Live check: database does not exist'
+                                        : ($isAuth ? 'Live check: database authentication failed' : 'Live check: database connection failed'),
+                                    'summary' => 'A real connection from the app container to the database sidecar failed right now. '
+                                        .'This is why the site can still return HTTP 500 even when older log lines look stale.',
+                                    'evidence' => [mb_substr($error, 0, 300)],
+                                    'treat_action' => 'sync_database_credentials',
+                                    'treat_label' => 'Repair DB credentials',
+                                    'manual_steps' => $this->repairDatabaseCredentialsManualSteps(
+                                        $stack,
+                                        (string) $databaseTemplate->type
+                                    ),
+                                    'source' => 'live',
+                                ];
+                            }
                         }
                     } else {
                         $pdoTableCount = $deploymentService->countApplicationDatabaseTables(
@@ -4084,6 +4091,22 @@ PHP;
             }
             if ($platformAdminPassword !== '') {
                 $syncEnv['TALKSASA_PLATFORM_DB_PASSWORD'] = $platformAdminPassword;
+            }
+
+            if (in_array((string) $databaseTemplate->type, ['mysql', 'mariadb'], true)) {
+                try {
+                    $deploymentService->persistLaravelRuntimeDriversOnCompose(
+                        $ssh,
+                        $deployment->fresh(),
+                        $envVars,
+                        $service
+                    );
+                } catch (\Throwable $e) {
+                    \Log::warning('Doctor could not pin unique sidecar DNS before GRANT', [
+                        'service_id' => $service->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
             }
 
             match ($databaseTemplate->type) {
