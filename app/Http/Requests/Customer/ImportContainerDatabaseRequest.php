@@ -2,7 +2,9 @@
 
 namespace App\Http\Requests\Customer;
 
+use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Http\Exceptions\HttpResponseException;
 
 class ImportContainerDatabaseRequest extends FormRequest
 {
@@ -21,10 +23,23 @@ class ImportContainerDatabaseRequest extends FormRequest
                 'required',
                 'file',
                 'max:'.$maxKb,
-                'mimes:sql,txt',
-                'mimetypes:text/plain,text/x-sql,application/sql,application/octet-stream,application/x-sql',
             ],
         ];
+    }
+
+    public function withValidator($validator): void
+    {
+        $validator->after(function ($validator): void {
+            $file = $this->file('file');
+            if (! $file) {
+                return;
+            }
+
+            $ext = strtolower((string) $file->getClientOriginalExtension());
+            if (! in_array($ext, ['sql', 'txt'], true)) {
+                $validator->errors()->add('file', 'Only .sql files are supported for database import.');
+            }
+        });
     }
 
     public function messages(): array
@@ -34,5 +49,20 @@ class ImportContainerDatabaseRequest extends FormRequest
             'file.max' => 'SQL file cannot exceed '.(int) config('security.container_db_import.max_size_mb', 50).' MB.',
             'file.mimes' => 'Only .sql files are supported for database import.',
         ];
+    }
+
+    protected function failedValidation(Validator $validator): void
+    {
+        if ($this->expectsJson()) {
+            $message = $validator->errors()->first() ?: 'Import failed.';
+
+            throw new HttpResponseException(response()->json([
+                'error' => $message,
+                'message' => $message,
+                'errors' => $validator->errors(),
+            ], 422));
+        }
+
+        parent::failedValidation($validator);
     }
 }

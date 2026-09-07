@@ -40,6 +40,7 @@ use App\Services\Provisioning\ContainerGitRepositoryService;
 use App\Services\Provisioning\ContainerHermesOllamaLinkService;
 use App\Services\Provisioning\ContainerOllamaModelService;
 use App\Services\Provisioning\ContainerPhpExtensionsService;
+use App\Services\Provisioning\ContainerSqlDumpImportService;
 use App\Services\Provisioning\ContainerSslErrorPresenter;
 use App\Services\Provisioning\ContainerStagingService;
 use App\Services\Provisioning\ContainerTemplateEnvironmentService;
@@ -1173,15 +1174,15 @@ class ContainerController extends Controller
             return response()->json(['error' => 'SQL file is empty or unreadable'], 422);
         }
 
-        try {
-            $this->assertSafeSqlImport($sql);
-        } catch (\InvalidArgumentException $e) {
-            return response()->json(['error' => $e->getMessage()], 422);
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(0);
         }
+        @ini_set('max_execution_time', '0');
 
         try {
             $ssh = SSHService::forNode($deployment->node);
-            $output = $this->importDatabaseSql($ssh, $deployment, $databaseContext, $sql);
+            $output = app(ContainerSqlDumpImportService::class)
+                ->importIntoSidecar($ssh, $deployment, $databaseContext, $sql);
             $this->logDatabaseImport($service, $file->getClientOriginalName(), (int) $file->getSize(), true);
 
             return response()->json([
@@ -1189,6 +1190,10 @@ class ContainerController extends Controller
                 'message' => 'Database import completed successfully.',
                 'output' => $output !== '' ? $output : 'Import finished with no output.',
             ]);
+        } catch (\InvalidArgumentException $e) {
+            $this->logDatabaseImport($service, $file->getClientOriginalName(), (int) $file->getSize(), false);
+
+            return response()->json(['error' => $e->getMessage()], 422);
         } catch (\Exception $e) {
             \Log::warning("Database import failed for service {$service->id}: ".$e->getMessage());
             $this->logDatabaseImport($service, $file->getClientOriginalName(), (int) $file->getSize(), false);
@@ -1800,76 +1805,6 @@ class ContainerController extends Controller
         }
 
         throw new \RuntimeException('Interactive query is not supported for this database type yet');
-    }
-
-    private function importDatabaseSql(SSHService $ssh, $deployment, array $databaseContext, string $sql): string
-    {
-        $containerPath = '/opt/talksasa/containers/'.$deployment->container_name;
-        $importDir = $containerPath.'/.db-imports';
-        $ssh->mkdirp($importDir);
-
-        $remotePath = $importDir.'/import_'.time().'_'.bin2hex(random_bytes(4)).'.sql';
-        $ssh->upload($sql, $remotePath);
-
-        try {
-            $remoteArg = escapeshellarg($remotePath);
-            $dbType = $databaseContext['type'];
-
-            if (in_array($dbType, ['mysql', 'mariadb'], true)) {
-                $db = escapeshellarg((string) ($databaseContext['database'] ?? 'appdb'));
-                $user = escapeshellarg((string) ($databaseContext['username'] ?? 'appuser'));
-                $service = escapeshellarg((string) ($databaseContext['service'] ?? 'db'));
-                $password = escapeshellarg((string) (
-                    $deployment->env_values['WORDPRESS_DB_PASSWORD']
-                    ?? $deployment->env_values['DB_PASSWORD']
-                    ?? $deployment->env_values['MYSQL_PASSWORD']
-                    ?? ''
-                ));
-
-                $command = "cd {$containerPath} && cat {$remoteArg} | docker compose exec -T -e MYSQL_PWD={$password} {$service} "
-                    ."mysql --batch -u {$user} {$db}";
-
-                return $ssh->exec($command, 180);
-            }
-
-            if ($dbType === 'postgresql') {
-                $db = escapeshellarg((string) ($databaseContext['database'] ?? 'appdb'));
-                $user = escapeshellarg((string) ($databaseContext['username'] ?? 'appuser'));
-                $password = escapeshellarg((string) ($deployment->env_values['DB_PASSWORD'] ?? $deployment->env_values['POSTGRES_PASSWORD'] ?? ''));
-
-                $command = "cd {$containerPath} && cat {$remoteArg} | docker compose exec -T -e PGPASSWORD={$password} db "
-                    ."psql -v ON_ERROR_STOP=1 -U {$user} -d {$db}";
-
-                return $ssh->exec($command, 180);
-            }
-
-            throw new \RuntimeException('SQL import is not supported for this database type');
-        } finally {
-            try {
-                $ssh->exec('rm -f '.escapeshellarg($remotePath), 10);
-            } catch (\Throwable) {
-                // Best-effort cleanup of temporary import file on the node.
-            }
-        }
-    }
-
-    private function assertSafeSqlImport(string $sql): void
-    {
-        $blocked = [
-            '/\bDROP\s+DATABASE\b/i',
-            '/\bCREATE\s+DATABASE\b/i',
-            '/\bDROP\s+SCHEMA\b/i',
-            '/\bGRANT\s+/i',
-            '/\bREVOKE\s+/i',
-        ];
-
-        foreach ($blocked as $pattern) {
-            if (preg_match($pattern, $sql)) {
-                throw new \InvalidArgumentException(
-                    'SQL file contains disallowed statements (database-level privilege or schema drops). Remove them and try again.'
-                );
-            }
-        }
     }
 
     private function tabSeparatedToCsv(string $input): string

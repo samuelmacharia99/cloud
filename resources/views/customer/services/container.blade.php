@@ -712,7 +712,7 @@
                                 <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/50">
                                     <h3 class="text-sm font-semibold text-slate-900 dark:text-white mb-2">Import SQL dump</h3>
                                     <p class="text-sm text-slate-600 dark:text-slate-400 mb-3">
-                                        Upload a <code class="font-mono">.sql</code> file to load tables and data into this service database (max {{ $dbImportMaxMb }} MB). Existing tables with the same names may be overwritten depending on your dump.
+                                        Upload a <code class="font-mono">.sql</code> file to load tables and data into this service database (max {{ $dbImportMaxMb }} MB). DirectAdmin dumps that <code class="font-mono">CREATE DATABASE</code> / <code class="font-mono">USE</code> another name are rewritten into this sidecar. Existing tables with the same names may be overwritten.
                                     </p>
                                     <div class="flex flex-wrap items-center gap-3">
                                         <input type="file" id="db-import-file" accept=".sql,text/plain" class="text-sm text-slate-700 dark:text-slate-300">
@@ -1542,12 +1542,26 @@ async function importDatabaseSql() {
             body: formData,
         });
 
-        const data = await response.json();
-        if (!response.ok) {
+        let data = {};
+        try {
+            data = await response.json();
+        } catch {
             statusEl.textContent = 'Import failed';
             if (outEl) {
                 outEl.classList.remove('hidden');
-                outEl.textContent = data.error || 'Import failed';
+                outEl.textContent = 'The server did not return JSON. The upload may have exceeded PHP/nginx size limits.';
+            }
+            return;
+        }
+        if (!response.ok) {
+            const detail = data.error
+                || data.message
+                || Object.values(data.errors || {}).flat().join(' ')
+                || 'Import failed';
+            statusEl.textContent = 'Import failed';
+            if (outEl) {
+                outEl.classList.remove('hidden');
+                outEl.textContent = detail;
             }
             return;
         }
@@ -1561,6 +1575,10 @@ async function importDatabaseSql() {
         loadDatabaseHistory();
     } catch (error) {
         statusEl.textContent = 'Import failed';
+        if (outEl) {
+            outEl.classList.remove('hidden');
+            outEl.textContent = error?.message || 'Network or browser error while uploading the dump.';
+        }
     }
 }
 
