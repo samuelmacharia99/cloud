@@ -491,6 +491,51 @@ class ContainerDeploymentComposeTest extends TestCase
     }
 
     #[Test]
+    public function render_compose_uses_custom_php_document_root(): void
+    {
+        $template = new ContainerTemplate([
+            'slug' => 'php',
+            'docker_image' => 'talksasa/php-runtime:8.3',
+            'default_port' => 8080,
+            'required_cpu_cores' => 0.5,
+            'required_ram_mb' => 256,
+            'volume_paths' => ['app_data' => '/app'],
+        ]);
+
+        $runtimeImages = $this->createMock(RuntimeImageProvisioner::class);
+        $runtimeImages->method('usesRuntimeImage')->willReturn(true);
+        $runtimeImages->method('resolveImageReference')->willReturn(['image' => 'talksasa/php-runtime:8.3']);
+
+        $deployer = new ContainerDeploymentService(
+            runtimeImages: $runtimeImages,
+            templateEnvironment: new ContainerTemplateEnvironmentService
+        );
+
+        $method = new ReflectionMethod(ContainerDeploymentService::class, 'renderCompose');
+        $method->setAccessible(true);
+
+        $yaml = $method->invoke(
+            $deployer,
+            $template,
+            'user-483-service-426-static-site',
+            30426,
+            ['APP_ENV' => 'production'],
+            null,
+            null,
+            null,
+            '/opt/talksasa/containers/user-483-service-426-static-site/app',
+            null,
+            '/app/public_html'
+        );
+
+        $this->assertStringContainsString('talksasa-php-server', $yaml);
+        $this->assertStringContainsString('/app/public_html', $yaml);
+        $this->assertStringContainsString('30426:8080', $yaml);
+        $this->assertStringNotContainsString('nginx:alpine', $yaml);
+        $this->assertStringNotContainsString('nginx-static.conf', $yaml);
+    }
+
+    #[Test]
     public function render_compose_builds_laravel_next_sidecar_stack(): void
     {
         $template = new ContainerTemplate([

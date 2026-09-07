@@ -214,7 +214,7 @@ class ContainerDoctorInfrastructureAnalyzer
                         || preg_match('/GET \/\.env HTTP\/1\.1" 200 /', $haystack) === 1;
                 },
                 'title' => 'nginx has no index.html at the web root',
-                'summary' => 'Official nginx:alpine 403s GET / when the bind-mounted web root has no index.html. DirectAdmin files often sit in public_html/ or dist/. The same mount can publish .env. Do not hoist the Talksasa welcome placeholder from public/.',
+                'summary' => 'Official nginx:alpine 403s GET / when the bind-mounted web root has no index.html. DirectAdmin files often sit in public_html/ or dist/. The same mount can publish .env. If the tree has index.php, Switch to PHP instead of hoisting a fake homepage.',
                 'treat_action' => 'fix_static_site_docroot',
                 'treat_label' => 'Fix static web root',
                 'manual_steps' => [

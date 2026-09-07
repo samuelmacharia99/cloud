@@ -1921,7 +1921,7 @@ class ContainerDeploymentService
             } else {
                 $compose['services'][$containerName]['command'] = $this->phpProductionServerCommand(
                     $internalPort,
-                    '/app'
+                    $laravelDocumentRoot ?: '/app'
                 );
             }
         }
@@ -6007,6 +6007,102 @@ class ContainerDeploymentService
         }
     }
 
+    public function persistProvisionTemplateSlug(Service $service, string $slug): void
+    {
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        $meta['provision_template_slug'] = $slug;
+        $service->update(['service_meta' => $meta]);
+        $service->unsetRelation('product');
+    }
+
+    public function phpDocumentRootOnHost(SSHService $ssh, string $hostAppPath): string
+    {
+        try {
+            $root = trim((string) $ssh->exec(
+                app(LaravelProjectPathResolver::class)->phpDocumentRootCommand($hostAppPath),
+                15
+            ));
+            if (preg_match('#^/app(?:/[A-Za-z0-9._-]+)?$#', $root) === 1) {
+                return $root;
+            }
+        } catch (\Throwable) {
+        }
+
+        return '/app';
+    }
+
+    /**
+     * DirectAdmin static_or_php converts often land on nginx:alpine while the
+     * tree is a PHP app. Keep the billed product and host files; switch runtime only.
+     */
+    public function switchStaticSiteToPhpRuntime(
+        Service $service,
+        ContainerDeployment $deployment,
+        SSHService $ssh
+    ): string {
+        $phpTemplate = ContainerTemplate::query()
+            ->where('slug', 'php')
+            ->orderByRaw('is_active DESC')
+            ->first();
+        if (! $phpTemplate) {
+            throw new \RuntimeException(
+                'The PHP container template is not configured. Add it under Admin → Container templates.'
+            );
+        }
+
+        $this->persistProvisionTemplateSlug($service, 'php');
+        $service->refresh();
+        $template = $this->resolveContainerTemplate($service);
+        if (($template->slug ?? '') !== 'php') {
+            throw new \RuntimeException('Could not switch this service onto the PHP template.');
+        }
+
+        $hostAppPath = $this->resolveHostAppPath($template, $deployment->container_name)
+            ?? (self::CONTAINER_BASE_PATH.'/'.$deployment->container_name.'/app');
+        $documentRoot = $this->phpDocumentRootOnHost($ssh, $hostAppPath);
+        $envVars = is_array($deployment->env_values) ? $deployment->env_values : [];
+        $phpVersion = is_string($deployment->selected_version)
+            && preg_match('/^\d+\.\d+/', $deployment->selected_version) === 1
+            ? $deployment->selected_version
+            : null;
+
+        $composeYaml = $this->renderCompose(
+            $template,
+            $deployment->container_name,
+            (int) $deployment->assigned_port,
+            $envVars,
+            null,
+            $deployment,
+            $phpVersion,
+            $hostAppPath,
+            null,
+            $documentRoot,
+        );
+
+        $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+        $deployment->update([
+            'docker_compose_content' => $composeYaml,
+            'selected_version' => $phpVersion,
+        ]);
+        $ssh->upload($composeYaml, $containerPath.'/docker-compose.yml');
+
+        $this->runtimeImages->ensureImage($ssh, $template, $phpVersion, $service, $deployment);
+        $this->restartAppService($ssh, $deployment->fresh());
+        $this->waitForContainerRunning($ssh, $deployment->container_name);
+
+        try {
+            app(NginxProxyService::class)->refreshBoundDomainVhosts($service);
+        } catch (\Throwable $e) {
+            Log::warning('Could not refresh nginx vhost after static-to-php switch', [
+                'service_id' => $service->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return 'Switched this site from static nginx to PHP-FPM (document root '.$documentRoot
+            .'). Files were kept; no database sidecar was added. Reload the site.';
+    }
+
     public function refreshLaravelServeCompose(Service $service, ContainerDeployment $deployment, SSHService $ssh): string
     {
         return $this->refreshPhpProductionRuntime($service, $deployment, $ssh);
@@ -6030,6 +6126,10 @@ class ContainerDeploymentService
         $documentRoot = $slug === 'php' ? '/app' : '/app/public';
         $serveNextFrontend = false;
         $nextFrontendRelativeDir = 'frontend';
+
+        if ($slug === 'php') {
+            $documentRoot = $this->phpDocumentRootOnHost($ssh, $hostAppPath);
+        }
 
         if ($slug === 'laravel') {
             $resolver = app(LaravelProjectPathResolver::class);

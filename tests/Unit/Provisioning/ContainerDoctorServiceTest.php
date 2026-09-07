@@ -327,6 +327,33 @@ LOG;
     }
 
     #[Test]
+    public function php_on_static_nginx_finding_replaces_empty_docroot_from_logs(): void
+    {
+        $merged = app(ContainerDoctorService::class)->mergeLogAndLiveFindings(
+            [[
+                'id' => 'static_site_empty_docroot',
+                'severity' => 'critical',
+                'title' => 'nginx has no index.html at the web root',
+                'treat_action' => 'fix_static_site_docroot',
+            ]],
+            [
+                'findings' => [[
+                    'id' => 'static_site_php_on_nginx',
+                    'severity' => 'critical',
+                    'title' => 'This is a PHP app on the static nginx image',
+                    'treat_action' => 'switch_php_production_runtime',
+                ]],
+                'checks' => ['http_status' => 403, 'db_ok' => null],
+            ]
+        );
+
+        $ids = array_column($merged, 'id');
+        $this->assertContains('static_site_php_on_nginx', $ids);
+        $this->assertNotContains('static_site_empty_docroot', $ids);
+        $this->assertSame('switch_php_production_runtime', $merged[0]['treat_action']);
+    }
+
+    #[Test]
     public function production_php_server_does_not_route_static_files_through_index_php(): void
     {
         $script = (string) file_get_contents(base_path('deploy/docker/runtimes/common/php-production-server.sh'));

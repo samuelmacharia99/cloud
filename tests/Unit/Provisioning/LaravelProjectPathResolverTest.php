@@ -44,5 +44,30 @@ class LaravelProjectPathResolverTest extends TestCase
         $resolver = new LaravelProjectPathResolver;
 
         $this->assertSame(['public', 'public_html'], $resolver->webRootRelativeCandidates());
+        $this->assertSame(
+            ['public', 'public_html', 'web', 'htdocs', 'html', 'www'],
+            $resolver->phpWebRootRelativeCandidates()
+        );
+    }
+
+    #[Test]
+    public function php_document_root_command_prefers_public_html_over_root_index(): void
+    {
+        $tmp = sys_get_temp_dir().'/php-docroot-'.bin2hex(random_bytes(4));
+        mkdir($tmp.'/public_html', 0777, true);
+        file_put_contents($tmp.'/index.php', '<?php echo "root";');
+        file_put_contents($tmp.'/public_html/index.php', '<?php echo "html";');
+
+        try {
+            $cmd = (new LaravelProjectPathResolver)->phpDocumentRootCommand($tmp);
+            exec('sh -lc '.escapeshellarg($cmd), $output, $code);
+            $this->assertSame(0, $code);
+            $this->assertSame('/app/public_html', trim(implode("\n", $output)));
+        } finally {
+            @unlink($tmp.'/public_html/index.php');
+            @rmdir($tmp.'/public_html');
+            @unlink($tmp.'/index.php');
+            @rmdir($tmp);
+        }
     }
 }

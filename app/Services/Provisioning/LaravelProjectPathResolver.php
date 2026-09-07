@@ -74,6 +74,29 @@ class LaravelProjectPathResolver
         return ['public', 'public_html'];
     }
 
+    /**
+     * @return list<string>
+     */
+    public function phpWebRootRelativeCandidates(): array
+    {
+        return ['public', 'public_html', 'web', 'htdocs', 'html', 'www'];
+    }
+
+    /**
+     * Locate index.php for a generic PHP tree (DirectAdmin public_html or Laravel public/).
+     */
+    public function phpDocumentRootCommand(string $hostAppPath): string
+    {
+        $root = escapeshellarg(rtrim($hostAppPath, '/'));
+        $names = implode(' ', array_map('escapeshellarg', $this->phpWebRootRelativeCandidates()));
+
+        return 'ROOT='.$root.'; '
+            .'for d in '.$names.'; do '
+            .'  if [ -f "$ROOT/$d/index.php" ]; then echo /app/$d; exit 0; fi; '
+            .'done; '
+            .'echo /app';
+    }
+
     public function resolveDocumentRoot(SSHService $ssh, string $hostAppPath, ?string $relativeRoot = null): string
     {
         $relativeRoot ??= $this->findRelativeRoot($ssh, $hostAppPath);
