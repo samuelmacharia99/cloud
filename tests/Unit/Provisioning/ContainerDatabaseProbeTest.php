@@ -197,6 +197,10 @@ class ContainerDatabaseProbeTest extends TestCase
         $this->assertSame('mysql', $service->applicationDatabaseHost($env));
         $this->assertSame(
             'user-488-service-373-wordpress-mysql',
+            $service->applicationDatabaseHost($env, 'user-488-service-373-wordpress')
+        );
+        $this->assertSame(
+            'user-488-service-373-wordpress-mysql',
             $service->sidecarDnsHost('user-488-service-373-wordpress')
         );
         $this->assertSame(

@@ -945,7 +945,20 @@ LOG;
         $this->assertStringContainsString('wp-config.php', $steps[0]);
         $this->assertStringContainsString('WORDPRESS_DB_', $steps[0]);
         $this->assertStringContainsString('mysql_native_password', $steps[0]);
+        $this->assertStringContainsString('talksasa-net', $steps[0]);
         $this->assertStringNotContainsString('PHP-FPM', $steps[0]);
+    }
+
+    #[Test]
+    public function wordpress_container_name_wins_over_php_listing_slug(): void
+    {
+        $service = new Service;
+        $service->setRelation('product', null);
+        $service->setRelation('containerDeployment', new ContainerDeployment([
+            'container_name' => 'user-488-service-373-wordpress',
+        ]));
+
+        $this->assertSame('wordpress', app(ContainerDoctorService::class)->resolveStackSlug($service));
     }
 
     #[Test]

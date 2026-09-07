@@ -22,7 +22,7 @@ class ContainerDoctorService
     {
         $service->loadMissing('product.containerTemplate', 'containerDeployment.node');
         $deployment = $service->containerDeployment;
-        $stack = strtolower((string) ($service->effectiveContainerTemplate()?->slug ?? 'unknown'));
+        $stack = $this->resolveStackSlug($service);
 
         if (! $deployment || ! $deployment->node) {
             return [
@@ -343,11 +343,7 @@ class ContainerDoctorService
 
         $deploymentService = app(ContainerDeploymentService::class);
         $databaseTemplate = $deploymentService->resolveDatabaseTemplateForService($service);
-        $stack = strtolower((string) (
-            $service->effectiveContainerTemplate()?->slug
-            ?? $service->product?->containerTemplate?->slug
-            ?? ''
-        ));
+        $stack = $this->resolveStackSlug($service);
         $ssh = SSHService::forNode($deployment->node);
         $containerReady = $deployment->isRunning();
 
@@ -685,6 +681,35 @@ class ContainerDoctorService
                     );
                     $checks['db_ok'] = $probe['ok'];
                     $checks['db_error'] = $probe['error'];
+
+                    $configuredDbHost = (string) (
+                        $mergedEnv['WORDPRESS_DB_HOST']
+                        ?? $platformEnv['WORDPRESS_DB_HOST']
+                        ?? $mergedEnv['DB_HOST']
+                        ?? ''
+                    );
+                    if ($stack === 'wordpress'
+                        && $deploymentService->isAmbiguousSharedNetworkDatabaseHost($configuredDbHost)
+                        && ! $this->findingsContain($findings, ['live_shared_mysql_hostname'])) {
+                        $unique = $deploymentService->sidecarDnsHost((string) $deployment->container_name);
+                        $findings[] = [
+                            'id' => 'live_shared_mysql_hostname',
+                            'severity' => 'critical',
+                            'title' => 'WordPress is using the shared mysql hostname',
+                            'summary' => 'WORDPRESS_DB_HOST is `'.explode(':', $configuredDbHost, 2)[0].'`. On talksasa-net that alias is shared by every WordPress sidecar, so Docker DNS round-robins to other customers’ MySQL. The site returns HTTP 200 then 500 on its own even when a live probe is lucky. Repair pins WORDPRESS_DB_HOST to '.$unique.' in compose and wp-config.php (the database volume is kept).',
+                            'evidence' => [
+                                'WORDPRESS_DB_HOST='.$configuredDbHost,
+                                'unique sidecar DNS='.$unique,
+                            ],
+                            'treat_action' => 'sync_database_credentials',
+                            'treat_label' => 'Repair DB credentials',
+                            'manual_steps' => $this->repairDatabaseCredentialsManualSteps(
+                                $stack,
+                                (string) $databaseTemplate->type
+                            ),
+                            'source' => 'live',
+                        ];
+                    }
 
                     if (! $probe['ok']) {
                         $normalized = $deploymentService->normalizeDatabaseEnvironment(
@@ -1750,7 +1775,7 @@ PHP;
     {
         if ($stack === 'wordpress') {
             return [
-                'Click Repair DB credentials — creates the missing DB, resets the WordPress role password with mysql_native_password, rewrites wp-config.php and compose WORDPRESS_DB_*, and recreates the app (the database volume is kept).',
+                'Click Repair DB credentials — creates the missing DB, resets the WordPress role password with mysql_native_password, pins WORDPRESS_DB_HOST to this stack’s unique mysql container name (not the shared talksasa-net alias `mysql`), rewrites wp-config.php and compose, and recreates the app (the database volume is kept).',
                 'Do not Reset database — that wipes existing tables. Re-scan and Repair again if 1045 persists.',
             ];
         }
@@ -1783,7 +1808,7 @@ PHP;
             : '. Host-specific MySQL accounts (user@overlay-ip) were dropped and user@% recreated.'
                 .$hostHint
                 .' App DB_HOST is now '.$dbHost
-                .' (not the shared-network alias `db`).'
+                .' (this stack’s unique sidecar DNS, not the shared-network aliases `db` or `mysql`).'
                 .' Do not Reset database — that wipes existing tables. Re-scan Doctor and click Repair again if 1045 persists.';
 
         return $syncedMessage.' Live connection still fails: '.$probeError.$suffix;
@@ -1824,14 +1849,38 @@ PHP;
     {
         $service = $deployment->service ?? null;
         if ($service instanceof Service) {
-            $slug = strtolower((string) ($service->effectiveContainerTemplate()?->slug ?? ''));
-            if ($slug !== '') {
-                return $slug;
-            }
+            return $this->resolveStackSlug($service);
         }
 
         return app(ContainerDeploymentService::class)
             ->inferTemplateSlugFromContainerName((string) $deployment->container_name);
+    }
+
+    /**
+     * Product listing slug can be php/laravel after a DirectAdmin import while
+     * the running image is still wordpress:latest. Container name wins.
+     */
+    public function resolveStackSlug(Service $service): string
+    {
+        $service->loadMissing('product.containerTemplate', 'containerDeployment');
+
+        if ($this->isWordPressStack($service)) {
+            return 'wordpress';
+        }
+
+        $slug = strtolower((string) (
+            $service->effectiveContainerTemplate()?->slug
+            ?? $service->product?->containerTemplate?->slug
+            ?? ''
+        ));
+        if ($slug !== '' && $slug !== 'unknown') {
+            return $slug;
+        }
+
+        $fromName = app(ContainerDeploymentService::class)
+            ->inferTemplateSlugFromContainerName((string) $service->containerDeployment?->container_name);
+
+        return is_string($fromName) && $fromName !== '' ? $fromName : 'unknown';
     }
 
     /**
@@ -4047,7 +4096,7 @@ PHP;
                 default => throw new \RuntimeException('Unsupported database type: '.$databaseTemplate->type),
             };
 
-            $stack = strtolower((string) ($service->effectiveContainerTemplate()?->slug ?? ''));
+            $stack = $this->resolveStackSlug($service);
             if (in_array($stack, ['laravel', 'php'], true)) {
                 $envVars['SESSION_DRIVER'] = 'file';
                 $envVars['CACHE_STORE'] = 'file';
@@ -4799,7 +4848,7 @@ PHP;
         $finding['treat_label'] = 'Restart application';
         $finding['manual_steps'] = [
             'This is WordPress, not Laravel. Session/cache .env and artisan do not apply.',
-            'Click Restart application. If HTTP 500 continues, check the MySQL sidecar and WORDPRESS_DB_HOST (should be mysql, not db).',
+            'Click Restart application. If HTTP 500 continues, Repair DB credentials so WORDPRESS_DB_HOST is this stack’s unique mysql container name (not the shared alias `mysql`).',
         ];
 
         return $finding;

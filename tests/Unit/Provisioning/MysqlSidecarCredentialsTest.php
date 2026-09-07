@@ -213,7 +213,10 @@ YAML;
             $service->applicationDatabaseHost(['DB_HOST' => 'db'], 'user-74-service-24-laravel')
         );
         $this->assertTrue($service->isAmbiguousSharedNetworkDatabaseHost('db'));
+        $this->assertTrue($service->isAmbiguousSharedNetworkDatabaseHost('mysql'));
+        $this->assertTrue($service->isAmbiguousSharedNetworkDatabaseHost('mariadb'));
         $this->assertFalse($service->isAmbiguousSharedNetworkDatabaseHost('user-74-service-24-laravel-db'));
+        $this->assertFalse($service->isAmbiguousSharedNetworkDatabaseHost('user-488-service-373-wordpress-mysql'));
 
         $pinned = $service->pinApplicationDatabaseHost([
             'DB_USERNAME' => 'u74_s24',
@@ -225,6 +228,37 @@ YAML;
         $this->assertSame('user-74-service-24-laravel-db', $pinned['DB_HOST']);
         $this->assertStringContainsString('@user-74-service-24-laravel-db:3306/', $pinned['DATABASE_URL']);
         $this->assertStringNotContainsString('@db:', $pinned['DATABASE_URL']);
+    }
+
+    #[Test]
+    public function shared_network_mysql_alias_is_replaced_with_unique_wordpress_sidecar_dns(): void
+    {
+        $service = app(ContainerDeploymentService::class);
+
+        $this->assertSame(
+            'user-488-service-373-wordpress-mysql',
+            $service->applicationDatabaseHost(
+                [
+                    'WORDPRESS_DB_HOST' => 'mysql',
+                    'WORDPRESS_DB_NAME' => 'wordpress',
+                    'WORDPRESS_DB_USER' => 'wordpress',
+                    'WORDPRESS_DB_PASSWORD' => 'secret',
+                ],
+                'user-488-service-373-wordpress'
+            )
+        );
+
+        $pinned = $service->pinApplicationDatabaseHost([
+            'WORDPRESS_DB_HOST' => 'mysql',
+            'WORDPRESS_DB_NAME' => 'wordpress',
+            'WORDPRESS_DB_USER' => 'wordpress',
+            'WORDPRESS_DB_PASSWORD' => 'secret',
+        ], 'user-488-service-373-wordpress', 'mysql');
+
+        $this->assertSame('user-488-service-373-wordpress-mysql', $pinned['WORDPRESS_DB_HOST']);
+        $this->assertSame('user-488-service-373-wordpress-mysql', $pinned['DB_HOST']);
+        $this->assertStringContainsString('@user-488-service-373-wordpress-mysql:3306/', $pinned['DATABASE_URL']);
+        $this->assertStringNotContainsString('@mysql:', $pinned['DATABASE_URL']);
     }
 
     #[Test]

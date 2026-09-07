@@ -3204,12 +3204,13 @@ class ContainerDeploymentService
         ?string $containerPath
     ): array {
         $creds = $this->applicationDatabaseCredentials($envVars, 'mysql');
-        $host = $this->applicationDatabaseHost($envVars);
-        if ($host === '' || $host === 'localhost' || $host === '127.0.0.1') {
-            $host = $this->defaultMysqlSidecarHost($envVars);
+        $host = $this->applicationDatabaseHost($envVars, $containerName);
+        if ($this->isAmbiguousSharedNetworkDatabaseHost($host) && $containerName !== '') {
+            $host = $this->sidecarDnsHost($containerName);
         }
 
-        $script = $templateSlug === 'wordpress'
+        $useMysqli = $templateSlug === 'wordpress' || $this->envLooksLikeWordpress($envVars);
+        $script = $useMysqli
             ? $this->phpWordpressMysqliEvalScript($host, 3306, $creds['database'], $creds['username'], $creds['password'])
             : $this->phpPdoEvalScript(
                 'mysql:host='.$host.';port=3306;dbname='.$creds['database'],
@@ -4176,7 +4177,7 @@ class ContainerDeploymentService
 
     /**
      * Unique Docker DNS name for this stack's database sidecar.
-     * Service name `db` is not unique on the shared talksasa-net overlay.
+     * Service names `db` / `mysql` / `mariadb` are not unique on talksasa-net.
      */
     public function sidecarDnsHost(string $appContainerName): string
     {
@@ -4203,7 +4204,7 @@ class ContainerDeploymentService
             $host = explode(':', $host, 2)[0];
         }
 
-        return in_array($host, ['db', 'localhost', '127.0.0.1'], true);
+        return in_array($host, ['db', 'mysql', 'mariadb', 'localhost', '127.0.0.1'], true);
     }
 
     /**
