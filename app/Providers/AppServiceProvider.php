@@ -166,6 +166,13 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(20)->by(($request->user()?->id ?? $request->ip()).'|service:'.$serviceId);
         });
 
+        RateLimiter::for('container-doctor-treat', function (Request $request) {
+            $service = $request->route('service');
+            $serviceId = is_object($service) ? $service->id : $service;
+
+            return Limit::perMinute(30)->by(($request->user()?->id ?? $request->ip()).'|doctor:'.$serviceId);
+        });
+
         RateLimiter::for('da-offramp-progress', function (Request $request) {
             return Limit::perMinute(120)->by('da-offramp-progress|'.($request->user()?->id ?: $request->ip()));
         });

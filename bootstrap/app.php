@@ -24,6 +24,7 @@ use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Http\Exceptions\PostTooLargeException;
+use Illuminate\Http\Exceptions\ThrottleRequestsException;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Middleware\ThrottleRequests;
 use Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful;
@@ -86,6 +87,17 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
+        $exceptions->render(function (ThrottleRequestsException $e, Request $request) {
+            if (! $request->is('my/services/*/container/doctor/treat')) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Doctor is still finishing the last repair. Wait a few seconds and click again — treatments are limited so two clicks cannot stack.',
+            ], 429);
+        });
+
         $exceptions->render(function (PostTooLargeException $e, Request $request) {
             if (! $request->is('my/services/*/container/files/upload')
                 && ! $request->is('my/services/*/container/database/import')) {

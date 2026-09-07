@@ -2188,6 +2188,10 @@ PHP;
             }
         }
 
+        foreach ($this->probePhpRuntimeErrors($ssh, $deployment) as $phpLine) {
+            $lines[] = $phpLine;
+        }
+
         return $this->newestUniqueLines($lines, 6);
     }
 
@@ -2215,6 +2219,40 @@ PHP;
         }
 
         return array_reverse($out);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function probePhpRuntimeErrors(SSHService $ssh, $deployment): array
+    {
+        $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+
+        try {
+            $raw = trim($ssh->exec(
+                'cd '.escapeshellarg($containerPath)
+                .' && docker compose logs --no-color --since 30m --tail=120 '
+                .escapeshellarg($deployment->container_name)
+                .' 2>/dev/null | grep -E "PHP (Fatal|Parse)|Uncaught |SQLSTATE" | tail -n 8 || true',
+                25
+            ));
+        } catch (\Throwable) {
+            return [];
+        }
+
+        if ($raw === '') {
+            return [];
+        }
+
+        $lines = [];
+        foreach (preg_split('/\r\n|\r|\n/', $raw) ?: [] as $line) {
+            $line = trim($line);
+            if ($line !== '') {
+                $lines[] = mb_substr($line, 0, 280);
+            }
+        }
+
+        return $lines;
     }
 
     private function probeHttpErrorSnippet(SSHService $ssh, $deployment): ?string
@@ -5083,7 +5121,8 @@ PHP;
                         .'Restart recycles the app container only — it will not bounce MySQL (that 2002s the site).'
                     : 'Live PDO works (tables: '.(string) ($checks['table_count'] ?? '?')
                         .') but the public URL still returns HTTP '.$httpStatus
-                        .'. Restart recycles the app container only; MySQL stays up. Leftover 2002 lines are from a previous sidecar bounce.',
+                        .'. DirectAdmin PHP often keeps localhost / the old schema name in config.php while Doctor tests sidecar .env. '
+                        .'Restart rewrites those files to this sidecar, aligns the PHP document root, and recreates the app only. MySQL stays up.',
             ];
         }
 

@@ -70,4 +70,26 @@ class LaravelProjectPathResolverTest extends TestCase
             @rmdir($tmp);
         }
     }
+
+    #[Test]
+    public function php_document_root_command_skips_tiny_public_stub_when_root_index_is_the_site(): void
+    {
+        $tmp = sys_get_temp_dir().'/php-docroot-'.bin2hex(random_bytes(4));
+        mkdir($tmp.'/public', 0777, true);
+        file_put_contents($tmp.'/index.php', str_repeat("<?php echo 'site';\n", 40));
+        file_put_contents($tmp.'/public/index.php', '<?php echo "stub";');
+
+        try {
+            $cmd = (new LaravelProjectPathResolver)->phpDocumentRootCommand($tmp);
+            $output = [];
+            exec('sh -lc '.escapeshellarg($cmd), $output, $code);
+            $this->assertSame(0, $code);
+            $this->assertSame('/app', trim(implode("\n", $output)));
+        } finally {
+            @unlink($tmp.'/public/index.php');
+            @rmdir($tmp.'/public');
+            @unlink($tmp.'/index.php');
+            @rmdir($tmp);
+        }
+    }
 }

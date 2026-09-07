@@ -857,6 +857,14 @@ class ContainerDeploymentService
                 }
                 if (in_array($slug, ['laravel', 'php'], true)) {
                     $this->alignLaravelDocumentRootOnCompose($ssh, $service, $deployment);
+                    try {
+                        app(PhpSidecarDatabaseRewriter::class)->applyForDeployment($ssh, $service, $deployment);
+                    } catch (\Throwable $e) {
+                        Log::warning('Could not rewrite PHP database config before restart', [
+                            'service_id' => $service->id,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
                 }
                 if (in_array($slug, ['nodejs', 'python', 'ruby', 'go'], true)) {
                     // Git pull can leave files on disk while compose still runs the
@@ -1237,13 +1245,15 @@ class ContainerDeploymentService
     public function alignLaravelDocumentRootOnCompose(SSHService $ssh, Service $service, ContainerDeployment $deployment): void
     {
         $slug = strtolower((string) ($this->resolveContainerTemplate($service)?->slug ?? ''));
-        if ($slug !== 'laravel') {
+        if (! in_array($slug, ['laravel', 'php'], true)) {
             return;
         }
 
         $hostAppPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name.'/app';
         $resolver = app(LaravelProjectPathResolver::class);
-        $documentRoot = $resolver->resolveDocumentRoot($ssh, $hostAppPath);
+        $documentRoot = $slug === 'php'
+            ? $this->phpDocumentRootOnHost($ssh, $hostAppPath)
+            : $resolver->resolveDocumentRoot($ssh, $hostAppPath);
         if ($documentRoot === '' || $documentRoot === '/app') {
             $found = null;
             foreach ($resolver->webRootRelativeCandidates() as $web) {

@@ -3,6 +3,7 @@
 namespace App\Services\Provisioning;
 
 use App\Models\ContainerDeployment;
+use App\Models\Service;
 use App\Services\SSH\SSHService;
 use Illuminate\Http\UploadedFile;
 
@@ -723,10 +724,21 @@ class ContainerSqlDumpImportService
                 $rootPassword !== '' ? $rootPassword : $importPass,
             );
 
+            $rewriteWarning = $this->rewriteAppDatabaseConfigAfterImport(
+                $ssh,
+                $deployment,
+                $database,
+                $user,
+                $password,
+            );
+
             $message = 'Imported '.$statementCount.' SQL statements into '.$database
                 .' as '.$importUser.' via the sidecar mysql client.';
             if ($grantWarning !== null) {
                 $message .= ' '.$grantWarning;
+            }
+            if ($rewriteWarning !== null) {
+                $message .= ' '.$rewriteWarning;
             }
             if (trim($output) !== '') {
                 $message .= ' '.$output;
@@ -770,6 +782,41 @@ class ContainerSqlDumpImportService
         } catch (\Throwable $e) {
             return 'Dump loaded, but the application user could not be granted from Docker IPs: '
                 .$e->getMessage();
+        }
+
+        return null;
+    }
+
+    private function rewriteAppDatabaseConfigAfterImport(
+        SSHService $ssh,
+        ContainerDeployment $deployment,
+        string $database,
+        string $user,
+        string $password,
+    ): ?string {
+        $deployment->loadMissing('service');
+        $service = $deployment->service;
+        if (! $service instanceof Service || $password === '' || strcasecmp($user, 'root') === 0) {
+            return null;
+        }
+
+        $env = is_array($deployment->env_values) ? $deployment->env_values : [];
+        $env['DB_DATABASE'] = $database;
+        $env['MYSQL_DATABASE'] = $database;
+        $env['DB_USERNAME'] = $user;
+        $env['MYSQL_USER'] = $user;
+        $env['DB_PASSWORD'] = $password;
+        $env['MYSQL_PASSWORD'] = $password;
+        $deployment->env_values = $env;
+
+        try {
+            $changed = app(PhpSidecarDatabaseRewriter::class)->applyForDeployment($ssh, $service, $deployment);
+        } catch (\Throwable $e) {
+            return 'Dump loaded, but application config still names the old DirectAdmin database: '.$e->getMessage();
+        }
+
+        if ($changed > 0) {
+            return 'Rewrote '.$changed.' application file(s) to use this sidecar. Reload the site — do not Reset database.';
         }
 
         return null;
