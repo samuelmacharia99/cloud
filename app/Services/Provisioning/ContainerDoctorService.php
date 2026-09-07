@@ -935,11 +935,40 @@ class ContainerDoctorService
                     'treat_action' => 'fix_static_site_docroot',
                     'treat_label' => 'Fix static web root',
                     'manual_steps' => [
-                        'Click Fix static web root — hoists nested public_html/dist into nginx html, denies /.env, and recreates only the app.',
+                        'Click Fix static web root — strips the Talksasa welcome page, hoists nested public_html/dist into nginx html, denies /.env, and recreates only the app.',
                         'If the site is actually PHP or Node (index.php / package.json), convert it on that stack instead. Static nginx cannot run those apps.',
                     ],
                     'source' => 'live',
                 ];
+            }
+
+            if ($stack === 'static-site'
+                && $httpStatus !== null
+                && $httpStatus >= 200
+                && $httpStatus < 400
+                && ! $this->findingsContain($findings, ['static_site_empty_docroot', 'static_site_placeholder_homepage'])) {
+                $liveUrl = (string) ($deployment->getAccessUrl() ?? '');
+                $html = $liveUrl !== '' ? $this->probeHttpBody($ssh, $liveUrl) : null;
+                if (app(ContainerAppDirectoryService::class)->htmlLooksLikePlaceholder($html)) {
+                    $findings[] = [
+                        'id' => 'static_site_placeholder_homepage',
+                        'severity' => 'critical',
+                        'title' => 'Bound URL is still the Talksasa welcome page',
+                        'summary' => 'GET / returns HTTP '.$httpStatus.' with “Welcome to Talksasa Cloud”. That HTML is the empty-volume placeholder written at deploy, often sitting in public/index.html. Fix static web root strips it and hoists a real public_html/dist if one exists.',
+                        'evidence' => array_values(array_filter([
+                            'HTTP '.$httpStatus,
+                            $liveUrl,
+                            mb_substr(trim((string) $html), 0, 120),
+                        ])),
+                        'treat_action' => 'fix_static_site_docroot',
+                        'treat_label' => 'Fix static web root',
+                        'manual_steps' => [
+                            'Click Fix static web root — removes the Talksasa welcome page, hoists nested public_html/dist, denies /.env, and recreates only the app.',
+                            'Reload the bound URL. If you then get 403, this tree has no real index.html (often a PHP/Node app that must be converted onto that stack).',
+                        ],
+                        'source' => 'live',
+                    ];
+                }
             }
 
             if (in_array($stack, ['laravel', 'php'], true)
@@ -3289,11 +3318,11 @@ PHP;
                     '/GET \/\.env HTTP\/1\.1" 200 /',
                 ],
                 'title' => 'nginx has no index.html at the web root',
-                'summary' => 'Official nginx:alpine 403s GET / when the bind-mounted web root has no index.html (DirectAdmin files often sit in public_html/ or dist/). The same mis-mount can publish .env as a static file. Lift the nested web files and deny dotfiles.',
+                'summary' => 'Official nginx:alpine 403s GET / when the bind-mounted web root has no index.html (DirectAdmin files often sit in public_html/ or dist/). The same mis-mount can publish .env as a static file. Lift the nested web files, strip the Talksasa welcome placeholder, and deny dotfiles.',
                 'treat_action' => 'fix_static_site_docroot',
                 'treat_label' => 'Fix static web root',
                 'manual_steps' => [
-                    'Click Fix static web root — hoists nested public_html/dist into nginx html, denies /.env, and recreates only the app.',
+                    'Click Fix static web root — strips the Talksasa welcome page, hoists nested public_html/dist into nginx html, denies /.env, and recreates only the app.',
                     'If the tree is a PHP or Node app, convert on that stack. nginx:alpine will not execute index.php.',
                 ],
             ],
@@ -5566,12 +5595,25 @@ PHP;
 
         try {
             $static->flattenWebRoot($ssh, $hostAppPath);
+            $kind = 'empty';
+            try {
+                $kind = trim((string) $ssh->exec($static->webRootKindCommand($hostAppPath), 15));
+            } catch (\Throwable) {
+                $kind = 'empty';
+            }
             $static->persistNginxConfigOnCompose($ssh, $containerPath, $deployment->container_name);
             app(ContainerDeploymentService::class)->restartAppService($ssh, $deployment);
 
+            $message = match ($kind) {
+                'html' => 'Lifted nested web files into the nginx html root, removed the Talksasa welcome page if it was masking the import, and blocked /.env. Reload the site.',
+                'php' => 'Removed the Talksasa welcome page and blocked /.env. This tree has index.php — nginx:alpine will not run PHP. Convert this service onto PHP or Laravel.',
+                'node' => 'Removed the Talksasa welcome page and blocked /.env. This tree has package.json — nginx:alpine will not run Node. Convert this service onto Node.js.',
+                default => 'Removed the Talksasa welcome page and blocked /.env. There is still no index.html at the web root (no public_html/dist to hoist). If this is a PHP or Node app, convert it onto that stack.',
+            };
+
             return [
                 'success' => true,
-                'message' => 'Lifted nested web files into the nginx html root and blocked /.env. Reload the site. If it is still 403, this tree has no index.html (often a PHP/Node app that should not be on the static-site image).',
+                'message' => $message,
             ];
         } catch (\Throwable $e) {
             return ['success' => false, 'message' => 'Failed to fix static web root: '.$e->getMessage()];

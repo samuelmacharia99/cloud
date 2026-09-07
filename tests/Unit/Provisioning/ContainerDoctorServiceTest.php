@@ -4,6 +4,7 @@ namespace Tests\Unit\Provisioning;
 
 use App\Models\ContainerDeployment;
 use App\Models\Service;
+use App\Services\Provisioning\ContainerAppDirectoryService;
 use App\Services\Provisioning\ContainerDoctorService;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -315,6 +316,14 @@ LOG;
         $this->assertNotNull($finding);
         $this->assertSame('fix_static_site_docroot', $finding['treat_action']);
         $this->assertSame('Fix static web root', $finding['treat_label']);
+    }
+
+    #[Test]
+    public function it_treats_the_talksasa_welcome_page_as_a_static_site_placeholder(): void
+    {
+        $this->assertTrue(app(ContainerAppDirectoryService::class)->htmlLooksLikePlaceholder(
+            '<title>Welcome to Talksasa Cloud</title><h1>Welcome to Talksasa Cloud</h1>'
+        ));
     }
 
     #[Test]

@@ -119,6 +119,27 @@ class ContainerGitRepositoryServiceTest extends TestCase
     }
 
     #[Test]
+    public function sync_for_deploy_skips_placeholder_for_static_site(): void
+    {
+        $template = ContainerTemplate::factory()->create(['slug' => 'static-site']);
+        $product = Product::factory()->containerHosting()->create([
+            'container_template_id' => $template->id,
+        ]);
+        $serviceModel = Service::factory()->create([
+            'product_id' => $product->id,
+        ]);
+
+        $ssh = Mockery::mock(SSHService::class);
+        $ssh->shouldReceive('mkdirp')->once()->with('/tmp/static-app');
+        $ssh->shouldNotReceive('exec');
+
+        $git = new ContainerGitRepositoryService(new ContainerAppDirectoryService);
+        $git->syncForDeploy($ssh, $serviceModel->fresh(['product.containerTemplate']), '/tmp/static-app');
+
+        $this->assertFalse($git->supportsService($serviceModel->fresh(['product.containerTemplate'])));
+    }
+
+    #[Test]
     public function it_marks_container_git_directories_as_safe(): void
     {
         $service = new ContainerGitRepositoryService(new ContainerAppDirectoryService);

@@ -22,6 +22,22 @@ class ContainerAppDirectoryServiceTest extends TestCase
     }
 
     #[Test]
+    public function it_skips_the_welcome_placeholder_on_wordpress_and_static_site_deploys(): void
+    {
+        $service = new ContainerAppDirectoryService;
+
+        $this->assertFalse($service->shouldWriteDeployPlaceholder('wordpress'));
+        $this->assertFalse($service->shouldWriteDeployPlaceholder('static-site'));
+        $this->assertTrue($service->shouldWriteDeployPlaceholder('laravel'));
+        $this->assertTrue($service->shouldWriteDeployPlaceholder('nodejs'));
+        $this->assertTrue($service->htmlLooksLikePlaceholder(
+            '<h1>Welcome to Talksasa Cloud</h1><p>Your digital infrastructure partner.</p>'
+        ));
+        $this->assertFalse($service->htmlLooksLikePlaceholder('<h1>Roadtrip</h1>'));
+        $this->assertFalse($service->htmlLooksLikePlaceholder(null));
+    }
+
+    #[Test]
     public function it_treats_application_files_as_blocking(): void
     {
         $service = new ContainerAppDirectoryService;

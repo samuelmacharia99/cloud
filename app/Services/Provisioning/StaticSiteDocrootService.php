@@ -18,7 +18,9 @@ class StaticSiteDocrootService
      */
     public function nestedWebRootNames(): array
     {
-        return ['public_html', 'public', 'dist', 'build', 'www', 'htdocs', 'html', 'web'];
+        // Laravel `public/` is last: deploy writes a Talksasa placeholder there, and hoisting
+        // it makes nginx look healthy while hiding public_html/dist (or a PHP/Node app).
+        return ['public_html', 'dist', 'build', 'www', 'htdocs', 'html', 'web', 'public'];
     }
 
     public function nginxConfigContents(): string
@@ -62,29 +64,57 @@ NGINX;
 
     /**
      * Lift nested DirectAdmin / SPA output so nginx sees index.html at the bind mount root.
+     * The Talksasa welcome page is not a real homepage — strip it before deciding what to hoist.
      */
     public function flattenWebRootCommand(string $hostAppPath): string
     {
         $root = escapeshellarg(rtrim($hostAppPath, '/'));
         $names = implode(' ', array_map('escapeshellarg', $this->nestedWebRootNames()));
+        $marker = escapeshellarg(ContainerAppDirectoryService::PLACEHOLDER_HEADING);
 
         return 'ROOT='.$root.'; '
+            .'MARKER='.$marker.'; '
             .'if [ ! -d "$ROOT" ]; then exit 0; fi; '
-            .'has_html() { [ -f "$1/index.html" ] || [ -f "$1/index.htm" ]; }; '
-            .'if has_html "$ROOT"; then exit 0; fi; '
+            .'is_placeholder() { [ -f "$1/index.html" ] && grep -Fq "$MARKER" "$1/index.html"; }; '
+            .'has_real_html() { '
+            .'  if [ -f "$1/index.htm" ]; then return 0; fi; '
+            .'  [ -f "$1/index.html" ] && ! grep -Fq "$MARKER" "$1/index.html"; '
+            .'}; '
+            .'strip_placeholder() { if is_placeholder "$1"; then rm -f "$1/index.html"; fi; }; '
+            .'strip_placeholder "$ROOT"; '
+            .'strip_placeholder "$ROOT/public"; '
+            .'if has_real_html "$ROOT"; then exit 0; fi; '
             .'NESTED=""; '
             .'for d in '.$names.'; do '
-            .'  if has_html "$ROOT/$d"; then NESTED="$ROOT/$d"; break; fi; '
+            .'  if has_real_html "$ROOT/$d"; then NESTED="$ROOT/$d"; break; fi; '
             .'done; '
             .'if [ -z "$NESTED" ]; then '
             .'  kids=$(find "$ROOT" -mindepth 1 -maxdepth 1 -type d ! -name ".*" 2>/dev/null | wc -l); '
             .'  if [ "$kids" -eq 1 ]; then '
             .'    only=$(find "$ROOT" -mindepth 1 -maxdepth 1 -type d ! -name ".*" 2>/dev/null | head -n 1); '
-            .'    if has_html "$only"; then NESTED="$only"; fi; '
+            .'    if has_real_html "$only"; then NESTED="$only"; fi; '
             .'  fi; '
             .'fi; '
-            .'if [ -z "$NESTED" ]; then exit 0; fi; '
-            .'(cd "$NESTED" && tar cf - .) | (cd "$ROOT" && tar xf -)';
+            .'if [ -n "$NESTED" ]; then (cd "$NESTED" && tar cf - .) | (cd "$ROOT" && tar xf -); fi; '
+            .'strip_placeholder "$ROOT"; '
+            .'strip_placeholder "$ROOT/public"';
+    }
+
+    /**
+     * What nginx would actually serve after flatten (html / php / node / empty / placeholder).
+     */
+    public function webRootKindCommand(string $hostAppPath): string
+    {
+        $root = escapeshellarg(rtrim($hostAppPath, '/'));
+        $marker = escapeshellarg(ContainerAppDirectoryService::PLACEHOLDER_HEADING);
+
+        return 'ROOT='.$root.'; '
+            .'MARKER='.$marker.'; '
+            .'if [ -f "$ROOT/index.html" ] && grep -Fq "$MARKER" "$ROOT/index.html"; then echo placeholder; '
+            .'elif [ -f "$ROOT/index.html" ] || [ -f "$ROOT/index.htm" ]; then echo html; '
+            .'elif [ -f "$ROOT/index.php" ]; then echo php; '
+            .'elif [ -f "$ROOT/package.json" ]; then echo node; '
+            .'else echo empty; fi';
     }
 
     public function flattenWebRoot(SSHService $ssh, string $hostAppPath): void

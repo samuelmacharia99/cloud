@@ -535,7 +535,8 @@ class ContainerGitRepositoryService
         if (! $this->supportsService($service) || $settings['url'] === '') {
             $service->loadMissing('product.containerTemplate');
             // Official wordpress image copies core into an empty volume; placeholders block that.
-            if (($this->templateSlugFor($service) ?? '') !== 'wordpress') {
+            // Static nginx would later hoist public/index.html as a fake Talksasa homepage.
+            if ($this->appDirectory->shouldWriteDeployPlaceholder($this->templateSlugFor($service))) {
                 $this->appDirectory->ensurePlaceholderState($ssh, $hostAppPath);
             }
 

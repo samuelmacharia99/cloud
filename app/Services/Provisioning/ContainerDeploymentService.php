@@ -332,8 +332,9 @@ class ContainerDeploymentService
                 );
 
                 // Host mount is the source of truth for /app; ensure placeholders after compose is up.
-                // WordPress must stay empty so the official image can copy the latest core files.
-                if ($hostAppPath && ($template->slug ?? '') !== 'wordpress') {
+                // WordPress must stay empty so the official image can copy core. Static nginx must
+                // stay empty too — the welcome page is later hoisted as a fake homepage.
+                if ($hostAppPath && $this->appDirectory->shouldWriteDeployPlaceholder($template->slug ?? '')) {
                     $this->appDirectory->ensurePlaceholderState($ssh, $hostAppPath);
                 }
 

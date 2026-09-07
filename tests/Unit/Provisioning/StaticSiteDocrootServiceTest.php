@@ -19,8 +19,84 @@ class StaticSiteDocrootServiceTest extends TestCase
 
         $this->assertStringContainsString('public_html', $cmd);
         $this->assertStringContainsString('dist', $cmd);
-        $this->assertStringContainsString('has_html', $cmd);
+        $this->assertStringContainsString('has_real_html', $cmd);
+        $this->assertStringContainsString('Welcome to Talksasa Cloud', $cmd);
         $this->assertStringContainsString('tar cf -', $cmd);
+        $this->assertSame('public', (new StaticSiteDocrootService)->nestedWebRootNames()[
+            array_key_last((new StaticSiteDocrootService)->nestedWebRootNames())
+        ]);
+    }
+
+    #[Test]
+    public function flatten_command_strips_the_talksasa_placeholder_and_lifts_public_html(): void
+    {
+        $tmp = sys_get_temp_dir().'/static-docroot-'.bin2hex(random_bytes(4));
+        mkdir($tmp.'/public', 0777, true);
+        mkdir($tmp.'/public_html', 0777, true);
+        file_put_contents($tmp.'/index.html', '<h1>Welcome to Talksasa Cloud</h1>');
+        file_put_contents($tmp.'/public/index.html', '<h1>Welcome to Talksasa Cloud</h1>');
+        file_put_contents($tmp.'/public_html/index.html', '<h1>Roadtrip</h1>');
+
+        try {
+            $cmd = (new StaticSiteDocrootService)->flattenWebRootCommand($tmp);
+            exec('sh -lc '.escapeshellarg($cmd), $output, $code);
+
+            $this->assertSame(0, $code);
+            $this->assertStringContainsString('Roadtrip', (string) file_get_contents($tmp.'/index.html'));
+            $this->assertStringNotContainsString(
+                'Welcome to Talksasa Cloud',
+                (string) file_get_contents($tmp.'/index.html')
+            );
+            $this->assertSame('html', $this->webRootKind($tmp));
+        } finally {
+            $this->removeDirectory($tmp);
+        }
+    }
+
+    #[Test]
+    public function flatten_command_does_not_hoist_public_when_it_is_only_the_placeholder(): void
+    {
+        $tmp = sys_get_temp_dir().'/static-docroot-'.bin2hex(random_bytes(4));
+        mkdir($tmp.'/public', 0777, true);
+        file_put_contents($tmp.'/public/index.html', '<h1>Welcome to Talksasa Cloud</h1>');
+        file_put_contents($tmp.'/index.php', '<?php echo "app";');
+
+        try {
+            $cmd = (new StaticSiteDocrootService)->flattenWebRootCommand($tmp);
+            exec('sh -lc '.escapeshellarg($cmd), $output, $code);
+
+            $this->assertSame(0, $code);
+            $this->assertFileDoesNotExist($tmp.'/index.html');
+            $this->assertFileExists($tmp.'/index.php');
+            $this->assertSame('php', $this->webRootKind($tmp));
+        } finally {
+            $this->removeDirectory($tmp);
+        }
+    }
+
+    private function webRootKind(string $path): string
+    {
+        $cmd = (new StaticSiteDocrootService)->webRootKindCommand($path);
+        exec('sh -lc '.escapeshellarg($cmd), $output, $code);
+        $this->assertSame(0, $code);
+
+        return trim(implode("\n", $output));
+    }
+
+    private function removeDirectory(string $path): void
+    {
+        if (! is_dir($path)) {
+            return;
+        }
+
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($path, \FilesystemIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::CHILD_FIRST
+        );
+        foreach ($iterator as $file) {
+            $file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
+        }
+        rmdir($path);
     }
 
     #[Test]

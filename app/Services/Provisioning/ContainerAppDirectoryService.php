@@ -13,12 +13,24 @@ class ContainerAppDirectoryService
 {
     public const PROTECTED_ROOT_ENTRY = '.talksasa';
 
+    public const PLACEHOLDER_HEADING = 'Welcome to Talksasa Cloud';
+
     public const PLACEHOLDER_PATHS = [
         '.keep',
         'index.html',
         'public',
         'public/index.html',
     ];
+
+    public function shouldWriteDeployPlaceholder(?string $templateSlug): bool
+    {
+        return ! in_array($templateSlug, ['wordpress', 'static-site'], true);
+    }
+
+    public function htmlLooksLikePlaceholder(?string $html): bool
+    {
+        return is_string($html) && str_contains($html, self::PLACEHOLDER_HEADING);
+    }
 
     /**
      * @return array<int, string>
