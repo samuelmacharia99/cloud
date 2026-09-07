@@ -5,6 +5,7 @@ namespace App\Services\Provisioning;
 use App\Models\ContainerDeployment;
 use App\Services\SSH\SSHService;
 use Illuminate\Http\UploadedFile;
+use Symfony\Component\Yaml\Yaml;
 
 /**
  * Load an operator-uploaded .sql dump into this service's sidecar database.
@@ -152,16 +153,19 @@ class ContainerSqlDumpImportService
 
     public function sanitizeDumpForSidecar(string $sql): string
     {
+        // Only strip standalone statements. Greedy \bGRANT\b[^;]*; ate INSERT rows
+        // that mentioned GRANT and left a line starting with `\`, which mysql
+        // reports as: Unknown command '\\'.
         $stripped = preg_replace(
             [
-                '/\bCREATE\s+DATABASE\b[^;]*;/is',
-                '/\bDROP\s+DATABASE\b[^;]*;/is',
-                '/\bDROP\s+SCHEMA\b[^;]*;/is',
-                '/\bCREATE\s+USER\b[^;]*;/is',
-                '/\bALTER\s+USER\b[^;]*;/is',
-                '/\bGRANT\b[^;]*;/is',
-                '/\bREVOKE\b[^;]*;/is',
-                '/\bUSE\s+[`\'"]?[A-Za-z0-9_\-]+[`\'"]?\s*;/i',
+                '/^\s*CREATE\s+DATABASE\b[^;]*;/ims',
+                '/^\s*DROP\s+DATABASE\b[^;]*;/im',
+                '/^\s*DROP\s+SCHEMA\b[^;]*;/im',
+                '/^\s*CREATE\s+USER\b[^;]*;/im',
+                '/^\s*ALTER\s+USER\b[^;]*;/im',
+                '/^\s*GRANT\b[^;]*;/im',
+                '/^\s*REVOKE\b[^;]*;/im',
+                '/^\s*USE\s+[`\'"]?[A-Za-z0-9_\-]+[`\'"]?\s*;/im',
                 '/\sDEFINER=(?:`[^`]+`|\'[^\']+\')@(?:`[^`]+`|\'[^\']+\')/i',
             ],
             '',
@@ -173,21 +177,215 @@ class ContainerSqlDumpImportService
 
     public function assertSafeSqlImport(string $sql): void
     {
-        $blocked = [
-            '/\bDROP\s+DATABASE\b/i',
-            '/\bCREATE\s+DATABASE\b/i',
-            '/\bDROP\s+SCHEMA\b/i',
-            '/\bGRANT\s+/i',
-            '/\bREVOKE\s+/i',
-        ];
-
-        foreach ($blocked as $pattern) {
-            if (preg_match($pattern, $sql)) {
-                throw new \InvalidArgumentException(
-                    'SQL file still contains database-level privilege or schema statements after cleanup. Remove them and try again.'
-                );
-            }
+        if (preg_match('/^\s*(CREATE|DROP)\s+DATABASE\b/im', $sql)
+            || preg_match('/^\s*DROP\s+SCHEMA\b/im', $sql)) {
+            throw new \InvalidArgumentException(
+                'SQL file still contains a standalone CREATE/DROP DATABASE statement after cleanup. Remove it and try again.'
+            );
         }
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function splitSqlStatements(string $sql): array
+    {
+        $sql = str_replace(["\r\n", "\r"], "\n", $sql);
+        $statements = [];
+        $current = '';
+        $length = strlen($sql);
+        $i = 0;
+        $state = 'code';
+        $delimiter = ';';
+
+        while ($i < $length) {
+            $ch = $sql[$i];
+            $next = $i + 1 < $length ? $sql[$i + 1] : '';
+
+            if ($state === 'code') {
+                if ($this->startsDelimiterKeyword($sql, $i)) {
+                    $trimmed = trim($current);
+                    if ($trimmed !== '') {
+                        $statements[] = $trimmed;
+                    }
+                    $current = '';
+                    $i += 9;
+                    while ($i < $length && ctype_space($sql[$i])) {
+                        $i++;
+                    }
+                    $new = '';
+                    while ($i < $length && $sql[$i] !== "\n") {
+                        $new .= $sql[$i];
+                        $i++;
+                    }
+                    $delimiter = trim($new) !== '' ? trim($new) : ';';
+                    if ($i < $length && $sql[$i] === "\n") {
+                        $i++;
+                    }
+
+                    continue;
+                }
+
+                if ($ch === '#' || ($ch === '-' && $next === '-')) {
+                    $state = 'linecomment';
+                    $current .= $ch;
+                    $i++;
+
+                    continue;
+                }
+
+                if ($ch === '/' && $next === '*') {
+                    $state = 'blockcomment';
+                    $current .= $ch.$next;
+                    $i += 2;
+
+                    continue;
+                }
+
+                if ($ch === "'") {
+                    $state = 'single';
+                    $current .= $ch;
+                    $i++;
+
+                    continue;
+                }
+
+                if ($ch === '"') {
+                    $state = 'double';
+                    $current .= $ch;
+                    $i++;
+
+                    continue;
+                }
+
+                if ($ch === '`') {
+                    $state = 'backtick';
+                    $current .= $ch;
+                    $i++;
+
+                    continue;
+                }
+
+                $delimLen = strlen($delimiter);
+                if ($delimLen > 0 && substr($sql, $i, $delimLen) === $delimiter) {
+                    $trimmed = trim($current);
+                    if ($trimmed !== '' && ! preg_match('/^DELIMITER\b/i', $trimmed)) {
+                        $statements[] = $trimmed;
+                    }
+                    $current = '';
+                    $i += $delimLen;
+
+                    continue;
+                }
+
+                $current .= $ch;
+                $i++;
+
+                continue;
+            }
+
+            if ($state === 'single') {
+                if ($ch === '\\') {
+                    $current .= $ch.$next;
+                    $i += $next === '' ? 1 : 2;
+
+                    continue;
+                }
+                if ($ch === "'" && $next === "'") {
+                    $current .= "''";
+                    $i += 2;
+
+                    continue;
+                }
+                if ($ch === "'") {
+                    $state = 'code';
+                }
+                $current .= $ch;
+                $i++;
+
+                continue;
+            }
+
+            if ($state === 'double') {
+                if ($ch === '\\') {
+                    $current .= $ch.$next;
+                    $i += $next === '' ? 1 : 2;
+
+                    continue;
+                }
+                if ($ch === '"' && $next === '"') {
+                    $current .= '""';
+                    $i += 2;
+
+                    continue;
+                }
+                if ($ch === '"') {
+                    $state = 'code';
+                }
+                $current .= $ch;
+                $i++;
+
+                continue;
+            }
+
+            if ($state === 'backtick') {
+                if ($ch === '`' && $next === '`') {
+                    $current .= '``';
+                    $i += 2;
+
+                    continue;
+                }
+                if ($ch === '`') {
+                    $state = 'code';
+                }
+                $current .= $ch;
+                $i++;
+
+                continue;
+            }
+
+            if ($state === 'linecomment') {
+                $current .= $ch;
+                if ($ch === "\n") {
+                    $state = 'code';
+                }
+                $i++;
+
+                continue;
+            }
+
+            $current .= $ch;
+            if ($ch === '*' && $next === '/') {
+                $current .= $next;
+                $i += 2;
+                $state = 'code';
+
+                continue;
+            }
+            $i++;
+        }
+
+        $trimmed = trim($current);
+        if ($trimmed !== '' && ! preg_match('/^DELIMITER\b/i', $trimmed)) {
+            $statements[] = $trimmed;
+        }
+
+        return $statements;
+    }
+
+    private function startsDelimiterKeyword(string $sql, int $i): bool
+    {
+        if (strncasecmp(substr($sql, $i, 9), 'DELIMITER', 9) !== 0) {
+            return false;
+        }
+
+        if ($i > 0 && ! ctype_space($sql[$i - 1]) && $sql[$i - 1] !== "\n") {
+            return false;
+        }
+
+        $after = $sql[$i + 9] ?? ' ';
+
+        return $after === '' || ctype_space($after);
     }
 
     /**
@@ -207,40 +405,36 @@ class ContainerSqlDumpImportService
         }
 
         $containerPath = '/opt/talksasa/containers/'.$deployment->container_name;
-        $importDir = $containerPath.'/.db-imports';
-        $ssh->mkdirp($importDir);
+        $dbType = (string) ($databaseContext['type'] ?? '');
 
-        $localDump = tempnam(sys_get_temp_dir(), 'ts-sql-import-');
-        if ($localDump === false) {
-            throw new \RuntimeException('Could not create a temporary file for the SQL dump.');
-        }
-        $localDump .= '.sql';
-        if (file_put_contents($localDump, $sql) === false) {
-            throw new \RuntimeException('Could not write the SQL dump to a temporary file.');
+        if (in_array($dbType, ['mysql', 'mariadb'], true)) {
+            return $this->importMysql($ssh, $deployment, $databaseContext, $containerPath, $sql);
         }
 
-        $remotePath = $importDir.'/import_'.time().'_'.bin2hex(random_bytes(4)).'.sql';
-
-        try {
-            $ssh->uploadFromLocal($localDump, $remotePath);
-
-            $dbType = (string) ($databaseContext['type'] ?? '');
-            if (in_array($dbType, ['mysql', 'mariadb'], true)) {
-                return $this->importMysql($ssh, $deployment, $databaseContext, $containerPath, $remotePath);
+        if ($dbType === 'postgresql') {
+            $importDir = $containerPath.'/.db-imports';
+            $ssh->mkdirp($importDir);
+            $localDump = tempnam(sys_get_temp_dir(), 'ts-sql-import-');
+            if ($localDump === false) {
+                throw new \RuntimeException('Could not create a temporary file for the SQL dump.');
             }
-
-            if ($dbType === 'postgresql') {
-                return $this->importPostgres($ssh, $deployment, $databaseContext, $containerPath, $remotePath);
-            }
-
-            throw new \RuntimeException('SQL import is not supported for this database type');
-        } finally {
-            @unlink($localDump);
+            $localDump .= '.sql';
+            file_put_contents($localDump, $sql);
+            $remotePath = $importDir.'/import_'.time().'_'.bin2hex(random_bytes(4)).'.sql';
             try {
-                $ssh->exec('rm -f '.escapeshellarg($remotePath), 10);
-            } catch (\Throwable) {
+                $ssh->uploadFromLocal($localDump, $remotePath);
+
+                return $this->importPostgres($ssh, $deployment, $databaseContext, $containerPath, $remotePath);
+            } finally {
+                @unlink($localDump);
+                try {
+                    $ssh->exec('rm -f '.escapeshellarg($remotePath), 10);
+                } catch (\Throwable) {
+                }
             }
         }
+
+        throw new \RuntimeException('SQL import is not supported for this database type');
     }
 
     /**
@@ -251,7 +445,7 @@ class ContainerSqlDumpImportService
         ContainerDeployment $deployment,
         array $databaseContext,
         string $containerPath,
-        string $remotePath,
+        string $sql,
     ): string {
         $dbService = (string) ($databaseContext['service'] ?? 'db');
         $database = (string) ($databaseContext['database'] ?? 'appdb');
@@ -284,16 +478,130 @@ class ContainerSqlDumpImportService
             );
         }
 
-        $command = $this->migrator->buildMysqlDumpImportCommand(
-            $containerPath,
-            $dbService,
-            $remotePath,
-            $importUser,
-            $importPass,
-            $database,
-        );
+        $statements = $this->splitSqlStatements($sql);
+        if ($statements === []) {
+            throw new \RuntimeException('SQL dump contained no executable statements after cleanup.');
+        }
 
-        return $ssh->exec($command, 600);
+        $appRoot = $containerPath.'/app';
+        $ssh->mkdirp($appRoot);
+        $localJsonl = tempnam(sys_get_temp_dir(), 'ts-sql-jsonl-');
+        if ($localJsonl === false) {
+            throw new \RuntimeException('Could not create a temporary file for SQL statements.');
+        }
+        $handle = fopen($localJsonl, 'wb');
+        if ($handle === false) {
+            @unlink($localJsonl);
+            throw new \RuntimeException('Could not write SQL statements for import.');
+        }
+        try {
+            foreach ($statements as $statement) {
+                fwrite($handle, json_encode($statement, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)."\n");
+            }
+        } finally {
+            fclose($handle);
+        }
+
+        $token = bin2hex(random_bytes(4));
+        $remoteJsonl = $appRoot.'/.talksasa-import-'.$token.'.jsonl';
+        $remotePhp = $appRoot.'/.talksasa-import-'.$token.'.php';
+        $localPhp = $localJsonl.'.php';
+        file_put_contents($localPhp, $this->pdoDumpImporterScript());
+
+        try {
+            $ssh->uploadFromLocal($localJsonl, $remoteJsonl);
+            $ssh->uploadFromLocal($localPhp, $remotePhp);
+            $appService = $this->composeAppService($ssh, $deployment, $containerPath);
+
+            $command = 'cd '.escapeshellarg($containerPath)
+                .' && docker compose exec -T'
+                .' -e TS_IMPORT_HOST='.escapeshellarg($dbService)
+                .' -e TS_IMPORT_DB='.escapeshellarg($database)
+                .' -e TS_IMPORT_USER='.escapeshellarg($importUser)
+                .' -e TS_IMPORT_PASS='.escapeshellarg($importPass)
+                .' '.escapeshellarg($appService)
+                .' php '.escapeshellarg('/app/.talksasa-import-'.$token.'.php')
+                .' '.escapeshellarg('/app/.talksasa-import-'.$token.'.jsonl');
+
+            return $ssh->exec($command, 600);
+        } finally {
+            @unlink($localJsonl);
+            @unlink($localPhp);
+            try {
+                $ssh->exec(
+                    'rm -f '.escapeshellarg($remoteJsonl).' '.escapeshellarg($remotePhp),
+                    10
+                );
+            } catch (\Throwable) {
+            }
+        }
+    }
+
+    public function pdoDumpImporterScript(): string
+    {
+        return <<<'PHP'
+<?php
+$host = (string) getenv('TS_IMPORT_HOST');
+$db = (string) getenv('TS_IMPORT_DB');
+$user = (string) getenv('TS_IMPORT_USER');
+$pass = (string) getenv('TS_IMPORT_PASS');
+$file = $argv[1] ?? '';
+if ($host === '' || $db === '' || $user === '' || $file === '' || ! is_file($file)) {
+    fwrite(STDERR, "Import script is missing database settings or the statement file.\n");
+    exit(1);
+}
+$pdo = new PDO(
+    'mysql:host='.$host.';port=3306;dbname='.$db.';charset=utf8mb4',
+    $user,
+    $pass,
+    [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+);
+$pdo->exec('SET NAMES utf8mb4');
+$handle = fopen($file, 'rb');
+if ($handle === false) {
+    fwrite(STDERR, "Could not read import statements.\n");
+    exit(1);
+}
+$count = 0;
+try {
+    while (($line = fgets($handle)) !== false) {
+        $line = trim($line);
+        if ($line === '') {
+            continue;
+        }
+        $statement = json_decode($line, true);
+        if (! is_string($statement) || trim($statement) === '') {
+            throw new RuntimeException('Invalid statement payload at statement '.($count + 1));
+        }
+        $pdo->exec($statement);
+        $count++;
+    }
+} finally {
+    fclose($handle);
+}
+fwrite(STDOUT, 'Imported '.$count." SQL statements via PDO.\n");
+PHP;
+    }
+
+    private function composeAppService(
+        SSHService $ssh,
+        ContainerDeployment $deployment,
+        string $containerPath,
+    ): string {
+        try {
+            $yaml = trim($ssh->exec('cat '.escapeshellarg($containerPath.'/docker-compose.yml'), 15));
+            $compose = Yaml::parse($yaml);
+            if (is_array($compose)) {
+                $key = app(ContainerDeploymentService::class)
+                    ->resolveComposeAppServiceKey($compose, $deployment->container_name);
+                if (is_string($key) && $key !== '') {
+                    return $key;
+                }
+            }
+        } catch (\Throwable) {
+        }
+
+        return $deployment->container_name;
     }
 
     /**

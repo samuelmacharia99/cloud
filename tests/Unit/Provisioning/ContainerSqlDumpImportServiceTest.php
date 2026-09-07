@@ -42,6 +42,33 @@ SQL;
     }
 
     #[Test]
+    public function it_keeps_grant_and_use_text_inside_insert_rows(): void
+    {
+        $dump = <<<'SQL'
+INSERT INTO `wp_options` VALUES (1,'sql','please GRANT ALL; then USE `other`;');
+GRANT ALL PRIVILEGES ON `digiworl_roadtrip`.* TO 'digiworl'@'%';
+SQL;
+
+        $sanitized = $this->importer()->sanitizeDumpForSidecar($dump);
+
+        $this->assertStringContainsString('please GRANT ALL; then USE `other`;', $sanitized);
+        $this->assertStringNotContainsString('GRANT ALL PRIVILEGES', $sanitized);
+        $this->importer()->assertSafeSqlImport($sanitized);
+    }
+
+    #[Test]
+    public function it_splits_statements_without_breaking_backslash_newlines_in_strings(): void
+    {
+        $dump = "INSERT INTO `t` VALUES ('foo\n\\bar');\nINSERT INTO `u` VALUES (1);\n";
+
+        $statements = $this->importer()->splitSqlStatements($dump);
+
+        $this->assertCount(2, $statements);
+        $this->assertSame("INSERT INTO `t` VALUES ('foo\n\\bar')", $statements[0]);
+        $this->assertSame('INSERT INTO `u` VALUES (1)', $statements[1]);
+    }
+
+    #[Test]
     public function it_strips_definer_clauses_from_views(): void
     {
         $dump = "CREATE ALGORITHM=UNDEFINED DEFINER=`digiworl`@`localhost` SQL SECURITY DEFINER VIEW `v` AS SELECT 1;\n";
@@ -57,7 +84,7 @@ SQL;
     public function it_rejects_leftover_database_level_statements(): void
     {
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('database-level');
+        $this->expectExceptionMessage('CREATE/DROP DATABASE');
 
         $this->importer()->assertSafeSqlImport('CREATE DATABASE leftover_db;');
     }
