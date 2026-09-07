@@ -72,6 +72,40 @@ class ContainerBackupNotificationEmailOnlyTest extends TestCase
         });
     }
 
+    public function test_backup_completed_does_not_email_reseller_owned_customers(): void
+    {
+        Mail::fake();
+
+        $reseller = User::factory()->reseller()->create();
+        $customer = User::factory()->customer()->create([
+            'reseller_id' => $reseller->id,
+            'email' => 'reseller-customer@example.com',
+        ]);
+        $node = Node::factory()->containerHost()->create();
+        $product = Product::factory()->containerHosting()->create();
+        $service = Service::factory()->create([
+            'user_id' => $customer->id,
+            'reseller_id' => $reseller->id,
+            'product_id' => $product->id,
+            'node_id' => $node->id,
+            'name' => 'Reseller App',
+        ]);
+        $deployment = ContainerDeployment::factory()->create([
+            'service_id' => $service->id,
+            'node_id' => $node->id,
+        ]);
+        $backup = ContainerBackup::factory()->create([
+            'container_deployment_id' => $deployment->id,
+            'service_id' => $service->id,
+            'node_id' => $node->id,
+            'status' => 'completed',
+        ]);
+
+        app(NotificationService::class)->notifyContainerBackupCompleted($service->fresh('user'), $backup);
+
+        Mail::assertNothingSent();
+    }
+
     public function test_backup_failed_sends_admin_email_but_not_sms(): void
     {
         Mail::fake();

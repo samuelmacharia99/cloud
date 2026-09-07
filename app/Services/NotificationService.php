@@ -860,6 +860,11 @@ class NotificationService
 
     public function notifyContainerBackupCompleted(Service $service, ContainerBackup $backup): void
     {
+        $service->loadMissing('user');
+        if ($this->isResellerOwnedService($service)) {
+            return;
+        }
+
         $event = NotificationEvent::ContainerBackupCompleted;
         if (! $this->emailDelivery->mailConfiguredFor($service->user) || ! $this->preferences->isGloballyEnabled($event)) {
             return;
@@ -1692,5 +1697,14 @@ EOT;
             'reseller_id' => $reseller->id,
             'count' => $count,
         ]);
+    }
+
+    /**
+     * End customers on a reseller book — platform backup mail is ops, not their inbox.
+     */
+    private function isResellerOwnedService(Service $service): bool
+    {
+        return $service->reseller_id !== null
+            || $service->user?->reseller_id !== null;
     }
 }
