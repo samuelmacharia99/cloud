@@ -916,6 +916,24 @@ LOG;
         );
         $this->assertSame('mysql', $wordpress['WORDPRESS_DB_HOST']);
         $this->assertSame('wp-secret', $wordpress['WORDPRESS_DB_PASSWORD']);
+
+        $probe = app(ContainerDoctorService::class)->envForRuntimeDatabaseProbe(
+            [
+                'DB_DATABASE' => 's373_db',
+                'DB_USERNAME' => 'u488_s373',
+                'DB_PASSWORD' => 'panel-password',
+                'DATABASE_URL' => 'mysql://u488_s373:panel-password@mysql:3306/s373_db',
+                'WORDPRESS_DB_HOST' => 'mysql:3306',
+                'WORDPRESS_DB_NAME' => 'wordpress',
+                'WORDPRESS_DB_USER' => 'wordpress',
+                'WORDPRESS_DB_PASSWORD' => 'wp-secret',
+            ],
+            'mysql'
+        );
+        $this->assertSame('wordpress', $probe['DB_DATABASE']);
+        $this->assertSame('wordpress', $probe['DB_USERNAME']);
+        $this->assertSame('wp-secret', $probe['DB_PASSWORD']);
+        $this->assertSame('mysql', $probe['DB_HOST']);
     }
 
     #[Test]

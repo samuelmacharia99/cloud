@@ -1656,13 +1656,18 @@ class ContainerController extends Controller
             default => null,
         };
 
+        $mysqlHost = app(ContainerDeploymentService::class)->splitDatabaseHostAndPort(
+            (string) ($env['WORDPRESS_DB_HOST'] ?? $env['DB_HOST'] ?? $dbService),
+            $env['DB_PORT'] ?? '3306'
+        );
+
         return match ($type) {
             'mysql', 'mariadb' => [
                 'available' => true,
                 'type' => $type,
                 'service' => $dbService,
-                'host' => $env['WORDPRESS_DB_HOST'] ?? $env['DB_HOST'] ?? $dbService,
-                'port' => $env['DB_PORT'] ?? '3306',
+                'host' => $mysqlHost['host'],
+                'port' => $mysqlHost['port'],
                 'database' => $env['WORDPRESS_DB_NAME']
                     ?? $env['DB_DATABASE']
                     ?? ($env['MYSQL_DATABASE'] ?? 'appdb'),

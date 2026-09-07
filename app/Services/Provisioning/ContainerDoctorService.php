@@ -1672,6 +1672,28 @@ PHP;
             }
         }
 
+        if (in_array($databaseType, ['mysql', 'mariadb'], true)
+            && app(ContainerDeploymentService::class)->envLooksLikeWordpress($probe)) {
+            if (trim((string) ($probe['WORDPRESS_DB_NAME'] ?? '')) !== '') {
+                $probe['DB_DATABASE'] = (string) $probe['WORDPRESS_DB_NAME'];
+            }
+            if (trim((string) ($probe['WORDPRESS_DB_USER'] ?? '')) !== '') {
+                $probe['DB_USERNAME'] = (string) $probe['WORDPRESS_DB_USER'];
+            }
+            if (trim((string) ($probe['WORDPRESS_DB_PASSWORD'] ?? '')) !== '') {
+                $probe['DB_PASSWORD'] = (string) $probe['WORDPRESS_DB_PASSWORD'];
+                $probe['MYSQL_PASSWORD'] = (string) $probe['WORDPRESS_DB_PASSWORD'];
+            }
+            if (trim((string) ($probe['WORDPRESS_DB_HOST'] ?? '')) !== '') {
+                $split = app(ContainerDeploymentService::class)->splitDatabaseHostAndPort(
+                    (string) $probe['WORDPRESS_DB_HOST'],
+                    $probe['DB_PORT'] ?? '3306'
+                );
+                $probe['DB_HOST'] = $split['host'];
+                $probe['DB_PORT'] = $split['port'];
+            }
+        }
+
         return $probe;
     }
 
@@ -4024,18 +4046,20 @@ PHP;
                 app(ContainerEnvironmentService::class)
                     ->syncDotEnvFile($ssh, $service, $deployment, $envVars);
 
-                try {
-                    $deploymentService->persistLaravelRuntimeDriversOnCompose(
-                        $ssh,
-                        $deployment->fresh(),
-                        $envVars,
-                        $service
-                    );
-                } catch (\Throwable $e) {
-                    \Log::warning('Doctor could not write DB_* into compose after credential repair', [
-                        'service_id' => $service->id,
-                        'error' => $e->getMessage(),
-                    ]);
+                if ($stack !== 'wordpress') {
+                    try {
+                        $deploymentService->persistLaravelRuntimeDriversOnCompose(
+                            $ssh,
+                            $deployment->fresh(),
+                            $envVars,
+                            $service
+                        );
+                    } catch (\Throwable $e) {
+                        \Log::warning('Doctor could not write DB_* into compose after credential repair', [
+                            'service_id' => $service->id,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
                 }
 
                 try {
@@ -4135,6 +4159,7 @@ PHP;
 
         $candidates = [];
         foreach ([
+            (string) ($env['WORDPRESS_DB_PASSWORD'] ?? ''),
             (string) ($env['DB_PASSWORD'] ?? ''),
             (string) ($env['POSTGRES_PASSWORD'] ?? ''),
             (string) ($env['MYSQL_PASSWORD'] ?? ''),
@@ -4162,6 +4187,9 @@ PHP;
             $try['DB_PASSWORD'] = $password;
             $try['POSTGRES_PASSWORD'] = $password;
             $try['MYSQL_PASSWORD'] = $password;
+            if (app(ContainerDeploymentService::class)->envLooksLikeWordpress($env)) {
+                $try['WORDPRESS_DB_PASSWORD'] = $password;
+            }
             $probe = $deploymentService->probeApplicationDatabaseAccess(
                 $ssh,
                 $deployment->container_name,

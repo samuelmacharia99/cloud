@@ -1036,11 +1036,13 @@ class ContainerDeploymentService
     public function composeRuntimeEnvironmentOverrides(ContainerDeployment $deployment, array $drivers = []): array
     {
         $fromEnv = is_array($deployment->env_values) ? $deployment->env_values : [];
-        $defaults = [
-            'SESSION_DRIVER' => 'file',
-            'CACHE_STORE' => 'file',
-            'CACHE_DRIVER' => 'file',
-        ];
+        $defaults = $this->envLooksLikeWordpress($fromEnv)
+            ? []
+            : [
+                'SESSION_DRIVER' => 'file',
+                'CACHE_STORE' => 'file',
+                'CACHE_DRIVER' => 'file',
+            ];
         $httpsOrigin = $this->httpsOriginForBoundDomain($deployment);
         if ($httpsOrigin !== null) {
             $appUrl = trim((string) ($fromEnv['APP_URL'] ?? ''));
@@ -1067,6 +1069,7 @@ class ContainerDeploymentService
         foreach ([
             'DB_CONNECTION', 'DB_HOST', 'DB_PORT', 'DB_DATABASE', 'DB_USERNAME', 'DB_PASSWORD',
             'MYSQL_DATABASE', 'MYSQL_USER', 'MYSQL_PASSWORD', 'MYSQL_HOST', 'DATABASE_URL',
+            'WORDPRESS_DB_HOST', 'WORDPRESS_DB_NAME', 'WORDPRESS_DB_USER', 'WORDPRESS_DB_PASSWORD',
             'POSTGRES_DB', 'POSTGRES_USER', 'POSTGRES_PASSWORD', 'TALKSASA_DB_DNS',
             'SESSION_DRIVER', 'CACHE_STORE', 'CACHE_DRIVER', 'APP_URL', 'ASSET_URL',
         ] as $key) {
@@ -2526,20 +2529,36 @@ class ContainerDeploymentService
             }
         }
 
-        $username = (string) (
-            $env['DB_USERNAME']
-            ?? $env['POSTGRES_USER']
-            ?? $env['MYSQL_USER']
-            ?? $canonical['username']
-        );
-        $database = (string) (
-            $env['DB_DATABASE']
-            ?? $env['POSTGRES_DB']
-            ?? $env['MYSQL_DATABASE']
-            ?? ''
-        );
+        $wordpress = $this->envLooksLikeWordpress($env);
+        if ($wordpress) {
+            $username = (string) (
+                $env['WORDPRESS_DB_USER']
+                ?? $env['MYSQL_USER']
+                ?? $env['DB_USERNAME']
+                ?: 'wordpress'
+            );
+            $database = (string) (
+                $env['WORDPRESS_DB_NAME']
+                ?? $env['MYSQL_DATABASE']
+                ?? $env['DB_DATABASE']
+                ?: 'wordpress'
+            );
+        } else {
+            $username = (string) (
+                $env['DB_USERNAME']
+                ?? $env['POSTGRES_USER']
+                ?? $env['MYSQL_USER']
+                ?? $canonical['username']
+            );
+            $database = (string) (
+                $env['DB_DATABASE']
+                ?? $env['POSTGRES_DB']
+                ?? $env['MYSQL_DATABASE']
+                ?? ''
+            );
+        }
 
-        $looksLikeUsernameAsDatabase = $database !== '' && (
+        $looksLikeUsernameAsDatabase = ! $wordpress && $database !== '' && (
             $database === $username
             || $database === $canonical['username']
             || (bool) preg_match('/^u\d+_s\d+$/', $database)
@@ -2549,7 +2568,7 @@ class ContainerDeploymentService
         $passwordAligned = false;
         $previous = $database !== '' ? $database : null;
 
-        if ($database === '' || $looksLikeUsernameAsDatabase) {
+        if (! $wordpress && ($database === '' || $looksLikeUsernameAsDatabase)) {
             $database = $canonical['database'];
             $corrected = ($previous !== $database);
         }
@@ -2589,14 +2608,16 @@ class ContainerDeploymentService
         } elseif (in_array($databaseType, ['mysql', 'mariadb'], true)) {
             $dbPassword = trim((string) ($env['DB_PASSWORD'] ?? ''));
             $sidecarPassword = trim((string) ($env['MYSQL_PASSWORD'] ?? ''));
+            $wordpressPassword = trim((string) ($env['WORDPRESS_DB_PASSWORD'] ?? ''));
             $urlPassword = $this->passwordFromDatabaseUrl($env['DATABASE_URL'] ?? null);
-            $password = $this->resolveAlignedDatabasePassword($env, [
-                'DB_PASSWORD',
-                'MYSQL_PASSWORD',
-                'MYSQL_ROOT_PASSWORD',
-            ], $env['DATABASE_URL'] ?? null);
+            $password = $this->resolveAlignedDatabasePassword($env, $wordpress
+                ? ['WORDPRESS_DB_PASSWORD', 'MYSQL_PASSWORD', 'DB_PASSWORD', 'MYSQL_ROOT_PASSWORD']
+                : ['DB_PASSWORD', 'MYSQL_PASSWORD', 'MYSQL_ROOT_PASSWORD'], $env['DATABASE_URL'] ?? null);
 
-            if ($this->databasePasswordsConflict([$dbPassword, $sidecarPassword, $urlPassword])) {
+            $conflict = $wordpress
+                ? [$wordpressPassword !== '' ? $wordpressPassword : $dbPassword, $sidecarPassword, $urlPassword]
+                : [$dbPassword, $sidecarPassword, $urlPassword];
+            if ($this->databasePasswordsConflict($conflict)) {
                 $passwordAligned = true;
                 $corrected = true;
             }
@@ -2609,8 +2630,19 @@ class ContainerDeploymentService
             $env['MYSQL_DATABASE'] = $database;
             $env['MYSQL_USER'] = $env['DB_USERNAME'];
             $env['DB_CONNECTION'] = (string) (($env['DB_CONNECTION'] ?? '') !== '' ? $env['DB_CONNECTION'] : 'mysql');
-            $env['DB_HOST'] = (string) (($env['DB_HOST'] ?? '') !== '' ? $env['DB_HOST'] : 'db');
-            $env['DB_PORT'] = (string) (($env['DB_PORT'] ?? '') !== '' ? $env['DB_PORT'] : '3306');
+            $defaultHost = $wordpress ? 'mysql' : 'db';
+            $rawHost = (string) (($env['WORDPRESS_DB_HOST'] ?? '') !== ''
+                ? $env['WORDPRESS_DB_HOST']
+                : (($env['DB_HOST'] ?? '') !== '' ? $env['DB_HOST'] : $defaultHost));
+            $split = $this->splitDatabaseHostAndPort($rawHost, $env['DB_PORT'] ?? '3306');
+            $env['DB_HOST'] = $split['host'];
+            $env['DB_PORT'] = $split['port'];
+            if ($wordpress) {
+                $env['WORDPRESS_DB_HOST'] = $split['host'];
+                $env['WORDPRESS_DB_NAME'] = $database;
+                $env['WORDPRESS_DB_USER'] = $env['DB_USERNAME'];
+                $env['WORDPRESS_DB_PASSWORD'] = $password;
+            }
             $env['DATABASE_URL'] = sprintf(
                 'mysql://%s:%s@%s:%s/%s',
                 rawurlencode($env['DB_USERNAME']),
@@ -3386,7 +3418,7 @@ class ContainerDeploymentService
      * @param  array<string, mixed>  $envVars
      * @return array{database: string, username: string, password: string}
      */
-    private function applicationDatabaseCredentials(array $envVars, string $databaseType): array
+    public function applicationDatabaseCredentials(array $envVars, string $databaseType): array
     {
         if ($databaseType === 'postgresql') {
             return [
@@ -3396,11 +3428,46 @@ class ContainerDeploymentService
             ];
         }
 
+        if ($this->envLooksLikeWordpress($envVars)) {
+            return [
+                'database' => (string) ($envVars['WORDPRESS_DB_NAME'] ?? $envVars['MYSQL_DATABASE'] ?? $envVars['DB_DATABASE'] ?? 'wordpress'),
+                'username' => (string) ($envVars['WORDPRESS_DB_USER'] ?? $envVars['MYSQL_USER'] ?? $envVars['DB_USERNAME'] ?? 'wordpress'),
+                'password' => (string) ($envVars['WORDPRESS_DB_PASSWORD'] ?? $envVars['MYSQL_PASSWORD'] ?? $envVars['DB_PASSWORD'] ?? ''),
+            ];
+        }
+
         return [
             'database' => (string) ($envVars['DB_DATABASE'] ?? $envVars['MYSQL_DATABASE'] ?? $envVars['WORDPRESS_DB_NAME'] ?? 'appdb'),
             'username' => (string) ($envVars['DB_USERNAME'] ?? $envVars['MYSQL_USER'] ?? $envVars['WORDPRESS_DB_USER'] ?? 'appuser'),
             'password' => (string) ($envVars['DB_PASSWORD'] ?? $envVars['MYSQL_PASSWORD'] ?? $envVars['WORDPRESS_DB_PASSWORD'] ?? ''),
         ];
+    }
+
+    /**
+     * Official WordPress compose uses WORDPRESS_DB_* — not Laravel s{id}_db / u{user}_s{id}.
+     *
+     * @param  array<string, mixed>  $envVars
+     */
+    public function envLooksLikeWordpress(array $envVars): bool
+    {
+        return trim((string) ($envVars['WORDPRESS_DB_NAME'] ?? '')) !== ''
+            || trim((string) ($envVars['WORDPRESS_DB_USER'] ?? '')) !== ''
+            || trim((string) ($envVars['WORDPRESS_DB_HOST'] ?? '')) !== ''
+            || trim((string) ($envVars['WORDPRESS_DB_PASSWORD'] ?? '')) !== '';
+    }
+
+    /**
+     * @return array{host: string, port: string}
+     */
+    public function splitDatabaseHostAndPort(string $host, string|int|null $defaultPort = '3306'): array
+    {
+        $host = trim($host);
+        $defaultPort = (string) ($defaultPort !== null && (string) $defaultPort !== '' ? $defaultPort : '3306');
+        if (preg_match('/^(.+):(\d+)$/', $host, $matched) === 1) {
+            return ['host' => $matched[1], 'port' => $matched[2]];
+        }
+
+        return ['host' => $host !== '' ? $host : 'db', 'port' => $defaultPort];
     }
 
     /**

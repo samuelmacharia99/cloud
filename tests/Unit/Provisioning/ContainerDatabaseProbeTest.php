@@ -210,5 +210,13 @@ class ContainerDatabaseProbeTest extends TestCase
         $this->assertStringContainsString('mysqli', $script);
         $this->assertStringNotContainsString('new PDO', $script);
         $this->assertStringNotContainsString('secret', $script);
+
+        $identity = $service->applicationDatabaseCredentials($env, 'mysql');
+        $this->assertSame('wordpress', $identity['database']);
+        $this->assertSame('wordpress', $identity['username']);
+        $this->assertSame('secret', $identity['password']);
+
+        $split = $service->splitDatabaseHostAndPort('mysql:3306', '3306');
+        $this->assertSame(['host' => 'mysql', 'port' => '3306'], $split);
     }
 }

@@ -125,6 +125,37 @@ class ContainerDatabaseEnvironmentTest extends TestCase
         $this->assertStringNotContainsString('old-sidecar-password', urldecode($result['env']['DATABASE_URL']));
     }
 
+    public function test_normalize_keeps_wordpress_identity_instead_of_canonical_laravel_ids(): void
+    {
+        $service = new Service;
+        $service->id = 373;
+        $service->user_id = 488;
+
+        $result = (new ContainerDeploymentService)->normalizeDatabaseEnvironment($service, [
+            'DB_DATABASE' => 's373_db',
+            'DB_USERNAME' => 'u488_s373',
+            'DB_PASSWORD' => 'panel-password',
+            'DB_HOST' => 'db',
+            'WORDPRESS_DB_HOST' => 'mysql:3306',
+            'WORDPRESS_DB_NAME' => 'wordpress',
+            'WORDPRESS_DB_USER' => 'wordpress',
+            'WORDPRESS_DB_PASSWORD' => 'wp-secret',
+        ], 'mysql');
+
+        $this->assertSame('wordpress', $result['database']);
+        $this->assertSame('wordpress', $result['username']);
+        $this->assertSame('wordpress', $result['env']['WORDPRESS_DB_NAME']);
+        $this->assertSame('wordpress', $result['env']['WORDPRESS_DB_USER']);
+        $this->assertSame('wp-secret', $result['env']['WORDPRESS_DB_PASSWORD']);
+        $this->assertSame('wp-secret', $result['env']['DB_PASSWORD']);
+        $this->assertSame('mysql', $result['env']['WORDPRESS_DB_HOST']);
+        $this->assertSame('mysql', $result['env']['DB_HOST']);
+        $this->assertSame('3306', $result['env']['DB_PORT']);
+        $this->assertStringContainsString('wordpress:wp-secret@mysql:3306/wordpress', urldecode($result['env']['DATABASE_URL']));
+        $this->assertStringNotContainsString('s373_db', $result['env']['DATABASE_URL']);
+        $this->assertStringNotContainsString('u488_s373', $result['env']['DATABASE_URL']);
+    }
+
     /**
      * @param  array<string, string>  $env
      * @return array<string, string>
