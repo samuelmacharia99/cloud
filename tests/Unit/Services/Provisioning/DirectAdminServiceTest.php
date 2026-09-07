@@ -176,6 +176,30 @@ class DirectAdminServiceTest extends TestCase
         });
     }
 
+    public function test_directory_entries_are_fetched_in_parallel_chunks(): void
+    {
+        Http::fake(function ($request) {
+            $user = strtolower((string) ($request['user'] ?? 'unknown'));
+
+            return Http::response(json_encode([
+                'error' => '0',
+                'domain' => $user.'.example.test',
+                'package' => 'Business',
+                'email' => 'info@'.$user.'.example.test',
+                'suspended' => 'no',
+            ]), 200);
+        });
+
+        $entries = (new DirectAdminService($this->createDirectAdminNode()))
+            ->getAccountDirectoryEntries(['Site_A', 'site_b', '']);
+
+        $this->assertCount(2, $entries);
+        $this->assertSame('site_a', $entries[0]['username']);
+        $this->assertSame('site_a.example.test', $entries[0]['domain']);
+        $this->assertSame('site_b', $entries[1]['username']);
+        Http::assertSentCount(2);
+    }
+
     public function test_sum_disk_usage_for_reseller_users_totals_all_hosted_accounts(): void
     {
         Http::fake(function ($request) {

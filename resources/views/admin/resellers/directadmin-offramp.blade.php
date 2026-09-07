@@ -43,6 +43,11 @@
                 <p class="text-slate-600 dark:text-slate-400 mt-1">
                     Convert {{ $reseller->name }}'s remaining DirectAdmin users. Each row shows whether a container exists, the current step, and any error.
                 </p>
+                @if (filled($reseller->directadmin_username))
+                    <p class="text-xs text-slate-500 mt-2">
+                        DirectAdmin user list is cached for a few minutes so this page does not wait on the panel for every reload.
+                    </p>
+                @endif
             </div>
             <a href="{{ route('admin.resellers.show', ['user' => $reseller, 'tab' => 'services']) }}" class="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm">
                 Back to reseller
@@ -71,6 +76,11 @@
                 <h2 class="font-semibold text-lg">Accounts</h2>
                 <div class="flex items-center gap-3 text-sm text-slate-500">
                     <span x-text="`${rows.length} account${rows.length === 1 ? '' : 's'}`"></span>
+                    @if (filled($reseller->directadmin_username))
+                        <a href="{{ route('admin.resellers.directadmin-offramp', ['user' => $reseller, 'refresh' => 1]) }}" class="px-3 py-1.5 border border-slate-300 dark:border-slate-600 rounded-lg text-sm text-slate-700 dark:text-slate-200">
+                            Refresh from DirectAdmin
+                        </a>
+                    @endif
                     <button form="da-import-packages" class="px-3 py-1.5 border border-slate-300 dark:border-slate-600 rounded-lg text-sm text-slate-700 dark:text-slate-200">
                         Import DA packages
                     </button>

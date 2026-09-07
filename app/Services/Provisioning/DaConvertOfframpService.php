@@ -18,6 +18,7 @@ use App\Services\ResellerDirectAdminService;
 use App\Services\ResellerHostedAccountLinkService;
 use App\Services\ResellerScopeService;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
@@ -25,6 +26,16 @@ use InvalidArgumentException;
 class DaConvertOfframpService
 {
     public const QUEUE = 'da-convert';
+
+    public const LIVE_DA_USER_LIST_TTL = 180;
+
+    public const LIVE_DA_ENTRY_TTL = 300;
+
+    /** @var array<int, Collection<int, Domain>> */
+    private array $resellerDomainIndex = [];
+
+    /** @var array<int, DaConvertBatchItem|null>|null */
+    private ?array $latestItemsByServiceId = null;
 
     public function __construct(
         private DirectAdminToContainerConvertService $convert,
@@ -60,7 +71,7 @@ class DaConvertOfframpService
      *
      * @return Collection<int, array<string, mixed>>
      */
-    public function eligibleAccounts(User $reseller): Collection
+    public function eligibleAccounts(User $reseller, bool $refreshLiveDa = false): Collection
     {
         $managed = $this->scope->managedServicesQuery($reseller)
             ->with(['user', 'product', 'node', 'latestDaAccountSnapshot', 'containerDeployment'])
@@ -68,13 +79,18 @@ class DaConvertOfframpService
             ->get();
 
         $rows = [];
+        $skipLiveConfig = [];
 
         foreach ($managed as $service) {
+            $username = $this->serviceDaUsername($service);
+            if ($username !== '') {
+                $skipLiveConfig[$username] = true;
+            }
+
             if (! $service->isSharedHosting()) {
                 continue;
             }
 
-            $username = $this->serviceDaUsername($service);
             $domain = $this->serviceHostname($service);
             if ($this->shouldHideFromOfframp($reseller, $username, $domain, $managed)) {
                 continue;
@@ -84,7 +100,7 @@ class DaConvertOfframpService
             $rows[$key] = $this->accountFromService($service, $key, $username, $domain);
         }
 
-        foreach ($this->liveDirectAdminEntries($reseller) as $entry) {
+        foreach ($this->liveDirectAdminEntries($reseller, array_keys($skipLiveConfig), $refreshLiveDa) as $entry) {
             $username = strtolower(trim((string) ($entry['username'] ?? '')));
             if ($username === '') {
                 continue;
@@ -802,12 +818,7 @@ class DaConvertOfframpService
             return false;
         }
 
-        $domains = Domain::query()
-            ->where(function ($query) use ($reseller) {
-                $query->where('user_id', $reseller->id)
-                    ->orWhereHas('user', fn ($user) => $user->where('reseller_id', $reseller->id));
-            })
-            ->get();
+        $domains = $this->domainsForReseller($reseller);
 
         $domain = $domains->first(function (Domain $row) use ($hostname): bool {
             $fqdn = strtolower($row->fqdn());
@@ -860,10 +871,18 @@ class DaConvertOfframpService
         })->values();
     }
 
+    public function forgetLiveDirectAdminCache(User $reseller): void
+    {
+        $generation = $this->liveDaCacheGeneration($reseller);
+        Cache::forget($this->liveDaUserListCacheKey($reseller, $generation));
+        Cache::forever($this->liveDaCacheGenerationKey($reseller), $generation + 1);
+    }
+
     /**
+     * @param  list<string>  $skipUsernames
      * @return list<array{username: string, domain: ?string, package: ?string, email: ?string, name: ?string, suspended: bool}>
      */
-    private function liveDirectAdminEntries(User $reseller): array
+    private function liveDirectAdminEntries(User $reseller, array $skipUsernames = [], bool $refresh = false): array
     {
         if (! $this->resellerDirectAdmin->hasDirectAdminBinding($reseller)) {
             return [];
@@ -874,15 +893,60 @@ class DaConvertOfframpService
             return [];
         }
 
-        $usernames = $da->listUsersOwnedByReseller((string) $reseller->directadmin_username) ?? [];
-        $entries = [];
-        foreach ($usernames as $username) {
+        if ($refresh) {
+            $this->forgetLiveDirectAdminCache($reseller);
+        }
+
+        $skip = [];
+        foreach ($skipUsernames as $username) {
             $username = strtolower(trim((string) $username));
+            if ($username !== '') {
+                $skip[$username] = true;
+            }
+        }
+
+        $generation = $this->liveDaCacheGeneration($reseller);
+        $usernames = Cache::remember(
+            $this->liveDaUserListCacheKey($reseller, $generation),
+            self::LIVE_DA_USER_LIST_TTL,
+            fn (): array => array_values(array_filter(array_map(
+                static fn (mixed $username): string => strtolower(trim((string) $username)),
+                $da->listUsersOwnedByReseller((string) $reseller->directadmin_username) ?? []
+            )))
+        );
+
+        $needed = [];
+        foreach ($usernames as $username) {
+            if ($username === '' || isset($skip[$username])) {
+                continue;
+            }
+            $needed[] = $username;
+        }
+
+        $entries = [];
+        $missing = [];
+        foreach ($needed as $username) {
+            $cached = Cache::get($this->liveDaEntryCacheKey($reseller, $generation, $username));
+            if (is_array($cached) && ($cached['username'] ?? '') === $username) {
+                $entries[] = $cached;
+
+                continue;
+            }
+            $missing[] = $username;
+        }
+
+        foreach ($da->getAccountDirectoryEntries($missing) as $entry) {
+            $username = strtolower(trim((string) ($entry['username'] ?? '')));
             if ($username === '') {
                 continue;
             }
-            $entry = $da->getAccountDirectoryEntry($username);
-            $entries[] = $entry ?? [
+            Cache::put($this->liveDaEntryCacheKey($reseller, $generation, $username), $entry, self::LIVE_DA_ENTRY_TTL);
+            $entries[] = $entry;
+            $missing = array_values(array_filter($missing, fn (string $row): bool => $row !== $username));
+        }
+
+        foreach ($missing as $username) {
+            $entries[] = [
                 'username' => $username,
                 'domain' => null,
                 'package' => null,
@@ -893,6 +957,44 @@ class DaConvertOfframpService
         }
 
         return $entries;
+    }
+
+    private function liveDaCacheGeneration(User $reseller): int
+    {
+        return max(1, (int) Cache::get($this->liveDaCacheGenerationKey($reseller), 1));
+    }
+
+    private function liveDaCacheGenerationKey(User $reseller): string
+    {
+        return 'da-offramp.gen.'.$reseller->id;
+    }
+
+    private function liveDaUserListCacheKey(User $reseller, int $generation): string
+    {
+        return 'da-offramp.users.'.$reseller->id.'.'.$generation;
+    }
+
+    private function liveDaEntryCacheKey(User $reseller, int $generation, string $username): string
+    {
+        return 'da-offramp.entry.'.$reseller->id.'.'.$generation.'.'.$username;
+    }
+
+    /**
+     * @return Collection<int, Domain>
+     */
+    private function domainsForReseller(User $reseller): Collection
+    {
+        $id = (int) $reseller->id;
+        if (! isset($this->resellerDomainIndex[$id])) {
+            $this->resellerDomainIndex[$id] = Domain::query()
+                ->where(function ($query) use ($reseller) {
+                    $query->where('user_id', $reseller->id)
+                        ->orWhereHas('user', fn ($user) => $user->where('reseller_id', $reseller->id));
+                })
+                ->get();
+        }
+
+        return $this->resellerDomainIndex[$id];
     }
 
     /**
@@ -1032,9 +1134,9 @@ class DaConvertOfframpService
      *
      * @return Collection<int, array<string, mixed>>
      */
-    public function boardAccounts(User $reseller): Collection
+    public function boardAccounts(User $reseller, bool $refreshLiveDa = false): Collection
     {
-        $rows = $this->eligibleAccounts($reseller)->keyBy('key');
+        $rows = $this->eligibleAccounts($reseller, $refreshLiveDa)->keyBy('key');
 
         foreach ($this->openConvertItems($reseller) as $item) {
             $service = $item->service;
@@ -1055,6 +1157,8 @@ class DaConvertOfframpService
                 $this->serviceHostname($service)
             );
         }
+
+        $this->primeLatestConvertItems($reseller, $rows);
 
         return $rows
             ->map(fn (array $account): array => $this->presentBoardAccount($reseller, $account))
@@ -1271,12 +1375,53 @@ class DaConvertOfframpService
 
     public function latestItemForService(User $reseller, Service $service): ?DaConvertBatchItem
     {
+        if (is_array($this->latestItemsByServiceId) && array_key_exists((int) $service->id, $this->latestItemsByServiceId)) {
+            return $this->latestItemsByServiceId[(int) $service->id];
+        }
+
         $items = DaConvertBatchItem::query()
             ->where('service_id', $service->id)
             ->whereHas('batch', fn ($query) => $query->where('reseller_user_id', $reseller->id))
             ->latest('id')
             ->get();
 
+        return $this->pickPreferredConvertItem($items);
+    }
+
+    /**
+     * @param  Collection<string, array<string, mixed>>  $rows
+     */
+    private function primeLatestConvertItems(User $reseller, Collection $rows): void
+    {
+        $ids = $rows
+            ->map(fn (array $account): ?int => $account['service'] instanceof Service ? (int) $account['service']->id : null)
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $this->latestItemsByServiceId = array_fill_keys($ids, null);
+        if ($ids === []) {
+            return;
+        }
+
+        $grouped = DaConvertBatchItem::query()
+            ->whereIn('service_id', $ids)
+            ->whereHas('batch', fn ($query) => $query->where('reseller_user_id', $reseller->id))
+            ->orderByDesc('id')
+            ->get()
+            ->groupBy('service_id');
+
+        foreach ($grouped as $serviceId => $items) {
+            $this->latestItemsByServiceId[(int) $serviceId] = $this->pickPreferredConvertItem($items);
+        }
+    }
+
+    /**
+     * @param  Collection<int, DaConvertBatchItem>  $items
+     */
+    private function pickPreferredConvertItem(Collection $items): ?DaConvertBatchItem
+    {
         return $items->first(fn (DaConvertBatchItem $item): bool => in_array($item->status, [
             DaConvertBatchItemStatus::WaitingDns,
             DaConvertBatchItemStatus::WaitingMx,

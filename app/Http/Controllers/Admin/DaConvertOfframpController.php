@@ -17,11 +17,13 @@ use App\Services\Provisioning\DaResellerPackageImportService;
 use App\Services\Provisioning\DirectAdminToContainerConvertService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 class DaConvertOfframpController extends Controller
 {
     public function show(
+        Request $request,
         User $user,
         DaConvertOfframpService $offramp,
         DirectAdminToContainerConvertService $convert,
@@ -29,13 +31,24 @@ class DaConvertOfframpController extends Controller
     ): View {
         abort_if(! $user->is_reseller, 404);
 
-        foreach ($offramp->openConvertItems($user) as $item) {
-            if ($item->service?->containerDeployment) {
+        $refresh = $request->boolean('refresh');
+        if ($refresh) {
+            foreach ($offramp->openConvertItems($user) as $item) {
+                if (! $item->service?->containerDeployment) {
+                    continue;
+                }
+                if (! in_array($item->status, [
+                    DaConvertBatchItemStatus::Converted,
+                    DaConvertBatchItemStatus::WaitingDns,
+                    DaConvertBatchItemStatus::WaitingMx,
+                ], true)) {
+                    continue;
+                }
                 $offramp->refreshCutoverStatus($item);
             }
         }
 
-        $accounts = $offramp->boardAccounts($user);
+        $accounts = $offramp->boardAccounts($user, $refresh);
         $services = $accounts
             ->pluck('service')
             ->filter()

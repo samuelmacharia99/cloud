@@ -366,6 +366,56 @@ class AdminDaConvertOfframpTest extends TestCase
             ->assertSee('Not on Talksasa yet');
     }
 
+    public function test_offramp_does_not_fetch_da_config_for_accounts_already_on_the_platform(): void
+    {
+        [$admin, $reseller, $ready] = $this->board();
+        $readyUser = strtolower((string) ($ready->service_meta['username'] ?? $ready->external_reference));
+        $da = Mockery::mock(DirectAdminService::class);
+        $da->shouldReceive('listUsersOwnedByReseller')->andReturn([$readyUser, 'ghostuser']);
+        $da->shouldReceive('getAccountDirectoryEntries')
+            ->once()
+            ->with(Mockery::on(function (array $usernames) use ($readyUser): bool {
+                $normalized = array_map('strtolower', $usernames);
+
+                return in_array('ghostuser', $normalized, true)
+                    && ! in_array($readyUser, $normalized, true);
+            }))
+            ->andReturn([[
+                'username' => 'ghostuser',
+                'domain' => 'ghost.example.test',
+                'package' => 'Business',
+                'email' => null,
+                'name' => null,
+                'suspended' => false,
+            ]]);
+        $da->shouldReceive('getAccountDirectoryEntry')->never();
+
+        $node = Node::factory()->create([
+            'type' => 'directadmin',
+            'api_url' => 'https://da.example.test:2222',
+            'is_active' => true,
+        ]);
+        $reseller->forceFill([
+            'directadmin_username' => 'res_acme',
+            'directadmin_login_key' => 'login-key',
+            'reseller_node_id' => $node->id,
+            'country' => 'KE',
+        ])->save();
+        $this->mock(ResellerDirectAdminService::class, function ($mock) use ($da, $node) {
+            $mock->shouldReceive('hasDirectAdminBinding')->andReturn(true);
+            $mock->shouldReceive('directAdmin')->andReturn($da);
+            $mock->shouldReceive('resolveNode')->andReturn($node);
+            $mock->shouldReceive('listAssignablePackages')->andReturn(['packages' => [], 'error' => null])->byDefault();
+        });
+
+        $this->actingAs($admin)
+            ->get(route('admin.resellers.directadmin-offramp', $reseller))
+            ->assertOk()
+            ->assertSee('ghostuser')
+            ->assertSee('ghost.example.test')
+            ->assertSee('Refresh from DirectAdmin');
+    }
+
     public function test_offramp_hides_accounts_already_on_a_cloudflare_container(): void
     {
         [$admin, $reseller] = $this->board();
@@ -573,6 +623,17 @@ class AdminDaConvertOfframpTest extends TestCase
         $usernames = array_map(fn (array $entry): string => strtolower((string) $entry['username']), $entries);
         $da = Mockery::mock(DirectAdminService::class);
         $da->shouldReceive('listUsersOwnedByReseller')->andReturn($usernames);
+        $da->shouldReceive('getAccountDirectoryEntries')->andReturnUsing(function (array $usernames) use ($entries): array {
+            $wanted = array_fill_keys(array_map('strtolower', $usernames), true);
+            $matched = [];
+            foreach ($entries as $entry) {
+                if (isset($wanted[strtolower((string) $entry['username'])])) {
+                    $matched[] = $entry;
+                }
+            }
+
+            return $matched;
+        });
         $da->shouldReceive('getAccountDirectoryEntry')->andReturnUsing(function (string $username) use ($entries): ?array {
             foreach ($entries as $entry) {
                 if (strtolower((string) $entry['username']) === strtolower($username)) {

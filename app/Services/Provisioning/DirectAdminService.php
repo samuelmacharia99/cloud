@@ -7,6 +7,8 @@ use App\Models\Node;
 use App\Models\Service;
 use App\Models\Setting;
 use App\Services\DirectAdminNodeHealthService;
+use Illuminate\Http\Client\Pool;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -515,16 +517,81 @@ class DirectAdminService
      */
     public function getAccountDirectoryEntry(string $username): ?array
     {
-        if (! $this->isConfigured() || blank($username)) {
-            return null;
+        $entries = $this->getAccountDirectoryEntries([$username]);
+
+        return $entries[0] ?? null;
+    }
+
+    /**
+     * Fetch DirectAdmin user configs concurrently. Sequential SHOW_USER_CONFIG
+     * is what made the off-ramp wait on every page load.
+     *
+     * @param  list<string>  $usernames
+     * @return list<array{username: string, domain: ?string, package: ?string, email: ?string, name: ?string, suspended: bool}>
+     */
+    public function getAccountDirectoryEntries(array $usernames): array
+    {
+        if (! $this->isConfigured()) {
+            return [];
         }
 
-        $config = $this->executeAdminApiCall('CMD_API_SHOW_USER_CONFIG', ['user' => $username]);
-        if (! $config['success']) {
-            return null;
+        $wanted = [];
+        foreach ($usernames as $username) {
+            $username = strtolower(trim((string) $username));
+            if ($username !== '') {
+                $wanted[$username] = true;
+            }
+        }
+        $wanted = array_keys($wanted);
+        if ($wanted === []) {
+            return [];
         }
 
-        $data = $config['data'];
+        $entries = [];
+        foreach (array_chunk($wanted, 8) as $chunk) {
+            $responses = Http::pool(function (Pool $pool) use ($chunk) {
+                $requests = [];
+                foreach ($chunk as $username) {
+                    $pending = $pool->as($username)
+                        ->timeout(30)
+                        ->withBasicAuth($this->username, $this->password);
+                    if ($this->node && ($this->node->verify_ssl ?? true) === false) {
+                        $pending = $pending->withoutVerifying();
+                    }
+                    $requests[$username] = $pending->get(
+                        rtrim($this->apiUrl, '/').'/CMD_API_SHOW_USER_CONFIG',
+                        ['user' => $username, 'json' => 'yes']
+                    );
+                }
+
+                return $requests;
+            });
+
+            foreach ($chunk as $username) {
+                $response = $responses[$username] ?? null;
+                if (! $response instanceof Response) {
+                    continue;
+                }
+
+                $config = $this->decodeUserApiResponse($response->body(), $response->status());
+                if (! $config['success']) {
+                    continue;
+                }
+
+                $entries[] = $this->mapAccountDirectoryEntry($username, $config['data']);
+            }
+        }
+
+        return $entries;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array{username: string, domain: ?string, package: ?string, email: ?string, name: ?string, suspended: bool}
+     */
+    private function mapAccountDirectoryEntry(string $username, array $data): array
+    {
+        $data = $this->flattenResponseValues($data);
 
         return [
             'username' => strtolower(trim($username)),
