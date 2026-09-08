@@ -62,8 +62,9 @@
             <div>
                 <h3 class="font-semibold text-amber-900 dark:text-amber-200 mb-1">Important Notice</h3>
                 <p class="text-sm text-amber-800 dark:text-amber-300">
-                    App files and database volumes are copied to the target node (brief downtime while the archive is created).
-                    DNS/proxy bindings may need a moment to settle after cutover. Prefer migrating during a maintenance window for large sites.
+                    App files and compose config are copied (brief downtime while the archive is created).
+                    Named database volumes stay on the source Docker engine — Repair DB credentials or restore a backup after cutover if the sidecar is empty.
+                    The domain proxy is rebound to the new node. Prefer a maintenance window for large sites.
                 </p>
             </div>
         </div>

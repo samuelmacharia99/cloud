@@ -1,9 +1,13 @@
-#!/bin/bash
-# Talksasa Container Node Setup & Optimization Script
-# For: Ubuntu 22.04 LTS with 1.8TB × 2 RAID 1, 64GB RAM
+#!/usr/bin/env bash
+# Talksasa Container Node Setup
+# Ubuntu 22.04 / 24.04 (Hetzner cloud or dedicated).
 # Run as: sudo bash setup-container-node.sh
+#
+# For a new cloud VPS, bootstrap-container-node.sh is enough.
+# This script also tunes Docker, UFW, fail2ban, and optional RAID monitors.
 
-set -e
+set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -44,18 +48,18 @@ fi
 
 log_info "=== SECTION 1: System Updates & Tools ==="
 
-apt update
-apt upgrade -y
+apt-get update -y
+apt-get upgrade -y
 
-# Install essential tools
-apt install -y \
+# nethogs is optional (the old typo "nethows" is not a package and aborts set -e).
+apt-get install -y \
+    ca-certificates \
     curl \
     wget \
     git \
     vim \
     htop \
     iotop \
-    nethows \
     jq \
     net-tools \
     ufw \
@@ -63,8 +67,29 @@ apt install -y \
     chrony \
     lm-sensors \
     sysstat \
+    gnupg \
+    lsb-release \
     mdadm \
     lvm2
+apt-get install -y nethogs || log_warn "nethogs not available; continuing"
+
+if ! command -v docker >/dev/null 2>&1; then
+    log_info "Installing Docker Engine + Compose plugin"
+    install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+    chmod a+r /etc/apt/keyrings/docker.gpg
+    echo \
+        "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+        $(. /etc/os-release && echo "${VERSION_CODENAME}") stable" > /etc/apt/sources.list.d/docker.list
+    apt-get update -y
+    apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    systemctl enable --now docker
+else
+    log_success "Docker already installed"
+fi
+
+apt-get install -y nginx certbot python3-certbot-nginx
+systemctl enable --now nginx
 
 log_success "System updated and tools installed"
 
@@ -74,12 +99,12 @@ log_success "System updated and tools installed"
 
 log_info "=== SECTION 2: RAID Monitoring ==="
 
-# Check RAID status
-echo "RAID Array Status:"
-cat /proc/mdstat
+if grep -qE '^md[0-9]+' /proc/mdstat 2>/dev/null; then
+    echo "RAID Array Status:"
+    cat /proc/mdstat
 
-# Create mdadm monitoring config
-cat > /etc/mdadm/mdadm.conf << 'EOF'
+    mkdir -p /etc/mdadm
+    cat > /etc/mdadm/mdadm.conf << 'EOF'
 # mdadm.conf
 ARRAY /dev/md0 metadata=1.2
 ARRAY /dev/md1 metadata=1.2
@@ -89,18 +114,17 @@ MONITOR
   ALERT /usr/local/bin/raid-alert.sh
 EOF
 
-# Create alert script
-cat > /usr/local/bin/raid-alert.sh << 'EOF'
+    cat > /usr/local/bin/raid-alert.sh << 'EOF'
 #!/bin/bash
-# RAID degradation alert
 echo "CRITICAL: RAID array degradation detected!" | \
     mail -s "CRITICAL: RAID Alert on $(hostname)" root
 EOF
-chmod +x /usr/local/bin/raid-alert.sh
-
-systemctl restart mdadm-monitor || true
-
-log_success "RAID monitoring configured"
+    chmod +x /usr/local/bin/raid-alert.sh
+    systemctl restart mdadm-monitor || true
+    log_success "RAID monitoring configured"
+else
+    log_warn "No software RAID arrays — skipping mdadm monitor (normal on Hetzner cloud)"
+fi
 
 # ============================================================================
 # SECTION 3: Storage Optimization
@@ -133,48 +157,31 @@ log_success "Storage directories prepared"
 
 log_info "=== SECTION 4: Docker Daemon Configuration ==="
 
-# Stop Docker daemon
+install -d -m 0755 /etc/docker
 systemctl stop docker || true
 
-# Create optimized daemon.json
+# overlay2.override_kernel_check was removed in Docker 23+ and makes dockerd
+# exit 1 on Ubuntu 24.04. Keep this file aligned with bootstrap-container-node.sh.
 cat > /etc/docker/daemon.json << 'EOF'
 {
-  "debug": false,
   "log-driver": "json-file",
   "log-opts": {
     "max-size": "10m",
     "max-file": "3"
   },
   "storage-driver": "overlay2",
-  "storage-opts": [
-    "overlay2.override_kernel_check=true"
-  ],
-  "insecure-registries": [],
   "live-restore": true,
   "userland-proxy": false,
-  "icc": false,
-  "default-ulimits": {
-    "nofile": {
-      "Name": "nofile",
-      "Hard": 65536,
-      "Soft": 65536
-    },
-    "nproc": {
-      "Name": "nproc",
-      "Hard": 65536,
-      "Soft": 65536
-    }
-  },
   "max-concurrent-downloads": 10,
   "max-concurrent-uploads": 10,
-  "metrics-addr": "127.0.0.1:9323",
-  "experimental": false
+  "metrics-addr": "127.0.0.1:9323"
 }
 EOF
 
-# Fix permissions
 chmod 644 /etc/docker/daemon.json
-
+systemctl daemon-reload
+systemctl enable --now docker
+sleep 2
 log_success "Docker daemon configuration optimized"
 
 # ============================================================================
@@ -258,6 +265,8 @@ ufw default allow outgoing > /dev/null
 
 # Allow SSH (CRITICAL!)
 ufw allow 22/tcp > /dev/null
+ufw allow 80/tcp > /dev/null
+ufw allow 443/tcp > /dev/null
 
 # Allow container ports (30000-40000)
 ufw allow 30000:40000/tcp > /dev/null
@@ -279,23 +288,15 @@ ufw status numbered | tail -20
 
 log_info "=== SECTION 8: SSH Security ==="
 
-# Backup original sshd_config
+# Do not disable root or password login on a fresh cloud image — that locks
+# you out when the only session is root@... as on Hetzner rescue/cloud.
 cp /etc/ssh/sshd_config /etc/ssh/sshd_config.backup.$(date +%s)
-
-# Apply security settings
-sed -i 's/#PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
 sed -i 's/#PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
-sed -i 's/#PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
 sed -i 's/#PermitEmptyPasswords.*/PermitEmptyPasswords no/' /etc/ssh/sshd_config
 sed -i 's/#X11Forwarding.*/X11Forwarding no/' /etc/ssh/sshd_config
-sed -i 's/#MaxAuthTries.*/MaxAuthTries 3/' /etc/ssh/sshd_config
-
-# Verify SSH config
 sshd -t && log_success "SSH configuration valid" || log_error "SSH config error"
-
-systemctl reload sshd
-
-log_success "SSH hardened"
+systemctl reload ssh || systemctl reload sshd || true
+log_warn "Root login left enabled. After you add a sudo user and SSH keys, disable PasswordAuthentication yourself."
 
 # ============================================================================
 # SECTION 9: Fail2ban Configuration
@@ -452,7 +453,8 @@ sleep 3
 if docker ps > /dev/null 2>&1; then
     log_success "Docker daemon started successfully"
 else
-    log_error "Docker daemon failed to start!"
+    log_error "Docker daemon failed to start. Last dockerd lines:"
+    journalctl -u docker.service -n 20 --no-pager || true
     exit 1
 fi
 

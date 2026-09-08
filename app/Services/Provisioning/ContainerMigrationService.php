@@ -83,6 +83,7 @@ class ContainerMigrationService
             try {
                 $this->deploymentService->ensureComposeFileExists($targetSsh, $freshDeployment);
                 $this->deploymentService->startComposeStack($targetSsh, $service->fresh(), $freshDeployment);
+                $this->deploymentService->rebindDeploymentDomains($service->fresh(), $freshDeployment->fresh());
             } finally {
                 $targetSsh->disconnect();
             }
@@ -258,16 +259,34 @@ class ContainerMigrationService
         }
     }
 
+    /**
+     * New hosts have no compose directory yet. `@$ssh->exec` does not swallow
+     * SSHCommandException — a missing path aborted migrate of service 454.
+     */
+    public function stopComposeIfPresent(SSHService $ssh, string $containerPath): void
+    {
+        try {
+            $ssh->exec(
+                'cd '.escapeshellarg($containerPath).' && docker compose -f docker-compose.yml down -v',
+                120
+            );
+        } catch (\Throwable) {
+        }
+    }
+
     private function unpackContainerOnNode(Node $node, string $containerName, string $remoteArchive): void
     {
         $ssh = SSHService::forNode($node);
         try {
             $containerPath = self::CONTAINER_BASE_PATH.'/'.$containerName;
-            @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml down -v", 120);
-            @$ssh->deleteDir($containerPath);
-            $ssh->exec('mkdir -p '.self::CONTAINER_BASE_PATH);
+            $this->stopComposeIfPresent($ssh, $containerPath);
+            try {
+                $ssh->deleteDir($containerPath);
+            } catch (\Throwable) {
+            }
+            $ssh->exec('mkdir -p '.escapeshellarg(self::CONTAINER_BASE_PATH));
             $ssh->exec(
-                'tar -xzf '.escapeshellarg($remoteArchive).' -C '.self::CONTAINER_BASE_PATH,
+                'tar -xzf '.escapeshellarg($remoteArchive).' -C '.escapeshellarg(self::CONTAINER_BASE_PATH),
                 self::TRANSFER_TIMEOUT
             );
         } finally {
@@ -304,8 +323,8 @@ class ContainerMigrationService
             $containerPath = self::CONTAINER_BASE_PATH.'/'.$containerName;
 
             try {
-                @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml down -v", 120);
-                @$ssh->deleteDir($containerPath);
+                $this->stopComposeIfPresent($ssh, $containerPath);
+                $ssh->deleteDir($containerPath);
             } finally {
                 $ssh->disconnect();
             }

@@ -6959,6 +6959,11 @@ class ContainerDeploymentService
         }
     }
 
+    public function rebindDeploymentDomains(Service $service, ContainerDeployment $latestDeployment): void
+    {
+        $this->reattachAndRebindDomains($service, $latestDeployment);
+    }
+
     private function reattachAndBindPrimaryDomains(Service $service, ContainerDeployment $latestDeployment): void
     {
         $this->reattachAndRebindDomains($service, $latestDeployment);
