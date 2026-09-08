@@ -10,6 +10,26 @@ class ContainerTemplate extends Model
 {
     use HasFactory;
 
+    /**
+     * Official Node images offered by the deployment version picker.
+     *
+     * @return list<string>
+     */
+    public static function nodeRuntimeVersions(): array
+    {
+        return [
+            '18-alpine',
+            '20-alpine',
+            '22-alpine',
+            '18-slim',
+            '20-slim',
+            '22-slim',
+            '18',
+            '20',
+            '22',
+        ];
+    }
+
     protected $fillable = [
         'slug',
         'name',

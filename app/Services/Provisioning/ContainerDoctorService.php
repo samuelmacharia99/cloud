@@ -2,6 +2,7 @@
 
 namespace App\Services\Provisioning;
 
+use App\Models\ContainerTemplate;
 use App\Models\Service;
 use App\Services\AdminActivityService;
 use App\Services\SSH\SSHService;
@@ -6152,19 +6153,12 @@ PHP;
             return ['success' => false, 'message' => 'Node.js deployment not found.'];
         }
 
-        $versions = is_array($template->versions)
-            ? $template->versions
-            : (json_decode((string) $template->versions, true) ?: []);
-        $currentImage = strtolower((string) ($deployment->docker_compose_content ?? $template->docker_image ?? ''));
-        $version = str_contains($currentImage, 'slim') ? '22-slim' : '22-alpine';
-        if (! in_array($version, $versions, true)) {
-            $version = in_array('22', $versions, true) ? '22' : '';
-        }
-        if ($version === '') {
-            return ['success' => false, 'message' => 'The Node template does not offer a Node 22 image.'];
-        }
-
-        $image = app(ContainerDeploymentService::class)->resolveTemplateDockerImage($template, $version);
+        $selection = $this->node22RuntimeSelection(
+            $template,
+            (string) $deployment->docker_compose_content
+        );
+        $version = $selection['version'];
+        $image = $selection['image'];
         $ssh = SSHService::forNode($deployment->node);
         try {
             $ssh->exec('docker pull '.escapeshellarg($image), 900, false);
@@ -6186,6 +6180,32 @@ PHP;
         $result['message'] = 'Runtime upgraded to '.$image.'. '.$result['message'];
 
         return $result;
+    }
+
+    /**
+     * Existing production rows may predate Node 22 because the original seeder
+     * used firstOrCreate. Resolve against the canonical list immediately while
+     * the data migration persists that list for all future version pickers.
+     *
+     * @return array{version: string, image: string}
+     */
+    public function node22RuntimeSelection(ContainerTemplate $template, string $compose = ''): array
+    {
+        $versions = is_array($template->versions)
+            ? $template->versions
+            : (json_decode((string) $template->versions, true) ?: []);
+        $template->setAttribute('versions', array_values(array_unique(array_merge(
+            $versions,
+            ContainerTemplate::nodeRuntimeVersions(),
+        ))));
+
+        $currentImage = strtolower($compose !== '' ? $compose : (string) $template->docker_image);
+        $version = str_contains($currentImage, 'slim') ? '22-slim' : '22-alpine';
+
+        return [
+            'version' => $version,
+            'image' => app(ContainerDeploymentService::class)->resolveTemplateDockerImage($template, $version),
+        ];
     }
 
     /**

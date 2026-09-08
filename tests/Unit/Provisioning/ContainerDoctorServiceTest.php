@@ -3,6 +3,7 @@
 namespace Tests\Unit\Provisioning;
 
 use App\Models\ContainerDeployment;
+use App\Models\ContainerTemplate;
 use App\Models\Service;
 use App\Services\Provisioning\ContainerAppDirectoryService;
 use App\Services\Provisioning\ContainerDoctorService;
@@ -165,6 +166,24 @@ LOG;
         $this->assertSame('Upgrade to Node 22', $finding['treat_label']);
         $this->assertTrue($doctor->bootstrapLogsLookFatal($logs));
         $this->assertNull($doctor->recentLogsIndicateBootstrapProgress($logs));
+    }
+
+    #[Test]
+    public function node_22_upgrade_works_when_the_persisted_template_versions_are_stale(): void
+    {
+        $template = new ContainerTemplate([
+            'slug' => 'nodejs',
+            'docker_image' => 'node:20-alpine',
+            'versions' => ['18-alpine', '20-alpine'],
+        ]);
+
+        $selection = app(ContainerDoctorService::class)
+            ->node22RuntimeSelection($template, 'image: node:20-alpine');
+
+        $this->assertSame('22-alpine', $selection['version']);
+        $this->assertSame('node:22-alpine', $selection['image']);
+        $this->assertContains('22-slim', ContainerTemplate::nodeRuntimeVersions());
+        $this->assertContains('22', ContainerTemplate::nodeRuntimeVersions());
     }
 
     #[Test]
