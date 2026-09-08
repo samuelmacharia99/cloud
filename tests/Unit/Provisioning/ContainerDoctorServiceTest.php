@@ -134,7 +134,7 @@ user-493-service-454-nodejs     | This project is configured to use npm because 
 LOG;
 
         $doctor = app(ContainerDoctorService::class);
-        $this->assertNotNull($doctor->recentLogsIndicateBootstrapProgress($recent));
+        $this->assertNull($doctor->recentLogsIndicateBootstrapProgress($recent));
         $this->assertNull($doctor->recentLogsIndicateBootstrapProgress($recent, $compose));
         $this->assertTrue($doctor->bootstrapLogsLookFatal($compose));
 
@@ -142,6 +142,29 @@ LOG;
         $ids = array_column($findings, 'id');
         $this->assertContains('node_package_manager_mismatch', $ids);
         $this->assertContains('postgres_role_missing', $ids);
+    }
+
+    #[Test]
+    public function node_20_engine_mismatch_is_fatal_and_offers_node_22_upgrade(): void
+    {
+        $logs = <<<'LOG'
+npm warn EBADENGINE Unsupported engine {
+npm warn EBADENGINE   package: 'sameplan@0.1.0',
+npm warn EBADENGINE   required: { node: '>=22' },
+npm warn EBADENGINE   current: { node: 'v20.20.2', npm: '10.8.2' }
+npm warn EBADENGINE }
+added 1059 packages in 20s
+LOG;
+
+        $doctor = app(ContainerDoctorService::class);
+        $finding = collect($doctor->analyzeLogs($logs, 'nodejs'))
+            ->firstWhere('id', 'node_runtime_too_old');
+
+        $this->assertNotNull($finding);
+        $this->assertSame('upgrade_node_runtime', $finding['treat_action']);
+        $this->assertSame('Upgrade to Node 22', $finding['treat_label']);
+        $this->assertTrue($doctor->bootstrapLogsLookFatal($logs));
+        $this->assertNull($doctor->recentLogsIndicateBootstrapProgress($logs));
     }
 
     #[Test]

@@ -80,6 +80,7 @@ class ContainerDoctorService
             && ! in_array($action, [
                 'recreate_application',
                 'fix_vite_production_runtime',
+                'upgrade_node_runtime',
                 'switch_php_production_runtime',
                 'restart_application',
                 'import_da_database',
@@ -127,6 +128,7 @@ class ContainerDoctorService
             'restart_application' => $this->treatRestartApplication($service),
             'recreate_application' => $this->treatRecreateApplication($service),
             'fix_vite_production_runtime' => $this->treatFixViteProductionRuntime($service),
+            'upgrade_node_runtime' => $this->treatUpgradeNodeRuntime($service),
             'switch_php_production_runtime' => $this->treatSwitchPhpProductionRuntime($service),
             'run_migrations' => $this->treatRunMigrations($service),
             'migrate_fresh' => $this->treatMigrateFresh($service),
@@ -1162,6 +1164,7 @@ class ContainerDoctorService
                     'mysql_unix_socket_missing',
                     'npm_workspace_protocol',
                     'node_package_manager_mismatch',
+                    'node_runtime_too_old',
                     'postgres_role_missing',
                 ]);
 
@@ -1452,6 +1455,7 @@ class ContainerDoctorService
             $drop = ['mysql_connection_refused', 'live_db_connection_failed'];
         } elseif (in_array('npm_workspace_protocol', $ids, true)
             || in_array('node_package_manager_mismatch', $ids, true)
+            || in_array('node_runtime_too_old', $ids, true)
             || in_array('postgres_role_missing', $ids, true)) {
             $drop = ['live_bootstrap_in_progress', 'live_upstream_unreachable', 'container_crash_loop'];
         } elseif (array_intersect($ids, [
@@ -3348,8 +3352,8 @@ PHP;
      * install finishes and hide crash loops (wrong package manager, missing role).
      */
     private const BOOTSTRAP_LOG_PATTERNS = [
-        '/npm warn (idealTree|reify|tar|EBADENGINE|config)/i',
-        '/idealTree|reify|audited \d+ packages|added \d+ packages|changed \d+ packages/i',
+        '/npm warn (idealTree|reify|tar|config)/i',
+        '/idealTree|reify/i',
         '/(vite|next|nuxt|astro|tsc|webpack) build|building for production|creating an optimized production build/i',
         '/transforming\b|rendering chunks|computing gzip size/i',
         '/(collecting|downloading|installing) [a-z0-9._-]+/i',
@@ -3363,6 +3367,7 @@ PHP;
         '/This project is configured to use (npm|pnpm|yarn)/i',
         '/has a "packageManager" field/i',
         '/FATAL:\s+role "[^"]+" does not exist/i',
+        '/npm warn EBADENGINE[\s\S]{0,500}required:\s*\{\s*node:\s*[\'"]>=22[^\'"]*[\'"][\s\S]{0,500}current:\s*\{\s*node:\s*[\'"]v20/i',
     ];
 
     public function bootstrapLogsLookFatal(string $logs): bool
@@ -3768,6 +3773,22 @@ PHP;
                 'treat_label' => 'Install GD',
                 'manual_steps' => [
                     'Install GD from Doctor, then retry composer install / the failing request.',
+                ],
+            ],
+            [
+                'id' => 'node_runtime_too_old',
+                'severity' => 'critical',
+                'stacks' => ['nodejs', '*'],
+                'patterns' => [
+                    '/npm warn EBADENGINE[\s\S]{0,500}required:\s*\{\s*node:\s*[\'"]>=22[^\'"]*[\'"][\s\S]{0,500}current:\s*\{\s*node:\s*[\'"]v20/i',
+                ],
+                'title' => 'This app requires Node 22',
+                'summary' => 'package.json requires Node 22 or newer, but this service runs Node 20. npm finishes installing, then the container exits before it starts listening and repeats the install. Upgrade rewrites compose to node:22-alpine and recreates only the app; the database volume is kept.',
+                'treat_action' => 'upgrade_node_runtime',
+                'treat_label' => 'Upgrade to Node 22',
+                'manual_steps' => [
+                    'Click Upgrade to Node 22 — pulls node:22-alpine, updates the selected runtime, and recreates only the app.',
+                    'Watch Logs for the production build and start command. Do not Reset database.',
                 ],
             ],
             [
@@ -6116,6 +6137,55 @@ PHP;
         } finally {
             $ssh->disconnect();
         }
+    }
+
+    /**
+     * @return array{success: bool, message: string}
+     */
+    private function treatUpgradeNodeRuntime(Service $service): array
+    {
+        $service->loadMissing('product.containerTemplate', 'containerDeployment.node');
+        $deployment = $service->containerDeployment;
+        $template = $service->effectiveContainerTemplate();
+
+        if (! $deployment?->node || strtolower((string) ($template?->slug ?? '')) !== 'nodejs') {
+            return ['success' => false, 'message' => 'Node.js deployment not found.'];
+        }
+
+        $versions = is_array($template->versions)
+            ? $template->versions
+            : (json_decode((string) $template->versions, true) ?: []);
+        $currentImage = strtolower((string) ($deployment->docker_compose_content ?? $template->docker_image ?? ''));
+        $version = str_contains($currentImage, 'slim') ? '22-slim' : '22-alpine';
+        if (! in_array($version, $versions, true)) {
+            $version = in_array('22', $versions, true) ? '22' : '';
+        }
+        if ($version === '') {
+            return ['success' => false, 'message' => 'The Node template does not offer a Node 22 image.'];
+        }
+
+        $image = app(ContainerDeploymentService::class)->resolveTemplateDockerImage($template, $version);
+        $ssh = SSHService::forNode($deployment->node);
+        try {
+            $ssh->exec('docker pull '.escapeshellarg($image), 900, false);
+        } catch (\Throwable $e) {
+            return ['success' => false, 'message' => 'Could not pull '.$image.': '.$e->getMessage()];
+        } finally {
+            $ssh->disconnect();
+        }
+
+        $deployment->update(['selected_version' => $version]);
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        $meta['selected_version'] = $version;
+        $service->update(['service_meta' => $meta]);
+
+        $result = $this->treatRestartApplication($service->fresh([
+            'product.containerTemplate',
+            'containerDeployment.node',
+        ]));
+        $result['message'] = 'Runtime upgraded to '.$image.'. '.$result['message'];
+
+        return $result;
     }
 
     /**
