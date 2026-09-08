@@ -3356,12 +3356,11 @@ PHP;
      * build). A first Vite/Next build easily runs for minutes, so an unreachable port
      * during that window is progress, not a failure.
      *
-     * Do not match generic `npm warn deprecated` / `npm notice` — those linger after
-     * install finishes and hide crash loops (wrong package manager, missing role).
+     * Do not match any `npm warn` / `npm notice` line — warnings linger after
+     * install finishes and can repeat on every `npm start`, hiding crash loops.
      */
     private const BOOTSTRAP_LOG_PATTERNS = [
-        '/npm warn (idealTree|reify|tar|config)/i',
-        '/idealTree|reify/i',
+        '/^(?!.*\bnpm warn\b).*(idealTree|reify)/i',
         '/(vite|next|nuxt|astro|tsc|webpack) build|building for production|creating an optimized production build/i',
         '/transforming\b|rendering chunks|computing gzip size/i',
         '/(collecting|downloading|installing) [a-z0-9._-]+/i',

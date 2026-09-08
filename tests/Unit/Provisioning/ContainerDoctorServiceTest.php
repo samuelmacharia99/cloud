@@ -122,6 +122,16 @@ LOG;
     }
 
     #[Test]
+    public function npm_config_warning_is_not_bootstrap_progress(): void
+    {
+        $doctor = app(ContainerDoctorService::class);
+
+        $this->assertNull($doctor->recentLogsIndicateBootstrapProgress(
+            'user-493-service-454-nodejs | npm warn config production Use `--omit=dev` instead.'
+        ));
+    }
+
+    #[Test]
     public function completed_npm_install_plus_package_manager_loop_is_fatal_not_progress(): void
     {
         $recent = <<<'LOG'
