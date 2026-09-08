@@ -12,9 +12,9 @@ use App\Services\Provisioning\ContainerNodeAnalyticsService;
 use App\Services\Provisioning\DirectAdminService;
 use App\Services\Provisioning\InfrastructureStorageBoxService;
 use App\Services\Provisioning\MailcowService;
+use App\Services\Provisioning\NodeHardwareProbeService;
 use App\Services\Provisioning\NodeServiceRelocationService;
 use App\Services\ResellerDirectAdminService;
-use App\Services\SSH\SSHService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\View\View;
@@ -105,7 +105,7 @@ class NodeController extends Controller
         return view('admin.nodes.create', compact('regions', 'types', 'type'));
     }
 
-    public function store(Request $request)
+    public function store(Request $request, NodeHardwareProbeService $hardwareProbe)
     {
         $type = $request->input('type');
 
@@ -175,10 +175,10 @@ class NodeController extends Controller
                 'type' => 'required|in:container_host',
                 'ssh_port' => 'required|string|max:10',
                 'ssh_username' => 'required|string|max:100',
-                'ssh_password' => 'nullable|string',
-                'cpu_cores' => 'required|integer|min:1',
-                'ram_gb' => 'required|integer|min:1',
-                'storage_gb' => 'required|integer|min:1',
+                'ssh_password' => 'required|string',
+                'cpu_cores' => 'nullable|integer|min:1',
+                'ram_gb' => 'nullable|integer|min:1',
+                'storage_gb' => 'nullable|integer|min:1',
                 'nameserver_1' => 'nullable|string|max:255',
                 'nameserver_2' => 'nullable|string|max:255',
                 'nameserver_3' => 'nullable|string|max:255',
@@ -189,6 +189,9 @@ class NodeController extends Controller
                 'is_active' => 'nullable|boolean',
             ]);
             $validated['status'] = 'offline';
+            $validated['cpu_cores'] = $validated['cpu_cores'] ?? 0;
+            $validated['ram_gb'] = $validated['ram_gb'] ?? 0;
+            $validated['storage_gb'] = $validated['storage_gb'] ?? 0;
             foreach (['nameserver_1', 'nameserver_2', 'nameserver_3', 'nameserver_4'] as $field) {
                 $validated[$field] = ! empty($validated[$field]) ? trim((string) $validated[$field]) : null;
             }
@@ -217,7 +220,11 @@ class NodeController extends Controller
 
         $validated['is_active'] = $request->has('is_active');
 
-        Node::create($validated);
+        $node = Node::create($validated);
+
+        if ($type === 'container_host') {
+            return $this->redirectAfterContainerHostCreate($node, $hardwareProbe);
+        }
 
         return redirect()->route('admin.nodes.index')
             ->with('success', 'Node created successfully.');
@@ -872,111 +879,21 @@ class NodeController extends Controller
         }
     }
 
-    public function testHealth(Node $node)
+    public function testHealth(Node $node, NodeHardwareProbeService $hardwareProbe)
     {
         if (! in_array($node->type, ['container_host', 'database_server', 'directadmin'])) {
             return back()->with('error', 'Node health tests are only available for container hosts, database servers, and DirectAdmin nodes.');
         }
 
-        // Validate SSH credentials are configured
-        if (! $node->ssh_username) {
-            return back()->with('error', 'SSH username is not configured. Please edit the node and set the SSH username.');
+        $result = $hardwareProbe->probeAndPersist($node);
+
+        if (! $result['success']) {
+            $prefix = $result['reason'] === 'credentials' ? '' : 'Node health test failed: ';
+
+            return back()->with('error', $prefix.$result['message']);
         }
 
-        if (! $node->ssh_password) {
-            return back()->with('error', 'SSH password is not configured. Please edit the node and set the SSH password (root login on port '.$node->ssh_port.').');
-        }
-
-        try {
-            $ssh = SSHService::forNode($node);
-
-            // Test 1: SSH connectivity
-            $ssh->exec('echo "SSH connection OK"', 5);
-            $node->recordHeartbeat();
-
-            // Test 2: Collect system metrics
-            $uptime = $ssh->exec('uptime -p', 5);
-            $freeOutput = $ssh->exec('free -b | grep Mem', 5);
-            $diskPath = $node->type === 'directadmin'
-                ? '/'
-                : '/opt/talksasa/containers';
-            $dfOutput = $ssh->exec("df {$diskPath} -B1 2>/dev/null | tail -1 || df / -B1 | tail -1", 5);
-            $cpuOutput = $ssh->exec('grep -c ^processor /proc/cpuinfo', 5);
-            $loadOutput = $ssh->exec('cat /proc/loadavg | awk \'{print $1, $2, $3}\'', 5);
-
-            // Parse memory (free -b output: Mem: total used free shared buff/cache available)
-            preg_match('/Mem:\s+(\d+)\s+(\d+)\s+(\d+)/', $freeOutput, $memMatches);
-            $ramTotalBytes = $memMatches[1] ?? 0;
-            $ramUsedBytes = $memMatches[2] ?? 0;
-            $ramTotalGb = intval($ramTotalBytes / (1024 * 1024 * 1024));
-            $ramUsedGb = intval($ramUsedBytes / (1024 * 1024 * 1024));
-
-            // Parse disk (df output: filesystem 1B-blocks used available use% mounted)
-            $dfParts = preg_split('/\s+/', trim($dfOutput));
-            $diskTotalBytes = intval($dfParts[1] ?? 0);
-            $diskUsedBytes = intval($dfParts[2] ?? 0);
-            $diskTotalGb = intval($diskTotalBytes / (1024 * 1024 * 1024));
-            $diskUsedGb = intval($diskUsedBytes / (1024 * 1024 * 1024));
-
-            // Get CPU load average (1, 5, 15 min)
-            $loads = array_map('floatval', explode(' ', trim($loadOutput)));
-            $loadAverage = $loads[0] ?? 0;
-            $cpuCores = intval(trim($cpuOutput));
-            $cpuPercent = $cpuCores > 0 ? intval(($loadAverage / $cpuCores) * 100) : 0;
-            $cpuPercent = min(100, max(0, $cpuPercent));
-
-            // Determine uptime percentage (estimate: 99% if running, 0% if just booted)
-            $uptimePercent = strpos($uptime, 'minute') !== false || strpos($uptime, 'hour') !== false ? 99 : 95;
-
-            // Record monitoring data
-            NodeMonitoring::create([
-                'node_id' => $node->id,
-                'uptime_percentage' => $uptimePercent,
-                'ram_used_gb' => $ramUsedGb,
-                'ram_total_gb' => $ramTotalGb,
-                'storage_used_gb' => $diskUsedGb,
-                'storage_total_gb' => $diskTotalGb,
-                'cpu_percentage' => $cpuPercent,
-                'recorded_at' => now(),
-            ]);
-
-            // Update node resource utilization and enable monitoring
-            $node->update([
-                'is_active' => true,
-                'ram_gb' => $ramTotalGb,
-                'storage_gb' => $diskTotalGb,
-                'cpu_cores' => $cpuCores,
-                'ram_used_gb' => $ramUsedGb,
-                'storage_used_gb' => $diskUsedGb,
-                'cpu_used' => $cpuPercent,
-            ]);
-
-            // If all metrics look healthy, set status to online
-            if ($ramUsedGb <= ($ramTotalGb * 0.85) && $diskUsedGb <= ($diskTotalGb * 0.90)) {
-                $node->update(['status' => 'online']);
-            }
-
-            $ssh->disconnect();
-
-            $ramPercent = $ramTotalGb > 0 ? intval($ramUsedGb / $ramTotalGb * 100) : 0;
-            $storagePercent = $diskTotalGb > 0 ? intval($diskUsedGb / $diskTotalGb * 100) : 0;
-
-            $message = "Node health test passed! ✓\n\n";
-            $message .= "📊 Metrics:\n";
-            $message .= "  CPU: {$cpuPercent}% ({$cpuCores} cores)\n";
-            $message .= "  RAM: {$ramUsedGb}/{$ramTotalGb} GB ({$ramPercent}%)\n";
-            if ($diskTotalGb > 0) {
-                $message .= "  Storage: {$diskUsedGb}/{$diskTotalGb} GB ({$storagePercent}%)\n";
-            } else {
-                $message .= "  Storage: Could not determine (path may not exist)\n";
-            }
-            $message .= "  Uptime: {$uptime}\n";
-            $message .= "  Load Average: {$loadAverage}";
-
-            return back()->with('success', $message);
-        } catch (\Exception $e) {
-            return back()->with('error', 'Node health test failed: '.$e->getMessage());
-        }
+        return back()->with('success', $hardwareProbe->formatHealthMessage($result));
     }
 
     public function pushPackageLimits(DirectAdminPackage $package)
@@ -1205,5 +1122,34 @@ class NodeController extends Controller
                 unset($validated[$field]);
             }
         }
+    }
+
+    private function redirectAfterContainerHostCreate(Node $node, NodeHardwareProbeService $hardwareProbe)
+    {
+        $result = $hardwareProbe->probeAndPersist($node);
+        $node->refresh();
+
+        if ($result['success']) {
+            $statusNote = $node->status === 'online' ? ' Node is online.' : '';
+
+            return redirect()
+                ->route('admin.nodes.show', $node)
+                ->with('success', sprintf(
+                    'Application host created. Detected %d CPU cores, %d GB RAM, %d GB disk.%s',
+                    $result['cpu_cores'],
+                    $result['ram_gb'],
+                    $result['storage_gb'],
+                    $statusNote,
+                ));
+        }
+
+        $hasManualSpecs = $node->cpu_cores > 0 && $node->ram_gb > 0 && $node->storage_gb > 0;
+        $message = $hasManualSpecs
+            ? 'Application host created with the specs you entered. SSH could not refresh them: '.$result['message']
+            : 'Application host created, but SSH could not read hardware specs: '.$result['message'].' Use Test Health once the host is reachable, or edit the node and enter specs manually.';
+
+        return redirect()
+            ->route('admin.nodes.show', $node)
+            ->with('warning', $message);
     }
 }

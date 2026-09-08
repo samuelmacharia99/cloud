@@ -285,7 +285,8 @@
                         <!-- SSH Password -->
                         <div>
                             <label for="ssh_password" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">SSH Password</label>
-                            <input type="password" id="ssh_password" name="ssh_password" placeholder="Your root password" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('ssh_password') border-red-500 @enderror">
+                            <input type="password" id="ssh_password" name="ssh_password" placeholder="Your root password" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('ssh_password') border-red-500 @enderror" required>
+                            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Used to detect CPU, RAM, and disk when you create the node.</p>
                             @error('ssh_password')
                                 <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
                             @enderror
@@ -295,12 +296,20 @@
 
                 <!-- Hardware Specifications -->
                 <div>
-                    <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-6">Hardware Specifications</h2>
+                    <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-2">Hardware Specifications</h2>
+                    <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                        Leave these blank. After you click Create Node we SSH in and fill CPU, RAM, and disk from the host.
+                    </p>
+                    <div class="mb-6 bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-900 rounded-lg p-4">
+                        <p class="text-sm text-purple-900 dark:text-purple-100">
+                            Manual values are only a fallback if the host is unreachable. A successful SSH read always overwrites them with the real hardware.
+                        </p>
+                    </div>
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <!-- CPU Cores -->
                         <div>
-                            <label for="cpu_cores" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">CPU Cores</label>
-                            <input type="number" id="cpu_cores" name="cpu_cores" value="{{ old('cpu_cores') }}" placeholder="8" min="1" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('cpu_cores') border-red-500 @enderror" required>
+                            <label for="cpu_cores" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">CPU Cores <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
+                            <input type="number" id="cpu_cores" name="cpu_cores" value="{{ old('cpu_cores') }}" placeholder="Auto-detected" min="1" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('cpu_cores') border-red-500 @enderror">
                             @error('cpu_cores')
                                 <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
                             @enderror
@@ -308,8 +317,8 @@
 
                         <!-- RAM GB -->
                         <div>
-                            <label for="ram_gb" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">RAM (GB)</label>
-                            <input type="number" id="ram_gb" name="ram_gb" value="{{ old('ram_gb') }}" placeholder="32" min="1" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('ram_gb') border-red-500 @enderror" required>
+                            <label for="ram_gb" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">RAM (GB) <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
+                            <input type="number" id="ram_gb" name="ram_gb" value="{{ old('ram_gb') }}" placeholder="Auto-detected" min="1" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('ram_gb') border-red-500 @enderror">
                             @error('ram_gb')
                                 <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
                             @enderror
@@ -317,8 +326,8 @@
 
                         <!-- Storage GB -->
                         <div>
-                            <label for="storage_gb" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Storage (GB)</label>
-                            <input type="number" id="storage_gb" name="storage_gb" value="{{ old('storage_gb') }}" placeholder="500" min="1" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('storage_gb') border-red-500 @enderror" required>
+                            <label for="storage_gb" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Storage (GB) <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
+                            <input type="number" id="storage_gb" name="storage_gb" value="{{ old('storage_gb') }}" placeholder="Auto-detected" min="1" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('storage_gb') border-red-500 @enderror">
                             @error('storage_gb')
                                 <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
                             @enderror
