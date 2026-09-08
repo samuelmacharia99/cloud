@@ -790,4 +790,63 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
         $this->assertStringContainsString('[ ! -f apps/web/.next/BUILD_ID ]', $bootstrap);
         $this->assertStringNotContainsString('npm install --omit=dev', $bootstrap);
     }
+
+    #[Test]
+    public function declared_npm_package_manager_is_not_overridden_to_pnpm(): void
+    {
+        $root = json_encode([
+            'private' => true,
+            'packageManager' => 'npm@10.9.2',
+            'workspaces' => ['apps/*'],
+            'scripts' => [
+                'build' => 'npm run build --workspaces',
+            ],
+        ], JSON_THROW_ON_ERROR);
+        $app = json_encode([
+            'name' => 'web',
+            'scripts' => [
+                'start' => 'next start',
+                'build' => 'next build',
+            ],
+            'dependencies' => [
+                'next' => '14.2.35',
+            ],
+        ], JSON_THROW_ON_ERROR);
+
+        $this->assertSame('npm', $this->service->declaredNodePackageManagerFromPackageJson($root));
+        $this->assertSame('npm', $this->service->resolveNodePackageManager($app, $root));
+        $this->assertSame('npm', $this->service->detectNodePackageManagerFromPackageJson($root));
+
+        $bootstrap = $this->service->nodeBootstrap($app, $root, 'apps/web');
+        $this->assertStringContainsString('/usr/local/bin/npm', $bootstrap);
+        $this->assertStringContainsString('npm --prefix apps/web run build', $bootstrap);
+        $this->assertStringNotContainsString('corepack pnpm', $bootstrap);
+
+        $runtime = $this->service->detectNodeFromContents(
+            null,
+            $app,
+            false,
+            false,
+            false,
+            3000,
+            '/app/apps/web',
+            $root,
+            '/app'
+        );
+        $this->assertStringContainsString('exec npx next start', $runtime->command[2]);
+        $this->assertStringNotContainsString('corepack pnpm', $runtime->command[2]);
+    }
+
+    #[Test]
+    public function workspace_protocol_still_selects_pnpm_when_package_manager_is_unset(): void
+    {
+        $app = json_encode([
+            'dependencies' => [
+                '@repo/ui' => 'workspace:*',
+            ],
+        ], JSON_THROW_ON_ERROR);
+
+        $this->assertSame('pnpm', $this->service->detectNodePackageManagerFromPackageJson($app));
+        $this->assertSame('pnpm', $this->service->resolveNodePackageManager($app, '{"private":true}'));
+    }
 }

@@ -664,7 +664,14 @@ class ContainerStackCommandService
         string $hostAppPath,
         ?string $packageJson = null,
     ): string {
+        $declared = $this->runtimeService->declaredNodePackageManagerFromPackageJson($packageJson);
+
         if ($this->hostFileExists($ssh, $hostAppPath.'/package-lock.json')) {
+            return 'npm';
+        }
+
+        // Leftover pnpm-lock.yaml from a wrong bootstrap must not override packageManager: npm.
+        if ($declared === 'npm') {
             return 'npm';
         }
 

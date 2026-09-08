@@ -59,10 +59,14 @@ class PhpRuntime500Probe
             'ci_allowed_hostnames' => false,
         ];
 
+        $probeHost = parse_url((string) ($deployment->getAccessUrl() ?? ''), PHP_URL_HOST);
+        $probeHost = is_string($probeHost) && $probeHost !== '' ? $probeHost : 'localhost';
+
         try {
             $raw = trim($ssh->exec(
                 'cd '.escapeshellarg($containerPath)
-                .' && docker compose exec -T '.escapeshellarg($deployment->container_name)
+                .' && docker compose exec -T -e TALKSASA_PROBE_HOST='.escapeshellarg($probeHost)
+                .' '.escapeshellarg($deployment->container_name)
                 .' php -d display_errors=0 -d log_errors=0 -r '.escapeshellarg($this->script()),
                 25
             ));
@@ -153,7 +157,7 @@ class PhpRuntime500Probe
 
         if ($result['fatal'] === null || $this->isGenericServerError((string) $result['fatal'])) {
             foreach ($this->preferredFrontControllers($result['index_files']) as $front) {
-                $cliFatal = $this->captureFrontControllerFatal($ssh, $deployment, $front);
+                $cliFatal = $this->captureFrontControllerFatal($ssh, $deployment, $front, $probeHost);
                 if ($cliFatal !== null && ! $this->isGenericServerError($cliFatal)) {
                     $result['fatal'] = $cliFatal;
                     break;
@@ -192,8 +196,10 @@ class PhpRuntime500Probe
         SSHService $ssh,
         ContainerDeployment $deployment,
         string $front,
+        string $httpHost = 'localhost',
     ): ?string {
         $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+        $httpHost = preg_replace('/[^a-zA-Z0-9.-]/', '', $httpHost) ?: 'localhost';
 
         try {
             $raw = trim($ssh->exec(
@@ -204,7 +210,8 @@ class PhpRuntime500Probe
                     .'PREPEND="-d auto_prepend_file=/app/.talksasa-mysql-shim.php"; fi; '
                     .'export CI_ENVIRONMENT=development CI_DEBUG=true '
                     .'REQUEST_METHOD=GET REQUEST_URI=/ SCRIPT_NAME=/index.php '
-                    .'HTTP_HOST=localhost SERVER_NAME=localhost SERVER_PORT=80; '
+                    .'HTTP_HOST='.$httpHost.' SERVER_NAME='.$httpHost
+                    .' SERVER_PORT=80; '
                     .'timeout 8 php -d display_errors=1 -d error_reporting=32767 $PREPEND '
                     .escapeshellarg($front).' 2>&1 | tail -n 80 || true'
                 ),
@@ -230,7 +237,7 @@ class PhpRuntime500Probe
         }
 
         if (preg_match(
-            '/(Fatal error:|Uncaught |Call to undefined function|Failed opening required|DatabaseException|Class "[^"]+" not found|Unable to connect to the database|Access denied for user|The encryption key|intl extension|mysqli)[^\n<]{0,240}/i',
+            '/(Fatal error:|Uncaught |Call to undefined function|Failed opening required|DatabaseException|Class "[^"]+" not found|Unable to connect to the database|Access denied for user|The encryption key|intl extension|mysqli|allowedHostnames|Security:)[^\n<]{0,240}/i',
             $raw,
             $matches
         ) === 1) {
@@ -316,7 +323,7 @@ class PhpRuntime500Probe
             $parts[] = 'This tree is Open Source POS (app/Config/OSPOS.php).';
         }
         if (($probe['ci_allowed_hostnames'] ?? true) !== true && ($probe['ci_ospos'] ?? false) === true) {
-            $parts[] = 'app.allowedHostnames is empty — official OSPOS fatals in production.';
+            $parts[] = 'app.allowedHostnames / ALLOWED_HOSTNAMES is empty — official OSPOS fatals in production (getenv does not read dotted .env keys).';
         }
         if (($probe['index_files'] ?? []) === []) {
             $parts[] = 'No index.php was found under /app or /app/public.';
@@ -453,7 +460,8 @@ foreach (preg_split('/\\r\\n|\\r|\\n/', $envText) ?: [] as $line) {
     }
 }
 $httpBody = null;
-$ctx = stream_context_create(['http' => ['timeout' => 6, 'ignore_errors' => true, 'header' => "Host: localhost\r\n"]]);
+$probeHost = getenv('TALKSASA_PROBE_HOST') ?: 'localhost';
+$ctx = stream_context_create(['http' => ['timeout' => 6, 'ignore_errors' => true, 'header' => 'Host: '.$probeHost."\r\n"]]);
 $origin = @file_get_contents('http://127.0.0.1:8080/', false, $ctx);
 if (is_string($origin) && $origin !== '') {
     $httpBody = trim(preg_replace('/\\s+/', ' ', strip_tags($origin)) ?? '');
@@ -469,7 +477,7 @@ $logFiles = array_merge(
 rsort($logFiles);
 if ($logFiles !== []) {
     $tail = (string) @file_get_contents($logFiles[0]);
-    if (preg_match('/(CRITICAL|ERROR|ErrorException|ParseError|Unable to write|encryption key|Access denied|1045|Unable to connect|Class .* not found|mysqli|DatabaseException)[^\\n]{0,240}/i', $tail, $match) === 1) {
+    if (preg_match('/(CRITICAL|ERROR|ErrorException|ParseError|Unable to write|encryption key|Access denied|1045|Unable to connect|Class .* not found|mysqli|DatabaseException|allowedHostnames|Security:)[^\\n]{0,240}/i', $tail, $match) === 1) {
         $ciLog = trim($match[0]);
     }
 }
@@ -498,10 +506,11 @@ echo 'TALKSASA_PHP500='.json_encode([
     'ci_db_driver' => $driver,
     'ci_http_body' => $httpBody,
     'ci_ospos' => is_file('/app/app/Config/OSPOS.php'),
-    'ci_allowed_hostnames' => (preg_match('/^app\\.allowedHostnames[ \\t]*=[ \\t]*(.+)$/m', $envText, $allowedMatch) === 1
+    'ci_allowed_hostnames' => (preg_match('/^ALLOWED_HOSTNAMES[ \\t]*=[ \\t]*(.+)$/m', $envText, $allowedMatch) === 1
         && trim($allowedMatch[1], " \t\"'") !== '')
-        || (preg_match('/^ALLOWED_HOSTNAMES[ \\t]*=[ \\t]*(.+)$/m', $envText, $allowedMatch) === 1
-        && trim($allowedMatch[1], " \t\"'") !== ''),
+        || (! is_file('/app/app/Config/OSPOS.php')
+            && preg_match('/^app\\.allowedHostnames[ \\t]*=[ \\t]*(.+)$/m', $envText, $allowedMatch) === 1
+            && trim($allowedMatch[1], " \t\"'") !== ''),
 ]);
 PHP;
     }

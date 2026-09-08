@@ -50,9 +50,10 @@ class PhpCodeIgniterRuntimeHealer
             $env = $this->upsertEnv($env, 'app.baseURL', $base);
         }
 
-        $hosts = $this->hostnamesFromPublicUrl($publicUrl);
-        if ($hosts !== '' && $this->allowedHostnamesMissing($env)) {
+        $hosts = $this->allowedHostnamesLine($publicUrl);
+        if ($hosts !== '' && $this->allowedHostnamesNeedUpdate($env, $publicUrl)) {
             $env = $this->upsertEnv($env, 'app.allowedHostnames', $hosts);
+            $env = $this->upsertEnv($env, 'ALLOWED_HOSTNAMES', $hosts);
         }
 
         return $env === '' || str_ends_with($env, "\n") ? $env : $env."\n";
@@ -64,13 +65,7 @@ class PhpCodeIgniterRuntimeHealer
      */
     public function allowedHostnamesMissing(string $env): bool
     {
-        foreach (['app.allowedHostnames', 'ALLOWED_HOSTNAMES'] as $key) {
-            if (preg_match('/^'.preg_quote($key, '/').'[ \t]*=[ \t]*(.*)$/m', $env, $matches) === 1) {
-                return trim($matches[1], " \t\"'") === '';
-            }
-        }
-
-        return true;
+        return $this->currentAllowedHostnames($env) === [];
     }
 
     public function hostnamesFromPublicUrl(string $url): string
@@ -78,6 +73,76 @@ class PhpCodeIgniterRuntimeHealer
         $host = parse_url(trim($url), PHP_URL_HOST);
 
         return is_string($host) && $host !== '' ? strtolower($host) : '';
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function allowedHostnameList(string $publicUrl): array
+    {
+        $hosts = [];
+        $public = $this->hostnamesFromPublicUrl($publicUrl);
+        if ($public !== '') {
+            $hosts[] = $public;
+            if (! str_starts_with($public, 'www.')) {
+                $hosts[] = 'www.'.$public;
+            }
+        }
+        $hosts[] = 'localhost';
+        $hosts[] = '127.0.0.1';
+
+        return array_values(array_unique($hosts));
+    }
+
+    public function allowedHostnamesLine(string $publicUrl): string
+    {
+        return implode(',', $this->allowedHostnameList($publicUrl));
+    }
+
+    public function currentAllowedHostnames(string $env): array
+    {
+        foreach (['ALLOWED_HOSTNAMES', 'app.allowedHostnames'] as $key) {
+            if (preg_match('/^'.preg_quote($key, '/').'[ \t]*=[ \t]*(.*)$/m', $env, $matches) !== 1) {
+                continue;
+            }
+            $value = trim($matches[1], " \t\"'");
+            if ($value === '') {
+                continue;
+            }
+
+            return array_values(array_filter(array_map(
+                static fn (string $host): string => strtolower(trim($host)),
+                explode(',', $value)
+            )));
+        }
+
+        return [];
+    }
+
+    public function allowedHostnamesNeedUpdate(string $env, string $publicUrl = ''): bool
+    {
+        if ($this->envKeyMissingOrEmpty($env, 'ALLOWED_HOSTNAMES')
+            || $this->envKeyMissingOrEmpty($env, 'app.allowedHostnames')) {
+            return true;
+        }
+
+        $current = $this->currentAllowedHostnames($env);
+        if ($current === []) {
+            return true;
+        }
+
+        $needed = $this->hostnamesFromPublicUrl($publicUrl);
+
+        return $needed !== '' && ! in_array($needed, $current, true);
+    }
+
+    public function envKeyMissingOrEmpty(string $env, string $key): bool
+    {
+        if (preg_match('/^'.preg_quote($key, '/').'[ \t]*=[ \t]*(.*)$/m', $env, $matches) !== 1) {
+            return true;
+        }
+
+        return trim($matches[1], " \t\"'") === '';
     }
 
     public function normalizeBaseUrl(string $url): string
@@ -112,6 +177,17 @@ class PhpCodeIgniterRuntimeHealer
         $changed = 0;
         $root = rtrim($hostAppPath, '/');
         app(PhpCodeIgniterPathFixer::class)->ensureWritableOnHost($ssh, $root);
+
+        try {
+            $ssh->exec(
+                'if [ ! -f '.escapeshellarg($root.'/.env')
+                .' ] && [ -f '.escapeshellarg($root.'/.env.example')
+                .' ]; then cp '.escapeshellarg($root.'/.env.example')
+                .' '.escapeshellarg($root.'/.env').'; fi',
+                10
+            );
+        } catch (\Throwable) {
+        }
 
         foreach ([$root.'/.env', $root.'/app/.env'] as $envPath) {
             try {

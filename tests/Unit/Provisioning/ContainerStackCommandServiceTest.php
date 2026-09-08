@@ -350,6 +350,16 @@ class ContainerStackCommandServiceTest extends TestCase
             '/opt/talksasa/containers/user-1-service-1/app',
             '{"packageManager":"pnpm@9.15.4"}'
         ));
+
+        $leftoverPnpmLock = $this->createMock(SSHService::class);
+        $leftoverPnpmLock->method('exec')->willReturnCallback(
+            fn (string $command): string => str_contains($command, 'pnpm-lock.yaml') ? 'yes' : 'no'
+        );
+        $this->assertSame('npm', $service->detectHostNodePackageManager(
+            $leftoverPnpmLock,
+            '/opt/talksasa/containers/user-1-service-1/app',
+            '{"packageManager":"npm@10.9.2"}'
+        ));
     }
 
     #[Test]

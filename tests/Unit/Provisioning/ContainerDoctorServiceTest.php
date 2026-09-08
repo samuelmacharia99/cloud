@@ -50,6 +50,58 @@ LOG;
     }
 
     #[Test]
+    public function it_detects_package_manager_field_mismatch(): void
+    {
+        $logs = <<<'LOG'
+user-493-service-454-nodejs  | This project is configured to use npm because /app/package.json has a "packageManager" field
+LOG;
+
+        $doctor = app(ContainerDoctorService::class);
+        $finding = collect($doctor->analyzeLogs($logs, 'nodejs'))->firstWhere('id', 'node_package_manager_mismatch');
+
+        $this->assertNotNull($finding);
+        $this->assertSame('restart_application', $finding['treat_action']);
+        $this->assertSame('Start the Node app', $finding['treat_label']);
+        $this->assertSame('critical', $finding['severity']);
+        $this->assertTrue($doctor->bootstrapLogsLookFatal($logs));
+        $this->assertNull($doctor->recentLogsIndicateBootstrapProgress($logs));
+    }
+
+    #[Test]
+    public function package_manager_mismatch_replaces_crash_loop_recreate(): void
+    {
+        $merged = app(ContainerDoctorService::class)->mergeLogAndLiveFindings(
+            [[
+                'id' => 'node_package_manager_mismatch',
+                'severity' => 'critical',
+                'title' => 'Wrong package manager for this Node app',
+                'treat_action' => 'restart_application',
+            ]],
+            [
+                'findings' => [
+                    [
+                        'id' => 'container_crash_loop',
+                        'severity' => 'critical',
+                        'title' => 'Application container is crash-looping',
+                        'treat_action' => 'recreate_application',
+                    ],
+                    [
+                        'id' => 'live_upstream_unreachable',
+                        'severity' => 'critical',
+                        'title' => 'App port is not answering',
+                    ],
+                ],
+                'checks' => ['http_status' => null, 'db_ok' => null],
+            ]
+        );
+
+        $ids = array_column($merged, 'id');
+        $this->assertContains('node_package_manager_mismatch', $ids);
+        $this->assertNotContains('container_crash_loop', $ids);
+        $this->assertNotContains('live_upstream_unreachable', $ids);
+    }
+
+    #[Test]
     public function workspace_protocol_finding_replaces_false_bootstrap_progress(): void
     {
         $merged = app(ContainerDoctorService::class)->mergeLogAndLiveFindings(
@@ -1719,7 +1771,25 @@ LOG;
 
         $this->assertSame('heal_codeigniter_runtime', $treat['treat_action']);
         $this->assertStringContainsString('allowedHostnames', $treat['summary']);
+        $this->assertStringContainsString('ALLOWED_HOSTNAMES', $treat['summary']);
         $this->assertStringNotContainsString('recreates the app', $treat['summary']);
+        $this->assertStringContainsString('Host whitelist is set', app(ContainerDoctorService::class)->resolveHttp500Treatment(
+            [
+                'db_ok' => true,
+                'table_count' => 39,
+                'http_status' => 500,
+                'php_paths_php' => ['/app/app/Config/Paths.php'],
+                'php_ci_system' => true,
+                'php_ci_vendor_system' => true,
+                'php_ci_db_host' => 'user-483-service-426-static-site-db',
+                'php_ci_db_user' => 'u483_s426',
+                'php_ci_ospos' => true,
+                'php_ci_allowed_hostnames' => true,
+                'da_can_import_ci_app' => true,
+            ],
+            [],
+            'php'
+        )['summary']);
         $this->assertSame('install_ospos_application', app(ContainerDoctorService::class)->resolveHttp500Treatment(
             [
                 'db_ok' => true,

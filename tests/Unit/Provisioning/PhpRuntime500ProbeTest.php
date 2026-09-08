@@ -75,6 +75,17 @@ class PhpRuntime500ProbeTest extends TestCase
             'ci_encryption_key' => true,
             'ci_autoload' => true,
         ]));
+        $this->assertStringContainsString('ALLOWED_HOSTNAMES is empty', $probe->summary([
+            'fatal' => null,
+            'uses_mysql_ext' => false,
+            'index_files' => ['/app/public/index.php (800 bytes)'],
+            'lint' => [],
+            'paths_php' => ['/app/app/Config/Paths.php'],
+            'ci_ospos' => true,
+            'ci_allowed_hostnames' => false,
+            'ci_system' => true,
+            'ci_vendor_system' => true,
+        ]));
         $this->assertStringContainsString('mysqli is not loaded', $probe->summary([
             'fatal' => null,
             'uses_mysql_ext' => false,
@@ -109,6 +120,10 @@ class PhpRuntime500ProbeTest extends TestCase
         $this->assertSame(
             'Call to undefined function mysqli_connect()',
             $probe->extractExceptionFromOutput('<title>ErrorException</title><div class="exception-message">Call to undefined function mysqli_connect()</div>')
+        );
+        $this->assertStringContainsString(
+            'allowedHostnames',
+            (string) $probe->extractExceptionFromOutput('Uncaught RuntimeException: The current domain is not in app.allowedHostnames')
         );
     }
 }

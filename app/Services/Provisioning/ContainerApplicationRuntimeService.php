@@ -1391,26 +1391,58 @@ class ContainerApplicationRuntimeService
         );
     }
 
-    public function detectNodePackageManagerFromPackageJson(?string $packageJson): string
+    /**
+     * Corepack / pnpm refuse to run when this field names a different manager.
+     */
+    public function declaredNodePackageManagerFromPackageJson(?string $packageJson): ?string
     {
         if ($packageJson === null || trim($packageJson) === '') {
-            return 'npm';
+            return null;
         }
 
         $data = json_decode($packageJson, true);
         if (! is_array($data)) {
-            return 'npm';
+            return null;
         }
 
         $declared = strtolower(trim((string) ($data['packageManager'] ?? '')));
+        if ($declared === '') {
+            return null;
+        }
+
         if (str_starts_with($declared, 'pnpm@') || $declared === 'pnpm') {
             return 'pnpm';
         }
         if (str_starts_with($declared, 'yarn@') || $declared === 'yarn') {
             return 'yarn';
         }
+        if (str_starts_with($declared, 'npm@') || $declared === 'npm') {
+            return 'npm';
+        }
 
-        if ($this->packageJsonUsesWorkspaceProtocol($packageJson)) {
+        return null;
+    }
+
+    public function detectNodePackageManagerFromPackageJson(?string $packageJson): string
+    {
+        return $this->declaredNodePackageManagerFromPackageJson($packageJson)
+            ?? ($this->packageJsonUsesWorkspaceProtocol($packageJson) ? 'pnpm' : 'npm');
+    }
+
+    public function resolveNodePackageManager(?string $packageJson, ?string $workspaceRootPackageJson = null): string
+    {
+        $declaredRoot = $this->declaredNodePackageManagerFromPackageJson($workspaceRootPackageJson);
+        if ($declaredRoot !== null) {
+            return $declaredRoot;
+        }
+
+        $declaredApp = $this->declaredNodePackageManagerFromPackageJson($packageJson);
+        if ($declaredApp !== null) {
+            return $declaredApp;
+        }
+
+        if ($this->packageJsonUsesWorkspaceProtocol($packageJson)
+            || $this->packageJsonUsesWorkspaceProtocol($workspaceRootPackageJson)) {
             return 'pnpm';
         }
 
@@ -1733,11 +1765,7 @@ class ContainerApplicationRuntimeService
     ): string {
         $isWorkspace = $workspaceRootPackageJson !== null
             || $this->packageJsonUsesWorkspaceProtocol($packageJson);
-        $managerJson = $workspaceRootPackageJson ?? $packageJson;
-        $packageManager = $this->detectNodePackageManagerFromPackageJson($managerJson);
-        if ($isWorkspace && $packageManager === 'npm') {
-            $packageManager = 'pnpm';
-        }
+        $packageManager = $this->resolveNodePackageManager($packageJson, $workspaceRootPackageJson);
 
         $openssl = 'if command -v apk >/dev/null 2>&1; then apk add --no-cache openssl libc6-compat >/dev/null 2>&1 || true; fi && ';
         $binFix = $isWorkspace
@@ -1793,6 +1821,7 @@ class ContainerApplicationRuntimeService
             if ($dir !== '') {
                 $binary = match ($packageManager) {
                     'yarn' => '/usr/local/bin/corepack yarn --cwd '.$dir.' run build',
+                    'npm' => self::NODE_NPM_BIN.' --prefix '.$dir.' run build',
                     default => '/usr/local/bin/corepack pnpm --dir '.$dir.' run build',
                 };
 

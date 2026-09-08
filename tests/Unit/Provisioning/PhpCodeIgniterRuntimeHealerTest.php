@@ -24,15 +24,18 @@ class PhpCodeIgniterRuntimeHealerTest extends TestCase
         $this->assertStringNotContainsString('localhost:8080', $healed);
         $this->assertFalse($healer->encryptionKeyIsMissing($healed));
         $this->assertStringContainsString('app.allowedHostnames=roadtrip.digiworldmediasln.com', $healed);
+        $this->assertStringContainsString('ALLOWED_HOSTNAMES=roadtrip.digiworldmediasln.com', $healed);
+        $this->assertStringContainsString('localhost', $healed);
     }
 
     #[Test]
-    public function it_leaves_a_real_key_and_public_url_alone(): void
+    public function it_leaves_a_real_key_and_complete_host_whitelist_alone(): void
     {
         $healer = new PhpCodeIgniterRuntimeHealer;
-        $env = 'encryption.key=hex2bin:'.str_repeat('ab', 32)."\napp.baseURL=https://roadtrip.digiworldmediasln.com/\napp.allowedHostnames=roadtrip.digiworldmediasln.com\n";
+        $hosts = 'roadtrip.digiworldmediasln.com,www.roadtrip.digiworldmediasln.com,localhost,127.0.0.1';
+        $env = 'encryption.key=hex2bin:'.str_repeat('ab', 32)."\napp.baseURL=https://roadtrip.digiworldmediasln.com/\napp.allowedHostnames={$hosts}\nALLOWED_HOSTNAMES={$hosts}\n";
 
-        $this->assertSame($env, $healer->healEnv($env, 'https://other.example.com'));
+        $this->assertSame($env, $healer->healEnv($env, 'https://roadtrip.digiworldmediasln.com'));
     }
 
     #[Test]
@@ -43,10 +46,29 @@ class PhpCodeIgniterRuntimeHealerTest extends TestCase
 
         $this->assertTrue($healer->allowedHostnamesMissing($env));
         $this->assertSame('roadtrip.digiworldmediasln.com', $healer->hostnamesFromPublicUrl('https://roadtrip.digiworldmediasln.com/'));
+        $healed = $healer->healEnv($env, 'https://roadtrip.digiworldmediasln.com');
         $this->assertStringContainsString(
-            'app.allowedHostnames=roadtrip.digiworldmediasln.com',
-            $healer->healEnv($env, 'https://roadtrip.digiworldmediasln.com')
+            'app.allowedHostnames=roadtrip.digiworldmediasln.com,www.roadtrip.digiworldmediasln.com,localhost,127.0.0.1',
+            $healed
         );
+        $this->assertStringContainsString(
+            'ALLOWED_HOSTNAMES=roadtrip.digiworldmediasln.com,www.roadtrip.digiworldmediasln.com,localhost,127.0.0.1',
+            $healed
+        );
+    }
+
+    #[Test]
+    public function it_writes_allowed_hostnames_env_when_only_the_dotted_key_exists(): void
+    {
+        $healer = new PhpCodeIgniterRuntimeHealer;
+        $env = 'encryption.key=hex2bin:'.str_repeat('ab', 32)."\napp.baseURL=https://roadtrip.digiworldmediasln.com/\napp.allowedHostnames=roadtrip.digiworldmediasln.com\n";
+
+        $this->assertFalse($healer->allowedHostnamesMissing($env));
+        $this->assertTrue($healer->allowedHostnamesNeedUpdate($env, 'https://roadtrip.digiworldmediasln.com'));
+        $healed = $healer->healEnv($env, 'https://roadtrip.digiworldmediasln.com');
+        $this->assertStringContainsString('ALLOWED_HOSTNAMES=roadtrip.digiworldmediasln.com', $healed);
+        $this->assertMatchesRegularExpression('/^encryption\\.key=hex2bin:'.str_repeat('ab', 32).'$/m', $healed);
+        $this->assertStringContainsString('app.baseURL=https://roadtrip.digiworldmediasln.com/', $healed);
     }
 
     #[Test]

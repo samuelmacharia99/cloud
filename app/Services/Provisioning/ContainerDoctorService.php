@@ -1161,6 +1161,7 @@ class ContainerDoctorService
                     'laravel_docroot_not_public',
                     'mysql_unix_socket_missing',
                     'npm_workspace_protocol',
+                    'node_package_manager_mismatch',
                 ]);
 
                 $appErrors = $containerReady ? $this->readRecentApplicationErrors($ssh, $deployment) : [];
@@ -1220,7 +1221,7 @@ class ContainerDoctorService
                             $phpProbeLines[] = 'Open Source POS (app/Config/OSPOS.php)';
                         }
                         if (($phpProbe['ci_ospos'] ?? false) === true && ($phpProbe['ci_allowed_hostnames'] ?? true) !== true) {
-                            $phpProbeLines[] = 'app.allowedHostnames is empty';
+                            $phpProbeLines[] = 'app.allowedHostnames / ALLOWED_HOSTNAMES is empty';
                         }
                         if (is_string($phpProbe['ci_http_body'] ?? null) && $phpProbe['ci_http_body'] !== '') {
                             $phpProbeLines[] = 'HTTP body: '.$phpProbe['ci_http_body'];
@@ -1453,7 +1454,8 @@ class ContainerDoctorService
             $drop = ['php_builtin_dev_server', 'container_crash_loop', 'live_upstream_unreachable', 'stale_php_runtime_image'];
         } elseif (in_array('mysql_unix_socket_missing', $ids, true)) {
             $drop = ['mysql_connection_refused', 'live_db_connection_failed'];
-        } elseif (in_array('npm_workspace_protocol', $ids, true)) {
+        } elseif (in_array('npm_workspace_protocol', $ids, true)
+            || in_array('node_package_manager_mismatch', $ids, true)) {
             $drop = ['live_bootstrap_in_progress', 'live_upstream_unreachable', 'container_crash_loop'];
         } elseif (array_intersect($ids, [
             'php_builtin_dev_server',
@@ -2343,11 +2345,14 @@ PHP;
     private function probeContainerHttpSnippet(SSHService $ssh, $deployment): ?string
     {
         $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
-        $php = <<<'PHP'
-$c = stream_context_create(['http' => ['timeout' => 6, 'ignore_errors' => true, 'header' => "Host: localhost\r\n"]]);
+        $probeHost = parse_url((string) ($deployment->getAccessUrl() ?? ''), PHP_URL_HOST);
+        $probeHost = is_string($probeHost) && $probeHost !== '' ? $probeHost : 'localhost';
+        $probeHost = preg_replace('/[^a-zA-Z0-9.-]/', '', $probeHost) ?: 'localhost';
+        $php = str_replace('__PROBE_HOST__', $probeHost, <<<'PHP'
+$c = stream_context_create(['http' => ['timeout' => 6, 'ignore_errors' => true, 'header' => "Host: __PROBE_HOST__\r\n"]]);
 $b = @file_get_contents('http://127.0.0.1:8080/', false, $c);
 echo is_string($b) ? $b : '';
-PHP;
+PHP);
 
         try {
             $body = trim($ssh->exec(
@@ -3355,6 +3360,8 @@ PHP;
         '/EUNSUPPORTEDPROTOCOL/i',
         '/Unsupported URL Type "workspace:"/i',
         '/sh:\s+next:\s+Permission denied/i',
+        '/This project is configured to use (npm|pnpm|yarn)/i',
+        '/has a "packageManager" field/i',
     ];
 
     public function bootstrapLogsLookFatal(string $logs): bool
@@ -3739,6 +3746,25 @@ PHP;
                 'manual_steps' => [
                     'Click Start the Node app — re-detects package.json and recreates the app (database stays).',
                     'Reload the bound URL. Do not Reset database.',
+                ],
+            ],
+            [
+                'id' => 'node_package_manager_mismatch',
+                'severity' => 'critical',
+                'stacks' => ['nodejs', '*'],
+                'patterns' => [
+                    '/This project is configured to use (npm|pnpm|yarn)/i',
+                    '/has a "packageManager" field/i',
+                    '/ERR_PNPM_BAD_PM_VERSION/i',
+                    '/Usage Error: This project is configured to use/i',
+                ],
+                'title' => 'Wrong package manager for this Node app',
+                'summary' => 'package.json has a packageManager field (usually npm), but the container start command ran a different manager (often pnpm on npm workspaces). Recreate keeps that same command. Start the Node app re-detects npm/pnpm/yarn from packageManager, rewrites compose, and recreates only the app container. The database volume is kept.',
+                'treat_action' => 'restart_application',
+                'treat_label' => 'Start the Node app',
+                'manual_steps' => [
+                    'Click Start the Node app — rewrites the start command to the declared package manager and recreates only the app container.',
+                    'The first install can take several minutes. Watch Logs. Do not Recreate containers (same broken command) and do not Reset database.',
                 ],
             ],
             [
@@ -5195,7 +5221,7 @@ PHP;
 
                 return [
                     'success' => false,
-                    'message' => 'Wrote sidecar DB credentials, enabled mysqli, encryption.key / app.baseURL / writable/, and reloaded php-fpm, but GET / still returns HTTP '.$httpStatus.'. '
+                    'message' => 'Wrote sidecar DB credentials, enabled mysqli, encryption.key / app.baseURL / app.allowedHostnames / ALLOWED_HOSTNAMES / writable/, and reloaded php-fpm, but GET / still returns HTTP '.$httpStatus.'. '
                         .app(PhpRuntime500Probe::class)->summary($phpProbe)
                         .($logLines === [] ? '' : ' Log: '.implode(' | ', array_slice($logLines, 0, 2)))
                         .' MySQL was left running.',
@@ -5204,7 +5230,7 @@ PHP;
 
             return [
                 'success' => true,
-                'message' => 'Healed CodeIgniter sidecar credentials, mysqli, encryption.key, app.baseURL, and writable/. php-fpm was reloaded. The container was not recreated. MySQL was left running. Reload the site.',
+                'message' => 'Healed CodeIgniter sidecar credentials, mysqli, encryption.key, app.baseURL, app.allowedHostnames, and writable/. php-fpm was reloaded. The container was not recreated. MySQL was left running. Reload the site.',
             ];
         } catch (\Throwable $e) {
             return [
@@ -5593,12 +5619,17 @@ PHP;
                     ];
                 }
                 if (! $missingApp && $looksLikeOspos && $hasVendorSystem) {
+                    $allowedMissing = ($checks['php_ci_allowed_hostnames'] ?? true) === false;
+
                     return [
                         'treat_action' => 'heal_codeigniter_runtime',
                         'treat_label' => 'Heal CodeIgniter runtime',
                         'summary' => 'Official Open Source POS is already in /app (vendor/codeigniter4 present, '.((string) ($checks['table_count'] ?? '?')).' tables kept). '
-                            .'Stock Paths.php already points at vendor — a missing /app/system is not the 500. Production OSPOS fatals when app.allowedHostnames is empty. '
-                            .'Heal writes the public hostname, encryption.key, sidecar credentials, and writable/, then reloads php-fpm. It does not recreate the container or wipe MySQL.',
+                            .'Stock Paths.php already points at vendor — a missing /app/system is not the 500. '
+                            .($allowedMissing
+                                ? 'Production OSPOS fatals when app.allowedHostnames / ALLOWED_HOSTNAMES is empty (getenv does not read dotted .env keys). '
+                                : 'Host whitelist is set; the empty HTTP 500 is the next OSPOS boot exception — Heal rewrites env, probes with the public Host header, and surfaces writable/logs. ')
+                            .'Heal writes the public hostname plus localhost, encryption.key, sidecar credentials, and writable/, then reloads php-fpm. It does not recreate the container or wipe MySQL.',
                     ];
                 }
                 if (! $missingApp && ! $hasSystem && $hasVendorSystem) {
@@ -5662,13 +5693,13 @@ PHP;
                         .($requireAlreadyResolved ? '; the front-controller require is correct' : '')
                         .'. '
                         .($allowedMissing
-                            ? 'Official Open Source POS fatals in production when app.allowedHostnames is empty. '
+                            ? 'Official Open Source POS fatals in production when ALLOWED_HOSTNAMES is empty (getenv does not read dotted app.allowedHostnames). '
                             : ($mysqliMissing
                                 ? 'Doctor PDO uses PDO; CodeIgniter’s default DBDriver is MySQLi, which is not loaded on this runtime. '
                                 : ($alreadySidecarCreds
                                     ? 'Sidecar user/name are already written; the 12-byte HTTP 500 is CodeIgniter’s production “Server Error” (writable/logs or a later boot exception). '
                                     : 'The empty HTTP 500 is usually CodeIgniter still using DirectAdmin DB user/password against the sidecar, or a missing encryption.key/writable/. ')))
-                        .'Heal writes app.allowedHostnames from the public URL, installs mysqli if needed, rewrites sidecar credentials, encryption.key, app.baseURL, and writable/, then reloads php-fpm. It does not recreate the container or touch MySQL.',
+                        .'Heal writes ALLOWED_HOSTNAMES and app.allowedHostnames from the public URL, installs mysqli if needed, rewrites sidecar credentials, encryption.key, app.baseURL, and writable/, then reloads php-fpm. It does not recreate the container or touch MySQL.',
                 ];
             }
 
