@@ -5335,6 +5335,15 @@ class ContainerDeploymentService
             $versions = is_array($template->versions)
                 ? $template->versions
                 : json_decode($template->versions, true) ?? [];
+            if (strtolower((string) ($template->slug ?? '')) === 'nodejs') {
+                // Existing production template rows can predate newly supported
+                // official Node tags. Runtime selection must not silently fall
+                // back to node:20 after Doctor already selected/pulled Node 22.
+                $versions = array_values(array_unique(array_merge(
+                    $versions,
+                    ContainerTemplate::nodeRuntimeVersions(),
+                )));
+            }
 
             if (
                 in_array($selectedVersion, $versions, true)

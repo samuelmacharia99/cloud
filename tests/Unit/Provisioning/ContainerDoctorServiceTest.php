@@ -187,6 +187,33 @@ LOG;
     }
 
     #[Test]
+    public function old_node_20_engine_logs_are_removed_after_the_live_container_runs_node_22(): void
+    {
+        $merged = app(ContainerDoctorService::class)->mergeLogAndLiveFindings(
+            [[
+                'id' => 'node_runtime_too_old',
+                'severity' => 'critical',
+                'title' => 'This app requires Node 22',
+            ]],
+            [
+                'findings' => [[
+                    'id' => 'live_upstream_unreachable',
+                    'severity' => 'critical',
+                    'title' => 'App port is not answering',
+                ]],
+                'checks' => [
+                    'http_status' => 502,
+                    'container_image' => 'node:22-alpine',
+                ],
+            ]
+        );
+
+        $ids = array_column($merged, 'id');
+        $this->assertNotContains('node_runtime_too_old', $ids);
+        $this->assertContains('live_upstream_unreachable', $ids);
+    }
+
+    #[Test]
     public function workspace_protocol_finding_replaces_false_bootstrap_progress(): void
     {
         $merged = app(ContainerDoctorService::class)->mergeLogAndLiveFindings(

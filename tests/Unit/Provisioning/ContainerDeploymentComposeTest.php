@@ -394,6 +394,29 @@ class ContainerDeploymentComposeTest extends TestCase
     }
 
     #[Test]
+    public function node_22_selection_does_not_fall_back_when_the_database_template_is_stale(): void
+    {
+        $template = new ContainerTemplate([
+            'slug' => 'nodejs',
+            'docker_image' => 'node:20-alpine',
+            'versions' => ['18-alpine', '20-alpine'],
+        ]);
+
+        $runtimeImages = $this->createMock(RuntimeImageProvisioner::class);
+        $runtimeImages->method('usesRuntimeImage')->willReturn(false);
+
+        $deployer = new ContainerDeploymentService(
+            runtimeImages: $runtimeImages,
+            templateEnvironment: new ContainerTemplateEnvironmentService
+        );
+
+        $this->assertSame(
+            'node:22-alpine',
+            $deployer->resolveTemplateDockerImage($template, '22-alpine')
+        );
+    }
+
+    #[Test]
     public function render_compose_allows_bound_domains_on_the_vite_preview_server(): void
     {
         $template = new ContainerTemplate([

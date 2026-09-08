@@ -1402,6 +1402,13 @@ class ContainerDoctorService
                 return false;
             }
 
+            // Once the running container is Node 22+, old EBADENGINE lines from
+            // the six-hour compose log window are historical.
+            if (($f['id'] ?? '') === 'node_runtime_too_old'
+                && preg_match('/(?:^|\/)node:?(?:-|runtime:)?(?:v)?(2[2-9]|[3-9]\d)/i', (string) ($checks['container_image'] ?? '')) === 1) {
+                return false;
+            }
+
             // If live PDO works, old auth/missing-db log signatures are historical only.
             if ($dbOk && in_array($f['id'] ?? '', $resolvedLogIds, true)) {
                 return false;
@@ -6177,7 +6184,32 @@ PHP;
             'product.containerTemplate',
             'containerDeployment.node',
         ]));
-        $result['message'] = 'Runtime upgraded to '.$image.'. '.$result['message'];
+
+        $ssh = SSHService::forNode($deployment->node);
+        try {
+            $runningImage = trim($ssh->exec(
+                'docker inspect --format '.escapeshellarg('{{.Config.Image}}').' '
+                    .escapeshellarg((string) $deployment->container_name),
+                20
+            ));
+        } catch (\Throwable $e) {
+            return [
+                'success' => false,
+                'message' => 'Node 22 was selected, but the recreated container could not be verified: '.$e->getMessage(),
+            ];
+        } finally {
+            $ssh->disconnect();
+        }
+
+        if ($runningImage !== $image) {
+            return [
+                'success' => false,
+                'message' => 'Node 22 was pulled, but Compose recreated the app with '.$runningImage
+                    .' instead of '.$image.'. Runtime selection was not applied.',
+            ];
+        }
+
+        $result['message'] = 'Running image verified as '.$runningImage.'. '.$result['message'];
 
         return $result;
     }
