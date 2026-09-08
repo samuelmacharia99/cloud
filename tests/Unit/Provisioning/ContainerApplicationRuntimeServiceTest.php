@@ -562,6 +562,7 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
         $pnpm = $this->service->pnpmInstallShellCommand(true, true);
         $this->assertStringContainsString('/usr/local/bin/corepack pnpm install --frozen-lockfile', $pnpm);
         $this->assertStringContainsString('COREPACK_HOME=/tmp/.corepack', $pnpm);
+        $this->assertStringContainsString('COREPACK_ENABLE_STRICT=0', $pnpm);
 
         $npx = $this->service->pnpmInstallShellCommand(true, true, viaNpx: true);
         $this->assertStringContainsString('/usr/local/bin/npx --yes pnpm@9 install --frozen-lockfile', $npx);

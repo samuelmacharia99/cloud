@@ -1267,6 +1267,8 @@ class ContainerApplicationRuntimeService
         return [
             'COREPACK_HOME' => '/tmp/.corepack',
             'COREPACK_ENABLE_DOWNLOAD_PROMPT' => '0',
+            // package.json packageManager: npm must not crash-loop leftover yarn/pnpm shims.
+            'COREPACK_ENABLE_STRICT' => '0',
         ];
     }
 

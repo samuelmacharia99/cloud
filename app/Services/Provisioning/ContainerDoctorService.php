@@ -361,7 +361,7 @@ class ContainerDoctorService
         $containerReady = $deployment->isRunning();
 
         try {
-            $upstream = $this->withBootstrapState($ssh, $deployment, $this->probeUpstream($ssh, $deployment));
+            $upstream = $this->withBootstrapState($ssh, $deployment, $this->probeUpstream($ssh, $deployment), $logs);
             $snapshot = $this->inspectInfrastructureSnapshot($ssh, $service, $deployment, $upstream);
             $this->mergeInfrastructureSnapshotIntoChecks($checks, $snapshot, $upstream);
             $checks['upstream_reachable'] = $upstream['reachable'];
@@ -1162,6 +1162,7 @@ class ContainerDoctorService
                     'mysql_unix_socket_missing',
                     'npm_workspace_protocol',
                     'node_package_manager_mismatch',
+                    'postgres_role_missing',
                 ]);
 
                 $appErrors = $containerReady ? $this->readRecentApplicationErrors($ssh, $deployment) : [];
@@ -1381,6 +1382,7 @@ class ContainerDoctorService
         $resolvedLogIds = [
             'postgres_password_auth_failed',
             'postgres_database_missing',
+            'postgres_role_missing',
             'mysql_access_denied',
             'missing_pdo_pgsql',
         ];
@@ -1455,7 +1457,8 @@ class ContainerDoctorService
         } elseif (in_array('mysql_unix_socket_missing', $ids, true)) {
             $drop = ['mysql_connection_refused', 'live_db_connection_failed'];
         } elseif (in_array('npm_workspace_protocol', $ids, true)
-            || in_array('node_package_manager_mismatch', $ids, true)) {
+            || in_array('node_package_manager_mismatch', $ids, true)
+            || in_array('postgres_role_missing', $ids, true)) {
             $drop = ['live_bootstrap_in_progress', 'live_upstream_unreachable', 'container_crash_loop'];
         } elseif (array_intersect($ids, [
             'php_builtin_dev_server',
@@ -3346,9 +3349,12 @@ PHP;
      * Log lines proving the container is mid-bootstrap (dependency install or production
      * build). A first Vite/Next build easily runs for minutes, so an unreachable port
      * during that window is progress, not a failure.
+     *
+     * Do not match generic `npm warn deprecated` / `npm notice` — those linger after
+     * install finishes and hide crash loops (wrong package manager, missing role).
      */
     private const BOOTSTRAP_LOG_PATTERNS = [
-        '/npm (warn|notice|info)/i',
+        '/npm warn (idealTree|reify|tar|EBADENGINE|config)/i',
         '/idealTree|reify|audited \d+ packages|added \d+ packages|changed \d+ packages/i',
         '/(vite|next|nuxt|astro|tsc|webpack) build|building for production|creating an optimized production build/i',
         '/transforming\b|rendering chunks|computing gzip size/i',
@@ -3362,6 +3368,7 @@ PHP;
         '/sh:\s+next:\s+Permission denied/i',
         '/This project is configured to use (npm|pnpm|yarn)/i',
         '/has a "packageManager" field/i',
+        '/FATAL:\s+role "[^"]+" does not exist/i',
     ];
 
     public function bootstrapLogsLookFatal(string $logs): bool
@@ -3375,9 +3382,10 @@ PHP;
         return false;
     }
 
-    public function recentLogsIndicateBootstrapProgress(string $logs): ?string
+    public function recentLogsIndicateBootstrapProgress(string $logs, string $fatalContext = ''): ?string
     {
-        if ($this->bootstrapLogsLookFatal($logs)) {
+        $combined = trim($fatalContext) !== '' ? $fatalContext."\n".$logs : $logs;
+        if ($this->bootstrapLogsLookFatal($combined)) {
             return null;
         }
 
@@ -3400,29 +3408,31 @@ PHP;
     /**
      * @return string|null the log line that proves work is in progress
      */
-    private function detectBootstrapActivity(SSHService $ssh, $deployment): ?string
+    private function detectBootstrapActivity(SSHService $ssh, $deployment, string $knownLogs = ''): ?string
     {
         try {
-            $logs = trim($ssh->exec(
+            $recent = trim($ssh->exec(
                 'docker logs --since 120s --tail 20 '
                 .escapeshellarg((string) $deployment->container_name).' 2>&1 || true',
                 20
             ));
         } catch (\Throwable) {
-            return null;
+            $recent = '';
         }
 
-        return $this->recentLogsIndicateBootstrapProgress($logs);
+        $window = $recent !== '' ? $recent : $knownLogs;
+
+        return $this->recentLogsIndicateBootstrapProgress($window, $knownLogs);
     }
 
     /**
      * @param  array<string, mixed>  $probe
      * @return array<string, mixed>
      */
-    private function withBootstrapState(SSHService $ssh, $deployment, array $probe): array
+    private function withBootstrapState(SSHService $ssh, $deployment, array $probe, string $knownLogs = ''): array
     {
         if (! $probe['reachable']) {
-            $probe['bootstrapping'] = $this->detectBootstrapActivity($ssh, $deployment);
+            $probe['bootstrapping'] = $this->detectBootstrapActivity($ssh, $deployment, $knownLogs);
         }
 
         return $probe;
@@ -3634,6 +3644,23 @@ PHP;
                     'Click Create/sync database — Doctor will rename DB_DATABASE to s{id}_db if it was set to the username, create the database, and rewrite .env.',
                     'Then run: php artisan migrate --force',
                     'Do not Reset database if tables already exist — that wipes data. Re-scan and Repair again if the database name is still wrong.',
+                ],
+            ],
+            [
+                'id' => 'postgres_role_missing',
+                'severity' => 'critical',
+                'stacks' => ['laravel', 'php', 'nodejs', 'python', 'ruby', '*'],
+                'patterns' => [
+                    '/FATAL:\s+role "[^"]+" does not exist/i',
+                    '/role "postgres" does not exist/i',
+                ],
+                'title' => 'PostgreSQL role does not exist',
+                'summary' => 'The app or a healthcheck logged in as a role the volume never created. Official Postgres images with a custom POSTGRES_USER do not create a `postgres` superuser — Repair DB credentials rewrites DATABASE_URL / DB_USERNAME to the platform role and recreates only the app. The database volume is kept.',
+                'treat_action' => 'sync_database_credentials',
+                'treat_label' => 'Repair DB credentials',
+                'manual_steps' => [
+                    'Click Repair DB credentials — logs in as the volume superuser (not `postgres`), resets the app role, and rewrites .env / DATABASE_URL.',
+                    'Do not Reset database — that wipes existing tables. Re-scan and Repair again if the role error persists.',
                 ],
             ],
             [

@@ -236,7 +236,7 @@ class ContainerStackCommandService
 
         $installScript = 'set -e; '.$npmPrefix
             .'cd '.escapeshellarg($containerDir).'; '
-            .'export COREPACK_HOME=/tmp/.corepack COREPACK_ENABLE_DOWNLOAD_PROMPT=0; '
+            .'export COREPACK_HOME=/tmp/.corepack COREPACK_ENABLE_DOWNLOAD_PROMPT=0 COREPACK_ENABLE_STRICT=0; '
             .'if [ -f package-lock.json ]; then '
             .'npm ci --legacy-peer-deps --cache /tmp/.npm --no-audit --no-fund '
             .'|| npm install --legacy-peer-deps --cache /tmp/.npm --no-audit --no-fund; '
@@ -1304,7 +1304,7 @@ class ContainerStackCommandService
      */
     public function corepackEnablePrefix(): string
     {
-        return 'export COREPACK_HOME=/tmp/.corepack COREPACK_ENABLE_DOWNLOAD_PROMPT=0; '
+        return 'export COREPACK_HOME=/tmp/.corepack COREPACK_ENABLE_DOWNLOAD_PROMPT=0 COREPACK_ENABLE_STRICT=0; '
             .'mkdir -p /tmp/.corepack; '
             .'if command -v corepack >/dev/null 2>&1; then corepack enable >/dev/null 2>&1 || true; fi; ';
     }

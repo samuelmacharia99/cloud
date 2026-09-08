@@ -192,6 +192,7 @@ class ContainerStackCommandServiceTest extends TestCase
     {
         $service = new ContainerStackCommandService;
         $this->assertStringContainsString('corepack enable', $service->corepackEnablePrefix());
+        $this->assertStringContainsString('COREPACK_ENABLE_STRICT=0', $service->corepackEnablePrefix());
 
         $ssh = $this->createMock(SSHService::class);
         $ssh->expects($this->once())

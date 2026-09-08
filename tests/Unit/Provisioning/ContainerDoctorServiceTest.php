@@ -80,6 +80,11 @@ LOG;
             [
                 'findings' => [
                     [
+                        'id' => 'live_bootstrap_in_progress',
+                        'severity' => 'warning',
+                        'title' => 'Live check: the app is still installing and building',
+                    ],
+                    [
                         'id' => 'container_crash_loop',
                         'severity' => 'critical',
                         'title' => 'Application container is crash-looping',
@@ -91,14 +96,52 @@ LOG;
                         'title' => 'App port is not answering',
                     ],
                 ],
-                'checks' => ['http_status' => null, 'db_ok' => null],
+                'checks' => ['http_status' => 502, 'db_ok' => null],
             ]
         );
 
         $ids = array_column($merged, 'id');
         $this->assertContains('node_package_manager_mismatch', $ids);
+        $this->assertNotContains('live_bootstrap_in_progress', $ids);
         $this->assertNotContains('container_crash_loop', $ids);
         $this->assertNotContains('live_upstream_unreachable', $ids);
+    }
+
+    #[Test]
+    public function npm_deprecation_warnings_are_not_bootstrap_progress(): void
+    {
+        $doctor = app(ContainerDoctorService::class);
+        $deprecated = <<<'LOG'
+user-493-service-454-nodejs: npm warn deprecated glob@7.2.3: Old versions of glob are not supported
+user-493-service-454-nodejs: npm warn deprecated uuid@8.3.2: uuid@10 and below is no longer supported
+LOG;
+
+        $this->assertNull($doctor->recentLogsIndicateBootstrapProgress($deprecated));
+        $this->assertFalse($doctor->bootstrapLogsLookFatal($deprecated));
+    }
+
+    #[Test]
+    public function completed_npm_install_plus_package_manager_loop_is_fatal_not_progress(): void
+    {
+        $recent = <<<'LOG'
+user-493-service-454-nodejs: npm warn deprecated glob@7.2.3: Old versions of glob are not supported
+user-493-service-454-nodejs: added 1059 packages in 16s
+LOG;
+        $compose = <<<'LOG'
+user-493-service-454-nodejs-db  | FATAL:  role "postgres" does not exist
+user-493-service-454-nodejs     | This project is configured to use npm because /app/package.json has a "packageManager" field
+user-493-service-454-nodejs     | This project is configured to use npm because /app/package.json has a "packageManager" field
+LOG;
+
+        $doctor = app(ContainerDoctorService::class);
+        $this->assertNotNull($doctor->recentLogsIndicateBootstrapProgress($recent));
+        $this->assertNull($doctor->recentLogsIndicateBootstrapProgress($recent, $compose));
+        $this->assertTrue($doctor->bootstrapLogsLookFatal($compose));
+
+        $findings = $doctor->analyzeLogs($recent."\n".$compose, 'nodejs');
+        $ids = array_column($findings, 'id');
+        $this->assertContains('node_package_manager_mismatch', $ids);
+        $this->assertContains('postgres_role_missing', $ids);
     }
 
     #[Test]
@@ -581,6 +624,20 @@ LOG;
         $findings = app(ContainerDoctorService::class)->analyzeLogs($logs, 'laravel');
 
         $this->assertContains('postgres_database_missing', array_column($findings, 'id'));
+    }
+
+    #[Test]
+    public function it_detects_missing_postgres_role(): void
+    {
+        $logs = '2026-09-08 18:46:27.378 UTC [65] FATAL:  role "postgres" does not exist';
+
+        $findings = app(ContainerDoctorService::class)->analyzeLogs($logs, 'nodejs');
+        $finding = collect($findings)->firstWhere('id', 'postgres_role_missing');
+
+        $this->assertNotNull($finding);
+        $this->assertSame('sync_database_credentials', $finding['treat_action']);
+        $this->assertSame('Repair DB credentials', $finding['treat_label']);
+        $this->assertSame('critical', $finding['severity']);
     }
 
     #[Test]
