@@ -1241,6 +1241,26 @@ LOG;
     }
 
     #[Test]
+    public function node_upstream_unreachable_offers_start_the_node_app_not_recreate(): void
+    {
+        $treat = app(ContainerDoctorService::class)->unreachableUpstreamTreatment('nodejs');
+
+        $this->assertSame('restart_application', $treat['treat_action']);
+        $this->assertSame('Start the Node app', $treat['treat_label']);
+        $this->assertStringContainsString('same start command', $treat['summary']);
+        $this->assertStringContainsString('Do not Recreate', implode(' ', $treat['manual_steps']));
+    }
+
+    #[Test]
+    public function laravel_upstream_unreachable_still_offers_recreate(): void
+    {
+        $treat = app(ContainerDoctorService::class)->unreachableUpstreamTreatment('laravel');
+
+        $this->assertSame('recreate_application', $treat['treat_action']);
+        $this->assertSame('Recreate containers', $treat['treat_label']);
+    }
+
+    #[Test]
     public function unreachable_upstream_failure_message_names_the_real_cause(): void
     {
         $message = $this->callPrivate('upstreamFailureMessage', [[

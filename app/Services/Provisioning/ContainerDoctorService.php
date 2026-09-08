@@ -1269,22 +1269,16 @@ class ContainerDoctorService
                         'source' => 'live',
                     ];
                 } elseif (! $upstream['reachable'] && $upstream['assigned_port'] !== null && ! $hasSpecificInfra) {
+                    $treat = $this->unreachableUpstreamTreatment($stack);
                     $findings[] = [
                         'id' => 'live_upstream_unreachable',
                         'severity' => 'critical',
                         'title' => 'Live check: proxy cannot reach the app (HTTP '.$httpStatus.')',
-                        'summary' => 'The web proxy returned HTTP '.$httpStatus.' because nothing answered on the app port '
-                            .'(127.0.0.1:'.$upstream['assigned_port'].') on the node. This is not an application exception — '
-                            .'the container is stopped, crash-looping on boot, or no longer publishing that port, '
-                            .'so restarting alone will not help until the boot failure is fixed.',
+                        'summary' => $treat['summary'],
                         'evidence' => $this->upstreamEvidence($upstream, $httpStatus, (string) ($deployment->getAccessUrl() ?? '')),
-                        'treat_action' => 'recreate_application',
-                        'treat_label' => 'Recreate containers',
-                        'manual_steps' => [
-                            'Recreate containers re-runs docker compose up -d, which restart cannot do for missing containers or changed ports.',
-                            'Read the boot error in Logs — a crash-looping container repeats the same startup error.',
-                            'If the app crashes on boot, fix the start command or missing environment variables, then recreate.',
-                        ],
+                        'treat_action' => $treat['treat_action'],
+                        'treat_label' => $treat['treat_label'],
+                        'manual_steps' => $treat['manual_steps'],
                         'source' => 'live',
                     ];
                 } elseif ($hasEmptyDb) {
@@ -3439,8 +3433,43 @@ PHP;
     }
 
     /**
-     * @param  array<string, mixed>  $probe
+     * Recreate keeps the compose start command. Node/Python/Ruby/Go 502s are
+     * usually a wrong start command (packageManager, placeholder, missing build).
+     *
+     * @return array{treat_action: string, treat_label: string, summary: string, manual_steps: list<string>}
      */
+    public function unreachableUpstreamTreatment(string $stack): array
+    {
+        if (in_array($stack, ['nodejs', 'python', 'ruby', 'go'], true)) {
+            $label = $stack === 'nodejs' ? 'Start the Node app' : 'Start the application';
+
+            return [
+                'treat_action' => 'restart_application',
+                'treat_label' => $label,
+                'summary' => 'Nothing answered on the app port because the container is stopped, crash-looping on boot, or never published that port. '
+                    .'Recreate containers keeps the same start command. '.$label.' re-detects package.json / the entrypoint, rewrites compose, and recreates only the app. The database volume is kept.',
+                'manual_steps' => [
+                    'Click '.$label.' — re-detects the start command and recreates only the app (database stays).',
+                    'The first install and production build can take several minutes. Watch Logs.',
+                    'Do not Recreate containers (same broken command) and do not Reset database.',
+                ],
+            ];
+        }
+
+        return [
+            'treat_action' => 'recreate_application',
+            'treat_label' => 'Recreate containers',
+            'summary' => 'The web proxy cannot reach the app because nothing answered on the published port. '
+                .'The container is stopped, crash-looping on boot, or no longer publishing that port, '
+                .'so a process restart will not help until compose is brought up again.',
+            'manual_steps' => [
+                'Recreate containers re-runs docker compose up -d, which restart cannot do for missing containers or changed ports.',
+                'Read the boot error in Logs — a crash-looping container repeats the same startup error.',
+                'If the app crashes on boot, fix the start command or missing environment variables, then recreate.',
+            ],
+        ];
+    }
+
     private function bootstrapProgressMessage(array $probe): string
     {
         return 'The container is still installing dependencies and building the app on '
@@ -7071,6 +7100,19 @@ PHP;
 
             if (is_string($probe['bootstrapping'])) {
                 return ['success' => true, 'message' => $this->bootstrapProgressMessage($probe)];
+            }
+
+            $slug = strtolower((string) (
+                $service->effectiveContainerTemplate()?->slug
+                ?? $service->product?->containerTemplate?->slug
+                ?? ''
+            ));
+            if (in_array($slug, ['nodejs', 'python', 'ruby', 'go'], true)) {
+                return [
+                    'success' => false,
+                    'message' => $this->upstreamFailureMessage($probe)
+                        .' Watch Logs until the start command runs. Do not Recreate containers — that keeps the same broken start command.',
+                ];
             }
 
             // `docker compose restart` cannot apply a changed compose environment or
