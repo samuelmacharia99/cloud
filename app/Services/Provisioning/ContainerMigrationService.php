@@ -94,6 +94,11 @@ class ContainerMigrationService
             $this->cleanupRemoteArchive($sourceNode, $remoteArchive);
             $this->cleanupRemoteArchive($targetNode, $remoteArchive);
 
+            if ((int) $sourceNode->container_count > 0) {
+                $sourceNode->decrement('container_count');
+            }
+            $targetNode->increment('container_count');
+
             Log::info("Container data-migrated for service {$service->id} from node {$oldNodeId} to {$targetNode->id}");
         } catch (Exception $e) {
             $service->update([

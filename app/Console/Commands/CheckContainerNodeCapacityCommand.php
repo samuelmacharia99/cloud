@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Models\Node;
 use App\Services\NotificationService;
 use App\Services\Provisioning\ContainerNodeCapacityService;
+use App\Services\Provisioning\ContainerNodeEvacuationService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
@@ -12,7 +13,7 @@ class CheckContainerNodeCapacityCommand extends BaseCronCommand
 {
     protected $signature = 'cron:check-container-node-capacity';
 
-    protected $description = 'Alerts admins to provision another application host when capacity reaches ~70%';
+    protected $description = 'Alerts admins when an application host is live-full and moves bursting apps to a quieter host';
 
     public function __construct(
         private ContainerNodeCapacityService $capacity,
@@ -80,6 +81,9 @@ class CheckContainerNodeCapacityCommand extends BaseCronCommand
         $onlineCount = $nodes->where('status', 'online')->count();
         $pressuredCount = count($pressured);
 
+        $evacuation = app(ContainerNodeEvacuationService::class)->evacuatePressuredHosts();
+        $moved = count($evacuation['migrated']);
+
         if ($pressuredCount > 0 && $pressuredCount === $nodes->count()) {
             $fleetKey = 'container-node-scale-out:fleet';
             if (Cache::add($fleetKey, true, now()->addMinutes($cooldownMinutes))) {
@@ -92,12 +96,13 @@ class CheckContainerNodeCapacityCommand extends BaseCronCommand
         }
 
         return sprintf(
-            'Checked %d application host(s). %d at/above %d%% pressure. %d alert(s) sent. %d online.',
+            'Checked %d application host(s). %d at/above %d%% pressure. %d alert(s) sent. %d online. Moved %d container(s).',
             $nodes->count(),
             $pressuredCount,
             $threshold,
             $alerted,
-            $onlineCount
+            $onlineCount,
+            $moved
         );
     }
 }

@@ -88,6 +88,43 @@ class ContainerDomainBindingServiceTest extends TestCase
         app(ContainerDomainBindingService::class)->attachPrimaryHosts($context['service']->fresh());
     }
 
+    public function test_sync_managed_a_records_points_bound_hosts_at_the_current_node(): void
+    {
+        $context = $this->makeService(['example.com']);
+        $platform = Domain::create([
+            'user_id' => $context['user']->id,
+            'name' => 'example',
+            'extension' => '.com',
+            'status' => 'active',
+            'cloudflare_dns_enabled' => true,
+            'cloudflare_zone_id' => 'zone-1',
+        ]);
+        ContainerDomain::create([
+            'container_deployment_id' => $context['deployment']->id,
+            'domain' => 'app.example.com',
+            'status' => 'active',
+        ]);
+
+        $this->mock(DomainCloudflareDnsService::class, function ($mock) use ($platform, $context) {
+            $mock->shouldReceive('resolvePlatformDomainForHostname')
+                ->once()
+                ->with($context['user']->id, 'app.example.com')
+                ->andReturn($platform);
+            $mock->shouldReceive('upsertARecord')
+                ->once()
+                ->with(
+                    \Mockery::on(fn ($domain) => $domain->is($platform)),
+                    'app.example.com',
+                    $context['deployment']->node->ip_address
+                )
+                ->andReturn(['success' => true, 'message' => 'ok']);
+        });
+
+        app(ContainerDomainBindingService::class)->syncManagedARecords(
+            $context['service']->fresh(['containerDeployment.node', 'containerDeployment.domains'])
+        );
+    }
+
     public function test_unmanaged_dns_does_not_write_a_records(): void
     {
         $context = $this->makeService(['example.com']);

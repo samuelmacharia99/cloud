@@ -121,6 +121,29 @@ class ContainerDomainBindingService
         return $domain?->fresh();
     }
 
+    /**
+     * Point platform-managed DNS A records at the current container host.
+     * Used after bind, redeploy, and live migration so traffic follows the node IP.
+     */
+    public function syncManagedARecords(Service $service): void
+    {
+        $service->loadMissing(['containerDeployment.node', 'containerDeployment.domains']);
+        $deployment = $service->containerDeployment;
+        $nodeIp = (string) ($deployment?->node?->ip_address ?? '');
+        if ($nodeIp === '' || ! $deployment) {
+            return;
+        }
+
+        $domains = $deployment->domains ?? collect();
+        foreach ($domains as $domain) {
+            if (! in_array($domain->status, ['active', 'pending'], true)) {
+                continue;
+            }
+
+            $this->syncManagedARecord($service, (string) $domain->domain, $nodeIp);
+        }
+    }
+
     public function resolvePrimaryHostname(Service $service): ?string
     {
         $service->loadMissing(['product', 'containerDeployment.domains']);

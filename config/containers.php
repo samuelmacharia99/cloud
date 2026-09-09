@@ -37,6 +37,10 @@ return [
         // Alert operators when live CPU, RAM, or disk is high so a new host can be provisioned.
         'scale_out_threshold_percent' => (int) env('CONTAINER_NODE_SCALE_OUT_PERCENT', 70),
         'scale_out_alert_cooldown_minutes' => (int) env('CONTAINER_NODE_SCALE_OUT_COOLDOWN_MINUTES', 360),
+        // Move the heaviest bursting app off a pressured host onto the quietest host that fits.
+        'evacuate_max_per_run' => (int) env('CONTAINER_NODE_EVACUATE_MAX', 1),
+        'evacuate_cooldown_hours' => (int) env('CONTAINER_NODE_EVACUATE_COOLDOWN_HOURS', 6),
+        'evacuate_lock_seconds' => (int) env('CONTAINER_NODE_EVACUATE_LOCK_SECONDS', 1800),
     ],
 
     'runtime_templates' => [

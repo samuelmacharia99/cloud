@@ -39,6 +39,41 @@ class ContainerDeploymentCapacityTest extends TestCase
     }
 
     #[Test]
+    public function placement_picks_the_quietest_host_by_live_usage(): void
+    {
+        $hot = $this->containerHost([
+            'name' => 'hot-host',
+            'cpu_cores' => 16,
+            'ram_gb' => 32,
+            'storage_gb' => 400,
+            'cpu_used' => 80,
+            'ram_used_gb' => 24,
+            'storage_used_gb' => 40,
+            'container_count' => 1,
+        ]);
+        $quiet = $this->containerHost([
+            'name' => 'quiet-host',
+            'cpu_cores' => 16,
+            'ram_gb' => 32,
+            'storage_gb' => 400,
+            'cpu_used' => 8,
+            'ram_used_gb' => 4,
+            'storage_used_gb' => 20,
+            'container_count' => 4,
+        ]);
+        $service = $this->containerService([
+            'cpu' => 1,
+            'memory' => 512,
+            'disk' => 10,
+        ]);
+
+        $selected = app(ContainerDeploymentService::class)->assertHostHasCapacity($service);
+
+        $this->assertSame($quiet->id, $selected->id);
+        $this->assertNotSame($hot->id, $selected->id);
+    }
+
+    #[Test]
     public function a_cpu_hot_host_still_accepts_because_cpu_is_billed_as_overage(): void
     {
         $node = $this->containerHost([

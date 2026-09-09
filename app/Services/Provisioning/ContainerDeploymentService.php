@@ -118,11 +118,22 @@ class ContainerDeploymentService
                 'template_slug' => $template->slug,
             ]);
 
-            // Select node if not already set
+            // Select node if not already set. Redeploys stay on the current host
+            // unless that host is over live pressure or no longer has headroom.
             if (! $service->node_id) {
                 $node = $this->selectNode($template, $service);
             } else {
                 $node = $service->node;
+                if ($node && $this->shouldRelocateOffHost($node, $service, $template)) {
+                    $relocated = app(ContainerNodeEvacuationService::class)->relocateIfNeeded(
+                        $service,
+                        'node_capacity'
+                    );
+                    if ($relocated) {
+                        $service->refresh();
+                        $node = $service->node;
+                    }
+                }
             }
 
             if (! $node || $node->type !== 'container_host' || ! $node->is_active) {
@@ -771,6 +782,16 @@ class ContainerDeploymentService
 
             if (! $deployment || ! $deployment->node) {
                 throw new \DomainException('Container deployment not found');
+            }
+
+            $template = $this->resolveContainerTemplate($service) ?? $service->product?->containerTemplate;
+            if ($template && $this->shouldRelocateOffHost($deployment->node, $service, $template)) {
+                app(ContainerNodeEvacuationService::class)->relocateIfNeeded($service, 'node_capacity');
+                $service->refresh();
+                $deployment = $service->containerDeployment;
+                if (! $deployment || ! $deployment->node) {
+                    throw new \DomainException('Container deployment not found');
+                }
             }
 
             // Validate node has SSH credentials before attempting operation
@@ -1639,22 +1660,34 @@ class ContainerDeploymentService
     /**
      * Select the least-loaded container host node
      */
-    private function selectNode($template = null, ?Service $service = null): Node
+    private function selectNode($template = null, ?Service $service = null, ?int $exceptNodeId = null): Node
     {
-        $nodes = Node::where('type', 'container_host')
+        $query = Node::where('type', 'container_host')
             ->where('is_active', true)
             ->where('status', 'online')
             ->with([
                 'containerDeployments' => fn ($query) => $query
                     ->where('status', '!=', 'terminated')
                     ->with('service.product.containerTemplate'),
-            ])
-            ->orderBy('container_count')
-            ->get();
+            ]);
 
+        if ($exceptNodeId) {
+            $query->where('id', '!=', $exceptNodeId);
+        }
+
+        $nodes = $query->get();
         if ($nodes->isEmpty()) {
             throw new \DomainException('No available container host nodes');
         }
+
+        $capacity = app(ContainerNodeCapacityService::class);
+        $nodes = $nodes
+            ->sortBy([
+                fn (Node $node) => $capacity->evaluate($node)['pressure_percent'],
+                fn (Node $node) => (int) $node->container_count,
+                fn (Node $node) => (int) $node->id,
+            ])
+            ->values();
 
         if (! $template) {
             return $nodes->first();
@@ -1703,6 +1736,35 @@ class ContainerDeploymentService
         }
 
         return $this->selectNode($template, $service);
+    }
+
+    public function selectLeastLoadedHost($template = null, ?Service $service = null, ?int $exceptNodeId = null): Node
+    {
+        return $this->selectNode($template, $service, $exceptNodeId);
+    }
+
+    public function hostCanAccept(Node $node, ?Service $service, object $template): bool
+    {
+        $node->load([
+            'containerDeployments' => fn ($query) => $query
+                ->where('status', '!=', 'terminated')
+                ->with('service.product.containerTemplate'),
+        ]);
+
+        return $this->nodeHasCapacity($node, $service, $template);
+    }
+
+    public function shouldRelocateOffHost(Node $node, Service $service, object $template): bool
+    {
+        if ($node->type !== 'container_host' || ! $node->is_active || $node->status !== 'online') {
+            return true;
+        }
+
+        if (app(ContainerNodeCapacityService::class)->needsScaleOut($node)) {
+            return true;
+        }
+
+        return ! $this->hostCanAccept($node, $service, $template);
     }
 
     /**
@@ -7281,6 +7343,11 @@ class ContainerDeploymentService
                     }
                 }
             }
+
+            app(ContainerDomainBindingService::class)->syncManagedARecords($service->fresh([
+                'containerDeployment.node',
+                'containerDeployment.domains',
+            ]));
         } catch (\Throwable $e) {
             \Log::warning('Failed to reattach domains to latest deployment', [
                 'service_id' => $service->id,

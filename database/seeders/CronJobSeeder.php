@@ -138,7 +138,7 @@ class CronJobSeeder extends Seeder
             ],
             [
                 'name' => 'Check Container Node Capacity',
-                'description' => 'Alerts admins to provision another application host when live or reserved capacity reaches ~70%.',
+                'description' => 'Alerts admins when an application host is live-full and moves bursting apps to a quieter host.',
                 'command' => 'cron:check-container-node-capacity',
                 'schedule' => '*/15 * * * *',
                 'enabled' => true,
