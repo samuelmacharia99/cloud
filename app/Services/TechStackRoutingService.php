@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\ContainerTemplate;
 use App\Models\DatabaseTemplate;
 use App\Models\Product;
+use App\Models\Service;
 use Illuminate\Database\Eloquent\Collection;
 
 class TechStackRoutingService
@@ -209,6 +210,42 @@ class TechStackRoutingService
             'skip_modal' => self::skipsStackModal($language),
             'stack_builder_version' => (int) config('stack_builder.version', 1),
         ];
+    }
+
+    /**
+     * Payload for the Redeploy stack card (console and failed-deploy retry).
+     *
+     * @return array<string, mixed>|null
+     */
+    public static function redeployOptionsForService(Service $service): ?array
+    {
+        $template = $service->effectiveContainerTemplate();
+        if (! $template) {
+            return null;
+        }
+
+        $currentFramework = is_string($service->service_meta['framework'] ?? null)
+            ? $service->service_meta['framework']
+            : null;
+        $deployment = $service->containerDeployment;
+        $options = self::stackOptionsPayload($template, $currentFramework);
+        $options['current'] = [
+            'framework' => $currentFramework,
+            'frontend' => $service->service_meta['frontend'] ?? ($options['frontend']['value'] ?? 'none'),
+            'database_id' => $service->service_meta['database_id'] ?? null,
+            'selected_version' => ($service->service_meta['node_version_source'] ?? null) === 'auto'
+                ? null
+                : ($deployment?->selected_version ?? $service->service_meta['selected_version'] ?? null),
+            'node_version_source' => $service->service_meta['node_version_source']
+                ?? (! empty($service->service_meta['selected_version']) ? 'manual' : 'auto'),
+            'backend_root' => $service->service_meta['node_backend_root']
+                ?? data_get($service->service_meta, 'node_workloads.backend.root'),
+            'frontend_root' => $service->service_meta['node_frontend_root']
+                ?? data_get($service->service_meta, 'node_workloads.frontend.root'),
+            'node_workloads' => $service->service_meta['node_workloads'] ?? null,
+        ];
+
+        return $options;
     }
 
     /**

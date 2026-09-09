@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Customer;
 
+use App\Jobs\ProvisionContainerServiceJob;
 use App\Models\ContainerDeployment;
 use App\Models\ContainerTemplate;
 use App\Models\DatabaseTemplate;
@@ -12,6 +13,7 @@ use App\Models\User;
 use App\Services\Provisioning\ContainerDeploymentService;
 use App\Services\Provisioning\ContainerDeployResult;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Bus;
 use Tests\TestCase;
 
 class CustomerContainerRedeployStackTest extends TestCase
@@ -35,6 +37,58 @@ class CustomerContainerRedeployStackTest extends TestCase
             ->assertSee('Redeploy stack')
             ->assertSee('Frontend')
             ->assertSee('Database');
+    }
+
+    public function test_failed_deploy_console_shows_the_redeploy_stack_card(): void
+    {
+        [$customer, $service] = $this->makeNodeService([
+            'framework' => 'express',
+            'frontend' => 'vite-spa',
+            'node_backend_root' => 'apps/api',
+            'node_frontend_root' => 'apps/mobile',
+        ]);
+        $service->update(['status' => 'failed']);
+
+        $this->actingAs($customer)
+            ->get(route('customer.services.deploying', $service))
+            ->assertOk()
+            ->assertSee('Retry deploy')
+            ->assertSee('Live console')
+            ->assertSee('Advanced workload roots')
+            ->assertSee('Expo/React Native');
+    }
+
+    public function test_retry_from_deploy_console_persists_stack_fixes_then_queues(): void
+    {
+        Bus::fake();
+        [$customer, $service] = $this->makeNodeService([
+            'framework' => 'express',
+            'frontend' => 'vite-spa',
+            'node_backend_root' => 'apps/api',
+            'node_frontend_root' => 'apps/mobile',
+            'node_workloads' => [
+                'topology' => 'split_web_api',
+                'frontend' => ['root' => 'apps/mobile'],
+            ],
+        ]);
+        $service->update(['status' => 'failed']);
+
+        $this->actingAs($customer)
+            ->post(route('customer.services.deploying.retry', $service), [
+                'framework' => 'express',
+                'frontend' => 'none',
+                'backend_root' => 'apps/api',
+                'frontend_root' => '',
+            ])
+            ->assertRedirect(route('customer.services.deploying', $service));
+
+        $service->refresh();
+        $this->assertSame('provisioning', $service->status->value ?? $service->status);
+        $this->assertSame('none', $service->service_meta['frontend'] ?? null);
+        $this->assertSame('apps/api', $service->service_meta['node_backend_root'] ?? null);
+        $this->assertArrayNotHasKey('node_frontend_root', $service->service_meta ?? []);
+        $this->assertArrayNotHasKey('node_workloads', $service->service_meta ?? []);
+        Bus::assertDispatched(ProvisionContainerServiceJob::class);
     }
 
     public function test_redeploy_persists_frontend_and_database_selection(): void

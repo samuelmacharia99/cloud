@@ -40,6 +40,11 @@
         <p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-ink-500 dark:text-ink-400 mb-2">Deploy</p>
         <h1 class="font-display text-3xl text-ink-950 dark:text-white leading-tight">{{ $service->name }}</h1>
         <p class="text-ink-600 dark:text-ink-400 mt-2" x-text="view.headline"></p>
+        @if ($errors->any())
+            <div class="mt-3 rounded-xl border border-red-200 bg-red-50 dark:border-red-900/60 dark:bg-red-950/40 px-4 py-3 text-sm text-red-800 dark:text-red-200">
+                {{ $errors->first() }}
+            </div>
+        @endif
     </div>
 
     <div class="rounded-3xl border border-ink-200 dark:border-ink-800 bg-ink-950 text-slate-100 overflow-hidden shadow-xl">
@@ -100,18 +105,19 @@
                 ></pre>
             </div>
 
-            <div class="flex flex-col sm:flex-row gap-3">
-                <form
+            <div class="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
+                <div
                     x-show="view.can_retry && !view.is_active"
                     x-cloak
-                    method="POST"
-                    action="{{ route('customer.services.deploying.retry', $service) }}"
                 >
-                    @csrf
-                    <button type="submit" class="px-4 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-ink-950 text-sm font-semibold">
-                        Retry deploy
-                    </button>
-                </form>
+                    @include('services.partials.container-redeploy-modal', [
+                        'redeployButtonLabel' => 'Retry deploy',
+                        'redeploySubmitLabel' => 'Retry deploy',
+                        'redeployFormAction' => route('customer.services.deploying.retry', $service),
+                        'redeployButtonClass' => 'px-4 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-ink-950 text-sm font-semibold',
+                        'openRedeployModal' => $errors->any(),
+                    ])
+                </div>
                 @if($service->project_id)
                     <a href="{{ route('customer.projects.show', $service->project_id) }}" class="px-4 py-2.5 rounded-xl border border-slate-600 text-slate-200 text-sm font-semibold text-center hover:bg-slate-800">
                         Back to project
@@ -124,6 +130,7 @@
 
 @push('scripts')
 <script>
+@include('services.partials.container-redeploy-scripts')
 function deployConsole(initial, statusUrl) {
     return {
         view: initial || {},

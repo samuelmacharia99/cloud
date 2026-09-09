@@ -1,6 +1,6 @@
-                        <div x-data="redeployStackPanel(@js($redeployStackOptions ?? null))">
-                            <button type="button" @click="open = true" class="px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg font-medium transition hover:bg-slate-200 dark:hover:bg-slate-600">
-                                Redeploy stack
+                        <div x-data="redeployStackPanel(@js($redeployStackOptions ?? null))" x-init="open = open || @js((bool) ($openRedeployModal ?? false))">
+                            <button type="button" @click="open = true" class="{{ $redeployButtonClass ?? 'px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg font-medium transition hover:bg-slate-200 dark:hover:bg-slate-600' }}">
+                                {{ $redeployButtonLabel ?? 'Redeploy stack' }}
                             </button>
 
                             <template x-teleport="body">
@@ -14,15 +14,18 @@
                                         class="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-xl p-6"
                                         @click.outside="open = false"
                                     >
-                                        <h3 class="text-lg font-semibold text-slate-900 dark:text-white">Redeploy stack</h3>
+                                        <h3 class="text-lg font-semibold text-slate-900 dark:text-white">{{ $redeployButtonLabel ?? 'Redeploy stack' }}</h3>
                                         <p class="text-sm text-slate-500 dark:text-slate-400 mt-1 mb-4">
                                             Recreate the application runtime. Files in <code class="font-mono text-xs">/app</code> are kept unless you reset the database.
                                             @if (!empty($redeployStackOptions))
                                                 Choose frontend and database the same way as when you first deployed.
                                             @endif
+                                            @if (($templateSlug ?? '') === 'nodejs')
+                                                Expo/React Native apps are not a browser frontend — choose <strong>None</strong> to deploy the API, or point the frontend directory at a web app such as <code class="font-mono text-xs">apps/web</code>.
+                                            @endif
                                         </p>
 
-                                        <form method="POST" action="{{ container_route('redeploy', $service) }}" @submit.prevent="submitRedeploy($el)">
+                                        <form method="POST" action="{{ $redeployFormAction ?? container_route('redeploy', $service) }}" @submit.prevent="submitRedeploy($el)">
                                             @csrf
 
                                             @if (!empty($redeployStackOptions) && empty($redeployStackOptions['skip_modal']))
@@ -72,10 +75,11 @@
                                                 </template>
 
                                                 @if (($templateSlug ?? '') === 'nodejs')
-                                                    <div class="mb-4 rounded-lg border border-slate-200 dark:border-slate-700 p-3" x-show="selectedFrontend && selectedFrontend !== 'none'">
+                                                    <div class="mb-4 rounded-lg border border-slate-200 dark:border-slate-700 p-3">
                                                         <p class="text-sm font-semibold text-slate-900 dark:text-white">Advanced workload roots</p>
                                                         <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 mb-3">
-                                                            Leave blank to detect both applications. A split stack runs backend and frontend separately behind this service's domain.
+                                                            Leave blank to detect both applications. Backend and frontend must be different directories.
+                                                            If Frontend is None, only the API directory is used.
                                                         </p>
                                                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                                             <label class="text-xs font-medium text-slate-700 dark:text-slate-300">
@@ -189,7 +193,7 @@
                                             <div class="flex gap-2">
                                                 <button type="button" @click="open = false" class="btn-secondary flex-1 btn-sm">Cancel</button>
                                                 <button type="submit" class="flex-1 px-3 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-medium">
-                                                    Redeploy
+                                                    {{ $redeploySubmitLabel ?? 'Redeploy' }}
                                                 </button>
                                             </div>
                                         </form>

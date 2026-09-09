@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Customer;
 
 use App\Enums\ServiceStatus;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Customer\RedeployContainerStackRequest;
 use App\Http\Requests\DeployProjectWorkloadRequest;
 use App\Http\Requests\DestroyCustomerProjectRequest;
 use App\Http\Requests\MoveCustomerServiceProjectRequest;
@@ -25,6 +26,7 @@ use App\Services\Hosting\ServicePackageUsageService;
 use App\Services\Provisioning\ContainerDeployProgressService;
 use App\Services\Provisioning\WordPressAdminLoginService;
 use App\Services\ServiceEnforcementInsightService;
+use App\Services\TechStackRoutingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -261,9 +263,13 @@ class ServiceController extends Controller
             return redirect()->to($payload['redirect']);
         }
 
+        $service->loadMissing(['product.containerTemplate', 'containerDeployment']);
+
         return view('customer.services.deploying', [
             'service' => $service,
             'progress' => $payload,
+            'templateSlug' => $service->effectiveContainerTemplate()?->slug,
+            'redeployStackOptions' => TechStackRoutingService::redeployOptionsForService($service),
         ]);
     }
 
@@ -274,7 +280,7 @@ class ServiceController extends Controller
         return response()->json($progress->payload($service->fresh()));
     }
 
-    public function retryDeploy(Service $service): RedirectResponse
+    public function retryDeploy(RedeployContainerStackRequest $request, Service $service): RedirectResponse
     {
         $this->authorize('view', $service);
 
@@ -290,12 +296,71 @@ class ServiceController extends Controller
             return back()->withErrors(['error' => 'This service cannot be retried in its current state.']);
         }
 
+        $this->applyRetryStackSelection($service, $request);
+
         $service->update(['status' => ServiceStatus::Provisioning]);
         ProvisionContainerServiceJob::dispatchForService((int) $service->id, deferUntilResponse: true);
 
         return redirect()
             ->route('customer.services.deploying', $service)
             ->with('success', 'Deploy restarted. Watch the console for progress.');
+    }
+
+    private function applyRetryStackSelection(Service $service, RedeployContainerStackRequest $request): void
+    {
+        if (! $request->exists('frontend')
+            && ! $request->exists('framework')
+            && ! $request->exists('backend_root')
+            && ! $request->exists('frontend_root')
+            && ! $request->exists('database_id')
+            && ! $request->exists('selected_version')
+        ) {
+            return;
+        }
+
+        $template = $service->effectiveContainerTemplate();
+        if (! $template) {
+            return;
+        }
+
+        $validated = $request->validated();
+        $database = ! empty($validated['database_id'])
+            ? DatabaseTemplate::find($validated['database_id'])
+            : null;
+
+        try {
+            $applied = TechStackRoutingService::applyRedeployStackSelection(
+                is_array($service->service_meta) ? $service->service_meta : [],
+                $template,
+                $validated['framework'] ?? null,
+                $validated['frontend'] ?? null,
+                $database,
+                isset($validated['selected_version'])
+                    ? trim((string) $validated['selected_version'])
+                    : null,
+                $request->exists('selected_version'),
+            );
+        } catch (\InvalidArgumentException $e) {
+            throw ValidationException::withMessages(['error' => $e->getMessage()]);
+        }
+
+        if (($template->slug ?? '') === 'nodejs') {
+            foreach (['backend_root' => 'node_backend_root', 'frontend_root' => 'node_frontend_root'] as $input => $key) {
+                $value = trim((string) ($validated[$input] ?? ''));
+                if ($value !== '') {
+                    $applied['meta'][$key] = $value;
+                } else {
+                    unset($applied['meta'][$key]);
+                }
+            }
+            if (($applied['meta']['frontend'] ?? 'none') === 'none') {
+                unset($applied['meta']['node_frontend_root']);
+            }
+            unset($applied['meta']['node_workloads']);
+        }
+
+        $service->update(['service_meta' => $applied['meta']]);
+        $service->refresh();
     }
 
     public function wordpressAdminLogin(Service $service, WordPressAdminLoginService $loginService)

@@ -174,25 +174,7 @@ class ContainerController extends Controller
         $redeployStackOptions = null;
         $template = $resolvedTemplate ?? $service->product?->containerTemplate;
         if ($template) {
-            $currentFramework = is_string($service->service_meta['framework'] ?? null)
-                ? $service->service_meta['framework']
-                : null;
-            $redeployStackOptions = TechStackRoutingService::stackOptionsPayload($template, $currentFramework);
-            $redeployStackOptions['current'] = [
-                'framework' => $currentFramework,
-                'frontend' => $service->service_meta['frontend'] ?? ($redeployStackOptions['frontend']['value'] ?? 'none'),
-                'database_id' => $service->service_meta['database_id'] ?? null,
-                'selected_version' => ($service->service_meta['node_version_source'] ?? null) === 'auto'
-                    ? null
-                    : ($deployment?->selected_version ?? $service->service_meta['selected_version'] ?? null),
-                'node_version_source' => $service->service_meta['node_version_source']
-                    ?? (! empty($service->service_meta['selected_version']) ? 'manual' : 'auto'),
-                'backend_root' => $service->service_meta['node_backend_root']
-                    ?? data_get($service->service_meta, 'node_workloads.backend.root'),
-                'frontend_root' => $service->service_meta['node_frontend_root']
-                    ?? data_get($service->service_meta, 'node_workloads.frontend.root'),
-                'node_workloads' => $service->service_meta['node_workloads'] ?? null,
-            ];
+            $redeployStackOptions = TechStackRoutingService::redeployOptionsForService($service);
         }
 
         if ($deployment) {
