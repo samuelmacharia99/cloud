@@ -211,8 +211,15 @@ function containerEnvironmentPanel(initialRows) {
 }
 
 function containerTabs(initialTab) {
-    // Tabs list is built when a deployment exists; falls back for pending apps.
-    const allowedTabs = @js($containerTabs ?? ['overview']);
+    // Must match the tab strip in container-console exactly: setTab() refuses
+    // anything missing here, so a short list makes the buttons dead.
+    const allowedTabs = @js($containerTabs ?? (empty($deployment)
+        ? \App\Support\ContainerConsoleTabs::NOT_DEPLOYED
+        : \App\Support\ContainerConsoleTabs::resolve(
+            ! empty($supportsOllamaChat),
+            ! empty($supportsGitRepository),
+            ! empty($supportsPhpExtensions),
+        )));
 
     return {
         activeTab: allowedTabs.includes(initialTab) ? initialTab : 'overview',

@@ -6,6 +6,7 @@ use App\Models\Setting;
 use App\Models\TicketReply;
 use App\Models\User;
 use App\Services\ResellerBrandingResolver;
+use App\Support\ContainerConsoleContext;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\View;
 
@@ -264,9 +265,7 @@ function formatBytes(int $bytes, int $precision = 2): string
  */
 function container_route(string $name, mixed ...$parameters): string
 {
-    $prefix = View::getShared()['containerRoutePrefix'] ?? 'customer.services.container';
-
-    return route($prefix.'.'.$name, $parameters);
+    return route(ContainerConsoleContext::routePrefix().'.'.$name, $parameters);
 }
 
 function customer_portal_route(

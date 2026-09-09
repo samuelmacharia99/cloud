@@ -49,6 +49,7 @@ use App\Services\Provisioning\LaravelAppInitializationService;
 use App\Services\Provisioning\NginxProxyService;
 use App\Services\SSH\SSHService;
 use App\Services\TechStackRoutingService;
+use App\Support\ContainerConsoleTabs;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -212,6 +213,9 @@ class ContainerController extends Controller
         return [
             'service' => $service,
             'deployment' => $deployment,
+            'containerTabs' => $deployment
+                ? ContainerConsoleTabs::resolve($supportsOllamaChat, $supportsGitRepository, $supportsPhpExtensions)
+                : ContainerConsoleTabs::NOT_DEPLOYED,
             'status' => $status,
             'databaseContext' => $databaseContext,
             'databaseConsoleEnabled' => $databaseConsoleEnabled,

@@ -31,6 +31,7 @@ use App\Services\ServiceInfrastructureProbeService;
 use App\Services\ServiceStatusSyncService;
 use App\Services\ServiceTransferService;
 use App\Services\TaxService;
+use App\Support\ContainerConsoleContext;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -277,8 +278,10 @@ class ServiceController extends Controller
             : [];
 
         if ($containerConsole !== []) {
-            view()->share('containerRoutePrefix', 'admin.services.container');
-            view()->share('containerConsoleContext', 'admin');
+            // Request-scoped: view()->share() would keep the admin prefix set for
+            // the next customer page handled by the same process (Octane, tests).
+            ContainerConsoleContext::useAdminRoutes();
+            $containerConsole['containerConsoleContext'] = 'admin';
         }
 
         return view('admin.services.show', array_merge(compact(

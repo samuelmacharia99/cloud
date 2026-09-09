@@ -1,17 +1,12 @@
         @if ($deployment)
             @php
-                $containerTabs = ['overview', 'environment', 'files', 'terminal', 'backups', 'domains', 'database', 'cron', 'logs', 'documentation'];
-                if (! empty($supportsOllamaChat)) {
-                    array_splice($containerTabs, array_search('terminal', $containerTabs, true), 0, 'chat');
-                }
-                if (! empty($supportsGitRepository)) {
-                    array_splice($containerTabs, array_search('terminal', $containerTabs, true) + 1, 0, 'github');
-                }
-                if (! empty($supportsPhpExtensions)) {
-                    $documentationIndex = array_search('documentation', $containerTabs, true);
-                    array_splice($containerTabs, $documentationIndex, 0, 'php-extensions');
-                }
-                $initialTab = in_array(request('tab'), $containerTabs, true) ? request('tab') : 'overview';
+                // Shared with the Alpine allow-list in container-console-scripts.
+                $containerTabs = $containerTabs ?? \App\Support\ContainerConsoleTabs::resolve(
+                    ! empty($supportsOllamaChat),
+                    ! empty($supportsGitRepository),
+                    ! empty($supportsPhpExtensions),
+                );
+                $initialTab = \App\Support\ContainerConsoleTabs::initial($containerTabs, request('tab'));
             @endphp
             <!-- Tab Navigation -->
             <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-lg mb-8 pb-20 md:pb-0" x-data="containerTabs(@js($initialTab))" x-init="init()" @container-set-tab.window="setTab($event.detail)">
