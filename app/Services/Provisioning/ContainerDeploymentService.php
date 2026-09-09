@@ -3163,7 +3163,7 @@ class ContainerDeploymentService
         ));
 
         throw new \RuntimeException(
-            'Split Node stack did not become ready: '.mb_substr($lastDiagnostic."\n".$logs, 0, 4000)
+            'Split web/API stack did not become ready: '.mb_substr($lastDiagnostic."\n".$logs, 0, 4000)
         );
     }
 

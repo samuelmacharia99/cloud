@@ -273,6 +273,38 @@ class CustomerContainerRedeployStackTest extends TestCase
             ->assertSessionHasErrors('backend_root');
     }
 
+    public function test_python_ruby_and_go_redeploys_persist_split_workload_roots(): void
+    {
+        $this->mock(ContainerDeploymentService::class, function ($mock) {
+            $mock->shouldReceive('deploy')->times(3)->andReturn(new ContainerDeployResult);
+        });
+
+        foreach ([
+            'python' => 'django',
+            'ruby' => 'rails',
+            'go' => 'other',
+        ] as $slug => $framework) {
+            [$customer, $service] = $this->makeRuntimeService($slug, [
+                'framework' => $framework,
+                'frontend' => 'none',
+            ]);
+
+            $this->actingAs($customer)
+                ->post(route('customer.services.container.redeploy', $service), [
+                    'framework' => $framework,
+                    'frontend' => 'vite-spa',
+                    'backend_root' => 'backend',
+                    'frontend_root' => 'frontend',
+                ])
+                ->assertRedirect();
+
+            $service->refresh();
+            $this->assertSame('backend', $service->service_meta['node_backend_root']);
+            $this->assertSame('frontend', $service->service_meta['node_frontend_root']);
+            $this->assertSame('vite-spa', $service->service_meta['frontend']);
+        }
+    }
+
     public function test_failed_node_redeploy_restores_the_previous_runtime_pin(): void
     {
         [$customer, $service] = $this->makeNodeService([
@@ -438,6 +470,58 @@ class CustomerContainerRedeployStackTest extends TestCase
             'status' => 'running',
             'container_name' => 'user-'.$customer->id.'-service-'.$service->id.'-nodejs',
             'selected_version' => $meta['selected_version'] ?? null,
+        ]);
+
+        return [$customer, $service->fresh(['product.containerTemplate', 'containerDeployment.node'])];
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     * @return array{0: User, 1: Service}
+     */
+    private function makeRuntimeService(string $slug, array $meta): array
+    {
+        $customer = User::factory()->customer()->create();
+        $template = ContainerTemplate::query()->create([
+            'name' => ucfirst($slug),
+            'slug' => $slug,
+            'description' => ucfirst($slug).' app',
+            'category' => 'web',
+            'docker_image' => match ($slug) {
+                'python' => 'python:3.12-slim',
+                'ruby' => 'ruby:3.3-slim',
+                'go' => 'golang:1.23-alpine',
+            },
+            'default_port' => 8000,
+            'required_ram_mb' => 512,
+            'required_cpu_cores' => 1,
+            'required_storage_gb' => 2,
+            'is_active' => true,
+            'order' => 0,
+            'hosting_type' => 'container',
+        ]);
+        $product = Product::factory()->containerHosting()->create([
+            'container_template_id' => $template->id,
+            'name' => ucfirst($slug).' App',
+        ]);
+        $node = Node::factory()->create([
+            'type' => 'container_host',
+            'ssh_username' => 'root',
+            'ssh_password' => 'secret',
+            'is_active' => true,
+        ]);
+        $service = Service::factory()->create([
+            'user_id' => $customer->id,
+            'product_id' => $product->id,
+            'node_id' => $node->id,
+            'status' => 'active',
+            'service_meta' => $meta,
+        ]);
+        ContainerDeployment::factory()->create([
+            'service_id' => $service->id,
+            'node_id' => $node->id,
+            'status' => 'running',
+            'container_name' => 'user-'.$customer->id.'-service-'.$service->id.'-'.$slug,
         ]);
 
         return [$customer, $service->fresh(['product.containerTemplate', 'containerDeployment.node'])];

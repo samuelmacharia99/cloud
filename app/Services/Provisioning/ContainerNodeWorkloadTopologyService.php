@@ -36,6 +36,7 @@ class ContainerNodeWorkloadTopologyService
         'apps/site',
         'www',
         'site',
+        'apps/mobile',
     ];
 
     /**
@@ -147,6 +148,12 @@ class ContainerNodeWorkloadTopologyService
         );
 
         if ($browser !== null && $backendRoot !== $browser['root']) {
+            $hostedFrontend = $browser['root'];
+            $skippedMobile = array_values(array_filter(
+                $skippedMobile,
+                fn (string $root): bool => $root !== $hostedFrontend,
+            ));
+
             return $this->splitTopology(
                 $ssh,
                 $hostAppPath,
@@ -427,14 +434,12 @@ class ContainerNodeWorkloadTopologyService
             if ($package === null) {
                 throw new \DomainException("The selected frontend root '{$root}' is not a valid frontend application.");
             }
-            if (! $this->isMobileBundle($package)) {
-                $kind = $this->browserFrontendKind($package);
-                if ($kind === null) {
-                    throw new \DomainException("The selected frontend root '{$root}' is not a valid frontend application.");
-                }
-
-                return ['root' => $root, 'type' => $kind];
+            $kind = $this->explicitBrowserKind($package);
+            if ($kind === null) {
+                throw new \DomainException("The selected frontend root '{$root}' is not a valid frontend application.");
             }
+
+            return ['root' => $root, 'type' => $kind];
         }
 
         $preferred = [];
@@ -576,7 +581,7 @@ class ContainerNodeWorkloadTopologyService
 
         $root = $this->sanitizeRelativeRoot($frontendOverride);
         $package = $this->packageAt($ssh, $hostAppPath, $root);
-        if ($package !== null && $this->isMobileBundle($package)) {
+        if ($package !== null && $this->isNativeMobileOnly($package) && $this->explicitBrowserKind($package) === null) {
             $skippedMobile = $this->uniqueRoots([...$skippedMobile, $root]);
 
             return null;
@@ -594,7 +599,7 @@ class ContainerNodeWorkloadTopologyService
         $roots = [];
         foreach ($this->uniqueRoots(['apps/mobile', 'mobile', 'apps/app', ...$discovered]) as $root) {
             $package = $this->packageAt($ssh, $hostAppPath, $root);
-            if ($package !== null && $this->isMobileBundle($package)) {
+            if ($package !== null && $this->isNativeMobileOnly($package)) {
                 $roots[] = $root;
             }
         }
@@ -650,19 +655,29 @@ class ContainerNodeWorkloadTopologyService
         }
 
         $path = $root === '.' ? rtrim($hostAppPath, '/') : rtrim($hostAppPath, '/').'/'.$root;
-        $markers = match ($slug) {
-            'python' => ['manage.py', 'requirements.txt', 'pyproject.toml', 'main.py', 'app.py', 'wsgi.py'],
-            'ruby' => ['Gemfile', 'bin/rails', 'config.ru'],
-            'go' => ['go.mod', 'main.go', 'cmd/server/main.go'],
-            default => [],
+        $file = fn (string $name): string => '[ -f '.escapeshellarg($path.'/'.$name).' ]';
+        $probe = match ($slug) {
+            'python' => match ($framework) {
+                'django' => $file('manage.py'),
+                'fastapi' => '('.$file('main.py').' || '.$file('app.py').') && grep -Eiq '
+                    .escapeshellarg('fastapi|uvicorn').' '
+                    .escapeshellarg($path.'/requirements.txt').' '.escapeshellarg($path.'/pyproject.toml').' 2>/dev/null',
+                'flask' => '('.$file('app.py').' || '.$file('wsgi.py').') && grep -Eiq '
+                    .escapeshellarg('flask|gunicorn').' '
+                    .escapeshellarg($path.'/requirements.txt').' '.escapeshellarg($path.'/pyproject.toml').' 2>/dev/null',
+                default => implode(' || ', array_map($file, [
+                    'manage.py', 'requirements.txt', 'pyproject.toml', 'main.py', 'app.py', 'wsgi.py',
+                ])),
+            },
+            'ruby' => $framework === 'rails'
+                ? $file('bin/rails')
+                : implode(' || ', array_map($file, ['Gemfile', 'bin/rails', 'config.ru'])),
+            'go' => implode(' || ', array_map($file, ['go.mod', 'main.go', 'cmd/server/main.go'])),
+            default => '',
         };
-        $tests = array_map(
-            fn (string $marker): string => '[ -f '.escapeshellarg($path.'/'.$marker).' ]',
-            $markers,
-        );
 
-        return $tests !== []
-            && trim($ssh->exec('{ '.implode(' || ', $tests).'; } && echo yes || echo no', 10)) === 'yes';
+        return $probe !== ''
+            && trim($ssh->exec('{ '.$probe.'; } && echo yes || echo no', 10)) === 'yes';
     }
 
     /**
@@ -679,7 +694,7 @@ class ContainerNodeWorkloadTopologyService
         $start = trim((string) ($package['scripts']['start'] ?? ''));
         $dev = trim((string) ($package['scripts']['dev'] ?? ''));
 
-        return $frameworkMatches && ($start !== '' || $dev !== '') && ! $this->isMobileBundle($package);
+        return $frameworkMatches && ($start !== '' || $dev !== '') && ! $this->isNativeMobileOnly($package);
     }
 
     /**
