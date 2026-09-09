@@ -3,6 +3,7 @@
 namespace Tests\Unit\Provisioning;
 
 use App\Models\ContainerDeployment;
+use App\Models\ContainerDomain;
 use App\Services\Provisioning\ContainerMigrationBundleService;
 use App\Services\SSH\SSHService;
 use PHPUnit\Framework\Attributes\Test;
@@ -108,6 +109,86 @@ class ContainerMigrationBundleServiceTest extends TestCase
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('insufficient free disk space');
+        $service->preflight($source, $target, $deployment);
+    }
+
+    #[Test]
+    public function preflight_rejects_invalid_target_nginx_before_downtime(): void
+    {
+        $service = new ContainerMigrationBundleService;
+        $deployment = new ContainerDeployment([
+            'container_name' => 'user-1-service-454-nodejs',
+            'assigned_port' => null,
+        ]);
+        $deployment->setRelation('domains', collect([
+            new ContainerDomain([
+                'domain' => 'carslynk.com',
+                'status' => 'active',
+                'ssl_enabled' => false,
+            ]),
+        ]));
+
+        $source = $this->createMock(SSHService::class);
+        $source->method('exec')->willReturn('');
+        $target = $this->createMock(SSHService::class);
+        $target->method('exec')->willReturnCallback(static function (string $command): string {
+            if (str_contains($command, 'command -v nginx')) {
+                return 'yes';
+            }
+
+            if (str_contains($command, 'nginx -t')) {
+                throw new \RuntimeException('missing certificate');
+            }
+
+            return '';
+        });
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Target nginx configuration is invalid');
+        $service->preflight($source, $target, $deployment);
+    }
+
+    #[Test]
+    public function preflight_rejects_missing_target_certificate_before_downtime(): void
+    {
+        $service = new ContainerMigrationBundleService;
+        $deployment = new ContainerDeployment([
+            'container_name' => 'user-1-service-454-nodejs',
+            'assigned_port' => null,
+        ]);
+        $deployment->setRelation('domains', collect([
+            new ContainerDomain([
+                'domain' => 'carslynk.com',
+                'status' => 'active',
+                'ssl_enabled' => true,
+                'ssl_certificate_path' => '/etc/letsencrypt/live/carslynk.com/fullchain.pem',
+                'ssl_key_path' => '/etc/letsencrypt/live/carslynk.com/privkey.pem',
+            ]),
+        ]));
+
+        $source = $this->createMock(SSHService::class);
+        $source->method('exec')->willReturnCallback(static function (string $command): string {
+            return str_contains($command, 'base64 -w0') ? 'certificate-archive' : '';
+        });
+        $target = $this->createMock(SSHService::class);
+        $target->method('exec')->willReturnCallback(static function (string $command): string {
+            if (str_contains($command, 'command -v nginx')) {
+                return 'yes';
+            }
+
+            if (str_contains($command, 'nginx -t')) {
+                return 'syntax is ok';
+            }
+
+            if (str_contains($command, 'fullchain.pem')) {
+                return 'no';
+            }
+
+            return '';
+        });
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Target node is missing the SSL certificate for carslynk.com');
         $service->preflight($source, $target, $deployment);
     }
 }

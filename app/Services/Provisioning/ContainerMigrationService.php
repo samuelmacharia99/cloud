@@ -67,7 +67,7 @@ class ContainerMigrationService
     {
         $startedAt = microtime(true);
         $this->assertTargetNodeIsEligible($targetNode);
-        $service->load(['containerDeployment.node', 'product.containerTemplate', 'user']);
+        $service->load(['containerDeployment.node', 'containerDeployment.domains', 'product.containerTemplate', 'user']);
         $oldDeployment = $service->containerDeployment;
         if (! $oldDeployment) {
             throw new Exception('Service has no active deployment');

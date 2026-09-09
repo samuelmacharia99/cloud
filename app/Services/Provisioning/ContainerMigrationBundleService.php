@@ -4,6 +4,7 @@ namespace App\Services\Provisioning;
 
 use App\Models\ContainerDeployment;
 use App\Services\SSH\SSHService;
+use Throwable;
 
 class ContainerMigrationBundleService
 {
@@ -28,6 +29,7 @@ class ContainerMigrationBundleService
         $source->exec('test -f '.$path.'/docker-compose.yml', 15);
         $source->exec('docker info >/dev/null && docker compose version >/dev/null', 30);
         $target->exec('docker info >/dev/null && docker compose version >/dev/null', 30);
+        $this->assertTargetNginxReady($source, $target, $deployment);
         $source->exec(
             'docker image inspect '.escapeshellarg(self::UTILITY_IMAGE)
                 .' >/dev/null 2>&1 || docker pull '.escapeshellarg(self::UTILITY_IMAGE).' >/dev/null',
@@ -134,6 +136,175 @@ class ContainerMigrationBundleService
             'required_bytes' => $requiredBytes,
             'volumes' => $volumes,
         ];
+    }
+
+    /**
+     * Validate host nginx before the source is stopped.
+     *
+     * A migration can restore and start the application successfully while
+     * still being unable to publish it because the target host has a broken
+     * unrelated vhost or lacks a certificate referenced by this deployment.
+     */
+    private function assertTargetNginxReady(
+        SSHService $source,
+        SSHService $target,
+        ContainerDeployment $deployment,
+    ): void
+    {
+        $domains = $deployment->relationLoaded('domains')
+            ? $deployment->domains
+            : collect();
+
+        if ($domains->isEmpty()) {
+            return;
+        }
+
+        try {
+            $installed = trim($target->exec(
+                'if command -v nginx >/dev/null 2>&1; then echo yes; else echo no; fi',
+                15,
+            ));
+        } catch (Throwable $e) {
+            throw new \RuntimeException(
+                'Target nginx preflight could not determine whether nginx is installed: '.$e->getMessage(),
+                0,
+                $e,
+            );
+        }
+
+        if ($installed !== 'yes') {
+            throw new \RuntimeException(
+                'Target node has bound domains, but nginx is not installed. Install and configure nginx before migrating this service.'
+            );
+        }
+
+        $this->syncMissingSslCertificates($source, $target, $domains);
+
+        try {
+            $target->exec('nginx -t 2>&1', 30);
+        } catch (Throwable $directError) {
+            try {
+                $target->exec('sudo -n nginx -t 2>&1', 30);
+            } catch (Throwable $sudoError) {
+                throw new \RuntimeException(
+                    'Target nginx configuration is invalid; migration stopped before source downtime. '
+                    .'Direct error: '.$directError->getMessage().' | Sudo error: '.$sudoError->getMessage(),
+                    0,
+                    $sudoError,
+                );
+            }
+        }
+
+        foreach ($domains as $domain) {
+            if (! $domain->ssl_enabled || $domain->status !== 'active') {
+                continue;
+            }
+
+            $certificate = trim((string) $domain->ssl_certificate_path);
+            $key = trim((string) $domain->ssl_key_path);
+            if ($certificate === '' || $key === '') {
+                throw new \RuntimeException(
+                    "SSL is enabled for {$domain->domain}, but its certificate paths are incomplete. "
+                    .'Repair the domain SSL configuration before migrating.'
+                );
+            }
+
+            try {
+                $exists = trim($target->exec(
+                    '[ -f '.escapeshellarg($certificate).' ] && [ -f '.escapeshellarg($key).' ] && echo yes || echo no',
+                    15,
+                ));
+            } catch (Throwable $e) {
+                throw new \RuntimeException(
+                    "Could not verify the SSL certificate for {$domain->domain} on the target node: ".$e->getMessage(),
+                    0,
+                    $e,
+                );
+            }
+
+            if ($exists !== 'yes') {
+                throw new \RuntimeException(
+                    "Target node is missing the SSL certificate for {$domain->domain} "
+                    ."({$certificate} and/or {$key}). Copy or issue the certificate before migrating; "
+                    .'the source application was not stopped.'
+                );
+            }
+        }
+    }
+
+    /**
+     * Certificates live on the node, not in the container bundle. Copy a
+     * missing Let's Encrypt lineage before nginx is tested on the target.
+     */
+    private function syncMissingSslCertificates(SSHService $source, SSHService $target, iterable $domains): void
+    {
+        foreach ($domains as $domain) {
+            if (! $domain->ssl_enabled || $domain->status !== 'active') {
+                continue;
+            }
+
+            $certificate = trim((string) $domain->ssl_certificate_path);
+            $key = trim((string) $domain->ssl_key_path);
+            if ($certificate === '' || $key === '') {
+                continue;
+            }
+
+            $targetHasCertificate = trim($target->exec(
+                '[ -f '.escapeshellarg($certificate).' ] && [ -f '.escapeshellarg($key).' ] && echo yes || echo no',
+                15,
+            )) === 'yes';
+            if ($targetHasCertificate) {
+                continue;
+            }
+
+            $hostname = (string) $domain->domain;
+            if (
+                ! str_starts_with($certificate, '/etc/letsencrypt/live/'.$hostname.'/')
+                || ! str_starts_with($key, '/etc/letsencrypt/live/'.$hostname.'/')
+                || preg_match('/^[a-z0-9.-]+$/i', $hostname) !== 1
+            ) {
+                throw new \RuntimeException(
+                    "Cannot safely transfer the SSL certificate for {$hostname}; "
+                    .'the configured certificate paths are not a standard Let\'s Encrypt lineage.'
+                );
+            }
+
+            $archive = $source->exec(
+                'sudo -n tar -C /etc/letsencrypt -czf - '
+                    .escapeshellarg('live/'.$hostname).' '
+                    .escapeshellarg('archive/'.$hostname).' '
+                    .escapeshellarg('renewal/'.$hostname.'.conf')
+                    .' | base64 -w0',
+                60,
+            );
+            if (trim($archive) === '') {
+                throw new \RuntimeException(
+                    "Could not read the Let's Encrypt certificate for {$hostname} from the source node."
+                );
+            }
+
+            $temporary = '/tmp/talksasa-cert-'.hash('sha256', $hostname).'.b64';
+            try {
+                $target->upload($archive, $temporary);
+                $target->exec(
+                    'base64 -d '.escapeshellarg($temporary)
+                        .' | sudo -n tar -xzf - -C /etc/letsencrypt; rm -f '.escapeshellarg($temporary),
+                    60,
+                );
+            } catch (Throwable $e) {
+                throw new \RuntimeException(
+                    "Could not transfer the SSL certificate for {$hostname} to the target node: ".$e->getMessage(),
+                    0,
+                    $e,
+                );
+            } finally {
+                try {
+                    $target->exec('rm -f '.escapeshellarg($temporary), 15);
+                } catch (Throwable) {
+                    // The migration must report the transfer failure, not mask it with cleanup.
+                }
+            }
+        }
     }
 
     /**
