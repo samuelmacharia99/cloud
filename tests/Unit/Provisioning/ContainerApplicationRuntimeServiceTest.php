@@ -373,6 +373,7 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
             $this->service->nodeBootstrap($packageJson),
         );
         $this->assertTrue($this->service->isAllowedNodeBuildEnvKey('EXPO_PUBLIC_API_URL'));
+        $this->assertStringNotContainsString('&&', $this->service->nodeProductionBuildShellCommand($packageJson, null, 'npm', 'apps/mobile'));
     }
 
     #[Test]

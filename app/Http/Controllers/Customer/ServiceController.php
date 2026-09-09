@@ -21,6 +21,7 @@ use App\Services\Customer\CustomerProjectRemovalService;
 use App\Services\Customer\CustomerProjectService;
 use App\Services\Customer\CustomerServiceCancellationService;
 use App\Services\Customer\CustomerServiceRenewalService;
+use App\Services\Customer\ProjectNodeWebSplitService;
 use App\Services\Customer\ProjectWorkloadDeployService;
 use App\Services\Hosting\ServicePackageUsageService;
 use App\Services\Provisioning\ContainerDeployProgressService;
@@ -298,14 +299,21 @@ class ServiceController extends Controller
         }
 
         $this->applyRetryStackSelection($service, $request);
+        $split = app(ProjectNodeWebSplitService::class)->apply($service->fresh());
+        app(ProjectNodeWebSplitService::class)->provisionNewFrontendIfNeeded($split);
         app(ProvisionFailureLedger::class)->clear($service);
 
         $service->update(['status' => ServiceStatus::Provisioning]);
         ProvisionContainerServiceJob::dispatchForService((int) $service->id, deferUntilResponse: true);
 
+        $message = 'Deploy restarted. Watch the console for progress.';
+        if (is_array($split) && ($split['created'] ?? false)) {
+            $message = 'Deploy restarted. A Web container was added to this project for the frontend.';
+        }
+
         return redirect()
             ->route('customer.services.deploying', $service)
-            ->with('success', 'Deploy restarted. Watch the console for progress.');
+            ->with('success', $message);
     }
 
     private function applyRetryStackSelection(Service $service, RedeployContainerStackRequest $request): void

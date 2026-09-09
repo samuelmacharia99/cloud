@@ -602,18 +602,24 @@ class ContainerStackCommandService
                     );
                 }
 
+                $buildCommand = $this->runtimeService->nodeProductionBuildShellCommand(
+                    $projectPackageJson,
+                    $applicationRelativeDir !== '' ? $packageJson : null,
+                    $packageManager,
+                    $applicationRelativeDir,
+                    $publicBuildEnv,
+                );
+                $buildWorkDir = '/app';
+                $expoRoot = $this->runtimeService->sanitizeArtifactRelativeDir($applicationRelativeDir);
+                if ($expoRoot !== '' && $this->runtimeService->packageJsonNeedsExpoWebExport($projectPackageJson)) {
+                    $buildWorkDir = '/app/'.$expoRoot;
+                }
                 $this->runUnlimitedMemoryNodeCommand(
                     $ssh,
                     $dockerImage,
                     $hostAppPath,
-                    $this->runtimeService->nodeProductionBuildShellCommand(
-                        $projectPackageJson,
-                        $applicationRelativeDir !== '' ? $packageJson : null,
-                        $packageManager,
-                        $applicationRelativeDir,
-                        $publicBuildEnv,
-                    ),
-                    '/app',
+                    $buildCommand,
+                    $buildWorkDir,
                     $buildTimeout
                 );
                 $hasTypeScriptConfig = $this->hostFileExists(
@@ -622,7 +628,8 @@ class ContainerStackCommandService
                 );
                 $keepDevDependencies = $applicationRelativeDir !== ''
                     || $hasTypeScriptConfig
-                    || $this->runtimeService->productionStartRequiresVite($projectPackageJson);
+                    || $this->runtimeService->productionStartRequiresVite($projectPackageJson)
+                    || $this->runtimeService->packageJsonNeedsExpoWebExport($projectPackageJson);
                 if (! $keepDevDependencies) {
                     $this->runUnlimitedMemoryNodeCommand(
                         $ssh,

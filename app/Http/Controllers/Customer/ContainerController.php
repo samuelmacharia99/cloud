@@ -26,6 +26,7 @@ use App\Models\DatabaseTemplate;
 use App\Models\Service;
 use App\Models\Setting;
 use App\Services\Customer\CustomerServiceCancellationService;
+use App\Services\Customer\ProjectNodeWebSplitService;
 use App\Services\Dns\DomainCloudflareDnsService;
 use App\Services\Provisioning\ContainerAutoDeployService;
 use App\Services\Provisioning\ContainerBackupService;
@@ -377,6 +378,7 @@ class ContainerController extends Controller
 
             $template = $service->effectiveContainerTemplate();
             $resetDatabase = $request->boolean('reset_database');
+            $webSplitCreated = false;
 
             if ($template) {
                 $validated = $request->validated();
@@ -428,6 +430,10 @@ class ContainerController extends Controller
 
                 $service->update(['service_meta' => $applied['meta']]);
                 $service->refresh();
+                $split = app(ProjectNodeWebSplitService::class)->apply($service);
+                app(ProjectNodeWebSplitService::class)->provisionNewFrontendIfNeeded($split);
+                $webSplitCreated = is_array($split) && ($split['created'] ?? false);
+                $service->refresh();
 
                 // Changing database engine/sidecar requires a clean volume.
                 if ($applied['database_changed']) {
@@ -443,6 +449,9 @@ class ContainerController extends Controller
             );
 
             $message = 'Container stack redeployed successfully.';
+            if ($webSplitCreated) {
+                $message .= ' A Web container was added to this project for the frontend. Each service can connect its own Git repository.';
+            }
             if ($replaceApplication) {
                 $message .= ' Application files were replaced from Git (Open Source POS on PHP stacks).';
             }

@@ -85,7 +85,9 @@ class ContainerNodeWorkloadTopologyService
                 'backend',
                 $backendOverride,
                 $backendCandidates,
-                fn (string $root): bool => $this->isBackendAt($ssh, $hostAppPath, $root, $slug, $framework),
+                fn (string $root): bool => $this->isBackendAt($ssh, $hostAppPath, $root, $slug, $framework)
+                    || ($backendOverride !== null && trim($backendOverride) !== ''
+                        && $this->isPinnedApplicationAt($ssh, $hostAppPath, $root)),
                 required: $backendOverride !== null && trim((string) $backendOverride) !== '',
             );
             if ($backendRoot === null) {
@@ -95,6 +97,11 @@ class ContainerNodeWorkloadTopologyService
                     'selection_source' => 'stack',
                 ];
             }
+
+            $skippedMobile = array_values(array_filter(
+                $skippedMobile,
+                fn (string $root): bool => $root !== $backendRoot,
+            ));
 
             return $this->apiOnlyTopology(
                 $service,
@@ -704,6 +711,21 @@ class ContainerNodeWorkloadTopologyService
         $dev = trim((string) ($package['scripts']['dev'] ?? ''));
 
         return $frameworkMatches && ($start !== '' || $dev !== '') && ! $this->isNativeMobileOnly($package);
+    }
+
+    /**
+     * An operator-pinned root may be Expo/RN that this container is meant to host.
+     */
+    private function isPinnedApplicationAt(SSHService $ssh, string $hostAppPath, string $root): bool
+    {
+        $package = $this->packageAt($ssh, $hostAppPath, $root);
+        if ($package === null) {
+            return false;
+        }
+        $start = trim((string) ($package['scripts']['start'] ?? ''));
+        $dev = trim((string) ($package['scripts']['dev'] ?? ''));
+
+        return $start !== '' || $dev !== '' || $this->explicitBrowserKind($package) !== null;
     }
 
     /**

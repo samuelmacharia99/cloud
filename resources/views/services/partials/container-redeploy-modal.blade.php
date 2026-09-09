@@ -21,7 +21,7 @@
                                                 Choose frontend and database the same way as when you first deployed.
                                             @endif
                                             @if (($templateSlug ?? '') === 'nodejs')
-                                                Expo/React Native in <code class="font-mono text-xs">apps/mobile</code> can be the browser app when you set that frontend directory — we export it for web. Native binaries still need a mobile build service.
+                                                Expo/React Native in <code class="font-mono text-xs">apps/mobile</code> becomes a Web container on this project — the API stays on this service. Each container can connect its own Git repository.
                                             @endif
                                         </p>
 

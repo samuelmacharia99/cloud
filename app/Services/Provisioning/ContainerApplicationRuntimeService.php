@@ -1731,13 +1731,8 @@ class ContainerApplicationRuntimeService
 
         if ($this->packageJsonNeedsExpoWebExport($projectPackageJson)
             && ! $this->packageJsonHasBuildScript($projectPackageJson)) {
-            $export = 'npx --yes expo export --platform web --output-dir dist';
-            $binary = $relativeDir !== ''
-                ? 'cd '.escapeshellarg($relativeDir).' && '.$export
-                : $export;
-
             return $this->nodeCleanCommand(
-                $binary,
+                'npx --yes expo export --platform web --output-dir dist',
                 'production',
                 array_merge(
                     $this->corepackEnvironment(),

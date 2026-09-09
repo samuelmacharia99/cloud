@@ -397,6 +397,38 @@ class ContainerNodeWorkloadTopologyServiceTest extends TestCase
     }
 
     #[Test]
+    public function it_runs_a_pinned_expo_app_as_the_only_container_process(): void
+    {
+        $runtime = Mockery::mock(ContainerApplicationRuntimeService::class);
+        $runtime->shouldReceive('detectNodeRuntimeAt')
+            ->once()
+            ->andReturn(new ApplicationRuntime(
+                ['sh', '-lc', 'cd /app/apps/mobile && exec npm start'],
+                'expo-web',
+                'Expo web export',
+                '/app/apps/mobile',
+            ));
+        $this->app->instance(ContainerApplicationRuntimeService::class, $runtime);
+        $ssh = $this->sshForPackages([
+            'apps/mobile' => [
+                'scripts' => ['start' => 'expo start'],
+                'dependencies' => ['expo' => '^54.0', 'react-native' => '^0.81'],
+            ],
+        ]);
+
+        $topology = (new ContainerNodeWorkloadTopologyService)->resolve(
+            $this->nodeService('other', 'none'),
+            $ssh,
+            '/srv/app',
+            backendOverride: 'apps/mobile',
+        );
+
+        $this->assertSame('single', $topology['topology']);
+        $this->assertSame('apps/mobile', $topology['backend']['root']);
+        $this->assertSame([], $topology['skipped_mobile']);
+    }
+
+    #[Test]
     public function it_requires_an_override_when_multiple_frontends_match(): void
     {
         $ssh = $this->sshForPackages([

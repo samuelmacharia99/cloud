@@ -8306,6 +8306,7 @@ class ContainerDeploymentService
         return [
             'BACKEND_URL' => $url,
             'NEXT_PUBLIC_API_URL' => $url,
+            'EXPO_PUBLIC_API_URL' => $url,
             'API_URL' => $url,
         ];
     }

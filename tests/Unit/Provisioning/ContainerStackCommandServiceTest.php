@@ -66,6 +66,17 @@ class ContainerStackCommandServiceTest extends TestCase
         $this->assertFalse($service->isSafeCommand("npm install\nrm -rf /"));
         $this->assertFalse($service->isSafeCommand("npm install\t--omit=dev"));
         $this->assertTrue($service->isSafeCommand('bundle install --without development test'));
+        $expo = (new ContainerApplicationRuntimeService)->nodeProductionBuildShellCommand(
+            json_encode([
+                'scripts' => ['start' => 'expo start'],
+                'dependencies' => ['expo' => '^54.0'],
+            ], JSON_THROW_ON_ERROR),
+            null,
+            'npm',
+            'apps/mobile',
+        );
+        $this->assertTrue($service->isSafeCommand($expo));
+        $this->assertStringNotContainsString('&&', $expo);
     }
 
     #[Test]
