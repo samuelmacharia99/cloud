@@ -465,7 +465,7 @@ class ContainerNodeWorkloadTopologyServiceTest extends TestCase
             if (str_contains($command, '-name manage.py') && str_contains($command, '-name go.mod')) {
                 return '/srv/app/backend/'.$marker;
             }
-            if (str_contains($command, '/frontend/package.json')) {
+            if (str_contains($command, '/srv/app/frontend/package.json')) {
                 return $frontend;
             }
             if (str_contains($command, '/backend/'.$marker)) {
