@@ -702,10 +702,6 @@ class ContainerNodeWorkloadTopologyService
      */
     private function browserFrontendKind(array $package): ?string
     {
-        if ($this->isMobileBundle($package)) {
-            return null;
-        }
-
         $dependencies = $this->dependencies($package);
         if (isset($dependencies['next'])) {
             return 'nextjs';
@@ -713,24 +709,73 @@ class ContainerNodeWorkloadTopologyService
         if (isset($dependencies['vite'])) {
             return 'vite-spa';
         }
+        if (isset($dependencies['react-native-web']) || $this->hasExpoWebScripts($package)) {
+            return 'expo-web';
+        }
 
         return null;
     }
 
     /**
-     * Expo or React Native is a mobile client even when Vite is listed for
-     * Expo web. Next.js in the same package is treated as a hostable web app.
+     * Operator-pinned roots may be Expo/RN that still ship a web export.
      *
      * @param  array<string, mixed>  $package
      */
-    private function isMobileBundle(array $package): bool
+    private function explicitBrowserKind(array $package): ?string
+    {
+        $kind = $this->browserFrontendKind($package);
+        if ($kind !== null) {
+            return $kind;
+        }
+
+        $dependencies = $this->dependencies($package);
+
+        return (isset($dependencies['expo']) || isset($dependencies['react-native']))
+            ? 'expo-web'
+            : null;
+    }
+
+    /**
+     * Metro/native-only clients. Vite, Next, and Expo web exports are hostable.
+     *
+     * @param  array<string, mixed>  $package
+     */
+    private function isNativeMobileOnly(array $package): bool
     {
         $dependencies = $this->dependencies($package);
-        if (isset($dependencies['next'])) {
+        if (isset($dependencies['next'])
+            || isset($dependencies['vite'])
+            || isset($dependencies['react-native-web'])) {
+            return false;
+        }
+        if ($this->hasExpoWebScripts($package)) {
             return false;
         }
 
         return isset($dependencies['expo']) || isset($dependencies['react-native']);
+    }
+
+    /**
+     * @param  array<string, mixed>  $package
+     */
+    private function hasExpoWebScripts(array $package): bool
+    {
+        $scripts = is_array($package['scripts'] ?? null) ? $package['scripts'] : [];
+        $build = strtolower((string) ($scripts['build'] ?? ''));
+        $start = strtolower((string) ($scripts['start'] ?? ''));
+        $web = strtolower((string) ($scripts['web'] ?? ''));
+
+        return str_contains($build, 'expo export')
+            || str_contains($start, '--web')
+            || $web !== '';
+    }
+
+    /**
+     * @param  array<string, mixed>  $package
+     */
+    private function isMobileBundle(array $package): bool
+    {
+        return $this->isNativeMobileOnly($package);
     }
 
     /**
