@@ -56,16 +56,16 @@ class ContainerNodeWorkloadTopologyServiceTest extends TestCase
     }
 
     #[Test]
-    public function it_deploys_the_api_when_the_only_other_app_is_expo(): void
+    public function it_hosts_expo_web_when_it_is_the_only_frontend(): void
     {
         $runtime = Mockery::mock(ContainerApplicationRuntimeService::class);
         $runtime->shouldReceive('detectNodeRuntimeAt')
-            ->once()
-            ->andReturn(new ApplicationRuntime(
-                ['sh', '-lc', 'cd /app/apps/api && exec npm start'],
+            ->twice()
+            ->andReturnUsing(fn ($ssh, $host, $root, $port) => new ApplicationRuntime(
+                ['sh', '-lc', "cd /app/{$root} && exec npm start"],
                 'package-script',
-                'apps/api',
-                '/app/apps/api',
+                $root,
+                '/app/'.$root,
             ));
         $this->app->instance(ContainerApplicationRuntimeService::class, $runtime);
         $ssh = $this->sshForPackages([
@@ -85,11 +85,13 @@ class ContainerNodeWorkloadTopologyServiceTest extends TestCase
             '/srv/app',
         );
 
-        $this->assertSame('single', $topology['topology']);
-        $this->assertSame('auto_api', $topology['selection_source']);
+        $this->assertSame('split_web_api', $topology['topology']);
+        $this->assertSame('auto', $topology['selection_source']);
         $this->assertSame('apps/api', $topology['backend']['root']);
-        $this->assertSame(['apps/mobile'], $topology['skipped_mobile']);
-        $this->assertTrue(ContainerNodeWorkloadTopologyService::isApiOnly(
+        $this->assertSame('apps/mobile', $topology['frontend']['root']);
+        $this->assertSame('expo-web', $topology['frontend_type']);
+        $this->assertSame([], $topology['skipped_mobile']);
+        $this->assertFalse(ContainerNodeWorkloadTopologyService::isApiOnly(
             $this->serviceWithTopology($topology, 'vite-spa')
         ));
     }
@@ -170,16 +172,16 @@ class ContainerNodeWorkloadTopologyServiceTest extends TestCase
     }
 
     #[Test]
-    public function it_skips_a_stale_expo_frontend_pin_and_deploys_the_api(): void
+    public function it_hosts_an_explicit_expo_frontend_at_apps_mobile(): void
     {
         $runtime = Mockery::mock(ContainerApplicationRuntimeService::class);
         $runtime->shouldReceive('detectNodeRuntimeAt')
-            ->once()
-            ->andReturn(new ApplicationRuntime(
-                ['sh', '-lc', 'cd /app/apps/api && exec npm start'],
+            ->twice()
+            ->andReturnUsing(fn ($ssh, $host, $root, $port) => new ApplicationRuntime(
+                ['sh', '-lc', "cd /app/{$root} && exec npm start"],
                 'package-script',
-                'apps/api',
-                '/app/apps/api',
+                $root,
+                '/app/'.$root,
             ));
         $this->app->instance(ContainerApplicationRuntimeService::class, $runtime);
         $ssh = $this->sshForPackages([
@@ -200,26 +202,24 @@ class ContainerNodeWorkloadTopologyServiceTest extends TestCase
             frontendOverride: 'apps/mobile',
         );
 
-        $this->assertSame('single', $topology['topology']);
-        $this->assertSame('auto_api', $topology['selection_source']);
+        $this->assertSame('split_web_api', $topology['topology']);
         $this->assertSame('apps/api', $topology['backend']['root']);
-        $this->assertSame(['apps/mobile'], $topology['skipped_mobile']);
-        $this->assertTrue(ContainerNodeWorkloadTopologyService::isApiOnly(
-            $this->serviceWithTopology($topology, 'vite-spa')
-        ));
+        $this->assertSame('apps/mobile', $topology['frontend']['root']);
+        $this->assertSame('expo-web', $topology['frontend_type']);
+        $this->assertSame([], $topology['skipped_mobile']);
     }
 
     #[Test]
-    public function it_treats_expo_with_vite_as_mobile_not_a_browser_app(): void
+    public function it_treats_expo_with_vite_as_a_browser_app(): void
     {
         $runtime = Mockery::mock(ContainerApplicationRuntimeService::class);
         $runtime->shouldReceive('detectNodeRuntimeAt')
-            ->once()
-            ->andReturn(new ApplicationRuntime(
-                ['sh', '-lc', 'cd /app/apps/api && exec npm start'],
+            ->twice()
+            ->andReturnUsing(fn ($ssh, $host, $root, $port) => new ApplicationRuntime(
+                ['sh', '-lc', "cd /app/{$root} && exec npm start"],
                 'package-script',
-                'apps/api',
-                '/app/apps/api',
+                $root,
+                '/app/'.$root,
             ));
         $this->app->instance(ContainerApplicationRuntimeService::class, $runtime);
         $ssh = $this->sshForPackages([
@@ -228,7 +228,7 @@ class ContainerNodeWorkloadTopologyServiceTest extends TestCase
                 'dependencies' => ['express' => '^5.0'],
             ],
             'apps/mobile' => [
-                'scripts' => ['start' => 'expo start'],
+                'scripts' => ['start' => 'expo start', 'build' => 'vite build'],
                 'dependencies' => ['expo' => '^54.0', 'react-native' => '^0.81', 'vite' => '^6.0'],
             ],
         ]);
@@ -239,8 +239,9 @@ class ContainerNodeWorkloadTopologyServiceTest extends TestCase
             '/srv/app',
         );
 
-        $this->assertSame('auto_api', $topology['selection_source']);
-        $this->assertSame(['apps/mobile'], $topology['skipped_mobile']);
+        $this->assertSame('split_web_api', $topology['topology']);
+        $this->assertSame('apps/mobile', $topology['frontend']['root']);
+        $this->assertSame('vite-spa', $topology['frontend_type']);
     }
 
     #[Test]
@@ -280,7 +281,7 @@ class ContainerNodeWorkloadTopologyServiceTest extends TestCase
     }
 
     #[Test]
-    public function it_skips_an_expo_pin_and_uses_the_browser_app_when_one_exists(): void
+    public function it_keeps_an_expo_frontend_pin_even_when_a_web_app_also_exists(): void
     {
         $runtime = Mockery::mock(ContainerApplicationRuntimeService::class);
         $runtime->shouldReceive('detectNodeRuntimeAt')
@@ -315,22 +316,23 @@ class ContainerNodeWorkloadTopologyServiceTest extends TestCase
         );
 
         $this->assertSame('split_web_api', $topology['topology']);
-        $this->assertSame('apps/web', $topology['frontend']['root']);
-        $this->assertSame(['apps/mobile'], $topology['skipped_mobile']);
-        $this->assertSame('auto', $topology['selection_source']);
+        $this->assertSame('apps/mobile', $topology['frontend']['root']);
+        $this->assertSame('expo-web', $topology['frontend_type']);
+        $this->assertSame([], $topology['skipped_mobile']);
+        $this->assertSame('manual', $topology['selection_source']);
     }
 
     #[Test]
-    public function it_runs_the_api_alone_when_the_frontend_would_be_the_same_directory(): void
+    public function it_hosts_expo_web_when_the_frontend_pin_collides_with_the_api(): void
     {
         $runtime = Mockery::mock(ContainerApplicationRuntimeService::class);
         $runtime->shouldReceive('detectNodeRuntimeAt')
-            ->once()
-            ->andReturn(new ApplicationRuntime(
-                ['sh', '-lc', 'cd /app/apps/api && exec npm start'],
+            ->twice()
+            ->andReturnUsing(fn ($ssh, $host, $root, $port) => new ApplicationRuntime(
+                ['sh', '-lc', "cd /app/{$root} && exec npm start"],
                 'package-script',
-                'apps/api',
-                '/app/apps/api',
+                $root,
+                '/app/'.$root,
             ));
         $this->app->instance(ContainerApplicationRuntimeService::class, $runtime);
         $ssh = $this->sshForPackages([
@@ -352,10 +354,45 @@ class ContainerNodeWorkloadTopologyServiceTest extends TestCase
             frontendOverride: 'apps/api',
         );
 
+        $this->assertSame('split_web_api', $topology['topology']);
+        $this->assertSame('apps/api', $topology['backend']['root']);
+        $this->assertSame('apps/mobile', $topology['frontend']['root']);
+        $this->assertSame('expo-web', $topology['frontend_type']);
+        $this->assertSame([], $topology['skipped_mobile']);
+    }
+
+    #[Test]
+    public function it_runs_the_api_alone_when_there_is_no_separate_frontend(): void
+    {
+        $runtime = Mockery::mock(ContainerApplicationRuntimeService::class);
+        $runtime->shouldReceive('detectNodeRuntimeAt')
+            ->once()
+            ->andReturn(new ApplicationRuntime(
+                ['sh', '-lc', 'cd /app/apps/api && exec npm start'],
+                'package-script',
+                'apps/api',
+                '/app/apps/api',
+            ));
+        $this->app->instance(ContainerApplicationRuntimeService::class, $runtime);
+        $ssh = $this->sshForPackages([
+            'apps/api' => [
+                'scripts' => ['start' => 'node server.js', 'build' => 'vite build'],
+                'dependencies' => ['express' => '^5.0', 'vite' => '^6.0'],
+            ],
+        ]);
+
+        $topology = (new ContainerNodeWorkloadTopologyService)->resolve(
+            $this->nodeService('express', 'vite-spa'),
+            $ssh,
+            '/srv/app',
+            backendOverride: 'apps/api',
+            frontendOverride: 'apps/api',
+        );
+
         $this->assertSame('single', $topology['topology']);
         $this->assertSame('auto_api', $topology['selection_source']);
         $this->assertSame('apps/api', $topology['backend']['root']);
-        $this->assertSame(['apps/mobile'], $topology['skipped_mobile']);
+        $this->assertSame([], $topology['skipped_mobile']);
         $this->assertNotEmpty($topology['notes']);
     }
 

@@ -545,6 +545,14 @@ class ContainerApplicationRuntimeService
             ];
         }
 
+        if ($this->packageJsonHasExpo($packageJson)) {
+            return [
+                'command' => 'npx --yes serve@14 dist -s --listen tcp://0.0.0.0:${PORT:-'.$defaultPort.'}',
+                'source' => 'expo-web',
+                'label' => 'Expo web export',
+            ];
+        }
+
         return null;
     }
 
@@ -836,6 +844,12 @@ class ContainerApplicationRuntimeService
             return 'npx vite preview --host 0.0.0.0 --port ${PORT:-'.$defaultPort.'} --strictPort';
         }
 
+        if ($this->commandLooksLikeExpoStart($command)
+            && $this->packageJsonHasExpo($packageJson)
+            && ! $this->packageJsonHasVite($packageJson)) {
+            return 'npx --yes serve@14 dist -s --listen tcp://0.0.0.0:${PORT:-'.$defaultPort.'}';
+        }
+
         return null;
     }
 
@@ -856,6 +870,56 @@ class ContainerApplicationRuntimeService
         );
 
         return isset($dependencies['vite']);
+    }
+
+    public function packageJsonHasExpo(?string $packageJson): bool
+    {
+        if ($packageJson === null || trim($packageJson) === '') {
+            return false;
+        }
+
+        $data = json_decode($packageJson, true);
+        if (! is_array($data)) {
+            return false;
+        }
+
+        $dependencies = array_merge(
+            is_array($data['dependencies'] ?? null) ? $data['dependencies'] : [],
+            is_array($data['devDependencies'] ?? null) ? $data['devDependencies'] : []
+        );
+
+        return isset($dependencies['expo']) || isset($dependencies['react-native-web']);
+    }
+
+    public function commandLooksLikeExpoStart(string $command): bool
+    {
+        $normalized = strtolower(trim($command));
+        if ($normalized === '') {
+            return false;
+        }
+
+        return (bool) preg_match('/\bexpo\s+start\b/', $normalized)
+            || (bool) preg_match('/\bexpo\s+serve\b/', $normalized);
+    }
+
+    public function packageJsonNeedsExpoWebExport(?string $packageJson): bool
+    {
+        if (! $this->packageJsonHasExpo($packageJson)) {
+            return false;
+        }
+
+        $data = json_decode((string) $packageJson, true);
+        if (! is_array($data)) {
+            return false;
+        }
+
+        $scripts = is_array($data['scripts'] ?? null) ? $data['scripts'] : [];
+        $build = strtolower(trim((string) ($scripts['build'] ?? '')));
+        if ($build !== '' && ! str_contains($build, 'expo export')) {
+            return false;
+        }
+
+        return true;
     }
 
     /**
@@ -1123,6 +1187,10 @@ class ContainerApplicationRuntimeService
             return false;
         }
 
+        if ($this->packageJsonNeedsExpoWebExport($packageJson)) {
+            return true;
+        }
+
         $scripts = $data['scripts'] ?? [];
         if (! is_array($scripts) || empty($scripts['build'])) {
             return false;
@@ -1144,6 +1212,7 @@ class ContainerApplicationRuntimeService
             'vite',
             'astro',
             'turbo',
+            'expo',
         ];
 
         foreach ($buildPackages as $package) {
@@ -1660,6 +1729,24 @@ class ContainerApplicationRuntimeService
         $usesRootTurbo = $workspaceRootPackageJson !== null
             && $this->packageJsonUsesTurbo($workspaceRootPackageJson);
 
+        if ($this->packageJsonNeedsExpoWebExport($projectPackageJson)
+            && ! $this->packageJsonHasBuildScript($projectPackageJson)) {
+            $export = 'npx --yes expo export --platform web --output-dir dist';
+            $binary = $relativeDir !== ''
+                ? 'cd '.escapeshellarg($relativeDir).' && '.$export
+                : $export;
+
+            return $this->nodeCleanCommand(
+                $binary,
+                'production',
+                array_merge(
+                    $this->corepackEnvironment(),
+                    ['EXPO_NO_TELEMETRY' => '1'],
+                    $extraEnv,
+                ),
+            );
+        }
+
         if ($relativeDir !== '' && ! $usesRootTurbo) {
             $binary = match ($packageManager) {
                 'yarn' => '/usr/local/bin/corepack yarn --cwd '.$relativeDir.' run build',
@@ -1738,7 +1825,7 @@ class ContainerApplicationRuntimeService
             return false;
         }
 
-        foreach (['NEXT_PUBLIC_', 'VITE_', 'NUXT_PUBLIC_', 'REACT_APP_', 'PUBLIC_'] as $prefix) {
+        foreach (['NEXT_PUBLIC_', 'VITE_', 'NUXT_PUBLIC_', 'REACT_APP_', 'PUBLIC_', 'EXPO_PUBLIC_'] as $prefix) {
             if (str_starts_with($key, $prefix)) {
                 return true;
             }
@@ -1943,18 +2030,22 @@ class ContainerApplicationRuntimeService
             'yarn' => $this->yarnInstallShellCommand(preferDevDependencies: true, mode: 'loose'),
             default => $this->npmInstallShellCommand(),
         };
-        $buildJson = ($workspaceRootPackageJson !== null && $this->packageJsonUsesTurbo($workspaceRootPackageJson))
-            ? $workspaceRootPackageJson
-            : $packageJson;
         $artifactRel = $this->sanitizeArtifactRelativeDir($artifactRelativeDir);
-        $buildCommand = $this->workspaceAwareBuildCommand($buildJson, $packageManager, $artifactRel, $isWorkspace);
+        $buildCommand = $this->nodeProductionBuildShellCommand(
+            $packageJson,
+            $workspaceRootPackageJson,
+            $packageManager,
+            $artifactRel,
+        );
         $pruneCommand = $this->nodePruneShellCommand($packageManager);
         $prepareStep = $this->nodeBuildPrepareEnabled()
             ? '{ [ ! -f .talksasa/prepare-build.cjs ] || node .talksasa/prepare-build.cjs; } && '
             : '';
         // Workspace links and Vite preview both need the full tree. Pruning
         // `workspace:*` packages (or Vite) crash-loops the container.
-        $keepDevDependencies = $isWorkspace || $this->productionStartRequiresVite($packageJson);
+        $keepDevDependencies = $isWorkspace
+            || $this->productionStartRequiresVite($packageJson)
+            || $this->packageJsonNeedsExpoWebExport($packageJson);
         $steadyStateInstall = $isWorkspace
             ? $installForBuild
             : ($keepDevDependencies
@@ -1972,34 +2063,6 @@ class ContainerApplicationRuntimeService
             .($pruneStep !== '' ? ' && '.$pruneStep : '');
 
         return $openssl.'[ -f package.json ] && { if '.$artifactMissingCheck.'; then rm -rf node_modules && '.$buildBranch.'; else '.$steadyStateInstall.' && '.$binFix.'; fi; }';
-    }
-
-    private function workspaceAwareBuildCommand(
-        ?string $packageJson,
-        string $packageManager,
-        string $artifactRelativeDir,
-        bool $isWorkspace
-    ): string {
-        if ($isWorkspace
-            && $artifactRelativeDir !== ''
-            && ! $this->packageJsonUsesTurbo($packageJson)) {
-            $dir = $this->sanitizeArtifactRelativeDir($artifactRelativeDir);
-            if ($dir !== '') {
-                $binary = match ($packageManager) {
-                    'yarn' => '/usr/local/bin/corepack yarn --cwd '.$dir.' run build',
-                    'npm' => self::NODE_NPM_BIN.' --prefix '.$dir.' run build',
-                    default => '/usr/local/bin/corepack pnpm --dir '.$dir.' run build',
-                };
-
-                return $this->nodeCleanCommand(
-                    $binary,
-                    'production',
-                    $this->corepackEnvironment() + ['TURBO_TELEMETRY_DISABLED' => '1']
-                );
-            }
-        }
-
-        return $this->npmBuildShellCommand(null, false, $packageJson, [], $packageManager);
     }
 
     private function rubyBootstrap(): string

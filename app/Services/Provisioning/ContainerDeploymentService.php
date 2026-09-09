@@ -368,6 +368,7 @@ class ContainerDeploymentService
                         $envVars['BACKEND_URL'] ??= $envVars['INTERNAL_API_URL'];
                         $envVars['NEXT_PUBLIC_API_URL'] ??= '/api';
                         $envVars['VITE_API_URL'] ??= '/api';
+                        $envVars['EXPO_PUBLIC_API_URL'] ??= '/api';
                         $deployment->update(['env_values' => $envVars]);
                         $ssh->upload(NodeWebGatewayProxy::scriptContents(), NodeWebGatewayProxy::scriptPath($hostAppPath));
                         if (($nodeTopology['frontend_type'] ?? '') === 'vite-spa') {
@@ -2579,6 +2580,7 @@ class ContainerDeploymentService
                 'INTERNAL_API_URL' => 'http://backend:'.$backendPort,
                 'BACKEND_URL' => 'http://backend:'.$backendPort,
                 'NEXT_PUBLIC_API_URL' => $envVars['NEXT_PUBLIC_API_URL'] ?? '/api',
+                'EXPO_PUBLIC_API_URL' => $envVars['EXPO_PUBLIC_API_URL'] ?? '/api',
             ]);
             $frontend = [
                 'image' => $frontendRuntimeImage,
@@ -7125,6 +7127,7 @@ class ContainerDeploymentService
                 $envVars['BACKEND_URL'] ??= $envVars['INTERNAL_API_URL'];
                 $envVars['NEXT_PUBLIC_API_URL'] ??= '/api';
                 $envVars['VITE_API_URL'] ??= '/api';
+                $envVars['EXPO_PUBLIC_API_URL'] ??= '/api';
                 $ssh->upload(NodeWebGatewayProxy::scriptContents(), NodeWebGatewayProxy::scriptPath($hostAppPath));
                 if (($nodeTopology['frontend_type'] ?? '') === 'vite-spa') {
                     $ssh->upload(NodeWebGatewayProxy::viteConfig(), NodeWebGatewayProxy::viteConfigPath($hostAppPath));
@@ -7273,6 +7276,7 @@ class ContainerDeploymentService
                     $envVars['BACKEND_URL'] ??= $envVars['INTERNAL_API_URL'];
                     $envVars['NEXT_PUBLIC_API_URL'] ??= '/api';
                     $envVars['VITE_API_URL'] ??= '/api';
+                    $envVars['EXPO_PUBLIC_API_URL'] ??= '/api';
                     $ssh->upload(NodeWebGatewayProxy::scriptContents(), NodeWebGatewayProxy::scriptPath($hostAppPath));
                     if (($nodeTopology['frontend_type'] ?? '') === 'vite-spa') {
                         $ssh->upload(NodeWebGatewayProxy::viteConfig(), NodeWebGatewayProxy::viteConfigPath($hostAppPath));

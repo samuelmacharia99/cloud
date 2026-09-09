@@ -21,7 +21,7 @@
                                                 Choose frontend and database the same way as when you first deployed.
                                             @endif
                                             @if (($templateSlug ?? '') === 'nodejs')
-                                                Expo/React Native apps are not a browser frontend — choose <strong>None</strong> to deploy the API, or point the frontend directory at a web app such as <code class="font-mono text-xs">apps/web</code>.
+                                                Expo/React Native in <code class="font-mono text-xs">apps/mobile</code> can be the browser app when you set that frontend directory — we export it for web. Native binaries still need a mobile build service.
                                             @endif
                                         </p>
 

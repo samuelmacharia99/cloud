@@ -102,6 +102,78 @@ class NodeWebGatewayProxyTest extends TestCase
     }
 
     #[Test]
+    public function compose_runs_expo_web_as_a_node_sidecar_on_the_same_project(): void
+    {
+        $template = new ContainerTemplate([
+            'slug' => 'nodejs',
+            'docker_image' => 'node:22-alpine',
+            'default_port' => 3000,
+            'required_cpu_cores' => 1,
+            'required_ram_mb' => 1024,
+            'volume_paths' => ['app_data' => '/app'],
+        ]);
+        $deployment = new ContainerDeployment([
+            'container_name' => 'user-1-service-2-nodejs',
+            'assigned_port' => 30123,
+            'restart_policy' => 'always',
+            'cpu_limit' => 1,
+            'memory_limit_mb' => 1024,
+            'selected_version' => '22-alpine',
+        ]);
+        $runtime = new ApplicationRuntime(
+            ['sh', '-lc', 'cd /app/apps/api && exec npm start'],
+            'package-script',
+            'npm start',
+            '/app/apps/api',
+        );
+        $frontendCommand = ['sh', '-lc', 'npx --yes serve@14 dist -s --listen tcp://0.0.0.0:${PORT:-3000}'];
+        $topology = [
+            'topology' => 'split_web_api',
+            'frontend_type' => 'expo-web',
+            'backend' => [
+                'root' => 'apps/api',
+                'port' => 8000,
+                'working_directory' => '/app/apps/api',
+                'start_command' => $runtime->command,
+            ],
+            'frontend' => [
+                'root' => 'apps/mobile',
+                'port' => 3000,
+                'working_directory' => '/app/apps/mobile',
+                'start_command' => $frontendCommand,
+            ],
+        ];
+        $service = new ContainerDeploymentService;
+        $method = new \ReflectionMethod($service, 'renderCompose');
+        $yaml = $method->invoke(
+            $service,
+            $template,
+            $deployment->container_name,
+            30123,
+            [],
+            null,
+            $deployment,
+            '22-alpine',
+            '/srv/service/app',
+            $runtime,
+            null,
+            false,
+            'frontend',
+            8001,
+            $topology,
+        );
+        $compose = Yaml::parse($yaml);
+
+        $this->assertSame('node:22-alpine', $compose['services']['frontend']['image']);
+        $this->assertSame('/app/apps/mobile', $compose['services']['frontend']['working_dir']);
+        $this->assertSame($frontendCommand, $compose['services']['frontend']['command']);
+        $this->assertSame('/api', $compose['services']['frontend']['environment']['EXPO_PUBLIC_API_URL']);
+        $this->assertSame(['30123:8080'], $compose['services']['edge']['ports']);
+        $this->assertArrayNotHasKey('ports', $compose['services']['frontend']);
+        $this->assertArrayNotHasKey('ports', $compose['services']['backend']);
+    }
+
+    #[Test]
     public function manual_node_pin_must_satisfy_backend_and_frontend_engines(): void
     {
         $template = new ContainerTemplate(['slug' => 'nodejs']);

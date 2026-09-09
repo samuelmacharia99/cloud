@@ -340,6 +340,42 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
     }
 
     #[Test]
+    public function it_serves_an_expo_web_export_instead_of_metro(): void
+    {
+        $packageJson = json_encode([
+            'scripts' => [
+                'start' => 'expo start',
+            ],
+            'dependencies' => [
+                'expo' => '^54.0',
+                'react-native' => '^0.81',
+            ],
+        ], JSON_THROW_ON_ERROR);
+
+        $command = $this->service->platformNodeListenCommand(
+            'expo start',
+            3000,
+            $packageJson
+        );
+
+        $this->assertSame(
+            'npx --yes serve@14 dist -s --listen tcp://0.0.0.0:${PORT:-3000}',
+            $command
+        );
+        $this->assertTrue($this->service->packageJsonNeedsExpoWebExport($packageJson));
+        $this->assertTrue($this->service->packageJsonRequiresProductionBuild($packageJson));
+        $this->assertStringContainsString(
+            'npx --yes expo export --platform web --output-dir dist',
+            $this->service->nodeProductionBuildShellCommand($packageJson, null, 'npm'),
+        );
+        $this->assertStringContainsString(
+            'npx --yes expo export --platform web --output-dir dist',
+            $this->service->nodeBootstrap($packageJson),
+        );
+        $this->assertTrue($this->service->isAllowedNodeBuildEnvKey('EXPO_PUBLIC_API_URL'));
+    }
+
+    #[Test]
     public function it_builds_next_js_on_container_start_when_artifact_is_missing(): void
     {
         $packageJson = json_encode([

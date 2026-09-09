@@ -20,8 +20,9 @@ class ContainerNodeWorkloadTopologyService
     private const BACKEND_CANDIDATES = ['.', 'apps/api', 'api', 'backend', 'server', 'apps/server', 'packages/api'];
 
     /**
-     * Browser-app directories only. apps/mobile is never a Vite/Next host just
-     * because it sits next to the API — scanning it first used to abort deploys.
+     * Preferred browser-app directories. Metro-only Expo at apps/mobile is not
+     * treated as Vite/Next during auto-scan; a single Expo app is still hosted
+     * as expo-web when the customer asked for a browser frontend.
      *
      * @var list<string>
      */
@@ -110,12 +111,7 @@ class ContainerNodeWorkloadTopologyService
             throw new \DomainException("The selected frontend '{$frontend}' is not supported by the split web runtime.");
         }
 
-        $effectiveFrontendOverride = $this->forgetMobileFrontendOverride(
-            $ssh,
-            $hostAppPath,
-            $frontendOverride,
-            $skippedMobile,
-        );
+        $effectiveFrontendOverride = $frontendOverride;
 
         $backendRoot = $this->resolveRoot(
             $ssh,
@@ -146,6 +142,9 @@ class ContainerNodeWorkloadTopologyService
                 fn (string $root): bool => $root !== $backendRoot,
             )),
         );
+        if ($browser === null) {
+            $browser = $this->resolveExpoWebFallback($ssh, $hostAppPath, $skippedMobile, $backendRoot);
+        }
 
         if ($browser !== null && $backendRoot !== $browser['root']) {
             $hostedFrontend = $browser['root'];
@@ -564,30 +563,40 @@ class ContainerNodeWorkloadTopologyService
     }
 
     /**
-     * A persisted Expo/RN frontend pin must not abort deploy. Drop it and keep
-     * scanning for a real browser app (or fall back to API-only).
+     * When the customer asked for a browser app and the repo only has one
+     * Expo/RN package beside the API, host that package as expo-web on the
+     * same compose project (backend + frontend + edge).
      *
      * @param  list<string>  $skippedMobile
+     * @return array{root: string, type: string}|null
      */
-    private function forgetMobileFrontendOverride(
+    private function resolveExpoWebFallback(
         SSHService $ssh,
         string $hostAppPath,
-        ?string $frontendOverride,
-        array &$skippedMobile,
-    ): ?string {
-        if ($frontendOverride === null || trim($frontendOverride) === '') {
+        array $skippedMobile,
+        string $backendRoot,
+    ): ?array {
+        $candidates = [];
+        foreach ($skippedMobile as $root) {
+            if ($root === $backendRoot) {
+                continue;
+            }
+            $package = $this->packageAt($ssh, $hostAppPath, $root);
+            if ($package === null) {
+                continue;
+            }
+            $kind = $this->explicitBrowserKind($package);
+            if ($kind !== 'expo-web') {
+                continue;
+            }
+            $candidates[$root] = ['root' => $root, 'type' => $kind];
+        }
+
+        if (count($candidates) !== 1) {
             return null;
         }
 
-        $root = $this->sanitizeRelativeRoot($frontendOverride);
-        $package = $this->packageAt($ssh, $hostAppPath, $root);
-        if ($package !== null && $this->isNativeMobileOnly($package) && $this->explicitBrowserKind($package) === null) {
-            $skippedMobile = $this->uniqueRoots([...$skippedMobile, $root]);
-
-            return null;
-        }
-
-        return $frontendOverride;
+        return array_values($candidates)[0];
     }
 
     /**
