@@ -337,7 +337,7 @@ class ContainerDeploymentService
                 }
 
                 $nodeTopology = null;
-                if (($template->slug ?? '') === 'nodejs' && $hostAppPath) {
+                if ($this->supportsSplitWebWorkloads($template->slug ?? null) && $hostAppPath) {
                     $service->refresh();
                     $meta = is_array($service->service_meta) ? $service->service_meta : [];
                     $nodeTopology = app(ContainerNodeWorkloadTopologyService::class)->resolve(
@@ -347,13 +347,15 @@ class ContainerDeploymentService
                         is_string($meta['node_backend_root'] ?? null) ? $meta['node_backend_root'] : null,
                         is_string($meta['node_frontend_root'] ?? null) ? $meta['node_frontend_root'] : null,
                     );
-                    $selectedVersion = $this->resolveSplitNodeVersion(
-                        $service,
-                        $deployment,
-                        $template,
-                        $nodeTopology,
-                        $selectedVersion,
-                    );
+                    if (($template->slug ?? '') === 'nodejs') {
+                        $selectedVersion = $this->resolveSplitNodeVersion(
+                            $service,
+                            $deployment,
+                            $template,
+                            $nodeTopology,
+                            $selectedVersion,
+                        );
+                    }
                     app(ContainerNodeWorkloadTopologyService::class)->persist($service, $nodeTopology);
                     $this->recordDeploymentEvent($service, $deployment, 'node_workload_topology_resolved', [
                         'topology' => $nodeTopology['topology'] ?? 'single',
@@ -408,6 +410,13 @@ class ContainerDeploymentService
                         $ssh,
                         forceRebuild: $options->isRedeploy,
                         operationAlreadyLocked: true,
+                    );
+                } elseif (($nodeTopology['topology'] ?? null) === 'split_web_api') {
+                    $this->stackCommands->buildSplitWebFrontend(
+                        $deployment->fresh(),
+                        $ssh,
+                        (string) data_get($nodeTopology, 'frontend.root'),
+                        forceRebuild: $options->isRedeploy,
                     );
                 }
                 if (($options->isRedeploy || $replaceExistingContainers) && ($template->slug ?? '') === 'nodejs') {
@@ -518,16 +527,16 @@ class ContainerDeploymentService
                 $deployment->touch();
                 try {
                     $this->waitForContainerHealth($ssh, $containerName, $healthTimeoutSeconds, $deployment);
+                    if (($nodeTopology['topology'] ?? null) === 'split_web_api') {
+                        $this->waitForNodeSplitStackReadiness($ssh, $deployment, $healthTimeoutSeconds);
+                        $this->recordDeploymentEvent($service, $deployment, 'split_web_cutover_ready', [
+                            'backend_root' => data_get($nodeTopology, 'backend.root'),
+                            'frontend_root' => data_get($nodeTopology, 'frontend.root'),
+                        ]);
+                    } elseif (($template->slug ?? '') === 'nodejs') {
+                        $this->waitForNodeApplicationReadiness($ssh, $deployment, $healthTimeoutSeconds);
+                    }
                     if (($template->slug ?? '') === 'nodejs') {
-                        if (($nodeTopology['topology'] ?? null) === 'split_web_api') {
-                            $this->waitForNodeSplitStackReadiness($ssh, $deployment, $healthTimeoutSeconds);
-                            $this->recordDeploymentEvent($service, $deployment, 'node_split_cutover_ready', [
-                                'backend_root' => data_get($nodeTopology, 'backend.root'),
-                                'frontend_root' => data_get($nodeTopology, 'frontend.root'),
-                            ]);
-                        } else {
-                            $this->waitForNodeApplicationReadiness($ssh, $deployment, $healthTimeoutSeconds);
-                        }
                         app(ContainerNodeBuildService::class)->markHealthy($service, $deployment);
                     }
                     $this->recordDeploymentEvent($service, $deployment, 'health_check_passed', [
@@ -2409,7 +2418,7 @@ class ContainerDeploymentService
                 $deployment
             );
         }
-        $serveNodeWebFrontend = ($template->slug ?? null) === 'nodejs'
+        $serveNodeWebFrontend = $this->supportsSplitWebWorkloads($template->slug ?? null)
             && ($nodeTopology['topology'] ?? null) === 'split_web_api';
         if ($serveNodeWebFrontend) {
             $this->attachNodeWebSidecarStack(
@@ -2605,6 +2614,11 @@ class ContainerDeploymentService
         $compose['services'][NodeWebGatewayProxy::BACKEND_SERVICE] = $backend;
         $compose['services'][NodeWebGatewayProxy::FRONTEND_SERVICE] = $frontend;
         $compose['services'][NodeWebGatewayProxy::EDGE_SERVICE] = $edge;
+    }
+
+    private function supportsSplitWebWorkloads(?string $slug): bool
+    {
+        return in_array($slug, ['nodejs', 'python', 'ruby', 'go'], true);
     }
 
     /**
@@ -6899,15 +6913,16 @@ class ContainerDeploymentService
         }
 
         $pinned = $this->pinnedNodeBackendRoot($nodeTopology);
-        if (($template->slug ?? '') === 'nodejs' && $pinned !== null) {
+        if ($this->supportsSplitWebWorkloads($template->slug ?? null) && $pinned !== null) {
             $port = ($nodeTopology['topology'] ?? null) === 'split_web_api'
                 ? ContainerNodeWorkloadTopologyService::BACKEND_PORT
                 : (int) ($template->default_port ?? 3000);
 
-            return $this->applicationRuntime->detectNodeRuntimeAt(
+            return $this->applicationRuntime->detectRuntimeAt(
                 $ssh,
                 $hostAppPath,
                 $pinned,
+                (string) $template->slug,
                 $port,
                 includeBootstrap: false,
             );

@@ -219,6 +219,33 @@ class ContainerStackCommandService
     }
 
     /**
+     * Build a Node-based browser frontend paired with a non-Node backend.
+     *
+     * @return list<string>
+     */
+    public function buildSplitWebFrontend(
+        ContainerDeployment $deployment,
+        SSHService $ssh,
+        string $applicationRelativeDir,
+        bool $forceRebuild = false,
+    ): array {
+        $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+        $hostAppPath = app(ContainerAppDirectoryService::class)->hostAppPath($deployment);
+
+        return $this->installNodeDependencies(
+            $ssh,
+            $containerPath,
+            $deployment->container_name,
+            $hostAppPath,
+            $deployment,
+            (int) config('containers.node_build.command_timeout_seconds', 900),
+            $forceRebuild,
+            $applicationRelativeDir,
+            'node:22-alpine',
+        );
+    }
+
+    /**
      * Install + build a Next/Vite app under /app/frontend (Laravel monorepo) when present.
      *
      * @return list<string>
@@ -459,6 +486,7 @@ class ContainerStackCommandService
         int $timeout,
         bool $forceRebuild = false,
         string $applicationRelativeDir = '',
+        ?string $dockerImageOverride = null,
     ): array {
         $applicationRelativeDir = trim($applicationRelativeDir, '/');
         if ($applicationRelativeDir !== ''
@@ -496,7 +524,7 @@ class ContainerStackCommandService
                 || $this->runtimeService->packageJsonHasBuildScript($packageJson)
             ));
         $buildTimeout = (int) config('containers.node_build.command_timeout_seconds', 900);
-        $dockerImage = $this->resolveNodeDockerImage($deployment);
+        $dockerImage = $dockerImageOverride ?? $this->resolveNodeDockerImage($deployment);
         $publicBuildEnv = $this->runtimeService->collectNodeBuildEnvFromDeployment($deployment);
 
         try {

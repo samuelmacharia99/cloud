@@ -733,7 +733,7 @@ class ContainerController extends Controller
                 'error' => $e->getMessage(),
             ]);
 
-            return response()->json(['error' => $e->getMessage()], 502);
+            return response()->json(['error' => 'Ollama chat failed. Please try again or contact support.'], 502);
         } catch (\Throwable $e) {
             \Log::error("Ollama chat failed for service {$service->id}: ".$e->getMessage());
 
@@ -1196,7 +1196,7 @@ class ContainerController extends Controller
             \Log::warning("Database query failed for service {$service->id}: ".$e->getMessage());
             $this->logDatabaseQuery($service, $query, $format, false);
 
-            return response()->json(['error' => 'Query failed: '.$e->getMessage()], 500);
+            return response()->json(['error' => 'Query failed. Please try again or contact support.'], 500);
         }
     }
 
@@ -1292,7 +1292,7 @@ class ContainerController extends Controller
             \Log::warning("Database import failed for service {$service->id}: ".$e->getMessage());
             $this->logDatabaseImport($service, $originalName, $bytes, false);
 
-            return response()->json(['error' => 'Import failed: '.$e->getMessage()], 500);
+            return response()->json(['error' => 'Import failed. Please try again or contact support.'], 500);
         } finally {
             if ($uploadId !== '') {
                 $importer->forgetUpload((int) $service->id, $uploadId);
@@ -1383,7 +1383,7 @@ class ContainerController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Connection failed: '.$e->getMessage(),
+                'message' => 'Connection failed. Please try again or contact support.',
             ]);
         }
     }
@@ -1436,7 +1436,7 @@ class ContainerController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Sync failed: '.$e->getMessage(),
+                'message' => 'Sync failed. Please try again or contact support.',
             ]);
         }
     }
@@ -1554,7 +1554,7 @@ class ContainerController extends Controller
 
             return response()->json([
                 'error' => 'Doctor could not scan logs right now.',
-                'message' => $e->getMessage(),
+                'message' => 'Please try again or contact support.',
             ], 500);
         }
     }
@@ -1583,7 +1583,7 @@ class ContainerController extends Controller
 
             return response()->json([
                 'success' => false,
-                'message' => 'Treatment failed: '.$e->getMessage(),
+                'message' => 'Treatment failed. Please try again or contact support.',
             ], 500);
         }
     }
@@ -2214,7 +2214,7 @@ class ContainerController extends Controller
         } catch (\Exception $e) {
             \Log::error("Failed to bind domain for service {$service->id}: ".$e->getMessage());
 
-            return $this->domainsTabRedirect($service)->withErrors(['error' => 'Failed to bind domain: '.$e->getMessage()]);
+            return $this->domainsTabRedirect($service)->withErrors(['error' => 'Failed to bind domain. Please try again or contact support.']);
         }
     }
 
@@ -2292,7 +2292,7 @@ class ContainerController extends Controller
         } catch (\Exception $e) {
             \Log::error("Failed to update domain for service {$service->id}: ".$e->getMessage());
 
-            return $this->domainsTabRedirect($service)->withErrors(['error' => 'Failed to update domain: '.$e->getMessage()]);
+            return $this->domainsTabRedirect($service)->withErrors(['error' => 'Failed to update domain. Please try again or contact support.']);
         }
     }
 
@@ -2326,7 +2326,7 @@ class ContainerController extends Controller
         } catch (\Exception $e) {
             \Log::error("Failed to unbind domain for service {$service->id}: ".$e->getMessage());
 
-            return $this->domainsTabRedirect($service)->withErrors(['error' => 'Failed to remove domain: '.$e->getMessage()]);
+            return $this->domainsTabRedirect($service)->withErrors(['error' => 'Failed to remove domain. Please try again or contact support.']);
         }
     }
 
@@ -2386,7 +2386,7 @@ class ContainerController extends Controller
             'error' => $presenter->flashMessage($presented ?? [
                 'title' => "SSL certificate could not be issued for {$domain->domain}.",
                 'guidance' => 'Check DNS and retry SSL.',
-                'details' => $e->getMessage(),
+                'details' => 'Certificate provider details were logged for support.',
             ]),
         ]);
     }
@@ -2450,7 +2450,7 @@ class ContainerController extends Controller
             \Log::error("Failed to queue backup for service {$service->id}: ".$e->getMessage());
 
             return $this->redirectToContainerTab($service, 'backups')
-                ->withErrors(['error' => 'Backup failed: '.$e->getMessage()]);
+                ->withErrors(['error' => 'Backup failed. Please try again or contact support.']);
         }
     }
 
@@ -2472,16 +2472,15 @@ class ContainerController extends Controller
         } catch (\Throwable $e) {
             \Log::error("Failed to update environment for service {$service->id}: ".$e->getMessage());
 
-            $message = $e->getMessage();
             // Values may already be persisted before apply/restart fails.
-            if (str_contains($message, 'were saved')) {
+            if (str_contains($e->getMessage(), 'were saved')) {
                 return $this->redirectToContainerTab($service, 'environment')
                     ->with('success', 'Environment variables saved.')
-                    ->withErrors(['error' => $message]);
+                    ->withErrors(['error' => 'Applying the saved variables failed. Please try again or contact support.']);
             }
 
             return $this->redirectToContainerTab($service, 'environment')
-                ->withErrors(['error' => 'Failed to update environment: '.$message]);
+                ->withErrors(['error' => 'Failed to update environment. Please try again or contact support.']);
         }
     }
 
@@ -2504,7 +2503,7 @@ class ContainerController extends Controller
             \Log::error("Failed to delete environment keys for service {$service->id}: ".$e->getMessage());
 
             return $this->redirectToContainerTab($service, 'environment')
-                ->withErrors(['error' => 'Failed to remove variables: '.$e->getMessage()]);
+                ->withErrors(['error' => 'Failed to remove variables. Please try again or contact support.']);
         }
     }
 
@@ -2542,7 +2541,7 @@ class ContainerController extends Controller
                 ->withErrors(['error' => $e->getMessage()]);
         } catch (\Throwable $e) {
             return $this->redirectToContainerTab($service, 'overview')
-                ->withErrors(['error' => 'Staging update failed: '.$e->getMessage()]);
+                ->withErrors(['error' => 'Staging update failed. Please try again or contact support.']);
         }
     }
 
@@ -2559,7 +2558,7 @@ class ContainerController extends Controller
         } catch (\Exception $e) {
             \Log::error("Failed to restore backup {$backup->id}: ".$e->getMessage());
 
-            return back()->withErrors(['error' => 'Restore failed: '.$e->getMessage()]);
+            return back()->withErrors(['error' => 'Restore failed. Please try again or contact support.']);
         }
     }
 
