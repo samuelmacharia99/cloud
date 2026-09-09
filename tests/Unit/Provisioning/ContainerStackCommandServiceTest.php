@@ -108,7 +108,7 @@ class ContainerStackCommandServiceTest extends TestCase
         $this->assertTrue($service->isSafeCommand('npm run build'));
         $this->assertTrue($service->isSafeCommand('npm prune --omit=dev'));
         $this->assertTrue($service->isSafeCommand('rm -rf node_modules'));
-        $this->assertTrue($service->isSafeCommand('env -i HOME=/tmp NPM_CONFIG_CACHE=/tmp/.npm PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin npm_config_production=false NPM_CONFIG_PRODUCTION=false npm_config_omit= NODE_ENV=development /usr/local/bin/npm install --production=false --include=dev --legacy-peer-deps --no-audit --no-fund'));
+        $this->assertTrue($service->isSafeCommand('env -i HOME=/tmp NPM_CONFIG_CACHE=/tmp/.npm PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin npm_config_omit= NODE_ENV=development /usr/local/bin/npm install --production=false --include=dev --legacy-peer-deps --no-audit --no-fund'));
     }
 
     #[Test]
@@ -128,7 +128,7 @@ class ContainerStackCommandServiceTest extends TestCase
             $ssh,
             '/var/lib/talksasa/containers/user-1-service-1',
             'user-1-service-1-nodejs',
-            'env -i HOME=/tmp NPM_CONFIG_CACHE=/tmp/.npm PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin npm_config_production=false NPM_CONFIG_PRODUCTION=false npm_config_omit= NODE_ENV=development /usr/local/bin/npm install --production=false --include=dev --legacy-peer-deps --no-audit --no-fund',
+            'env -i HOME=/tmp NPM_CONFIG_CACHE=/tmp/.npm PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin npm_config_omit= NODE_ENV=development /usr/local/bin/npm install --production=false --include=dev --legacy-peer-deps --no-audit --no-fund',
             '/app',
             120,
             [
@@ -157,7 +157,7 @@ class ContainerStackCommandServiceTest extends TestCase
             $ssh,
             'node:20-alpine',
             '/var/lib/talksasa/containers/user-1-service-1/app',
-            'env -i HOME=/tmp NPM_CONFIG_CACHE=/tmp/.npm PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin npm_config_production=false NPM_CONFIG_PRODUCTION=false npm_config_omit= NODE_OPTIONS=--max-old-space-size=4096 NODE_ENV=production node ./node_modules/next/dist/bin/next build',
+            'env -i HOME=/tmp NPM_CONFIG_CACHE=/tmp/.npm PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin npm_config_omit= NODE_OPTIONS=--max-old-space-size=4096 NODE_ENV=production node ./node_modules/next/dist/bin/next build',
             '/app',
             900
         );
@@ -181,7 +181,7 @@ class ContainerStackCommandServiceTest extends TestCase
             $ssh,
             'node:20-alpine',
             '/var/lib/talksasa/containers/user-1-service-1/app',
-            'env -i HOME=/tmp NPM_CONFIG_CACHE=/tmp/.npm PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin npm_config_production=false NPM_CONFIG_PRODUCTION=false npm_config_omit= NODE_ENV=development /usr/local/bin/npm ci --include=dev --legacy-peer-deps --no-audit --no-fund',
+            'env -i HOME=/tmp NPM_CONFIG_CACHE=/tmp/.npm PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin npm_config_omit= NODE_ENV=development /usr/local/bin/npm ci --include=dev --legacy-peer-deps --no-audit --no-fund',
             '/app',
             600
         );

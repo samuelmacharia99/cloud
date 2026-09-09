@@ -15,6 +15,7 @@ use App\Services\NotificationService;
 use App\Services\SSH\SSHService;
 use App\Services\Terminal\ContainerDockerExecUserResolver;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -87,6 +88,7 @@ class ContainerDeploymentService
         $databaseReset = false;
         $laravelDatabaseSyncMessage = null;
         $deployStartedAt = microtime(true);
+        $operationLock = null;
 
         try {
             // Load relationships
@@ -95,6 +97,13 @@ class ContainerDeploymentService
             $template = $this->resolveContainerTemplate($service);
             if (! $template) {
                 throw new \DomainException('Service must have a container template');
+            }
+            if (($template->slug ?? '') === 'nodejs') {
+                $operationLock = Cache::lock(
+                    app(ContainerNodeBuildService::class)->lockName($service),
+                    (int) config('containers.node_build.operation_lock_seconds', 1800),
+                );
+                $operationLock->block(10);
             }
 
             \Log::info('Container deploy started', [
@@ -294,6 +303,18 @@ class ContainerDeploymentService
                 // Upload docker-compose.yml
                 $ssh->upload($composeYaml, $containerPath.'/docker-compose.yml');
 
+                // Node releases are built once, before runtime startup. The app
+                // container command only starts the already-validated release.
+                if (($template->slug ?? '') === 'nodejs') {
+                    app(ContainerNodeBuildService::class)->build(
+                        $service->fresh(['product.containerTemplate']),
+                        $deployment->fresh(),
+                        $ssh,
+                        forceRebuild: $options->isRedeploy,
+                        operationAlreadyLocked: true,
+                    );
+                }
+
                 // Quiet convert / reset: wipe volumes after compose exists so named volumes
                 // from prior failed attempts cannot keep a stale MySQL root password.
                 if ($options->shouldResetDatabase($hasDatabaseSidecar)) {
@@ -355,6 +376,10 @@ class ContainerDeploymentService
                 $deployment->touch();
                 try {
                     $this->waitForContainerHealth($ssh, $containerName, $healthTimeoutSeconds, $deployment);
+                    if (($template->slug ?? '') === 'nodejs') {
+                        $this->waitForNodeApplicationReadiness($ssh, $deployment, $healthTimeoutSeconds);
+                        app(ContainerNodeBuildService::class)->markHealthy($service, $deployment);
+                    }
                     $this->recordDeploymentEvent($service, $deployment, 'health_check_passed', [
                         'container_name' => $containerName,
                         'strict' => $strictHealthCheck,
@@ -380,13 +405,15 @@ class ContainerDeploymentService
 
                 $this->appDirectory->normalizePermissions($ssh, $deployment);
 
-                $this->stackCommands->executeSetupCommands(
-                    $ssh,
-                    $containerPath,
-                    $containerName,
-                    $template,
-                    self::DEPLOY_TIMEOUT
-                );
+                if (($template->slug ?? '') !== 'nodejs') {
+                    $this->stackCommands->executeSetupCommands(
+                        $ssh,
+                        $containerPath,
+                        $containerName,
+                        $template,
+                        self::DEPLOY_TIMEOUT
+                    );
+                }
 
                 // Build Next + switch to backend/frontend/edge after Laravel is healthy.
                 try {
@@ -649,6 +676,8 @@ class ContainerDeploymentService
             ]);
 
             throw $e;
+        } finally {
+            $operationLock?->release();
         }
     }
 
@@ -866,6 +895,7 @@ class ContainerDeploymentService
      */
     public function restart(Service $service): void
     {
+        $operationLock = null;
         try {
             $deployment = $service->containerDeployment;
 
@@ -884,6 +914,13 @@ class ContainerDeploymentService
 
                 $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
                 $slug = strtolower((string) ($this->resolveContainerTemplate($service)?->slug ?? ''));
+                if ($slug === 'nodejs') {
+                    $operationLock = Cache::lock(
+                        app(ContainerNodeBuildService::class)->lockName($service),
+                        (int) config('containers.node_build.operation_lock_seconds', 1800),
+                    );
+                    $operationLock->block(10);
+                }
                 $hasDatabase = $this->resolveDatabaseTemplateForService($service) !== null;
                 // Node/DirectAdmin apps often keep DB_HOST=localhost:/var/lib/mysql/mysql.sock.
                 // Recreate the app with unique sidecar DNS so mysql2 uses TCP, not a missing unix socket.
@@ -955,6 +992,8 @@ class ContainerDeploymentService
             \Log::error("Failed to restart container for service {$service->id}: ".$e->getMessage());
 
             throw $e;
+        } finally {
+            $operationLock?->release();
         }
     }
 
@@ -1819,7 +1858,12 @@ class ContainerDeploymentService
             $env = array_merge($env, $this->databaseEnvironmentVariables($databaseTemplate, $env, $service, $appContainerName));
         }
 
-        return $this->templateEnvironment->prepare($template, $env, $service, $port);
+        $prepared = $this->templateEnvironment->prepare($template, $env, $service, $port);
+        if (($template->slug ?? '') === 'nodejs') {
+            unset($prepared['NPM_CONFIG_PRODUCTION'], $prepared['npm_config_production']);
+        }
+
+        return $prepared;
     }
 
     /**
@@ -2607,6 +2651,47 @@ class ContainerDeploymentService
         throw new \RuntimeException(
             'Laravel HTTP health check failed after '.$timeoutSeconds.' seconds'
             .($lastError ? ': '.$lastError->getMessage() : '.')
+        );
+    }
+
+    public function waitForNodeApplicationReadiness(
+        SSHService $ssh,
+        ContainerDeployment $deployment,
+        int $timeoutSeconds = 120,
+    ): void {
+        $port = (int) $deployment->assigned_port;
+        $maxAttempts = max(1, (int) ceil($timeoutSeconds / self::HEALTH_CHECK_DELAY));
+        $probe = 'code=$(curl -sS -o /dev/null -w "%{http_code}" --connect-timeout 2 --max-time 4 '
+            .escapeshellarg('http://127.0.0.1:'.$port.'/').' 2>/dev/null || true); '
+            .'case "$code" in [1-5][0-9][0-9]) exit 0;; esac; '
+            .'timeout 3 sh -c '.escapeshellarg('</dev/tcp/127.0.0.1/'.$port);
+
+        for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
+            $deployment->touch();
+            try {
+                $this->waitForContainerRunning($ssh, $deployment->container_name, self::HEALTH_CHECK_DELAY * 2);
+                $ssh->exec('sh -lc '.escapeshellarg($probe), 10);
+
+                return;
+            } catch (\Throwable) {
+                if ($attempt < $maxAttempts - 1) {
+                    sleep(self::HEALTH_CHECK_DELAY);
+                }
+            }
+        }
+
+        $diagnostic = trim($ssh->exec(
+            'docker inspect --format '
+                .escapeshellarg('status={{.State.Status}} exit={{.State.ExitCode}} error={{.State.Error}} command={{json .Config.Cmd}}')
+                .' '.escapeshellarg($deployment->container_name).' 2>&1 || true; '
+                .'docker logs --tail 80 '.escapeshellarg($deployment->container_name)
+                ." 2>&1 | awk 'BEGIN{IGNORECASE=1} !/npm warn deprecated|npm notice/' | tail -n 20",
+            20
+        ));
+
+        throw new \RuntimeException(
+            'Node application did not answer on 127.0.0.1:'.$port.' after '.$timeoutSeconds
+            .' seconds.'.($diagnostic !== '' ? ' '.$diagnostic : '')
         );
     }
 
@@ -6057,7 +6142,8 @@ class ContainerDeploymentService
             $ssh,
             $hostAppPath,
             (string) $template->slug,
-            (int) ($template->default_port ?? 3000)
+            (int) ($template->default_port ?? 3000),
+            includeNodeBootstrap: ($template->slug ?? null) !== 'nodejs',
         );
     }
 
@@ -6079,11 +6165,16 @@ class ContainerDeploymentService
             $ssh,
             $hostAppPath,
             (string) $template->slug,
-            (int) ($template->default_port ?? 3000)
+            (int) ($template->default_port ?? 3000),
+            includeNodeBootstrap: ($template->slug ?? null) !== 'nodejs',
         );
 
         $databaseTemplate = $this->resolveDatabaseTemplate($service, $template);
         $envVars = is_array($deployment->env_values) ? $deployment->env_values : [];
+        if (($template->slug ?? '') === 'nodejs') {
+            unset($envVars['NPM_CONFIG_PRODUCTION'], $envVars['npm_config_production']);
+            $deployment->update(['env_values' => $envVars]);
+        }
         $composeYaml = $this->renderCompose(
             $template,
             $deployment->container_name,

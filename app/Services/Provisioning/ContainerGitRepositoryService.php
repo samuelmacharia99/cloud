@@ -7,6 +7,7 @@ use App\Models\ContainerGitPull;
 use App\Models\Service;
 use App\Models\User;
 use App\Services\SSH\SSHService;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -153,6 +154,7 @@ class ContainerGitRepositoryService
 
     public function runPull(ContainerGitPull $pull): void
     {
+        $operationLock = null;
         $pull->loadMissing('service.product.containerTemplate', 'service.containerDeployment.node');
         $service = $pull->service;
         $deployment = $service->containerDeployment;
@@ -176,7 +178,6 @@ class ContainerGitRepositoryService
         $runComposer = (bool) ($options['run_composer'] ?? true);
         $runMigrations = (bool) ($options['run_migrations'] ?? true);
         $forceRebuild = (bool) ($options['force_rebuild'] ?? false);
-
         $pull->update([
             'status' => ContainerGitPull::STATUS_RUNNING,
             'started_at' => now(),
@@ -191,6 +192,14 @@ class ContainerGitRepositoryService
         $previousAppPath = null;
 
         try {
+            if (($service->effectiveContainerTemplate()?->slug ?? '') === 'nodejs') {
+                $operationLock = Cache::lock(
+                    app(ContainerNodeBuildService::class)->lockName($service),
+                    (int) config('containers.node_build.operation_lock_seconds', 1800),
+                );
+                $operationLock->block(10);
+            }
+
             $options = is_array($pull->options) ? $pull->options : [];
             $settings = [
                 'url' => (string) ($options['repository_url'] ?? $this->repositorySettings($service)['url']),
@@ -356,7 +365,18 @@ class ContainerGitRepositoryService
                 $this->skipPullStep($pull, 'frontend', 'No Laravel project detected in /app.');
             } else {
                 $this->runPullStep($pull, 'post_pull', function () use ($service, $deployment, $ssh, $pull, $forceRebuild) {
-                    $messages = $this->stackCommands->runPostPullSteps($service, $deployment, $ssh, $forceRebuild);
+                    if (($service->effectiveContainerTemplate()?->slug ?? '') === 'nodejs') {
+                        $build = app(ContainerNodeBuildService::class)->build(
+                            $service,
+                            $deployment,
+                            $ssh,
+                            $forceRebuild,
+                            operationAlreadyLocked: true,
+                        );
+                        $messages = $build['messages'];
+                    } else {
+                        $messages = $this->stackCommands->runPostPullSteps($service, $deployment, $ssh, $forceRebuild);
+                    }
                     foreach ($messages as $message) {
                         $pull->appendLog($message);
                     }
@@ -396,6 +416,17 @@ class ContainerGitRepositoryService
                     return 'Container and Laravel HTTP health checks passed.';
                 }
 
+                if (($service->effectiveContainerTemplate()?->slug ?? '') === 'nodejs') {
+                    $this->deploymentService->waitForNodeApplicationReadiness(
+                        $ssh,
+                        $deployment,
+                        (int) config('containers.node_build.readiness_timeout_seconds', 120),
+                    );
+                    app(ContainerNodeBuildService::class)->markHealthy($service, $deployment);
+
+                    return 'Container and Node application readiness checks passed.';
+                }
+
                 return 'Application container is running.';
             });
 
@@ -431,6 +462,7 @@ class ContainerGitRepositoryService
             $this->failPull($pull, $e->getMessage());
         } finally {
             $ssh->disconnect();
+            $operationLock?->release();
         }
     }
 
@@ -1190,6 +1222,14 @@ class ContainerGitRepositoryService
                 $this->restorePreviousApplication($ssh, $service, $deployment, $hostAppPath, $previousPath);
             } else {
                 $this->refreshApplicationRuntime($ssh, $service, $deployment);
+            }
+
+            if (($service->effectiveContainerTemplate()?->slug ?? '') === 'nodejs') {
+                $this->deploymentService->waitForNodeApplicationReadiness(
+                    $ssh,
+                    $deployment,
+                    (int) config('containers.node_build.rollback_readiness_timeout_seconds', 90),
+                );
             }
 
             if (is_string($state['stage_path'] ?? null)) {

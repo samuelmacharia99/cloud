@@ -6,6 +6,7 @@ use App\Models\ContainerTemplate;
 use App\Models\Service;
 use App\Services\AdminActivityService;
 use App\Services\SSH\SSHService;
+use Illuminate\Support\Carbon;
 
 class ContainerDoctorService
 {
@@ -51,6 +52,7 @@ class ContainerDoctorService
 
         $live = $this->collectLiveFindings($service, $logs);
         $findings = $this->mergeLogAndLiveFindings($findings, $live);
+        $findings = $this->applyNodeReleaseLifecycle($service, $findings, $live['checks'] ?? []);
 
         return [
             'scanned_at' => now()->toIso8601String(),
@@ -84,6 +86,7 @@ class ContainerDoctorService
                 'upgrade_node_runtime',
                 'switch_php_production_runtime',
                 'restart_application',
+                'rebuild_node_application',
                 'import_da_database',
                 'import_da_codeigniter_app',
                 'link_codeigniter_system',
@@ -127,6 +130,7 @@ class ContainerDoctorService
             'fix_laravel_app_url' => $this->treatFixLaravelAppUrl($service),
             'refresh_domain_proxy' => $this->treatRefreshDomainProxy($service),
             'restart_application' => $this->treatRestartApplication($service),
+            'rebuild_node_application' => $this->treatRebuildNodeApplication($service),
             'recreate_application' => $this->treatRecreateApplication($service),
             'fix_vite_production_runtime' => $this->treatFixViteProductionRuntime($service),
             'upgrade_node_runtime' => $this->treatUpgradeNodeRuntime($service),
@@ -2432,12 +2436,12 @@ PHP);
         $name = (string) $deployment->container_name;
         $raw = trim($ssh->exec(
             'docker inspect --format '
-            .escapeshellarg('{{.State.Status}}|||{{.State.Running}}|||{{.State.Restarting}}|||{{.State.OOMKilled}}|||{{.RestartCount}}|||{{.Config.Image}}|||{{json .Config.Cmd}}|||{{.State.Error}}')
+            .escapeshellarg('{{.State.Status}}|||{{.State.Running}}|||{{.State.Restarting}}|||{{.State.OOMKilled}}|||{{.RestartCount}}|||{{.Config.Image}}|||{{json .Config.Cmd}}|||{{.State.ExitCode}}|||{{.State.Error}}')
             .' '.escapeshellarg($name).' 2>/dev/null || true',
             15
         ));
 
-        $parts = $raw === '' ? [] : explode('|||', $raw, 8);
+        $parts = $raw === '' ? [] : explode('|||', $raw, 9);
         $status = trim((string) ($parts[0] ?? ''));
         $running = strtolower((string) ($parts[1] ?? '')) === 'true';
         $restarting = strtolower((string) ($parts[2] ?? '')) === 'true'
@@ -2446,7 +2450,8 @@ PHP);
         $restartCount = is_numeric($parts[4] ?? null) ? (int) $parts[4] : 0;
         $image = trim((string) ($parts[5] ?? ''));
         $cmd = trim((string) ($parts[6] ?? ''), " \t\n\r\0\x0B\"[]");
-        $stateError = trim((string) ($parts[7] ?? ''));
+        $exitCode = is_numeric($parts[7] ?? null) ? (int) $parts[7] : null;
+        $stateError = trim((string) ($parts[8] ?? ''));
 
         foreach ($upstream['containers'] ?? [] as $container) {
             $containerStatus = strtolower((string) ($container['status'] ?? ''));
@@ -2503,6 +2508,7 @@ PHP);
             'image' => $image,
             'expected_image' => $expectedImage,
             'cmd' => $cmd,
+            'exit_code' => $exitCode,
             'state_error' => $stateError,
             'process_list' => $processList,
             'disk_percent' => $diskPercent,
@@ -2524,6 +2530,12 @@ PHP);
         $checks['restarting'] = ($snapshot['restarting'] ?? false) === true;
         $checks['container_image'] = $snapshot['image'] ?? null;
         $checks['expected_image'] = $snapshot['expected_image'] ?? null;
+        $checks['container_status'] = $snapshot['status'] ?? null;
+        $checks['container_command'] = $snapshot['cmd'] ?? null;
+        $checks['container_restart_count'] = $snapshot['restart_count'] ?? 0;
+        $checks['container_exit_code'] = $snapshot['exit_code'] ?? null;
+        $checks['container_state_error'] = $snapshot['state_error'] ?? null;
+        $checks['container_crash_logs'] = $snapshot['crash_logs'] ?? [];
         $checks['disk_percent'] = $snapshot['disk_percent'] ?? null;
         $checks['publishes_port'] = $snapshot['publishes_port'] ?? $upstream['publishes_port'] ?? null;
         $checks['php_start_command'] = ($snapshot['cmd'] ?? '') !== '' ? $snapshot['cmd'] : ($checks['php_start_command'] ?? null);
@@ -3374,6 +3386,7 @@ PHP;
         '/This project is configured to use (npm|pnpm|yarn)/i',
         '/has a "packageManager" field/i',
         '/FATAL:\s+role "[^"]+" does not exist/i',
+        '/Could not find a production build in the [\'"]?\.next[\'"]? directory/i',
         '/npm warn EBADENGINE[\s\S]{0,500}required:\s*\{\s*node:\s*[\'"]>=22[^\'"]*[\'"][\s\S]{0,500}current:\s*\{\s*node:\s*[\'"]v20/i',
     ];
 
@@ -3480,6 +3493,103 @@ PHP;
                 'If the app crashes on boot, fix the start command or missing environment variables, then recreate.',
             ],
         ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $findings
+     * @param  array<string, mixed>  $checks
+     * @return list<array<string, mixed>>
+     */
+    public function applyNodeReleaseLifecycle(Service $service, array $findings, array $checks): array
+    {
+        if ($this->resolveStackSlug($service) !== 'nodejs'
+            || ($checks['upstream_reachable'] ?? null) !== false) {
+            return $findings;
+        }
+
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        $release = is_array($meta['node_release'] ?? null) ? $meta['node_release'] : [];
+        $state = (string) ($release['state'] ?? '');
+        if ($state === 'building' && ! empty($release['updated_at'])) {
+            try {
+                if (Carbon::parse((string) $release['updated_at'])->lt(now()->subMinutes(30))) {
+                    $state = 'build_failed';
+                    $release['error'] = 'The build worker stopped before recording completion.';
+                }
+            } catch (\Throwable) {
+                $state = 'build_failed';
+                $release['error'] = 'The build state timestamp is invalid.';
+            }
+        }
+        $command = $checks['container_command'] ?? ($release['start_command'] ?? null);
+        $lastRuntimeError = null;
+        foreach (array_reverse(is_array($checks['container_crash_logs'] ?? null) ? $checks['container_crash_logs'] : []) as $line) {
+            if (is_string($line)
+                && preg_match('/npm (?:warn|notice)|added \d+ packages?/i', $line) !== 1) {
+                $lastRuntimeError = $line;
+                break;
+            }
+        }
+        $diagnosticEvidence = array_values(array_filter([
+            $command ? 'generated start command: '.(is_array($command) ? json_encode($command) : $command) : null,
+            isset($checks['container_status']) ? 'container state: '.$checks['container_status'] : null,
+            isset($checks['container_exit_code']) ? 'exit code: '.$checks['container_exit_code'] : null,
+            ! empty($checks['container_restart_count']) ? 'restart count: '.$checks['container_restart_count'] : null,
+            ! empty($checks['container_state_error']) ? 'runtime error: '.$checks['container_state_error'] : null,
+            $lastRuntimeError ? 'last non-warning log: '.$lastRuntimeError : null,
+            ! empty($release['error']) ? 'last build error: '.$release['error'] : null,
+        ]));
+
+        $replacement = match ($state) {
+            'building' => [
+                'id' => 'node_release_building',
+                'severity' => 'warning',
+                'title' => 'Node release build is running',
+                'summary' => 'The dedicated build phase has not completed. Runtime startup waits for a validated release manifest.',
+                'evidence' => $diagnosticEvidence,
+                'manual_steps' => ['Wait for the active build operation to finish, then re-scan.'],
+            ],
+            'built', 'healthy' => [
+                'id' => 'node_release_start_failed',
+                'severity' => 'critical',
+                'title' => 'Built Node release did not start',
+                'summary' => 'Dependencies and production artifacts were built successfully, but the detected server command did not answer on the assigned port.',
+                'evidence' => $diagnosticEvidence,
+                'treat_action' => 'restart_application',
+                'treat_label' => 'Re-detect and restart',
+                'manual_steps' => [
+                    'Re-detect and restart rewrites only the runtime command; it does not reinstall dependencies.',
+                    'Ensure the application listens on 0.0.0.0 and process.env.PORT.',
+                ],
+            ],
+            default => [
+                'id' => 'node_release_invalid',
+                'severity' => 'critical',
+                'title' => $state === 'build_failed' ? 'Node release build failed' : 'Node release has not been built',
+                'summary' => 'No validated Node release is available. Rebuild installs with the declared package manager, runs the production build, validates artifacts, then starts the app.',
+                'evidence' => $diagnosticEvidence,
+                'treat_action' => 'rebuild_node_application',
+                'treat_label' => 'Rebuild and start',
+                'manual_steps' => [
+                    'Rebuild and start uses the dedicated build container and leaves the database volume unchanged.',
+                    'If the build fails, Doctor records the exact build phase and error instead of restarting in a loop.',
+                ],
+            ],
+        };
+
+        $replaced = false;
+        foreach ($findings as $index => $finding) {
+            if (($finding['id'] ?? '') === 'live_upstream_unreachable') {
+                $findings[$index] = $replacement;
+                $replaced = true;
+                break;
+            }
+        }
+        if (! $replaced) {
+            $findings[] = $replacement;
+        }
+
+        return array_values($findings);
     }
 
     private function bootstrapProgressMessage(array $probe): string
@@ -3843,12 +3953,30 @@ PHP;
                     '/Usage Error: This project is configured to use/i',
                 ],
                 'title' => 'Wrong package manager for this Node app',
-                'summary' => 'package.json has a packageManager field (usually npm), but the container start command ran a different manager (often pnpm on npm workspaces). Recreate keeps that same command. Start the Node app re-detects npm/pnpm/yarn from packageManager, rewrites compose, and recreates only the app container. The database volume is kept.',
-                'treat_action' => 'restart_application',
-                'treat_label' => 'Start the Node app',
+                'summary' => 'package.json declares a different package manager than the failed release used. Rebuild detects npm/pnpm/yarn once, validates the release, then starts it without installing during container boot.',
+                'treat_action' => 'rebuild_node_application',
+                'treat_label' => 'Rebuild and start',
                 'manual_steps' => [
                     'Click Start the Node app — rewrites the start command to the declared package manager and recreates only the app container.',
                     'The first install can take several minutes. Watch Logs. Do not Recreate containers (same broken command) and do not Reset database.',
+                ],
+            ],
+            [
+                'id' => 'node_production_artifact_missing',
+                'severity' => 'critical',
+                'stacks' => ['nodejs', '*'],
+                'patterns' => [
+                    '/Could not find a production build in the [\'"]?\.next[\'"]? directory/i',
+                    '/production-start-no-build-id/i',
+                    '/Cannot find module [\'"][^\'"]*(?:dist|build|\.output)[^\'"]*[\'"]/i',
+                ],
+                'title' => 'Node production artifact is missing',
+                'summary' => 'The server command was started without a validated production artifact. Rebuild creates dependencies and artifacts in the dedicated build phase before runtime startup.',
+                'treat_action' => 'rebuild_node_application',
+                'treat_label' => 'Rebuild and start',
+                'manual_steps' => [
+                    'Click Rebuild and start. The database volume and previous Git release are preserved.',
+                    'If the build fails, fix the reported package or build error and retry.',
                 ],
             ],
             [
@@ -3862,9 +3990,9 @@ PHP;
                     '/sh:\s+next:\s+Permission denied/i',
                 ],
                 'title' => 'npm cannot install a pnpm/yarn workspace',
-                'summary' => 'The app package uses the workspace:* protocol (pnpm or Yarn). npm install inside the nested package fails, then `next` is missing or not executable (exit 126). Start the Node app re-detects the repo root, installs with pnpm/Yarn from /app, and starts the nested app. The database volume is kept.',
-                'treat_action' => 'restart_application',
-                'treat_label' => 'Start the Node app',
+                'summary' => 'The app uses a pnpm/Yarn workspace protocol. Rebuild detects the workspace root and declared package manager, builds there, validates the nested artifact, then starts without installing during container boot.',
+                'treat_action' => 'rebuild_node_application',
+                'treat_label' => 'Rebuild and start',
                 'manual_steps' => [
                     'Click Start the Node app — installs from the workspace root (not npm inside apps/web) and recreates only the app container.',
                     'The first pnpm install and production build can take several minutes. Watch Logs. Do not Reset database.',
@@ -7105,6 +7233,10 @@ PHP;
      */
     private function treatFixViteProductionRuntime(Service $service): array
     {
+        if ($this->resolveStackSlug($service) === 'nodejs') {
+            return $this->treatRebuildNodeApplication($service);
+        }
+
         $deployment = $service->containerDeployment;
         if (! $deployment?->node) {
             return ['success' => false, 'message' => 'Application is not deployed.'];
@@ -7148,6 +7280,39 @@ PHP;
             ];
         } catch (\Throwable $e) {
             return ['success' => false, 'message' => 'Vite runtime repair failed: '.$e->getMessage()];
+        } finally {
+            $ssh->disconnect();
+        }
+    }
+
+    /**
+     * @return array{success: bool, message: string}
+     */
+    private function treatRebuildNodeApplication(Service $service): array
+    {
+        $deployment = $service->containerDeployment;
+        if (! $deployment?->node || $this->resolveStackSlug($service) !== 'nodejs') {
+            return ['success' => false, 'message' => 'A deployed Node.js application is required.'];
+        }
+
+        $ssh = SSHService::forNode($deployment->node);
+        try {
+            $result = app(ContainerNodeBuildService::class)->rebuildAndStart(
+                $service,
+                $deployment,
+                $ssh,
+            );
+
+            return [
+                'success' => true,
+                'message' => 'Node release built and verified on 127.0.0.1:'.$deployment->assigned_port
+                    .'. '.implode(' ', $result['messages']),
+            ];
+        } catch (\Throwable $e) {
+            return [
+                'success' => false,
+                'message' => 'Node rebuild failed before readiness: '.$e->getMessage(),
+            ];
         } finally {
             $ssh->disconnect();
         }

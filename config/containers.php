@@ -147,6 +147,9 @@ return [
         'heap_limit_ratio' => (float) env('NODE_BUILD_HEAP_LIMIT_RATIO', 0.65),
         'min_heap_limit_mb' => (int) env('NODE_BUILD_MIN_HEAP_LIMIT_MB', 384),
         'unlimited_heap_limit_mb' => (int) env('NODE_BUILD_UNLIMITED_HEAP_LIMIT_MB', 4096),
+        'operation_lock_seconds' => (int) env('NODE_OPERATION_LOCK_SECONDS', 1800),
+        'readiness_timeout_seconds' => (int) env('NODE_READINESS_TIMEOUT_SECONDS', 120),
+        'rollback_readiness_timeout_seconds' => (int) env('NODE_ROLLBACK_READINESS_TIMEOUT_SECONDS', 90),
         // Patches tsconfig + Next/Nuxt config before production builds on Git pull.
         'prepare_before_build' => (bool) env('NODE_BUILD_PREPARE_BEFORE_BUILD', true),
     ],

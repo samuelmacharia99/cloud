@@ -162,15 +162,7 @@ class ContainerStackCommandService
         $timeout = (int) config('containers.laravel_init.command_timeout_seconds', 600);
 
         return match ($slug) {
-            'nodejs' => $this->installNodeDependencies(
-                $ssh,
-                $containerPath,
-                $containerName,
-                $hostAppPath,
-                $deployment,
-                $timeout,
-                $forceRebuild
-            ),
+            'nodejs' => $this->buildNodeApplication($service, $deployment, $ssh, $forceRebuild),
             'laravel' => $this->installLaravelFrontendDependencies(
                 $ssh,
                 $deployment,
@@ -192,6 +184,35 @@ class ContainerStackCommandService
             'python' => $this->installPythonDependencies($ssh, $containerPath, $containerName, $hostAppPath, $timeout),
             default => [],
         };
+    }
+
+    /**
+     * Build the bind-mounted Node release before its runtime container starts.
+     *
+     * @return list<string>
+     */
+    public function buildNodeApplication(
+        Service $service,
+        ContainerDeployment $deployment,
+        SSHService $ssh,
+        bool $forceRebuild = false,
+    ): array {
+        if (($service->effectiveContainerTemplate()?->slug ?? '') !== 'nodejs') {
+            throw new \DomainException('The Node build pipeline only supports Node.js services.');
+        }
+
+        $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+        $hostAppPath = app(ContainerAppDirectoryService::class)->hostAppPath($deployment);
+
+        return $this->installNodeDependencies(
+            $ssh,
+            $containerPath,
+            $deployment->container_name,
+            $hostAppPath,
+            $deployment,
+            (int) config('containers.node_build.command_timeout_seconds', 900),
+            $forceRebuild,
+        );
     }
 
     /**

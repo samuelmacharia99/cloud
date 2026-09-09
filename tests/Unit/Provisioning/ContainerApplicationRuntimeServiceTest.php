@@ -358,8 +358,40 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
         $this->assertStringContainsString('apk add --no-cache openssl libc6-compat', $bootstrap);
         $this->assertStringContainsString('env -i HOME=/tmp', $bootstrap);
         $this->assertStringContainsString('/usr/local/bin/npm install --production=false --include=dev', $bootstrap);
+        $this->assertStringContainsString(
+            '{ [ ! -f .talksasa/prepare-build.cjs ] || node .talksasa/prepare-build.cjs; }',
+            $bootstrap
+        );
         $this->assertStringContainsString('node ./node_modules/next/dist/bin/next build', $bootstrap);
         $this->assertStringContainsString('.next/BUILD_ID', $bootstrap);
+    }
+
+    #[Test]
+    public function production_node_runtime_starts_the_validated_release_without_installing_or_building(): void
+    {
+        $packageJson = json_encode([
+            'scripts' => [
+                'build' => 'next build',
+                'start' => 'next start',
+            ],
+            'dependencies' => ['next' => '14.0.0'],
+        ], JSON_THROW_ON_ERROR);
+
+        $runtime = $this->service->detectNodeFromContents(
+            null,
+            $packageJson,
+            false,
+            false,
+            false,
+            3000,
+            includeBootstrap: false,
+        );
+        $command = $runtime->command[2];
+
+        $this->assertStringContainsString('exec npx next start', $command);
+        $this->assertStringNotContainsString('npm install', $command);
+        $this->assertStringNotContainsString('next build', $command);
+        $this->assertStringNotContainsString('prepare-build.cjs', $command);
     }
 
     #[Test]
@@ -398,7 +430,7 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
         $runtime = new ContainerApplicationRuntimeService;
 
         $this->assertStringContainsString(
-            'env -i HOME=/tmp NPM_CONFIG_CACHE=/tmp/.npm PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin npm_config_production=false NPM_CONFIG_PRODUCTION=false npm_config_omit= NODE_ENV=development /usr/local/bin/npm install --production=false --include=dev --legacy-peer-deps --no-audit --no-fund',
+            'env -i HOME=/tmp NPM_CONFIG_CACHE=/tmp/.npm PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin npm_config_omit= NODE_ENV=development /usr/local/bin/npm install --production=false --include=dev --legacy-peer-deps --no-audit --no-fund',
             $runtime->npmInstallShellCommand()
         );
         $npmBuild = $runtime->npmBuildShellCommand(1000);

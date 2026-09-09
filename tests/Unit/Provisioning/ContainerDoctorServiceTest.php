@@ -4,6 +4,7 @@ namespace Tests\Unit\Provisioning;
 
 use App\Models\ContainerDeployment;
 use App\Models\ContainerTemplate;
+use App\Models\Product;
 use App\Models\Service;
 use App\Services\Provisioning\ContainerAppDirectoryService;
 use App\Services\Provisioning\ContainerDoctorService;
@@ -12,6 +13,54 @@ use Tests\TestCase;
 
 class ContainerDoctorServiceTest extends TestCase
 {
+    #[Test]
+    public function node_without_a_validated_release_offers_an_audited_rebuild(): void
+    {
+        $service = $this->nodeServiceWithRelease([]);
+
+        $findings = app(ContainerDoctorService::class)->applyNodeReleaseLifecycle(
+            $service,
+            [['id' => 'live_upstream_unreachable', 'severity' => 'critical']],
+            [
+                'upstream_reachable' => false,
+                'container_status' => 'exited',
+                'container_command' => 'npm start',
+            ],
+        );
+
+        $this->assertSame('node_release_invalid', $findings[0]['id']);
+        $this->assertSame('rebuild_node_application', $findings[0]['treat_action']);
+        $this->assertSame('Rebuild and start', $findings[0]['treat_label']);
+    }
+
+    #[Test]
+    public function built_node_release_with_no_listener_offers_start_only_restart(): void
+    {
+        $service = $this->nodeServiceWithRelease(['state' => 'built']);
+
+        $findings = app(ContainerDoctorService::class)->applyNodeReleaseLifecycle(
+            $service,
+            [['id' => 'live_upstream_unreachable', 'severity' => 'critical']],
+            ['upstream_reachable' => false, 'container_command' => 'npx next start'],
+        );
+
+        $this->assertSame('node_release_start_failed', $findings[0]['id']);
+        $this->assertSame('restart_application', $findings[0]['treat_action']);
+        $this->assertSame('Re-detect and restart', $findings[0]['treat_label']);
+    }
+
+    #[Test]
+    public function missing_next_production_artifact_offers_rebuild_instead_of_restart_loop(): void
+    {
+        $finding = collect(app(ContainerDoctorService::class)->analyzeLogs(
+            "Error: Could not find a production build in the '.next' directory",
+            'nodejs',
+        ))->firstWhere('id', 'node_production_artifact_missing');
+
+        $this->assertNotNull($finding);
+        $this->assertSame('rebuild_node_application', $finding['treat_action']);
+    }
+
     #[Test]
     public function it_detects_vite_missing_from_production_start(): void
     {
@@ -43,8 +92,8 @@ LOG;
         $finding = collect($doctor->analyzeLogs($logs, 'nodejs'))->firstWhere('id', 'npm_workspace_protocol');
 
         $this->assertNotNull($finding);
-        $this->assertSame('restart_application', $finding['treat_action']);
-        $this->assertSame('Start the Node app', $finding['treat_label']);
+        $this->assertSame('rebuild_node_application', $finding['treat_action']);
+        $this->assertSame('Rebuild and start', $finding['treat_label']);
         $this->assertSame('critical', $finding['severity']);
         $this->assertTrue($doctor->bootstrapLogsLookFatal($logs));
         $this->assertNull($doctor->recentLogsIndicateBootstrapProgress($logs));
@@ -61,8 +110,8 @@ LOG;
         $finding = collect($doctor->analyzeLogs($logs, 'nodejs'))->firstWhere('id', 'node_package_manager_mismatch');
 
         $this->assertNotNull($finding);
-        $this->assertSame('restart_application', $finding['treat_action']);
-        $this->assertSame('Start the Node app', $finding['treat_label']);
+        $this->assertSame('rebuild_node_application', $finding['treat_action']);
+        $this->assertSame('Rebuild and start', $finding['treat_label']);
         $this->assertSame('critical', $finding['severity']);
         $this->assertTrue($doctor->bootstrapLogsLookFatal($logs));
         $this->assertNull($doctor->recentLogsIndicateBootstrapProgress($logs));
@@ -2130,5 +2179,22 @@ LOG;
             'php',
             null
         ));
+    }
+
+    /**
+     * @param  array<string, mixed>  $release
+     */
+    private function nodeServiceWithRelease(array $release): Service
+    {
+        $template = new ContainerTemplate(['slug' => 'nodejs']);
+        $product = new Product;
+        $product->setRelation('containerTemplate', $template);
+
+        $service = new Service;
+        $service->service_meta = $release === [] ? [] : ['node_release' => $release];
+        $service->setRelation('product', $product);
+        $service->setRelation('containerDeployment', null);
+
+        return $service;
     }
 }

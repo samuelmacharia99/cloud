@@ -261,21 +261,12 @@ class ContainerTemplateSeeder extends Seeder
                         'required' => false,
                         'secret' => false,
                     ],
-                    [
-                        'key' => 'npm_config_production',
-                        'label' => 'Production Dependencies',
-                        'default' => 'false',
-                        'required' => false,
-                        'secret' => false,
-                    ],
                 ],
                 'volume_paths' => [
                     'app_data' => '/app',
                 ],
                 'compose_services' => [],
-                'setup_commands' => [
-                    'npm install --omit=dev',
-                ],
+                'setup_commands' => [],
                 'strict_health_check' => true,
                 'health_check_timeout_seconds' => 180,
                 'is_active' => true,

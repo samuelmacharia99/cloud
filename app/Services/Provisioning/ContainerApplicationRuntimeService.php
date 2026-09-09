@@ -21,10 +21,11 @@ class ContainerApplicationRuntimeService
         SSHService $ssh,
         string $hostAppPath,
         string $slug,
-        int $defaultPort
+        int $defaultPort,
+        bool $includeNodeBootstrap = true,
     ): ApplicationRuntime {
         return match ($slug) {
-            'nodejs' => $this->detectNodeRuntime($ssh, $hostAppPath, $defaultPort),
+            'nodejs' => $this->detectNodeRuntime($ssh, $hostAppPath, $defaultPort, $includeNodeBootstrap),
             'ruby' => $this->detectRubyRuntime($ssh, $hostAppPath, $defaultPort),
             'python' => $this->detectPythonRuntime($ssh, $hostAppPath, $defaultPort),
             'go' => $this->detectGoRuntime($ssh, $hostAppPath, $defaultPort),
@@ -32,8 +33,12 @@ class ContainerApplicationRuntimeService
         };
     }
 
-    public function detectNodeRuntime(SSHService $ssh, string $hostAppPath, int $defaultPort): ApplicationRuntime
-    {
+    public function detectNodeRuntime(
+        SSHService $ssh,
+        string $hostAppPath,
+        int $defaultPort,
+        bool $includeBootstrap = true,
+    ): ApplicationRuntime {
         $relative = $this->discoverNodeProjectRelativeRoot($ssh, $hostAppPath);
         $projectHost = $relative === '' ? $hostAppPath : $hostAppPath.'/'.$relative;
         $workdir = $this->sanitizeContainerWorkdir($relative === '' ? '/app' : '/app/'.$relative);
@@ -56,7 +61,8 @@ class ContainerApplicationRuntimeService
             $defaultPort,
             $workdir,
             $isWorkspace ? $rootPackageJson : null,
-            $isWorkspace ? '/app' : $workdir
+            $isWorkspace ? '/app' : $workdir,
+            $includeBootstrap,
         );
     }
 
@@ -295,7 +301,8 @@ class ContainerApplicationRuntimeService
         int $defaultPort,
         string $containerWorkdir = '/app',
         ?string $workspaceRootPackageJson = null,
-        ?string $bootstrapWorkdir = null
+        ?string $bootstrapWorkdir = null,
+        bool $includeBootstrap = true,
     ): ApplicationRuntime {
         $workdir = $this->sanitizeContainerWorkdir($containerWorkdir);
         $bootDir = $this->sanitizeContainerWorkdir(
@@ -303,7 +310,9 @@ class ContainerApplicationRuntimeService
             ?? ($workspaceRootPackageJson !== null ? '/app' : $containerWorkdir)
         );
         $artifactRel = $bootDir !== $workdir ? $this->relativeDirUnderApp($workdir) : '';
-        $bootstrap = $this->nodeBootstrap($packageJson, $workspaceRootPackageJson, $artifactRel);
+        $bootstrap = $includeBootstrap
+            ? $this->nodeBootstrap($packageJson, $workspaceRootPackageJson, $artifactRel)
+            : null;
 
         if ($procfileCommand !== null) {
             $platformCommand = $this->platformNodeListenCommand($procfileCommand, $defaultPort, $packageJson);
@@ -316,7 +325,8 @@ class ContainerApplicationRuntimeService
                     null,
                     null,
                     $workspaceRootPackageJson,
-                    $bootDir
+                    $bootDir,
+                    $includeBootstrap,
                 );
             }
 
@@ -346,7 +356,8 @@ class ContainerApplicationRuntimeService
                             null,
                             null,
                             $workspaceRootPackageJson,
-                            $bootDir
+                            $bootDir,
+                            $includeBootstrap,
                         );
                     }
 
@@ -385,7 +396,8 @@ class ContainerApplicationRuntimeService
                         $inferred['source'],
                         $inferred['label'],
                         $workspaceRootPackageJson,
-                        $bootDir
+                        $bootDir,
+                        $includeBootstrap,
                     );
                 }
 
@@ -892,7 +904,8 @@ class ContainerApplicationRuntimeService
         ?string $source = null,
         ?string $label = null,
         ?string $workspaceRootPackageJson = null,
-        ?string $bootstrapWorkdir = null
+        ?string $bootstrapWorkdir = null,
+        bool $includeBootstrap = true,
     ): ApplicationRuntime {
         $isNext = str_contains($platformCommand, 'next start');
         $startDir = $this->sanitizeContainerWorkdir($containerWorkdir);
@@ -904,7 +917,9 @@ class ContainerApplicationRuntimeService
             $defaultPort,
             $source ?? ($isNext ? 'next' : 'vite'),
             $label ?? ($isNext ? 'Next.js server' : 'Vite production preview'),
-            $this->nodeBootstrap($packageJson, $workspaceRootPackageJson, $artifactRel),
+            $includeBootstrap
+                ? $this->nodeBootstrap($packageJson, $workspaceRootPackageJson, $artifactRel)
+                : null,
             $startDir,
             $bootDir
         );
@@ -1169,7 +1184,7 @@ class ContainerApplicationRuntimeService
 
     private const NODE_NPM_BIN = '/usr/local/bin/npm';
 
-    private const NODE_CLEAN_ENV = 'HOME=/tmp NPM_CONFIG_CACHE=/tmp/.npm PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin npm_config_production=false NPM_CONFIG_PRODUCTION=false npm_config_omit=';
+    private const NODE_CLEAN_ENV = 'HOME=/tmp NPM_CONFIG_CACHE=/tmp/.npm PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin npm_config_omit=';
 
     public function nodeCleanNpmCommand(string $npmArgs, ?string $nodeEnv = null, array $extraEnv = []): string
     {
@@ -1651,10 +1666,7 @@ class ContainerApplicationRuntimeService
      */
     public function nodeBuildEnvironmentOverrides(): array
     {
-        return [
-            'NPM_CONFIG_PRODUCTION' => 'false',
-            'npm_config_production' => 'false',
-        ];
+        return [];
     }
 
     /**
@@ -1786,7 +1798,7 @@ class ContainerApplicationRuntimeService
         $buildCommand = $this->workspaceAwareBuildCommand($buildJson, $packageManager, $artifactRel, $isWorkspace);
         $pruneCommand = $this->nodePruneShellCommand($packageManager);
         $prepareStep = $this->nodeBuildPrepareEnabled()
-            ? '[ -f .talksasa/prepare-build.cjs ] && node .talksasa/prepare-build.cjs && '
+            ? '{ [ ! -f .talksasa/prepare-build.cjs ] || node .talksasa/prepare-build.cjs; } && '
             : '';
         // Workspace links and Vite preview both need the full tree. Pruning
         // `workspace:*` packages (or Vite) crash-loops the container.
