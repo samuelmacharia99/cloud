@@ -533,6 +533,8 @@
                                             @if(!empty($databaseContext['password']))
                                                 <span x-show="showDbPassword">{{ $databaseContext['password'] }}</span>
                                                 <span x-show="!showDbPassword">{{ $databaseContext['password_masked'] }}</span>
+                                            @elseif(!empty($databaseContext['redacted']))
+                                                <span class="text-slate-500">Hidden in the operator console.</span>
                                             @else
                                                 <span class="text-slate-500">Not available — redeploy to regenerate credentials.</span>
                                             @endif

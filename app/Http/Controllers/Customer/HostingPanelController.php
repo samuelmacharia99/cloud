@@ -360,7 +360,9 @@ class HostingPanelController extends Controller
 
             return response()->json($result, ($result['success'] ?? false) ? 200 : 422);
         } catch (RuntimeException $e) {
-            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+            report($e);
+
+            return response()->json(['success' => false, 'message' => $this->hostingPanelUnavailableMessage()], 422);
         }
     }
 
@@ -380,7 +382,9 @@ class HostingPanelController extends Controller
 
             return response()->json($result, ($result['success'] ?? false) ? 200 : 422);
         } catch (RuntimeException $e) {
-            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+            report($e);
+
+            return response()->json(['success' => false, 'message' => $this->hostingPanelUnavailableMessage()], 422);
         }
     }
 
@@ -392,5 +396,10 @@ class HostingPanelController extends Controller
         }
 
         return $domain;
+    }
+
+    private function hostingPanelUnavailableMessage(): string
+    {
+        return 'Hosting panel request failed. Please try again or contact support.';
     }
 }

@@ -238,14 +238,23 @@ class ContainerNodeWorkloadTopologyService
         $backendPackage = $this->packageAt($ssh, $hostAppPath, $backendRoot);
         $frontendPackage = $this->packageAt($ssh, $hostAppPath, $browser['root']);
         $versionService = app(ContainerNodeVersionService::class);
-        $backendRuntime = app(ContainerApplicationRuntimeService::class)->detectRuntimeAt(
-            $ssh,
-            $hostAppPath,
-            $backendRoot,
-            $backendSlug,
-            self::BACKEND_PORT,
-            includeNodeBootstrap: false,
-        );
+        $runtimeService = app(ContainerApplicationRuntimeService::class);
+        $backendRuntime = $backendSlug === 'nodejs'
+            ? $runtimeService->detectNodeRuntimeAt(
+                $ssh,
+                $hostAppPath,
+                $backendRoot,
+                self::BACKEND_PORT,
+                includeBootstrap: false,
+            )
+            : $runtimeService->detectRuntimeAt(
+                $ssh,
+                $hostAppPath,
+                $backendRoot,
+                $backendSlug,
+                self::BACKEND_PORT,
+                includeNodeBootstrap: false,
+            );
         $frontendRuntime = app(ContainerApplicationRuntimeService::class)->detectNodeRuntimeAt(
             $ssh,
             $hostAppPath,

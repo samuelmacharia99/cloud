@@ -2568,7 +2568,7 @@ class ContainerController extends Controller
         } catch (\Exception $e) {
             \Log::error("Failed to delete backup {$backup->id}: ".$e->getMessage());
 
-            return back()->withErrors(['error' => 'Delete failed: '.$e->getMessage()]);
+            return back()->withErrors(['error' => 'Delete failed. Please try again or contact support.']);
         }
     }
 
