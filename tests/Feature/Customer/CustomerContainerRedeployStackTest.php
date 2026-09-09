@@ -70,6 +70,12 @@ class CustomerContainerRedeployStackTest extends TestCase
                 'topology' => 'split_web_api',
                 'frontend' => ['root' => 'apps/mobile'],
             ],
+            'provision_failure' => [
+                'class' => 'config',
+                'hash' => 'stale-expo',
+                'attempts' => 4,
+                'auto_retry' => false,
+            ],
         ]);
         $service->update(['status' => 'failed']);
 
@@ -88,6 +94,7 @@ class CustomerContainerRedeployStackTest extends TestCase
         $this->assertSame('apps/api', $service->service_meta['node_backend_root'] ?? null);
         $this->assertArrayNotHasKey('node_frontend_root', $service->service_meta ?? []);
         $this->assertArrayNotHasKey('node_workloads', $service->service_meta ?? []);
+        $this->assertArrayNotHasKey('provision_failure', $service->service_meta ?? []);
         Bus::assertDispatched(ProvisionContainerServiceJob::class);
     }
 

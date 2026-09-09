@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\Service;
 use App\Services\Provisioning\InvoiceProvisioningService;
+use App\Services\Provisioning\ProvisionFailureLedger;
 use App\Services\Provisioning\ProvisioningService;
 
 class ProvisionPendingDirectAdminCommand extends BaseCronCommand
@@ -16,6 +17,7 @@ class ProvisionPendingDirectAdminCommand extends BaseCronCommand
     {
         $invoiceProvisioning = app(InvoiceProvisioningService::class);
         $provisioningService = app(ProvisioningService::class);
+        $ledger = app(ProvisionFailureLedger::class);
         $limit = (int) $this->option('limit');
 
         $services = Service::query()
@@ -33,6 +35,10 @@ class ProvisionPendingDirectAdminCommand extends BaseCronCommand
 
         foreach ($services as $service) {
             if (! $invoiceProvisioning->invoiceIsPaidEnoughForProvisioning($service)) {
+                continue;
+            }
+
+            if (! $ledger->shouldAutoRetry($service)) {
                 continue;
             }
 

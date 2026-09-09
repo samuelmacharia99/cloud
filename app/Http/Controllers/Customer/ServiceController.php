@@ -24,6 +24,7 @@ use App\Services\Customer\CustomerServiceRenewalService;
 use App\Services\Customer\ProjectWorkloadDeployService;
 use App\Services\Hosting\ServicePackageUsageService;
 use App\Services\Provisioning\ContainerDeployProgressService;
+use App\Services\Provisioning\ProvisionFailureLedger;
 use App\Services\Provisioning\WordPressAdminLoginService;
 use App\Services\ServiceEnforcementInsightService;
 use App\Services\TechStackRoutingService;
@@ -297,6 +298,7 @@ class ServiceController extends Controller
         }
 
         $this->applyRetryStackSelection($service, $request);
+        app(ProvisionFailureLedger::class)->clear($service);
 
         $service->update(['status' => ServiceStatus::Provisioning]);
         ProvisionContainerServiceJob::dispatchForService((int) $service->id, deferUntilResponse: true);

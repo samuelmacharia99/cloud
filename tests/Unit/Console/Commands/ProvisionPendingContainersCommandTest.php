@@ -57,4 +57,73 @@ class ProvisionPendingContainersCommandTest extends TestCase
 
         $this->assertEqualsCanonicalizing([$pending->id, $failed->id], $provisionedIds);
     }
+
+    public function test_skips_operator_actionable_config_failures(): void
+    {
+        $user = User::factory()->create();
+        $invoice = Invoice::factory()->create([
+            'user_id' => $user->id,
+            'status' => 'paid',
+        ]);
+
+        $held = Service::factory()->create([
+            'user_id' => $user->id,
+            'invoice_id' => $invoice->id,
+            'status' => 'failed',
+            'provisioning_driver_key' => 'container',
+            'service_meta' => [
+                'provision_failure' => [
+                    'class' => 'config',
+                    'hash' => 'abc',
+                    'attempts' => 3,
+                    'auto_retry' => false,
+                    'retry_after' => null,
+                ],
+            ],
+        ]);
+
+        $pending = Service::factory()->create([
+            'user_id' => $user->id,
+            'invoice_id' => $invoice->id,
+            'status' => 'pending',
+            'provisioning_driver_key' => 'container',
+        ]);
+
+        $provisionedIds = [];
+        $mock = Mockery::mock(ProvisioningService::class);
+        $mock->shouldReceive('provision')
+            ->once()
+            ->andReturnUsing(function (Service $service) use (&$provisionedIds) {
+                $provisionedIds[] = $service->id;
+            });
+        $this->app->instance(ProvisioningService::class, $mock);
+
+        $this->artisan('cron:provision-pending-containers')
+            ->expectsOutputToContain('Held 1 operator-actionable: ['.$held->id.']')
+            ->assertSuccessful();
+
+        $this->assertSame([$pending->id], $provisionedIds);
+    }
+
+    public function test_does_not_fail_the_cron_when_one_container_provision_fails(): void
+    {
+        $user = User::factory()->create();
+        $invoice = Invoice::factory()->create([
+            'user_id' => $user->id,
+            'status' => 'paid',
+        ]);
+
+        Service::factory()->create([
+            'user_id' => $user->id,
+            'invoice_id' => $invoice->id,
+            'status' => 'pending',
+            'provisioning_driver_key' => 'container',
+        ]);
+
+        $mock = Mockery::mock(ProvisioningService::class);
+        $mock->shouldReceive('provision')->once()->andThrow(new \RuntimeException('port is already allocated'));
+        $this->app->instance(ProvisioningService::class, $mock);
+
+        $this->artisan('cron:provision-pending-containers')->assertSuccessful();
+    }
 }

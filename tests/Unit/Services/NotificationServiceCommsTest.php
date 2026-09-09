@@ -11,6 +11,7 @@ use App\Models\Service;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\NotificationService;
+use App\Services\Provisioning\ProvisionFailureLedger;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
@@ -75,6 +76,30 @@ class NotificationServiceCommsTest extends TestCase
             return $mail->hasTo($customer->email);
         });
         Mail::assertNotSent(GenericNotificationMail::class);
+    }
+
+    public function test_notify_service_provision_failed_does_not_reemail_the_same_reason(): void
+    {
+        Mail::fake();
+
+        User::factory()->create([
+            'is_admin' => true,
+            'email' => 'admin@example.com',
+        ]);
+        $customer = User::factory()->customer()->create(['email' => 'provision@example.com']);
+        $service = Service::factory()->for($customer)->create([
+            'status' => 'failed',
+            'name' => 'Test Hosting',
+        ]);
+        $reason = "The frontend at 'apps/mobile' is Expo/React Native, not a browser application.";
+        $ledger = app(ProvisionFailureLedger::class);
+        $ledger->record($service, new \DomainException($reason));
+
+        $notifier = app(NotificationService::class);
+        $notifier->notifyServiceProvisionFailed($service->fresh(), $reason);
+        $notifier->notifyServiceProvisionFailed($service->fresh(), $reason);
+
+        Mail::assertSent(ServiceProvisionFailedMail::class, 1);
     }
 
     public function test_notify_admin_node_offline_does_not_email(): void

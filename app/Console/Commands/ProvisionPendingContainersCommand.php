@@ -4,17 +4,19 @@ namespace App\Console\Commands;
 
 use App\Models\Service;
 use App\Services\Provisioning\InvoiceProvisioningService;
+use App\Services\Provisioning\ProvisionFailureLedger;
 use App\Services\Provisioning\ProvisioningService;
 
 class ProvisionPendingContainersCommand extends BaseCronCommand
 {
     protected $signature = 'cron:provision-pending-containers {--limit=25 : Maximum services to attempt}';
 
-    protected $description = 'Auto-provision pending or failed container services with paid invoices';
+    protected $description = 'Auto-provision pending container services, and retry failed ones when the error is transient';
 
     protected function handleCron(): string
     {
         $invoiceProvisioning = app(InvoiceProvisioningService::class);
+        $ledger = app(ProvisionFailureLedger::class);
         $limit = (int) $this->option('limit');
 
         $services = Service::query()
@@ -22,16 +24,27 @@ class ProvisionPendingContainersCommand extends BaseCronCommand
             ->where('provisioning_driver_key', 'container')
             ->with('invoice')
             ->orderBy('id')
-            ->limit($limit)
+            ->limit(max($limit * 5, 25))
             ->get();
 
         $provisioned = [];
         $failed = [];
+        $held = [];
         $skipped = 0;
 
         foreach ($services as $service) {
+            if (count($provisioned) + count($failed) >= $limit) {
+                break;
+            }
+
             if (! $invoiceProvisioning->invoiceIsPaidEnoughForProvisioning($service)) {
                 $skipped++;
+
+                continue;
+            }
+
+            if (! $ledger->shouldAutoRetry($service)) {
+                $held[] = $service->id;
 
                 continue;
             }
@@ -53,13 +66,13 @@ class ProvisionPendingContainersCommand extends BaseCronCommand
         if (count($failed) > 0) {
             $message .= ': ['.implode(', ', $failed).']';
         }
+        $message .= '. Held '.count($held).' operator-actionable';
+        if (count($held) > 0) {
+            $message .= ': ['.implode(', ', $held).']';
+        }
         $message .= ". Skipped {$skipped} unpaid.";
 
         \Log::info($message);
-
-        if ($failed !== []) {
-            throw new \RuntimeException($message);
-        }
 
         return $message;
     }

@@ -33,7 +33,6 @@ class ContainerNodeWorkloadTopologyService
         'apps/site',
         'www',
         'site',
-        'apps/mobile',
     ];
 
     /**
@@ -58,6 +57,7 @@ class ContainerNodeWorkloadTopologyService
         $frontend = strtolower((string) ($meta['frontend'] ?? 'none'));
         $framework = (string) ($meta['framework'] ?? 'other');
         $discovered = $this->discoverPackageRoots($ssh, $hostAppPath);
+        $skippedMobile = $this->mobileRoots($ssh, $hostAppPath, $discovered);
         $backendCandidates = $this->uniqueRoots([...self::BACKEND_CANDIDATES, ...$discovered]);
         $frontendCandidates = $this->uniqueRoots([...self::FRONTEND_CANDIDATES, ...$discovered]);
 
@@ -84,7 +84,7 @@ class ContainerNodeWorkloadTopologyService
                 $ssh,
                 $hostAppPath,
                 $backendRoot,
-                $this->mobileRoots($ssh, $hostAppPath, $discovered),
+                $skippedMobile,
                 'stack',
                 $frontend,
             );
@@ -93,6 +93,13 @@ class ContainerNodeWorkloadTopologyService
         if (! in_array($frontend, ['nextjs', 'vite-spa'], true)) {
             throw new \DomainException("The selected frontend '{$frontend}' is not supported by the split Node runtime.");
         }
+
+        $effectiveFrontendOverride = $this->forgetMobileFrontendOverride(
+            $ssh,
+            $hostAppPath,
+            $frontendOverride,
+            $skippedMobile,
+        );
 
         $backendRoot = $this->resolveRoot(
             $ssh,
@@ -107,7 +114,7 @@ class ContainerNodeWorkloadTopologyService
             $ssh,
             $hostAppPath,
             $frontend,
-            $frontendOverride,
+            $effectiveFrontendOverride,
             $frontendCandidates,
         );
 
@@ -121,8 +128,9 @@ class ContainerNodeWorkloadTopologyService
                 $hostAppPath,
                 $backendRoot,
                 $browser,
-                ($backendOverride || $frontendOverride) ? 'manual' : 'auto',
+                ($backendOverride || $effectiveFrontendOverride) ? 'manual' : 'auto',
                 $framework,
+                $skippedMobile,
             );
         }
 
@@ -131,7 +139,7 @@ class ContainerNodeWorkloadTopologyService
             $ssh,
             $hostAppPath,
             $backendRoot,
-            $this->mobileRoots($ssh, $hostAppPath, $discovered),
+            $skippedMobile,
             'auto_api',
             $frontend,
         );
@@ -171,12 +179,23 @@ class ContainerNodeWorkloadTopologyService
         if (is_string($backendRoot) && trim($backendRoot) !== '' && empty($meta['node_backend_root'])) {
             $meta['node_backend_root'] = $backendRoot;
         }
+
+        $frontendRoot = data_get($topology, 'frontend.root');
+        if (is_string($frontendRoot) && trim($frontendRoot) !== '') {
+            $meta['node_frontend_root'] = $frontendRoot;
+        } else {
+            unset($meta['node_frontend_root']);
+        }
+
         $service->update(['service_meta' => $meta]);
     }
 
     /**
      * @param  array<string, mixed>  $browser
      * @return array<string, mixed>
+     */
+    /**
+     * @param  list<string>  $skippedMobile
      */
     private function splitTopology(
         SSHService $ssh,
@@ -185,6 +204,7 @@ class ContainerNodeWorkloadTopologyService
         array $browser,
         string $selectionSource,
         string $framework,
+        array $skippedMobile = [],
     ): array {
         $backendPackage = $this->packageAt($ssh, $hostAppPath, $backendRoot);
         $frontendPackage = $this->packageAt($ssh, $hostAppPath, $browser['root']);
@@ -204,6 +224,12 @@ class ContainerNodeWorkloadTopologyService
             includeBootstrap: false,
         );
 
+        $notes = [];
+        if ($skippedMobile !== []) {
+            $notes[] = 'Skipped Expo/React Native at '.implode(', ', $skippedMobile)
+                .'. The browser app at '.$browser['root'].' is what this host publishes.';
+        }
+
         return [
             'schema' => self::SCHEMA,
             'topology' => 'split_web_api',
@@ -212,6 +238,8 @@ class ContainerNodeWorkloadTopologyService
             'frontend_type' => $browser['type'],
             'backend' => $this->workloadPayload($backendRoot, self::BACKEND_PORT, $backendRuntime, $backendPackage, $versionService),
             'frontend' => $this->workloadPayload($browser['root'], self::FRONTEND_PORT, $frontendRuntime, $frontendPackage, $versionService),
+            'skipped_mobile' => $skippedMobile,
+            'notes' => $notes,
             'resolved_at' => now()->toIso8601String(),
         ];
     }
@@ -357,20 +385,14 @@ class ContainerNodeWorkloadTopologyService
             if ($package === null) {
                 throw new \DomainException("The selected frontend root '{$root}' is not a valid frontend application.");
             }
-            if ($this->isMobileBundle($package)) {
-                throw new \DomainException(sprintf(
-                    "The frontend at '%s' is Expo/React Native, not a browser application. Deploy its API here"
-                    .' and build the mobile app through a mobile build service, or point Advanced roots at the'
-                    .' browser application if the repository also ships one.',
-                    $root,
-                ));
-            }
-            $kind = $this->browserFrontendKind($package);
-            if ($kind === null) {
-                throw new \DomainException("The selected frontend root '{$root}' is not a valid frontend application.");
-            }
+            if (! $this->isMobileBundle($package)) {
+                $kind = $this->browserFrontendKind($package);
+                if ($kind === null) {
+                    throw new \DomainException("The selected frontend root '{$root}' is not a valid frontend application.");
+                }
 
-            return ['root' => $root, 'type' => $kind];
+                return ['root' => $root, 'type' => $kind];
+            }
         }
 
         $preferred = [];
@@ -456,6 +478,33 @@ class ContainerNodeWorkloadTopologyService
     }
 
     /**
+     * A persisted Expo/RN frontend pin must not abort deploy. Drop it and keep
+     * scanning for a real browser app (or fall back to API-only).
+     *
+     * @param  list<string>  $skippedMobile
+     */
+    private function forgetMobileFrontendOverride(
+        SSHService $ssh,
+        string $hostAppPath,
+        ?string $frontendOverride,
+        array &$skippedMobile,
+    ): ?string {
+        if ($frontendOverride === null || trim($frontendOverride) === '') {
+            return null;
+        }
+
+        $root = $this->sanitizeRelativeRoot($frontendOverride);
+        $package = $this->packageAt($ssh, $hostAppPath, $root);
+        if ($package !== null && $this->isMobileBundle($package)) {
+            $skippedMobile = $this->uniqueRoots([...$skippedMobile, $root]);
+
+            return null;
+        }
+
+        return $frontendOverride;
+    }
+
+    /**
      * @param  list<string>  $discovered
      * @return list<string>
      */
@@ -528,6 +577,10 @@ class ContainerNodeWorkloadTopologyService
      */
     private function browserFrontendKind(array $package): ?string
     {
+        if ($this->isMobileBundle($package)) {
+            return null;
+        }
+
         $dependencies = $this->dependencies($package);
         if (isset($dependencies['next'])) {
             return 'nextjs';
@@ -540,15 +593,19 @@ class ContainerNodeWorkloadTopologyService
     }
 
     /**
+     * Expo or React Native is a mobile client even when Vite is listed for
+     * Expo web. Next.js in the same package is treated as a hostable web app.
+     *
      * @param  array<string, mixed>  $package
      */
     private function isMobileBundle(array $package): bool
     {
         $dependencies = $this->dependencies($package);
+        if (isset($dependencies['next'])) {
+            return false;
+        }
 
-        return (isset($dependencies['expo']) || isset($dependencies['react-native']))
-            && ! isset($dependencies['next'])
-            && ! isset($dependencies['vite']);
+        return isset($dependencies['expo']) || isset($dependencies['react-native']);
     }
 
     /**

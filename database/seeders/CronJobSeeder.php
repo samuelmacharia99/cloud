@@ -82,7 +82,7 @@ class CronJobSeeder extends Seeder
             ],
             [
                 'name' => 'Provision Pending Containers',
-                'description' => 'Auto-provisions container services with paid invoices stuck in pending or failed status.',
+                'description' => 'Auto-provisions paid container services that are pending, and retries failed ones only when the error is transient.',
                 'command' => 'cron:provision-pending-containers',
                 'schedule' => '*/10 * * * *',
                 'enabled' => true,

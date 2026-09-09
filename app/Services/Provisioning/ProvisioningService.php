@@ -51,6 +51,8 @@ class ProvisioningService
                 }
             }
 
+            app(ProvisionFailureLedger::class)->clear($service->fresh());
+
             // Send service activated notification (only if not already sent by the driver)
             if ($service->status === ServiceStatus::Active && ! in_array($driver, ['container'], true)) {
                 app(NotificationService::class)->notifyServiceActivated($service->fresh());
@@ -58,6 +60,7 @@ class ProvisioningService
         } catch (\Exception $e) {
             \Log::error("Provisioning failed for service {$service->id}: {$e->getMessage()}");
             $service->update(['status' => 'failed']);
+            app(ProvisionFailureLedger::class)->record($service->fresh(), $e);
 
             $service->loadMissing('user', 'product');
             app(NotificationService::class)->notifyServiceProvisionFailed($service->fresh(), $e->getMessage());

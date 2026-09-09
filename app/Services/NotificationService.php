@@ -45,6 +45,7 @@ use App\Models\SmsTemplate;
 use App\Models\Ticket;
 use App\Models\TicketReply;
 use App\Models\User;
+use App\Services\Provisioning\ProvisionFailureLedger;
 use App\Services\Telegram\TelegramMonitorBridge;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -1047,33 +1048,45 @@ EOT;
     public function notifyServiceProvisionFailed(Service $service, string $reason): void
     {
         $service->loadMissing('user', 'product');
-        $this->telegram()->serviceLifecycle($service, 'provision failed', $reason);
+        $ledger = app(ProvisionFailureLedger::class);
+        $alertOperators = $ledger->shouldAlertOperators($service);
+
+        if ($alertOperators) {
+            $this->telegram()->serviceLifecycle($service, 'provision failed', $reason);
+            $ledger->markOperatorAlerted($service);
+            $service->refresh();
+        }
 
         $event = NotificationEvent::ServiceProvisionFailed;
 
         if ($this->preferences->isGloballyEnabled($event) && $this->emailDelivery->mailConfiguredFor($service->user)) {
-            $subject = 'Service setup failed — '.$service->name;
-            $this->sendCustomerEmail(
-                $service->user,
-                new ServiceProvisionFailedMail($service, $reason),
-                $subject,
-                $event,
-                $reason,
-                [
-                    'customer_name' => $service->user->name,
-                    'service_name' => $service->name,
-                    'reason' => $reason,
-                ],
-            );
+            if ($ledger->shouldNotifyCustomer($service)) {
+                $ledger->markCustomerNotified($service);
+                $service->refresh();
 
-            if ($service->user->phone) {
-                $message = $this->renderTemplate('service_provision_failed', [
-                    'customer_name' => $service->user->name,
-                    'service_name' => $service->name,
-                    'reason' => Str::limit($reason, 120),
-                    'site_name' => $this->siteNameFor($service->user),
-                ], 'Setup for "'.$service->name.'" failed. Our team has been notified. Check your dashboard or contact support.');
-                $this->sendCustomerSms($service->user, $message, $event);
+                $subject = 'Service setup failed — '.$service->name;
+                $this->sendCustomerEmail(
+                    $service->user,
+                    new ServiceProvisionFailedMail($service, $reason),
+                    $subject,
+                    $event,
+                    $reason,
+                    [
+                        'customer_name' => $service->user->name,
+                        'service_name' => $service->name,
+                        'reason' => $reason,
+                    ],
+                );
+
+                if ($service->user->phone) {
+                    $message = $this->renderTemplate('service_provision_failed', [
+                        'customer_name' => $service->user->name,
+                        'service_name' => $service->name,
+                        'reason' => Str::limit($reason, 120),
+                        'site_name' => $this->siteNameFor($service->user),
+                    ], 'Setup for "'.$service->name.'" failed. Our team has been notified. Check your dashboard or contact support.');
+                    $this->sendCustomerSms($service->user, $message, $event);
+                }
             }
         }
 
@@ -1081,7 +1094,7 @@ EOT;
             return;
         }
 
-        if ($this->shouldNotifyAdminBySmsForCustomer($service->user)) {
+        if ($alertOperators && $this->shouldNotifyAdminBySmsForCustomer($service->user)) {
             $adminSmsMessage = 'Provision failed: '.$service->name.' for '.$service->user->name.'. '.Str::limit($reason, 80);
             $this->sendAdminSmsAlert($event, $adminSmsMessage);
         }
