@@ -6,7 +6,13 @@
 <div class="space-y-6 max-w-4xl">
     <div>
         <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Notification Preferences</h1>
-        <p class="text-slate-600 dark:text-slate-400 mt-1">Choose which email and SMS alerts you receive.</p>
+        <p class="text-slate-600 dark:text-slate-400 mt-1">
+            @if($smsNotificationsEnabled)
+                Choose which email and SMS alerts you receive.
+            @else
+                Choose which email alerts you receive. This platform sends email only.
+            @endif
+        </p>
     </div>
 
     @if (session('status'))
@@ -25,7 +31,9 @@
                     <tr class="border-b border-slate-200 dark:border-slate-700 text-left">
                         <th class="py-3 pr-4 font-semibold text-slate-900 dark:text-white">Event</th>
                         <th class="py-3 px-4 font-semibold text-slate-900 dark:text-white">Email</th>
-                        <th class="py-3 pl-4 font-semibold text-slate-900 dark:text-white">SMS</th>
+                        @if($smsNotificationsEnabled)
+                            <th class="py-3 pl-4 font-semibold text-slate-900 dark:text-white">SMS</th>
+                        @endif
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-200 dark:divide-slate-700">
@@ -41,10 +49,12 @@
                                 <input type="hidden" name="preferences[{{ $eventKey }}][email]" value="0">
                                 <input type="checkbox" name="preferences[{{ $eventKey }}][email]" value="1" @checked($emailEnabled) class="rounded">
                             </td>
-                            <td class="py-3 pl-4">
-                                <input type="hidden" name="preferences[{{ $eventKey }}][sms]" value="0">
-                                <input type="checkbox" name="preferences[{{ $eventKey }}][sms]" value="1" @checked($smsEnabled) class="rounded">
-                            </td>
+                            @if($smsNotificationsEnabled)
+                                <td class="py-3 pl-4">
+                                    <input type="hidden" name="preferences[{{ $eventKey }}][sms]" value="0">
+                                    <input type="checkbox" name="preferences[{{ $eventKey }}][sms]" value="1" @checked($smsEnabled) class="rounded">
+                                </td>
+                            @endif
                         </tr>
                     @endforeach
                 </tbody>

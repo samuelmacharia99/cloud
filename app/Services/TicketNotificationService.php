@@ -206,7 +206,7 @@ class TicketNotificationService
             ]);
         }
 
-        if ($this->smsService->isConfigured() && filled($reseller->phone)) {
+        if ($this->preferences->areSmsNotificationsEnabled() && $this->smsService->isConfigured() && filled($reseller->phone)) {
             try {
                 $this->smsService->send(
                     $reseller->phone,
@@ -289,7 +289,7 @@ class TicketNotificationService
             ]);
         }
 
-        if ($this->smsService->isConfigured() && filled($reseller->phone)) {
+        if ($this->preferences->areSmsNotificationsEnabled() && $this->smsService->isConfigured() && filled($reseller->phone)) {
             try {
                 $this->smsService->send(
                     $reseller->phone,
@@ -333,7 +333,8 @@ class TicketNotificationService
             ]);
         }
 
-        if ($this->smsService->isConfigured()
+        if ($this->preferences->areSmsNotificationsEnabled()
+            && $this->smsService->isConfigured()
             && is_array($notifyUser->notification_phones)
             && ! empty($notifyUser->notification_phones)) {
             try {

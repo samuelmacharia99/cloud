@@ -115,6 +115,29 @@ class SettingsFormSubmissionTest extends TestCase
         $this->assertSame('Cancelled', Setting::getValue('mpesa_register_response_type'));
     }
 
+    public function test_sms_notifications_setting_defaults_off_and_can_be_enabled(): void
+    {
+        $this->assertFalse(in_array(Setting::getValue('sms_notifications_enabled', '0'), ['1', 'true', true], true));
+
+        $response = $this->actingAs($this->admin)->postJson(route('admin.settings.update'), [
+            'settings' => [
+                'sms_notifications_enabled' => '1',
+            ],
+        ]);
+
+        $response->assertOk()->assertJson(['success' => true]);
+        $this->assertSame('1', Setting::getValue('sms_notifications_enabled'));
+
+        $response = $this->actingAs($this->admin)->postJson(route('admin.settings.update'), [
+            'settings' => [
+                'sms_notifications_enabled' => '0',
+            ],
+        ]);
+
+        $response->assertOk()->assertJson(['success' => true]);
+        $this->assertSame('0', Setting::getValue('sms_notifications_enabled'));
+    }
+
     public function test_email_reply_to_settings_persist(): void
     {
         $response = $this->actingAs($this->admin)->postJson(route('admin.settings.update'), [

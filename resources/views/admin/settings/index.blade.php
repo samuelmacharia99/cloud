@@ -1716,6 +1716,23 @@
                     @csrf
 
                     <fieldset>
+                        <legend class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Delivery channels</legend>
+                        <div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 p-4 space-y-3">
+                            <p class="text-sm text-slate-600 dark:text-slate-400">
+                                Operational alerts (invoices, tickets, services, orders, wallet) are sent by email. SMS is optional and off by default.
+                            </p>
+                            <div>
+                                <input type="hidden" name="settings[sms_notifications_enabled]" value="0">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" name="settings[sms_notifications_enabled]" value="1" @checked(in_array((string) ($settings['sms_notifications_enabled'] ?? '0'), ['1', 'true'], true)) class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Send SMS for invoices, tickets, services, and other alerts</span>
+                                </label>
+                                <p class="text-xs text-slate-500 mt-1">Leave off to use email only. Login and verification codes still follow the SMS tab if the gateway is enabled.</p>
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <fieldset>
                         <legend class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Notification Triggers</legend>
                         <div class="space-y-3">
                             <div>
@@ -1748,7 +1765,7 @@
                                     <input type="checkbox" name="settings[notify_ticket]" value="1" @checked(($settings['notify_ticket'] ?? '0') == '1') class="rounded" />
                                     <span class="text-slate-700 dark:text-slate-300">Support tickets (master)</span>
                                 </label>
-                                <p class="text-xs text-slate-500 mt-1">Enables ticket email/SMS notifications globally.</p>
+                                <p class="text-xs text-slate-500 mt-1">Enables ticket email notifications globally. SMS follows the delivery channel setting above.</p>
                             </div>
 
                             <div>
@@ -1827,14 +1844,14 @@
                                 <input type="hidden" name="settings[notify_admin_manual_payment]" value="0">
                                 <label class="flex items-center gap-2">
                                     <input type="checkbox" name="settings[notify_admin_manual_payment]" value="1" @checked(($settings['notify_admin_manual_payment'] ?? '0') == '1') class="rounded" />
-                                    <span class="text-slate-700 dark:text-slate-300">Admin: Manual Payment Submitted (email + SMS)</span>
+                                    <span class="text-slate-700 dark:text-slate-300">Admin: Manual Payment Submitted</span>
                                 </label>
                             </div>
                             <div>
                                 <input type="hidden" name="settings[notify_admin_reseller_domain_push]" value="0">
                                 <label class="flex items-center gap-2">
                                     <input type="checkbox" name="settings[notify_admin_reseller_domain_push]" value="1" @checked(($settings['notify_admin_reseller_domain_push'] ?? '0') == '1') class="rounded" />
-                                    <span class="text-slate-700 dark:text-slate-300">Admin: Reseller Domain Push (email + SMS)</span>
+                                    <span class="text-slate-700 dark:text-slate-300">Admin: Reseller Domain Push</span>
                                 </label>
                             </div>
                             <div>
@@ -1977,7 +1994,7 @@
                                 <input type="hidden" name="settings[notify_admin_new_order]" value="0">
                                 <label class="flex items-center gap-2">
                                     <input type="checkbox" name="settings[notify_admin_new_order]" value="1" @checked(($settings['notify_admin_new_order'] ?? '0') == '1') class="rounded" />
-                                    <span class="text-slate-700 dark:text-slate-300">Admin: New Order (email + SMS)</span>
+                                    <span class="text-slate-700 dark:text-slate-300">Admin: New Order</span>
                                 </label>
                             </div>
                             <div>
@@ -2154,7 +2171,7 @@
                 <div class="ui-card overflow-hidden">
                     <div class="px-6 py-5 border-b border-slate-200 dark:border-slate-800">
                         <h2 class="text-lg font-semibold text-slate-900 dark:text-white">SMS Configuration</h2>
-                        <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">Talksasa SMS API credentials and test sending.</p>
+                        <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">Gateway for login codes, verification, and test messages. Invoice, ticket, and service alerts are controlled on the Notifications tab and are email-only unless SMS alerts are enabled there.</p>
                     </div>
                     <form method="POST" action="{{ route('admin.settings.update') }}" class="p-6 space-y-6" @submit.prevent="window.submitForm($el)">
                     @csrf
@@ -2165,9 +2182,10 @@
                             <div>
                                 <input type="hidden" name="settings[sms_enabled]" value="0">
                                 <label class="flex items-center gap-2">
-                                    <input type="checkbox" name="settings[sms_enabled]" value="1" @checked(($settings['sms_enabled'] ?? '0') == '1')" class="rounded" />
-                                    <span class="text-slate-700 dark:text-slate-300">Enable SMS</span>
+                                    <input type="checkbox" name="settings[sms_enabled]" value="1" @checked(in_array((string) ($settings['sms_enabled'] ?? '0'), ['1', 'true'], true)) class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Enable SMS gateway</span>
                                 </label>
+                                <p class="text-xs text-slate-500 mt-1">Required for login and verification codes. Does not send invoice or ticket alerts unless SMS notifications are enabled on the Notifications tab.</p>
                             </div>
 
                             <div>

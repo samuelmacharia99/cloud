@@ -8,6 +8,7 @@ use App\Models\DomainRenewalOrder;
 use App\Models\Invoice;
 use App\Models\ResellerDomainOrder;
 use App\Models\ResellerWallet;
+use App\Models\User;
 use App\Models\WalletTransaction;
 use App\Services\Telegram\TelegramMonitorBridge;
 
@@ -36,13 +37,7 @@ class WalletNotificationService
 
         $message = "Your {$company} wallet balance is low: {$wallet->getFormattedBalance()}. Top up now: {$walletUrl}";
 
-        if (! empty($reseller->phone)) {
-            try {
-                $this->smsService->send($reseller->phone, $message);
-            } catch (\Exception $e) {
-                \Log::error("Failed to send low balance SMS to reseller {$reseller->id}: {$e->getMessage()}");
-            }
-        }
+        $this->sendNotificationSms($reseller, $message, $event);
 
         if ($reseller->email && $this->preferences->isEmailEnabledForUser($reseller, $event)) {
             $this->emailDelivery->sendTemplated($reseller, $event, [
@@ -77,11 +72,7 @@ class WalletNotificationService
 
         $smsMessage = "{$company}: Wallet {$action} {$currency} {$amountFormatted}. Previous: {$currency} {$previous}. New balance: {$currency} {$newBalance}.";
 
-        try {
-            $this->smsService->send($reseller->phone, $smsMessage);
-        } catch (\Exception $e) {
-            \Log::error("Failed to send wallet adjustment SMS to reseller {$reseller->id}: {$e->getMessage()}");
-        }
+        $this->sendNotificationSms($reseller, $smsMessage, $event);
 
         if ($reseller->email && $this->preferences->isEmailEnabledForUser($reseller, $event)) {
             $this->emailDelivery->sendTemplated($reseller, $event, [
@@ -113,11 +104,7 @@ class WalletNotificationService
 
         $smsMessage = "{$company}: Package invoice {$invoice->invoice_number} ({$currency} {$amount}) was paid automatically from your wallet. New balance: {$currency} {$balance}.";
 
-        try {
-            $this->smsService->send($reseller->phone, $smsMessage);
-        } catch (\Exception $e) {
-            \Log::error("Failed to send subscription auto-pay SMS to reseller {$reseller->id}: {$e->getMessage()}");
-        }
+        $this->sendNotificationSms($reseller, $smsMessage, NotificationEvent::ResellerWalletTopup);
 
         $event = NotificationEvent::ResellerWalletTopup;
         if ($reseller->email && $this->preferences->isEmailEnabledForUser($reseller, $event)) {
@@ -143,11 +130,7 @@ class WalletNotificationService
         $event = NotificationEvent::ResellerWalletTopup;
         $message = "Wallet top-up confirmed! Amount: {$transaction->amount} KES. New balance: {$transaction->balance_after} KES";
 
-        try {
-            $this->smsService->send($reseller->phone, $message);
-        } catch (\Exception $e) {
-            \Log::error("Failed to send topup SMS to reseller {$reseller->id}: {$e->getMessage()}");
-        }
+        $this->sendNotificationSms($reseller, $message, $event);
 
         if ($reseller->email && $this->preferences->isEmailEnabledForUser($reseller, $event)) {
             $company = $this->brandingResolver->forReseller($reseller)['company_name'];
@@ -217,16 +200,11 @@ class WalletNotificationService
                 ? $this->brandingResolver->forCustomer($customer)['company_name']
                 : config('app.name');
 
-            if ($customer?->phone) {
-                try {
-                    $this->smsService->send(
-                        $customer->phone,
-                        "{$company}: Domain {$domain} has been registered successfully!"
-                    );
-                } catch (\Exception $e) {
-                    \Log::error("Failed to send completed domain SMS to customer {$customer->id}: {$e->getMessage()}");
-                }
-            }
+            $this->sendNotificationSms(
+                $customer,
+                "{$company}: Domain {$domain} has been registered successfully!",
+                NotificationEvent::ResellerDomainPushed,
+            );
 
             $this->notificationService->notifyAdminResellerDomainOrder($order, 'provisioned');
 
@@ -244,13 +222,9 @@ class WalletNotificationService
         $resellerMessage = "Domain {$domain} has been registered successfully!";
         $customerMessage = "{$company}: Domain {$domain} has been registered successfully!";
 
-        try {
-            $this->smsService->send($reseller->phone, $resellerMessage);
-        } catch (\Exception $e) {
-            \Log::error("Failed to send completed domain SMS to reseller {$reseller->id}: {$e->getMessage()}");
-        }
+        $this->sendNotificationSms($reseller, $resellerMessage, NotificationEvent::ResellerDomainPushed);
 
-        if ($customer?->phone) {
+        if ($customer && $this->preferences->isSmsEnabledForUser($customer, NotificationEvent::ResellerDomainPushed) && filled($customer->phone)) {
             try {
                 app('talksasa-sms-service')->sendSms($reseller, $customer->phone, $customerMessage);
             } catch (\Exception $e) {
@@ -283,17 +257,11 @@ class WalletNotificationService
                 'Reason' => $reason,
             ]);
 
-            $customer = $order->customer;
-            if ($customer?->phone) {
-                try {
-                    $this->smsService->send(
-                        $customer->phone,
-                        "Domain {$domain} registration failed: {$reason}"
-                    );
-                } catch (\Exception $e) {
-                    \Log::error("Failed to send failed domain SMS to customer {$customer->id}: {$e->getMessage()}");
-                }
-            }
+            $this->sendNotificationSms(
+                $order->customer,
+                "Domain {$domain} registration failed: {$reason}",
+                NotificationEvent::ResellerDomainPushed,
+            );
 
             return;
         }
@@ -304,13 +272,11 @@ class WalletNotificationService
             return;
         }
 
-        $message = "Domain {$domain} registration failed: {$reason}";
-
-        try {
-            $this->smsService->send($reseller->phone, $message);
-        } catch (\Exception $e) {
-            \Log::error("Failed to send failed domain SMS to reseller {$reseller->id}: {$e->getMessage()}");
-        }
+        $this->sendNotificationSms(
+            $reseller,
+            "Domain {$domain} registration failed: {$reason}",
+            NotificationEvent::ResellerDomainPushed,
+        );
 
         if ($reseller->email) {
             $subject = 'Domain registration failed - '.$domain;
@@ -345,11 +311,7 @@ class WalletNotificationService
             default => "Domain order update: {$domain}",
         };
 
-        try {
-            $this->smsService->send($reseller->phone, $smsMessage);
-        } catch (\Exception $e) {
-            \Log::error("Failed to send domain order SMS to reseller {$reseller->id}: {$e->getMessage()}");
-        }
+        $this->sendNotificationSms($reseller, $smsMessage, $event);
 
         if ($reseller->email && $this->preferences->isEmailEnabledForUser($reseller, $event)) {
             $company = $this->brandingResolver->forReseller($reseller)['company_name'];
@@ -367,5 +329,18 @@ class WalletNotificationService
     protected function notifyAdminDomainPush(ResellerDomainOrder $order): void
     {
         $this->notificationService->notifyAdminResellerDomainOrder($order, 'pushed');
+    }
+
+    private function sendNotificationSms(?User $user, string $message, NotificationEvent $event): void
+    {
+        if (! $user || ! filled($user->phone) || ! $this->preferences->isSmsEnabledForUser($user, $event)) {
+            return;
+        }
+
+        try {
+            $this->smsService->send($user->phone, $message);
+        } catch (\Exception $e) {
+            \Log::error("Failed to send notification SMS to user {$user->id}: {$e->getMessage()}");
+        }
     }
 }

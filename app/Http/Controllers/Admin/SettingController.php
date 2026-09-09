@@ -86,6 +86,7 @@ class SettingController extends Controller
             'mail_from_name', 'mail_from_address', 'mail_reply_to_name', 'mail_reply_to_address', 'email_queue_enabled',
         ],
         'notifications' => [
+            'sms_notifications_enabled',
             'notify_new_order', 'notify_payment', 'notify_payment_failed', 'notify_manual_payment_rejected',
             'notify_service_suspend', 'notify_ticket', 'notify_ticket_platform', 'notify_ticket_reseller',
             'notify_invoice_generated', 'notify_invoice_reminder', 'notify_invoice_overdue',

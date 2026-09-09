@@ -155,7 +155,7 @@ class NotificationService
 
     public function sendAdminSmsAlert(NotificationEvent $event, string $message): void
     {
-        if (! $this->smsService->isConfigured() || ! $this->preferences->isGloballyEnabled($event)) {
+        if (! $this->smsService->isConfigured() || ! $this->preferences->isSmsEnabledForUser(null, $event)) {
             return;
         }
 
@@ -343,7 +343,7 @@ class NotificationService
             $recipient,
         );
 
-        if ($recipient->phone && $this->smsService->isConfigured()) {
+        if ($recipient->phone && $this->smsService->isConfigured() && $this->preferences->isSmsEnabledForUser($recipient, $event)) {
             try {
                 $company = $this->brandingResolver->defaults()['company_name'];
                 $expiry = ($domain->expires_at ?? now())->format('M d, Y');
@@ -1215,7 +1215,7 @@ EOT;
             );
         }
 
-        if ($reseller->phone && $this->smsService->isConfigured()) {
+        if ($reseller->phone && $this->smsService->isConfigured() && $this->preferences->isSmsEnabledForUser($reseller, $event)) {
             try {
                 $this->smsService->send(
                     $reseller->phone,
@@ -1259,7 +1259,7 @@ EOT;
             );
         }
 
-        if ($reseller->phone && $this->smsService->isConfigured()) {
+        if ($reseller->phone && $this->smsService->isConfigured() && $this->preferences->isSmsEnabledForUser($reseller, $event)) {
             try {
                 $this->smsService->send(
                     $reseller->phone,
@@ -1305,7 +1305,7 @@ EOT;
             );
         }
 
-        if ($reseller->phone && $this->smsService->isConfigured()) {
+        if ($reseller->phone && $this->smsService->isConfigured() && $this->preferences->isSmsEnabledForUser($reseller, $event)) {
             try {
                 $this->smsService->send(
                     $reseller->phone,
@@ -1533,7 +1533,7 @@ EOT;
             );
         }
 
-        if ($reseller->phone && $this->smsService->isConfigured()) {
+        if ($reseller->phone && $this->smsService->isConfigured() && $this->preferences->isSmsEnabledForUser($reseller, $event)) {
             $message = $this->renderTemplate('reseller_ssl_provision_failed', [
                 'reseller_name' => $reseller->name,
                 'domain' => $domain,

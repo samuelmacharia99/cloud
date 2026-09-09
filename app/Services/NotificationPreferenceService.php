@@ -37,8 +37,19 @@ class NotificationPreferenceService
         return $pref->email_enabled;
     }
 
+    public function areSmsNotificationsEnabled(): bool
+    {
+        $value = Setting::getValue('sms_notifications_enabled', '0');
+
+        return in_array($value, ['1', 'true', true], true);
+    }
+
     public function isSmsEnabledForUser(?User $user, NotificationEvent $event): bool
     {
+        if (! $this->areSmsNotificationsEnabled()) {
+            return false;
+        }
+
         if (! $this->isGloballyEnabled($event)) {
             return false;
         }

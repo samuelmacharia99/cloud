@@ -25,6 +25,7 @@ class NotificationServiceAdminOrderAlertTest extends TestCase
 
         Setting::setValue('sms_enabled', 'true');
         Setting::setValue('sms_api_token', 'test-token');
+        Setting::setValue('sms_notifications_enabled', '1');
         Setting::setValue('notify_admin_new_order', 'true');
         Setting::setValue('notify_admin_manual_payment', 'true');
         Setting::setValue('notify_admin_reseller_domain_push', 'true');
@@ -73,7 +74,7 @@ class NotificationServiceAdminOrderAlertTest extends TestCase
     public function test_notify_new_order_can_skip_duplicate_admin_sms_on_payment(): void
     {
         $this->createAdminWithPhones();
-        $customer = User::factory()->customer()->create();
+        $customer = User::factory()->customer()->create(['phone' => null]);
         $invoice = Invoice::factory()->create(['user_id' => $customer->id, 'total' => 500]);
         $order = Order::create([
             'user_id' => $customer->id,
@@ -248,5 +249,34 @@ class NotificationServiceAdminOrderAlertTest extends TestCase
         $this->app->instance(SmsService::class, $sms);
 
         app(NotificationService::class)->notifyServiceProvisionFailed($service, 'DirectAdmin API timeout');
+    }
+
+    public function test_notify_new_order_skips_admin_sms_when_sms_notifications_disabled(): void
+    {
+        Setting::setValue('sms_notifications_enabled', '0');
+
+        $this->createAdminWithPhones();
+        $customer = User::factory()->customer()->create(['name' => 'Jane Customer']);
+        $invoice = Invoice::factory()->create([
+            'user_id' => $customer->id,
+            'total' => 1500,
+        ]);
+        $order = Order::create([
+            'user_id' => $customer->id,
+            'invoice_id' => $invoice->id,
+            'order_number' => 'ORD-EMAIL-ONLY',
+            'status' => 'pending',
+            'payment_status' => 'unpaid',
+            'subtotal' => 1500,
+            'tax' => 0,
+            'total' => 1500,
+        ]);
+
+        $sms = Mockery::mock(SmsService::class);
+        $sms->shouldReceive('isConfigured')->andReturn(true);
+        $sms->shouldReceive('send')->never();
+        $this->app->instance(SmsService::class, $sms);
+
+        app(NotificationService::class)->notifyNewOrder($order, $invoice, 'awaiting payment');
     }
 }

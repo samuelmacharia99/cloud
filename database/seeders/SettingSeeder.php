@@ -156,7 +156,8 @@ class SettingSeeder extends Seeder
             ['key' => 'email_queue_enabled', 'value' => 'true', 'description' => 'Queue outbound emails via Laravel queue'],
 
             // SMS settings
-            ['key' => 'sms_enabled', 'value' => 'false', 'description' => 'Enable SMS notifications'],
+            ['key' => 'sms_notifications_enabled', 'value' => '0', 'description' => 'Send operational alerts by SMS. When off, invoices, tickets, services, and other alerts are email-only.'],
+            ['key' => 'sms_enabled', 'value' => 'false', 'description' => 'Enable the SMS gateway for login codes, verification, and test messages'],
             ['key' => 'sms_api_token', 'value' => '', 'description' => 'Talksasa SMS API Bearer token'],
             ['key' => 'sms_sender_id', 'value' => 'TalksasaCloud', 'description' => 'SMS sender ID (max 11 chars)'],
 

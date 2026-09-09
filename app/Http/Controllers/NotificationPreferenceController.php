@@ -28,6 +28,7 @@ class NotificationPreferenceController extends Controller
             'user' => $user,
             'events' => $events,
             'saved' => $saved,
+            'smsNotificationsEnabled' => $this->preferences->areSmsNotificationsEnabled(),
         ]);
     }
 
@@ -42,13 +43,15 @@ class NotificationPreferenceController extends Controller
             'preferences.*.sms' => 'nullable|boolean',
         ]);
 
+        $smsAllowed = $this->preferences->areSmsNotificationsEnabled();
+
         foreach ($events as $eventKey) {
             $pref = $validated['preferences'][$eventKey] ?? [];
             $this->preferences->updatePreference(
                 $user,
                 $eventKey,
                 (bool) ($pref['email'] ?? true),
-                (bool) ($pref['sms'] ?? true),
+                $smsAllowed && (bool) ($pref['sms'] ?? true),
             );
         }
 

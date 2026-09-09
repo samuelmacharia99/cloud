@@ -8,6 +8,7 @@ use App\Models\Setting;
 use App\Models\User;
 use App\Services\EmailDeliveryService;
 use App\Services\NotificationPreferenceService;
+use Database\Seeders\EmailTemplateSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -15,13 +16,25 @@ class EmailCommunicationTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_notification_preference_defaults_to_enabled(): void
+    public function test_notification_preference_defaults_to_email_enabled_and_sms_off(): void
     {
         $user = User::factory()->create();
         $service = app(NotificationPreferenceService::class);
 
         $this->assertTrue($service->isEmailEnabledForUser($user, NotificationEvent::InvoiceGenerated));
+        $this->assertFalse($service->isSmsEnabledForUser($user, NotificationEvent::InvoiceGenerated));
+    }
+
+    public function test_sms_notifications_require_platform_channel(): void
+    {
+        $user = User::factory()->create();
+        $service = app(NotificationPreferenceService::class);
+
+        Setting::setValue('sms_notifications_enabled', '1');
         $this->assertTrue($service->isSmsEnabledForUser($user, NotificationEvent::InvoiceGenerated));
+
+        Setting::setValue('sms_notifications_enabled', '0');
+        $this->assertFalse($service->isSmsEnabledForUser($user, NotificationEvent::InvoiceGenerated));
     }
 
     public function test_user_can_disable_email_for_event(): void
@@ -32,12 +45,15 @@ class EmailCommunicationTest extends TestCase
         $service->updatePreference($user, NotificationEvent::InvoiceGenerated->value, false, true);
 
         $this->assertFalse($service->isEmailEnabledForUser($user, NotificationEvent::InvoiceGenerated));
+        $this->assertFalse($service->isSmsEnabledForUser($user, NotificationEvent::InvoiceGenerated));
+
+        Setting::setValue('sms_notifications_enabled', '1');
         $this->assertTrue($service->isSmsEnabledForUser($user, NotificationEvent::InvoiceGenerated));
     }
 
     public function test_email_template_renders_placeholders(): void
     {
-        $this->seed(\Database\Seeders\EmailTemplateSeeder::class);
+        $this->seed(EmailTemplateSeeder::class);
 
         $template = EmailTemplate::forEvent('payment_received');
         $this->assertNotNull($template);
