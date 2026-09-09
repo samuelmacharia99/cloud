@@ -69,7 +69,7 @@ class ContainerTerminalController extends Controller
             \Log::error("Failed to create terminal session for service {$service->id}: ".$e->getMessage());
 
             return response()->json([
-                'error' => 'Failed to create terminal session: '.$e->getMessage(),
+                'error' => 'Failed to create terminal session. Please try again or contact support.',
             ], 500);
         }
     }
@@ -110,7 +110,7 @@ class ContainerTerminalController extends Controller
             }
 
             return response()->json([
-                'error' => 'Failed to extend session: '.$message,
+                'error' => 'Failed to extend session. Please try again or contact support.',
             ], 500);
         }
     }
@@ -163,7 +163,7 @@ class ContainerTerminalController extends Controller
             \Log::error("Failed to execute terminal command for service {$service->id}: ".$message);
 
             return response()->json([
-                'error' => 'Failed to execute command: '.$message,
+                'error' => 'Failed to execute command. Please try again or contact support.',
             ], 500);
         }
     }
@@ -196,7 +196,7 @@ class ContainerTerminalController extends Controller
             \Log::error("Failed to close terminal session for service {$service->id}: ".$e->getMessage());
 
             return response()->json([
-                'error' => 'Failed to close session: '.$e->getMessage(),
+                'error' => 'Failed to close session. Please try again or contact support.',
             ], 500);
         }
     }

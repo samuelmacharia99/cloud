@@ -49,7 +49,8 @@ class EmailHostingController extends Controller
                 $aliases = $al['data'] ?? [];
             }
         } catch (\Throwable $e) {
-            $error = $e->getMessage();
+            report($e);
+            $error = $this->mailHostingUnavailableMessage();
         }
 
         $meta = is_array($service->service_meta) ? $service->service_meta : [];
@@ -117,7 +118,9 @@ class EmailHostingController extends Controller
                 return back()->withErrors(['error' => $result['message']])->withInput();
             }
         } catch (\Throwable $e) {
-            return back()->withErrors(['error' => $e->getMessage()])->withInput();
+            report($e);
+
+            return back()->withErrors(['error' => $this->mailHostingUnavailableMessage()])->withInput();
         }
 
         return back()->with('success', 'Mailbox created.');
@@ -143,7 +146,9 @@ class EmailHostingController extends Controller
                 return back()->withErrors(['error' => $result['message']]);
             }
         } catch (\Throwable $e) {
-            return back()->withErrors(['error' => $e->getMessage()]);
+            report($e);
+
+            return back()->withErrors(['error' => $this->mailHostingUnavailableMessage()]);
         }
 
         return back()->with('success', 'Mailbox deleted.');
@@ -178,7 +183,9 @@ class EmailHostingController extends Controller
                 return back()->withErrors(['error' => $result['message']])->withInput();
             }
         } catch (\Throwable $e) {
-            return back()->withErrors(['error' => $e->getMessage()])->withInput();
+            report($e);
+
+            return back()->withErrors(['error' => $this->mailHostingUnavailableMessage()])->withInput();
         }
 
         return back()->with('success', 'Alias created.');
@@ -217,7 +224,9 @@ class EmailHostingController extends Controller
                 return back()->withErrors(['error' => $result['message']]);
             }
         } catch (\Throwable $e) {
-            return back()->withErrors(['error' => $e->getMessage()]);
+            report($e);
+
+            return back()->withErrors(['error' => $this->mailHostingUnavailableMessage()]);
         }
 
         return back()->with('success', 'Alias deleted.');
@@ -292,7 +301,9 @@ class EmailHostingController extends Controller
         try {
             $result = $ops->changePassword($service, $validated['email'], $validated['password']);
         } catch (\Throwable $e) {
-            return back()->withErrors(['error' => $e->getMessage()])->withInput();
+            report($e);
+
+            return back()->withErrors(['error' => $this->mailHostingUnavailableMessage()])->withInput();
         }
 
         if (! $result['success']) {
@@ -317,7 +328,9 @@ class EmailHostingController extends Controller
         try {
             $result = $ops->updateDisplayName($service, $validated['email'], $validated['name']);
         } catch (\Throwable $e) {
-            return back()->withErrors(['error' => $e->getMessage()])->withInput();
+            report($e);
+
+            return back()->withErrors(['error' => $this->mailHostingUnavailableMessage()])->withInput();
         }
 
         if (! $result['success']) {
@@ -350,7 +363,9 @@ class EmailHostingController extends Controller
                 (int) ($validated['days'] ?? 1),
             );
         } catch (\Throwable $e) {
-            return back()->withErrors(['error' => $e->getMessage()])->withInput();
+            report($e);
+
+            return back()->withErrors(['error' => $this->mailHostingUnavailableMessage()])->withInput();
         }
 
         if (! $result['success']) {
@@ -374,7 +389,9 @@ class EmailHostingController extends Controller
         try {
             $result = $ops->disableVacation($service, $validated['email']);
         } catch (\Throwable $e) {
-            return back()->withErrors(['error' => $e->getMessage()]);
+            report($e);
+
+            return back()->withErrors(['error' => $this->mailHostingUnavailableMessage()]);
         }
 
         if (! $result['success']) {
@@ -396,11 +413,18 @@ class EmailHostingController extends Controller
         } catch (\InvalidArgumentException $e) {
             return back()->withErrors(['domain' => $e->getMessage()])->withInput();
         } catch (\Throwable $e) {
-            return back()->withErrors(['error' => $e->getMessage()])->withInput();
+            report($e);
+
+            return back()->withErrors(['error' => $this->mailHostingUnavailableMessage()])->withInput();
         }
 
         return redirect()
             ->route('customer.services.email.show', ['service' => $service, 'tab' => 'manage'])
             ->with('success', 'Mail domain updated to '.$domain.'. Create mailboxes on the new domain and publish MX, SPF, DKIM, and DMARC.');
+    }
+
+    private function mailHostingUnavailableMessage(): string
+    {
+        return 'Email hosting request failed. Please try again or contact support.';
     }
 }

@@ -7105,6 +7105,8 @@ class ContainerDeploymentService
         $nodeTopology = null;
         if (($template->slug ?? '') === 'nodejs') {
             unset($envVars['NPM_CONFIG_PRODUCTION'], $envVars['npm_config_production']);
+        }
+        if ($this->supportsSplitWebWorkloads($template->slug ?? null)) {
             $service->refresh();
             $meta = is_array($service->service_meta) ? $service->service_meta : [];
             $nodeTopology = app(ContainerNodeWorkloadTopologyService::class)->resolve(
@@ -7128,6 +7130,7 @@ class ContainerDeploymentService
             }
             $deployment->update(['env_values' => $envVars]);
         }
+        $runtime = $this->resolveApplicationRuntime($ssh, $template, $hostAppPath, $nodeTopology);
         $composeYaml = $this->renderCompose(
             $template,
             $deployment->container_name,
@@ -7251,7 +7254,7 @@ class ContainerDeploymentService
                     $deployment->update(['env_values' => $envVars]);
                 }
             }
-            if (($template->slug ?? null) === 'nodejs' && $hostAppPath) {
+            if ($this->supportsSplitWebWorkloads($template->slug ?? null) && $hostAppPath) {
                 $service->refresh();
                 $meta = is_array($service->service_meta) ? $service->service_meta : [];
                 $nodeTopology = app(ContainerNodeWorkloadTopologyService::class)->resolve(
@@ -7299,17 +7302,26 @@ class ContainerDeploymentService
 
             app(ContainerEnvironmentService::class)->syncDotEnvFile($ssh, $service, $deployment, $envVars);
             if (($nodeTopology['topology'] ?? null) === 'split_web_api') {
-                $service->refresh();
-                $oldChecksum = data_get($service->service_meta, 'node_release.frontend_env_checksum');
-                $newChecksum = app(ContainerNodeBuildService::class)->frontendBuildEnvironmentChecksum($deployment->fresh());
-                if (! is_string($oldChecksum) || ! hash_equals($oldChecksum, $newChecksum)) {
-                    app(ContainerNodeBuildService::class)->build(
-                        $service,
+                if (($template->slug ?? '') === 'nodejs') {
+                    $service->refresh();
+                    $oldChecksum = data_get($service->service_meta, 'node_release.frontend_env_checksum');
+                    $newChecksum = app(ContainerNodeBuildService::class)->frontendBuildEnvironmentChecksum($deployment->fresh());
+                    if (! is_string($oldChecksum) || ! hash_equals($oldChecksum, $newChecksum)) {
+                        app(ContainerNodeBuildService::class)->build(
+                            $service,
+                            $deployment->fresh(),
+                            $ssh,
+                            forceRebuild: true,
+                            operationAlreadyLocked: true,
+                            workloads: ['frontend'],
+                        );
+                    }
+                } else {
+                    $this->stackCommands->buildSplitWebFrontend(
                         $deployment->fresh(),
                         $ssh,
+                        (string) data_get($nodeTopology, 'frontend.root'),
                         forceRebuild: true,
-                        operationAlreadyLocked: true,
-                        workloads: ['frontend'],
                     );
                 }
             }
