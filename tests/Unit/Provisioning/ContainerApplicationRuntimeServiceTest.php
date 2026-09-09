@@ -4,6 +4,7 @@ namespace Tests\Unit\Provisioning;
 
 use App\Models\ContainerDeployment;
 use App\Services\Provisioning\ContainerApplicationRuntimeService;
+use App\Services\Provisioning\ContainerStackCommandService;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -577,12 +578,52 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
                 'NEXT_PUBLIC_API_URL' => 'https://api.example.com',
                 'SECRET_KEY' => 'should-not-appear',
                 'VITE_APP_NAME' => 'Demo',
+                'INTERNAL_API_URL' => 'http://backend:8000',
+                'VITE_API_URL' => '/api',
             ],
         ]);
         $buildEnv = $this->service->collectNodeBuildEnvFromDeployment($deployment);
         $this->assertSame('https://api.example.com', $buildEnv['NEXT_PUBLIC_API_URL']);
         $this->assertSame('Demo', $buildEnv['VITE_APP_NAME']);
+        $this->assertSame('http://backend:8000', $buildEnv['INTERNAL_API_URL']);
+        $this->assertSame('/api', $buildEnv['VITE_API_URL']);
         $this->assertArrayNotHasKey('SECRET_KEY', $buildEnv);
+        $this->assertTrue($this->service->isAllowedNodeBuildEnvKey('INTERNAL_API_URL'));
+        $this->assertTrue($this->service->isAllowedNodeBuildEnvKey('TALKSASA_FETCH_BASE'));
+    }
+
+    #[Test]
+    public function it_resolves_relative_vite_fetches_without_rewriting_the_browser_api_url(): void
+    {
+        $resolved = $this->service->withViteRelativeFetchResolution(
+            ['VITE_API_URL' => '/api'],
+            'http://backend:8000',
+        );
+
+        $this->assertSame('/api', $resolved['VITE_API_URL']);
+        $this->assertSame('http://backend:8000', $resolved['TALKSASA_FETCH_BASE']);
+        $this->assertSame('http://backend:8000', $resolved['INTERNAL_API_URL']);
+        $this->assertSame('--require=/app/.talksasa/resolve-relative-fetch.cjs', $resolved['NODE_OPTIONS']);
+
+        $vite = json_encode([
+            'scripts' => ['build' => 'vite build && node scripts/prerender-seo.mjs'],
+            'dependencies' => ['vite' => '8.2.1'],
+        ], JSON_THROW_ON_ERROR);
+        $command = $this->service->nodeProductionBuildShellCommand($vite, null, 'pnpm', 'apps/web', $resolved);
+        $this->assertStringContainsString('VITE_API_URL=/api', $command);
+        $this->assertStringContainsString('TALKSASA_FETCH_BASE=http://backend:8000', $command);
+        $this->assertStringContainsString('NODE_OPTIONS=--require=/app/.talksasa/resolve-relative-fetch.cjs', $command);
+        $this->assertTrue((new ContainerStackCommandService)->isSafeCommand($command));
+
+        $this->assertSame('apps/web/dist/index.html', $this->service->viteProductionIndexRelativePath('apps/web'));
+        $this->assertTrue($this->service->isRecoverableVitePrerenderFailure(
+            "vite v8.2.1 building client environment for production...\n✓ built in 182ms\n"
+            ."TypeError: Failed to parse URL from /api/restaurants/public\n"
+            ."code: 'ERR_INVALID_URL'"
+        ));
+        $this->assertFalse($this->service->isRecoverableVitePrerenderFailure(
+            'vite v8.2.1 transforming... Could not resolve ./missing.tsx'
+        ));
     }
 
     #[Test]

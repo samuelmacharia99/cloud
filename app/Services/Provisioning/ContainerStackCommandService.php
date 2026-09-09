@@ -181,8 +181,15 @@ class ContainerStackCommandService
                     $forceRebuild
                 ),
             ))),
-            'ruby' => $this->installRubyDependencies($ssh, $containerPath, $containerName, $hostAppPath, $timeout),
-            'python' => $this->installPythonDependencies($ssh, $containerPath, $containerName, $hostAppPath, $timeout),
+            'ruby' => array_values(array_filter(array_merge(
+                $this->installRubyDependencies($ssh, $containerPath, $containerName, $hostAppPath, $timeout),
+                $this->maybeBuildSplitWebFrontend($service, $deployment, $ssh, $forceRebuild),
+            ))),
+            'python' => array_values(array_filter(array_merge(
+                $this->installPythonDependencies($ssh, $containerPath, $containerName, $hostAppPath, $timeout),
+                $this->maybeBuildSplitWebFrontend($service, $deployment, $ssh, $forceRebuild),
+            ))),
+            'go' => $this->maybeBuildSplitWebFrontend($service, $deployment, $ssh, $forceRebuild),
             default => [],
         };
     }
@@ -273,7 +280,26 @@ class ContainerStackCommandService
             $forceRebuild,
             $applicationRelativeDir,
             'node:22-alpine',
+            stopStackForMaintenance: false,
         );
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function maybeBuildSplitWebFrontend(
+        Service $service,
+        ContainerDeployment $deployment,
+        SSHService $ssh,
+        bool $forceRebuild = false,
+    ): array {
+        $service->refresh();
+        $root = trim((string) data_get($service->service_meta, 'node_workloads.frontend.root', ''));
+        if (data_get($service->service_meta, 'node_workloads.topology') !== 'split_web_api' || $root === '') {
+            return [];
+        }
+
+        return $this->buildSplitWebFrontend($deployment, $ssh, $root, $forceRebuild);
     }
 
     /**
@@ -518,6 +544,7 @@ class ContainerStackCommandService
         bool $forceRebuild = false,
         string $applicationRelativeDir = '',
         ?string $dockerImageOverride = null,
+        bool $stopStackForMaintenance = true,
     ): array {
         $applicationRelativeDir = trim($applicationRelativeDir, '/');
         if ($applicationRelativeDir !== ''
@@ -557,6 +584,15 @@ class ContainerStackCommandService
         $buildTimeout = (int) config('containers.node_build.command_timeout_seconds', 900);
         $dockerImage = $dockerImageOverride ?? $this->resolveNodeDockerImage($deployment);
         $publicBuildEnv = $this->runtimeService->collectNodeBuildEnvFromDeployment($deployment);
+        $usesVite = $this->runtimeService->packageJsonHasVite($projectPackageJson);
+        if ($usesVite) {
+            $publicBuildEnv = $this->runtimeService->withViteRelativeFetchResolution(
+                $publicBuildEnv,
+                $dockerImageOverride !== null
+                    ? 'http://backend:'.ContainerNodeWorkloadTopologyService::BACKEND_PORT
+                    : null,
+            );
+        }
 
         try {
             if ($requiresBuild) {
@@ -574,6 +610,7 @@ class ContainerStackCommandService
                     cleanBuildArtifacts: true,
                     nodeDockerImage: $dockerImage,
                     artifactRelativeDir: $applicationRelativeDir,
+                    stopStackForMaintenance: $stopStackForMaintenance,
                 );
 
                 $this->installNodeDependenciesPreferringLockfile(
@@ -614,7 +651,9 @@ class ContainerStackCommandService
                     $applicationRelativeDir,
                 );
                 $this->restoreNodeModuleBinPermissions($ssh, $containerPath, $containerName, $dockerImage, $hostAppPath);
-                $this->stopApplicationServiceForMaintenance($ssh, $containerPath, $containerName);
+                if ($stopStackForMaintenance) {
+                    $this->stopApplicationServiceForMaintenance($ssh, $containerPath, $containerName);
+                }
 
                 if ($this->runtimeService->nodeBuildPrepareEnabled()) {
                     app(ContainerNodeBuildPrepService::class)->syncPrepareScriptToHost($ssh, $hostAppPath);
@@ -646,14 +685,34 @@ class ContainerStackCommandService
                     $applicationRelativeDir,
                     $projectPackageJson,
                 );
-                $this->runUnlimitedMemoryNodeCommand(
-                    $ssh,
-                    $dockerImage,
-                    $hostAppPath,
-                    $buildCommand,
-                    $buildWorkDir,
-                    $buildTimeout
-                );
+                if ($usesVite && isset($publicBuildEnv['TALKSASA_FETCH_BASE'])) {
+                    app(ContainerNodeBuildPrepService::class)->syncFetchResolveScriptToHost($ssh, $hostAppPath);
+                }
+                try {
+                    $this->runUnlimitedMemoryNodeCommand(
+                        $ssh,
+                        $dockerImage,
+                        $hostAppPath,
+                        $buildCommand,
+                        $buildWorkDir,
+                        $buildTimeout
+                    );
+                } catch (\Throwable $buildError) {
+                    $recovered = $this->recoverViteSpaBuildAfterPrerenderFailure(
+                        $buildError,
+                        $ssh,
+                        $hostAppPath,
+                        $applicationRelativeDir,
+                        $projectPackageJson,
+                    );
+                    if ($recovered === null) {
+                        throw $buildError;
+                    }
+
+                    $this->restoreNodeModuleBinPermissions($ssh, $containerPath, $containerName, $dockerImage, $hostAppPath);
+
+                    return [$recovered];
+                }
                 $hasTypeScriptConfig = $this->hostFileExists(
                     $ssh,
                     $hostAppPath.'/'.($applicationRelativeDir !== '' ? $applicationRelativeDir.'/' : '').'next.config.ts'
@@ -685,6 +744,7 @@ class ContainerStackCommandService
                 $containerName,
                 $hostAppPath,
                 $packageJson,
+                stopStackForMaintenance: $stopStackForMaintenance,
             );
 
             $this->installNodeDependenciesPreferringLockfile(
@@ -1133,6 +1193,39 @@ class ContainerStackCommandService
             );
     }
 
+    public function recoverViteSpaBuildAfterPrerenderFailure(
+        \Throwable $error,
+        SSHService $ssh,
+        string $hostAppPath,
+        string $applicationRelativeDir,
+        ?string $projectPackageJson,
+    ): ?string {
+        if (! $this->runtimeService->packageJsonHasVite($projectPackageJson)) {
+            return null;
+        }
+
+        if (! $this->runtimeService->isRecoverableVitePrerenderFailure($error->getMessage())) {
+            return null;
+        }
+
+        $index = $this->runtimeService->viteProductionIndexRelativePath($applicationRelativeDir);
+        if (! $this->hostFileExists($ssh, rtrim($hostAppPath, '/').'/'.$index)) {
+            return null;
+        }
+
+        try {
+            \Log::warning('Vite production assets are ready; SEO prerender was skipped', [
+                'host_app_path' => $hostAppPath,
+                'artifact' => $index,
+                'error' => $error->getMessage(),
+            ]);
+        } catch (\Throwable) {
+            // Unit tests may run without the Log facade bootstrap.
+        }
+
+        return 'Vite production build completed. SEO prerender was skipped because it needs an absolute API URL while the site is being built.';
+    }
+
     private function stopApplicationServiceForMaintenance(
         SSHService $ssh,
         string $containerPath,
@@ -1163,8 +1256,11 @@ class ContainerStackCommandService
         bool $cleanBuildArtifacts = true,
         ?string $nodeDockerImage = null,
         string $artifactRelativeDir = '',
+        bool $stopStackForMaintenance = true,
     ): void {
-        $this->stopApplicationServiceForMaintenance($ssh, $containerPath, $containerName);
+        if ($stopStackForMaintenance) {
+            $this->stopApplicationServiceForMaintenance($ssh, $containerPath, $containerName);
+        }
 
         $extraDirs = $cleanBuildArtifacts
             ? $this->runtimeService->nodeBuildArtifactDirs($packageJson)

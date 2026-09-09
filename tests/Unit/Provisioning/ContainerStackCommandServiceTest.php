@@ -457,4 +457,44 @@ class ContainerStackCommandServiceTest extends TestCase
             'ERR_PNPM_OUTDATED_LOCKFILE Cannot install with frozen-lockfile because pnpm-lock.yaml is not up to date'
         )));
     }
+
+    #[Test]
+    public function it_publishes_a_vite_dist_when_only_prerender_fetch_fails(): void
+    {
+        $service = new ContainerStackCommandService;
+        $ssh = $this->createMock(SSHService::class);
+        $ssh->expects($this->once())
+            ->method('exec')
+            ->with($this->stringContains('apps/web/dist/index.html'))
+            ->willReturn('yes');
+
+        $packageJson = json_encode([
+            'scripts' => ['build' => 'vite build && node scripts/prerender-seo.mjs'],
+            'dependencies' => ['vite' => '8.2.1'],
+        ], JSON_THROW_ON_ERROR);
+
+        $recovered = $service->recoverViteSpaBuildAfterPrerenderFailure(
+            new \RuntimeException(
+                "vite v8.2.1 building client environment for production...\n✓ built in 182ms\n"
+                ."TypeError: Failed to parse URL from /api/restaurants/public { code: 'ERR_INVALID_URL' }"
+            ),
+            $ssh,
+            '/opt/talksasa/containers/user-493-service-457-python/app',
+            'apps/web',
+            $packageJson,
+        );
+
+        $this->assertNotNull($recovered);
+        $this->assertStringContainsString('SEO prerender was skipped', $recovered);
+
+        $sshMissing = $this->createMock(SSHService::class);
+        $sshMissing->method('exec')->willReturn('no');
+        $this->assertNull($service->recoverViteSpaBuildAfterPrerenderFailure(
+            new \RuntimeException('vite transforming... Could not resolve ./App.tsx'),
+            $sshMissing,
+            '/opt/talksasa/containers/user-493-service-457-python/app',
+            'apps/web',
+            $packageJson,
+        ));
+    }
 }

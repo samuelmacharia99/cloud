@@ -196,6 +196,14 @@ class ContainerGitPullErrorPresenter
                 );
             }
 
+            if ($this->contains($message, ['err_invalid_url', 'failed to parse url', 'prerender-seo', 'prerender'])) {
+                return $this->result(
+                    'The web app built, but SEO prerender could not call the API.',
+                    'Vite finished writing the static site. The follow-up prerender script fetched a relative /api URL, which Node cannot resolve during deploy. Retry the deploy — Talksasa now publishes the Vite build even when prerender cannot reach the API. To prerender on later deploys, use an absolute API origin (INTERNAL_API_URL) in that script.',
+                    $details,
+                );
+            }
+
             return $this->result(
                 'The application build failed.',
                 'Review the build output below, fix the dependency or build error, then restart the pull.',

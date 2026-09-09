@@ -1931,7 +1931,80 @@ class ContainerApplicationRuntimeService
             'CI',
             'DATABASE_URL',
             'DIRECT_URL',
+            'INTERNAL_API_URL',
+            'BACKEND_URL',
+            'API_URL',
+            'SITE_URL',
+            'ORIGIN',
+            'TALKSASA_FETCH_BASE',
         ], true);
+    }
+
+    /**
+     * Node fetch() rejects relative URLs. Platform Vite builds set VITE_API_URL=/api
+     * for the browser; prerender scripts then call fetch('/api/...'). Resolve those
+     * against the compose backend without baking a Docker hostname into the SPA.
+     *
+     * @param  array<string, string>  $env
+     * @return array<string, string>
+     */
+    public function withViteRelativeFetchResolution(array $env, ?string $defaultFetchBase = null): array
+    {
+        $base = $env['TALKSASA_FETCH_BASE'] ?? $env['INTERNAL_API_URL'] ?? $env['BACKEND_URL'] ?? $defaultFetchBase;
+        if (! is_string($base)) {
+            return $env;
+        }
+
+        $base = rtrim(trim($base), '/');
+        if ($base === '' || preg_match('/\s/', $base) || preg_match('#^https?://[A-Za-z0-9._:/-]+$#', $base) !== 1) {
+            return $env;
+        }
+
+        $env['TALKSASA_FETCH_BASE'] = $base;
+        $env['INTERNAL_API_URL'] = $env['INTERNAL_API_URL'] ?? $base;
+        $env['NODE_OPTIONS'] = '--require=/app/.talksasa/resolve-relative-fetch.cjs';
+
+        return $env;
+    }
+
+    public function viteProductionIndexRelativePath(string $applicationRelativeDir = ''): string
+    {
+        $prefix = trim($applicationRelativeDir, '/');
+
+        return $prefix === '' ? 'dist/index.html' : $prefix.'/dist/index.html';
+    }
+
+    /**
+     * Vite already wrote dist/; a follow-up prerender/SEO script failed because
+     * Node cannot fetch a relative /api URL (or the API is not up yet).
+     */
+    public function isRecoverableVitePrerenderFailure(string $message): bool
+    {
+        $normalized = strtolower($message);
+        $viteFinished = str_contains($normalized, 'built in')
+            || str_contains($normalized, 'vite v') && str_contains($normalized, 'precache');
+
+        if (! $viteFinished) {
+            return false;
+        }
+
+        foreach ([
+            'err_invalid_url',
+            'failed to parse url',
+            'invalid url',
+            'prerender',
+            'econnrefused',
+            'enotfound',
+            'fetch failed',
+            'failed to fetch',
+            'getaddrinfo',
+        ] as $signal) {
+            if (str_contains($normalized, $signal)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

@@ -173,6 +173,22 @@ class ContainerGitPullErrorPresenterTest extends TestCase
     }
 
     #[Test]
+    public function it_explains_vite_prerender_relative_api_url_failures(): void
+    {
+        $pull = $this->failedPull(
+            'post_pull',
+            'Run stack post-pull steps',
+            "Node post-pull step failed: TypeError: Failed to parse URL from /api/restaurants/public\n"
+            ."at file:///app/apps/web/scripts/prerender-seo.mjs:107:27 { code: 'ERR_INVALID_URL', input: '/api/restaurants/public' }",
+        );
+
+        $error = $this->presenter->present($pull);
+
+        $this->assertSame('The web app built, but SEO prerender could not call the API.', $error['title']);
+        $this->assertStringContainsString('relative /api URL', $error['guidance']);
+    }
+
+    #[Test]
     public function it_returns_no_error_for_a_successful_pull(): void
     {
         $pull = new ContainerGitPull([

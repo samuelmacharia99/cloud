@@ -8,6 +8,8 @@ class ContainerNodeBuildPrepService
 {
     public const PREPARE_SCRIPT_RELATIVE_PATH = '.talksasa/prepare-build.cjs';
 
+    public const FETCH_RESOLVE_SCRIPT_RELATIVE_PATH = '.talksasa/resolve-relative-fetch.cjs';
+
     public function prepareBuildShellPrefix(): string
     {
         return 'node '.self::PREPARE_SCRIPT_RELATIVE_PATH.' && ';
@@ -30,6 +32,25 @@ class ContainerNodeBuildPrepService
 
         $ssh->mkdirp($base.'/.talksasa');
         $ssh->upload($script, $base.'/'.self::PREPARE_SCRIPT_RELATIVE_PATH);
+    }
+
+    public function syncFetchResolveScriptToHost(SSHService $ssh, string $hostAppPath): void
+    {
+        $base = rtrim($hostAppPath, '/');
+        $allowedBase = rtrim(ContainerDeploymentService::CONTAINER_BASE_PATH, '/');
+
+        if ($base === '' || ! str_starts_with($base, $allowedBase.'/')) {
+            throw new \InvalidArgumentException('Invalid host app path for Node fetch resolution.');
+        }
+
+        $script = file_get_contents(resource_path('container-templates/nodejs/resolve-relative-fetch.cjs'));
+
+        if ($script === false || trim($script) === '') {
+            throw new \RuntimeException('Node relative-fetch helper is missing.');
+        }
+
+        $ssh->mkdirp($base.'/.talksasa');
+        $ssh->upload($script, $base.'/'.self::FETCH_RESOLVE_SCRIPT_RELATIVE_PATH);
     }
 
     public function packageJsonRequiresProductionBuild(?string $packageJson): bool
