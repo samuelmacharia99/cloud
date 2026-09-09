@@ -32,7 +32,8 @@ class AdminContainerConsoleTest extends TestCase
             ->assertSee('Git')
             ->assertSee('Logs')
             ->assertSee('Files')
-            ->assertSee('Terminal');
+            ->assertSee('Terminal')
+            ->assertDontSee('cdn.jsdelivr.net/npm/alpinejs');
     }
 
     public function test_admin_can_fetch_container_logs_without_impersonating(): void
