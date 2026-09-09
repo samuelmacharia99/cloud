@@ -624,6 +624,7 @@ class ContainerApplicationRuntimeService
         $procfile = $this->readProcfileWebCommand($ssh, $hostAppPath);
         $requirements = $this->readHostFile($ssh, $hostAppPath.'/requirements.txt');
         $wsgi = $this->readHostFile($ssh, $hostAppPath.'/wsgi.py');
+        $asgiTarget = $this->resolvePythonAsgiTarget($ssh, $hostAppPath);
 
         return $this->detectPythonFromContents(
             $procfile,
@@ -634,6 +635,7 @@ class ContainerApplicationRuntimeService
             $this->hostFileExists($ssh, $hostAppPath.'/app.py'),
             $defaultPort,
             $includeBootstrap,
+            $asgiTarget,
         );
     }
 
@@ -646,6 +648,7 @@ class ContainerApplicationRuntimeService
         bool $hasAppPy,
         int $defaultPort,
         bool $includeBootstrap = true,
+        ?string $asgiTarget = null,
     ): ApplicationRuntime {
         $bootstrap = $includeBootstrap ? $this->pythonBootstrap() : null;
 
@@ -682,12 +685,18 @@ class ContainerApplicationRuntimeService
             }
         }
 
-        if ($requirements !== null && stripos($requirements, 'uvicorn') !== false && $hasMainPy) {
+        $uvicornTarget = $asgiTarget
+            ?? (($requirements !== null && stripos($requirements, 'uvicorn') !== false && $hasMainPy)
+                ? 'main:app'
+                : null);
+        if ($uvicornTarget !== null
+            && $requirements !== null
+            && stripos($requirements, 'uvicorn') !== false) {
             return $this->shellRuntime(
-                'uvicorn main:app --host 0.0.0.0 --port ${PORT:-'.$defaultPort.'}',
+                'uvicorn '.$uvicornTarget.' --host 0.0.0.0 --port ${PORT:-'.$defaultPort.'}',
                 $defaultPort,
                 'uvicorn',
-                'Uvicorn ASGI server',
+                'Uvicorn ASGI server ('.$uvicornTarget.')',
                 $bootstrap
             );
         }
@@ -701,6 +710,185 @@ class ContainerApplicationRuntimeService
         }
 
         return $this->fallbackRuntime('python', $defaultPort);
+    }
+
+    /**
+     * Prefer the FastAPI/Starlette module customers actually ship.
+     * Many monorepos use app/main.py → app.main:app rather than ./main.py.
+     */
+    public function resolvePythonAsgiTarget(SSHService $ssh, string $hostAppPath): ?string
+    {
+        $hostAppPath = rtrim($hostAppPath, '/');
+        $fromDocker = $this->resolvePythonAsgiTargetFromDockerfile(
+            $this->readHostFile($ssh, $hostAppPath.'/Dockerfile')
+            ?? $this->readHostFile($ssh, $hostAppPath.'/dockerfile')
+        );
+        if ($fromDocker !== null) {
+            return $fromDocker;
+        }
+
+        $candidates = [
+            'main.py',
+            'app/main.py',
+            'src/main.py',
+            'src/app/main.py',
+            'asgi.py',
+            'app/asgi.py',
+            'app/__init__.py',
+        ];
+
+        foreach ($candidates as $relative) {
+            $contents = $this->readHostFile($ssh, $hostAppPath.'/'.$relative);
+            if ($contents === null) {
+                continue;
+            }
+            $target = $this->asgiTargetFromPythonSource($relative, $contents);
+            if ($target !== null) {
+                return $target;
+            }
+        }
+
+        if ($this->hostFileExists($ssh, $hostAppPath.'/main.py')) {
+            return 'main:app';
+        }
+        if ($this->hostFileExists($ssh, $hostAppPath.'/app/main.py')) {
+            return 'app.main:app';
+        }
+
+        return null;
+    }
+
+    public function resolvePythonAsgiTargetFromDockerfile(?string $dockerfile): ?string
+    {
+        if ($dockerfile === null || trim($dockerfile) === '') {
+            return null;
+        }
+
+        if (preg_match(
+            '/\buvicorn\s+([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*:[A-Za-z_][A-Za-z0-9_]*)\b/',
+            $dockerfile,
+            $matches
+        ) === 1) {
+            return $matches[1];
+        }
+
+        return null;
+    }
+
+    public function asgiTargetFromPythonSource(string $relativePath, string $contents): ?string
+    {
+        $attr = $this->pythonAsgiAttributeName($contents);
+        if ($attr === null) {
+            return null;
+        }
+
+        $module = str_replace('/', '.', preg_replace('/\.py$/', '', $relativePath) ?? $relativePath);
+        if (str_ends_with($module, '.__init__')) {
+            $module = substr($module, 0, -strlen('.__init__'));
+        }
+
+        if ($module === '' || preg_match('/^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/', $module) !== 1) {
+            return null;
+        }
+
+        return $module.':'.$attr;
+    }
+
+    public function pythonAsgiAttributeName(string $contents): ?string
+    {
+        if (preg_match(
+            '/\b(app|application)\s*=\s*(FastAPI|Starlette|Quart)\s*\(/',
+            $contents,
+            $matches
+        ) === 1) {
+            return $matches[1];
+        }
+
+        if (preg_match('/\bFastAPI\s*\(/', $contents) !== 1
+            && preg_match('/\bStarlette\s*\(/', $contents) !== 1
+            && preg_match('/\bQuart\s*\(/', $contents) !== 1) {
+            return null;
+        }
+
+        if (preg_match('/\b(app|application)\s*=/', $contents, $matches) === 1) {
+            return $matches[1];
+        }
+
+        return null;
+    }
+
+    public function pythonSourceLooksLikeAsgiApp(string $contents): bool
+    {
+        return $this->pythonAsgiAttributeName($contents) !== null;
+    }
+
+    public function extractUvicornAsgiTarget(array $command): ?string
+    {
+        $script = isset($command[2]) && is_string($command[2]) ? $command[2] : implode(' ', $command);
+        if (preg_match(
+            '/\buvicorn\s+([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*:[A-Za-z_][A-Za-z0-9_]*)\b/',
+            $script,
+            $matches
+        ) !== 1) {
+            return null;
+        }
+
+        return $matches[1];
+    }
+
+    public function pythonAsgiImportCheckCommand(string $asgiTarget): string
+    {
+        $asgiTarget = trim($asgiTarget);
+        if (preg_match('/^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*:[A-Za-z_][A-Za-z0-9_]*$/', $asgiTarget) !== 1) {
+            throw new \InvalidArgumentException('Invalid ASGI target.');
+        }
+
+        [$module, $attr] = explode(':', $asgiTarget, 2);
+
+        // No shell metacharacters — must pass ContainerStackCommandService::isSafeCommand.
+        return 'python -c "from '.$module.' import '.$attr.'"';
+    }
+
+    /**
+     * Strip pip noise and surface the import/traceback lines operators need.
+     */
+    public function summarizePythonContainerLogs(string $logs, int $maxChars = 3500): string
+    {
+        $lines = preg_split('/\r\n|\n|\r/', $logs) ?: [];
+        $kept = [];
+        foreach ($lines as $line) {
+            $trim = trim($line);
+            if ($trim === '') {
+                continue;
+            }
+            if (preg_match(
+                '/^(Requirement already satisfied:|Collecting |Downloading |Installing collected|Using cached |Looking in indexes)/i',
+                $trim
+            ) === 1) {
+                continue;
+            }
+            $kept[] = $line;
+        }
+
+        $priority = [];
+        foreach ($kept as $line) {
+            if (preg_match(
+                '/Traceback|Error|Exception|ModuleNotFound|ImportError|File "|exit=|restarting|uvicorn|Error loading ASGI/i',
+                $line
+            ) === 1) {
+                $priority[] = $line;
+            }
+        }
+
+        $selected = $priority !== [] ? $priority : $kept;
+        $selected = array_slice($selected, -80);
+        $summary = trim(implode("\n", $selected));
+
+        if ($summary === '') {
+            $summary = trim($logs);
+        }
+
+        return mb_substr($summary, 0, max(200, $maxChars));
     }
 
     public function detectGoRuntime(
@@ -2263,6 +2451,8 @@ class ContainerApplicationRuntimeService
 
     private function pythonBootstrap(): string
     {
-        return '[ -f requirements.txt ] && pip install --no-cache-dir -r requirements.txt';
+        // Ensure local packages (app/, src/) import when uvicorn loads the ASGI module.
+        return 'export PYTHONPATH=.:${PYTHONPATH:-} && '
+            .'[ -f requirements.txt ] && pip install --no-cache-dir -r requirements.txt';
     }
 }
