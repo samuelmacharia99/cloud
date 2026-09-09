@@ -12,7 +12,6 @@ use Exception;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -227,7 +226,7 @@ class ContainerMigrationService
             $freshService = $service->fresh(['containerDeployment.node', 'containerDeployment.domains']);
             $freshDeployment = $freshService->containerDeployment;
             $this->deploymentService->rebindDeploymentDomainsStrict($freshService, $freshDeployment);
-            $domainsVerified = $this->verifyPublicDomains($freshDeployment);
+            $domainsVerified = $this->verifyTargetDomains($targetSsh, $targetNode, $freshDeployment);
             $this->progress->log($service, $domainsVerified > 0
                 ? $domainsVerified.' domain(s) answered from '.$targetNode->hostname.'.'
                 : 'No public domains bound; skipped reachability checks.');
@@ -513,11 +512,20 @@ class ContainerMigrationService
         $deployment->update(['status' => $oldDeploymentStatus]);
     }
 
-    private function verifyPublicDomains(ContainerDeployment $deployment): int
+    private function verifyTargetDomains(
+        SSHService $ssh,
+        Node $targetNode,
+        ContainerDeployment $deployment,
+    ): int
     {
         $domains = $deployment->domains()
             ->whereIn('status', ['active', 'pending'])
             ->get();
+        $targetIp = trim((string) $targetNode->ip_address);
+        if (filter_var($targetIp, FILTER_VALIDATE_IP) === false) {
+            throw new Exception('Target node has no valid IP address for domain verification.');
+        }
+
         $attempts = max(1, (int) config('containers.migration.public_verify_attempts', 5));
         $delay = max(1, (int) config('containers.migration.public_verify_delay_seconds', 3));
         $verifiedCount = 0;
@@ -527,16 +535,24 @@ class ContainerMigrationService
             }
             $verified = false;
             $lastError = null;
+            $scheme = $domain->ssl_enabled ? 'https' : 'http';
+            $port = $domain->ssl_enabled ? 443 : 80;
+            $url = $scheme.'://'.$domain->domain.'/?__talksasa_migration='.bin2hex(random_bytes(8));
+            $resolve = $domain->domain.':'.$port.':'.$targetIp;
             for ($attempt = 0; $attempt < $attempts; $attempt++) {
                 try {
-                    $response = Http::timeout(10)
-                        ->withHeaders(['Cache-Control' => 'no-cache', 'Pragma' => 'no-cache'])
-                        ->get('https://'.$domain->domain.'/?__talksasa_migration='.bin2hex(random_bytes(8)));
-                    if ($response->status() >= 100 && $response->status() < 500) {
+                    $status = trim($ssh->exec(
+                        'curl -k -sS -o /dev/null -w "%{http_code}" '
+                            .'--connect-timeout 5 --max-time 15 '
+                            .'--resolve '.escapeshellarg($resolve).' '
+                            .escapeshellarg($url).' || echo 000',
+                        20,
+                    ));
+                    if (preg_match('/^[1-4][0-9]{2}$/', $status) === 1) {
                         $verified = true;
                         break;
                     }
-                    $lastError = 'HTTP '.$response->status();
+                    $lastError = $status === '000' ? 'connection failed' : 'HTTP '.$status;
                 } catch (Throwable $e) {
                     $lastError = $e->getMessage();
                 }
