@@ -911,18 +911,26 @@ class ContainerApplicationRuntimeService
         $startDir = $this->sanitizeContainerWorkdir($containerWorkdir);
         $bootDir = $this->sanitizeContainerWorkdir($bootstrapWorkdir ?? $containerWorkdir);
         $artifactRel = $bootDir !== $startDir ? $this->relativeDirUnderApp($startDir) : '';
+        $preStart = $includeBootstrap
+            ? $this->nodeBootstrap($packageJson, $workspaceRootPackageJson, $artifactRel)
+            : ($isNext ? $this->nodeProductionArtifactGuard($packageJson, $artifactRel) : null);
 
         return $this->shellRuntime(
             $platformCommand,
             $defaultPort,
             $source ?? ($isNext ? 'next' : 'vite'),
             $label ?? ($isNext ? 'Next.js server' : 'Vite production preview'),
-            $includeBootstrap
-                ? $this->nodeBootstrap($packageJson, $workspaceRootPackageJson, $artifactRel)
-                : null,
+            $preStart,
             $startDir,
             $bootDir
         );
+    }
+
+    public function nodeProductionArtifactGuard(?string $packageJson, string $relativeDir = ''): string
+    {
+        $missing = $this->packageJsonBuildArtifactMissingCheck($packageJson, $relativeDir);
+
+        return 'if '.$missing.'; then echo production-start-no-build-id >&2; exit 78; fi';
     }
 
     private function resolvePythonWsgiModule(string $wsgiContents): ?string
@@ -1427,17 +1435,31 @@ class ContainerApplicationRuntimeService
             return null;
         }
 
-        if (str_starts_with($declared, 'pnpm@') || $declared === 'pnpm') {
-            return 'pnpm';
-        }
-        if (str_starts_with($declared, 'yarn@') || $declared === 'yarn') {
-            return 'yarn';
-        }
-        if (str_starts_with($declared, 'npm@') || $declared === 'npm') {
-            return 'npm';
+        return preg_match(
+            '/^(npm|pnpm|yarn)(?:@\d+\.\d+\.\d+(?:-[0-9a-z.-]+)?(?:\+[0-9a-z.-]+)?)?$/i',
+            $declared,
+            $matches,
+        ) === 1
+            ? strtolower($matches[1])
+            : null;
+    }
+
+    public function malformedNodePackageManagerFromPackageJson(?string $packageJson): ?string
+    {
+        if ($packageJson === null || trim($packageJson) === '') {
+            return null;
         }
 
-        return null;
+        $data = json_decode($packageJson, true);
+        if (! is_array($data)) {
+            return null;
+        }
+
+        $declared = trim((string) ($data['packageManager'] ?? ''));
+
+        return $declared !== '' && $this->declaredNodePackageManagerFromPackageJson($packageJson) === null
+            ? $declared
+            : null;
     }
 
     public function detectNodePackageManagerFromPackageJson(?string $packageJson): string
@@ -1533,6 +1555,44 @@ class ContainerApplicationRuntimeService
         }
 
         return $this->nodeCleanCommand($this->nodePackageManagerRunBuildBinary($manager), 'production', $extra);
+    }
+
+    public function nodeProductionBuildShellCommand(
+        ?string $projectPackageJson,
+        ?string $workspaceRootPackageJson,
+        string $packageManager,
+        string $applicationRelativeDir = '',
+        array $extraEnv = [],
+    ): string {
+        $relativeDir = $this->sanitizeArtifactRelativeDir($applicationRelativeDir);
+        $usesRootTurbo = $workspaceRootPackageJson !== null
+            && $this->packageJsonUsesTurbo($workspaceRootPackageJson);
+
+        if ($relativeDir !== '' && ! $usesRootTurbo) {
+            $binary = match ($packageManager) {
+                'yarn' => '/usr/local/bin/corepack yarn --cwd '.$relativeDir.' run build',
+                'pnpm' => '/usr/local/bin/corepack pnpm --dir '.$relativeDir.' run build',
+                default => self::NODE_NPM_BIN.' --prefix '.$relativeDir.' run build',
+            };
+
+            return $this->nodeCleanCommand(
+                $binary,
+                'production',
+                array_merge(
+                    $this->corepackEnvironment(),
+                    ['TURBO_TELEMETRY_DISABLED' => '1'],
+                    $extraEnv,
+                ),
+            );
+        }
+
+        return $this->npmBuildShellCommand(
+            null,
+            true,
+            $usesRootTurbo ? $workspaceRootPackageJson : $projectPackageJson,
+            $extraEnv,
+            $packageManager,
+        );
     }
 
     public function nodePackageManagerRunBuildBinary(string $packageManager): string

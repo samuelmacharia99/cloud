@@ -196,6 +196,7 @@ class ContainerStackCommandService
         ContainerDeployment $deployment,
         SSHService $ssh,
         bool $forceRebuild = false,
+        string $applicationRelativeDir = '',
     ): array {
         if (($service->effectiveContainerTemplate()?->slug ?? '') !== 'nodejs') {
             throw new \DomainException('The Node build pipeline only supports Node.js services.');
@@ -212,6 +213,7 @@ class ContainerStackCommandService
             $deployment,
             (int) config('containers.node_build.command_timeout_seconds', 900),
             $forceRebuild,
+            $applicationRelativeDir,
         );
     }
 
@@ -454,7 +456,8 @@ class ContainerStackCommandService
         string $hostAppPath,
         ContainerDeployment $deployment,
         int $timeout,
-        bool $forceRebuild = false
+        bool $forceRebuild = false,
+        string $applicationRelativeDir = '',
     ): array {
         $packageJsonPath = $hostAppPath.'/package.json';
         if (! $this->hostFileExists($ssh, $packageJsonPath)) {
@@ -462,9 +465,28 @@ class ContainerStackCommandService
         }
 
         $packageJson = $this->readHostFile($ssh, $packageJsonPath);
-        $packageManager = $this->detectHostNodePackageManager($ssh, $hostAppPath, $packageJson);
-        $requiresBuild = $this->runtimeService->packageJsonRequiresProductionBuild($packageJson)
-            || ($forceRebuild && $this->runtimeService->packageJsonHasBuildScript($packageJson));
+        $applicationRelativeDir = trim($applicationRelativeDir, '/');
+        if ($applicationRelativeDir !== ''
+            && (! preg_match('#^[a-zA-Z0-9._/-]+$#', $applicationRelativeDir)
+                || str_contains($applicationRelativeDir, '..'))) {
+            throw new \InvalidArgumentException('Invalid Node application directory.');
+        }
+        $projectPackageJson = $applicationRelativeDir !== ''
+            ? $this->readHostFile($ssh, $hostAppPath.'/'.$applicationRelativeDir.'/package.json')
+            : $packageJson;
+        $projectPackageJson ??= $packageJson;
+        $packageManager = $this->detectHostNodePackageManager(
+            $ssh,
+            $hostAppPath,
+            $packageJson,
+            $projectPackageJson,
+        );
+        $requiresBuild = $this->runtimeService->packageJsonRequiresProductionBuild($projectPackageJson)
+            || $this->runtimeService->packageJsonRequiresProductionBuild($packageJson)
+            || ($forceRebuild && (
+                $this->runtimeService->packageJsonHasBuildScript($projectPackageJson)
+                || $this->runtimeService->packageJsonHasBuildScript($packageJson)
+            ));
         $buildTimeout = (int) config('containers.node_build.command_timeout_seconds', 900);
         $dockerImage = $this->resolveNodeDockerImage($deployment);
         $publicBuildEnv = $this->runtimeService->collectNodeBuildEnvFromDeployment($deployment);
@@ -480,16 +502,18 @@ class ContainerStackCommandService
                     $containerPath,
                     $containerName,
                     $hostAppPath,
-                    $packageJson,
+                    $projectPackageJson,
                     $buildEnv,
                     cleanBuildArtifacts: true,
                     nodeDockerImage: $dockerImage,
+                    artifactRelativeDir: $applicationRelativeDir,
                 );
 
                 $this->installNodeDependenciesPreferringLockfile(
                     $ssh,
                     $hostAppPath,
                     preferDevDependencies: true,
+                    packageManager: $packageManager,
                     runner: function (string $command) use ($ssh, $dockerImage, $hostAppPath, $timeout): void {
                         $this->runUnlimitedMemoryNodeCommand(
                             $ssh,
@@ -507,21 +531,36 @@ class ContainerStackCommandService
                     $containerPath,
                     $containerName,
                     $hostAppPath,
-                    $packageJson,
+                    $projectPackageJson,
                     $timeout,
-                    $buildEnv
+                    $buildEnv,
+                    $packageManager,
+                    $applicationRelativeDir,
                 );
-                $this->ensureNodeModulesIntegrity($ssh, $dockerImage, $hostAppPath, $packageJson, $timeout);
+                $this->ensureNodeModulesIntegrity(
+                    $ssh,
+                    $dockerImage,
+                    $hostAppPath,
+                    $projectPackageJson,
+                    $timeout,
+                    $packageManager,
+                    $applicationRelativeDir,
+                );
                 $this->restoreNodeModuleBinPermissions($ssh, $containerPath, $containerName, $dockerImage, $hostAppPath);
                 $this->stopApplicationServiceForMaintenance($ssh, $containerPath, $containerName);
 
                 if ($this->runtimeService->nodeBuildPrepareEnabled()) {
                     app(ContainerNodeBuildPrepService::class)->syncPrepareScriptToHost($ssh, $hostAppPath);
+                    $prepareCommand = $this->runtimeService->nodeBuildPrepareCommand();
+                    if ($applicationRelativeDir !== '') {
+                        $prepareCommand = 'TALKSASA_APP_RELATIVE_DIR='
+                            .escapeshellarg($applicationRelativeDir).' '.$prepareCommand;
+                    }
                     $this->runUnlimitedMemoryNodeCommand(
                         $ssh,
                         $dockerImage,
                         $hostAppPath,
-                        $this->runtimeService->nodeBuildPrepareCommand(),
+                        $prepareCommand,
                         '/app',
                         120
                     );
@@ -531,24 +570,33 @@ class ContainerStackCommandService
                     $ssh,
                     $dockerImage,
                     $hostAppPath,
-                    $this->runtimeService->npmBuildShellCommand(
-                        null,
-                        true,
-                        $packageJson,
+                    $this->runtimeService->nodeProductionBuildShellCommand(
+                        $projectPackageJson,
+                        $applicationRelativeDir !== '' ? $packageJson : null,
+                        $packageManager,
+                        $applicationRelativeDir,
                         $publicBuildEnv,
-                        $packageManager
                     ),
                     '/app',
                     $buildTimeout
                 );
-                $this->runUnlimitedMemoryNodeCommand(
+                $hasTypeScriptConfig = $this->hostFileExists(
                     $ssh,
-                    $dockerImage,
-                    $hostAppPath,
-                    $this->runtimeService->nodePruneShellCommand($packageManager),
-                    '/app',
-                    $timeout
+                    $hostAppPath.'/'.($applicationRelativeDir !== '' ? $applicationRelativeDir.'/' : '').'next.config.ts'
                 );
+                $keepDevDependencies = $applicationRelativeDir !== ''
+                    || $hasTypeScriptConfig
+                    || $this->runtimeService->productionStartRequiresVite($projectPackageJson);
+                if (! $keepDevDependencies) {
+                    $this->runUnlimitedMemoryNodeCommand(
+                        $ssh,
+                        $dockerImage,
+                        $hostAppPath,
+                        $this->runtimeService->nodePruneShellCommand($packageManager),
+                        '/app',
+                        $timeout
+                    );
+                }
                 $this->restoreNodeModuleBinPermissions($ssh, $containerPath, $containerName, $dockerImage, $hostAppPath);
 
                 return [$forceRebuild
@@ -568,6 +616,7 @@ class ContainerStackCommandService
                 $ssh,
                 $hostAppPath,
                 preferDevDependencies: false,
+                packageManager: $packageManager,
                 runner: function (string $command) use ($ssh, $containerPath, $containerName, $timeout): void {
                     $this->runOneOffInContainer($ssh, $containerPath, $containerName, $command, '/app', $timeout);
                 },
@@ -684,6 +733,7 @@ class ContainerStackCommandService
         SSHService $ssh,
         string $hostAppPath,
         ?string $packageJson = null,
+        ?string $projectPackageJson = null,
     ): string {
         $declared = $this->runtimeService->declaredNodePackageManagerFromPackageJson($packageJson);
 
@@ -704,18 +754,9 @@ class ContainerStackCommandService
             return 'yarn';
         }
 
-        $data = is_string($packageJson) && $packageJson !== ''
-            ? json_decode($packageJson, true)
-            : null;
-        $declared = strtolower((string) (is_array($data) ? ($data['packageManager'] ?? '') : ''));
-        if (str_starts_with($declared, 'pnpm@') || $declared === 'pnpm') {
-            return 'pnpm';
-        }
-        if (str_starts_with($declared, 'yarn@') || $declared === 'yarn') {
-            return 'yarn';
-        }
-
-        return 'npm';
+        return $declared
+            ?? $this->runtimeService->declaredNodePackageManagerFromPackageJson($projectPackageJson)
+            ?? $this->runtimeService->resolveNodePackageManager($projectPackageJson, $packageJson);
     }
 
     private function restoreNodeModuleBinPermissions(
@@ -761,7 +802,9 @@ class ContainerStackCommandService
         string $hostAppPath,
         ?string $packageJson,
         int $timeout,
-        array $buildEnv
+        array $buildEnv,
+        string $packageManager,
+        string $applicationRelativeDir = '',
     ): void {
         if ($packageJson === null || trim($packageJson) === '') {
             return;
@@ -785,9 +828,19 @@ class ContainerStackCommandService
             return;
         }
 
-        $integrityOk = $this->hostNodeModulesIntegrityOk($ssh, $hostAppPath, $packageJson);
+        $integrityOk = $this->hostNodeModulesIntegrityOk(
+            $ssh,
+            $hostAppPath,
+            $packageJson,
+            $applicationRelativeDir,
+        );
 
-        if ($integrityOk && $this->hostDirectoryExists($ssh, $hostAppPath.'/node_modules/'.$probePackage)) {
+        if ($integrityOk && $this->hostNodeModuleDirectoryExists(
+            $ssh,
+            $hostAppPath,
+            $probePackage,
+            $applicationRelativeDir,
+        )) {
             return;
         }
 
@@ -806,6 +859,7 @@ class ContainerStackCommandService
             $ssh,
             $hostAppPath,
             preferDevDependencies: true,
+            packageManager: $packageManager,
             runner: function (string $command) use ($ssh, $nodeDockerImage, $hostAppPath, $containerPath, $containerName, $timeout, $buildEnv): void {
                 if ($nodeDockerImage !== null) {
                     $this->runUnlimitedMemoryNodeCommand($ssh, $nodeDockerImage, $hostAppPath, $command, '/app', $timeout);
@@ -826,8 +880,15 @@ class ContainerStackCommandService
             },
         );
 
-        if ($this->hostDirectoryExists($ssh, $hostAppPath.'/node_modules/'.$probePackage)) {
+        if ($this->hostNodeModuleDirectoryExists($ssh, $hostAppPath, $probePackage, $applicationRelativeDir)) {
             return;
+        }
+
+        if ($applicationRelativeDir !== '') {
+            throw new \RuntimeException(
+                'Workspace dev dependency '.$probePackage.' is missing after '.$packageManager
+                .' install. Fix the workspace lockfile and commit it before rebuilding.'
+            );
         }
 
         $devInstallCommand = $this->runtimeService->npmInstallDevPackagesShellCommand($packageJson);
@@ -859,13 +920,15 @@ class ContainerStackCommandService
         string $nodeDockerImage,
         string $hostAppPath,
         ?string $packageJson,
-        int $timeout
+        int $timeout,
+        string $packageManager,
+        string $applicationRelativeDir = '',
     ): void {
-        if ($this->hostNodeModulesIntegrityOk($ssh, $hostAppPath, $packageJson)) {
+        if ($this->hostNodeModulesIntegrityOk($ssh, $hostAppPath, $packageJson, $applicationRelativeDir)) {
             return;
         }
 
-        $missing = $this->missingNodeIntegrityMarkers($ssh, $hostAppPath, $packageJson);
+        $missing = $this->missingNodeIntegrityMarkers($ssh, $hostAppPath, $packageJson, $applicationRelativeDir);
 
         \Log::warning('Node dependency install is incomplete after lockfile install; retrying with a clean install', [
             'missing' => $missing,
@@ -878,6 +941,7 @@ class ContainerStackCommandService
             $ssh,
             $hostAppPath,
             preferDevDependencies: true,
+            packageManager: $packageManager,
             runner: function (string $command) use ($ssh, $nodeDockerImage, $hostAppPath, $timeout): void {
                 $this->runUnlimitedMemoryNodeCommand(
                     $ssh,
@@ -890,11 +954,26 @@ class ContainerStackCommandService
             },
         );
 
-        if (! $this->hostNodeModulesIntegrityOk($ssh, $hostAppPath, $packageJson)
+        if (! $this->hostNodeModulesIntegrityOk($ssh, $hostAppPath, $packageJson, $applicationRelativeDir)
+            && $applicationRelativeDir !== ''
+        ) {
+            $missing = $this->missingNodeIntegrityMarkers(
+                $ssh,
+                $hostAppPath,
+                $packageJson,
+                $applicationRelativeDir,
+            );
+            throw new \RuntimeException(
+                'Workspace dependencies are incomplete after '.$packageManager.' install (missing '
+                .implode(', ', $missing).'). Fix and commit the workspace lockfile before rebuilding.'
+            );
+        }
+
+        if (! $this->hostNodeModulesIntegrityOk($ssh, $hostAppPath, $packageJson, $applicationRelativeDir)
             && $this->runtimeService->packageJsonUsesNext($packageJson)
         ) {
             \Log::warning('Next.js install is missing react peers; installing react and react-dom explicitly', [
-                'missing' => $this->missingNodeIntegrityMarkers($ssh, $hostAppPath, $packageJson),
+                'missing' => $this->missingNodeIntegrityMarkers($ssh, $hostAppPath, $packageJson, $applicationRelativeDir),
                 'host_app_path' => $hostAppPath,
             ]);
 
@@ -908,8 +987,13 @@ class ContainerStackCommandService
             );
         }
 
-        if (! $this->hostNodeModulesIntegrityOk($ssh, $hostAppPath, $packageJson)) {
-            $stillMissing = $this->missingNodeIntegrityMarkers($ssh, $hostAppPath, $packageJson);
+        if (! $this->hostNodeModulesIntegrityOk($ssh, $hostAppPath, $packageJson, $applicationRelativeDir)) {
+            $stillMissing = $this->missingNodeIntegrityMarkers(
+                $ssh,
+                $hostAppPath,
+                $packageJson,
+                $applicationRelativeDir,
+            );
             $hint = $stillMissing !== [] ? implode(', ', $stillMissing) : 'framework packages';
 
             throw new \RuntimeException(
@@ -922,9 +1006,15 @@ class ContainerStackCommandService
     private function hostNodeModulesIntegrityOk(
         SSHService $ssh,
         string $hostAppPath,
-        ?string $packageJson
+        ?string $packageJson,
+        string $applicationRelativeDir = '',
     ): bool {
-        return $this->missingNodeIntegrityMarkers($ssh, $hostAppPath, $packageJson) === [];
+        return $this->missingNodeIntegrityMarkers(
+            $ssh,
+            $hostAppPath,
+            $packageJson,
+            $applicationRelativeDir,
+        ) === [];
     }
 
     /**
@@ -933,16 +1023,39 @@ class ContainerStackCommandService
     private function missingNodeIntegrityMarkers(
         SSHService $ssh,
         string $hostAppPath,
-        ?string $packageJson
+        ?string $packageJson,
+        string $applicationRelativeDir = '',
     ): array {
         $missing = [];
         foreach ($this->runtimeService->nodeIntegrityMarkerRelativePaths($packageJson) as $marker) {
-            if (! $this->hostFileExists($ssh, $hostAppPath.'/'.$marker)) {
+            $rootMarker = $hostAppPath.'/'.$marker;
+            $applicationMarker = $applicationRelativeDir !== ''
+                ? $hostAppPath.'/'.trim($applicationRelativeDir, '/').'/'.$marker
+                : null;
+            if (! $this->hostFileExists($ssh, $rootMarker)
+                && ($applicationMarker === null || ! $this->hostFileExists($ssh, $applicationMarker))) {
                 $missing[] = $marker;
             }
         }
 
         return $missing;
+    }
+
+    private function hostNodeModuleDirectoryExists(
+        SSHService $ssh,
+        string $hostAppPath,
+        string $package,
+        string $applicationRelativeDir = '',
+    ): bool {
+        if ($this->hostDirectoryExists($ssh, $hostAppPath.'/node_modules/'.$package)) {
+            return true;
+        }
+
+        return $applicationRelativeDir !== ''
+            && $this->hostDirectoryExists(
+                $ssh,
+                $hostAppPath.'/'.trim($applicationRelativeDir, '/').'/node_modules/'.$package,
+            );
     }
 
     private function stopApplicationServiceForMaintenance(
@@ -974,12 +1087,21 @@ class ContainerStackCommandService
         array $environment = [],
         bool $cleanBuildArtifacts = true,
         ?string $nodeDockerImage = null,
+        string $artifactRelativeDir = '',
     ): void {
         $this->stopApplicationServiceForMaintenance($ssh, $containerPath, $containerName);
 
         $extraDirs = $cleanBuildArtifacts
             ? $this->runtimeService->nodeBuildArtifactDirs($packageJson)
             : [];
+        if ($artifactRelativeDir !== '') {
+            $prefix = trim($artifactRelativeDir, '/');
+            $extraDirs = array_map(
+                static fn (string $dir): string => $prefix.'/'.trim($dir, '/'),
+                $extraDirs,
+            );
+            $extraDirs[] = $prefix.'/node_modules';
+        }
 
         $this->removeHostNodeInstallArtifacts($ssh, $hostAppPath, $extraDirs);
 
@@ -1017,7 +1139,9 @@ class ContainerStackCommandService
         $targets = ['node_modules'];
         foreach ($extraDirs as $dir) {
             $dir = trim((string) $dir, '/');
-            if ($dir !== '' && preg_match('/^[a-zA-Z0-9._-]+$/', $dir)) {
+            if ($dir !== ''
+                && preg_match('#^[a-zA-Z0-9._/-]+$#', $dir)
+                && ! str_contains($dir, '..')) {
                 $targets[] = $dir;
             }
         }
@@ -1040,9 +1164,10 @@ class ContainerStackCommandService
         SSHService $ssh,
         string $hostAppPath,
         bool $preferDevDependencies,
+        string $packageManager,
         callable $runner,
     ): void {
-        $manager = $this->detectHostNodePackageManager($ssh, $hostAppPath);
+        $manager = $packageManager;
 
         if ($manager === 'pnpm') {
             $this->runPnpmInstallPreferringLockfile($hostAppPath, $preferDevDependencies, $runner);

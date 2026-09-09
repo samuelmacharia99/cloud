@@ -3969,9 +3969,11 @@ PHP;
                     '/Could not find a production build in the [\'"]?\.next[\'"]? directory/i',
                     '/production-start-no-build-id/i',
                     '/Cannot find module [\'"][^\'"]*(?:dist|build|\.output)[^\'"]*[\'"]/i',
+                    '/Failed to install TypeScript, please install it manually/i',
+                    '/Failed to load next\.config\.ts/i',
                 ],
                 'title' => 'Node production artifact is missing',
-                'summary' => 'The server command was started without a validated production artifact. Rebuild creates dependencies and artifacts in the dedicated build phase before runtime startup.',
+                'summary' => 'The server command was started without a complete validated release. Rebuild installs workspace tooling, validates the production artifact, and keeps runtime dependencies required by framework configuration.',
                 'treat_action' => 'rebuild_node_application',
                 'treat_label' => 'Rebuild and start',
                 'manual_steps' => [

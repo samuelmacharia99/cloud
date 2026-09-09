@@ -62,6 +62,25 @@ class ContainerDoctorServiceTest extends TestCase
     }
 
     #[Test]
+    public function next_typescript_config_runtime_install_failure_offers_release_rebuild(): void
+    {
+        $logs = <<<'LOG'
+⚠ Installing TypeScript as it was not found while loading "next.config.ts".
+error This project's package.json defines "packageManager": "yarn@npm@10.9.3".
+Failed to install TypeScript, please install it manually to continue
+⨯ Failed to load next.config.ts
+LOG;
+
+        $finding = collect(app(ContainerDoctorService::class)->analyzeLogs(
+            $logs,
+            'nodejs',
+        ))->firstWhere('id', 'node_production_artifact_missing');
+
+        $this->assertNotNull($finding);
+        $this->assertSame('rebuild_node_application', $finding['treat_action']);
+    }
+
+    #[Test]
     public function it_detects_vite_missing_from_production_start(): void
     {
         $logs = <<<'LOG'

@@ -113,12 +113,6 @@ class ContainerNodeBuildService
         $this->persistState($service, 'building');
 
         try {
-            $messages = $this->stackCommands->buildNodeApplication(
-                $service,
-                $deployment,
-                $ssh,
-                $forceRebuild,
-            );
             $runtime = $this->runtimeService->detectNodeRuntime(
                 $ssh,
                 $hostAppPath,
@@ -126,6 +120,13 @@ class ContainerNodeBuildService
                 includeBootstrap: false,
             );
             $relativeRoot = $this->runtimeService->relativeDirUnderApp($runtime->containerWorkdir);
+            $messages = $this->stackCommands->buildNodeApplication(
+                $service,
+                $deployment,
+                $ssh,
+                $forceRebuild,
+                $relativeRoot,
+            );
             $projectHostPath = $relativeRoot === '' ? $hostAppPath : $hostAppPath.'/'.$relativeRoot;
             $projectPackageJson = $this->remoteValue(
                 $ssh,
@@ -137,6 +138,54 @@ class ContainerNodeBuildService
                     'head -c 65536 '.escapeshellarg($hostAppPath.'/package.json').' 2>/dev/null || true'
                 )
                 : null;
+            $requiresProductionArtifact = $this->runtimeService->packageJsonRequiresProductionBuild($projectPackageJson)
+                || $this->runtimeService->packageJsonRequiresProductionBuild($workspacePackageJson);
+            $artifactMissingCheck = null;
+            $hasTypeScriptNextConfig = trim($ssh->exec(
+                'test -f '.escapeshellarg($projectHostPath.'/next.config.ts').' && echo yes || echo no',
+                10,
+            )) === 'yes';
+            if ($hasTypeScriptNextConfig) {
+                $template = $service->effectiveContainerTemplate();
+                $dockerImage = app(ContainerDeploymentService::class)->resolveTemplateDockerImage(
+                    $template,
+                    $deployment->selected_version,
+                );
+                try {
+                    $this->stackCommands->runUnlimitedMemoryNodeCommand(
+                        $ssh,
+                        $dockerImage,
+                        $hostAppPath,
+                        'node -e \'require.resolve("typescript")\'',
+                        $runtime->containerWorkdir,
+                        30,
+                    );
+                } catch (\Throwable $e) {
+                    throw new \RuntimeException(
+                        'next.config.ts requires TypeScript at runtime, but TypeScript is not installed in the '
+                        .'validated release. Add typescript to this app workspace devDependencies, update the '
+                        .'repository lockfile, and rebuild.',
+                        0,
+                        $e,
+                    );
+                }
+            }
+            if ($requiresProductionArtifact) {
+                $artifactMissingCheck = $this->runtimeService->packageJsonBuildArtifactMissingCheck(
+                    $projectPackageJson,
+                    $relativeRoot,
+                );
+                $ssh->exec(
+                    'cd '.escapeshellarg($hostAppPath)
+                        .' && if '.$artifactMissingCheck
+                        .'; then echo '.escapeshellarg(
+                            'Node production artifact validation failed for '
+                            .($relativeRoot !== '' ? $relativeRoot : '/app').'.'
+                        )
+                        .' >&2; exit 78; fi',
+                    30,
+                );
+            }
             $service->refresh();
             $serviceMeta = is_array($service->service_meta) ? $service->service_meta : [];
             $manifest = [
@@ -164,9 +213,15 @@ class ContainerNodeBuildService
                     $projectPackageJson,
                     $workspacePackageJson,
                 ),
+                'malformed_package_manager' => $this->runtimeService
+                    ->malformedNodePackageManagerFromPackageJson($workspacePackageJson)
+                    ?? $this->runtimeService->malformedNodePackageManagerFromPackageJson($projectPackageJson),
                 'node_version' => $deployment->selected_version,
                 'node_version_source' => $serviceMeta['node_version_source'] ?? 'auto',
                 'node_engine' => $serviceMeta['node_detected_engine'] ?? null,
+                'artifact_check' => $artifactMissingCheck,
+                'artifact_root' => $relativeRoot,
+                'typescript_config_validated' => $hasTypeScriptNextConfig,
                 'working_directory' => $runtime->containerWorkdir,
                 'start_command' => $runtime->command,
             ];

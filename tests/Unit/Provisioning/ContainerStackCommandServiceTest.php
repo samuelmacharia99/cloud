@@ -295,6 +295,7 @@ class ContainerStackCommandServiceTest extends TestCase
             $ssh,
             '/opt/talksasa/containers/user-1-service-1/app',
             true,
+            'npm',
             function (string $command) use (&$commands): void {
                 $commands[] = $command;
                 if (str_contains($command, 'npm ci') || str_contains($command, '/usr/local/bin/npm ci')) {
@@ -361,6 +362,14 @@ class ContainerStackCommandServiceTest extends TestCase
             '/opt/talksasa/containers/user-1-service-1/app',
             '{"packageManager":"npm@10.9.2"}'
         ));
+
+        $noLock = $this->createMock(SSHService::class);
+        $noLock->method('exec')->willReturn('no');
+        $this->assertSame('npm', $service->detectHostNodePackageManager(
+            $noLock,
+            '/opt/talksasa/containers/user-1-service-1/app',
+            '{"packageManager":"yarn@npm@10.9.3"}'
+        ));
     }
 
     #[Test]
@@ -381,6 +390,7 @@ class ContainerStackCommandServiceTest extends TestCase
             $ssh,
             '/opt/talksasa/containers/user-1-service-1/app',
             true,
+            'pnpm',
             function (string $command) use (&$commands): void {
                 $commands[] = $command;
             }

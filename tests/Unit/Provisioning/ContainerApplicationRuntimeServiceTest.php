@@ -882,4 +882,40 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
         $this->assertSame('pnpm', $this->service->detectNodePackageManagerFromPackageJson($app));
         $this->assertSame('pnpm', $this->service->resolveNodePackageManager($app, '{"private":true}'));
     }
+
+    #[Test]
+    public function malformed_package_manager_is_not_misclassified_as_yarn(): void
+    {
+        $package = '{"packageManager":"yarn@npm@10.9.3"}';
+
+        $this->assertNull($this->service->declaredNodePackageManagerFromPackageJson($package));
+        $this->assertSame('yarn@npm@10.9.3', $this->service->malformedNodePackageManagerFromPackageJson($package));
+        $this->assertSame('npm', $this->service->resolveNodePackageManager($package));
+    }
+
+    #[Test]
+    public function production_next_runtime_refuses_to_start_without_a_build_id(): void
+    {
+        $package = json_encode([
+            'scripts' => ['start' => 'next start'],
+            'dependencies' => ['next' => '15.5.25'],
+        ], JSON_THROW_ON_ERROR);
+
+        $runtime = $this->service->detectNodeFromContents(
+            null,
+            $package,
+            false,
+            false,
+            false,
+            3000,
+            '/app/apps/web',
+            '{"private":true}',
+            '/app',
+            includeBootstrap: false,
+        );
+
+        $this->assertStringContainsString('[ ! -f apps/web/.next/BUILD_ID ]', $runtime->command[2]);
+        $this->assertStringContainsString('production-start-no-build-id', $runtime->command[2]);
+        $this->assertStringNotContainsString('npm install', $runtime->command[2]);
+    }
 }

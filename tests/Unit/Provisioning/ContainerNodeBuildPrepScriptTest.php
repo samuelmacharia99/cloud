@@ -112,4 +112,72 @@ class ContainerNodeBuildPrepScriptTest extends TestCase
         $this->assertSame('prisma/schema.prisma', $marker['prisma']['schema']);
         $this->assertSame(0, $marker['prisma']['status']);
     }
+
+    #[Test]
+    public function it_prepares_the_nested_runtime_app_without_replacing_typescript_config(): void
+    {
+        $temp = sys_get_temp_dir().'/talksasa-node-prep-workspace-'.uniqid();
+        mkdir($temp.'/apps/web', 0777, true);
+        file_put_contents($temp.'/package.json', json_encode([
+            'private' => true,
+            'workspaces' => ['apps/*'],
+        ], JSON_THROW_ON_ERROR));
+        file_put_contents($temp.'/apps/web/package.json', json_encode([
+            'scripts' => ['build' => 'next build', 'start' => 'next start -p 3001'],
+            'dependencies' => ['next' => '15.5.25'],
+            'devDependencies' => ['typescript' => '5.8.2'],
+        ], JSON_THROW_ON_ERROR));
+        file_put_contents($temp.'/apps/web/next.config.ts', "export default { output: 'standalone' };\n");
+
+        $script = realpath(__DIR__.'/../../../resources/container-templates/nodejs/prepare-build.cjs');
+        $output = [];
+        $exitCode = 0;
+        exec(
+            'cd '.escapeshellarg($temp)
+                .' && TALKSASA_APP_RELATIVE_DIR=apps/web node '.escapeshellarg($script).' 2>&1',
+            $output,
+            $exitCode,
+        );
+
+        $this->assertSame(0, $exitCode, implode("\n", $output));
+        $this->assertFileExists($temp.'/apps/web/next.config.ts');
+        $this->assertFileDoesNotExist($temp.'/apps/web/next.config.js');
+        $this->assertFileDoesNotExist($temp.'/apps/web/next.config.user.talksasa.ts');
+        $package = json_decode(
+            (string) file_get_contents($temp.'/apps/web/package.json'),
+            true,
+            512,
+            JSON_THROW_ON_ERROR,
+        );
+        $this->assertSame('next start -H 0.0.0.0', $package['scripts']['start']);
+        $marker = json_decode(
+            (string) file_get_contents($temp.'/.talksasa/build-prepared-apps-web.json'),
+            true,
+            512,
+            JSON_THROW_ON_ERROR,
+        );
+        $this->assertSame('next.config.ts', $marker['next']['preserved']);
+    }
+
+    #[Test]
+    public function it_restores_a_typescript_config_replaced_by_the_legacy_wrapper(): void
+    {
+        $temp = sys_get_temp_dir().'/talksasa-node-prep-legacy-ts-'.uniqid();
+        mkdir($temp, 0777, true);
+        file_put_contents($temp.'/package.json', json_encode([
+            'dependencies' => ['next' => '15.5.25'],
+        ], JSON_THROW_ON_ERROR));
+        file_put_contents($temp.'/next.config.user.talksasa.ts', "export default { output: 'standalone' };\n");
+        file_put_contents($temp.'/next.config.js', "const talksasaOverlay = {};\nmodule.exports = {};\n");
+
+        $script = realpath(__DIR__.'/../../../resources/container-templates/nodejs/prepare-build.cjs');
+        $output = [];
+        $exitCode = 0;
+        exec('cd '.escapeshellarg($temp).' && node '.escapeshellarg($script).' 2>&1', $output, $exitCode);
+
+        $this->assertSame(0, $exitCode, implode("\n", $output));
+        $this->assertFileExists($temp.'/next.config.ts');
+        $this->assertFileDoesNotExist($temp.'/next.config.user.talksasa.ts');
+        $this->assertFileDoesNotExist($temp.'/next.config.js');
+    }
 }

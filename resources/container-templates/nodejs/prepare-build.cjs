@@ -9,9 +9,17 @@
 const fs = require('fs');
 const path = require('path');
 
-const ROOT = process.cwd();
-const TALKSASA_DIR = path.join(ROOT, '.talksasa');
-const MARKER = path.join(TALKSASA_DIR, 'build-prepared.json');
+const WORKSPACE_ROOT = process.cwd();
+const requestedAppDir = String(process.env.TALKSASA_APP_RELATIVE_DIR || '')
+    .replace(/\\/g, '/')
+    .replace(/^\/+|\/+$/g, '');
+if (requestedAppDir.includes('..') || (requestedAppDir && !/^[a-zA-Z0-9._/-]+$/.test(requestedAppDir))) {
+    throw new Error('Invalid TALKSASA_APP_RELATIVE_DIR');
+}
+const ROOT = requestedAppDir ? path.join(WORKSPACE_ROOT, requestedAppDir) : WORKSPACE_ROOT;
+const TALKSASA_DIR = path.join(WORKSPACE_ROOT, '.talksasa');
+const markerSuffix = requestedAppDir ? `-${requestedAppDir.replace(/[^a-zA-Z0-9._-]+/g, '-')}` : '';
+const MARKER = path.join(TALKSASA_DIR, `build-prepared${markerSuffix}.json`);
 
 function readJsonc(filePath) {
     const text = fs.readFileSync(filePath, 'utf8');
@@ -117,6 +125,17 @@ function wrapNextConfig() {
         ? JSON.parse(fs.readFileSync(MARKER, 'utf8'))
         : {};
 
+    const legacyTsBackup = path.join(ROOT, 'next.config.user.talksasa.ts');
+    const generatedJsConfig = path.join(ROOT, 'next.config.js');
+    if (!fs.existsSync(path.join(ROOT, 'next.config.ts'))
+        && fs.existsSync(legacyTsBackup)
+        && fs.existsSync(generatedJsConfig)
+        && fs.readFileSync(generatedJsConfig, 'utf8').includes('talksasaOverlay')) {
+        fs.unlinkSync(generatedJsConfig);
+        fs.renameSync(legacyTsBackup, path.join(ROOT, 'next.config.ts'));
+        delete markerData.nextWrapped;
+    }
+
     if (markerData.nextWrapped) {
         return markerData.nextWrapped;
     }
@@ -161,6 +180,15 @@ function mergeConfig(user) {
         return markerData.nextWrapped;
     }
 
+    // next.config.ts is executable production configuration, not a build-only
+    // type-check input. Keep it intact and retain dev dependencies at runtime
+    // so Next can load it without attempting a network install during startup.
+    if (path.extname(userFile) === '.ts') {
+        markerData.nextWrapped = { preserved: userFile, reason: 'runtime-typescript-config' };
+
+        return markerData.nextWrapped;
+    }
+
     const backup = `next.config.user.talksasa${path.extname(userFile)}`;
     fs.renameSync(path.join(ROOT, userFile), path.join(ROOT, backup));
 
@@ -180,8 +208,6 @@ module.exports = async (phase, defaultConfig) => {
   return mergeConfig(resolved);
 };
 `;
-    } else if (ext === '.ts') {
-        wrapper = overlayConfig + 'module.exports = mergeConfig({});\n';
     } else {
         wrapper = overlayConfig + `const loadUser = () => require('./${backup}');
 const config = loadUser();
