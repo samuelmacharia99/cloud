@@ -374,6 +374,12 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
         );
         $this->assertTrue($this->service->isAllowedNodeBuildEnvKey('EXPO_PUBLIC_API_URL'));
         $this->assertStringNotContainsString('&&', $this->service->nodeProductionBuildShellCommand($packageJson, null, 'npm', 'apps/mobile'));
+        $this->assertSame('apps/mobile', $this->service->expoWebIsolatedRelativeRoot($packageJson, 'apps/mobile'));
+        $this->assertSame('', $this->service->expoWebIsolatedRelativeRoot($packageJson, ''));
+        $this->assertSame('', $this->service->expoWebIsolatedRelativeRoot(
+            json_encode(['dependencies' => ['next' => '14.0.0']], JSON_THROW_ON_ERROR),
+            'apps/api',
+        ));
     }
 
     #[Test]

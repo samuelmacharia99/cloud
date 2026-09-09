@@ -502,6 +502,15 @@ class ContainerStackCommandService
         if ($projectPackageJson === null) {
             return ['No package.json found; skipped npm install.'];
         }
+        $expoIsolateRoot = $this->runtimeService->expoWebIsolatedRelativeRoot(
+            $projectPackageJson,
+            $applicationRelativeDir,
+        );
+        if ($expoIsolateRoot !== '') {
+            $hostAppPath = $hostAppPath.'/'.$expoIsolateRoot;
+            $applicationRelativeDir = '';
+            $packageJson = $projectPackageJson;
+        }
         $hasWorkspaceRoot = $packageJson !== null;
         $packageJson ??= $projectPackageJson;
         $installHostPath = $hasWorkspaceRoot || $applicationRelativeDir === ''
@@ -609,17 +618,12 @@ class ContainerStackCommandService
                     $applicationRelativeDir,
                     $publicBuildEnv,
                 );
-                $buildWorkDir = '/app';
-                $expoRoot = $this->runtimeService->sanitizeArtifactRelativeDir($applicationRelativeDir);
-                if ($expoRoot !== '' && $this->runtimeService->packageJsonNeedsExpoWebExport($projectPackageJson)) {
-                    $buildWorkDir = '/app/'.$expoRoot;
-                }
                 $this->runUnlimitedMemoryNodeCommand(
                     $ssh,
                     $dockerImage,
                     $hostAppPath,
                     $buildCommand,
-                    $buildWorkDir,
+                    '/app',
                     $buildTimeout
                 );
                 $hasTypeScriptConfig = $this->hostFileExists(
@@ -1453,7 +1457,10 @@ class ContainerStackCommandService
         }
 
         $imageArg = escapeshellarg($dockerImage);
-        $volumeArg = escapeshellarg(rtrim($hostAppPath, '/').':'.rtrim($workDir, '/'));
+        // hostAppPath is always the directory that should appear as /app.
+        // workDir is only the process cwd inside that mount — never the volume target.
+        $workDir = $this->runtimeService->sanitizeContainerWorkdir($workDir);
+        $volumeArg = escapeshellarg(rtrim($hostAppPath, '/').':/app');
         $workDirArg = escapeshellarg($workDir);
         $wrapped = $this->alpineOpensslEnsurePrefix($dockerImage)
             .$this->corepackEnablePrefix()

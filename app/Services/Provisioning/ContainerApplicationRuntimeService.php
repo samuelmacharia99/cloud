@@ -902,6 +902,21 @@ class ContainerApplicationRuntimeService
             || (bool) preg_match('/\bexpo\s+serve\b/', $normalized);
     }
 
+    /**
+     * Expo's default AppEntry imports ../../App from node_modules/expo.
+     * That only resolves when the Expo app directory is the Node project root
+     * (App next to package.json, expo installed in that same tree).
+     */
+    public function expoWebIsolatedRelativeRoot(?string $projectPackageJson, string $applicationRelativeDir): string
+    {
+        $relative = $this->sanitizeArtifactRelativeDir($applicationRelativeDir);
+        if ($relative === '' || ! $this->packageJsonNeedsExpoWebExport($projectPackageJson)) {
+            return '';
+        }
+
+        return $relative;
+    }
+
     public function packageJsonNeedsExpoWebExport(?string $packageJson): bool
     {
         if (! $this->packageJsonHasExpo($packageJson)) {

@@ -232,6 +232,41 @@ class ContainerStackCommandServiceTest extends TestCase
     }
 
     #[Test]
+    public function it_bind_mounts_the_host_app_at_app_even_when_cwd_is_a_subdirectory(): void
+    {
+        $service = new ContainerStackCommandService;
+        $ssh = $this->createMock(SSHService::class);
+        $ssh->expects($this->once())
+            ->method('exec')
+            ->with($this->callback(function (string $command): bool {
+                return str_contains($command, "-v '/var/lib/talksasa/containers/user-1-service-1/app:/app'")
+                    && str_contains($command, "-w '/app/apps/mobile'")
+                    && ! str_contains($command, ':/app/apps/mobile')
+                    && str_contains($command, 'npx --yes expo export --platform web --output-dir dist');
+            }))
+            ->willReturn('');
+
+        $expo = (new ContainerApplicationRuntimeService)->nodeProductionBuildShellCommand(
+            json_encode([
+                'scripts' => ['start' => 'expo start'],
+                'dependencies' => ['expo' => '^54.0'],
+            ], JSON_THROW_ON_ERROR),
+            null,
+            'npm',
+            'apps/mobile',
+        );
+
+        $service->runUnlimitedMemoryNodeCommand(
+            $ssh,
+            'node:22-alpine',
+            '/var/lib/talksasa/containers/user-1-service-1/app',
+            $expo,
+            '/app/apps/mobile',
+            900
+        );
+    }
+
+    #[Test]
     public function it_skips_alpine_openssl_prefix_on_debian_node_images(): void
     {
         $service = new ContainerStackCommandService;
