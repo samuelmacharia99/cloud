@@ -7156,10 +7156,15 @@ class ContainerDeploymentService
 
         if (($template->slug ?? '') === 'nodejs') {
             $meta = is_array($service->service_meta) ? $service->service_meta : [];
-            $meta['node_project_root'] = $this->pinnedNodeBackendRoot($nodeTopology)
+            $pinnedRoot = $this->pinnedNodeBackendRoot($nodeTopology)
                 ?? ($runtime->containerWorkdir === '/app'
                     ? ''
                     : trim(substr($runtime->containerWorkdir, strlen('/app')), '/'));
+            $meta['node_project_root'] = $pinnedRoot;
+            if (app(ContainerExclusiveApplicationPin::class)->isExclusive($service) && $pinnedRoot !== '') {
+                $meta['node_application_root'] = $pinnedRoot;
+                $meta['node_backend_root'] = $pinnedRoot;
+            }
             $service->update(['service_meta' => $meta]);
         }
 

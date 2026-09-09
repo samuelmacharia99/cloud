@@ -46,7 +46,9 @@ class ProjectNodeWebSplitServiceTest extends TestCase
         $this->assertSame($project->id, $web->project_id);
         $this->assertSame('Web', $web->service_meta['project_role_label']);
         $this->assertSame('frontend', $web->service_meta['project_role']);
+        $this->assertSame('apps/mobile', $web->service_meta['node_application_root']);
         $this->assertSame('apps/mobile', $web->service_meta['node_backend_root']);
+        $this->assertSame('apps/api', $web->service_meta['sibling_application_root']);
         $this->assertSame('none', $web->service_meta['frontend']);
         $this->assertSame('https://github.com/ndinda7688/sameplan', $web->service_meta['source_repo_url']);
         $this->assertSame(0.0, (float) $web->custom_price);
@@ -56,6 +58,8 @@ class ProjectNodeWebSplitServiceTest extends TestCase
         $this->assertSame('API', $api->service_meta['project_role_label']);
         $this->assertSame('backend', $api->service_meta['project_role']);
         $this->assertSame('none', $api->service_meta['frontend']);
+        $this->assertSame('apps/api', $api->service_meta['node_application_root']);
+        $this->assertSame('apps/mobile', $api->service_meta['sibling_application_root']);
         $this->assertArrayNotHasKey('node_frontend_root', $api->service_meta);
         $this->assertSame($web->id, $api->service_meta['frontend_service_id']);
         $this->assertSame($project->name.'-api', $api->name);
@@ -92,8 +96,10 @@ class ProjectNodeWebSplitServiceTest extends TestCase
         $this->assertFalse($again['created']);
         $this->assertSame($first['frontend']->id, $again['frontend']->id);
         $this->assertSame('none', $api->fresh()->service_meta['frontend']);
+        $this->assertSame('apps/mobile', $again['frontend']->fresh()->service_meta['node_application_root']);
         $this->assertSame('apps/mobile', $again['frontend']->fresh()->service_meta['node_backend_root']);
         $this->assertSame('apps/mobile', $again['frontend']->fresh()->service_meta['node_project_root']);
+        $this->assertSame('apps/api', $again['frontend']->fresh()->service_meta['sibling_application_root']);
     }
 
     public function test_it_does_not_split_when_frontend_is_none(): void

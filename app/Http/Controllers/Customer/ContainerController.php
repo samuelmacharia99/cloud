@@ -393,6 +393,9 @@ class ContainerController extends Controller
                         'node_detected_at' => $meta['node_detected_at'] ?? null,
                         'node_backend_root' => $meta['node_backend_root'] ?? null,
                         'node_frontend_root' => $meta['node_frontend_root'] ?? null,
+                        'node_application_root' => $meta['node_application_root'] ?? null,
+                        'node_project_root' => $meta['node_project_root'] ?? null,
+                        'sibling_application_root' => $meta['sibling_application_root'] ?? null,
                         'node_workloads' => $meta['node_workloads'] ?? null,
                         'node_release' => $meta['node_release'] ?? null,
                     ];
@@ -469,6 +472,9 @@ class ContainerController extends Controller
                     'node_detected_at',
                     'node_backend_root',
                     'node_frontend_root',
+                    'node_application_root',
+                    'node_project_root',
+                    'sibling_application_root',
                     'node_workloads',
                     'node_release',
                 ] as $key) {

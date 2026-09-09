@@ -60,9 +60,18 @@ class ContainerNodeWorkloadTopologyService
         }
 
         $meta = is_array($service->service_meta) ? $service->service_meta : [];
-        $rolePin = $this->projectRoleApplicationRoot($service, $ssh, $hostAppPath, $backendOverride);
-        if ($rolePin !== null) {
-            return $this->projectRoleTopology($service, $ssh, $hostAppPath, $rolePin);
+        $exclusive = app(ContainerExclusiveApplicationPin::class);
+        $exclusive->reconcilePair($service);
+        $role = $exclusive->role($service);
+        if ($role !== null) {
+            return $this->exclusiveRoleTopology(
+                $service,
+                $ssh,
+                $hostAppPath,
+                $role,
+                $backendOverride,
+                $exclusive,
+            );
         }
 
         $frontend = strtolower((string) ($meta['frontend'] ?? 'none'));
@@ -202,7 +211,7 @@ class ContainerNodeWorkloadTopologyService
         }
 
         $meta = is_array($service->service_meta) ? $service->service_meta : [];
-        if (self::projectWorkloadRoleFor($service) === 'frontend') {
+        if (app(ContainerExclusiveApplicationPin::class)->role($service) === ContainerExclusiveApplicationPin::ROLE_FRONTEND) {
             return false;
         }
         if (data_get($meta, 'node_workloads.topology') === 'split_web_api') {
@@ -218,14 +227,8 @@ class ContainerNodeWorkloadTopologyService
 
     public function isProjectFrontendContainer(Service $service): bool
     {
-        return self::projectWorkloadRoleFor($service) === 'frontend';
-    }
-
-    public function isReservedBackendRoot(string $root): bool
-    {
-        $root = trim($root, '/');
-
-        return $root !== '' && $root !== '.' && in_array($root, self::BACKEND_CANDIDATES, true);
+        return app(ContainerExclusiveApplicationPin::class)->role($service)
+            === ContainerExclusiveApplicationPin::ROLE_FRONTEND;
     }
 
     /**
@@ -237,13 +240,15 @@ class ContainerNodeWorkloadTopologyService
         $meta = is_array($service->service_meta) ? $service->service_meta : [];
         $meta['node_workloads'] = $topology;
         $backendRoot = data_get($topology, 'backend.root');
-        $role = $meta['project_role'] ?? null;
+        $exclusive = app(ContainerExclusiveApplicationPin::class)->isExclusive($service);
         if (is_string($backendRoot) && trim($backendRoot) !== '') {
-            if (in_array($role, ['frontend', 'backend'], true) || empty($meta['node_backend_root'])) {
+            if ($exclusive || empty($meta['node_backend_root'])) {
                 $meta['node_backend_root'] = $backendRoot;
             }
-            if (in_array($role, ['frontend', 'backend'], true)
-                && trim((string) ($meta['node_project_root'] ?? '')) === '') {
+            if ($exclusive) {
+                $meta['node_application_root'] = $backendRoot;
+                $meta['node_project_root'] = $backendRoot;
+            } elseif (empty($meta['node_project_root'])) {
                 $meta['node_project_root'] = $backendRoot;
             }
         }
@@ -268,124 +273,111 @@ class ContainerNodeWorkloadTopologyService
      */
     public function applyOperatorRootSelection(array $meta, array $validated): array
     {
-        $role = $meta['project_role'] ?? null;
-        $pinned = in_array($role, ['frontend', 'backend'], true);
-
-        foreach (['backend_root' => 'node_backend_root', 'frontend_root' => 'node_frontend_root'] as $input => $key) {
-            $value = trim((string) ($validated[$input] ?? ''));
-            if ($value !== '') {
-                $meta[$key] = $value;
-                if ($key === 'node_backend_root' && $pinned) {
-                    $meta['node_project_root'] = $value;
-                }
-
-                continue;
-            }
-
-            if ($key === 'node_backend_root' && $pinned) {
-                continue;
-            }
-
-            unset($meta[$key]);
-        }
-
-        if (($meta['frontend'] ?? 'none') === 'none') {
-            unset($meta['node_frontend_root']);
-        }
-        unset($meta['node_workloads']);
-
-        return $meta;
+        return app(ContainerExclusiveApplicationPin::class)
+            ->applyOperatorRootSelection($meta, $validated);
     }
 
     /**
-     * Exclusive application root for a project Web or API container.
-     * A Web container never builds apps/api even if that pin was corrupted.
+     * @return array<string, mixed>
      */
-    private function projectRoleApplicationRoot(
+    private function exclusiveRoleTopology(
         Service $service,
         SSHService $ssh,
         string $hostAppPath,
+        string $role,
         ?string $backendOverride,
+        ContainerExclusiveApplicationPin $pin,
+    ): array {
+        $stored = $pin->storedApplicationRoot($service, $backendOverride);
+        $root = $stored['root'];
+
+        if ($stored['state'] === 'conflict') {
+            throw new \DomainException($pin->conflictMessage($service, (string) $stored['rejected']));
+        }
+
+        if ($root === null) {
+            $root = $this->discoverExclusiveFirstRoot($service, $ssh, $hostAppPath, $role, $pin);
+        }
+
+        if ($root === null) {
+            throw new \DomainException($pin->missingMessage($service));
+        }
+
+        if (! $this->isPinnedApplicationAt($ssh, $hostAppPath, $root)) {
+            throw new \DomainException("The {$role} root '{$root}' is not a valid application.");
+        }
+
+        $sibling = $pin->sibling($service);
+        $siblingRoot = $sibling instanceof Service
+            ? $pin->storedApplicationRoot($sibling)['root']
+            : null;
+        $pin->rememberPair($service, $root, $sibling, is_string($siblingRoot) ? $siblingRoot : null);
+
+        return $this->projectRoleTopology($service, $ssh, $hostAppPath, $root, $role);
+    }
+
+    /**
+     * First provision of a split container may have a role and no pin yet.
+     * Discover one matching package. Never used to overwrite a sibling conflict.
+     */
+    private function discoverExclusiveFirstRoot(
+        Service $service,
+        SSHService $ssh,
+        string $hostAppPath,
+        string $role,
+        ContainerExclusiveApplicationPin $pin,
     ): ?string {
-        $role = self::projectWorkloadRoleFor($service);
-        if ($role === null) {
-            return null;
-        }
-
-        $meta = is_array($service->service_meta) ? $service->service_meta : [];
-        $named = [];
-        foreach ([$meta['node_project_root'] ?? null, $backendOverride, $meta['node_backend_root'] ?? null] as $candidate) {
-            if (is_string($candidate) && trim($candidate) !== '') {
-                $named[] = $this->sanitizeRelativeRoot($candidate);
+        $forbidden = [];
+        $sibling = $pin->sibling($service);
+        if ($sibling instanceof Service) {
+            $siblingRoot = $pin->storedApplicationRoot($sibling)['root'];
+            if (is_string($siblingRoot) && $siblingRoot !== '') {
+                $forbidden[] = $siblingRoot;
             }
         }
 
-        if ($role === 'frontend') {
-            foreach ($named as $root) {
-                if (! $this->isReservedBackendRoot($root) && $this->isPinnedApplicationAt($ssh, $hostAppPath, $root)) {
-                    return $root;
-                }
-            }
-
-            $discovered = $this->discoverPackageRoots($ssh, $hostAppPath);
+        $discovered = $this->discoverPackageRoots($ssh, $hostAppPath);
+        if ($role === ContainerExclusiveApplicationPin::ROLE_FRONTEND) {
+            $matches = [];
             foreach ($this->uniqueRoots([...self::FRONTEND_CANDIDATES, ...$discovered]) as $root) {
-                if ($this->isReservedBackendRoot($root) || ! $this->isPinnedApplicationAt($ssh, $hostAppPath, $root)) {
+                if (in_array($root, $forbidden, true)
+                    || ($root !== '.' && in_array($root, self::BACKEND_CANDIDATES, true))) {
                     continue;
                 }
                 $package = $this->packageAt($ssh, $hostAppPath, $root);
                 if ($package !== null && $this->explicitBrowserKind($package) !== null) {
-                    return $root;
+                    $matches[] = $root;
                 }
             }
-
-            foreach ($named as $root) {
-                if ($this->isPinnedApplicationAt($ssh, $hostAppPath, $root)) {
-                    return $root;
-                }
+            if (count($matches) === 1) {
+                return $matches[0];
+            }
+            if (count($matches) > 1) {
+                throw new \DomainException(
+                    'Multiple frontend applications were detected ('.implode(', ', $matches)
+                    .'). Choose the intended directory in Advanced roots.'
+                );
             }
 
-            throw new \DomainException(
-                'This Web container has no application directory pinned. Set the frontend directory (for example apps/mobile) and retry deploy.'
-            );
+            return null;
         }
 
-        foreach ($named as $root) {
-            if (! in_array($root, self::FRONTEND_CANDIDATES, true)
-                && $this->isPinnedApplicationAt($ssh, $hostAppPath, $root)) {
-                return $root;
-            }
-        }
+        $framework = (string) ((is_array($service->service_meta) ? $service->service_meta['framework'] ?? 'other' : 'other'));
+        $slug = strtolower((string) ($service->effectiveContainerTemplate()?->slug ?? 'nodejs'));
 
-        throw new \DomainException(
-            'This API container has no application directory pinned. Set the backend directory (for example apps/api) and retry deploy.'
+        return $this->resolveRoot(
+            $ssh,
+            $hostAppPath,
+            'backend',
+            null,
+            array_values(array_filter(
+                $this->uniqueRoots([...self::BACKEND_CANDIDATES, ...$this->discoverBackendRoots($ssh, $hostAppPath), ...$discovered]),
+                fn (string $root): bool => ! in_array($root, $forbidden, true),
+            )),
+            fn (string $root): bool => $this->isBackendAt($ssh, $hostAppPath, $root, $slug, $framework)
+                || $this->isPinnedApplicationAt($ssh, $hostAppPath, $root),
+            required: false,
         );
-    }
-
-    private static function projectWorkloadRoleFor(Service $service): ?string
-    {
-        $meta = is_array($service->service_meta) ? $service->service_meta : [];
-        $role = $meta['project_role'] ?? null;
-        if (in_array($role, ['frontend', 'backend'], true)) {
-            return $role;
-        }
-
-        $label = strtolower(trim((string) ($meta['project_role_label'] ?? '')));
-        if ($label === 'web') {
-            return 'frontend';
-        }
-        if ($label === 'api') {
-            return 'backend';
-        }
-
-        $name = strtolower(trim((string) $service->name));
-        if (str_ends_with($name, '-web') || str_ends_with($name, '_web')) {
-            return 'frontend';
-        }
-        if (str_ends_with($name, '-api') || str_ends_with($name, '_api')) {
-            return 'backend';
-        }
-
-        return null;
     }
 
     /**
@@ -396,9 +388,10 @@ class ContainerNodeWorkloadTopologyService
         SSHService $ssh,
         string $hostAppPath,
         string $root,
+        ?string $role = null,
     ): array {
         $meta = is_array($service->service_meta) ? $service->service_meta : [];
-        $role = (string) ($meta['project_role'] ?? '');
+        $role = $role ?? (string) ($meta['project_role'] ?? 'application');
         if (! $this->isPinnedApplicationAt($ssh, $hostAppPath, $root)) {
             throw new \DomainException("The {$role} root '{$root}' is not a valid application.");
         }

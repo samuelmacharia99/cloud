@@ -284,6 +284,9 @@ class ContainerGitRepositoryService
                         'node_workloads' => $meta['node_workloads'] ?? null,
                         'node_backend_root' => $meta['node_backend_root'] ?? null,
                         'node_frontend_root' => $meta['node_frontend_root'] ?? null,
+                        'node_application_root' => $meta['node_application_root'] ?? null,
+                        'node_project_root' => $meta['node_project_root'] ?? null,
+                        'sibling_application_root' => $meta['sibling_application_root'] ?? null,
                     ],
                 ]);
                 $this->runPullStep($pull, 'runtime_version', function () use ($service, $deployment, $ssh, $hostAppPath) {
@@ -1300,6 +1303,9 @@ class ContainerGitRepositoryService
                     'node_workloads',
                     'node_backend_root',
                     'node_frontend_root',
+                    'node_application_root',
+                    'node_project_root',
+                    'sibling_application_root',
                 ] as $key) {
                     if (array_key_exists($key, $nodeVersionState) && $nodeVersionState[$key] !== null) {
                         $meta[$key] = $nodeVersionState[$key];

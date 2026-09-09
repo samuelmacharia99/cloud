@@ -62,7 +62,7 @@ class ProjectNodeWebSplitService
                 $frontend = $this->restoreFrontendPin($frontend, $frontendRoot);
             }
 
-            $this->promoteApiService($service, $project, $frontend);
+            $this->promoteApiService($service, $project, $frontend, $frontendRoot);
 
             return ['created' => $created, 'frontend' => $frontend];
         });
@@ -144,6 +144,7 @@ class ProjectNodeWebSplitService
         $meta['project_role'] = 'frontend';
         $meta['project_role_label'] = $meta['project_role_label'] ?? 'Web';
         $meta['frontend'] = 'none';
+        $meta['node_application_root'] = $frontendRoot;
         $meta['node_backend_root'] = $frontendRoot;
         $meta['node_project_root'] = $frontendRoot;
         unset($meta['node_frontend_root'], $meta['node_workloads']);
@@ -173,6 +174,7 @@ class ProjectNodeWebSplitService
             'application_stack' => 'Node.js Application',
             'deployment_platform' => 'container',
             'provision_template_slug' => 'nodejs',
+            'node_application_root' => $frontendRoot,
             'node_backend_root' => $frontendRoot,
             'node_project_root' => $frontendRoot,
             'node_version_source' => $apiMeta['node_version_source'] ?? 'manual',
@@ -214,7 +216,7 @@ class ProjectNodeWebSplitService
         ]);
     }
 
-    private function promoteApiService(Service $api, CustomerProject $project, Service $frontend): void
+    private function promoteApiService(Service $api, CustomerProject $project, Service $frontend, string $frontendRoot): void
     {
         $meta = is_array($api->service_meta) ? $api->service_meta : [];
         $slug = $this->recipes->projectSlug($project->name);
@@ -231,11 +233,24 @@ class ProjectNodeWebSplitService
             'cpu' => 0.55,
             'memory' => 0.55,
         ];
+        $apiRoot = trim((string) ($meta['node_application_root'] ?? $meta['node_backend_root'] ?? ''));
+        if ($apiRoot !== '') {
+            $meta['node_application_root'] = $apiRoot;
+            $meta['node_project_root'] = $apiRoot;
+            $meta['node_backend_root'] = $apiRoot;
+        }
+        $meta['sibling_application_root'] = $frontendRoot;
         unset($meta['node_frontend_root'], $meta['node_workloads']);
 
         $frontendMeta = is_array($frontend->service_meta) ? $frontend->service_meta : [];
         $frontendMeta['backend_service_id'] = $api->id;
         $frontendMeta['sibling_service_id'] = $api->id;
+        if ($apiRoot !== '') {
+            $frontendMeta['sibling_application_root'] = $apiRoot;
+        }
+        $frontendMeta['node_application_root'] = $frontendRoot;
+        $frontendMeta['node_project_root'] = $frontendRoot;
+        $frontendMeta['node_backend_root'] = $frontendRoot;
         $frontend->update(['service_meta' => $frontendMeta]);
 
         $payload = [

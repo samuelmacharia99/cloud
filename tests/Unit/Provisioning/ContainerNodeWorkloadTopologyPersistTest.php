@@ -97,6 +97,7 @@ class ContainerNodeWorkloadTopologyPersistTest extends TestCase
                 'project_role' => 'frontend',
                 'frontend' => 'none',
                 'node_backend_root' => 'apps/api',
+                'node_application_root' => 'apps/mobile',
                 'node_project_root' => 'apps/mobile',
             ],
         ]);
@@ -111,6 +112,7 @@ class ContainerNodeWorkloadTopologyPersistTest extends TestCase
 
         $service->refresh();
         $this->assertSame('apps/mobile', $service->service_meta['node_backend_root']);
+        $this->assertSame('apps/mobile', $service->service_meta['node_application_root']);
         $this->assertSame('apps/mobile', $service->service_meta['node_project_root']);
         $this->assertArrayNotHasKey('node_frontend_root', $service->service_meta);
     }

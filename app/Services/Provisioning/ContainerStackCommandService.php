@@ -231,17 +231,15 @@ class ContainerStackCommandService
         string $requested,
     ): string {
         $meta = is_array($service->service_meta) ? $service->service_meta : [];
-        try {
-            $topology = app(ContainerNodeWorkloadTopologyService::class)->resolve(
-                $service,
-                $ssh,
-                $hostAppPath,
-                is_string($meta['node_backend_root'] ?? null) ? $meta['node_backend_root'] : null,
-                is_string($meta['node_frontend_root'] ?? null) ? $meta['node_frontend_root'] : null,
-            );
-        } catch (\DomainException) {
-            return trim($requested, '/');
-        }
+        $topology = app(ContainerNodeWorkloadTopologyService::class)->resolve(
+            $service,
+            $ssh,
+            $hostAppPath,
+            is_string($meta['node_application_root'] ?? null) ? $meta['node_application_root'] : (
+                is_string($meta['node_backend_root'] ?? null) ? $meta['node_backend_root'] : null
+            ),
+            is_string($meta['node_frontend_root'] ?? null) ? $meta['node_frontend_root'] : null,
+        );
 
         $pinned = trim((string) data_get($topology, 'backend.root', ''), '/');
         if ($pinned !== '' && $pinned !== '.') {
