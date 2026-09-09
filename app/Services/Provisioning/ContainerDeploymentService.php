@@ -7296,6 +7296,11 @@ class ContainerDeploymentService
         $this->reattachAndRebindDomains($service, $latestDeployment);
     }
 
+    public function rebindDeploymentDomainsStrict(Service $service, ContainerDeployment $latestDeployment): void
+    {
+        $this->reattachAndRebindDomains($service, $latestDeployment, true);
+    }
+
     private function reattachAndBindPrimaryDomains(Service $service, ContainerDeployment $latestDeployment): void
     {
         $this->reattachAndRebindDomains($service, $latestDeployment);
@@ -7313,8 +7318,11 @@ class ContainerDeploymentService
         }
     }
 
-    private function reattachAndRebindDomains(Service $service, ContainerDeployment $latestDeployment): void
-    {
+    private function reattachAndRebindDomains(
+        Service $service,
+        ContainerDeployment $latestDeployment,
+        bool $throwOnFailure = false,
+    ): void {
         try {
             $domains = ContainerDomain::whereHas('deployment', function ($query) use ($service) {
                 $query->where('service_id', $service->id);
@@ -7335,6 +7343,9 @@ class ContainerDeploymentService
                     try {
                         $nginxService->bind($domain->fresh());
                     } catch (\Throwable $domainError) {
+                        if ($throwOnFailure) {
+                            throw $domainError;
+                        }
                         \Log::warning('Failed to rebind container domain after redeploy', [
                             'service_id' => $service->id,
                             'domain' => $domain->domain,
@@ -7349,6 +7360,9 @@ class ContainerDeploymentService
                 'containerDeployment.domains',
             ]));
         } catch (\Throwable $e) {
+            if ($throwOnFailure) {
+                throw $e;
+            }
             \Log::warning('Failed to reattach domains to latest deployment', [
                 'service_id' => $service->id,
                 'deployment_id' => $latestDeployment->id,

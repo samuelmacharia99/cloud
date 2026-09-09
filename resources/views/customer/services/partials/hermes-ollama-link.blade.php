@@ -40,7 +40,7 @@
             @else
                 <form
                     method="POST"
-                    action="{{ route('customer.services.container.hermes.ollama.connect', $service) }}"
+                    action="{{ container_route('hermes.ollama.connect', $service) }}"
                     class="mt-4 flex flex-col sm:flex-row sm:items-end gap-3"
                     data-confirm="Hermes needs a 64K-context model. Mistral 7B cannot be used. If llama3.1:8b is not pulled yet, Connect will tell you to pull it first. Ollama may restart, then Hermes restarts (brief downtime). Open a new Chat session after connecting."
                     data-confirm-title="Connect Ollama"

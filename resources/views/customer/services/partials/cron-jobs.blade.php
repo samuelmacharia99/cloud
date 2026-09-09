@@ -83,7 +83,7 @@
                                     @unless ($job->is_system)
                                     <details class="inline-block text-left">
                                         <summary class="cursor-pointer text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline">Edit</summary>
-                                        <form method="POST" action="{{ route('customer.services.container.cron-jobs.update', [$service, $job]) }}" class="mt-3 p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 space-y-3 min-w-[18rem]">
+                                        <form method="POST" action="{{ container_route('cron-jobs.update', $service, $job) }}" class="mt-3 p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 space-y-3 min-w-[18rem]">
                                             @csrf
                                             @method('PUT')
                                             <div>
@@ -105,7 +105,7 @@
                                             <button type="submit" class="w-full px-3 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white">Save changes</button>
                                         </form>
                                     </details>
-                                    <form method="POST" action="{{ route('customer.services.container.cron-jobs.delete', [$service, $job]) }}" class="inline-block ml-2" data-confirm="Delete this cron job?">
+                                    <form method="POST" action="{{ container_route('cron-jobs.delete', $service, $job) }}" class="inline-block ml-2" data-confirm="Delete this cron job?">
                                         @csrf
                                         @method('DELETE')
                                         <button type="submit" class="text-xs font-medium text-red-600 dark:text-red-400 hover:underline">Delete</button>
@@ -125,7 +125,7 @@
     </div>
 
     @if ($customerCronJobCount < config('containers.cron.max_jobs_per_service', 20))
-        <form method="POST" action="{{ route('customer.services.container.cron-jobs.store', $service) }}" class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-5 space-y-4">
+        <form method="POST" action="{{ container_route('cron-jobs.store', $service) }}" class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-5 space-y-4">
             @csrf
             <h4 class="text-sm font-semibold text-slate-900 dark:text-white">Add cron job</h4>
 

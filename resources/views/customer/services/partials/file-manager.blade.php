@@ -196,7 +196,7 @@ function fileManager() {
             this.error = null;
 
             try {
-                const response = await fetch(`{{ route('customer.services.container.files.index', $service->id) }}?path=${encodeURIComponent(this.currentPath)}`, {
+                const response = await fetch(`{{ container_route('files.index', $service->id) }}?path=${encodeURIComponent(this.currentPath)}`, {
                     headers: {
                         'X-CSRF-TOKEN': document.head.querySelector('meta[name="csrf-token"]').content
                     }
@@ -257,7 +257,7 @@ function fileManager() {
             this.error = null;
 
             try {
-                const response = await fetch(`{{ route('customer.services.container.files.content', $service->id) }}?path=${encodeURIComponent(path)}`, {
+                const response = await fetch(`{{ container_route('files.content', $service->id) }}?path=${encodeURIComponent(path)}`, {
                     headers: {
                         'Accept': 'application/json',
                         'X-CSRF-TOKEN': document.head.querySelector('meta[name="csrf-token"]').content,
@@ -289,7 +289,7 @@ function fileManager() {
             this.error = null;
 
             try {
-                const response = await fetch(`{{ route('customer.services.container.files.save', $service->id) }}`, {
+                const response = await fetch(`{{ container_route('files.save', $service->id) }}`, {
                     method: 'PUT',
                     headers: {
                         'Content-Type': 'application/json',
@@ -337,7 +337,7 @@ function fileManager() {
             const path = this.joinPath(this.currentPath, name.trim());
 
             try {
-                const response = await fetch(`{{ route('customer.services.container.files.mkdir', $service->id) }}`, {
+                const response = await fetch(`{{ container_route('files.mkdir', $service->id) }}`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -370,7 +370,7 @@ function fileManager() {
             const path = this.joinPath(this.currentPath, trimmed);
 
             try {
-                const response = await fetch(`{{ route('customer.services.container.files.create', $service->id) }}`, {
+                const response = await fetch(`{{ container_route('files.create', $service->id) }}`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -413,7 +413,7 @@ function fileManager() {
             const path = this.joinPath(this.currentPath, name);
 
             try {
-                const response = await fetch(`{{ route('customer.services.container.files.rename', $service->id) }}`, {
+                const response = await fetch(`{{ container_route('files.rename', $service->id) }}`, {
                     method: 'PATCH',
                     headers: {
                         'Content-Type': 'application/json',
@@ -485,7 +485,7 @@ function fileManager() {
                     });
 
                     xhr.addEventListener('error', () => reject(new Error('Upload failed')));
-                    xhr.open('POST', `{{ route('customer.services.container.files.upload', $service->id) }}`);
+                    xhr.open('POST', `{{ container_route('files.upload', $service->id) }}`);
                     xhr.setRequestHeader('X-CSRF-TOKEN', document.head.querySelector('meta[name="csrf-token"]').content);
                     xhr.send(formData);
                 });
@@ -501,7 +501,7 @@ function fileManager() {
 
         async downloadFile(name) {
             const path = this.joinPath(this.currentPath, name);
-            const url = new URL(`{{ route('customer.services.container.files.download', $service->id) }}`, window.location);
+            const url = new URL(`{{ container_route('files.download', $service->id) }}`, window.location);
             url.searchParams.append('path', path);
 
             const a = document.createElement('a');
@@ -516,7 +516,7 @@ function fileManager() {
             const path = this.joinPath(this.currentPath, name);
 
             try {
-                const response = await fetch(`{{ route('customer.services.container.files.delete', $service->id) }}`, {
+                const response = await fetch(`{{ container_route('files.delete', $service->id) }}`, {
                     method: 'DELETE',
                     headers: {
                         'Content-Type': 'application/json',

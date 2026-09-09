@@ -400,7 +400,7 @@ function containerDashboard() {
             this.loading = true;
 
             try {
-                const response = await fetch(`{{ route('customer.services.container.metrics', $service->id) }}?hours=${hours}`, {
+                const response = await fetch(`{{ container_route('metrics', $service->id) }}?hours=${hours}`, {
                     headers: { 'X-CSRF-TOKEN': document.head.querySelector('meta[name="csrf-token"]').content }
                 });
 
@@ -429,7 +429,7 @@ function containerDashboard() {
             this.healthLoading = true;
 
             try {
-                const response = await fetch(`{{ route('customer.services.container.health', $service->id) }}`, {
+                const response = await fetch(`{{ container_route('health', $service->id) }}`, {
                     headers: { 'X-CSRF-TOKEN': document.head.querySelector('meta[name="csrf-token"]').content }
                 });
 
@@ -445,7 +445,7 @@ function containerDashboard() {
 
         async loadStorageStats() {
             try {
-                const response = await fetch(`{{ route('customer.services.container.storage-stats', $service->id) }}`, {
+                const response = await fetch(`{{ container_route('storage-stats', $service->id) }}`, {
                     headers: { 'X-CSRF-TOKEN': document.head.querySelector('meta[name="csrf-token"]').content }
                 });
 
@@ -465,7 +465,7 @@ function containerDashboard() {
             this.logsLoading = true;
 
             try {
-                const response = await fetch(`{{ route('customer.services.container.logs', $service) }}`);
+                const response = await fetch(`{{ container_route('logs', $service) }}`);
                 const data = await response.json();
 
                 if (data.error) {

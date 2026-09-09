@@ -64,7 +64,7 @@ class ContainerController extends Controller
      */
     public function show(Service $service): View|RedirectResponse
     {
-        abort_if($service->user_id !== auth()->id(), 403);
+        $this->authorize('manageContainer', $service);
 
         if ($invoice = $service->unpaidActivationInvoice()) {
             return redirect()->route('customer.payment.select-method', $invoice)
@@ -86,12 +86,22 @@ class ContainerController extends Controller
             abort(404);
         }
 
-        $service->load('containerDeployment', 'product.containerTemplate');
+        return view('customer.services.container', $this->consoleViewData($service));
+    }
+
+    /**
+     * Shared application-console payload for customer and admin service pages.
+     *
+     * @return array<string, mixed>
+     */
+    public function consoleViewData(Service $service, bool $probeStatus = true): array
+    {
+        $service->loadMissing('containerDeployment', 'product.containerTemplate');
 
         $deployment = $service->containerDeployment;
         $status = null;
 
-        if ($deployment) {
+        if ($probeStatus && $deployment) {
             $containerService = app(ContainerDeploymentService::class);
             try {
                 $status = $containerService->getStatus($service);
@@ -138,10 +148,14 @@ class ContainerController extends Controller
                 'has_composer_auth' => $gitCredentialsService->hasComposerAuth($service),
             ]
         ) : null;
-        $containerLimits = $service->product->getIncludedContainerLimits(
-            $resolvedTemplate ?? $service->product->containerTemplate,
+        $containerLimits = $service->product?->getIncludedContainerLimits(
+            $resolvedTemplate ?? $service->product?->containerTemplate,
             $deployment
-        );
+        ) ?? [
+            'cpu' => (float) ($resolvedTemplate?->required_cpu_cores ?? $deployment?->cpu_limit ?? 0),
+            'memory_mb' => (int) ($resolvedTemplate?->required_ram_mb ?? $deployment?->memory_limit_mb ?? 0),
+            'disk_gb' => (float) ($resolvedTemplate?->required_storage_gb ?? 0),
+        ];
         $dbImportMaxMb = (int) config('security.container_db_import.max_size_mb', 100);
         $dbImportPhpLimitLabel = app(ContainerSqlDumpImportService::class)->phpUploadLimitLabel();
 
@@ -195,35 +209,35 @@ class ContainerController extends Controller
             }
         }
 
-        return view('customer.services.container', compact(
-            'service',
-            'deployment',
-            'status',
-            'databaseContext',
-            'databaseConsoleEnabled',
-            'isLaravelTemplate',
-            'templateSlug',
-            'supportsPhpExtensions',
-            'phpExtensionsPanel',
-            'supportsOllamaChat',
-            'ollamaChatPanel',
-            'hermesDashboardPanel',
-            'hermesOllamaLinkPanel',
-            'supportsGitRepository',
-            'gitRepository',
-            'containerLimits',
-            'dbImportMaxMb',
-            'dbImportPhpLimitLabel',
-            'latestBackup',
-            'domainCount',
-            'domainsMissingSsl',
-            'containerCronJobs',
-            'environmentPanel',
-            'autoDeployPanel',
-            'stagingPanel',
-            'scheduledBackupDue',
-            'redeployStackOptions',
-        ));
+        return [
+            'service' => $service,
+            'deployment' => $deployment,
+            'status' => $status,
+            'databaseContext' => $databaseContext,
+            'databaseConsoleEnabled' => $databaseConsoleEnabled,
+            'isLaravelTemplate' => $isLaravelTemplate,
+            'templateSlug' => $templateSlug,
+            'supportsPhpExtensions' => $supportsPhpExtensions,
+            'phpExtensionsPanel' => $phpExtensionsPanel,
+            'supportsOllamaChat' => $supportsOllamaChat,
+            'ollamaChatPanel' => $ollamaChatPanel,
+            'hermesDashboardPanel' => $hermesDashboardPanel,
+            'hermesOllamaLinkPanel' => $hermesOllamaLinkPanel,
+            'supportsGitRepository' => $supportsGitRepository,
+            'gitRepository' => $gitRepository,
+            'containerLimits' => $containerLimits,
+            'dbImportMaxMb' => $dbImportMaxMb,
+            'dbImportPhpLimitLabel' => $dbImportPhpLimitLabel,
+            'latestBackup' => $latestBackup,
+            'domainCount' => $domainCount,
+            'domainsMissingSsl' => $domainsMissingSsl,
+            'containerCronJobs' => $containerCronJobs,
+            'environmentPanel' => $environmentPanel,
+            'autoDeployPanel' => $autoDeployPanel,
+            'stagingPanel' => $stagingPanel,
+            'scheduledBackupDue' => $scheduledBackupDue,
+            'redeployStackOptions' => $redeployStackOptions,
+        ];
     }
 
     /**
@@ -231,7 +245,7 @@ class ContainerController extends Controller
      */
     public function restart(Service $service): RedirectResponse
     {
-        abort_if($service->user_id !== auth()->id(), 403);
+        $this->authorize('manageContainer', $service);
 
         try {
             if ($service->product?->type !== 'container_hosting') {
@@ -264,7 +278,7 @@ class ContainerController extends Controller
      */
     public function stop(Service $service): RedirectResponse
     {
-        abort_if($service->user_id !== auth()->id(), 403);
+        $this->authorize('manageContainer', $service);
 
         try {
             if ($service->product?->type !== 'container_hosting') {
@@ -297,7 +311,7 @@ class ContainerController extends Controller
      */
     public function start(Service $service): RedirectResponse
     {
-        abort_if($service->user_id !== auth()->id(), 403);
+        $this->authorize('manageContainer', $service);
 
         try {
             if ($service->product?->type !== 'container_hosting') {
@@ -453,7 +467,7 @@ class ContainerController extends Controller
 
     public function initializeLaravel(Service $service, LaravelAppInitializationService $initializationService): RedirectResponse
     {
-        abort_if($service->user_id !== auth()->id(), 403);
+        $this->authorize('manageContainer', $service);
 
         try {
             if (($service->product?->containerTemplate?->slug ?? '') !== 'laravel') {
@@ -480,7 +494,7 @@ class ContainerController extends Controller
 
     public function clearAppDirectory(Service $service, LaravelAppInitializationService $initializationService): RedirectResponse
     {
-        abort_if($service->user_id !== auth()->id(), 403);
+        $this->authorize('manageContainer', $service);
 
         try {
             if (($service->product?->containerTemplate?->slug ?? '') !== 'laravel') {
@@ -501,7 +515,7 @@ class ContainerController extends Controller
 
     public function laravelSetupStatus(Service $service, LaravelAppInitializationService $initializationService): JsonResponse
     {
-        abort_if($service->user_id !== auth()->id(), 403);
+        $this->authorize('manageContainer', $service);
 
         if (($service->product?->containerTemplate?->slug ?? '') !== 'laravel') {
             return response()->json(['error' => 'Not a Laravel container service'], 400);
@@ -529,7 +543,7 @@ class ContainerController extends Controller
         UpdateContainerPhpExtensionsRequest $request,
         ContainerPhpExtensionsService $phpExtensionsService
     ): RedirectResponse|JsonResponse {
-        abort_if($service->user_id !== auth()->id(), 403);
+        $this->authorize('manageContainer', $service);
 
         $wantsJson = $request->expectsJson();
         $templateSlug = $service->effectiveContainerTemplate()?->slug;
@@ -562,8 +576,7 @@ class ContainerController extends Controller
                 return response()->json($result);
             }
 
-            return redirect()
-                ->route('customer.services.container.show', ['service' => $service, 'tab' => 'php-extensions'])
+            return $this->consoleTabRedirect($service, 'php-extensions')
                 ->with('success', $result['message']);
         } catch (\DomainException|\InvalidArgumentException $e) {
             return $wantsJson
@@ -599,7 +612,6 @@ class ContainerController extends Controller
         Service $service,
         ContainerOllamaModelService $ollamaModels,
     ): JsonResponse {
-        abort_if($service->user_id !== auth()->id(), 403);
         $this->authorize('manageContainer', $service);
 
         if (! $ollamaModels->supportsService($service)) {
@@ -639,7 +651,6 @@ class ContainerController extends Controller
         Service $service,
         ContainerOllamaModelService $ollamaModels,
     ): JsonResponse {
-        abort_if($service->user_id !== auth()->id(), 403);
         $this->authorize('manageContainer', $service);
 
         if (! $ollamaModels->supportsService($service)) {
@@ -715,7 +726,6 @@ class ContainerController extends Controller
         Service $service,
         ContainerHermesOllamaLinkService $link,
     ): RedirectResponse {
-        abort_if($service->user_id !== auth()->id(), 403);
         $this->authorize('manageContainer', $service);
 
         if (! $link->supportsHermes($service)) {
@@ -762,7 +772,7 @@ class ContainerController extends Controller
         UpdateContainerGitRepositoryRequest $request,
         ContainerGitRepositoryService $gitRepositoryService
     ): RedirectResponse {
-        abort_if($service->user_id !== auth()->id(), 403);
+        $this->authorize('manageContainer', $service);
 
         if (! $gitRepositoryService->supportsService($service)) {
             return back()->withErrors(['error' => 'Git repository connections are not supported for this container type.']);
@@ -779,8 +789,7 @@ class ContainerController extends Controller
                 $request->boolean('remove_composer_auth'),
             );
 
-            return redirect()
-                ->route('customer.services.container.show', ['service' => $service, 'tab' => 'github'])
+            return $this->consoleTabRedirect($service, 'github')
                 ->with('success', 'Git repository saved. Use Pull latest to sync code into /app.');
         } catch (\DomainException|\InvalidArgumentException $e) {
             return back()->withErrors(['error' => $e->getMessage()]);
@@ -796,7 +805,7 @@ class ContainerController extends Controller
         PullContainerGitRepositoryRequest $request,
         ContainerGitRepositoryService $gitRepositoryService
     ): RedirectResponse|JsonResponse {
-        abort_if($service->user_id !== auth()->id(), 403);
+        $this->authorize('manageContainer', $service);
 
         if (! $gitRepositoryService->supportsService($service)) {
             if ($request->expectsJson()) {
@@ -834,8 +843,7 @@ class ContainerController extends Controller
                 ]);
             }
 
-            return redirect()
-                ->route('customer.services.container.show', ['service' => $service, 'tab' => 'github'])
+            return $this->consoleTabRedirect($service, 'github')
                 ->with('success', 'Git pull started. Progress updates appear below.');
         } catch (\DomainException|\InvalidArgumentException $e) {
             if ($request->expectsJson()) {
@@ -858,7 +866,6 @@ class ContainerController extends Controller
         Service $service,
         ContainerGitRepositoryService $gitRepositoryService
     ): RedirectResponse|JsonResponse {
-        abort_if($service->user_id !== auth()->id(), 403);
         $this->authorize('manageContainer', $service);
 
         if (! $gitRepositoryService->supportsService($service)) {
@@ -888,8 +895,7 @@ class ContainerController extends Controller
             ]);
         }
 
-        return redirect()
-            ->route('customer.services.container.show', ['service' => $service, 'tab' => 'github'])
+        return $this->consoleTabRedirect($service, 'github')
             ->with('success', 'Git pull cancelled. You can start a new pull when ready.');
     }
 
@@ -898,7 +904,6 @@ class ContainerController extends Controller
         PullContainerGitRepositoryRequest $request,
         ContainerGitRepositoryService $gitRepositoryService
     ): RedirectResponse|JsonResponse {
-        abort_if($service->user_id !== auth()->id(), 403);
         $this->authorize('manageContainer', $service);
 
         if (! $gitRepositoryService->supportsService($service)) {
@@ -937,8 +942,7 @@ class ContainerController extends Controller
                 ]);
             }
 
-            return redirect()
-                ->route('customer.services.container.show', ['service' => $service, 'tab' => 'github'])
+            return $this->consoleTabRedirect($service, 'github')
                 ->with('success', 'Git pull restarted. Progress updates appear below.');
         } catch (\DomainException|\InvalidArgumentException $e) {
             if ($request->expectsJson()) {
@@ -959,7 +963,7 @@ class ContainerController extends Controller
 
     public function gitPullStatus(Service $service, ContainerGitRepositoryService $gitRepositoryService): JsonResponse
     {
-        abort_if($service->user_id !== auth()->id(), 403);
+        $this->authorize('manageContainer', $service);
 
         if (! $gitRepositoryService->supportsService($service)) {
             return response()->json(['error' => 'Git repository pulls are not supported for this container type.'], 400);
@@ -1098,7 +1102,7 @@ class ContainerController extends Controller
      */
     public function databaseQuery(Service $service, Request $request): JsonResponse
     {
-        abort_if($service->user_id !== auth()->id(), 403);
+        $this->authorize('manageContainer', $service);
 
         $validated = $request->validate([
             'query' => 'required|string|max:2000',
@@ -1178,7 +1182,7 @@ class ContainerController extends Controller
 
     public function databaseImport(Service $service, ImportContainerDatabaseRequest $request): JsonResponse
     {
-        abort_if($service->user_id !== auth()->id(), 403);
+        $this->authorize('manageContainer', $service);
 
         if (! $this->isDatabaseConsoleEnabled()) {
             return response()->json(['error' => 'Database console is disabled by administrator'], 403);
@@ -1278,7 +1282,7 @@ class ContainerController extends Controller
 
     public function databaseHistory(Service $service): JsonResponse
     {
-        abort_if($service->user_id !== auth()->id(), 403);
+        $this->authorize('manageContainer', $service);
 
         if (! $this->isDatabaseConsoleEnabled()) {
             return response()->json(['error' => 'Database console is disabled by administrator'], 403);
@@ -1305,7 +1309,7 @@ class ContainerController extends Controller
 
     public function databaseTestConnection(Service $service): JsonResponse
     {
-        abort_if($service->user_id !== auth()->id(), 403);
+        $this->authorize('manageContainer', $service);
 
         if ($service->product?->type !== 'container_hosting') {
             return response()->json(['error' => 'Invalid service type'], 400);
@@ -1366,7 +1370,7 @@ class ContainerController extends Controller
 
     public function databaseSyncCredentials(Service $service): JsonResponse
     {
-        abort_if($service->user_id !== auth()->id(), 403);
+        $this->authorize('manageContainer', $service);
 
         if ($service->product?->type !== 'container_hosting') {
             return response()->json(['success' => false, 'message' => 'Invalid service type.'], 400);
@@ -1488,7 +1492,7 @@ class ContainerController extends Controller
      */
     public function logs(Service $service): JsonResponse
     {
-        abort_if($service->user_id !== auth()->id(), 403);
+        $this->authorize('manageContainer', $service);
 
         try {
             if ($service->product?->type !== 'container_hosting') {
@@ -1498,7 +1502,7 @@ class ContainerController extends Controller
             $lines = (int) request()->query('lines', 200);
             $lines = max(50, min(1000, $lines));
 
-            $containerService = new ContainerDeploymentService;
+            $containerService = app(ContainerDeploymentService::class);
             $logs = $containerService->getLogs($service, $lines);
 
             return response()->json([
@@ -1517,7 +1521,7 @@ class ContainerController extends Controller
      */
     public function doctorDiagnose(Service $service, ContainerDoctorService $doctor): JsonResponse
     {
-        abort_if($service->user_id !== auth()->id(), 403);
+        $this->authorize('manageContainer', $service);
 
         if ($service->product?->type !== 'container_hosting') {
             return response()->json(['error' => 'Invalid service type'], 400);
@@ -1540,7 +1544,7 @@ class ContainerController extends Controller
      */
     public function doctorTreat(Service $service, Request $request, ContainerDoctorService $doctor): JsonResponse
     {
-        abort_if($service->user_id !== auth()->id(), 403);
+        $this->authorize('manageContainer', $service);
 
         if ($service->product?->type !== 'container_hosting') {
             return response()->json(['success' => false, 'message' => 'Invalid service type'], 400);
@@ -1569,7 +1573,7 @@ class ContainerController extends Controller
      */
     public function metrics(Service $service, Request $request): JsonResponse
     {
-        abort_if($service->user_id !== auth()->id(), 403);
+        $this->authorize('manageContainer', $service);
 
         try {
             if ($service->product?->type !== 'container_hosting') {
@@ -1654,7 +1658,7 @@ class ContainerController extends Controller
      */
     public function storageStats(Service $service): JsonResponse
     {
-        abort_if($service->user_id !== auth()->id(), 403);
+        $this->authorize('manageContainer', $service);
 
         try {
             if ($service->product?->type !== 'container_hosting') {
@@ -1955,7 +1959,7 @@ class ContainerController extends Controller
      */
     public function health(Service $service): JsonResponse
     {
-        abort_if($service->user_id !== auth()->id(), 403);
+        $this->authorize('manageContainer', $service);
 
         if ($service->product?->type !== 'container_hosting') {
             return response()->json(['error' => 'Invalid service type'], 400);
@@ -2102,7 +2106,7 @@ class ContainerController extends Controller
      */
     public function bindDomain(Service $service, Request $request): RedirectResponse
     {
-        abort_if($service->user_id !== auth()->id(), 403);
+        $this->authorize('manageContainer', $service);
 
         try {
             if ($service->product?->type !== 'container_hosting') {
@@ -2154,7 +2158,7 @@ class ContainerController extends Controller
      */
     public function updateDomain(Service $service, ContainerDomain $domain, Request $request): RedirectResponse
     {
-        abort_if($service->user_id !== auth()->id(), 403);
+        $this->authorize('manageContainer', $service);
 
         if ($response = $this->assertContainerDomainOwnership($service, $domain)) {
             return $response;
@@ -2227,7 +2231,7 @@ class ContainerController extends Controller
      */
     public function unbindDomain(Service $service, ContainerDomain $domain): RedirectResponse
     {
-        abort_if($service->user_id !== auth()->id(), 403);
+        $this->authorize('manageContainer', $service);
 
         if ($response = $this->assertContainerDomainOwnership($service, $domain)) {
             return $response;
@@ -2252,7 +2256,7 @@ class ContainerController extends Controller
      */
     public function enableSsl(Service $service, ContainerDomain $domain): RedirectResponse
     {
-        abort_if($service->user_id !== auth()->id(), 403);
+        $this->authorize('manageContainer', $service);
 
         if ($response = $this->assertContainerDomainOwnership($service, $domain)) {
             return $response;
@@ -2276,9 +2280,21 @@ class ContainerController extends Controller
 
     private function domainsTabRedirect(Service $service): RedirectResponse
     {
+        return $this->consoleTabRedirect($service, 'domains');
+    }
+
+    private function consoleTabRedirect(Service $service, string $tab): RedirectResponse
+    {
+        if (request()->routeIs('admin.services.*')) {
+            return redirect()->route('admin.services.show', [
+                'service' => $service,
+                'tab' => $tab,
+            ]);
+        }
+
         return redirect()->route('customer.services.container.show', [
             'service' => $service,
-            'tab' => 'domains',
+            'tab' => $tab,
         ]);
     }
 
@@ -2487,7 +2503,6 @@ class ContainerController extends Controller
 
     public function storeCronJob(Request $request, Service $service, ContainerCronService $cronService): RedirectResponse
     {
-        abort_if($service->user_id !== auth()->id(), 403);
         $this->authorize('manageContainer', $service);
 
         $request->validate([
@@ -2510,10 +2525,9 @@ class ContainerController extends Controller
 
     public function updateCronJob(Request $request, Service $service, ContainerCronJob $cronJob, ContainerCronService $cronService): RedirectResponse
     {
-        abort_if($service->user_id !== auth()->id(), 403);
+        $this->authorize('manageContainer', $service);
         abort_if((int) $cronJob->service_id !== (int) $service->id, 404);
         abort_if($cronJob->is_system, 403, 'Platform-managed cron jobs cannot be changed.');
-        $this->authorize('manageContainer', $service);
 
         $request->validate([
             'name' => 'required|string|max:120',
@@ -2541,10 +2555,9 @@ class ContainerController extends Controller
 
     public function deleteCronJob(Service $service, ContainerCronJob $cronJob, ContainerCronService $cronService): RedirectResponse
     {
-        abort_if($service->user_id !== auth()->id(), 403);
+        $this->authorize('manageContainer', $service);
         abort_if((int) $cronJob->service_id !== (int) $service->id, 404);
         abort_if($cronJob->is_system, 403, 'Platform-managed cron jobs cannot be deleted.');
-        $this->authorize('manageContainer', $service);
 
         try {
             $cronService->delete($cronJob);
@@ -2559,10 +2572,7 @@ class ContainerController extends Controller
 
     private function redirectToContainerTab(Service $service, string $tab): RedirectResponse
     {
-        return redirect()->route('customer.services.container.show', [
-            'service' => $service,
-            'tab' => $tab,
-        ]);
+        return $this->consoleTabRedirect($service, $tab);
     }
 
     public function destroy(Request $request, Service $service, CustomerServiceCancellationService $cancellation): RedirectResponse

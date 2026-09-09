@@ -131,7 +131,7 @@
 function phpExtensionsPanel() {
     return {
         containerRunning: {{ $phpExtensionsPanel['container_running'] ? 'true' : 'false' }},
-        updateUrl: @js(route('customer.services.container.php-extensions.update', $service)),
+        updateUrl: @js(container_route('php-extensions.update', $service)),
         extensions: @js(array_values($phpExtensionsPanel['optional'])),
         busyKey: null,
         successMessage: '',

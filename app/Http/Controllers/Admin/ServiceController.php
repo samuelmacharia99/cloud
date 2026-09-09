@@ -6,6 +6,7 @@ use App\Enums\InvoiceStatus;
 use App\Enums\NotificationEvent;
 use App\Enums\ServiceStatus;
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Customer\ContainerController as CustomerContainerController;
 use App\Http\Requests\BulkDestroyTerminatedServicesRequest;
 use App\Mail\AdminServerOrderMail;
 use App\Models\Domain;
@@ -271,7 +272,16 @@ class ServiceController extends Controller
             'containerDeployment.backups',
         ]);
 
-        return view('admin.services.show', compact(
+        $containerConsole = $service->isContainerHosting()
+            ? app(CustomerContainerController::class)->consoleViewData($service, false)
+            : [];
+
+        if ($containerConsole !== []) {
+            view()->share('containerRoutePrefix', 'admin.services.container');
+            view()->share('containerConsoleContext', 'admin');
+        }
+
+        return view('admin.services.show', array_merge(compact(
             'service',
             'sameTypeProducts',
             'currencyCode',
@@ -284,7 +294,7 @@ class ServiceController extends Controller
             'hasStaleOverlimitFlags',
             'infrastructureAbsent',
             'transferCustomers',
-        ));
+        ), $containerConsole));
     }
 
     public function transferPreview(Request $request, Service $service, ServiceTransferService $transferService)

@@ -20,6 +20,8 @@
         <p class="text-slate-600 dark:text-slate-400 mt-1">Move this container to a different hosting node.</p>
     </div>
 
+    @include('admin.container.partials.migration-console')
+
     <!-- Service Info Card -->
     <div class="ui-card p-8">
         <h2 class="text-xl font-bold text-slate-900 dark:text-white mb-4">Service Information</h2>
@@ -62,16 +64,26 @@
             <div>
                 <h3 class="font-semibold text-amber-900 dark:text-amber-200 mb-1">Important Notice</h3>
                 <p class="text-sm text-amber-800 dark:text-amber-300">
-                    App files and compose config are copied (brief downtime while the archive is created).
-                    Named database volumes stay on the source Docker engine — Repair DB credentials or restore a backup after cutover if the sidecar is empty.
-                    The domain proxy is rebound to the new node. Prefer a maintenance window for large sites.
+                    This is a verified cold migration. The platform briefly stops the stack, snapshots application files and every Docker named volume,
+                    verifies SHA-256 checksums on both nodes, restores and health-checks the target, then moves domains. The source is deleted only after
+                    target and public-domain verification succeed; any earlier failure automatically restarts the source.
                 </p>
             </div>
         </div>
     </div>
 
     <!-- Migration Form -->
-    <div class="ui-card p-8">
+    <div
+        class="ui-card p-8"
+        x-data="{ migrating: @js((bool) ($migrationProgress['is_active'] ?? false)) }"
+        @container-migration-state.window="migrating = $event.detail.active"
+    >
+        <div x-show="migrating" x-cloak class="mb-6 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 p-4">
+            <p class="text-sm text-amber-900 dark:text-amber-200">
+                A migration is running for this service. Watch the console above; you can queue another move once it finishes.
+            </p>
+        </div>
+
         <form method="POST" action="{{ route('admin.services.container.migrate.confirm', $service) }}" class="space-y-6">
             @csrf
 
@@ -100,6 +112,7 @@
                                         <span class="text-slate-600 dark:text-slate-400">Containers: <strong>{{ $containerCount }}</strong></span>
                                         <span class="text-slate-600 dark:text-slate-400">CPU: <strong>{{ $cpuUsage }}%</strong></span>
                                         <span class="text-slate-600 dark:text-slate-400">RAM: <strong>{{ $ramUsage }}%</strong></span>
+                                        <span class="text-slate-600 dark:text-slate-400">Disk: <strong>{{ $target->storage_used_gb ?? 0 }} / {{ $target->storage_gb ?? '?' }} GB</strong></span>
                                     </div>
                                 </div>
                             </label>
@@ -125,13 +138,28 @@
                 <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Optional: Document why this migration is happening</p>
             </div>
 
+            <label class="flex items-start gap-3 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 p-4">
+                <input type="checkbox" name="confirm_downtime" value="1" class="mt-1 rounded border-slate-300" required>
+                <span class="text-sm text-amber-900 dark:text-amber-200">
+                    I confirm a brief maintenance window. The move runs on a worker, so you can close this page and follow the console when you come back.
+                </span>
+            </label>
+            @error('confirm_downtime')
+                <p class="text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+            @enderror
+
             <!-- Form Actions -->
             <div class="flex items-center justify-between pt-6 border-t border-slate-200 dark:border-slate-800">
                 <a href="{{ route('admin.services.show', $service) }}" class="px-6 py-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white font-medium transition">
                     Cancel
                 </a>
-                <button type="submit" class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition" @if ($availableTargets->isEmpty()) disabled @endif>
-                    Confirm Migration
+                <button
+                    type="submit"
+                    class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
+                    :disabled="migrating"
+                    @if ($availableTargets->isEmpty()) disabled @endif
+                >
+                    <span x-text="migrating ? 'Migration running…' : 'Confirm Migration'">Confirm Migration</span>
                 </button>
             </div>
         </form>

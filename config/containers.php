@@ -99,6 +99,14 @@ return [
         'migrate_retry_delay_seconds' => (int) env('CONTAINER_REDEPLOY_MIGRATE_RETRY_DELAY', 10),
     ],
 
+    'migration' => [
+        'operation_lock_seconds' => (int) env('CONTAINER_MIGRATION_LOCK_SECONDS', 14400),
+        // Copying a large stack outlives any web request, so the move runs on a worker.
+        'job_timeout_seconds' => (int) env('CONTAINER_MIGRATION_JOB_TIMEOUT', 14400),
+        'public_verify_attempts' => (int) env('CONTAINER_MIGRATION_PUBLIC_VERIFY_ATTEMPTS', 5),
+        'public_verify_delay_seconds' => (int) env('CONTAINER_MIGRATION_PUBLIC_VERIFY_DELAY', 3),
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Container file editor (Files tab)

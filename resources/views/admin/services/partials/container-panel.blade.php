@@ -31,33 +31,7 @@
 
     <div
         class="ui-card p-6 space-y-6"
-        x-data="{
-            logsOpen: false,
-            composeOpen: false,
-            logs: '',
-            logsLoading: false,
-            logsError: '',
-            async loadLogs() {
-                this.logsOpen = true;
-                this.logsLoading = true;
-                this.logsError = '';
-                try {
-                    const response = await fetch(@js(route('admin.services.container.logs', $service)));
-                    const data = await response.json();
-                    if (data.error) {
-                        this.logsError = data.error;
-                        this.logs = '';
-                    } else {
-                        this.logs = data.logs || 'No logs available';
-                    }
-                } catch (error) {
-                    this.logsError = 'Failed to fetch logs';
-                    this.logs = '';
-                } finally {
-                    this.logsLoading = false;
-                }
-            }
-        }"
+        x-data="{ composeOpen: false }"
     >
         <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div class="min-w-0">
@@ -153,7 +127,7 @@
             @endif
         </dl>
 
-        <div class="flex flex-wrap gap-2">
+        <div class="flex flex-wrap gap-2 items-center">
             @if ($deployment->status === 'pending')
                 <form method="POST" action="{{ route('admin.services.container.provision', $service) }}">
                     @csrf
@@ -175,9 +149,7 @@
                 </form>
             @endif
 
-            <button type="button" @click="loadLogs()" class="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 text-sm font-medium rounded-lg transition">
-                View logs
-            </button>
+            @include('services.partials.container-redeploy-modal')
             <a href="{{ route('admin.services.container.edit', $service) }}" class="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 text-sm font-medium rounded-lg transition">
                 Edit runtime
             </a>
@@ -185,25 +157,6 @@
                 Migrate node
             </a>
         </div>
-
-        <form method="POST" action="{{ route('admin.services.container.redeploy', $service) }}" class="flex flex-col sm:flex-row sm:items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700" data-confirm="Redeploy this container? Leave Reset database unchecked to keep MySQL. Replace application files clones official Open Source POS (or the connected Git repo) into /app." data-confirm-title="Redeploy stack">
-            @csrf
-            <div class="flex-1">
-                <p class="text-sm font-medium text-slate-900 dark:text-white">Redeploy stack</p>
-                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Recreate the runtime. Reset database wipes MySQL. Replace application files refreshes /app from Git (Open Source POS on PHP) and keeps uploads.</p>
-            </div>
-            <label class="inline-flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
-                <input type="checkbox" name="replace_application" value="1" class="rounded border-slate-300 dark:border-slate-600">
-                Replace application files
-            </label>
-            <label class="inline-flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
-                <input type="checkbox" name="reset_database" value="1" class="rounded border-slate-300 dark:border-slate-600">
-                Reset database
-            </label>
-            <button type="submit" class="px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg transition">
-                Redeploy
-            </button>
-        </form>
 
         <div>
             <h3 class="text-sm font-semibold text-slate-900 dark:text-white mb-3">Resource Allocation</h3>
@@ -223,126 +176,6 @@
             </div>
         </div>
 
-        <div>
-            <h3 class="text-sm font-semibold text-slate-900 dark:text-white mb-3">Resource usage (last 24 hours)</h3>
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <div class="h-40">
-                    <canvas id="cpuChart"></canvas>
-                </div>
-                <div class="h-40">
-                    <canvas id="memoryChart"></canvas>
-                </div>
-            </div>
-        </div>
-
-        <div>
-            <h3 class="text-sm font-semibold text-slate-900 dark:text-white mb-3">Custom domains</h3>
-            @if ($domains->isNotEmpty())
-                <div class="space-y-2 mb-4">
-                    @foreach ($domains as $domain)
-                        @php
-                            $domainStatus = match ($domain->status) {
-                                'pending' => 'bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300',
-                                'active' => 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300',
-                                'failed' => 'bg-red-100 dark:bg-red-950 text-red-800 dark:text-red-300',
-                                'removing' => 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300',
-                                default => 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300',
-                            };
-                        @endphp
-                        <div class="flex flex-col gap-3 p-3 bg-slate-50 dark:bg-slate-800/80 rounded-lg">
-                            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                                <div>
-                                    <p class="font-mono text-sm text-slate-900 dark:text-white">{{ $domain->domain }}</p>
-                                    <div class="flex items-center gap-2 mt-1">
-                                        <span class="px-2 py-0.5 rounded text-xs font-semibold {{ $domainStatus }}">{{ ucfirst($domain->status) }}</span>
-                                        @if ($domain->hasSsl())
-                                            <span class="px-2 py-0.5 rounded text-xs font-semibold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300">SSL</span>
-                                        @elseif ($domain->canRequestSsl())
-                                            <span class="px-2 py-0.5 rounded text-xs font-semibold bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300">No SSL</span>
-                                        @endif
-                                    </div>
-                                </div>
-                                <div class="flex gap-2">
-                                    @if ($domain->canRequestSsl())
-                                        <form method="POST" action="{{ route('admin.services.container.domains.ssl', [$service, $domain]) }}">
-                                            @csrf
-                                            <button type="submit" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition">
-                                                {{ $domain->error_message ? 'Retry SSL' : 'Enable SSL' }}
-                                            </button>
-                                        </form>
-                                    @endif
-                                    <form method="POST" action="{{ route('admin.services.container.domains.unbind', [$service, $domain]) }}" data-confirm="Remove {{ $domain->domain }} from this container?" data-confirm-title="Remove domain">
-                                        @csrf
-                                        @method('DELETE')
-                                        <button type="submit" class="px-3 py-1.5 border border-red-300 dark:border-red-800 text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/40 text-xs font-medium rounded-lg transition">Remove</button>
-                                    </form>
-                                </div>
-                            </div>
-                            @php
-                                $domainSetupError = $domain->error_message
-                                    ? app(\App\Services\Provisioning\ContainerSslErrorPresenter::class)->present($domain)
-                                    : null;
-                            @endphp
-                            @if ($domainSetupError)
-                                <x-container-ssl-error
-                                    :title="$domainSetupError['title']"
-                                    :guidance="$domainSetupError['guidance']"
-                                    :details="$domainSetupError['details']"
-                                />
-                            @endif
-                        </div>
-                    @endforeach
-                </div>
-            @else
-                <p class="text-sm text-slate-500 dark:text-slate-400 mb-3">No custom domains bound yet.</p>
-            @endif
-
-            <form method="POST" action="{{ route('admin.services.container.domains.bind', $service) }}" class="flex flex-col sm:flex-row gap-2">
-                @csrf
-                <input type="text" name="domain" placeholder="example.com" class="flex-1 px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white rounded-lg text-sm" required>
-                <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition">Bind domain</button>
-            </form>
-        </div>
-
-        <div>
-            <h3 class="text-sm font-semibold text-slate-900 dark:text-white mb-3">Backups</h3>
-            @if ($activeBackups->isNotEmpty())
-                <div class="space-y-2 mb-4">
-                    @foreach ($activeBackups as $backup)
-                        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 bg-slate-50 dark:bg-slate-800/80 rounded-lg text-sm">
-                            <div>
-                                <p class="font-mono text-slate-900 dark:text-white">{{ $backup->backup_name }}</p>
-                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                                    {{ $backup->status === 'completed' ? 'Size: '.formatBytes($backup->size_bytes) : ucfirst($backup->status) }}
-                                    · {{ $backup->created_at->diffForHumans() }}
-                                </p>
-                            </div>
-                            <div class="flex gap-2">
-                                @if ($backup->status === 'completed')
-                                    <form method="POST" action="{{ route('admin.services.container.backups.restore', [$service, $backup]) }}" data-confirm="Restore this backup? The running application will be replaced." data-confirm-title="Restore backup">
-                                        @csrf
-                                        <button type="submit" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition">Restore</button>
-                                    </form>
-                                @endif
-                                <form method="POST" action="{{ route('admin.services.container.backups.delete', [$service, $backup]) }}" data-confirm="Delete this backup permanently?" data-confirm-title="Delete backup">
-                                    @csrf
-                                    @method('DELETE')
-                                    <button type="submit" class="px-3 py-1.5 border border-red-300 dark:border-red-800 text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/40 text-xs font-medium rounded-lg transition">Delete</button>
-                                </form>
-                            </div>
-                        </div>
-                    @endforeach
-                </div>
-            @else
-                <p class="text-sm text-slate-500 dark:text-slate-400 mb-3">No backups yet.</p>
-            @endif
-
-            <form method="POST" action="{{ route('admin.services.container.backups.create', $service) }}">
-                @csrf
-                <button type="submit" class="px-4 py-2 bg-slate-800 hover:bg-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 text-white text-sm font-medium rounded-lg transition">Create backup</button>
-            </form>
-        </div>
-
         @if (filled($deployment->docker_compose_content))
             <div>
                 <button type="button" class="flex items-center justify-between w-full text-sm font-semibold text-slate-900 dark:text-white" @click="composeOpen = !composeOpen">
@@ -352,108 +185,17 @@
                 <pre x-show="composeOpen" x-cloak class="mt-3 bg-slate-950 text-emerald-300 p-4 rounded-lg text-xs overflow-x-auto max-h-96">{{ $deployment->docker_compose_content }}</pre>
             </div>
         @endif
-
-        <div x-show="logsOpen" x-cloak class="rounded-xl border border-slate-200 dark:border-slate-700 p-4">
-            <div class="flex items-center justify-between mb-2">
-                <h3 class="text-sm font-semibold text-slate-900 dark:text-white">Recent logs</h3>
-                <div class="flex items-center gap-2">
-                    <button type="button" class="text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-200" @click="loadLogs()">Refresh</button>
-                    <button type="button" class="text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-200" @click="logsOpen = false">Close</button>
-                </div>
-            </div>
-            <pre class="bg-slate-950 p-4 rounded-lg text-xs overflow-x-auto max-h-96 whitespace-pre-wrap break-all" :class="logsError ? 'text-red-400' : 'text-slate-200'" x-text="logsLoading ? 'Loading logs...' : (logsError ? ('Error: ' + logsError) : logs)"></pre>
-        </div>
     </div>
 
-    @push('scripts')
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <script>
-        let cpuChart = null;
-        let memoryChart = null;
+    <div class="mt-6">
+        <div class="flex items-center justify-between mb-3">
+            <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Application console</h2>
+            <p class="text-sm text-slate-500 dark:text-slate-400">Same tools the customer has: logs, Git pull, files, terminal, env, doctor.</p>
+        </div>
+        @include('services.partials.container-console')
+        @include('services.partials.container-console-scripts')
+    </div>
 
-        function chartTheme() {
-            const isDark = document.documentElement.classList.contains('dark');
-            return {
-                tick: isDark ? '#94a3b8' : '#64748b',
-                grid: isDark ? 'rgba(148, 163, 184, 0.12)' : 'rgba(15, 23, 42, 0.08)',
-            };
-        }
-
-        function initializeCharts() {
-            fetch(@js(route('admin.services.container.metrics', $service)))
-                .then(response => response.json())
-                .then(data => {
-                    if (data.labels && data.labels.length > 0) {
-                        renderCpuChart(data);
-                        renderMemoryChart(data);
-                    }
-                })
-                .catch(error => console.error('Failed to load metrics:', error));
-        }
-
-        function renderCpuChart(data) {
-            const ctx = document.getElementById('cpuChart').getContext('2d');
-            const theme = chartTheme();
-            if (cpuChart) cpuChart.destroy();
-            cpuChart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: data.labels,
-                    datasets: [{
-                        label: 'CPU %',
-                        data: data.cpu,
-                        borderColor: 'rgb(59, 130, 246)',
-                        backgroundColor: 'rgba(59, 130, 246, 0.12)',
-                        borderWidth: 1.5,
-                        tension: 0.3,
-                        fill: true
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { display: true, position: 'top', labels: { color: theme.tick } } },
-                    scales: {
-                        x: { ticks: { color: theme.tick }, grid: { color: theme.grid } },
-                        y: { beginAtZero: true, max: 100, ticks: { color: theme.tick }, grid: { color: theme.grid } }
-                    }
-                }
-            });
-        }
-
-        function renderMemoryChart(data) {
-            const ctx = document.getElementById('memoryChart').getContext('2d');
-            const theme = chartTheme();
-            if (memoryChart) memoryChart.destroy();
-            memoryChart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: data.labels,
-                    datasets: [{
-                        label: 'Memory (MB)',
-                        data: data.memory,
-                        borderColor: 'rgb(16, 185, 129)',
-                        backgroundColor: 'rgba(16, 185, 129, 0.12)',
-                        borderWidth: 1.5,
-                        tension: 0.3,
-                        fill: true
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { display: true, position: 'top', labels: { color: theme.tick } } },
-                    scales: {
-                        x: { ticks: { color: theme.tick }, grid: { color: theme.grid } },
-                        y: { beginAtZero: true, ticks: { color: theme.tick }, grid: { color: theme.grid } }
-                    }
-                }
-            });
-        }
-
-        document.addEventListener('DOMContentLoaded', initializeCharts);
-    </script>
-    @endpush
 @elseif ($service->isContainerHosting())
     <div class="ui-card p-6">
         <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Application runtime</h2>

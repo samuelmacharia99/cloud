@@ -382,15 +382,61 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/services/{service}/container/suspend', [ContainerController::class, 'suspend'])->name('admin.services.container.suspend');
         Route::post('admin/services/{service}/container/stop', [ContainerController::class, 'stop'])->name('admin.services.container.stop');
         Route::post('admin/services/{service}/container/start', [ContainerController::class, 'start'])->name('admin.services.container.start');
-        Route::get('admin/services/{service}/container/logs', [ContainerController::class, 'logs'])->name('admin.services.container.logs');
+        Route::get('admin/services/{service}/container/logs', [App\Http\Controllers\Customer\ContainerController::class, 'logs'])->name('admin.services.container.logs');
         Route::get('admin/services/{service}/container/metrics', [ContainerController::class, 'metrics'])->name('admin.services.container.metrics');
-        Route::post('admin/services/{service}/container/redeploy', [ContainerController::class, 'redeploy'])->name('admin.services.container.redeploy');
+        Route::post('admin/services/{service}/container/redeploy', [App\Http\Controllers\Customer\ContainerController::class, 'redeploy'])->name('admin.services.container.redeploy');
         Route::get('admin/services/{service}/container/edit', [ContainerController::class, 'edit'])->name('admin.services.container.edit');
         Route::patch('admin/services/{service}/container', [ContainerController::class, 'update'])->name('admin.services.container.update');
         Route::post('admin/services/{service}/container/provision', [ContainerController::class, 'provision'])->name('admin.services.container.provision');
         Route::post('admin/services/{service}/container/domains', [ContainerController::class, 'bindDomain'])->name('admin.services.container.domains.bind');
+        Route::patch('admin/services/{service}/container/domains/{domain}', [App\Http\Controllers\Customer\ContainerController::class, 'updateDomain'])->name('admin.services.container.domains.update');
         Route::delete('admin/services/{service}/container/domains/{domain}', [ContainerController::class, 'unbindDomain'])->name('admin.services.container.domains.unbind');
         Route::post('admin/services/{service}/container/domains/{domain}/ssl', [ContainerController::class, 'enableSsl'])->name('admin.services.container.domains.ssl');
+
+        Route::post('admin/services/{service}/container/initialize-laravel', [App\Http\Controllers\Customer\ContainerController::class, 'initializeLaravel'])->name('admin.services.container.initialize-laravel');
+        Route::post('admin/services/{service}/container/clear-app', [App\Http\Controllers\Customer\ContainerController::class, 'clearAppDirectory'])->name('admin.services.container.clear-app');
+        Route::get('admin/services/{service}/container/laravel-setup', [App\Http\Controllers\Customer\ContainerController::class, 'laravelSetupStatus'])->name('admin.services.container.laravel-setup');
+        Route::post('admin/services/{service}/container/php-extensions', [App\Http\Controllers\Customer\ContainerController::class, 'updatePhpExtensions'])->name('admin.services.container.php-extensions.update');
+        Route::get('admin/services/{service}/container/ollama/models', [App\Http\Controllers\Customer\ContainerController::class, 'ollamaModels'])->name('admin.services.container.ollama.models');
+        Route::post('admin/services/{service}/container/ollama/chat', [App\Http\Controllers\Customer\ContainerController::class, 'ollamaChat'])->name('admin.services.container.ollama.chat');
+        Route::post('admin/services/{service}/container/hermes/ollama', [App\Http\Controllers\Customer\ContainerController::class, 'connectHermesOllama'])->name('admin.services.container.hermes.ollama.connect');
+        Route::put('admin/services/{service}/container/environment', [App\Http\Controllers\Customer\ContainerController::class, 'updateEnvironment'])->name('admin.services.container.environment.update');
+        Route::delete('admin/services/{service}/container/environment', [App\Http\Controllers\Customer\ContainerController::class, 'deleteEnvironment'])->name('admin.services.container.environment.delete');
+        Route::post('admin/services/{service}/container/cron-jobs', [App\Http\Controllers\Customer\ContainerController::class, 'storeCronJob'])->name('admin.services.container.cron-jobs.store');
+        Route::put('admin/services/{service}/container/cron-jobs/{cronJob}', [App\Http\Controllers\Customer\ContainerController::class, 'updateCronJob'])->name('admin.services.container.cron-jobs.update');
+        Route::delete('admin/services/{service}/container/cron-jobs/{cronJob}', [App\Http\Controllers\Customer\ContainerController::class, 'deleteCronJob'])->name('admin.services.container.cron-jobs.delete');
+        Route::post('admin/services/{service}/container/git-repository', [App\Http\Controllers\Customer\ContainerController::class, 'updateGitRepository'])->name('admin.services.container.git-repository.update');
+        Route::post('admin/services/{service}/container/git-repository/pull', [App\Http\Controllers\Customer\ContainerController::class, 'pullGitRepository'])->name('admin.services.container.git-repository.pull');
+        Route::post('admin/services/{service}/container/git-repository/cancel', [App\Http\Controllers\Customer\ContainerController::class, 'cancelGitPull'])->name('admin.services.container.git-repository.cancel');
+        Route::post('admin/services/{service}/container/git-repository/restart', [App\Http\Controllers\Customer\ContainerController::class, 'restartGitPull'])->name('admin.services.container.git-repository.restart');
+        Route::get('admin/services/{service}/container/git-repository/status', [App\Http\Controllers\Customer\ContainerController::class, 'gitPullStatus'])->name('admin.services.container.git-repository.status');
+        Route::post('admin/services/{service}/container/auto-deploy', [App\Http\Controllers\Customer\ContainerController::class, 'updateAutoDeploy'])->name('admin.services.container.auto-deploy.update');
+        Route::post('admin/services/{service}/container/auto-deploy/rotate', [App\Http\Controllers\Customer\ContainerController::class, 'rotateAutoDeploySecret'])->name('admin.services.container.auto-deploy.rotate');
+        Route::post('admin/services/{service}/container/staging', [App\Http\Controllers\Customer\ContainerController::class, 'updateStaging'])->name('admin.services.container.staging.update');
+        Route::post('admin/services/{service}/container/doctor/diagnose', [App\Http\Controllers\Customer\ContainerController::class, 'doctorDiagnose'])->name('admin.services.container.doctor.diagnose');
+        Route::post('admin/services/{service}/container/doctor/treat', [App\Http\Controllers\Customer\ContainerController::class, 'doctorTreat'])->name('admin.services.container.doctor.treat');
+        Route::get('admin/services/{service}/container/health', [App\Http\Controllers\Customer\ContainerController::class, 'health'])->name('admin.services.container.health');
+        Route::get('admin/services/{service}/container/storage-stats', [App\Http\Controllers\Customer\ContainerController::class, 'storageStats'])->name('admin.services.container.storage-stats');
+        Route::post('admin/services/{service}/container/database/query', [App\Http\Controllers\Customer\ContainerController::class, 'databaseQuery'])->name('admin.services.container.database.query');
+        Route::post('admin/services/{service}/container/database/import', [App\Http\Controllers\Customer\ContainerController::class, 'databaseImport'])->name('admin.services.container.database.import');
+        Route::get('admin/services/{service}/container/database/history', [App\Http\Controllers\Customer\ContainerController::class, 'databaseHistory'])->name('admin.services.container.database.history');
+        Route::post('admin/services/{service}/container/database/test-connection', [App\Http\Controllers\Customer\ContainerController::class, 'databaseTestConnection'])->name('admin.services.container.database.test');
+        Route::post('admin/services/{service}/container/database/sync-credentials', [App\Http\Controllers\Customer\ContainerController::class, 'databaseSyncCredentials'])->name('admin.services.container.database.sync');
+
+        Route::get('admin/services/{service}/container/files', [ContainerFileController::class, 'index'])->name('admin.services.container.files.index');
+        Route::get('admin/services/{service}/container/files/content', [ContainerFileController::class, 'content'])->name('admin.services.container.files.content');
+        Route::put('admin/services/{service}/container/files/content', [ContainerFileController::class, 'saveContent'])->name('admin.services.container.files.save');
+        Route::get('admin/services/{service}/container/files/download', [ContainerFileController::class, 'download'])->name('admin.services.container.files.download');
+        Route::post('admin/services/{service}/container/files/upload', [ContainerFileController::class, 'upload'])->name('admin.services.container.files.upload');
+        Route::delete('admin/services/{service}/container/files', [ContainerFileController::class, 'delete'])->name('admin.services.container.files.delete');
+        Route::post('admin/services/{service}/container/files/mkdir', [ContainerFileController::class, 'mkdir'])->name('admin.services.container.files.mkdir');
+        Route::post('admin/services/{service}/container/files/create', [ContainerFileController::class, 'createFile'])->name('admin.services.container.files.create');
+        Route::patch('admin/services/{service}/container/files/rename', [ContainerFileController::class, 'rename'])->name('admin.services.container.files.rename');
+
+        Route::post('admin/services/{service}/terminal', [ContainerTerminalController::class, 'create'])->name('admin.services.container.terminal.create');
+        Route::post('admin/services/{service}/terminal/extend', [ContainerTerminalController::class, 'extend'])->name('admin.services.container.terminal.extend');
+        Route::post('admin/services/{service}/terminal/execute', [ContainerTerminalController::class, 'execute'])->name('admin.services.container.terminal.execute');
+        Route::delete('admin/services/{service}/terminal', [ContainerTerminalController::class, 'close'])->name('admin.services.container.terminal.close');
 
         // Container backups
         Route::post('admin/services/{service}/container/backups', [ContainerController::class, 'createBackup'])->name('admin.services.container.backups.create');
@@ -400,6 +446,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         // Container migration
         Route::get('admin/services/{service}/container/migrate', [ContainerMigrationController::class, 'index'])->name('admin.services.container.migrate');
         Route::post('admin/services/{service}/container/migrate', [ContainerMigrationController::class, 'migrate'])->name('admin.services.container.migrate.confirm');
+        Route::get('admin/services/{service}/container/migrate/progress', [ContainerMigrationController::class, 'progress'])->middleware('throttle:120,1')->name('admin.services.container.migrate.progress');
         Route::get('admin/services/{service}/migrate-to-container', [DirectAdminContainerMigrationController::class, 'show'])->name('admin.services.migrate-to-container');
         Route::post('admin/services/{service}/migrate-to-container', [DirectAdminContainerMigrationController::class, 'store'])->name('admin.services.migrate-to-container.store');
         Route::get('admin/services/{service}/migrate-mail', [DirectAdminMailcowMigrationController::class, 'show'])->name('admin.services.migrate-mail');

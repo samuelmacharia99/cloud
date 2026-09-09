@@ -72,7 +72,7 @@
 
     <form
         method="POST"
-        action="{{ route('customer.services.container.environment.update', $service) }}"
+        action="{{ container_route('environment.update', $service) }}"
         class="space-y-4"
         @submit="prepareSubmit($event)"
     >

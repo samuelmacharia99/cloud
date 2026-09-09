@@ -16,9 +16,11 @@
 /storage/framework/sessions
 /storage/framework/testing
 /storage/backups
+/storage/app/pdf-logos
 /database/database.sqlite
 /database/*.sqlite-journal
 *.swp
 *.swo
 *~
 .phpunit.result.cache
+.ui-preview-tmp

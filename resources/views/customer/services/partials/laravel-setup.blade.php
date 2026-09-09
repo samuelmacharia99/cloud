@@ -19,7 +19,7 @@
         <div class="flex flex-col sm:flex-row gap-2 shrink-0">
             <form
                 method="POST"
-                action="{{ route('customer.services.container.clear-app', $service) }}"
+                action="{{ container_route('clear-app', $service) }}"
                 x-show="canClearApp"
                 data-confirm="Remove all files in /app except Talksasa system files? This cannot be undone."
                 data-confirm-title="Clear application files"
@@ -35,7 +35,7 @@
 
             <form
                 method="POST"
-                action="{{ route('customer.services.container.initialize-laravel', $service) }}"
+                action="{{ container_route('initialize-laravel', $service) }}"
                 data-confirm="Install a fresh Laravel skeleton into /app? Existing application files will block this action."
                 data-confirm-title="Initialize Laravel"
                 @submit="if (!canInitialize) { $event.preventDefault(); $event.stopImmediatePropagation(); return false; }"
@@ -141,7 +141,7 @@ function laravelSetupPanel() {
 
         async refresh() {
             try {
-                const response = await fetch(`{{ route('customer.services.container.laravel-setup', $service) }}`, {
+                const response = await fetch(`{{ container_route('laravel-setup', $service) }}`, {
                     headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
                 });
 

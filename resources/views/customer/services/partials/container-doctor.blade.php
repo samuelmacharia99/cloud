@@ -2,8 +2,8 @@
 <div
     class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 overflow-hidden"
     x-data="containerDoctor({
-        diagnoseUrl: @js(route('customer.services.container.doctor.diagnose', $service)),
-        treatUrl: @js(route('customer.services.container.doctor.treat', $service)),
+        diagnoseUrl: @js(container_route('doctor.diagnose', $service)),
+        treatUrl: @js(container_route('doctor.treat', $service)),
         logLines: {{ \App\Services\Provisioning\ContainerDoctorService::LOG_LINES }},
     })"
 >

@@ -117,7 +117,7 @@
         </div>
     </div>
 
-    <form method="POST" action="{{ route('customer.services.container.git-repository.update', $service) }}" class="relative grid lg:grid-cols-2 gap-4">
+    <form method="POST" action="{{ container_route('git-repository.update', $service) }}" class="relative grid lg:grid-cols-2 gap-4">
         @csrf
         <div>
             <label for="source_repo_url" class="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Repository URL</label>
@@ -243,7 +243,7 @@
                 </div>
             </div>
 
-            <form method="POST" action="{{ route('customer.services.container.auto-deploy.update', $service) }}" class="space-y-3">
+            <form method="POST" action="{{ container_route('auto-deploy.update', $service) }}" class="space-y-3">
                 @csrf
                 <input type="hidden" name="enabled" value="{{ !empty($autoDeploy['enabled']) ? '0' : '1' }}">
                 @if (empty($autoDeploy['enabled']))
@@ -271,7 +271,7 @@
             </form>
 
             @if (!empty($autoDeploy['enabled']))
-                <form method="POST" action="{{ route('customer.services.container.auto-deploy.rotate', $service) }}" class="inline">
+                <form method="POST" action="{{ container_route('auto-deploy.rotate', $service) }}" class="inline">
                     @csrf
                     <button type="submit" class="text-xs font-medium text-amber-700 dark:text-amber-300 hover:underline" data-confirm="Rotate the webhook secret? You must update GitHub/GitLab with the new value." data-confirm-title="Rotate secret">
                         Rotate webhook secret
@@ -638,7 +638,7 @@ function gitPullPanel() {
 
         async refresh() {
             try {
-                const response = await fetch(`{{ route('customer.services.container.git-repository.status', $service) }}`, {
+                const response = await fetch(`{{ container_route('git-repository.status', $service) }}`, {
                     headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
                 });
                 if (!response.ok) return;
@@ -675,7 +675,7 @@ function gitPullPanel() {
             this.logOutput = '[init] Queuing Git sync pipeline…';
 
             try {
-                const response = await fetch(`{{ route('customer.services.container.git-repository.pull', $service) }}`, {
+                const response = await fetch(`{{ container_route('git-repository.pull', $service) }}`, {
                     method: 'POST',
                     headers: {
                         'Accept': 'application/json',
@@ -718,7 +718,7 @@ function gitPullPanel() {
             this.errorMessage = '';
 
             try {
-                const response = await fetch(`{{ route('customer.services.container.git-repository.cancel', $service) }}`, {
+                const response = await fetch(`{{ container_route('git-repository.cancel', $service) }}`, {
                     method: 'POST',
                     headers: {
                         'Accept': 'application/json',
@@ -761,7 +761,7 @@ function gitPullPanel() {
             this.logOutput = '[init] Restarting Git sync pipeline…';
 
             try {
-                const response = await fetch(`{{ route('customer.services.container.git-repository.restart', $service) }}`, {
+                const response = await fetch(`{{ container_route('git-repository.restart', $service) }}`, {
                     method: 'POST',
                     headers: {
                         'Accept': 'application/json',

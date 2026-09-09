@@ -14,24 +14,26 @@
     @if (!empty($staging['staging_service_id']))
         <p class="text-sm text-slate-700 dark:text-slate-300">
             Linked staging:
-            <a href="{{ route('customer.services.container.show', $staging['staging_service_id']) }}" class="font-medium text-blue-600 dark:text-blue-400 hover:underline">
+            <a href="{{ ($containerConsoleContext ?? 'customer') === 'admin'
+                ? route('admin.services.show', $staging['staging_service_id'])
+                : route('customer.services.container.show', $staging['staging_service_id']) }}" class="font-medium text-blue-600 dark:text-blue-400 hover:underline">
                 {{ $staging['staging_name'] ?? ('#'.$staging['staging_service_id']) }}
             </a>
         </p>
         <div class="flex flex-wrap gap-2">
-            <form method="POST" action="{{ route('customer.services.container.staging.update', $service) }}">
+            <form method="POST" action="{{ container_route('staging.update', $service) }}">
                 @csrf
                 <input type="hidden" name="action" value="sync_env">
                 <button type="submit" class="px-3 py-1.5 text-sm rounded-lg bg-violet-600 hover:bg-violet-700 text-white">Sync env to staging</button>
             </form>
-            <form method="POST" action="{{ route('customer.services.container.staging.update', $service) }}">
+            <form method="POST" action="{{ container_route('staging.update', $service) }}">
                 @csrf
                 <input type="hidden" name="action" value="unlink">
                 <button type="submit" class="px-3 py-1.5 text-sm rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300">Unlink</button>
             </form>
         </div>
     @elseif (!empty($staging['candidates']))
-        <form method="POST" action="{{ route('customer.services.container.staging.update', $service) }}" class="flex flex-col sm:flex-row gap-2">
+        <form method="POST" action="{{ container_route('staging.update', $service) }}" class="flex flex-col sm:flex-row gap-2">
             @csrf
             <input type="hidden" name="action" value="link">
             <select name="staging_service_id" required class="flex-1 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm">

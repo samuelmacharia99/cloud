@@ -150,6 +150,9 @@
 <script>
 function containerTerminal() {
     const SERVICE_ID = {{ (int) $service->id }};
+    const TERMINAL_URL = @js(container_route('terminal.create', $service));
+    const TERMINAL_EXTEND_URL = @js(container_route('terminal.extend', $service));
+    const TERMINAL_EXECUTE_URL = @js(container_route('terminal.execute', $service));
     const CONTAINER_NAME = @json($terminalContainerName);
     const TEMPLATE_SLUG = @json($terminalTemplateSlug);
     const MAX_TABS = {{ (int) $maxTerminalTabs }};
@@ -523,7 +526,7 @@ function containerTerminal() {
 
             if (tab.sessionToken) {
                 try {
-                    await fetch(`/my/services/${SERVICE_ID}/terminal`, {
+                    await fetch(TERMINAL_URL, {
                         method: 'DELETE',
                         headers: this.csrfHeaders(),
                         body: JSON.stringify({ session_token: tab.sessionToken }),
@@ -551,7 +554,7 @@ function containerTerminal() {
         async createTabSession() {
             this.sessionStarting = true;
             try {
-                const response = await fetch(`/my/services/${SERVICE_ID}/terminal`, {
+                const response = await fetch(TERMINAL_URL, {
                     method: 'POST',
                     headers: this.csrfHeaders(),
                 });
@@ -1037,7 +1040,7 @@ function containerTerminal() {
             const tab = this.activeTab();
             if (!tab?.sessionToken) return;
             try {
-                const response = await fetch(`/my/services/${SERVICE_ID}/terminal/extend`, {
+                const response = await fetch(TERMINAL_EXTEND_URL, {}
                     method: 'POST',
                     headers: this.csrfHeaders(),
                     body: JSON.stringify({ session_token: tab.sessionToken }),
@@ -1058,7 +1061,7 @@ function containerTerminal() {
         },
 
         async recreateHttpSession(tab) {
-            const response = await fetch(`/my/services/${SERVICE_ID}/terminal`, {
+            const response = await fetch(TERMINAL_URL, {
                 method: 'POST',
                 headers: this.csrfHeaders(),
             });
@@ -1104,7 +1107,7 @@ function containerTerminal() {
             let skipFinalPrompt = false;
 
             try {
-                const response = await fetch(`/my/services/${SERVICE_ID}/terminal/execute`, {
+                const response = await fetch(TERMINAL_EXECUTE_URL, {}
                     method: 'POST',
                     headers: this.csrfHeaders(),
                     body: JSON.stringify({ session_token: tab.sessionToken, command }),
@@ -1190,7 +1193,7 @@ function containerTerminal() {
                 tab.intentionalClose = true;
                 if (tab.sessionToken) {
                     try {
-                        await fetch(`/my/services/${SERVICE_ID}/terminal`, {
+                        await fetch(TERMINAL_URL, {
                             method: 'DELETE',
                             headers: this.csrfHeaders(),
                             body: JSON.stringify({ session_token: tab.sessionToken }),

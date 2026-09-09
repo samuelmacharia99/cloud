@@ -259,6 +259,16 @@ function formatBytes(int $bytes, int $precision = 2): string
 /**
  * Generate a portal-aware URL without changing Laravel's global URL root.
  */
+/**
+ * Named route for the shared application console (customer or admin prefix).
+ */
+function container_route(string $name, mixed ...$parameters): string
+{
+    $prefix = View::getShared()['containerRoutePrefix'] ?? 'customer.services.container';
+
+    return route($prefix.'.'.$name, $parameters);
+}
+
 function customer_portal_route(
     User $customer,
     string $routeName,

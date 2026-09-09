@@ -95,8 +95,8 @@
 @push('scripts')
 <script>
 function ollamaChatPanel() {
-    const modelsUrl = @json(route('customer.services.container.ollama.models', $service));
-    const chatUrl = @json(route('customer.services.container.ollama.chat', $service));
+    const modelsUrl = @json(container_route('ollama.models', $service));
+    const chatUrl = @json(container_route('ollama.chat', $service));
     const csrf = document.head.querySelector('meta[name="csrf-token"]')?.content;
 
     return {
