@@ -55,6 +55,14 @@ class AdminServiceShowContainerPanelTest extends TestCase
             'container_name' => 'user-'.$customer->id.'-service-'.$service->id.'-nodejs',
             'assigned_port' => 30022,
             'domain' => 'gateway.example.test',
+            'env_values' => [
+                'DB_DATABASE' => 'customer_app_db',
+                'DB_USERNAME' => 'customer_app_user',
+                'DB_PASSWORD' => 'customer-db-secret-2026',
+                'DATABASE_URL' => 'mysql://customer_app_user:url-secret-2026@db:3306/customer_app_db',
+                'JWT_SECRET' => 'runtime-jwt-secret-2026',
+                'PUBLIC_LABEL' => 'plain-runtime-value',
+            ],
         ]);
 
         $this->assertNull($service->fresh()->product?->containerTemplate);
@@ -77,7 +85,24 @@ class AdminServiceShowContainerPanelTest extends TestCase
             ->assertSee('Environment variables')
             ->assertDontSee('Service Metadata')
             ->assertDontSee('super-secret-jwt-xyz-193')
-            ->assertDontSee('enc-secret-should-not-leak');
+            ->assertDontSee('enc-secret-should-not-leak')
+            ->assertDontSee('customer-db-secret-2026')
+            ->assertDontSee('url-secret-2026')
+            ->assertDontSee('runtime-jwt-secret-2026')
+            ->assertDontSee('plain-runtime-value')
+            ->assertDontSee('customer_app_db')
+            ->assertDontSee('customer_app_user');
+
+        $this->actingAs($customer)
+            ->get(route('customer.services.container.show', $service))
+            ->assertOk()
+            ->assertSee('customer-db-secret-2026')
+            ->assertSee('runtime-jwt-secret-2026')
+            ->assertSee('plain-runtime-value');
+
+        $this->actingAs(User::factory()->create())
+            ->get(route('customer.services.container.show', $service))
+            ->assertForbidden();
     }
 
     public function test_admin_sees_empty_runtime_state_when_container_is_not_provisioned(): void

@@ -74,7 +74,7 @@
                                                     </div>
                                                 </template>
 
-                                                @if (($templateSlug ?? '') === 'nodejs')
+                                                @if (in_array($templateSlug ?? '', ['nodejs', 'python', 'ruby', 'go'], true))
                                                     <div class="mb-4 rounded-lg border border-slate-200 dark:border-slate-700 p-3">
                                                         <p class="text-sm font-semibold text-slate-900 dark:text-white">Advanced workload roots</p>
                                                         <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 mb-3">
