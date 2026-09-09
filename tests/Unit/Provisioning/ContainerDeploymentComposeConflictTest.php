@@ -31,4 +31,18 @@ class ContainerDeploymentComposeConflictTest extends TestCase
             'a7ea987621f93f7a6c86c067286a768ab2aac4abac3c1d113081cbcd15bb5570',
         ], $service->conflictingDockerRefsFromError($message));
     }
+
+    #[Test]
+    public function it_detects_containers_marked_for_removal(): void
+    {
+        $service = app(ContainerDeploymentService::class);
+
+        $message = 'Container user-493-service-454-nodejs Starting Container user-493-service-454-nodejs Error response from daemon: container is marked for removal and cannot be started';
+
+        $this->assertTrue($service->isDockerContainerMarkedForRemoval($message));
+        $this->assertFalse($service->isDockerContainerMarkedForRemoval('npm install failed'));
+        $this->assertSame([
+            'user-493-service-454-nodejs',
+        ], $service->dockerContainerRefsFromComposeError($message));
+    }
 }

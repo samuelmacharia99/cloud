@@ -766,20 +766,25 @@ class ContainerDeploymentService
                 $composeContent = $ssh->exec("cat {$composeFile}");
                 $composeData = Yaml::parse($composeContent);
 
-                // Force remove any conflicting containers with explicit container_name
-                if (isset($composeData['services'])) {
-                    foreach ($composeData['services'] as $serviceName => $serviceConfig) {
-                        if (isset($serviceConfig['container_name'])) {
-                            $containerName = $serviceConfig['container_name'];
-                            // Force remove the container if it exists
-                            @$ssh->exec("docker rm -f {$containerName}", 10);
-                            \Log::debug("Force removed container: {$containerName}");
+                // Force remove any leftover containers with explicit container_name.
+                // docker rm -f is asynchronous: the daemon marks the container for
+                // removal and compose up will fail if we start before that finishes.
+                $removedNames = [];
+                if (isset($composeData['services']) && is_array($composeData['services'])) {
+                    foreach ($composeData['services'] as $serviceConfig) {
+                        if (! is_array($serviceConfig) || ! isset($serviceConfig['container_name'])) {
+                            continue;
                         }
+                        $containerName = (string) $serviceConfig['container_name'];
+                        $removedNames[] = $containerName;
+                        @$ssh->exec('docker rm -f '.escapeshellarg($containerName).' 2>/dev/null || true', 60, false);
+                        \Log::debug("Force removed container: {$containerName}");
                     }
                 }
 
                 // Stop and remove all containers/networks, then start fresh
                 @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml down --remove-orphans", self::DEPLOY_TIMEOUT);
+                $this->waitForRemovingDockerContainers($ssh, $containerPath, $removedNames);
 
                 $this->startComposeStack($ssh, $service, $deployment, recreate: false);
 
@@ -3134,10 +3139,12 @@ class ContainerDeploymentService
                     "cd {$pathArg} && docker compose -f docker-compose.yml down {$volumeFlag}--remove-orphans",
                     self::DEPLOY_TIMEOUT
                 );
+                $this->waitForRemovingDockerContainers($ssh, $containerPath);
             }
 
             if ($removeVolumes) {
                 $this->forceRemoveMysqlNamedVolumes($ssh, $containerPath);
+                $this->waitForRemovingDockerContainers($ssh, $containerPath);
             }
         } catch (\Throwable $e) {
             \Log::warning('Failed to tear down existing compose stack before deploy', [
@@ -5456,31 +5463,65 @@ class ContainerDeploymentService
         $pullFlag = $localRuntimeImage ? ' --pull never' : '';
         $command = "cd {$containerPath} && docker compose{$fileFlag} up -d{$pullFlag}";
         $timeoutSeconds = max(self::DEPLOY_TIMEOUT, $timeoutSeconds);
+        $maxAttempts = 3;
+        $lastError = null;
 
-        try {
-            $ssh->exec($command, $timeoutSeconds);
-        } catch (\Throwable $e) {
-            if ($this->isDockerAddressPoolExhausted($e->getMessage())) {
-                $this->ensureSharedDockerNetwork($ssh);
+        for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
+            try {
                 $ssh->exec($command, $timeoutSeconds);
 
                 return;
-            }
+            } catch (\Throwable $e) {
+                $lastError = $e;
+                $message = $e->getMessage();
 
-            if (! $this->isDockerContainerNameConflict($e->getMessage())) {
+                if ($this->isDockerAddressPoolExhausted($message)) {
+                    $this->ensureSharedDockerNetwork($ssh);
+
+                    continue;
+                }
+
+                if ($this->isDockerContainerMarkedForRemoval($message)) {
+                    \Log::warning('Docker compose up hit a container still marked for removal; waiting then retrying', [
+                        'container_path' => $containerPath,
+                        'attempt' => $attempt,
+                        'error' => $message,
+                    ]);
+                    $this->waitForRemovingDockerContainers(
+                        $ssh,
+                        $containerPath,
+                        $this->dockerContainerRefsFromComposeError($message)
+                    );
+
+                    continue;
+                }
+
+                if ($this->isDockerContainerNameConflict($message)) {
+                    $project = basename(rtrim($containerPath, '/'));
+                    \Log::warning('Docker compose up hit a container name conflict; clearing leftovers and retrying', [
+                        'container_path' => $containerPath,
+                        'project' => $project,
+                        'attempt' => $attempt,
+                        'error' => $message,
+                    ]);
+                    $this->clearDockerComposeNameConflicts($ssh, $project, $message);
+
+                    continue;
+                }
+
                 throw $e;
             }
-
-            $project = basename(rtrim($containerPath, '/'));
-            \Log::warning('Docker compose up hit a container name conflict; clearing leftovers and retrying', [
-                'container_path' => $containerPath,
-                'project' => $project,
-                'error' => $e->getMessage(),
-            ]);
-
-            $this->clearDockerComposeNameConflicts($ssh, $project, $e->getMessage());
-            $ssh->exec($command, $timeoutSeconds);
         }
+
+        if ($lastError && $this->isDockerContainerMarkedForRemoval($lastError->getMessage())) {
+            throw new \RuntimeException(
+                'Docker is still removing a previous copy of this container. Wait a minute, then try Start or Redeploy stack again.',
+                0,
+                $lastError
+            );
+        }
+
+        throw $lastError ?? new \RuntimeException('Docker compose up failed');
     }
 
     public function isDockerContainerNameConflict(string $message): bool
@@ -5489,6 +5530,87 @@ class ContainerDeploymentService
 
         return str_contains($message, 'conflict. the container name')
             || (str_contains($message, 'already in use by container') && str_contains($message, 'container name'));
+    }
+
+    public function isDockerContainerMarkedForRemoval(string $message): bool
+    {
+        $message = strtolower($message);
+
+        return str_contains($message, 'marked for removal')
+            || str_contains($message, 'removal in progress');
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function dockerContainerRefsFromComposeError(string $message): array
+    {
+        $refs = $this->conflictingDockerRefsFromError($message);
+
+        if (preg_match_all('/Container\s+(\S+)\s+(?:Creating|Created|Starting|Started|Exited|Error)/', $message, $matches)) {
+            foreach ($matches[1] as $name) {
+                $refs[] = ltrim((string) $name, '/');
+            }
+        }
+
+        return array_values(array_unique(array_filter($refs)));
+    }
+
+    /**
+     * `docker rm -f` and `compose down` mark containers for removal asynchronously.
+     * compose up then tries to start the old name and Docker rejects it.
+     *
+     * @param  list<string>  $extraRefs
+     */
+    private function waitForRemovingDockerContainers(
+        SSHService $ssh,
+        string $containerPath,
+        array $extraRefs = [],
+        int $timeoutSeconds = 90
+    ): void {
+        $project = basename(rtrim($containerPath, '/'));
+        $safeProject = preg_replace('/[^a-zA-Z0-9_.-]/', '', $project) ?: '';
+        if ($safeProject === '') {
+            return;
+        }
+
+        $refs = [$safeProject];
+        foreach ($extraRefs as $ref) {
+            $clean = preg_replace('/[^a-zA-Z0-9_.-]/', '', (string) $ref);
+            if ($clean !== '') {
+                $refs[] = $clean;
+            }
+        }
+        $refs = array_values(array_unique($refs));
+        $timeout = max(15, min(180, $timeoutSeconds));
+
+        $script = 'proj='.escapeshellarg($safeProject).'; '
+            .'deadline=$(( $(date +%s) + '.$timeout.' )); '
+            .'refs='.escapeshellarg(implode(' ', $refs)).'; '
+            .'while [ "$(date +%s)" -lt "$deadline" ]; do '
+            .'leftover=""; '
+            .'ids=$(docker ps -aq --filter label=com.docker.compose.project="$proj" 2>/dev/null || true); '
+            .'for ref in $refs; do ids="$ids $(docker ps -aq --filter name="$ref" 2>/dev/null || true)"; done; '
+            .'for id in $ids; do '
+            .'[ -z "$id" ] && continue; '
+            .'status=$(docker inspect --format '.escapeshellarg('{{.State.Status}}').' "$id" 2>/dev/null || true); '
+            .'if [ "$status" = "removing" ] || [ "$status" = "dead" ]; then leftover="$leftover $id"; fi; '
+            .'done; '
+            .'leftover=$(echo "$leftover" | xargs 2>/dev/null || true); '
+            .'if [ -z "$leftover" ]; then exit 0; fi; '
+            .'echo "$leftover" | xargs -r docker rm -f >/dev/null 2>&1 || true; '
+            .'sleep 2; '
+            .'done; '
+            .'exit 1';
+
+        try {
+            $ssh->exec($script, $timeout + 15, false);
+        } catch (\Throwable $e) {
+            \Log::warning('Docker still had containers marked for removal after waiting', [
+                'container_path' => $containerPath,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     public function isDockerAddressPoolExhausted(string $message): bool
@@ -5619,6 +5741,7 @@ class ContainerDeploymentService
 
         if ($recreate) {
             @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml down --remove-orphans", self::DEPLOY_TIMEOUT);
+            $this->waitForRemovingDockerContainers($ssh, $containerPath);
         }
 
         $this->composeUp($ssh, $containerPath, (bool) $usesRuntimeImage, useExplicitComposeFile: true);
