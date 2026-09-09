@@ -162,6 +162,8 @@ class CheckCronHealthCommandTest extends TestCase
         $this->artisan('cron:check-health')
             ->assertSuccessful()
             ->expectsOutputToContain('1 issue(s)');
+
+        Mail::assertNothingSent();
     }
 
     public function test_unknown_command_uses_default_threshold(): void

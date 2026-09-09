@@ -2,16 +2,13 @@
 
 namespace App\Jobs;
 
-use App\Mail\CronFailureMail;
 use App\Models\CronJob;
-use App\Models\User;
 use App\Services\Telegram\TelegramMonitorBridge;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Facades\Mail;
 
 class SendCronFailureAlerts implements ShouldQueue
 {
@@ -38,12 +35,5 @@ class SendCronFailureAlerts implements ShouldQueue
             'Command' => $job->command,
             'Schedule' => $job->schedule,
         ]);
-
-        User::query()
-            ->where('is_admin', true)
-            ->whereNotNull('email')
-            ->eachById(function (User $admin) use ($job): void {
-                Mail::to($admin->email)->send(new CronFailureMail($job));
-            });
     }
 }

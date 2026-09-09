@@ -127,6 +127,10 @@ class EmailDeliveryService
 
     public function sendToAdmins(Mailable $mailable, string $subject, NotificationEvent $event, ?string $logBody = null): int
     {
+        if ($event->adminAlertsAreTelegramOnly()) {
+            return 0;
+        }
+
         if (! $this->preferences->isGloballyEnabled($event)) {
             return 0;
         }

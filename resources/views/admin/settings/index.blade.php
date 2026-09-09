@@ -1882,6 +1882,7 @@
                                 <label class="flex items-center gap-2">
                                     <input type="checkbox" name="settings[notify_service_provision_failed]" value="1" @checked(($settings['notify_service_provision_failed'] ?? '0') == '1') class="rounded" />
                                     <span class="text-slate-700 dark:text-slate-300">Service Provision Failed</span>
+                                    <span class="text-xs text-slate-500 dark:text-slate-400">(customer email; admins get Telegram only)</span>
                                 </label>
                             </div>
                             <div>
@@ -1898,14 +1899,6 @@
                                 <label class="flex items-center gap-2">
                                     <input type="checkbox" name="settings[notify_container_backup]" value="1" @checked(($settings['notify_container_backup'] ?? '0') == '1') class="rounded" />
                                     <span class="text-slate-700 dark:text-slate-300">Application Backup Completed</span>
-                                    <span class="text-xs text-slate-500 dark:text-slate-400">(email only)</span>
-                                </label>
-                            </div>
-                            <div>
-                                <input type="hidden" name="settings[notify_container_backup_failure]" value="0">
-                                <label class="flex items-center gap-2">
-                                    <input type="checkbox" name="settings[notify_container_backup_failure]" value="1" @checked(($settings['notify_container_backup_failure'] ?? '0') == '1') class="rounded" />
-                                    <span class="text-slate-700 dark:text-slate-300">Application Backup Failed</span>
                                     <span class="text-xs text-slate-500 dark:text-slate-400">(email only)</span>
                                 </label>
                             </div>
@@ -1995,13 +1988,6 @@
                                 <label class="flex items-center gap-2">
                                     <input type="checkbox" name="settings[notify_admin_new_order]" value="1" @checked(($settings['notify_admin_new_order'] ?? '0') == '1') class="rounded" />
                                     <span class="text-slate-700 dark:text-slate-300">Admin: New Order</span>
-                                </label>
-                            </div>
-                            <div>
-                                <input type="hidden" name="settings[notify_admin_node_offline]" value="0">
-                                <label class="flex items-center gap-2">
-                                    <input type="checkbox" name="settings[notify_admin_node_offline]" value="1" @checked(($settings['notify_admin_node_offline'] ?? '0') == '1') class="rounded" />
-                                    <span class="text-slate-700 dark:text-slate-300">Admin: Application Node Offline</span>
                                 </label>
                             </div>
                             <div>

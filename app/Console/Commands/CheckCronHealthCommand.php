@@ -2,15 +2,12 @@
 
 namespace App\Console\Commands;
 
-use App\Mail\CronHealthAlertMail;
 use App\Models\ContainerCronJobRun;
 use App\Models\CronJob;
 use App\Models\CronJobLog;
 use App\Models\Setting;
-use App\Models\User;
 use App\Services\Telegram\TelegramMonitorBridge;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
 
 class CheckCronHealthCommand extends BaseCronCommand
 {
@@ -180,20 +177,6 @@ class CheckCronHealthCommand extends BaseCronCommand
                     'Failures (1h)' => (string) $issue['count'],
                 ]);
             }
-        }
-
-        try {
-            $admins = User::where('is_admin', true)->get();
-
-            foreach ($admins as $admin) {
-                Mail::to($admin->email)->queue(
-                    new CronHealthAlertMail($issues)
-                );
-            }
-        } catch (\Exception $e) {
-            Log::error('Failed to send cron health alert', [
-                'error' => $e->getMessage(),
-            ]);
         }
     }
 

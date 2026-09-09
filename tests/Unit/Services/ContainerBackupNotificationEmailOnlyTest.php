@@ -3,7 +3,6 @@
 namespace Tests\Unit\Services;
 
 use App\Mail\ContainerBackupCompletedMail;
-use App\Mail\ContainerBackupFailedMail;
 use App\Models\ContainerBackup;
 use App\Models\ContainerDeployment;
 use App\Models\Node;
@@ -106,7 +105,7 @@ class ContainerBackupNotificationEmailOnlyTest extends TestCase
         Mail::assertNothingSent();
     }
 
-    public function test_backup_failed_sends_admin_email_but_not_sms(): void
+    public function test_backup_failed_does_not_email_admins(): void
     {
         Mail::fake();
 
@@ -131,6 +130,6 @@ class ContainerBackupNotificationEmailOnlyTest extends TestCase
 
         app(NotificationService::class)->notifyContainerBackupFailed($service->fresh('user'), 'disk full');
 
-        Mail::assertSent(ContainerBackupFailedMail::class);
+        Mail::assertNothingSent();
     }
 }

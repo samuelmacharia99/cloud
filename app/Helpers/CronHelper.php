@@ -110,11 +110,6 @@ class CronHelper
                 'description' => 'Logs output to storage/logs/cron.log for debugging',
                 'command' => "* * * * * cd {$basePath} && {$phpPath} artisan schedule:run >> {$logPath} 2>&1",
             ],
-            'with_email' => [
-                'label' => 'With Email on Failure',
-                'description' => 'Email notification if cron fails (requires sendmail)',
-                'command' => "* * * * * cd {$basePath} && {$phpPath} artisan schedule:run >> {$logPath} 2>&1 || mail -s 'Cron failed on ".gethostname()."' admin@example.com",
-            ],
             'verbose' => [
                 'label' => 'Verbose (Development)',
                 'description' => 'Outputs all cron job details (development only)',

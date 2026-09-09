@@ -8,7 +8,6 @@ use App\Mail\AdminManualPaymentMail;
 use App\Mail\AdminResellerDomainPushMail;
 use App\Mail\ContainerAutoRestartedMail;
 use App\Mail\ContainerBackupCompletedMail;
-use App\Mail\ContainerBackupFailedMail;
 use App\Mail\ContainerFailedMail;
 use App\Mail\DomainAutoRenewUnpaidMail;
 use App\Mail\DomainExpiryMail;
@@ -885,14 +884,6 @@ class NotificationService
             'Customer' => $service->user?->name ?? '—',
             'Error' => Str::limit($error, 500),
         ]);
-
-        $event = NotificationEvent::ContainerBackupFailed;
-        if (! $this->preferences->isGloballyEnabled($event)) {
-            return;
-        }
-
-        $subject = 'Container Backup Failed: '.$service->name;
-        $this->emailDelivery->sendToAdmins(new ContainerBackupFailedMail($service, $error), $subject, $event);
     }
 
     public function notifyContainerFailed(Service $service, string $reason): void
@@ -970,18 +961,6 @@ class NotificationService
     public function notifyAdminNodeOffline(string $subject, string $body): void
     {
         $this->telegram()->systemAlert($subject, ['Details' => Str::limit($body, 800)]);
-
-        $event = NotificationEvent::AdminNodeOffline;
-        if (! $this->preferences->isGloballyEnabled($event)) {
-            return;
-        }
-
-        $this->emailDelivery->sendToAdmins(
-            new GenericNotificationMail($subject, 'Container Node Offline Alert', $body),
-            $subject,
-            $event,
-            $body
-        );
     }
 
     /**
@@ -1101,18 +1080,6 @@ EOT;
         if (! $this->preferences->isGloballyEnabled($event)) {
             return;
         }
-
-        $adminSubject = 'Provisioning failed — '.$service->name.' (#'.$service->id.')';
-        $adminBody = "Customer: {$service->user->name} ({$service->user->email})\n"
-            ."Service: {$service->name} (#{$service->id})\n"
-            ."Reason: {$reason}";
-
-        $this->emailDelivery->sendToAdmins(
-            new GenericNotificationMail($adminSubject, 'Service provisioning failed', $adminBody),
-            $adminSubject,
-            $event,
-            $adminBody,
-        );
 
         if ($this->shouldNotifyAdminBySmsForCustomer($service->user)) {
             $adminSmsMessage = 'Provision failed: '.$service->name.' for '.$service->user->name.'. '.Str::limit($reason, 80);

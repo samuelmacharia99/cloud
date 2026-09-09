@@ -139,4 +139,19 @@ enum NotificationEvent: string
     {
         return str_replace('_', ' ', ucwords($this->value, '_'));
     }
+
+    /**
+     * Operator error alerts must go to Telegram only — never email.
+     */
+    public function adminAlertsAreTelegramOnly(): bool
+    {
+        return match ($this) {
+            self::ContainerBackupFailed,
+            self::AdminNodeOffline,
+            self::CronFailure,
+            self::CronHealth,
+            self::ServiceProvisionFailed => true,
+            default => false,
+        };
+    }
 }

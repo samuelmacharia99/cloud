@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\Services;
 
+use App\Mail\GenericNotificationMail;
 use App\Mail\PaymentFailedMail;
 use App\Mail\ServiceProvisionFailedMail;
 use App\Models\Invoice;
@@ -58,6 +59,10 @@ class NotificationServiceCommsTest extends TestCase
     {
         Mail::fake();
 
+        User::factory()->create([
+            'is_admin' => true,
+            'email' => 'admin@example.com',
+        ]);
         $customer = User::factory()->customer()->create(['email' => 'provision@example.com']);
         $service = Service::factory()->for($customer)->create([
             'status' => 'failed',
@@ -69,5 +74,23 @@ class NotificationServiceCommsTest extends TestCase
         Mail::assertSent(ServiceProvisionFailedMail::class, function ($mail) use ($customer) {
             return $mail->hasTo($customer->email);
         });
+        Mail::assertNotSent(GenericNotificationMail::class);
+    }
+
+    public function test_notify_admin_node_offline_does_not_email(): void
+    {
+        Mail::fake();
+
+        User::factory()->create([
+            'is_admin' => true,
+            'email' => 'admin@example.com',
+        ]);
+
+        app(NotificationService::class)->notifyAdminNodeOffline(
+            'Container node offline: app-01',
+            'No heartbeat for 15+ minutes.',
+        );
+
+        Mail::assertNothingSent();
     }
 }
