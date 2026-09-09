@@ -600,10 +600,11 @@ class ContainerNodeWorkloadTopologyServiceTest extends TestCase
             $runtime = Mockery::mock(ContainerApplicationRuntimeService::class);
             $runtime->shouldReceive('detectRuntimeAt')
                 ->once()
-                ->withArgs(fn ($ssh, $host, $root, $runtimeSlug, $port) => $host === '/srv/app'
+                ->withArgs(fn ($ssh, $host, $root, $runtimeSlug, $port, $includeBootstrap = null) => $host === '/srv/app'
                     && $root === 'backend'
                     && $runtimeSlug === $slug
-                    && $port === ContainerNodeWorkloadTopologyService::BACKEND_PORT)
+                    && $port === ContainerNodeWorkloadTopologyService::BACKEND_PORT
+                    && $includeBootstrap === true)
                 ->andReturn(new ApplicationRuntime(
                     ['sh', '-lc', 'cd /app/backend && exec backend-server'],
                     $case['source'],

@@ -497,4 +497,20 @@ class ContainerStackCommandServiceTest extends TestCase
             $packageJson,
         ));
     }
+
+    #[Test]
+    public function it_requires_vite_dist_index_before_publishing_the_frontend_sidecar(): void
+    {
+        $service = new ContainerStackCommandService;
+        $ssh = $this->createMock(SSHService::class);
+        $ssh->method('exec')->willReturn('no');
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('apps/web/dist/index.html');
+        $service->assertViteFrontendDistReady(
+            $ssh,
+            '/opt/talksasa/containers/user-1-service-1/app',
+            'apps/web',
+        );
+    }
 }

@@ -364,16 +364,18 @@ class ContainerDeploymentService
                         'selection_source' => $nodeTopology['selection_source'] ?? 'stack',
                     ]);
                     if (($nodeTopology['topology'] ?? 'single') === 'split_web_api') {
-                        $envVars['INTERNAL_API_URL'] ??= 'http://backend:'.ContainerNodeWorkloadTopologyService::BACKEND_PORT;
-                        $envVars['BACKEND_URL'] ??= $envVars['INTERNAL_API_URL'];
-                        $envVars['NEXT_PUBLIC_API_URL'] ??= '/api';
-                        $envVars['VITE_API_URL'] ??= '/api';
-                        $envVars['EXPO_PUBLIC_API_URL'] ??= '/api';
+                        $internalApi = NodeWebGatewayProxy::internalApiUrl(
+                            (int) data_get($nodeTopology, 'backend.port', ContainerNodeWorkloadTopologyService::BACKEND_PORT)
+                        );
+                        // Compose DNS — never the Docker container name.
+                        $envVars['INTERNAL_API_URL'] = $internalApi;
+                        $envVars['BACKEND_URL'] = $internalApi;
+                        $envVars['API_URL'] = $internalApi;
+                        $envVars['NEXT_PUBLIC_API_URL'] = $envVars['NEXT_PUBLIC_API_URL'] ?? '/api';
+                        $envVars['VITE_API_URL'] = $envVars['VITE_API_URL'] ?? '/api';
+                        $envVars['EXPO_PUBLIC_API_URL'] = $envVars['EXPO_PUBLIC_API_URL'] ?? '/api';
                         $deployment->update(['env_values' => $envVars]);
-                        $ssh->upload(NodeWebGatewayProxy::scriptContents(), NodeWebGatewayProxy::scriptPath($hostAppPath));
-                        if (($nodeTopology['frontend_type'] ?? '') === 'vite-spa') {
-                            $ssh->upload(NodeWebGatewayProxy::viteConfig(), NodeWebGatewayProxy::viteConfigPath($hostAppPath));
-                        }
+                        $this->syncNodeWebGatewayFiles($ssh, $hostAppPath, (string) ($nodeTopology['frontend_type'] ?? ''));
                     }
                 }
 
@@ -413,10 +415,11 @@ class ContainerDeploymentService
                         operationAlreadyLocked: true,
                     );
                 } elseif (($nodeTopology['topology'] ?? null) === 'split_web_api') {
-                    $this->stackCommands->buildSplitWebFrontend(
-                        $deployment->fresh(),
+                    $this->prepareSplitWebApiRelease(
+                        $service,
+                        $deployment,
                         $ssh,
-                        (string) data_get($nodeTopology, 'frontend.root'),
+                        $nodeTopology,
                         forceRebuild: $options->isRedeploy,
                     );
                 }
@@ -2531,7 +2534,7 @@ class ContainerDeploymentService
         }
         if ($memoryLimitMb < 512 || $cpuLimit < 0.5) {
             throw new \DomainException(
-                'A split Node backend/frontend stack requires at least 0.5 CPU and 512 MB RAM. Upgrade the service plan before redeploying.'
+                'A split web/API stack requires at least 0.5 CPU and 512 MB RAM. Upgrade the service plan before redeploying.'
             );
         }
 
@@ -2556,8 +2559,9 @@ class ContainerDeploymentService
         $backend['expose'] = [(string) $backendPort];
         $backend['environment'] = array_merge($envVars, [
             'PORT' => (string) $backendPort,
-            'INTERNAL_API_URL' => 'http://backend:'.$backendPort,
-            'BACKEND_URL' => 'http://backend:'.$backendPort,
+            'INTERNAL_API_URL' => NodeWebGatewayProxy::internalApiUrl($backendPort),
+            'BACKEND_URL' => NodeWebGatewayProxy::internalApiUrl($backendPort),
+            'API_URL' => NodeWebGatewayProxy::internalApiUrl($backendPort),
         ]);
         $this->setComposeResourceLimits($backend, $backendCpu, $backendMemory);
 
@@ -2571,14 +2575,14 @@ class ContainerDeploymentService
                     $hostAppPath.'/'.data_get($topology, 'frontend.root').'/dist:/usr/share/nginx/html:ro',
                     NodeWebGatewayProxy::viteConfigPath($hostAppPath).':/etc/nginx/conf.d/default.conf:ro',
                 ],
-                'depends_on' => [NodeWebGatewayProxy::BACKEND_SERVICE],
+                // Static nginx does not need the API process; edge waits for both.
             ];
         } else {
             $frontendEnv = array_merge($envVars, [
                 'PORT' => (string) $frontendPort,
                 'HOSTNAME' => '0.0.0.0',
-                'INTERNAL_API_URL' => 'http://backend:'.$backendPort,
-                'BACKEND_URL' => 'http://backend:'.$backendPort,
+                'INTERNAL_API_URL' => NodeWebGatewayProxy::internalApiUrl($backendPort),
+                'BACKEND_URL' => NodeWebGatewayProxy::internalApiUrl($backendPort),
                 'NEXT_PUBLIC_API_URL' => $envVars['NEXT_PUBLIC_API_URL'] ?? '/api',
                 'EXPO_PUBLIC_API_URL' => $envVars['EXPO_PUBLIC_API_URL'] ?? '/api',
             ]);
@@ -2591,7 +2595,6 @@ class ContainerDeploymentService
                 'environment' => $frontendEnv,
                 'expose' => [(string) $frontendPort],
                 'volumes' => $backend['volumes'] ?? ["{$hostAppPath}:/app"],
-                'depends_on' => [NodeWebGatewayProxy::BACKEND_SERVICE],
             ];
         }
         $this->setComposeResourceLimits($frontend, $frontendCpu, $frontendMemory);
@@ -2612,7 +2615,10 @@ class ContainerDeploymentService
                 NodeWebGatewayProxy::scriptPath($hostAppPath).':'.NodeWebGatewayProxy::containerScriptPath().':ro',
             ],
             'command' => ['node', NodeWebGatewayProxy::containerScriptPath()],
-            'depends_on' => [NodeWebGatewayProxy::BACKEND_SERVICE],
+            'depends_on' => [
+                NodeWebGatewayProxy::BACKEND_SERVICE,
+                NodeWebGatewayProxy::FRONTEND_SERVICE,
+            ],
         ];
         $this->setComposeResourceLimits($edge, $edgeCpu, $edgeMemory);
 
@@ -3137,15 +3143,17 @@ class ContainerDeploymentService
         while (time() < $deadline) {
             try {
                 foreach ([$backend, $frontend, $edge] as $container) {
-                    $this->waitForContainerRunning($ssh, $container, self::HEALTH_CHECK_DELAY * 2);
+                    $this->waitForStableContainerRunning($ssh, $container, self::HEALTH_CHECK_DELAY * 2);
                 }
+                // Edge must own the public port and route UI → frontend, /api → backend.
                 $ssh->exec(
                     'front=$(curl -sS -D - -o /dev/null --connect-timeout 2 --max-time 5 '
                     .escapeshellarg('http://127.0.0.1:'.$port.'/')." | tr -d '\\r'); "
                     .'api=$(curl -sS -D - -o /dev/null --connect-timeout 2 --max-time 5 '
                     .escapeshellarg('http://127.0.0.1:'.$port.'/api/health')." | tr -d '\\r'); "
                     .'printf "%s" "$front" | grep -qi "^x-talksasa-upstream: frontend$"; '
-                    .'printf "%s" "$api" | grep -qi "^x-talksasa-upstream: backend$"',
+                    .'printf "%s" "$api" | grep -qi "^x-talksasa-upstream: backend$"; '
+                    .'printf "%s" "$api" | grep -Eiq "^HTTP/[0-9.]+ (200|204|301|302|401|403|404|405|422)$"',
                     15,
                 );
 
@@ -3159,14 +3167,138 @@ class ContainerDeploymentService
         $logs = trim($ssh->exec(
             'for c in '.escapeshellarg($backend).' '.escapeshellarg($frontend).' '.escapeshellarg($edge)
             .'; do echo "=== $c ==="; docker inspect --format '
-            .escapeshellarg('{{.State.Status}} exit={{.State.ExitCode}} restarts={{.RestartCount}}')
-            .' "$c" 2>&1 || true; docker logs --tail 40 "$c" 2>&1 || true; done',
+            .escapeshellarg('{{.State.Status}} exit={{.State.ExitCode}} restarts={{.RestartCount}} cmd={{json .Config.Cmd}}')
+            .' "$c" 2>&1 || true; docker logs --tail 40 "$c" 2>&1 || true; done; '
+            .'echo "=== compose services ==="; '
+            .'cd '.escapeshellarg(self::CONTAINER_BASE_PATH.'/'.$backend)
+            .' && docker compose -f docker-compose.yml ps -a 2>&1 || true',
             30,
         ));
 
         throw new \RuntimeException(
             'Split web/API stack did not become ready: '.mb_substr($lastDiagnostic."\n".$logs, 0, 4000)
         );
+    }
+
+    /**
+     * Running briefly between crash-loop restarts is not ready.
+     */
+    public function waitForStableContainerRunning(
+        SSHService $ssh,
+        string $containerName,
+        int $timeoutSeconds = 120,
+    ): void {
+        $deadline = time() + max(5, $timeoutSeconds);
+        $lastState = 'unknown';
+
+        while (time() < $deadline) {
+            $status = $this->getContainerStatus($ssh, $containerName);
+            $lastState = (string) ($status['state'] ?? 'unknown');
+            $running = (bool) ($status['running'] ?? false);
+
+            if ($running && ! in_array($lastState, ['restarting', 'dead', 'removing'], true)) {
+                sleep(2);
+                $again = $this->getContainerStatus($ssh, $containerName);
+                if (($again['running'] ?? false)
+                    && ! in_array((string) ($again['state'] ?? ''), ['restarting', 'dead', 'removing'], true)
+                ) {
+                    return;
+                }
+            }
+
+            sleep(self::HEALTH_CHECK_DELAY);
+        }
+
+        throw new \RuntimeException(
+            "Container {$containerName} is not stably running (last state: {$lastState})."
+        );
+    }
+
+    /**
+     * Install backend deps, build the browser app, and verify gateway artifacts before compose up.
+     *
+     * @param  array<string, mixed>  $nodeTopology
+     */
+    private function prepareSplitWebApiRelease(
+        Service $service,
+        ContainerDeployment $deployment,
+        SSHService $ssh,
+        array $nodeTopology,
+        bool $forceRebuild = false,
+    ): void {
+        $hostAppPath = app(ContainerAppDirectoryService::class)->hostAppPath($deployment);
+        $frontendRoot = (string) data_get($nodeTopology, 'frontend.root', '');
+        $frontendType = (string) ($nodeTopology['frontend_type'] ?? '');
+
+        $this->syncNodeWebGatewayFiles($ssh, $hostAppPath, $frontendType);
+
+        $backendMessages = $this->stackCommands->installSplitBackendDependencies(
+            $service->fresh(['product.containerTemplate']),
+            $deployment->fresh(),
+            $ssh,
+        );
+        foreach ($backendMessages as $message) {
+            $this->recordDeploymentEvent($service, $deployment, 'split_backend_dependencies', [
+                'message' => $message,
+            ]);
+        }
+
+        $frontendMessages = $this->stackCommands->buildSplitWebFrontend(
+            $deployment->fresh(),
+            $ssh,
+            $frontendRoot,
+            forceRebuild: $forceRebuild,
+        );
+        foreach ($frontendMessages as $message) {
+            $this->recordDeploymentEvent($service, $deployment, 'split_frontend_built', [
+                'frontend_root' => $frontendRoot,
+                'message' => $message,
+            ]);
+        }
+
+        if ($frontendType === 'vite-spa') {
+            $this->stackCommands->assertViteFrontendDistReady($ssh, $hostAppPath, $frontendRoot);
+        }
+
+        $this->recordDeploymentEvent($service, $deployment, 'split_web_release_ready', [
+            'backend_root' => data_get($nodeTopology, 'backend.root'),
+            'frontend_root' => $frontendRoot,
+            'frontend_type' => $frontendType,
+            'internal_api_url' => NodeWebGatewayProxy::internalApiUrl(
+                (int) data_get($nodeTopology, 'backend.port', ContainerNodeWorkloadTopologyService::BACKEND_PORT)
+            ),
+        ]);
+    }
+
+    private function syncNodeWebGatewayFiles(SSHService $ssh, string $hostAppPath, string $frontendType): void
+    {
+        $this->replaceHostPathWithFile(
+            $ssh,
+            NodeWebGatewayProxy::scriptPath($hostAppPath),
+            NodeWebGatewayProxy::scriptContents(),
+        );
+
+        if ($frontendType === 'vite-spa') {
+            $this->replaceHostPathWithFile(
+                $ssh,
+                NodeWebGatewayProxy::viteConfigPath($hostAppPath),
+                NodeWebGatewayProxy::viteConfig(),
+            );
+        }
+    }
+
+    /**
+     * Docker turns a missing bind-mount source into a directory, which breaks nginx/node.
+     */
+    private function replaceHostPathWithFile(SSHService $ssh, string $path, string $contents): void
+    {
+        $allowedBase = rtrim(self::CONTAINER_BASE_PATH, '/').'/';
+        if ($path === '' || ! str_starts_with($path, $allowedBase)) {
+            throw new \InvalidArgumentException('Invalid host path for gateway artifact.');
+        }
+
+        $ssh->exec('rm -rf '.escapeshellarg($path), 15);
+        $ssh->upload($contents, $path);
     }
 
     /**
@@ -6929,7 +7061,7 @@ class ContainerDeploymentService
                 $pinned,
                 (string) $template->slug,
                 $port,
-                includeNodeBootstrap: false,
+                includeNodeBootstrap: ($template->slug ?? null) !== 'nodejs',
             );
         }
 
@@ -7123,15 +7255,16 @@ class ContainerDeploymentService
             );
             app(ContainerNodeWorkloadTopologyService::class)->persist($service, $nodeTopology);
             if (($nodeTopology['topology'] ?? null) === 'split_web_api') {
-                $envVars['INTERNAL_API_URL'] ??= 'http://backend:'.ContainerNodeWorkloadTopologyService::BACKEND_PORT;
-                $envVars['BACKEND_URL'] ??= $envVars['INTERNAL_API_URL'];
-                $envVars['NEXT_PUBLIC_API_URL'] ??= '/api';
-                $envVars['VITE_API_URL'] ??= '/api';
-                $envVars['EXPO_PUBLIC_API_URL'] ??= '/api';
-                $ssh->upload(NodeWebGatewayProxy::scriptContents(), NodeWebGatewayProxy::scriptPath($hostAppPath));
-                if (($nodeTopology['frontend_type'] ?? '') === 'vite-spa') {
-                    $ssh->upload(NodeWebGatewayProxy::viteConfig(), NodeWebGatewayProxy::viteConfigPath($hostAppPath));
-                }
+                $internalApi = NodeWebGatewayProxy::internalApiUrl(
+                    (int) data_get($nodeTopology, 'backend.port', ContainerNodeWorkloadTopologyService::BACKEND_PORT)
+                );
+                $envVars['INTERNAL_API_URL'] = $internalApi;
+                $envVars['BACKEND_URL'] = $internalApi;
+                $envVars['API_URL'] = $internalApi;
+                $envVars['NEXT_PUBLIC_API_URL'] = $envVars['NEXT_PUBLIC_API_URL'] ?? '/api';
+                $envVars['VITE_API_URL'] = $envVars['VITE_API_URL'] ?? '/api';
+                $envVars['EXPO_PUBLIC_API_URL'] = $envVars['EXPO_PUBLIC_API_URL'] ?? '/api';
+                $this->syncNodeWebGatewayFiles($ssh, $hostAppPath, (string) ($nodeTopology['frontend_type'] ?? ''));
                 $this->ensureNodeWebSidecarImages($ssh, (string) ($nodeTopology['frontend_type'] ?? 'nextjs'));
             }
             $deployment->update(['env_values' => $envVars]);
@@ -7277,15 +7410,16 @@ class ContainerDeploymentService
                 );
                 app(ContainerNodeWorkloadTopologyService::class)->persist($service, $nodeTopology);
                 if (($nodeTopology['topology'] ?? null) === 'split_web_api') {
-                    $envVars['INTERNAL_API_URL'] ??= 'http://backend:'.ContainerNodeWorkloadTopologyService::BACKEND_PORT;
-                    $envVars['BACKEND_URL'] ??= $envVars['INTERNAL_API_URL'];
-                    $envVars['NEXT_PUBLIC_API_URL'] ??= '/api';
-                    $envVars['VITE_API_URL'] ??= '/api';
-                    $envVars['EXPO_PUBLIC_API_URL'] ??= '/api';
-                    $ssh->upload(NodeWebGatewayProxy::scriptContents(), NodeWebGatewayProxy::scriptPath($hostAppPath));
-                    if (($nodeTopology['frontend_type'] ?? '') === 'vite-spa') {
-                        $ssh->upload(NodeWebGatewayProxy::viteConfig(), NodeWebGatewayProxy::viteConfigPath($hostAppPath));
-                    }
+                    $internalApi = NodeWebGatewayProxy::internalApiUrl(
+                        (int) data_get($nodeTopology, 'backend.port', ContainerNodeWorkloadTopologyService::BACKEND_PORT)
+                    );
+                    $envVars['INTERNAL_API_URL'] = $internalApi;
+                    $envVars['BACKEND_URL'] = $internalApi;
+                    $envVars['API_URL'] = $internalApi;
+                    $envVars['NEXT_PUBLIC_API_URL'] = $envVars['NEXT_PUBLIC_API_URL'] ?? '/api';
+                    $envVars['VITE_API_URL'] = $envVars['VITE_API_URL'] ?? '/api';
+                    $envVars['EXPO_PUBLIC_API_URL'] = $envVars['EXPO_PUBLIC_API_URL'] ?? '/api';
+                    $this->syncNodeWebGatewayFiles($ssh, $hostAppPath, (string) ($nodeTopology['frontend_type'] ?? ''));
                     $deployment->update(['env_values' => $envVars]);
                 }
             }
@@ -7329,10 +7463,11 @@ class ContainerDeploymentService
                         );
                     }
                 } else {
-                    $this->stackCommands->buildSplitWebFrontend(
+                    $this->prepareSplitWebApiRelease(
+                        $service,
                         $deployment->fresh(),
                         $ssh,
-                        (string) data_get($nodeTopology, 'frontend.root'),
+                        $nodeTopology,
                         forceRebuild: true,
                     );
                 }

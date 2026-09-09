@@ -32,6 +32,15 @@ class NodeWebGatewayProxy
         return $backendName.'-edge';
     }
 
+    /**
+     * In-stack API origin for compose DNS. Browser apps keep relative /api via the edge;
+     * build-time and container-to-container calls use this absolute URL.
+     */
+    public static function internalApiUrl(int $port = ContainerNodeWorkloadTopologyService::BACKEND_PORT): string
+    {
+        return 'http://'.self::BACKEND_SERVICE.':'.$port;
+    }
+
     public static function viteConfigPath(string $hostAppPath): string
     {
         return rtrim($hostAppPath, '/').'/.talksasa-vite-nginx.conf';
@@ -103,10 +112,15 @@ const server = http.createServer((req, res) => {
     upstreamResponse.pipe(res);
   });
   upstream.on('error', (error) => {
-    if (!res.headersSent) res.writeHead(502, { 'content-type': 'text/plain; charset=utf-8' });
+    if (!res.headersSent) {
+      res.writeHead(502, {
+        'content-type': 'text/plain; charset=utf-8',
+        'x-talksasa-upstream': role,
+      });
+    }
     res.end('Bad gateway: ' + error.message);
   });
-  upstream.setTimeout(60000, () => upstream.destroy(new Error('Upstream timeout')));
+  upstream.setTimeout(4000, () => upstream.destroy(new Error('Upstream timeout')));
   req.pipe(upstream);
 });
 

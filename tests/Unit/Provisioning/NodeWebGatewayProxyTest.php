@@ -100,6 +100,13 @@ class NodeWebGatewayProxyTest extends TestCase
             $compose['services']['frontend']['volumes'],
         );
         $this->assertSame('http://backend:8000', $compose['services']['backend']['environment']['INTERNAL_API_URL']);
+        $this->assertSame('http://backend:8000', $compose['services']['backend']['environment']['API_URL']);
+        $this->assertSame(
+            [NodeWebGatewayProxy::BACKEND_SERVICE, NodeWebGatewayProxy::FRONTEND_SERVICE],
+            $compose['services']['edge']['depends_on'],
+        );
+        $this->assertArrayNotHasKey('depends_on', $compose['services']['frontend']);
+        $this->assertSame('http://backend:8000', NodeWebGatewayProxy::internalApiUrl());
     }
 
     #[Test]

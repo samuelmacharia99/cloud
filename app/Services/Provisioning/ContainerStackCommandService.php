@@ -182,11 +182,11 @@ class ContainerStackCommandService
                 ),
             ))),
             'ruby' => array_values(array_filter(array_merge(
-                $this->installRubyDependencies($ssh, $containerPath, $containerName, $hostAppPath, $timeout),
+                $this->installSplitBackendDependencies($service, $deployment, $ssh),
                 $this->maybeBuildSplitWebFrontend($service, $deployment, $ssh, $forceRebuild),
             ))),
             'python' => array_values(array_filter(array_merge(
-                $this->installPythonDependencies($ssh, $containerPath, $containerName, $hostAppPath, $timeout),
+                $this->installSplitBackendDependencies($service, $deployment, $ssh),
                 $this->maybeBuildSplitWebFrontend($service, $deployment, $ssh, $forceRebuild),
             ))),
             'go' => $this->maybeBuildSplitWebFrontend($service, $deployment, $ssh, $forceRebuild),
@@ -254,6 +254,68 @@ class ContainerStackCommandService
         }
 
         return trim($requested, '/');
+    }
+
+    /**
+     * Install API dependencies for a split non-Node backend using the compose `backend` service.
+     *
+     * @return list<string>
+     */
+    public function installSplitBackendDependencies(
+        Service $service,
+        ContainerDeployment $deployment,
+        SSHService $ssh,
+    ): array {
+        $slug = $service->effectiveContainerTemplate()?->slug ?? '';
+        $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+        $hostAppPath = app(ContainerAppDirectoryService::class)->hostAppPath($deployment);
+        $timeout = (int) config('containers.laravel_init.command_timeout_seconds', 600);
+        $composeService = $this->resolveAppComposeService($deployment);
+        $backendRoot = trim((string) data_get($service->service_meta, 'node_workloads.backend.root', ''), '/');
+        $workDir = ($backendRoot !== '' && $backendRoot !== '.')
+            ? '/app/'.$backendRoot
+            : '/app';
+        $installHostPath = ($backendRoot !== '' && $backendRoot !== '.')
+            ? rtrim($hostAppPath, '/').'/'.$backendRoot
+            : $hostAppPath;
+
+        return match ($slug) {
+            'python' => $this->installPythonDependencies(
+                $ssh,
+                $containerPath,
+                $composeService,
+                $installHostPath,
+                $timeout,
+                $workDir,
+            ),
+            'ruby' => $this->installRubyDependencies(
+                $ssh,
+                $containerPath,
+                $composeService,
+                $installHostPath,
+                $timeout,
+                $workDir,
+            ),
+            default => [],
+        };
+    }
+
+    public function assertViteFrontendDistReady(
+        SSHService $ssh,
+        string $hostAppPath,
+        string $frontendRelativeDir,
+    ): void {
+        $index = app(ContainerApplicationRuntimeService::class)
+            ->viteProductionIndexRelativePath($frontendRelativeDir);
+        $path = rtrim($hostAppPath, '/').'/'.$index;
+        $pathArg = escapeshellarg($path);
+
+        if (trim($ssh->exec("[ -f {$pathArg} ] && echo yes || echo no", 10)) !== 'yes') {
+            throw new \RuntimeException(
+                'Vite frontend build did not produce '.$index
+                .'. The nginx frontend sidecar cannot start without that file.'
+            );
+        }
     }
 
     /**
@@ -770,9 +832,10 @@ class ContainerStackCommandService
     private function installRubyDependencies(
         SSHService $ssh,
         string $containerPath,
-        string $containerName,
+        string $composeService,
         string $hostAppPath,
-        int $timeout
+        int $timeout,
+        string $workDir = '/app',
     ): array {
         if (! $this->hostFileExists($ssh, $hostAppPath.'/Gemfile')) {
             return ['No Gemfile found; skipped bundle install.'];
@@ -782,9 +845,9 @@ class ContainerStackCommandService
             $this->runOneOffInContainer(
                 $ssh,
                 $containerPath,
-                $containerName,
+                $composeService,
                 'bundle install --without development test',
-                '/app',
+                $workDir,
                 $timeout
             );
 
@@ -800,9 +863,10 @@ class ContainerStackCommandService
     private function installPythonDependencies(
         SSHService $ssh,
         string $containerPath,
-        string $containerName,
+        string $composeService,
         string $hostAppPath,
-        int $timeout
+        int $timeout,
+        string $workDir = '/app',
     ): array {
         $messages = [];
 
@@ -811,9 +875,9 @@ class ContainerStackCommandService
                 $this->runOneOffInContainer(
                     $ssh,
                     $containerPath,
-                    $containerName,
+                    $composeService,
                     'pip install --no-cache-dir -r requirements.txt',
-                    '/app',
+                    $workDir,
                     $timeout
                 );
 

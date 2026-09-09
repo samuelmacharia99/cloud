@@ -454,7 +454,8 @@ class ContainerNodeWorkloadTopologyService
                 $backendRoot,
                 $backendSlug,
                 self::BACKEND_PORT,
-                includeNodeBootstrap: false,
+                // Python/Ruby/Go install into the container layer on start — same as single-stack.
+                includeNodeBootstrap: true,
             );
         $frontendRuntime = app(ContainerApplicationRuntimeService::class)->detectNodeRuntimeAt(
             $ssh,

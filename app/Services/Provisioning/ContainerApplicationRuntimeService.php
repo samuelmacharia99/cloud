@@ -26,9 +26,9 @@ class ContainerApplicationRuntimeService
     ): ApplicationRuntime {
         return match ($slug) {
             'nodejs' => $this->detectNodeRuntime($ssh, $hostAppPath, $defaultPort, $includeNodeBootstrap),
-            'ruby' => $this->detectRubyRuntime($ssh, $hostAppPath, $defaultPort),
-            'python' => $this->detectPythonRuntime($ssh, $hostAppPath, $defaultPort),
-            'go' => $this->detectGoRuntime($ssh, $hostAppPath, $defaultPort),
+            'ruby' => $this->detectRubyRuntime($ssh, $hostAppPath, $defaultPort, $includeNodeBootstrap),
+            'python' => $this->detectPythonRuntime($ssh, $hostAppPath, $defaultPort, $includeNodeBootstrap),
+            'go' => $this->detectGoRuntime($ssh, $hostAppPath, $defaultPort, $includeNodeBootstrap),
             default => $this->fallbackRuntime($slug, $defaultPort),
         };
     }
@@ -62,9 +62,9 @@ class ContainerApplicationRuntimeService
         }
 
         $runtime = match ($slug) {
-            'python' => $this->detectPythonRuntime($ssh, $projectHost, $defaultPort),
-            'ruby' => $this->detectRubyRuntime($ssh, $projectHost, $defaultPort),
-            'go' => $this->detectGoRuntime($ssh, $projectHost, $defaultPort),
+            'python' => $this->detectPythonRuntime($ssh, $projectHost, $defaultPort, $includeNodeBootstrap),
+            'ruby' => $this->detectRubyRuntime($ssh, $projectHost, $defaultPort, $includeNodeBootstrap),
+            'go' => $this->detectGoRuntime($ssh, $projectHost, $defaultPort, $includeNodeBootstrap),
             default => $this->fallbackRuntime($slug, $defaultPort),
         };
 
@@ -556,15 +556,20 @@ class ContainerApplicationRuntimeService
         return null;
     }
 
-    public function detectRubyRuntime(SSHService $ssh, string $hostAppPath, int $defaultPort): ApplicationRuntime
-    {
+    public function detectRubyRuntime(
+        SSHService $ssh,
+        string $hostAppPath,
+        int $defaultPort,
+        bool $includeBootstrap = true,
+    ): ApplicationRuntime {
         $procfile = $this->readProcfileWebCommand($ssh, $hostAppPath);
 
         return $this->detectRubyFromContents(
             $procfile,
             $this->hostPathExists($ssh, $hostAppPath.'/bin/rails'),
             $this->hostFileExists($ssh, $hostAppPath.'/config.ru'),
-            $defaultPort
+            $defaultPort,
+            $includeBootstrap,
         );
     }
 
@@ -572,15 +577,18 @@ class ContainerApplicationRuntimeService
         ?string $procfileCommand,
         bool $hasBinRails,
         bool $hasConfigRu,
-        int $defaultPort
+        int $defaultPort,
+        bool $includeBootstrap = true,
     ): ApplicationRuntime {
+        $bootstrap = $includeBootstrap ? $this->rubyBootstrap() : null;
+
         if ($procfileCommand !== null) {
             return $this->shellRuntime(
                 $procfileCommand,
                 $defaultPort,
                 'procfile',
                 'Procfile web process',
-                $this->rubyBootstrap()
+                $bootstrap
             );
         }
 
@@ -590,7 +598,7 @@ class ContainerApplicationRuntimeService
                 $defaultPort,
                 'rails',
                 'Rails server',
-                $this->rubyBootstrap()
+                $bootstrap
             );
         }
 
@@ -600,15 +608,19 @@ class ContainerApplicationRuntimeService
                 $defaultPort,
                 'rack',
                 'Rack application',
-                $this->rubyBootstrap()
+                $bootstrap
             );
         }
 
         return $this->fallbackRuntime('ruby', $defaultPort);
     }
 
-    public function detectPythonRuntime(SSHService $ssh, string $hostAppPath, int $defaultPort): ApplicationRuntime
-    {
+    public function detectPythonRuntime(
+        SSHService $ssh,
+        string $hostAppPath,
+        int $defaultPort,
+        bool $includeBootstrap = true,
+    ): ApplicationRuntime {
         $procfile = $this->readProcfileWebCommand($ssh, $hostAppPath);
         $requirements = $this->readHostFile($ssh, $hostAppPath.'/requirements.txt');
         $wsgi = $this->readHostFile($ssh, $hostAppPath.'/wsgi.py');
@@ -620,7 +632,8 @@ class ContainerApplicationRuntimeService
             $this->hostFileExists($ssh, $hostAppPath.'/manage.py'),
             $this->hostFileExists($ssh, $hostAppPath.'/main.py'),
             $this->hostFileExists($ssh, $hostAppPath.'/app.py'),
-            $defaultPort
+            $defaultPort,
+            $includeBootstrap,
         );
     }
 
@@ -631,15 +644,18 @@ class ContainerApplicationRuntimeService
         bool $hasManagePy,
         bool $hasMainPy,
         bool $hasAppPy,
-        int $defaultPort
+        int $defaultPort,
+        bool $includeBootstrap = true,
     ): ApplicationRuntime {
+        $bootstrap = $includeBootstrap ? $this->pythonBootstrap() : null;
+
         if ($procfileCommand !== null) {
             return $this->shellRuntime(
                 $procfileCommand,
                 $defaultPort,
                 'procfile',
                 'Procfile web process',
-                $this->pythonBootstrap()
+                $bootstrap
             );
         }
 
@@ -649,7 +665,7 @@ class ContainerApplicationRuntimeService
                 $defaultPort,
                 'django',
                 'Django development server',
-                $this->pythonBootstrap()
+                $bootstrap
             );
         }
 
@@ -661,7 +677,7 @@ class ContainerApplicationRuntimeService
                     $defaultPort,
                     'gunicorn',
                     'Gunicorn WSGI server',
-                    $this->pythonBootstrap()
+                    $bootstrap
                 );
             }
         }
@@ -672,29 +688,34 @@ class ContainerApplicationRuntimeService
                 $defaultPort,
                 'uvicorn',
                 'Uvicorn ASGI server',
-                $this->pythonBootstrap()
+                $bootstrap
             );
         }
 
         if ($hasMainPy) {
-            return $this->shellRuntime('python main.py', $defaultPort, 'entrypoint', 'python main.py', $this->pythonBootstrap());
+            return $this->shellRuntime('python main.py', $defaultPort, 'entrypoint', 'python main.py', $bootstrap);
         }
 
         if ($hasAppPy) {
-            return $this->shellRuntime('python app.py', $defaultPort, 'entrypoint', 'python app.py', $this->pythonBootstrap());
+            return $this->shellRuntime('python app.py', $defaultPort, 'entrypoint', 'python app.py', $bootstrap);
         }
 
         return $this->fallbackRuntime('python', $defaultPort);
     }
 
-    public function detectGoRuntime(SSHService $ssh, string $hostAppPath, int $defaultPort): ApplicationRuntime
-    {
+    public function detectGoRuntime(
+        SSHService $ssh,
+        string $hostAppPath,
+        int $defaultPort,
+        bool $includeBootstrap = true,
+    ): ApplicationRuntime {
         return $this->detectGoFromContents(
             $this->readProcfileWebCommand($ssh, $hostAppPath),
             $this->hostFileExists($ssh, $hostAppPath.'/go.mod'),
             $this->hostFileExists($ssh, $hostAppPath.'/main.go'),
             $this->hostFileExists($ssh, $hostAppPath.'/cmd/server/main.go'),
-            $defaultPort
+            $defaultPort,
+            $includeBootstrap,
         );
     }
 
@@ -703,15 +724,18 @@ class ContainerApplicationRuntimeService
         bool $hasGoMod,
         bool $hasMainGo,
         bool $hasCmdServer,
-        int $defaultPort
+        int $defaultPort,
+        bool $includeBootstrap = true,
     ): ApplicationRuntime {
+        $bootstrap = $includeBootstrap ? $this->goBootstrap($hasGoMod) : null;
+
         if ($procfileCommand !== null) {
             return $this->shellRuntime(
                 $procfileCommand,
                 $defaultPort,
                 'procfile',
                 'Procfile web process',
-                $this->goBootstrap($hasGoMod)
+                $bootstrap
             );
         }
 
@@ -721,7 +745,7 @@ class ContainerApplicationRuntimeService
                 $defaultPort,
                 'entrypoint',
                 'go run ./cmd/server',
-                $this->goBootstrap($hasGoMod)
+                $bootstrap
             );
         }
 
@@ -731,7 +755,7 @@ class ContainerApplicationRuntimeService
                 $defaultPort,
                 'entrypoint',
                 'go run .',
-                $this->goBootstrap($hasGoMod)
+                $bootstrap
             );
         }
 

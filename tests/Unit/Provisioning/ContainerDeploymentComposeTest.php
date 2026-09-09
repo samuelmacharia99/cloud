@@ -23,6 +23,7 @@ use Monolog\Logger as Monolog;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
+use Symfony\Component\Yaml\Yaml;
 
 class ContainerDeploymentComposeTest extends TestCase
 {
@@ -1007,6 +1008,10 @@ class ContainerDeploymentComposeTest extends TestCase
             $this->assertStringContainsString('BACKEND_HOST: backend', $yaml);
             $this->assertStringContainsString('FRONTEND_HOST: frontend', $yaml);
             $this->assertStringNotContainsString("'31030:8000'", $yaml);
+            $parsed = Yaml::parse($yaml);
+            $this->assertSame('http://backend:8000', $parsed['services']['backend']['environment']['INTERNAL_API_URL']);
+            $this->assertSame(['backend', 'frontend'], $parsed['services']['edge']['depends_on']);
+            $this->assertArrayNotHasKey('depends_on', $parsed['services']['frontend']);
         }
     }
 }
