@@ -110,6 +110,72 @@ class NodeWebGatewayProxyTest extends TestCase
     }
 
     #[Test]
+    public function compose_escapes_shell_port_placeholders_so_docker_compose_does_not_strip_them(): void
+    {
+        $template = new ContainerTemplate([
+            'slug' => 'python',
+            'docker_image' => 'python:3.11-slim',
+            'default_port' => 8000,
+            'required_cpu_cores' => 1,
+            'required_ram_mb' => 1024,
+            'volume_paths' => ['app_data' => '/app'],
+        ]);
+        $runtime = new ApplicationRuntime(
+            ['sh', '-lc', 'cd /app/apps/backend && export PORT=${PORT:-8000} && exec uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}'],
+            'uvicorn',
+            'Uvicorn ASGI server',
+            '/app/apps/backend',
+        );
+        $topology = [
+            'topology' => 'split_web_api',
+            'backend_slug' => 'python',
+            'frontend_type' => 'vite-spa',
+            'backend' => [
+                'root' => 'apps/backend',
+                'port' => 8000,
+                'working_directory' => '/app/apps/backend',
+                'start_command' => $runtime->command,
+            ],
+            'frontend' => [
+                'root' => 'apps/web',
+                'port' => 3000,
+                'working_directory' => '/app/apps/web',
+                'start_command' => ['sh', '-lc', 'exit 1'],
+            ],
+        ];
+        $method = new \ReflectionMethod(ContainerDeploymentService::class, 'renderCompose');
+        $yaml = $method->invoke(
+            new ContainerDeploymentService,
+            $template,
+            'user-493-service-457-python',
+            30004,
+            ['PORT' => '8000'],
+            null,
+            new ContainerDeployment([
+                'container_name' => 'user-493-service-457-python',
+                'assigned_port' => 30004,
+                'restart_policy' => 'always',
+                'cpu_limit' => 1,
+                'memory_limit_mb' => 1024,
+            ]),
+            null,
+            '/opt/talksasa/containers/user-493-service-457-python/app',
+            $runtime,
+            null,
+            false,
+            'frontend',
+            8001,
+            $topology,
+        );
+
+        // Compose turns $$ into a literal $ for the container shell.
+        $this->assertStringContainsString('export PORT=$${PORT:-8000}', $yaml);
+        $this->assertStringContainsString('--port $${PORT:-8000}', $yaml);
+        $this->assertStringNotContainsString('--port ${PORT:-8000}', $yaml);
+        $this->assertDoesNotMatchRegularExpression('/--port ["\']?\s*$/m', $yaml);
+    }
+
+    #[Test]
     public function compose_runs_expo_web_as_a_node_sidecar_on_the_same_project(): void
     {
         $template = new ContainerTemplate([

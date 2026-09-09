@@ -2445,8 +2445,52 @@ class ContainerDeploymentService
             (float) $cpuLimit,
             (int) $memoryLimit
         );
+        $this->escapeComposeShellDollars($compose);
 
         return Yaml::dump($compose, 10, 2);
+    }
+
+    /**
+     * Docker Compose interpolates ${VAR} in the compose file before the container
+     * starts. Shell start commands need literal ${PORT:-8000}; write $$ so Compose
+     * passes a single $ through to sh.
+     *
+     * @param  array<string, mixed>  $compose
+     */
+    public function escapeComposeShellDollars(array &$compose): void
+    {
+        foreach ($compose['services'] ?? [] as $name => $service) {
+            if (! is_array($service) || ! array_key_exists('command', $service)) {
+                continue;
+            }
+
+            $compose['services'][$name]['command'] = $this->escapeComposeCommandDollars($service['command']);
+        }
+    }
+
+    private function escapeComposeCommandDollars(mixed $command): mixed
+    {
+        if (is_string($command)) {
+            return $this->escapeComposeDollarString($command);
+        }
+
+        if (! is_array($command)) {
+            return $command;
+        }
+
+        return array_map(function (mixed $part): mixed {
+            if (is_string($part)) {
+                return $this->escapeComposeDollarString($part);
+            }
+
+            return $part;
+        }, $command);
+    }
+
+    private function escapeComposeDollarString(string $value): string
+    {
+        // Preserve existing $$ escapes (Laravel sidecars already use them).
+        return str_replace("\0", '$$', str_replace('$', '$$', str_replace('$$', "\0", $value)));
     }
 
     /**
