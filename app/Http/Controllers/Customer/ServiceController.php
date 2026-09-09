@@ -346,7 +346,7 @@ class ServiceController extends Controller
             throw ValidationException::withMessages(['error' => $e->getMessage()]);
         }
 
-        if (($template->slug ?? '') === 'nodejs') {
+        if (in_array($template->slug ?? null, ['nodejs', 'python', 'ruby', 'go'], true)) {
             foreach (['backend_root' => 'node_backend_root', 'frontend_root' => 'node_frontend_root'] as $input => $key) {
                 $value = trim((string) ($validated[$input] ?? ''));
                 if ($value !== '') {

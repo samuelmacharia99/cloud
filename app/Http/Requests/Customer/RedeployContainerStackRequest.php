@@ -30,7 +30,7 @@ class RedeployContainerStackRequest extends FormRequest
         } else {
             $versionRules[] = 'prohibited';
         }
-        $rootRules = ($template?->slug ?? '') === 'nodejs'
+        $rootRules = in_array($template?->slug, ['nodejs', 'python', 'ruby', 'go'], true)
             ? ['nullable', 'string', 'max:255', 'regex:/^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/', 'not_regex:/\.\./']
             : ['prohibited'];
 

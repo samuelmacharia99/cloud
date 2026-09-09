@@ -380,7 +380,7 @@ class ContainerController extends Controller
 
             if ($template) {
                 $validated = $request->validated();
-                if (($template->slug ?? '') === 'nodejs') {
+                if (in_array($template->slug ?? null, ['nodejs', 'python', 'ruby', 'go'], true)) {
                     $meta = is_array($service->service_meta) ? $service->service_meta : [];
                     $previousNodeVersionState = [
                         'deployment_selected_version' => $deployment->selected_version,
@@ -415,7 +415,7 @@ class ContainerController extends Controller
                     return back()->withErrors(['error' => $e->getMessage()])->withInput();
                 }
 
-                if (($template->slug ?? '') === 'nodejs') {
+                if (in_array($template->slug ?? null, ['nodejs', 'python', 'ruby', 'go'], true)) {
                     foreach (['backend_root' => 'node_backend_root', 'frontend_root' => 'node_frontend_root'] as $input => $key) {
                         $value = trim((string) ($validated[$input] ?? ''));
                         if ($value !== '') {
@@ -1817,8 +1817,10 @@ class ContainerController extends Controller
     {
         unset($context['password']);
 
-        if (isset($context['connection'])) {
-            $context['connection'] = $this->redactConnectionString((string) $context['connection']);
+        foreach (['database', 'username', 'connection'] as $key) {
+            if (! empty($context[$key])) {
+                $context[$key] = '[redacted]';
+            }
         }
 
         $context['password_masked'] = $context['password_masked'] ?? '********';
@@ -1846,15 +1848,6 @@ class ContainerController extends Controller
         $panel['redacted'] = true;
 
         return $panel;
-    }
-
-    private function redactConnectionString(string $connection): string
-    {
-        if ($connection === '') {
-            return $connection;
-        }
-
-        return (string) preg_replace('#(://[^:/@\s]+:)[^@\s]+(@)#', '$1********$2', $connection);
     }
 
     /**
