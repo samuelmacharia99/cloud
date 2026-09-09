@@ -205,6 +205,12 @@ class ContainerStackCommandService
 
         $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
         $hostAppPath = app(ContainerAppDirectoryService::class)->hostAppPath($deployment);
+        $applicationRelativeDir = $this->resolveNodeApplicationRelativeDir(
+            $service,
+            $ssh,
+            $hostAppPath,
+            $applicationRelativeDir,
+        );
 
         return $this->installNodeDependencies(
             $ssh,
@@ -216,6 +222,33 @@ class ContainerStackCommandService
             $forceRebuild,
             $applicationRelativeDir,
         );
+    }
+
+    private function resolveNodeApplicationRelativeDir(
+        Service $service,
+        SSHService $ssh,
+        string $hostAppPath,
+        string $requested,
+    ): string {
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        try {
+            $topology = app(ContainerNodeWorkloadTopologyService::class)->resolve(
+                $service,
+                $ssh,
+                $hostAppPath,
+                is_string($meta['node_backend_root'] ?? null) ? $meta['node_backend_root'] : null,
+                is_string($meta['node_frontend_root'] ?? null) ? $meta['node_frontend_root'] : null,
+            );
+        } catch (\DomainException) {
+            return trim($requested, '/');
+        }
+
+        $pinned = trim((string) data_get($topology, 'backend.root', ''), '/');
+        if ($pinned !== '' && $pinned !== '.') {
+            return $pinned;
+        }
+
+        return trim($requested, '/');
     }
 
     /**

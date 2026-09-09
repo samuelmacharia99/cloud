@@ -410,6 +410,84 @@ class ContainerNodeWorkloadTopologyServiceTest extends TestCase
     }
 
     #[Test]
+    public function it_ignores_a_corrupted_api_pin_on_a_web_container(): void
+    {
+        $runtime = Mockery::mock(ContainerApplicationRuntimeService::class);
+        $runtime->shouldReceive('detectNodeRuntimeAt')
+            ->once()
+            ->withArgs(fn ($ssh, $host, $root): bool => $root === 'apps/mobile')
+            ->andReturn(new ApplicationRuntime(
+                ['sh', '-lc', 'cd /app/apps/mobile && exec npx serve dist'],
+                'expo-web',
+                'apps/mobile',
+                '/app/apps/mobile',
+            ));
+        $this->app->instance(ContainerApplicationRuntimeService::class, $runtime);
+        $ssh = $this->sshForPackages([
+            'apps/api' => [
+                'scripts' => ['start' => 'next start', 'build' => 'next build'],
+                'dependencies' => ['next' => '15.5.25'],
+            ],
+            'apps/mobile' => [
+                'scripts' => ['start' => 'expo start'],
+                'dependencies' => ['expo' => '^54.0', 'react-native' => '^0.81'],
+            ],
+        ]);
+
+        $service = $this->nodeService('other', 'none');
+        $service->name = 'tier-3-web';
+        $service->service_meta = array_merge($service->service_meta ?? [], [
+            'project_role' => 'frontend',
+            'node_backend_root' => 'apps/api',
+            'frontend' => 'none',
+        ]);
+
+        $topology = (new ContainerNodeWorkloadTopologyService)->resolve(
+            $service,
+            $ssh,
+            '/srv/app',
+            backendOverride: 'apps/api',
+        );
+
+        $this->assertSame('apps/mobile', $topology['backend']['root']);
+        $this->assertSame('project_role', $topology['selection_source']);
+    }
+
+    #[Test]
+    public function it_treats_a_web_named_service_as_frontend_even_without_project_role(): void
+    {
+        $runtime = Mockery::mock(ContainerApplicationRuntimeService::class);
+        $runtime->shouldReceive('detectNodeRuntimeAt')
+            ->once()
+            ->withArgs(fn ($ssh, $host, $root): bool => $root === 'apps/mobile')
+            ->andReturn(new ApplicationRuntime(
+                ['sh', '-lc', 'cd /app/apps/mobile && exec npx serve dist'],
+                'expo-web',
+                'apps/mobile',
+                '/app/apps/mobile',
+            ));
+        $this->app->instance(ContainerApplicationRuntimeService::class, $runtime);
+        $ssh = $this->sshForPackages([
+            'apps/api' => [
+                'scripts' => ['start' => 'next start', 'build' => 'next build'],
+                'dependencies' => ['next' => '15.5.25'],
+            ],
+            'apps/mobile' => [
+                'scripts' => ['start' => 'expo start'],
+                'dependencies' => ['expo' => '^54.0', 'react-native' => '^0.81'],
+            ],
+        ]);
+
+        $service = $this->nodeService('other', 'none');
+        $service->name = 'tier-3-web';
+
+        $topology = (new ContainerNodeWorkloadTopologyService)->resolve($service, $ssh, '/srv/app');
+
+        $this->assertSame('apps/mobile', $topology['backend']['root']);
+        $this->assertFalse(ContainerNodeWorkloadTopologyService::isApiOnly($service));
+    }
+
+    #[Test]
     public function it_keeps_a_project_role_pin_when_retry_roots_are_blank(): void
     {
         $meta = [

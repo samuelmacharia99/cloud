@@ -60,7 +60,7 @@ class ContainerNodeWorkloadTopologyService
         }
 
         $meta = is_array($service->service_meta) ? $service->service_meta : [];
-        $rolePin = $this->projectRoleApplicationRoot($service, $backendOverride);
+        $rolePin = $this->projectRoleApplicationRoot($service, $ssh, $hostAppPath, $backendOverride);
         if ($rolePin !== null) {
             return $this->projectRoleTopology($service, $ssh, $hostAppPath, $rolePin);
         }
@@ -202,7 +202,7 @@ class ContainerNodeWorkloadTopologyService
         }
 
         $meta = is_array($service->service_meta) ? $service->service_meta : [];
-        if (($meta['project_role'] ?? null) === 'frontend') {
+        if (self::projectWorkloadRoleFor($service) === 'frontend') {
             return false;
         }
         if (data_get($meta, 'node_workloads.topology') === 'split_web_api') {
@@ -214,6 +214,18 @@ class ContainerNodeWorkloadTopologyService
         }
 
         return data_get($meta, 'node_workloads.selection_source') === 'auto_api';
+    }
+
+    public function isProjectFrontendContainer(Service $service): bool
+    {
+        return self::projectWorkloadRoleFor($service) === 'frontend';
+    }
+
+    public function isReservedBackendRoot(string $root): bool
+    {
+        $root = trim($root, '/');
+
+        return $root !== '' && $root !== '.' && in_array($root, self::BACKEND_CANDIDATES, true);
     }
 
     /**
@@ -287,31 +299,93 @@ class ContainerNodeWorkloadTopologyService
 
     /**
      * Exclusive application root for a project Web or API container.
-     * Auto-detect must never pick a sibling package (apps/api on Web, apps/mobile on API).
+     * A Web container never builds apps/api even if that pin was corrupted.
      */
-    private function projectRoleApplicationRoot(Service $service, ?string $backendOverride): ?string
-    {
-        $meta = is_array($service->service_meta) ? $service->service_meta : [];
-        $role = $meta['project_role'] ?? null;
-        if (! in_array($role, ['frontend', 'backend'], true)) {
+    private function projectRoleApplicationRoot(
+        Service $service,
+        SSHService $ssh,
+        string $hostAppPath,
+        ?string $backendOverride,
+    ): ?string {
+        $role = self::projectWorkloadRoleFor($service);
+        if ($role === null) {
             return null;
         }
 
-        $order = $role === 'frontend'
-            ? [$meta['node_project_root'] ?? null, $backendOverride, $meta['node_backend_root'] ?? null]
-            : [$backendOverride, $meta['node_backend_root'] ?? null, $meta['node_project_root'] ?? null];
-
-        foreach ($order as $candidate) {
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        $named = [];
+        foreach ([$meta['node_project_root'] ?? null, $backendOverride, $meta['node_backend_root'] ?? null] as $candidate) {
             if (is_string($candidate) && trim($candidate) !== '') {
-                return $this->sanitizeRelativeRoot($candidate);
+                $named[] = $this->sanitizeRelativeRoot($candidate);
+            }
+        }
+
+        if ($role === 'frontend') {
+            foreach ($named as $root) {
+                if (! $this->isReservedBackendRoot($root) && $this->isPinnedApplicationAt($ssh, $hostAppPath, $root)) {
+                    return $root;
+                }
+            }
+
+            $discovered = $this->discoverPackageRoots($ssh, $hostAppPath);
+            foreach ($this->uniqueRoots([...self::FRONTEND_CANDIDATES, ...$discovered]) as $root) {
+                if ($this->isReservedBackendRoot($root) || ! $this->isPinnedApplicationAt($ssh, $hostAppPath, $root)) {
+                    continue;
+                }
+                $package = $this->packageAt($ssh, $hostAppPath, $root);
+                if ($package !== null && $this->explicitBrowserKind($package) !== null) {
+                    return $root;
+                }
+            }
+
+            foreach ($named as $root) {
+                if ($this->isPinnedApplicationAt($ssh, $hostAppPath, $root)) {
+                    return $root;
+                }
+            }
+
+            throw new \DomainException(
+                'This Web container has no application directory pinned. Set the frontend directory (for example apps/mobile) and retry deploy.'
+            );
+        }
+
+        foreach ($named as $root) {
+            if (! in_array($root, self::FRONTEND_CANDIDATES, true)
+                && $this->isPinnedApplicationAt($ssh, $hostAppPath, $root)) {
+                return $root;
             }
         }
 
         throw new \DomainException(
-            $role === 'frontend'
-                ? 'This Web container has no application directory pinned. Set the frontend directory (for example apps/mobile) and retry deploy.'
-                : 'This API container has no application directory pinned. Set the backend directory (for example apps/api) and retry deploy.'
+            'This API container has no application directory pinned. Set the backend directory (for example apps/api) and retry deploy.'
         );
+    }
+
+    private static function projectWorkloadRoleFor(Service $service): ?string
+    {
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        $role = $meta['project_role'] ?? null;
+        if (in_array($role, ['frontend', 'backend'], true)) {
+            return $role;
+        }
+
+        $label = strtolower(trim((string) ($meta['project_role_label'] ?? '')));
+        if ($label === 'web') {
+            return 'frontend';
+        }
+        if ($label === 'api') {
+            return 'backend';
+        }
+
+        $name = strtolower(trim((string) $service->name));
+        if (str_ends_with($name, '-web') || str_ends_with($name, '_web')) {
+            return 'frontend';
+        }
+        if (str_ends_with($name, '-api') || str_ends_with($name, '_api')) {
+            return 'backend';
+        }
+
+        return null;
     }
 
     /**
