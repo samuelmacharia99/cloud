@@ -903,11 +903,10 @@ class ContainerApplicationRuntimeService
     }
 
     /**
-     * Expo's default AppEntry imports ../../App from node_modules/expo.
-     * That only resolves when the Expo app directory is the Node project root
-     * (App next to package.json, expo installed in that same tree).
+     * Subdirectory to use as Expo export cwd when the Node clone is a workspace.
+     * The host app is still mounted at /app so workspace packages stay resolvable.
      */
-    public function expoWebIsolatedRelativeRoot(?string $projectPackageJson, string $applicationRelativeDir): string
+    public function expoWebExportRelativeRoot(?string $projectPackageJson, string $applicationRelativeDir): string
     {
         $relative = $this->sanitizeArtifactRelativeDir($applicationRelativeDir);
         if ($relative === '' || ! $this->packageJsonNeedsExpoWebExport($projectPackageJson)) {
@@ -915,6 +914,91 @@ class ContainerApplicationRuntimeService
         }
 
         return $relative;
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function expoWebAppEntryBasenames(): array
+    {
+        return [
+            'App.web.tsx',
+            'App.web.ts',
+            'App.web.jsx',
+            'App.web.js',
+            'App.tsx',
+            'App.ts',
+            'App.jsx',
+            'App.js',
+        ];
+    }
+
+    public function packageJsonHasExpoRouter(?string $packageJson): bool
+    {
+        if ($packageJson === null || trim($packageJson) === '') {
+            return false;
+        }
+
+        $data = json_decode($packageJson, true);
+        if (! is_array($data)) {
+            return false;
+        }
+
+        $dependencies = array_merge(
+            is_array($data['dependencies'] ?? null) ? $data['dependencies'] : [],
+            is_array($data['devDependencies'] ?? null) ? $data['devDependencies'] : []
+        );
+
+        return isset($dependencies['expo-router']);
+    }
+
+    public function packageJsonUsesDefaultExpoAppEntry(?string $packageJson): bool
+    {
+        if ($packageJson === null || trim($packageJson) === '') {
+            return false;
+        }
+
+        $data = json_decode($packageJson, true);
+        if (! is_array($data)) {
+            return false;
+        }
+
+        $main = str_replace('\\', '/', trim((string) ($data['main'] ?? '')));
+        if ($main === '') {
+            return true;
+        }
+
+        return (bool) preg_match('#(?:^|/)expo/AppEntry(?:\.js)?$#', $main)
+            || $main === 'node_modules/expo/AppEntry.js';
+    }
+
+    /**
+     * Point Metro at Expo Router so export does not load AppEntry's ../../App import.
+     */
+    public function packageJsonWithExpoRouterWebMain(string $packageJson): ?string
+    {
+        if (! $this->packageJsonHasExpoRouter($packageJson)
+            || ! $this->packageJsonUsesDefaultExpoAppEntry($packageJson)) {
+            return null;
+        }
+
+        $data = json_decode($packageJson, true);
+        if (! is_array($data)) {
+            return null;
+        }
+
+        $current = trim((string) ($data['main'] ?? ''));
+        if ($current === 'expo-router/entry') {
+            return null;
+        }
+
+        $data['main'] = 'expo-router/entry';
+
+        try {
+            return json_encode($data, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        } catch (\JsonException) {
+            return null;
+        }
     }
 
     public function packageJsonNeedsExpoWebExport(?string $packageJson): bool

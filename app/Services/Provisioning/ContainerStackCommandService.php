@@ -502,15 +502,6 @@ class ContainerStackCommandService
         if ($projectPackageJson === null) {
             return ['No package.json found; skipped npm install.'];
         }
-        $expoIsolateRoot = $this->runtimeService->expoWebIsolatedRelativeRoot(
-            $projectPackageJson,
-            $applicationRelativeDir,
-        );
-        if ($expoIsolateRoot !== '') {
-            $hostAppPath = $hostAppPath.'/'.$expoIsolateRoot;
-            $applicationRelativeDir = '';
-            $packageJson = $projectPackageJson;
-        }
         $hasWorkspaceRoot = $packageJson !== null;
         $packageJson ??= $projectPackageJson;
         $installHostPath = $hasWorkspaceRoot || $applicationRelativeDir === ''
@@ -618,12 +609,18 @@ class ContainerStackCommandService
                     $applicationRelativeDir,
                     $publicBuildEnv,
                 );
+                $buildWorkDir = $this->prepareExpoWebExportLayout(
+                    $ssh,
+                    $hostAppPath,
+                    $applicationRelativeDir,
+                    $projectPackageJson,
+                );
                 $this->runUnlimitedMemoryNodeCommand(
                     $ssh,
                     $dockerImage,
                     $hostAppPath,
                     $buildCommand,
-                    '/app',
+                    $buildWorkDir,
                     $buildTimeout
                 );
                 $hasTypeScriptConfig = $this->hostFileExists(
@@ -1438,6 +1435,94 @@ class ContainerStackCommandService
         } catch (\Throwable) {
             return null;
         }
+    }
+
+    /**
+     * Workspace installs stay at the clone root so packages like @sameplan/domain resolve.
+     * Expo export still runs in apps/mobile. Hoisted expo/AppEntry looks for ../../App at
+     * the workspace root, so symlink App.* there. Expo Router apps get main rewritten
+     * off the default AppEntry when no App file exists.
+     */
+    private function prepareExpoWebExportLayout(
+        SSHService $ssh,
+        string $hostAppPath,
+        string $applicationRelativeDir,
+        string $projectPackageJson,
+    ): string {
+        $expoRoot = $this->runtimeService->expoWebExportRelativeRoot(
+            $projectPackageJson,
+            $applicationRelativeDir,
+        );
+        if ($expoRoot === '') {
+            return '/app';
+        }
+
+        $this->linkHoistedExpoAppEntry($ssh, $hostAppPath, $expoRoot);
+        $this->ensureExpoRouterPackageMain($ssh, $hostAppPath, $expoRoot, $projectPackageJson);
+
+        if ($this->expoWebAppEntryExists($ssh, $hostAppPath, $expoRoot)
+            || $this->runtimeService->packageJsonHasExpoRouter($projectPackageJson)
+            || ! $this->runtimeService->packageJsonUsesDefaultExpoAppEntry($projectPackageJson)) {
+            return '/app/'.$expoRoot;
+        }
+
+        throw new \DomainException(
+            "The Expo app at '{$expoRoot}' has no App entry and does not use expo-router. Add App.tsx next to package.json, or add expo-router, then retry deploy."
+        );
+    }
+
+    private function expoWebAppEntryExists(SSHService $ssh, string $hostAppPath, string $expoRoot): bool
+    {
+        foreach ($this->runtimeService->expoWebAppEntryBasenames() as $basename) {
+            if ($this->hostFileExists($ssh, $hostAppPath.'/'.$expoRoot.'/'.$basename)
+                || $this->hostFileExists($ssh, $hostAppPath.'/'.$basename)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function linkHoistedExpoAppEntry(SSHService $ssh, string $hostAppPath, string $expoRoot): void
+    {
+        foreach ($this->runtimeService->expoWebAppEntryBasenames() as $basename) {
+            $source = $hostAppPath.'/'.$expoRoot.'/'.$basename;
+            $destination = $hostAppPath.'/'.$basename;
+            if (! $this->hostFileExists($ssh, $source) || $this->hostFileExists($ssh, $destination)) {
+                continue;
+            }
+
+            $ssh->exec(
+                'ln -sfn '.escapeshellarg($expoRoot.'/'.$basename).' '.escapeshellarg($destination),
+                10
+            );
+        }
+    }
+
+    private function ensureExpoRouterPackageMain(
+        SSHService $ssh,
+        string $hostAppPath,
+        string $expoRoot,
+        string $projectPackageJson,
+    ): void {
+        if ($this->expoWebAppEntryExists($ssh, $hostAppPath, $expoRoot)) {
+            return;
+        }
+
+        $rewritten = $this->runtimeService->packageJsonWithExpoRouterWebMain($projectPackageJson);
+        if ($rewritten === null) {
+            return;
+        }
+
+        $this->writeHostFile($ssh, $hostAppPath.'/'.$expoRoot.'/package.json', $rewritten."\n");
+    }
+
+    private function writeHostFile(SSHService $ssh, string $path, string $contents): void
+    {
+        $ssh->exec(
+            'printf %s '.escapeshellarg(base64_encode($contents)).' | base64 -d > '.escapeshellarg($path),
+            15
+        );
     }
 
     public function runUnlimitedMemoryNodeCommand(

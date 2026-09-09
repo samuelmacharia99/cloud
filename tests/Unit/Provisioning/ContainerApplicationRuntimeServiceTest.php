@@ -374,11 +374,30 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
         );
         $this->assertTrue($this->service->isAllowedNodeBuildEnvKey('EXPO_PUBLIC_API_URL'));
         $this->assertStringNotContainsString('&&', $this->service->nodeProductionBuildShellCommand($packageJson, null, 'npm', 'apps/mobile'));
-        $this->assertSame('apps/mobile', $this->service->expoWebIsolatedRelativeRoot($packageJson, 'apps/mobile'));
-        $this->assertSame('', $this->service->expoWebIsolatedRelativeRoot($packageJson, ''));
-        $this->assertSame('', $this->service->expoWebIsolatedRelativeRoot(
+        $this->assertSame('apps/mobile', $this->service->expoWebExportRelativeRoot($packageJson, 'apps/mobile'));
+        $this->assertSame('', $this->service->expoWebExportRelativeRoot($packageJson, ''));
+        $this->assertSame('', $this->service->expoWebExportRelativeRoot(
             json_encode(['dependencies' => ['next' => '14.0.0']], JSON_THROW_ON_ERROR),
             'apps/api',
+        ));
+        $this->assertTrue($this->service->packageJsonUsesDefaultExpoAppEntry($packageJson));
+        $this->assertNull($this->service->packageJsonWithExpoRouterWebMain($packageJson));
+
+        $routerJson = json_encode([
+            'scripts' => ['start' => 'expo start'],
+            'dependencies' => [
+                'expo' => '^54.0',
+                'expo-router' => '~5.0',
+            ],
+        ], JSON_THROW_ON_ERROR);
+        $rewritten = $this->service->packageJsonWithExpoRouterWebMain($routerJson);
+        $this->assertNotNull($rewritten);
+        $this->assertSame('expo-router/entry', json_decode($rewritten, true)['main']);
+        $this->assertNull($this->service->packageJsonWithExpoRouterWebMain(
+            json_encode([
+                'main' => 'expo-router/entry',
+                'dependencies' => ['expo-router' => '~5.0'],
+            ], JSON_THROW_ON_ERROR)
         ));
     }
 
