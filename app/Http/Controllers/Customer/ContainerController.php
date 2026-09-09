@@ -41,6 +41,7 @@ use App\Services\Provisioning\ContainerGitCredentialsService;
 use App\Services\Provisioning\ContainerGitPullErrorPresenter;
 use App\Services\Provisioning\ContainerGitRepositoryService;
 use App\Services\Provisioning\ContainerHermesOllamaLinkService;
+use App\Services\Provisioning\ContainerNodeWorkloadTopologyService;
 use App\Services\Provisioning\ContainerOllamaModelService;
 use App\Services\Provisioning\ContainerPhpExtensionsService;
 use App\Services\Provisioning\ContainerSqlDumpImportService;
@@ -418,14 +419,8 @@ class ContainerController extends Controller
                 }
 
                 if (in_array($template->slug ?? null, ['nodejs', 'python', 'ruby', 'go'], true)) {
-                    foreach (['backend_root' => 'node_backend_root', 'frontend_root' => 'node_frontend_root'] as $input => $key) {
-                        $value = trim((string) ($validated[$input] ?? ''));
-                        if ($value !== '') {
-                            $applied['meta'][$key] = $value;
-                        } else {
-                            unset($applied['meta'][$key]);
-                        }
-                    }
+                    $applied['meta'] = app(ContainerNodeWorkloadTopologyService::class)
+                        ->applyOperatorRootSelection($applied['meta'], $validated);
                 }
 
                 $service->update(['service_meta' => $applied['meta']]);

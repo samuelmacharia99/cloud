@@ -687,6 +687,20 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
         $this->assertStringContainsString('COREPACK_HOME=/tmp/.corepack', $build);
         $this->assertStringNotContainsString('node ./node_modules/next/dist/bin/next build', $build);
 
+        $api = json_encode([
+            'name' => '@sameplan/api',
+            'scripts' => ['build' => 'next build', 'start' => 'next start'],
+            'dependencies' => ['next' => '15.5.25'],
+        ], JSON_THROW_ON_ERROR);
+        $this->assertStringContainsString(
+            '/usr/local/bin/npm --prefix apps/api run build',
+            $this->service->nodeProductionBuildShellCommand($api, $pnpmTurbo, 'npm', 'apps/api'),
+        );
+        $this->assertStringNotContainsString(
+            'turbo run build',
+            $this->service->nodeProductionBuildShellCommand($api, $pnpmTurbo, 'npm', 'apps/api'),
+        );
+
         $nextPlusTurbo = json_encode([
             'packageManager' => 'pnpm@9.15.4',
             'scripts' => [
@@ -859,7 +873,7 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
         $this->assertStringContainsString('cd /app/apps/web && exec npx next start', $command);
         $this->assertStringContainsString('/usr/local/bin/corepack pnpm install', $command);
         $this->assertStringContainsString('[ ! -f apps/web/.next/BUILD_ID ]', $command);
-        $this->assertStringContainsString('/usr/local/bin/corepack pnpm run build', $command);
+        $this->assertStringContainsString('/usr/local/bin/corepack pnpm --dir apps/web run build', $command);
         $this->assertStringNotContainsString('npm install --omit=dev', $command);
         $this->assertStringNotContainsString('EUNSUPPORTEDPROTOCOL', $command);
         $this->assertStringNotContainsString('prune --prod', $command);

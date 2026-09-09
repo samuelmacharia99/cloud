@@ -58,6 +58,9 @@ class ProjectNodeWebSplitService
             $created = false;
             $frontend = $existing ?? $this->createFrontendService($service, $project, $frontendRoot);
             $created = $existing === null;
+            if ($existing !== null) {
+                $frontend = $this->restoreFrontendPin($frontend, $frontendRoot);
+            }
 
             $this->promoteApiService($service, $project, $frontend);
 
@@ -133,6 +136,20 @@ class ProjectNodeWebSplitService
                 return ($meta['project_role'] ?? null) === 'frontend'
                     && (int) ($meta['backend_service_id'] ?? 0) === (int) $api->id;
             });
+    }
+
+    private function restoreFrontendPin(Service $frontend, string $frontendRoot): Service
+    {
+        $meta = is_array($frontend->service_meta) ? $frontend->service_meta : [];
+        $meta['project_role'] = 'frontend';
+        $meta['project_role_label'] = $meta['project_role_label'] ?? 'Web';
+        $meta['frontend'] = 'none';
+        $meta['node_backend_root'] = $frontendRoot;
+        $meta['node_project_root'] = $frontendRoot;
+        unset($meta['node_frontend_root'], $meta['node_workloads']);
+        $frontend->update(['service_meta' => $meta]);
+
+        return $frontend->refresh();
     }
 
     private function createFrontendService(Service $api, CustomerProject $project, string $frontendRoot): Service

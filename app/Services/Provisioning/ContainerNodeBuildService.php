@@ -157,7 +157,9 @@ class ContainerNodeBuildService
                     (int) ($service->effectiveContainerTemplate()?->default_port ?? 3000),
                     includeBootstrap: false,
                 );
-            $relativeRoot = $this->runtimeService->relativeDirUnderApp($runtime->containerWorkdir);
+            $relativeRoot = $pinnedRoot !== ''
+                ? $pinnedRoot
+                : $this->runtimeService->relativeDirUnderApp($runtime->containerWorkdir);
             $messages = $this->stackCommands->buildNodeApplication(
                 $service,
                 $deployment,

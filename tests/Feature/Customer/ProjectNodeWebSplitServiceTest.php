@@ -79,6 +79,9 @@ class ProjectNodeWebSplitServiceTest extends TestCase
         [$api] = $this->makeNodeApiService();
 
         $first = app(ProjectNodeWebSplitService::class)->apply($api);
+        $webMeta = $first['frontend']->fresh()->service_meta;
+        $webMeta['node_backend_root'] = 'apps/api';
+        $first['frontend']->update(['service_meta' => $webMeta]);
         $meta = $api->fresh()->service_meta;
         $meta['frontend'] = 'nextjs';
         $meta['node_frontend_root'] = 'apps/mobile';
@@ -89,6 +92,8 @@ class ProjectNodeWebSplitServiceTest extends TestCase
         $this->assertFalse($again['created']);
         $this->assertSame($first['frontend']->id, $again['frontend']->id);
         $this->assertSame('none', $api->fresh()->service_meta['frontend']);
+        $this->assertSame('apps/mobile', $again['frontend']->fresh()->service_meta['node_backend_root']);
+        $this->assertSame('apps/mobile', $again['frontend']->fresh()->service_meta['node_project_root']);
     }
 
     public function test_it_does_not_split_when_frontend_is_none(): void

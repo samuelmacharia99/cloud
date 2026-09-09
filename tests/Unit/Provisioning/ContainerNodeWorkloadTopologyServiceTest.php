@@ -362,6 +362,75 @@ class ContainerNodeWorkloadTopologyServiceTest extends TestCase
     }
 
     #[Test]
+    public function it_pins_a_project_web_container_to_expo_and_ignores_the_api(): void
+    {
+        $runtime = Mockery::mock(ContainerApplicationRuntimeService::class);
+        $runtime->shouldReceive('detectNodeRuntimeAt')
+            ->once()
+            ->withArgs(fn ($ssh, $host, $root): bool => $root === 'apps/mobile')
+            ->andReturn(new ApplicationRuntime(
+                ['sh', '-lc', 'cd /app/apps/mobile && exec npx serve dist'],
+                'expo-web',
+                'apps/mobile',
+                '/app/apps/mobile',
+            ));
+        $this->app->instance(ContainerApplicationRuntimeService::class, $runtime);
+        $ssh = $this->sshForPackages([
+            'apps/api' => [
+                'scripts' => ['start' => 'next start', 'build' => 'next build'],
+                'dependencies' => ['next' => '15.5.25'],
+            ],
+            'apps/mobile' => [
+                'scripts' => ['start' => 'expo start'],
+                'dependencies' => ['expo' => '^54.0', 'react-native' => '^0.81'],
+            ],
+        ]);
+
+        $service = $this->nodeService('other', 'none');
+        $service->service_meta = array_merge($service->service_meta ?? [], [
+            'project_role' => 'frontend',
+            'node_project_root' => 'apps/mobile',
+            'node_backend_root' => 'apps/api',
+            'frontend' => 'none',
+        ]);
+
+        $topology = (new ContainerNodeWorkloadTopologyService)->resolve(
+            $service,
+            $ssh,
+            '/srv/app',
+            backendOverride: 'apps/api',
+        );
+
+        $this->assertSame('single', $topology['topology']);
+        $this->assertSame('project_role', $topology['selection_source']);
+        $this->assertSame('apps/mobile', $topology['backend']['root']);
+        $this->assertSame('/app/apps/mobile', $topology['backend']['working_directory']);
+        $this->assertStringContainsString('apps/mobile', implode(' ', $topology['notes']));
+        $this->assertStringNotContainsString('apps/api', implode(' ', $topology['notes']));
+    }
+
+    #[Test]
+    public function it_keeps_a_project_role_pin_when_retry_roots_are_blank(): void
+    {
+        $meta = [
+            'project_role' => 'frontend',
+            'frontend' => 'none',
+            'node_backend_root' => 'apps/mobile',
+            'node_project_root' => 'apps/mobile',
+        ];
+
+        $updated = (new ContainerNodeWorkloadTopologyService)->applyOperatorRootSelection($meta, [
+            'backend_root' => '',
+            'frontend_root' => '',
+        ]);
+
+        $this->assertSame('apps/mobile', $updated['node_backend_root']);
+        $this->assertSame('apps/mobile', $updated['node_project_root']);
+        $this->assertArrayNotHasKey('node_frontend_root', $updated);
+        $this->assertArrayNotHasKey('node_workloads', $updated);
+    }
+
+    #[Test]
     public function it_runs_the_api_alone_when_there_is_no_separate_frontend(): void
     {
         $runtime = Mockery::mock(ContainerApplicationRuntimeService::class);

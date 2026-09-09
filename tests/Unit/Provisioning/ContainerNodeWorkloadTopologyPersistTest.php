@@ -81,4 +81,37 @@ class ContainerNodeWorkloadTopologyPersistTest extends TestCase
         $this->assertSame('split_web_api', $service->service_meta['node_workloads']['topology']);
         $this->assertSame('expo-web', $service->service_meta['node_workloads']['frontend_type']);
     }
+
+    public function test_persist_restores_a_project_web_pin_over_a_detected_api_root(): void
+    {
+        $template = ContainerTemplate::factory()->create([
+            'slug' => 'nodejs',
+            'default_port' => 3000,
+        ]);
+        $product = Product::factory()->containerHosting()->create([
+            'container_template_id' => $template->id,
+        ]);
+        $service = Service::factory()->create([
+            'product_id' => $product->id,
+            'service_meta' => [
+                'project_role' => 'frontend',
+                'frontend' => 'none',
+                'node_backend_root' => 'apps/api',
+                'node_project_root' => 'apps/mobile',
+            ],
+        ]);
+
+        (new ContainerNodeWorkloadTopologyService)->persist($service, [
+            'schema' => 1,
+            'topology' => 'single',
+            'selection_source' => 'project_role',
+            'frontend_type' => 'none',
+            'backend' => ['root' => 'apps/mobile'],
+        ]);
+
+        $service->refresh();
+        $this->assertSame('apps/mobile', $service->service_meta['node_backend_root']);
+        $this->assertSame('apps/mobile', $service->service_meta['node_project_root']);
+        $this->assertArrayNotHasKey('node_frontend_root', $service->service_meta);
+    }
 }

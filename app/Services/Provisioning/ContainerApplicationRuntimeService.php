@@ -1841,7 +1841,7 @@ class ContainerApplicationRuntimeService
             );
         }
 
-        if ($relativeDir !== '' && ! $usesRootTurbo) {
+        if ($relativeDir !== '') {
             $binary = match ($packageManager) {
                 'yarn' => '/usr/local/bin/corepack yarn --cwd '.$relativeDir.' run build',
                 'pnpm' => '/usr/local/bin/corepack pnpm --dir '.$relativeDir.' run build',
