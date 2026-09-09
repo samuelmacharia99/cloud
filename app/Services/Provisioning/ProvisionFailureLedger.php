@@ -71,6 +71,18 @@ class ProvisionFailureLedger
         'timed out',
     ];
 
+    /**
+     * Config holds the platform used to abort on, then started recovering.
+     * Cron must retry those rows after a deploy; Retry deploy is not required.
+     *
+     * @var list<string>
+     */
+    private const SUPERSEDED_CONFIG_NEEDLES = [
+        'must be different directories',
+        'expo/react native',
+        'not a browser application',
+    ];
+
     public function classify(\Throwable $e): ProvisionFailureClass
     {
         $message = strtolower($e->getMessage());
@@ -160,6 +172,10 @@ class ProvisionFailureLedger
             return true;
         }
 
+        if ($this->isSupersededConfigHold($snapshot)) {
+            return true;
+        }
+
         if (($snapshot['auto_retry'] ?? false) !== true) {
             return false;
         }
@@ -237,6 +253,25 @@ class ProvisionFailureLedger
         $snapshot = $meta[self::META_KEY] ?? null;
 
         return is_array($snapshot) ? $snapshot : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $snapshot
+     */
+    private function isSupersededConfigHold(array $snapshot): bool
+    {
+        $message = strtolower((string) ($snapshot['message'] ?? ''));
+        if ($message === '') {
+            return false;
+        }
+
+        foreach (self::SUPERSEDED_CONFIG_NEEDLES as $needle) {
+            if (str_contains($message, $needle)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function autoRetryEnabled(ProvisionFailureClass $class, int $attempts): bool

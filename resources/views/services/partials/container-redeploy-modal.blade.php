@@ -78,7 +78,7 @@
                                                     <div class="mb-4 rounded-lg border border-slate-200 dark:border-slate-700 p-3">
                                                         <p class="text-sm font-semibold text-slate-900 dark:text-white">Advanced workload roots</p>
                                                         <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 mb-3">
-                                                            Leave blank to detect both applications. Backend and frontend must be different directories.
+                                                            Leave blank to detect both applications. A split stack needs two directories (for example apps/api and apps/web). If they are the same, this host runs the API only.
                                                             If Frontend is None, only the API directory is used.
                                                         </p>
                                                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">

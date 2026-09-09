@@ -36,7 +36,7 @@ class ProvisionFailureLedgerTest extends TestCase
         $service = Service::factory()->create(['status' => 'failed']);
         $ledger = app(ProvisionFailureLedger::class);
         $ledger->record($service, new \DomainException(
-            "The frontend at 'apps/mobile' is Expo/React Native, not a browser application."
+            'Multiple frontend applications were detected (apps/web, frontend). Choose the intended directory in Advanced roots.'
         ));
 
         $service->refresh();
@@ -52,7 +52,7 @@ class ProvisionFailureLedgerTest extends TestCase
         $this->assertFalse($ledger->shouldAlertOperators($service));
 
         $ledger->record($service->fresh(), new \DomainException(
-            "The frontend at 'apps/mobile' is Expo/React Native, not a browser application."
+            'Multiple frontend applications were detected (apps/web, frontend). Choose the intended directory in Advanced roots.'
         ));
         $service->refresh();
 
@@ -101,5 +101,15 @@ class ProvisionFailureLedgerTest extends TestCase
         $this->assertFalse($ledger->shouldAutoRetry($service));
         $this->assertNotEmpty($service->service_meta['provision_failure']['retry_after']);
         $this->assertTrue($service->service_meta['provision_failure']['auto_retry']);
+    }
+
+    public function test_retries_config_holds_the_platform_now_recovers_from(): void
+    {
+        $service = Service::factory()->create(['status' => 'failed']);
+        $ledger = app(ProvisionFailureLedger::class);
+        $ledger->record($service, new \DomainException('Backend and frontend roots must be different directories.'));
+
+        $this->assertFalse($service->fresh()->service_meta['provision_failure']['auto_retry']);
+        $this->assertTrue($ledger->shouldAutoRetry($service->fresh()));
     }
 }
