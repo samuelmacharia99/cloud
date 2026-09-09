@@ -114,6 +114,41 @@
                                                     </div>
                                                 </template>
 
+                                                <template x-if="options.version_picker?.show">
+                                                    <div class="mb-4">
+                                                        <p class="text-sm font-semibold text-slate-900 dark:text-white mb-2" x-text="options.version_picker.label || 'Runtime version'"></p>
+                                                        <p class="text-xs text-slate-500 dark:text-slate-400 mb-2" x-show="options.version_picker.help" x-text="options.version_picker.help"></p>
+                                                        <div class="space-y-2">
+                                                            <label class="block p-3 border-2 rounded-lg cursor-pointer transition-all"
+                                                                :class="selectedVersion === ''
+                                                                    ? 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-slate-800'
+                                                                    : 'border-slate-200 dark:border-slate-700 hover:border-blue-400'">
+                                                                <div class="flex items-start gap-3">
+                                                                    <input type="radio" name="selected_version" value="" x-model="selectedVersion" class="mt-1">
+                                                                    <div>
+                                                                        <span class="font-semibold text-slate-900 dark:text-white">Auto detect</span>
+                                                                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Use package.json <code class="font-mono">engines.node</code> on deploy and every Git pull.</p>
+                                                                    </div>
+                                                                </div>
+                                                            </label>
+                                                            <template x-for="option in options.version_picker.options" :key="option.value">
+                                                                <label class="block p-3 border-2 rounded-lg cursor-pointer transition-all"
+                                                                    :class="selectedVersion === option.value
+                                                                        ? 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-slate-800'
+                                                                        : 'border-slate-200 dark:border-slate-700 hover:border-blue-400'">
+                                                                    <div class="flex items-start gap-3">
+                                                                        <input type="radio" name="selected_version" :value="option.value" x-model="selectedVersion" class="mt-1">
+                                                                        <div>
+                                                                            <span class="font-semibold text-slate-900 dark:text-white" x-text="option.label"></span>
+                                                                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1" x-show="option.description" x-text="option.description"></p>
+                                                                        </div>
+                                                                    </div>
+                                                                </label>
+                                                            </template>
+                                                        </div>
+                                                    </div>
+                                                </template>
+
                                                 <template x-if="options.database?.show">
                                                     <div class="mb-4">
                                                         <p class="text-sm font-semibold text-slate-900 dark:text-white mb-2">
@@ -1402,6 +1437,9 @@ function redeployStackPanel(stackOptions) {
         options,
         selectedFramework: current.framework || options.framework?.value || '',
         selectedFrontend: current.frontend || options.frontend?.value || 'none',
+        selectedVersion: current.node_version_source === 'auto'
+            ? ''
+            : (current.selected_version || options.version_picker?.value || ''),
         selectedDatabaseId: initialDatabaseId,
         initialDatabaseId,
         resetDatabase: {{ config('containers.redeploy.reset_database_default', false) ? 'true' : 'false' }},

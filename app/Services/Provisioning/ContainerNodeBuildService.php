@@ -125,6 +125,20 @@ class ContainerNodeBuildService
                 (int) ($service->effectiveContainerTemplate()?->default_port ?? 3000),
                 includeBootstrap: false,
             );
+            $relativeRoot = $this->runtimeService->relativeDirUnderApp($runtime->containerWorkdir);
+            $projectHostPath = $relativeRoot === '' ? $hostAppPath : $hostAppPath.'/'.$relativeRoot;
+            $projectPackageJson = $this->remoteValue(
+                $ssh,
+                'head -c 65536 '.escapeshellarg($projectHostPath.'/package.json').' 2>/dev/null || true'
+            );
+            $workspacePackageJson = $relativeRoot !== ''
+                ? $this->remoteValue(
+                    $ssh,
+                    'head -c 65536 '.escapeshellarg($hostAppPath.'/package.json').' 2>/dev/null || true'
+                )
+                : null;
+            $service->refresh();
+            $serviceMeta = is_array($service->service_meta) ? $service->service_meta : [];
             $manifest = [
                 'schema' => 1,
                 'state' => 'built',
@@ -146,6 +160,13 @@ class ContainerNodeBuildService
                 ),
                 'runtime_source' => $runtime->source,
                 'runtime_label' => $runtime->label,
+                'package_manager' => $this->runtimeService->resolveNodePackageManager(
+                    $projectPackageJson,
+                    $workspacePackageJson,
+                ),
+                'node_version' => $deployment->selected_version,
+                'node_version_source' => $serviceMeta['node_version_source'] ?? 'auto',
+                'node_engine' => $serviceMeta['node_detected_engine'] ?? null,
                 'working_directory' => $runtime->containerWorkdir,
                 'start_command' => $runtime->command,
             ];

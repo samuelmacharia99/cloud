@@ -32,14 +32,12 @@
             <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
                 {{ $versionPicker['show'] ? $versionPicker['label'] : 'Select Version' }}
             </label>
-            <select name="selected_version[{{ $key }}]" required
+            <select name="selected_version[{{ $key }}]" @required($versionPicker['required'] ?? true)
                 class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white">
-                <option value="">{{ $versionPicker['show'] ? '— Choose a model size —' : '-- Choose a version --' }}</option>
-                @foreach($template->versions as $version)
-                    <option value="{{ $version }}" @selected($selectedVersion === $version)>
-                        {{ $versionPicker['show']
-                            ? \App\Services\TechStackRoutingService::versionLabel($template, $version)
-                            : $version }}
+                <option value="">{{ ($template->slug ?? '') === 'nodejs' ? 'Auto detect from package.json' : ($versionPicker['show'] ? '— Choose a model size —' : '-- Choose a version --') }}</option>
+                @foreach(($versionPicker['show'] ? $versionPicker['options'] : collect($template->versions)->map(fn ($version) => ['value' => $version, 'label' => $version])->all()) as $versionOption)
+                    <option value="{{ $versionOption['value'] }}" @selected($selectedVersion === $versionOption['value'])>
+                        {{ $versionOption['label'] }}
                     </option>
                 @endforeach
             </select>

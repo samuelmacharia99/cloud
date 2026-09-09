@@ -166,9 +166,14 @@ class ServiceBrowserController extends Controller
         }
 
         $requiredVersions = TechStackRoutingService::requiredSelectedVersions($language);
+        $allowedVersions = TechStackRoutingService::allowedSelectedVersions($language);
         $selectedVersion = $validated['selected_version'] ?? null;
         if ($requiredVersions !== [] && ! in_array((string) $selectedVersion, $requiredVersions, true)) {
             return back()->with('error', 'Choose a '.strtolower(TechStackRoutingService::versionPickerPayload($language)['label']).'.');
+        }
+        if ($selectedVersion !== null && $selectedVersion !== ''
+            && ! in_array($selectedVersion, $allowedVersions, true)) {
+            return back()->withErrors(['selected_version' => 'The selected runtime version is not supported.'])->withInput();
         }
 
         $roles = TechStackRoutingService::resolveDefaultRoles($language, $framework, $frontend);
@@ -209,6 +214,11 @@ class ServiceBrowserController extends Controller
 
         if ($selectedVersion !== null && $selectedVersion !== '') {
             $techstackData['selected_version'] = $selectedVersion;
+        }
+        if ($language->slug === 'nodejs') {
+            $techstackData['node_version_source'] = $selectedVersion !== null && $selectedVersion !== ''
+                ? 'manual'
+                : 'auto';
         }
 
         $projectId = (int) ($validated['project_id'] ?? 0);

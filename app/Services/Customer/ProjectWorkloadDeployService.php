@@ -93,12 +93,19 @@ class ProjectWorkloadDeployService
         }
 
         $requiredVersions = TechStackRoutingService::requiredSelectedVersions($language);
+        $allowedVersions = TechStackRoutingService::allowedSelectedVersions($language);
         if ($requiredVersions !== []) {
             if (! in_array((string) $selectedVersion, $requiredVersions, true)) {
                 throw ValidationException::withMessages([
                     'selected_version' => 'Choose a '.strtolower(TechStackRoutingService::versionPickerPayload($language)['label']).'.',
                 ]);
             }
+        }
+        if ($selectedVersion !== null && $selectedVersion !== ''
+            && ! in_array($selectedVersion, $allowedVersions, true)) {
+            throw ValidationException::withMessages([
+                'selected_version' => 'The selected runtime version is not supported.',
+            ]);
         }
 
         $roles = TechStackRoutingService::resolveDefaultRoles($language, $framework, $frontend);
@@ -133,6 +140,11 @@ class ProjectWorkloadDeployService
 
         if ($selectedVersion !== null && $selectedVersion !== '') {
             $meta['selected_version'] = $selectedVersion;
+        }
+        if ($language->slug === 'nodejs') {
+            $meta['node_version_source'] = $selectedVersion !== null && $selectedVersion !== ''
+                ? 'manual'
+                : 'auto';
         }
 
         if ($database) {

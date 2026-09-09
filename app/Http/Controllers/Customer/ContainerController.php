@@ -8,6 +8,7 @@ use App\Http\Requests\Customer\ChatContainerOllamaRequest;
 use App\Http\Requests\Customer\ConnectHermesOllamaRequest;
 use App\Http\Requests\Customer\ImportContainerDatabaseRequest;
 use App\Http\Requests\Customer\PullContainerGitRepositoryRequest;
+use App\Http\Requests\Customer\RedeployContainerStackRequest;
 use App\Http\Requests\Customer\UpdateContainerGitRepositoryRequest;
 use App\Http\Requests\Customer\UpdateContainerPhpExtensionsRequest;
 use App\Http\Requests\DeleteContainerEnvironmentRequest;
@@ -165,6 +166,11 @@ class ContainerController extends Controller
                 'framework' => $currentFramework,
                 'frontend' => $service->service_meta['frontend'] ?? ($redeployStackOptions['frontend']['value'] ?? 'none'),
                 'database_id' => $service->service_meta['database_id'] ?? null,
+                'selected_version' => ($service->service_meta['node_version_source'] ?? null) === 'auto'
+                    ? null
+                    : ($deployment?->selected_version ?? $service->service_meta['selected_version'] ?? null),
+                'node_version_source' => $service->service_meta['node_version_source']
+                    ?? (! empty($service->service_meta['selected_version']) ? 'manual' : 'auto'),
             ];
         }
 
@@ -322,9 +328,10 @@ class ContainerController extends Controller
     /**
      * Redeploy container stack
      */
-    public function redeploy(Service $service, Request $request): RedirectResponse
+    public function redeploy(Service $service, RedeployContainerStackRequest $request): RedirectResponse
     {
-        abort_if($service->user_id !== auth()->id(), 403);
+        $this->authorize('manageContainer', $service);
+        $previousNodeVersionState = null;
 
         try {
             if ($service->product?->type !== 'container_hosting') {
@@ -358,15 +365,21 @@ class ContainerController extends Controller
                 return back()->withErrors(['error' => 'Container host is not properly configured (missing SSH credentials). Please contact support.']);
             }
 
-            $template = $service->product?->containerTemplate;
+            $template = $service->effectiveContainerTemplate();
             $resetDatabase = $request->boolean('reset_database');
 
             if ($template) {
-                $validated = $request->validate([
-                    'framework' => ['nullable', 'string', 'max:64'],
-                    'frontend' => ['nullable', 'string', 'max:64'],
-                    'database_id' => ['nullable', 'integer', 'exists:database_templates,id'],
-                ]);
+                $validated = $request->validated();
+                if (($template->slug ?? '') === 'nodejs') {
+                    $meta = is_array($service->service_meta) ? $service->service_meta : [];
+                    $previousNodeVersionState = [
+                        'deployment_selected_version' => $deployment->selected_version,
+                        'selected_version' => $meta['selected_version'] ?? null,
+                        'node_version_source' => $meta['node_version_source'] ?? null,
+                        'node_detected_engine' => $meta['node_detected_engine'] ?? null,
+                        'node_detected_at' => $meta['node_detected_at'] ?? null,
+                    ];
+                }
 
                 $database = ! empty($validated['database_id'])
                     ? DatabaseTemplate::findOrFail($validated['database_id'])
@@ -379,6 +392,10 @@ class ContainerController extends Controller
                         $validated['framework'] ?? null,
                         $validated['frontend'] ?? null,
                         $database,
+                        isset($validated['selected_version'])
+                            ? trim((string) $validated['selected_version'])
+                            : null,
+                        $request->exists('selected_version'),
                     );
                 } catch (\InvalidArgumentException $e) {
                     return back()->withErrors(['error' => $e->getMessage()])->withInput();
@@ -413,6 +430,21 @@ class ContainerController extends Controller
 
             return back()->with('success', $message);
         } catch (\Exception $e) {
+            if (is_array($previousNodeVersionState)) {
+                $service->refresh();
+                $meta = is_array($service->service_meta) ? $service->service_meta : [];
+                foreach (['selected_version', 'node_version_source', 'node_detected_engine', 'node_detected_at'] as $key) {
+                    if ($previousNodeVersionState[$key] !== null) {
+                        $meta[$key] = $previousNodeVersionState[$key];
+                    } else {
+                        unset($meta[$key]);
+                    }
+                }
+                $service->update(['service_meta' => $meta]);
+                $service->containerDeployment?->update([
+                    'selected_version' => $previousNodeVersionState['deployment_selected_version'],
+                ]);
+            }
             \Log::error("Failed to redeploy container for service {$service->id}: ".$e->getMessage());
 
             return back()->withErrors(['error' => 'Failed to redeploy container: '.$e->getMessage()]);

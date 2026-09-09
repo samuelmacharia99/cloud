@@ -6305,6 +6305,7 @@ PHP;
         $deployment->update(['selected_version' => $version]);
         $meta = is_array($service->service_meta) ? $service->service_meta : [];
         $meta['selected_version'] = $version;
+        $meta['node_version_source'] = 'manual';
         $service->update(['service_meta' => $meta]);
 
         $result = $this->treatRestartApplication($service->fresh([

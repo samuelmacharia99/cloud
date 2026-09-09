@@ -17,6 +17,7 @@ class ContainerGitRepositoryService
         'validate' => 'Validate repository and container',
         'prepare' => 'Prepare /app directory',
         'sync' => 'Clone or pull from Git',
+        'runtime_version' => 'Resolve Node.js runtime version',
         'environment' => 'Configure application environment',
         'composer' => 'Install Composer dependencies',
         'migrations' => 'Run database migrations',
@@ -270,6 +271,30 @@ class ContainerGitRepositoryService
                     'commit' => $commit,
                 ];
             });
+
+            if (($service->effectiveContainerTemplate()?->slug ?? '') === 'nodejs') {
+                $meta = is_array($service->service_meta) ? $service->service_meta : [];
+                $this->mergeReplacementState($pull, [
+                    'node_version_state' => [
+                        'selected_version' => $deployment->selected_version,
+                        'node_version_source' => $meta['node_version_source'] ?? null,
+                        'node_detected_engine' => $meta['node_detected_engine'] ?? null,
+                        'node_detected_at' => $meta['node_detected_at'] ?? null,
+                        'node_release' => $meta['node_release'] ?? null,
+                    ],
+                ]);
+                $this->runPullStep($pull, 'runtime_version', function () use ($service, $deployment, $ssh) {
+                    $resolution = app(ContainerNodeVersionService::class)->reconcileFromHost(
+                        $service,
+                        $deployment,
+                        $ssh,
+                    );
+
+                    return $resolution['message'];
+                });
+                $deployment->refresh();
+                $service->refresh();
+            }
 
             if ($this->isLaravelService($service)) {
                 $this->pathResolver()->persistResolvedPaths($service, $ssh, $deployment);
@@ -713,6 +738,9 @@ class ContainerGitRepositoryService
             $steps[] = $this->makeStep('migrations');
             $steps[] = $this->makeStep('frontend');
         } else {
+            if (($service->effectiveContainerTemplate()?->slug ?? '') === 'nodejs') {
+                $steps[] = $this->makeStep('runtime_version');
+            }
             $steps[] = $this->makeStep('post_pull');
         }
 
@@ -1190,6 +1218,18 @@ class ContainerGitRepositoryService
         $pull->update(['options' => $options]);
     }
 
+    /**
+     * @param  array<string, mixed>  $state
+     */
+    private function mergeReplacementState(ContainerGitPull $pull, array $state): void
+    {
+        $pull->refresh();
+        $options = is_array($pull->options) ? $pull->options : [];
+        $existing = is_array($options['replacement_state'] ?? null) ? $options['replacement_state'] : [];
+        $options['replacement_state'] = array_merge($existing, $state);
+        $pull->update(['options' => $options]);
+    }
+
     public function clearReplacementState(ContainerGitPull $pull): void
     {
         $pull->refresh();
@@ -1218,6 +1258,26 @@ class ContainerGitRepositoryService
 
         $ssh = SSHService::forNode($deployment->node);
         try {
+            $nodeVersionState = is_array($state['node_version_state'] ?? null)
+                ? $state['node_version_state']
+                : null;
+            if ($nodeVersionState !== null) {
+                $deployment->update([
+                    'selected_version' => $nodeVersionState['selected_version'] ?? null,
+                ]);
+                $meta = is_array($service->service_meta) ? $service->service_meta : [];
+                foreach (['selected_version', 'node_version_source', 'node_detected_engine', 'node_detected_at', 'node_release'] as $key) {
+                    if (array_key_exists($key, $nodeVersionState) && $nodeVersionState[$key] !== null) {
+                        $meta[$key] = $nodeVersionState[$key];
+                    } else {
+                        unset($meta[$key]);
+                    }
+                }
+                $service->update(['service_meta' => $meta]);
+                $service->refresh();
+                $deployment->refresh();
+            }
+
             if (! empty($state['had_previous_content'])) {
                 $this->restorePreviousApplication($ssh, $service, $deployment, $hostAppPath, $previousPath);
             } else {

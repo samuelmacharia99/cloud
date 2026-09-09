@@ -419,6 +419,16 @@ class CheckoutController extends Controller
                             if (! empty($selectedVersion)) {
                                 $serviceMeta['selected_version'] = $selectedVersion;
                             }
+                            if (($product->containerTemplate?->slug ?? '') === 'nodejs') {
+                                $allowed = TechStackRoutingService::allowedSelectedVersions($product->containerTemplate);
+                                if ($selectedVersion !== null && $selectedVersion !== ''
+                                    && ! in_array($selectedVersion, $allowed, true)) {
+                                    throw ValidationException::withMessages([
+                                        $selectedVersionKey => 'Choose a supported Node.js runtime version or Auto detect.',
+                                    ]);
+                                }
+                                $serviceMeta['node_version_source'] = $selectedVersion ? 'manual' : 'auto';
+                            }
 
                             // Store selected stack builder roles + database for provisioning
                             $serviceMeta = TechStackRoutingService::applySessionSelectionToServiceMeta($serviceMeta);
@@ -1278,6 +1288,16 @@ class CheckoutController extends Controller
                             $selectedVersion = $request->input($selectedVersionKey);
                             if (! empty($selectedVersion)) {
                                 $serviceMeta['selected_version'] = $selectedVersion;
+                            }
+                            if (($product->containerTemplate?->slug ?? '') === 'nodejs') {
+                                $allowed = TechStackRoutingService::allowedSelectedVersions($product->containerTemplate);
+                                if ($selectedVersion !== null && $selectedVersion !== ''
+                                    && ! in_array($selectedVersion, $allowed, true)) {
+                                    throw ValidationException::withMessages([
+                                        $selectedVersionKey => 'Choose a supported Node.js runtime version or Auto detect.',
+                                    ]);
+                                }
+                                $serviceMeta['node_version_source'] = $selectedVersion ? 'manual' : 'auto';
                             }
 
                             // Store selected stack builder roles + database for provisioning

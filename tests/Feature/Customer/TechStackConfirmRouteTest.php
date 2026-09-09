@@ -179,6 +179,10 @@ class TechStackConfirmRouteTest extends TestCase
             ->getJson(route('api.languages.stack-options', ['language' => $language->id, 'framework' => 'nextjs']))
             ->assertOk()
             ->assertJsonPath('frontend.value', 'nextjs')
+            ->assertJsonPath('version_picker.show', true)
+            ->assertJsonPath('version_picker.required', false)
+            ->assertJsonPath('version_picker.value', null)
+            ->assertJsonFragment(['value' => '24-alpine', 'label' => 'Node 24-alpine'])
             ->assertJsonCount(1, 'frontend.options');
     }
 

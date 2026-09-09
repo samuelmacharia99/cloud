@@ -21,12 +21,15 @@ class ContainerTemplate extends Model
             '18-alpine',
             '20-alpine',
             '22-alpine',
+            '24-alpine',
             '18-slim',
             '20-slim',
             '22-slim',
+            '24-slim',
             '18',
             '20',
             '22',
+            '24',
         ];
     }
 

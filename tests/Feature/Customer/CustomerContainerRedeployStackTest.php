@@ -9,8 +9,8 @@ use App\Models\Node;
 use App\Models\Product;
 use App\Models\Service;
 use App\Models\User;
-use App\Services\Provisioning\ContainerDeployResult;
 use App\Services\Provisioning\ContainerDeploymentService;
+use App\Services\Provisioning\ContainerDeployResult;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -99,6 +99,104 @@ class CustomerContainerRedeployStackTest extends TestCase
             ->assertSessionHasErrors('error');
     }
 
+    public function test_node_redeploy_page_offers_auto_detection_and_supported_versions(): void
+    {
+        [$customer, $service] = $this->makeNodeService();
+        $this->mock(ContainerDeploymentService::class, function ($mock) {
+            $mock->shouldReceive('getStatus')->andReturn(['status' => 'running', 'healthy' => true]);
+        });
+
+        $this->actingAs($customer)
+            ->get(route('customer.services.container.show', $service))
+            ->assertOk()
+            ->assertSee('Auto detect')
+            ->assertSee('Node 22-alpine')
+            ->assertSee('Node 24-alpine');
+    }
+
+    public function test_node_redeploy_can_pin_a_supported_runtime_version(): void
+    {
+        [$customer, $service] = $this->makeNodeService();
+        $this->mock(ContainerDeploymentService::class, function ($mock) {
+            $mock->shouldReceive('deploy')->once()->andReturn(new ContainerDeployResult);
+        });
+
+        $this->actingAs($customer)
+            ->post(route('customer.services.container.redeploy', $service), [
+                'framework' => 'express',
+                'frontend' => 'none',
+                'selected_version' => '22-slim',
+            ])
+            ->assertRedirect();
+
+        $service->refresh();
+        $this->assertSame('22-slim', $service->service_meta['selected_version']);
+        $this->assertSame('manual', $service->service_meta['node_version_source']);
+    }
+
+    public function test_node_redeploy_can_return_to_auto_detection(): void
+    {
+        [$customer, $service] = $this->makeNodeService([
+            'selected_version' => '20-alpine',
+            'node_version_source' => 'manual',
+        ]);
+        $this->mock(ContainerDeploymentService::class, function ($mock) {
+            $mock->shouldReceive('deploy')->once()->andReturn(new ContainerDeployResult);
+        });
+
+        $this->actingAs($customer)
+            ->post(route('customer.services.container.redeploy', $service), [
+                'framework' => 'express',
+                'frontend' => 'none',
+                'selected_version' => '',
+            ])
+            ->assertRedirect();
+
+        $service->refresh();
+        $this->assertArrayNotHasKey('selected_version', $service->service_meta);
+        $this->assertSame('auto', $service->service_meta['node_version_source']);
+    }
+
+    public function test_node_redeploy_rejects_an_unsupported_runtime_version(): void
+    {
+        [$customer, $service] = $this->makeNodeService();
+        $this->mock(ContainerDeploymentService::class, function ($mock) {
+            $mock->shouldNotReceive('deploy');
+        });
+
+        $this->actingAs($customer)
+            ->post(route('customer.services.container.redeploy', $service), [
+                'framework' => 'express',
+                'frontend' => 'none',
+                'selected_version' => '99-alpine',
+            ])
+            ->assertSessionHasErrors('selected_version');
+    }
+
+    public function test_failed_node_redeploy_restores_the_previous_runtime_pin(): void
+    {
+        [$customer, $service] = $this->makeNodeService([
+            'selected_version' => '20-alpine',
+            'node_version_source' => 'manual',
+        ]);
+        $this->mock(ContainerDeploymentService::class, function ($mock) {
+            $mock->shouldReceive('deploy')->once()->andThrow(new \RuntimeException('preflight rejected'));
+        });
+
+        $this->actingAs($customer)
+            ->post(route('customer.services.container.redeploy', $service), [
+                'framework' => 'express',
+                'frontend' => 'none',
+                'selected_version' => '22-alpine',
+            ])
+            ->assertSessionHasErrors('error');
+
+        $service->refresh();
+        $this->assertSame('20-alpine', $service->service_meta['selected_version']);
+        $this->assertSame('manual', $service->service_meta['node_version_source']);
+        $this->assertSame('20-alpine', $service->containerDeployment->selected_version);
+    }
+
     /**
      * @return array{0: User, 1: Service}
      */
@@ -152,6 +250,65 @@ class CustomerContainerRedeployStackTest extends TestCase
             'node_id' => $node->id,
             'status' => 'running',
             'container_name' => 'user-'.$customer->id.'-service-'.$service->id.'-laravel',
+        ]);
+
+        return [$customer, $service->fresh(['product.containerTemplate', 'containerDeployment.node'])];
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     * @return array{0: User, 1: Service}
+     */
+    private function makeNodeService(array $meta = []): array
+    {
+        $customer = User::factory()->customer()->create();
+        $template = ContainerTemplate::query()->firstOrCreate(['slug' => 'nodejs'], [
+            'name' => 'Node.js',
+            'description' => 'Node app',
+            'category' => 'web',
+            'docker_image' => 'node:20-alpine',
+            'default_port' => 3000,
+            'required_ram_mb' => 512,
+            'required_cpu_cores' => 1,
+            'required_storage_gb' => 2,
+            'versions' => ContainerTemplate::nodeRuntimeVersions(),
+            'is_active' => true,
+            'order' => 0,
+            'hosting_type' => 'container',
+        ]);
+        $template->forceFill([
+            'versions' => ContainerTemplate::nodeRuntimeVersions(),
+            'hosting_type' => 'container',
+            'is_active' => true,
+        ])->save();
+
+        $product = Product::factory()->containerHosting()->create([
+            'container_template_id' => $template->id,
+            'name' => 'Node App',
+        ]);
+        $node = Node::factory()->create([
+            'type' => 'container_host',
+            'ssh_username' => 'root',
+            'ssh_password' => 'secret',
+            'is_active' => true,
+        ]);
+        $service = Service::factory()->create([
+            'user_id' => $customer->id,
+            'product_id' => $product->id,
+            'node_id' => $node->id,
+            'status' => 'active',
+            'service_meta' => array_merge([
+                'framework' => 'express',
+                'frontend' => 'none',
+                'node_version_source' => 'auto',
+            ], $meta),
+        ]);
+        ContainerDeployment::factory()->create([
+            'service_id' => $service->id,
+            'node_id' => $node->id,
+            'status' => 'running',
+            'container_name' => 'user-'.$customer->id.'-service-'.$service->id.'-nodejs',
+            'selected_version' => $meta['selected_version'] ?? null,
         ]);
 
         return [$customer, $service->fresh(['product.containerTemplate', 'containerDeployment.node'])];

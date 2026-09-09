@@ -159,6 +159,21 @@ class ContainerDeploymentService
             $envValues = array_merge($envValues, $this->projectRoleLinkEnv($service));
             $envVars = [];
 
+            // Validate a manual Node pin against the existing source before
+            // changing deployment/service status or stopping the healthy stack.
+            if (($template->slug ?? '') === 'nodejs' && $options->isRedeploy && $existingDeployment) {
+                $versionSsh = SSHService::forNode($node);
+                try {
+                    $selectedVersion = $this->resolveNodeVersionForDeployment(
+                        $service,
+                        $existingDeployment,
+                        $versionSsh,
+                    );
+                } finally {
+                    $versionSsh->disconnect();
+                }
+            }
+
             // Reserve port and persist deployment with retry in case of concurrent allocation collisions.
             $deployment = null;
             $port = null;
@@ -277,6 +292,14 @@ class ContainerDeploymentService
                     $this->syncApplicationSource($ssh, $service, $template, $hostAppPath);
                 } elseif ($hostAppPath) {
                     $ssh->mkdirp($hostAppPath);
+                }
+
+                if (($template->slug ?? '') === 'nodejs' && ! $options->isRedeploy) {
+                    $selectedVersion = $this->resolveNodeVersionForDeployment(
+                        $service,
+                        $deployment,
+                        $ssh,
+                    );
                 }
 
                 $applicationRuntime = $this->resolveApplicationRuntime($ssh, $template, $hostAppPath);
@@ -6268,6 +6291,30 @@ class ContainerDeploymentService
             (int) ($template->default_port ?? 3000),
             includeNodeBootstrap: ($template->slug ?? null) !== 'nodejs',
         );
+    }
+
+    private function resolveNodeVersionForDeployment(
+        Service $service,
+        ContainerDeployment $deployment,
+        SSHService $ssh,
+    ): ?string {
+        $resolution = app(ContainerNodeVersionService::class)->reconcileFromHost(
+            $service,
+            $deployment,
+            $ssh,
+        );
+        $selectedVersion = $resolution['selected_version'];
+        if ($deployment->selected_version !== $selectedVersion) {
+            $deployment->update(['selected_version' => $selectedVersion]);
+        }
+        $this->recordDeploymentEvent($service, $deployment, 'node_version_resolved', [
+            'selected_version' => $selectedVersion,
+            'source' => $resolution['source'],
+            'constraint' => $resolution['constraint'],
+            'changed' => $resolution['changed'],
+        ]);
+
+        return $selectedVersion;
     }
 
     public function refreshApplicationRuntimeCompose(Service $service, ContainerDeployment $deployment, SSHService $ssh): string

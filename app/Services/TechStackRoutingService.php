@@ -218,6 +218,31 @@ class TechStackRoutingService
      */
     public static function versionPickerPayload(ContainerTemplate $language): array
     {
+        if (strtolower((string) $language->slug) === 'nodejs') {
+            $versions = is_array($language->versions)
+                ? $language->versions
+                : (json_decode((string) $language->versions, true) ?: []);
+            $versions = array_values(array_unique(array_merge(
+                array_filter($versions, 'is_string'),
+                ContainerTemplate::nodeRuntimeVersions(),
+            )));
+
+            return [
+                'show' => true,
+                'required' => false,
+                'label' => 'Node.js version',
+                'help' => 'Choose Auto detect to honor package.json engines.node on deploy and Git pulls. A manual selection remains pinned until you switch back to Auto detect.',
+                'options' => array_map(fn (string $version): array => [
+                    'value' => $version,
+                    'label' => 'Node '.$version,
+                    'description' => str_contains($version, 'alpine')
+                        ? 'Small Alpine Linux image'
+                        : (str_contains($version, 'slim') ? 'Debian slim image' : 'Standard image'),
+                ], $versions),
+                'value' => null,
+            ];
+        }
+
         $definition = self::stackDefinition($language);
         $picker = $definition['version_picker'] ?? [];
         $options = [];
@@ -283,6 +308,16 @@ class TechStackRoutingService
         if (! $picker['show'] || ! $picker['required']) {
             return [];
         }
+
+        return array_values(array_column($picker['options'], 'value'));
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function allowedSelectedVersions(ContainerTemplate $language): array
+    {
+        $picker = self::versionPickerPayload($language);
 
         return array_values(array_column($picker['options'], 'value'));
     }
@@ -569,6 +604,12 @@ class TechStackRoutingService
         if (empty($serviceMeta['selected_version']) && ! empty($techstack['selected_version'])) {
             $serviceMeta['selected_version'] = (string) $techstack['selected_version'];
         }
+        if (! empty($techstack['node_version_source'])) {
+            $serviceMeta['node_version_source'] = (string) $techstack['node_version_source'];
+            if ($serviceMeta['node_version_source'] === 'auto') {
+                unset($serviceMeta['selected_version']);
+            }
+        }
 
         return $serviceMeta;
     }
@@ -585,6 +626,8 @@ class TechStackRoutingService
         ?string $framework,
         ?string $frontend,
         ?DatabaseTemplate $database,
+        ?string $selectedVersion = null,
+        bool $versionSubmitted = false,
     ): array {
         if (! self::isValidStackSelection($language, $framework, $frontend, $database)) {
             throw new \InvalidArgumentException('Invalid stack selection for this application type.');
@@ -598,6 +641,20 @@ class TechStackRoutingService
         $serviceMeta['frontend'] = $roles['frontend'];
         $serviceMeta['backend'] = $roles['backend'];
         $serviceMeta['stack_builder_version'] = (int) config('stack_builder.version', 1);
+
+        if (strtolower((string) $language->slug) === 'nodejs' && $versionSubmitted) {
+            if ($selectedVersion === null || $selectedVersion === '') {
+                unset($serviceMeta['selected_version']);
+                $serviceMeta['node_version_source'] = 'auto';
+            } else {
+                if (! in_array($selectedVersion, self::allowedSelectedVersions($language), true)) {
+                    throw new \InvalidArgumentException('The selected Node.js version is not supported.');
+                }
+                $serviceMeta['selected_version'] = $selectedVersion;
+                $serviceMeta['node_version_source'] = 'manual';
+                unset($serviceMeta['node_detected_engine'], $serviceMeta['node_detected_at']);
+            }
+        }
 
         if ($database) {
             $serviceMeta['database_id'] = $database->id;

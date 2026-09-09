@@ -223,6 +223,19 @@
                                     x-text="stackOptions.version_picker.help"
                                 ></p>
                                 <div class="space-y-2.5">
+                                    <template x-if="!stackOptions.version_picker.required">
+                                        <label class="techstack-soft-option block p-4 rounded-2xl cursor-pointer"
+                                            :class="selectedVersion === '' ? 'is-selected' : ''"
+                                        >
+                                            <div class="flex items-start gap-3">
+                                                <input type="radio" name="selected_version" value="" x-model="selectedVersion" class="mt-1">
+                                                <div class="flex-1">
+                                                    <span class="font-semibold text-ink-950 dark:text-white">Auto detect</span>
+                                                    <p class="text-sm text-ink-600 dark:text-ink-400 mt-1">Detect the required runtime from the repository.</p>
+                                                </div>
+                                            </div>
+                                        </label>
+                                    </template>
                                     <template x-for="option in stackOptions.version_picker.options" :key="option.value">
                                         <label class="techstack-soft-option block p-4 rounded-2xl cursor-pointer"
                                             :class="selectedVersion === option.value ? 'is-selected' : ''"
