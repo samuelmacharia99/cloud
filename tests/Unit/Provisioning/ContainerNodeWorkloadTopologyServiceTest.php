@@ -387,9 +387,61 @@ class ContainerNodeWorkloadTopologyServiceTest extends TestCase
         (new ContainerNodeWorkloadTopologyService)->sanitizeRelativeRoot('../apps/api');
     }
 
+    #[Test]
+    public function it_resolves_python_ruby_and_go_backends_with_node_frontends(): void
+    {
+        foreach ([
+            'python' => ['framework' => 'django', 'marker' => 'manage.py', 'source' => 'django'],
+            'ruby' => ['framework' => 'rails', 'marker' => 'bin/rails', 'source' => 'rails'],
+            'go' => ['framework' => 'other', 'marker' => 'go.mod', 'source' => 'entrypoint'],
+        ] as $slug => $case) {
+            $runtime = Mockery::mock(ContainerApplicationRuntimeService::class);
+            $runtime->shouldReceive('detectRuntimeAt')
+                ->once()
+                ->withArgs(fn ($ssh, $host, $root, $runtimeSlug, $port) => $host === '/srv/app'
+                    && $root === 'backend'
+                    && $runtimeSlug === $slug
+                    && $port === ContainerNodeWorkloadTopologyService::BACKEND_PORT)
+                ->andReturn(new ApplicationRuntime(
+                    ['sh', '-lc', 'cd /app/backend && exec backend-server'],
+                    $case['source'],
+                    ucfirst($slug).' backend',
+                    '/app/backend',
+                ));
+            $runtime->shouldReceive('detectNodeRuntimeAt')
+                ->once()
+                ->andReturn(new ApplicationRuntime(
+                    ['sh', '-lc', 'cd /app/frontend && exec npm start'],
+                    'vite',
+                    'Vite frontend',
+                    '/app/frontend',
+                ));
+            $this->app->instance(ContainerApplicationRuntimeService::class, $runtime);
+
+            $ssh = $this->sshForSplitBackend($case['marker']);
+            $topology = (new ContainerNodeWorkloadTopologyService)->resolve(
+                $this->runtimeService($slug, $case['framework'], 'vite-spa'),
+                $ssh,
+                '/srv/app',
+            );
+
+            $this->assertSame('split_web_api', $topology['topology']);
+            $this->assertSame($slug, $topology['backend_slug']);
+            $this->assertSame('backend', $topology['backend']['root']);
+            $this->assertSame('/app/backend', $topology['backend']['working_directory']);
+            $this->assertSame('frontend', $topology['frontend']['root']);
+            $this->assertSame('vite-spa', $topology['frontend_type']);
+        }
+    }
+
     private function nodeService(string $framework, string $frontend): Service
     {
-        $template = new ContainerTemplate(['slug' => 'nodejs', 'default_port' => 3000]);
+        return $this->runtimeService('nodejs', $framework, $frontend);
+    }
+
+    private function runtimeService(string $slug, string $framework, string $frontend): Service
+    {
+        $template = new ContainerTemplate(['slug' => $slug, 'default_port' => 3000]);
         $service = new Service([
             'service_meta' => compact('framework', 'frontend'),
         ]);
@@ -397,6 +449,33 @@ class ContainerNodeWorkloadTopologyServiceTest extends TestCase
         $service->product->setRelation('containerTemplate', $template);
 
         return $service;
+    }
+
+    private function sshForSplitBackend(string $marker): SSHService
+    {
+        $frontend = json_encode([
+            'scripts' => ['build' => 'vite build'],
+            'devDependencies' => ['vite' => '^7.0'],
+        ], JSON_THROW_ON_ERROR);
+        $ssh = $this->createMock(SSHService::class);
+        $ssh->method('exec')->willReturnCallback(function (string $command) use ($frontend, $marker): string {
+            if (str_contains($command, '-type f -name package.json')) {
+                return '/srv/app/frontend/package.json';
+            }
+            if (str_contains($command, '-name manage.py') && str_contains($command, '-name go.mod')) {
+                return '/srv/app/backend/'.$marker;
+            }
+            if (str_contains($command, '/frontend/package.json')) {
+                return $frontend;
+            }
+            if (str_contains($command, '/backend/'.$marker)) {
+                return 'yes';
+            }
+
+            return str_contains($command, '&& echo yes || echo no') ? 'no' : '';
+        });
+
+        return $ssh;
     }
 
     /**
