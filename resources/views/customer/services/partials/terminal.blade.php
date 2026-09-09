@@ -1040,7 +1040,7 @@ function containerTerminal() {
             const tab = this.activeTab();
             if (!tab?.sessionToken) return;
             try {
-                const response = await fetch(TERMINAL_EXTEND_URL, {}
+                const response = await fetch(TERMINAL_EXTEND_URL, {
                     method: 'POST',
                     headers: this.csrfHeaders(),
                     body: JSON.stringify({ session_token: tab.sessionToken }),
@@ -1107,7 +1107,7 @@ function containerTerminal() {
             let skipFinalPrompt = false;
 
             try {
-                const response = await fetch(TERMINAL_EXECUTE_URL, {}
+                const response = await fetch(TERMINAL_EXECUTE_URL, {
                     method: 'POST',
                     headers: this.csrfHeaders(),
                     body: JSON.stringify({ session_token: tab.sessionToken, command }),
