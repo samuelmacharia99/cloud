@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Customer;
 
 use App\Exceptions\SSH\SSHCommandException;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Customer\BindContainerDomainRequest;
 use App\Http\Requests\Customer\ChatContainerOllamaRequest;
 use App\Http\Requests\Customer\ConnectHermesOllamaRequest;
 use App\Http\Requests\Customer\ImportContainerDatabaseRequest;
@@ -2137,7 +2138,7 @@ class ContainerController extends Controller
     /**
      * Bind a domain to a container
      */
-    public function bindDomain(Service $service, Request $request): RedirectResponse
+    public function bindDomain(Service $service, BindContainerDomainRequest $request): RedirectResponse
     {
         $this->authorize('manageContainer', $service);
 
@@ -2146,21 +2147,16 @@ class ContainerController extends Controller
                 return $this->domainsTabRedirect($service)->withErrors(['error' => 'Service is not an application hosting service']);
             }
 
-            $validator = Validator::make($request->all(), [
-                'domain' => ['required', 'string', 'regex:'.$this->containerDomainRegex(), 'unique:container_domains,domain'],
-            ]);
-
-            if ($validator->fails()) {
-                return $this->domainsTabRedirect($service)->withErrors($validator)->withInput();
-            }
-
             $deployment = $service->containerDeployment;
             if (! $deployment) {
                 return $this->domainsTabRedirect($service)->withErrors(['error' => 'Application not deployed yet']);
             }
 
-            $hostname = strtolower($request->domain);
-            $bound = app(ContainerDomainBindingService::class)->bindHostnamePair($service, $hostname);
+            $hostname = $request->hostname();
+            $binding = app(ContainerDomainBindingService::class);
+            $bound = $request->purpose() === ContainerDomain::PURPOSE_API
+                ? [$binding->bindApiHostname($service, $hostname)]
+                : $binding->bindHostnamePair($service, $hostname);
             $names = collect($bound)->pluck('domain')->filter()->sort()->values();
 
             if ($names->isEmpty()) {
@@ -2171,9 +2167,11 @@ class ContainerController extends Controller
             $platformDomain = app(DomainCloudflareDnsService::class)
                 ->resolvePlatformDomainForHostname($service->user_id, $names->first());
 
-            $message = $names->count() > 1
+            $message = $request->purpose() === ContainerDomain::PURPOSE_API
+                ? "API endpoint {$names->first()} configured successfully"
+                : ($names->count() > 1
                 ? 'Domains '.$names->implode(' and ').' bound successfully'
-                : "Domain {$names->first()} bound successfully";
+                : "Domain {$names->first()} bound successfully");
             if ($platformDomain) {
                 $message .= '. DNS A records updated via managed DNS.';
             }
@@ -2195,6 +2193,11 @@ class ContainerController extends Controller
 
         if ($response = $this->assertContainerDomainOwnership($service, $domain)) {
             return $response;
+        }
+        if ($domain->isApiEndpoint()) {
+            return $this->domainsTabRedirect($service)->withErrors([
+                'error' => 'Remove the current API endpoint before configuring a different hostname.',
+            ]);
         }
 
         $validator = Validator::make($request->all(), [
@@ -2272,11 +2275,20 @@ class ContainerController extends Controller
 
         try {
             $domainName = $domain->domain;
+            $wasApiEndpoint = $domain->isApiEndpoint();
+            $dnsWarning = null;
 
             $nginxService = app(NginxProxyService::class);
             $nginxService->unbind($domain);
+            if ($wasApiEndpoint) {
+                $dnsWarning = app(ContainerDomainBindingService::class)
+                    ->clearApiHostnameMetadata($service, $domainName);
+            }
 
-            return $this->domainsTabRedirect($service)->with('success', "Domain {$domainName} removed successfully");
+            $response = $this->domainsTabRedirect($service)
+                ->with('success', "Domain {$domainName} removed successfully");
+
+            return $dnsWarning ? $response->with('warning', $dnsWarning) : $response;
         } catch (\Exception $e) {
             \Log::error("Failed to unbind domain for service {$service->id}: ".$e->getMessage());
 

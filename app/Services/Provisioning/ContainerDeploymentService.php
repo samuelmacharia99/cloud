@@ -7811,10 +7811,16 @@ class ContainerDeploymentService
 
         foreach ($domains as $domain) {
             try {
+                $isApiEndpoint = $domain->isApiEndpoint();
+                $hostname = (string) $domain->domain;
                 if ($domain->deployment?->node) {
                     $nginxService->unbind($domain);
                 } else {
                     $domain->delete();
+                }
+                if ($isApiEndpoint) {
+                    app(ContainerDomainBindingService::class)
+                        ->clearApiHostnameMetadata($service, $hostname);
                 }
             } catch (\Throwable $e) {
                 \Log::warning('Failed to unbind container domain during termination', [

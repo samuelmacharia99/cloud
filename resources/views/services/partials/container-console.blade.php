@@ -294,9 +294,82 @@
                     <template x-if="hasVisited('domains')">
                         <div x-show="activeTab === 'domains'">
                         <div class="space-y-6">
+                            @php
+                                $domainTemplate = $service->effectiveContainerTemplate() ?? $service->product?->containerTemplate;
+                                $isApiOnlyNode = ($domainTemplate?->slug ?? '') === 'nodejs'
+                                    && (string) data_get($service->service_meta, 'frontend', 'none') === 'none'
+                                    && data_get($service->service_meta, 'node_workloads.topology') !== 'split_web_api';
+                                $apiEndpointDomain = $isApiOnlyNode
+                                    ? $deployment->domains->firstWhere('purpose', \App\Models\ContainerDomain::PURPOSE_API)
+                                    : null;
+                                $apiManagedDomain = $apiEndpointDomain
+                                    ? app(\App\Services\Dns\DomainCloudflareDnsService::class)
+                                        ->resolvePlatformDomainForHostname((int) $service->user_id, $apiEndpointDomain->domain)
+                                    : null;
+                            @endphp
                             <div class="flex items-center justify-between">
                                 <h3 class="text-xl font-bold text-slate-900 dark:text-white">Custom Domains</h3>
                             </div>
+
+                            @if ($isApiOnlyNode)
+                                <section class="rounded-xl border border-indigo-200 bg-indigo-50 p-5 dark:border-indigo-800 dark:bg-indigo-950/30">
+                                    <h4 class="font-semibold text-indigo-950 dark:text-indigo-100">Public API endpoint</h4>
+                                    <p class="mt-1 text-sm text-indigo-800 dark:text-indigo-200">
+                                        Use a dedicated hostname for mobile apps and external clients. Managed domains receive their A record automatically; external domains must point to the host IP below.
+                                    </p>
+
+                                    @if ($apiEndpointDomain)
+                                        <div class="mt-4 rounded-lg border border-indigo-200 bg-white p-4 dark:border-indigo-700 dark:bg-slate-900">
+                                            <div class="flex flex-wrap items-center justify-between gap-3">
+                                                <div>
+                                                    <a href="{{ 'https://'.$apiEndpointDomain->domain }}" target="_blank" rel="noopener"
+                                                        class="font-mono font-semibold text-indigo-700 hover:underline dark:text-indigo-300">
+                                                        {{ ($apiEndpointDomain->ssl_enabled ? 'https' : 'http').'://'.$apiEndpointDomain->domain }}
+                                                    </a>
+                                                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                                        @if ($apiEndpointDomain->ssl_enabled)
+                                                            HTTPS ready.
+                                                        @elseif ($apiEndpointDomain->status === 'active')
+                                                            HTTP routing ready; issue SSL after DNS resolves.
+                                                        @else
+                                                            Endpoint setup needs attention. Review the error below or remove it and try again.
+                                                        @endif
+                                                    </p>
+                                                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                                        @if ($apiManagedDomain)
+                                                            Managed DNS points this hostname to {{ $deployment->node->ip_address }}.
+                                                        @else
+                                                            External DNS: create an A record for {{ $apiEndpointDomain->domain }} pointing to {{ $deployment->node->ip_address }}.
+                                                        @endif
+                                                    </p>
+                                                </div>
+                                                @if ($apiEndpointDomain->ssl_enabled)
+                                                    <button type="button"
+                                                        onclick="navigator.clipboard?.writeText(@js('EXPO_PUBLIC_API_URL=https://'.$apiEndpointDomain->domain))"
+                                                        class="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-medium text-white hover:bg-indigo-700">
+                                                        Copy Expo variable
+                                                    </button>
+                                                @endif
+                                            </div>
+                                            @if ($apiEndpointDomain->ssl_enabled)
+                                                <code class="mt-3 block break-all rounded bg-slate-100 px-3 py-2 text-xs text-slate-800 dark:bg-slate-800 dark:text-slate-200">API_BASE_URL=https://{{ $apiEndpointDomain->domain }}</code>
+                                                <code class="mt-3 block break-all rounded bg-slate-100 px-3 py-2 text-xs text-slate-800 dark:bg-slate-800 dark:text-slate-200">EXPO_PUBLIC_API_URL=https://{{ $apiEndpointDomain->domain }}</code>
+                                            @endif
+                                        </div>
+                                    @else
+                                        <form method="POST" action="{{ container_route('domains.bind', $service) }}" class="mt-4 flex flex-col gap-2 sm:flex-row">
+                                            @csrf
+                                            <input type="hidden" name="purpose" value="api">
+                                            <input type="text" name="domain" value="{{ old('purpose') === 'api' ? old('domain') : '' }}"
+                                                placeholder="api.example.com" autocomplete="off"
+                                                class="flex-1 rounded-lg border-slate-300 px-4 py-2 font-mono dark:border-slate-600 dark:bg-slate-800 dark:text-white" required>
+                                            <button type="submit" class="rounded-lg bg-indigo-600 px-5 py-2 font-medium text-white hover:bg-indigo-700">
+                                                Configure API domain
+                                            </button>
+                                        </form>
+                                    @endif
+                                </section>
+                            @endif
 
                             <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 space-y-2">
                                 <p class="text-sm text-blue-800 dark:text-blue-200">
@@ -326,6 +399,9 @@
                                                             <span class="px-2 py-1 rounded text-xs font-semibold {{ $statusColor }}">
                                                                 {{ ucfirst($domain->status) }}
                                                             </span>
+                                                            @if ($domain->isApiEndpoint())
+                                                                <span class="px-2 py-1 rounded text-xs font-semibold bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200">API endpoint</span>
+                                                            @endif
                                                             @if ($domain->ssl_enabled && $domain->status === 'active')
                                                                 <span class="px-2 py-1 rounded text-xs font-semibold bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">🔒 SSL</span>
                                                             @elseif ($domain->canRequestSsl())
@@ -353,9 +429,11 @@
                                                     </form>
                                                 </div>
                                                 <div class="flex flex-wrap gap-2 shrink-0">
-                                                    <button type="button" x-show="!editing" @click="editing = true" class="px-3 py-1 bg-slate-200 dark:bg-slate-600 text-slate-800 dark:text-slate-200 text-sm rounded hover:bg-slate-300 dark:hover:bg-slate-500">
-                                                        Edit
-                                                    </button>
+                                                    @unless ($domain->isApiEndpoint())
+                                                        <button type="button" x-show="!editing" @click="editing = true" class="px-3 py-1 bg-slate-200 dark:bg-slate-600 text-slate-800 dark:text-slate-200 text-sm rounded hover:bg-slate-300 dark:hover:bg-slate-500">
+                                                            Edit
+                                                        </button>
+                                                    @endunless
                                                     @if ($domain->canRequestSsl())
                                                         <form method="POST" action="{{ container_route('domains.ssl', $service, $domain) }}" class="inline">
                                                             @csrf
@@ -395,6 +473,7 @@
 
                             <form method="POST" action="{{ container_route('domains.bind', $service) }}" class="flex flex-col sm:flex-row gap-2">
                                 @csrf
+                                <input type="hidden" name="purpose" value="web">
                                 <input type="text" name="domain" value="{{ old('domain') }}" placeholder="example.com" class="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg dark:bg-slate-700 dark:text-white font-mono" required>
                                 <button type="submit" class="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition">
                                     Add Domain

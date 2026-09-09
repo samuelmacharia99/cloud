@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Customer\BindContainerDomainRequest;
 use App\Models\ContainerBackup;
 use App\Models\ContainerDomain;
 use App\Models\ContainerMetric;
@@ -205,7 +206,7 @@ class ContainerController extends Controller
     /**
      * Bind a domain to a container
      */
-    public function bindDomain(Service $service, Request $request): RedirectResponse
+    public function bindDomain(Service $service, BindContainerDomainRequest $request): RedirectResponse
     {
         $this->authorizeServiceAccess($service);
 
@@ -214,25 +215,26 @@ class ContainerController extends Controller
                 return back()->withErrors(['error' => 'Service is not a application hosting service']);
             }
 
-            $request->validate([
-                'domain' => 'required|string|regex:/^([a-z0-9]([-a-z0-9]*[a-z0-9])?\.)+[a-z]{2,}$/i|unique:container_domains,domain',
-            ]);
-
             $deployment = $service->containerDeployment;
             if (! $deployment) {
                 return back()->withErrors(['error' => 'Container not deployed yet']);
             }
 
-            $bound = app(ContainerDomainBindingService::class)->bindHostnamePair($service, (string) $request->domain);
+            $binding = app(ContainerDomainBindingService::class);
+            $bound = $request->purpose() === ContainerDomain::PURPOSE_API
+                ? [$binding->bindApiHostname($service, $request->hostname())]
+                : $binding->bindHostnamePair($service, $request->hostname());
             $names = collect($bound)->pluck('domain')->filter()->sort()->values();
 
             if ($names->isEmpty()) {
                 return back()->withErrors(['error' => 'Could not bind that domain. It may already be attached to another application.']);
             }
 
-            $label = $names->count() > 1
+            $label = $request->purpose() === ContainerDomain::PURPOSE_API
+                ? "API endpoint {$names->first()} configured successfully"
+                : ($names->count() > 1
                 ? 'Domains '.$names->implode(' and ').' bound successfully'
-                : "Domain {$names->first()} bound successfully";
+                : "Domain {$names->first()} bound successfully");
 
             return back()->with('success', $label);
         } catch (\Exception $e) {
@@ -259,11 +261,19 @@ class ContainerController extends Controller
             }
 
             $domainName = $domain->domain;
+            $wasApiEndpoint = $domain->isApiEndpoint();
+            $dnsWarning = null;
 
             $nginxService = new NginxProxyService;
             $nginxService->unbind($domain);
+            if ($wasApiEndpoint) {
+                $dnsWarning = app(ContainerDomainBindingService::class)
+                    ->clearApiHostnameMetadata($service, $domainName);
+            }
 
-            return back()->with('success', "Domain {$domainName} unbind successfully");
+            $response = back()->with('success', "Domain {$domainName} unbound successfully");
+
+            return $dnsWarning ? $response->with('warning', $dnsWarning) : $response;
         } catch (\Exception $e) {
             \Log::error("Failed to unbind domain for service {$service->id}: ".$e->getMessage());
 

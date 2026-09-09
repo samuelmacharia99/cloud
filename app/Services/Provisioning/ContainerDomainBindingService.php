@@ -2,10 +2,12 @@
 
 namespace App\Services\Provisioning;
 
+use App\Models\ContainerDeploymentEvent;
 use App\Models\ContainerDomain;
 use App\Models\Domain;
 use App\Models\Service;
 use App\Services\Dns\DomainCloudflareDnsService;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class ContainerDomainBindingService
@@ -73,8 +75,11 @@ class ContainerDomainBindingService
         return $bound;
     }
 
-    public function bindHostname(Service $service, string $hostname): ?ContainerDomain
-    {
+    public function bindHostname(
+        Service $service,
+        string $hostname,
+        string $purpose = ContainerDomain::PURPOSE_WEB,
+    ): ?ContainerDomain {
         $hostname = $this->normalizeHostname($hostname);
         if ($hostname === '' || ! str_contains($hostname, '.')) {
             return null;
@@ -100,6 +105,7 @@ class ContainerDomainBindingService
         $domain = $existing ?? ContainerDomain::query()->create([
             'container_deployment_id' => $deployment->id,
             'domain' => $hostname,
+            'purpose' => $purpose,
             'status' => 'pending',
         ]);
 
@@ -119,6 +125,156 @@ class ContainerDomainBindingService
         $this->attemptAutoSsl($service, $domain, (string) ($deployment->node?->ip_address ?? ''));
 
         return $domain?->fresh();
+    }
+
+    public function bindApiHostname(Service $service, string $hostname): ContainerDomain
+    {
+        $hostname = $this->normalizeHostname($hostname);
+        $service->loadMissing(['user', 'containerDeployment.node']);
+        $deployment = $service->containerDeployment;
+        if (($service->effectiveContainerTemplate()?->slug ?? '') !== 'nodejs'
+            || (string) data_get($service->service_meta, 'frontend', 'none') !== 'none'
+            || data_get($service->service_meta, 'node_workloads.topology') === 'split_web_api') {
+            throw new \DomainException(
+                'Dedicated API domains require an API-only Node.js service without a browser frontend.'
+            );
+        }
+        if (! $deployment?->node || $hostname === '' || ! str_contains($hostname, '.')) {
+            throw new \DomainException('A running deployment and valid API hostname are required.');
+        }
+
+        $domain = DB::transaction(function () use ($deployment, $hostname): ContainerDomain {
+            $deployment->newQuery()->whereKey($deployment->id)->lockForUpdate()->firstOrFail();
+            $current = ContainerDomain::query()
+                ->where('container_deployment_id', $deployment->id)
+                ->where('purpose', ContainerDomain::PURPOSE_API)
+                ->first();
+            if ($current && $current->domain !== $hostname) {
+                throw new \DomainException(
+                    "This service already has API endpoint {$current->domain}. Edit or remove it before adding another."
+                );
+            }
+            $claimed = ContainerDomain::query()->where('domain', $hostname)->first();
+            if ($claimed && (int) $claimed->container_deployment_id !== (int) $deployment->id) {
+                throw new \DomainException('That hostname is already attached to another application.');
+            }
+            if ($claimed) {
+                $claimed->update(['purpose' => ContainerDomain::PURPOSE_API]);
+
+                return $claimed;
+            }
+
+            return ContainerDomain::query()->create([
+                'container_deployment_id' => $deployment->id,
+                'domain' => $hostname,
+                'purpose' => ContainerDomain::PURPOSE_API,
+                'status' => 'pending',
+            ]);
+        });
+
+        $managedDns = false;
+        $nginxBound = false;
+        try {
+            $managedDns = $this->syncManagedARecordStrict(
+                $service,
+                $hostname,
+                (string) $deployment->node->ip_address,
+            );
+            $this->nginx->bind($domain->fresh());
+            $nginxBound = true;
+            $domain = $domain->fresh();
+            $this->attemptAutoSsl($service, $domain, (string) $deployment->node->ip_address);
+            $service->refresh();
+            $meta = is_array($service->service_meta) ? $service->service_meta : [];
+            $meta['api_hostname'] = $hostname;
+            $meta['api_url'] = 'https://'.$hostname;
+            $service->update(['service_meta' => $meta]);
+            $this->recordApiDomainEvent($service, 'api_domain_bound', [
+                'hostname' => $hostname,
+                'managed_dns' => $managedDns,
+                'ssl_enabled' => (bool) $domain->fresh()->ssl_enabled,
+            ]);
+
+            return $domain->fresh();
+        } catch (\Throwable $e) {
+            if ($nginxBound) {
+                try {
+                    $this->nginx->removeProxyConfig($domain);
+                    $this->nginx->cleanupSslCertificate($domain);
+                } catch (\Throwable $cleanupError) {
+                    Log::critical('Failed to compensate API hostname nginx binding', [
+                        'service_id' => $service->id,
+                        'hostname' => $hostname,
+                        'error' => $cleanupError->getMessage(),
+                    ]);
+                }
+            }
+            if ($managedDns) {
+                try {
+                    $platformDomain = $this->dns->resolvePlatformDomainForHostname(
+                        (int) $service->user_id,
+                        $hostname,
+                    );
+                    if ($platformDomain) {
+                        $this->dns->deleteARecordForHostname($platformDomain, $hostname);
+                    }
+                } catch (\Throwable $cleanupError) {
+                    Log::critical('Failed to compensate API hostname managed DNS', [
+                        'service_id' => $service->id,
+                        'hostname' => $hostname,
+                        'error' => $cleanupError->getMessage(),
+                    ]);
+                }
+            }
+            $service->refresh();
+            $meta = is_array($service->service_meta) ? $service->service_meta : [];
+            unset($meta['api_hostname'], $meta['api_url']);
+            $service->update(['service_meta' => $meta]);
+            $domain->update([
+                'status' => 'failed',
+                'error_message' => $e->getMessage(),
+            ]);
+            try {
+                $this->recordApiDomainEvent($service, 'api_domain_bind_failed', [
+                    'hostname' => $hostname,
+                    'error' => $e->getMessage(),
+                ]);
+            } catch (\Throwable $auditError) {
+                Log::critical('API hostname failure could not be audited', [
+                    'service_id' => $service->id,
+                    'hostname' => $hostname,
+                    'error' => $auditError->getMessage(),
+                ]);
+            }
+            throw new \RuntimeException('API hostname provisioning failed: '.$e->getMessage(), 0, $e);
+        }
+    }
+
+    public function clearApiHostnameMetadata(Service $service, string $hostname): ?string
+    {
+        $service->refresh();
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        unset($meta['api_hostname'], $meta['api_url']);
+        $service->update(['service_meta' => $meta]);
+        $dnsWarning = null;
+        $platformDomain = $this->dns->resolvePlatformDomainForHostname((int) $service->user_id, $hostname);
+        if ($platformDomain) {
+            $result = $this->dns->deleteARecordForHostname($platformDomain, $hostname);
+            if (! ($result['success'] ?? false)) {
+                $dnsWarning = 'The API route was removed, but its managed DNS A record could not be deleted: '
+                    .($result['message'] ?? 'unknown error');
+                Log::warning($dnsWarning, [
+                    'service_id' => $service->id,
+                    'hostname' => $hostname,
+                ]);
+            }
+        }
+        $this->recordApiDomainEvent($service, 'api_domain_unbound', [
+            'hostname' => $this->normalizeHostname($hostname),
+            'dns_cleanup_warning' => $dnsWarning,
+        ]);
+
+        return $dnsWarning;
     }
 
     /**
@@ -193,6 +349,25 @@ class ContainerDomainBindingService
         }
     }
 
+    private function syncManagedARecordStrict(Service $service, string $hostname, string $nodeIp): bool
+    {
+        if ($nodeIp === '') {
+            throw new \DomainException('The container host has no public IP address.');
+        }
+        $platformDomain = $this->dns->resolvePlatformDomainForHostname((int) $service->user_id, $hostname);
+        if (! $platformDomain) {
+            return false;
+        }
+        $result = $this->dns->upsertARecord($platformDomain, $hostname, $nodeIp);
+        if (! ($result['success'] ?? false)) {
+            throw new \RuntimeException(
+                'Managed DNS could not create the API A record: '.($result['message'] ?? 'unknown error')
+            );
+        }
+
+        return true;
+    }
+
     private function attemptAutoSsl(Service $service, ?ContainerDomain $domain, string $nodeIp): void
     {
         if (! $domain || $nodeIp === '' || $domain->ssl_enabled) {
@@ -239,5 +414,19 @@ class ContainerDomainBindingService
         $host = explode(':', $host)[0];
 
         return rtrim($host, '.');
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function recordApiDomainEvent(Service $service, string $event, array $payload): void
+    {
+        ContainerDeploymentEvent::query()->create([
+            'service_id' => $service->id,
+            'container_deployment_id' => $service->containerDeployment?->id,
+            'event' => $event,
+            'payload' => $payload,
+            'recorded_at' => now(),
+        ]);
     }
 }

@@ -8,9 +8,14 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ContainerDomain extends Model
 {
+    public const PURPOSE_WEB = 'web';
+
+    public const PURPOSE_API = 'api';
+
     protected $fillable = [
         'container_deployment_id',
         'domain',
+        'purpose',
         'status',
         'ssl_enabled',
         'ssl_certificate_path',
@@ -47,6 +52,11 @@ class ContainerDomain extends Model
     public function hasSsl(): bool
     {
         return $this->ssl_enabled && $this->isActive();
+    }
+
+    public function isApiEndpoint(): bool
+    {
+        return $this->purpose === self::PURPOSE_API;
     }
 
     /**

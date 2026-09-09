@@ -328,6 +328,29 @@ class DomainCloudflareDnsService
         return $this->addRecord($domain, $host, 'A', $ip);
     }
 
+    /**
+     * Remove only the managed container-routing A record for a hostname.
+     *
+     * @return array{success: bool, message: string}
+     */
+    public function deleteARecordForHostname(Domain $domain, string $host): array
+    {
+        if (! $this->usesCloudflareDns($domain)) {
+            return ['success' => true, 'message' => 'Managed DNS is not enabled.'];
+        }
+        $qualifiedHost = $this->qualifyRecordName($domain, $host);
+        foreach ($this->listRecords($domain) as $record) {
+            if (strtoupper((string) ($record['type'] ?? '')) !== 'A'
+                || strtolower((string) ($record['name'] ?? '')) !== strtolower($qualifiedHost)) {
+                continue;
+            }
+
+            return $this->deleteRecord($domain, (string) $record['id']);
+        }
+
+        return ['success' => true, 'message' => 'A record was already absent.'];
+    }
+
     public function resolvePlatformDomainForHostname(int $userId, string $hostname): ?Domain
     {
         $hostname = strtolower(trim($hostname));
