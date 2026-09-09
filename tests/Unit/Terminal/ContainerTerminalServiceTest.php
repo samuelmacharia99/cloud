@@ -11,6 +11,7 @@ use App\Models\Service;
 use App\Models\User;
 use App\Services\Terminal\ContainerTerminalService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use PHPUnit\Framework\Attributes\Test;
 use ReflectionMethod;
 use Tests\TestCase;
@@ -172,6 +173,42 @@ class ContainerTerminalServiceTest extends TestCase
             'slug' => 'nodejs',
             'volume_paths' => ['app_data' => '/app'],
         ]));
+    }
+
+    #[Test]
+    public function it_targets_the_selected_split_node_workload(): void
+    {
+        $user = User::factory()->customer()->create();
+        $template = ContainerTemplate::factory()->create(['slug' => 'nodejs']);
+        $product = Product::factory()->containerHosting()->create([
+            'container_template_id' => $template->id,
+        ]);
+        $service = Service::factory()->create([
+            'user_id' => $user->id,
+            'product_id' => $product->id,
+            'service_meta' => [
+                'node_workloads' => [
+                    'topology' => 'split_web_api',
+                    'backend' => ['working_directory' => '/app/apps/api'],
+                    'frontend' => ['working_directory' => '/app/apps/mobile'],
+                ],
+            ],
+        ]);
+        $deployment = ContainerDeployment::factory()->create([
+            'service_id' => $service->id,
+            'container_name' => 'user-1-service-'.$service->id.'-nodejs',
+            'status' => 'running',
+        ]);
+        $service->setRelation('containerDeployment', $deployment);
+        $session = (new ContainerTerminalService)->createSession(
+            $service,
+            $user,
+            Request::create('/', 'POST', ['workload' => 'frontend']),
+        );
+
+        $this->assertSame($deployment->container_name.'-frontend', $session->container_name);
+        $this->assertSame('/app/apps/mobile', $session->cwd);
+        $this->assertSame('/app/apps/mobile', (new ContainerTerminalService)->resolveAppRoot($session));
     }
 
     #[Test]

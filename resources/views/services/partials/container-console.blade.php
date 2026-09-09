@@ -193,7 +193,7 @@
 
                     <!-- Terminal Tab -->
                     <template x-if="hasVisited('terminal')">
-                        <div x-show="activeTab === 'terminal'">
+                        <div x-show="activeTab === 'terminal'" class="-mx-8 -mb-8">
                             @include('customer.services.partials.terminal')
                         </div>
                     </template>

@@ -66,6 +66,48 @@ class ContainerApplicationRuntimeService
         );
     }
 
+    public function detectNodeRuntimeAt(
+        SSHService $ssh,
+        string $hostAppPath,
+        string $relativeRoot,
+        int $defaultPort,
+        bool $includeBootstrap = true,
+    ): ApplicationRuntime {
+        $relativeRoot = trim(str_replace('\\', '/', $relativeRoot), '/');
+        if ($relativeRoot === ''
+            || str_contains($relativeRoot, '..')
+            || preg_match('#^[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*$#', $relativeRoot) !== 1) {
+            throw new \DomainException('Node workload root must be a safe relative repository directory.');
+        }
+        $projectHost = rtrim($hostAppPath, '/').'/'.$relativeRoot;
+        $workdir = $this->sanitizeContainerWorkdir('/app/'.$relativeRoot);
+        $rootPackageJson = $this->readHostFile($ssh, rtrim($hostAppPath, '/').'/package.json');
+        $projectPackageJson = $this->readHostFile($ssh, $projectHost.'/package.json');
+        if ($projectPackageJson === null) {
+            throw new \DomainException("No package.json was found in {$relativeRoot}.");
+        }
+        $isWorkspace = $this->isNodeWorkspaceLayout(
+            $ssh,
+            $hostAppPath,
+            $relativeRoot,
+            $rootPackageJson,
+            $projectPackageJson,
+        );
+
+        return $this->detectNodeFromContents(
+            $this->readProcfileWebCommand($ssh, $projectHost),
+            $projectPackageJson,
+            $this->hostFileExists($ssh, $projectHost.'/server.js'),
+            $this->hostFileExists($ssh, $projectHost.'/app.js'),
+            $this->hostFileExists($ssh, $projectHost.'/index.js'),
+            $defaultPort,
+            $workdir,
+            $isWorkspace ? $rootPackageJson : null,
+            $isWorkspace ? '/app' : $workdir,
+            $includeBootstrap,
+        );
+    }
+
     /**
      * @return list<string>
      */
@@ -82,6 +124,7 @@ class ContainerApplicationRuntimeService
             'src',
             'apps/web',
             'apps/api',
+            'apps/mobile',
             'apps/app',
             'packages/web',
         ];

@@ -8,6 +8,7 @@ use App\Models\ContainerTerminalSession;
 use App\Models\Service;
 use App\Models\User;
 use App\Services\Provisioning\ContainerStackCommandService;
+use App\Services\Provisioning\NodeWebGatewayProxy;
 use App\Services\SSH\SSHService;
 use Exception;
 use Illuminate\Http\Request;
@@ -55,6 +56,22 @@ class ContainerTerminalService
 
         $service->loadMissing('product.containerTemplate');
         $appRoot = $this->resolveAppRootFromTemplate($service->effectiveContainerTemplate());
+        $containerName = $deployment->container_name;
+        $workload = strtolower(trim((string) $request->input('workload', 'backend')));
+        if (data_get($service->service_meta, 'node_workloads.topology') === 'split_web_api') {
+            if (! in_array($workload, ['backend', 'frontend', 'edge'], true)) {
+                throw new Exception('Choose a valid terminal workload.');
+            }
+            if ($workload === 'frontend') {
+                $containerName = NodeWebGatewayProxy::frontendContainerName($deployment->container_name);
+                $appRoot = (string) data_get($service->service_meta, 'node_workloads.frontend.working_directory', '/app');
+            } elseif ($workload === 'edge') {
+                $containerName = NodeWebGatewayProxy::edgeContainerName($deployment->container_name);
+                $appRoot = '/gateway';
+            } else {
+                $appRoot = (string) data_get($service->service_meta, 'node_workloads.backend.working_directory', '/app');
+            }
+        }
 
         $token = bin2hex(random_bytes(32));
         $now = now();
@@ -65,7 +82,7 @@ class ContainerTerminalService
             'service_id' => $service->id,
             'user_id' => $user->id,
             'deployment_id' => $deployment->id,
-            'container_name' => $deployment->container_name,
+            'container_name' => $containerName,
             'cwd' => $appRoot,
             'status' => 'active',
             'ip_address' => $request->ip(),
@@ -91,7 +108,8 @@ class ContainerTerminalService
 
         return [
             'shell_user' => $shellUser,
-            'container_name' => $session->deployment?->container_name ?: $session->container_name,
+            'container_name' => $session->container_name
+                ?: $session->deployment?->container_name,
             'cwd' => $this->constrainCwdToAppRoot((string) ($session->cwd ?: $appRoot), $appRoot),
             'app_root' => $appRoot,
             'websocket_enabled' => (bool) config('terminal.websocket.enabled', true),
@@ -114,6 +132,17 @@ class ContainerTerminalService
     public function resolveAppRoot(ContainerTerminalSession $session): string
     {
         $session->loadMissing('service.product.containerTemplate');
+        if (data_get($session->service?->service_meta, 'node_workloads.topology') === 'split_web_api') {
+            $backendName = $session->deployment?->container_name;
+            if ($backendName && $session->container_name === NodeWebGatewayProxy::frontendContainerName($backendName)) {
+                return (string) data_get($session->service->service_meta, 'node_workloads.frontend.working_directory', '/app');
+            }
+            if ($backendName && $session->container_name === NodeWebGatewayProxy::edgeContainerName($backendName)) {
+                return '/gateway';
+            }
+
+            return (string) data_get($session->service->service_meta, 'node_workloads.backend.working_directory', '/app');
+        }
 
         return $this->resolveAppRootFromTemplate(
             $session->service?->effectiveContainerTemplate()

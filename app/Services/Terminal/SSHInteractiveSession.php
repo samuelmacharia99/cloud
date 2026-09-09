@@ -38,6 +38,27 @@ class SSHInteractiveSession
         $this->ssh->enablePTY();
         $this->ssh->setWindowSize($cols, $rows);
 
+        $command = self::buildDockerShellCommand($containerName, $execUser, $workDir);
+
+        $this->ssh->exec($command, function (string $output) use ($onOutput) {
+            if ($output !== '') {
+                $onOutput($output);
+            }
+        });
+    }
+
+    /**
+     * Interactive docker exec used by the browser PTY.
+     *
+     * The SSH session already has a PTY. We put that PTY in raw/-echo so the
+     * container bash is the only layer that echoes, then allocate a TTY inside
+     * the container (`docker exec -it`) so prompts, tab completion, and editors work.
+     */
+    public static function buildDockerShellCommand(
+        string $containerName,
+        ?string $execUser = null,
+        string $workDir = '/app',
+    ): string {
         $preferredShell = preg_replace('/[^a-zA-Z0-9_\/.-]/', '', (string) config('terminal.pty.shell', '/bin/bash')) ?: '/bin/bash';
         $fallbackShell = preg_replace('/[^a-zA-Z0-9_\/.-]/', '', (string) config('terminal.pty.shell_fallback', '/bin/sh')) ?: '/bin/sh';
         $userFlag = $execUser !== null ? '-u '.escapeshellarg($execUser).' ' : '';
@@ -46,22 +67,19 @@ class SSHInteractiveSession
             $workDir = '/app';
         }
 
-        // Prefer bash when present so history/completion feel like a normal terminal.
-        $shellBootstrap = "if [ -x {$preferredShell} ]; then exec {$preferredShell} -l; elif [ -x {$fallbackShell} ]; then exec {$fallbackShell} -l; else exec sh -l; fi";
+        // Interactive, not login: login shells often cd $HOME and ignore docker -w.
+        $shellBootstrap = "if [ -x {$preferredShell} ]; then exec {$preferredShell} -i; elif [ -x {$fallbackShell} ]; then exec {$fallbackShell} -i; else exec sh -i; fi";
 
-        $command = sprintf(
-            'docker exec -i %s-w %s -e TERM=xterm-256color -e COLORTERM=truecolor -e PATH=/usr/local/bin:/usr/bin:/bin -e HOME=/tmp -e NPM_CONFIG_CACHE=/tmp/.npm -e npm_config_cache=/tmp/.npm %s /bin/sh -c %s',
+        $docker = sprintf(
+            'docker exec -i -t %s-w %s -e TERM=xterm-256color -e COLORTERM=truecolor -e LANG=C.UTF-8 -e PS1=%s -e PATH=/usr/local/bin:/usr/bin:/bin -e HOME=/tmp -e HISTFILE=/tmp/.bash_history -e NPM_CONFIG_CACHE=/tmp/.npm -e npm_config_cache=/tmp/.npm %s /bin/sh -c %s',
             $userFlag,
             escapeshellarg($workDir),
+            escapeshellarg('\\u@\\h:\\w\\$ '),
             escapeshellarg($containerName),
             escapeshellarg($shellBootstrap)
         );
 
-        $this->ssh->exec($command, function (string $output) use ($onOutput) {
-            if ($output !== '') {
-                $onOutput($output);
-            }
-        });
+        return 'stty raw -echo 2>/dev/null || true; '.$docker;
     }
 
     public function write(string $data): void

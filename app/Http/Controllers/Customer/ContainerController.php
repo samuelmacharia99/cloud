@@ -186,6 +186,11 @@ class ContainerController extends Controller
                     : ($deployment?->selected_version ?? $service->service_meta['selected_version'] ?? null),
                 'node_version_source' => $service->service_meta['node_version_source']
                     ?? (! empty($service->service_meta['selected_version']) ? 'manual' : 'auto'),
+                'backend_root' => $service->service_meta['node_backend_root']
+                    ?? data_get($service->service_meta, 'node_workloads.backend.root'),
+                'frontend_root' => $service->service_meta['node_frontend_root']
+                    ?? data_get($service->service_meta, 'node_workloads.frontend.root'),
+                'node_workloads' => $service->service_meta['node_workloads'] ?? null,
             ];
         }
 
@@ -396,6 +401,10 @@ class ContainerController extends Controller
                         'node_version_source' => $meta['node_version_source'] ?? null,
                         'node_detected_engine' => $meta['node_detected_engine'] ?? null,
                         'node_detected_at' => $meta['node_detected_at'] ?? null,
+                        'node_backend_root' => $meta['node_backend_root'] ?? null,
+                        'node_frontend_root' => $meta['node_frontend_root'] ?? null,
+                        'node_workloads' => $meta['node_workloads'] ?? null,
+                        'node_release' => $meta['node_release'] ?? null,
                     ];
                 }
 
@@ -417,6 +426,17 @@ class ContainerController extends Controller
                     );
                 } catch (\InvalidArgumentException $e) {
                     return back()->withErrors(['error' => $e->getMessage()])->withInput();
+                }
+
+                if (($template->slug ?? '') === 'nodejs') {
+                    foreach (['backend_root' => 'node_backend_root', 'frontend_root' => 'node_frontend_root'] as $input => $key) {
+                        $value = trim((string) ($validated[$input] ?? ''));
+                        if ($value !== '') {
+                            $applied['meta'][$key] = $value;
+                        } else {
+                            unset($applied['meta'][$key]);
+                        }
+                    }
                 }
 
                 $service->update(['service_meta' => $applied['meta']]);
@@ -451,7 +471,16 @@ class ContainerController extends Controller
             if (is_array($previousNodeVersionState)) {
                 $service->refresh();
                 $meta = is_array($service->service_meta) ? $service->service_meta : [];
-                foreach (['selected_version', 'node_version_source', 'node_detected_engine', 'node_detected_at'] as $key) {
+                foreach ([
+                    'selected_version',
+                    'node_version_source',
+                    'node_detected_engine',
+                    'node_detected_at',
+                    'node_backend_root',
+                    'node_frontend_root',
+                    'node_workloads',
+                    'node_release',
+                ] as $key) {
                     if ($previousNodeVersionState[$key] !== null) {
                         $meta[$key] = $previousNodeVersionState[$key];
                     } else {

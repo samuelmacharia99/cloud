@@ -252,6 +252,7 @@ function containerTabs(initialTab) {
             const url = new URL(window.location.href);
             url.searchParams.set('tab', tab);
             history.replaceState({}, '', url);
+            this.$dispatch('container-tab-shown', tab);
             if (tab === 'logs') {
                 this.$nextTick(() => this.loadFullLogs());
             } else {
@@ -455,6 +456,8 @@ function redeployStackPanel(stackOptions) {
         options,
         selectedFramework: current.framework || options.framework?.value || '',
         selectedFrontend: current.frontend || options.frontend?.value || 'none',
+        backendRoot: current.backend_root || '',
+        frontendRoot: current.frontend_root || '',
         selectedVersion: current.node_version_source === 'auto'
             ? ''
             : (current.selected_version || options.version_picker?.value || ''),

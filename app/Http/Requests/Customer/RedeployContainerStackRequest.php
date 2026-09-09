@@ -30,12 +30,17 @@ class RedeployContainerStackRequest extends FormRequest
         } else {
             $versionRules[] = 'prohibited';
         }
+        $rootRules = ($template?->slug ?? '') === 'nodejs'
+            ? ['nullable', 'string', 'max:255', 'regex:/^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/', 'not_regex:/\.\./']
+            : ['prohibited'];
 
         return [
             'framework' => ['nullable', 'string', 'max:64'],
             'frontend' => ['nullable', 'string', 'max:64'],
             'database_id' => ['nullable', 'integer', 'exists:database_templates,id'],
             'selected_version' => $versionRules,
+            'backend_root' => $rootRules,
+            'frontend_root' => $rootRules,
             'reset_database' => ['sometimes', 'boolean'],
             'replace_application' => ['sometimes', 'boolean'],
         ];
@@ -49,6 +54,8 @@ class RedeployContainerStackRequest extends FormRequest
         return [
             'selected_version.in' => 'Choose a supported Node.js runtime version or Auto detect.',
             'selected_version.prohibited' => 'Runtime version selection is only available for Node.js services.',
+            'backend_root.regex' => 'Backend root must be a relative repository directory such as apps/api.',
+            'frontend_root.regex' => 'Frontend root must be a relative repository directory such as apps/web.',
         ];
     }
 }

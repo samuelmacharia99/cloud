@@ -281,16 +281,39 @@ class ContainerGitRepositoryService
                         'node_detected_engine' => $meta['node_detected_engine'] ?? null,
                         'node_detected_at' => $meta['node_detected_at'] ?? null,
                         'node_release' => $meta['node_release'] ?? null,
+                        'node_workloads' => $meta['node_workloads'] ?? null,
+                        'node_backend_root' => $meta['node_backend_root'] ?? null,
+                        'node_frontend_root' => $meta['node_frontend_root'] ?? null,
                     ],
                 ]);
-                $this->runPullStep($pull, 'runtime_version', function () use ($service, $deployment, $ssh) {
+                $this->runPullStep($pull, 'runtime_version', function () use ($service, $deployment, $ssh, $hostAppPath) {
                     $resolution = app(ContainerNodeVersionService::class)->reconcileFromHost(
                         $service,
                         $deployment,
                         $ssh,
                     );
+                    $service->refresh();
+                    $meta = is_array($service->service_meta) ? $service->service_meta : [];
+                    $topology = app(ContainerNodeWorkloadTopologyService::class)->resolve(
+                        $service,
+                        $ssh,
+                        $hostAppPath,
+                        is_string($meta['node_backend_root'] ?? null) ? $meta['node_backend_root'] : null,
+                        is_string($meta['node_frontend_root'] ?? null) ? $meta['node_frontend_root'] : null,
+                    );
+                    $selected = $this->deploymentService->resolveSplitNodeVersion(
+                        $service,
+                        $deployment,
+                        $service->effectiveContainerTemplate(),
+                        $topology,
+                        $resolution['selected_version'],
+                    );
+                    app(ContainerNodeWorkloadTopologyService::class)->persist($service, $topology);
 
-                    return $resolution['message'];
+                    return $resolution['message']
+                        .(($topology['topology'] ?? null) === 'split_web_api'
+                            ? ' Split backend/frontend runtime resolved to '.$selected.'.'
+                            : '');
                 });
                 $deployment->refresh();
                 $service->refresh();
@@ -442,11 +465,13 @@ class ContainerGitRepositoryService
                 }
 
                 if (($service->effectiveContainerTemplate()?->slug ?? '') === 'nodejs') {
-                    $this->deploymentService->waitForNodeApplicationReadiness(
-                        $ssh,
-                        $deployment,
-                        (int) config('containers.node_build.readiness_timeout_seconds', 120),
-                    );
+                    $timeout = (int) config('containers.node_build.readiness_timeout_seconds', 120);
+                    $service->refresh();
+                    if (data_get($service->service_meta, 'node_workloads.topology') === 'split_web_api') {
+                        $this->deploymentService->waitForNodeSplitStackReadiness($ssh, $deployment, $timeout);
+                    } else {
+                        $this->deploymentService->waitForNodeApplicationReadiness($ssh, $deployment, $timeout);
+                    }
                     app(ContainerNodeBuildService::class)->markHealthy($service, $deployment);
 
                     return 'Container and Node application readiness checks passed.';
@@ -1266,7 +1291,16 @@ class ContainerGitRepositoryService
                     'selected_version' => $nodeVersionState['selected_version'] ?? null,
                 ]);
                 $meta = is_array($service->service_meta) ? $service->service_meta : [];
-                foreach (['selected_version', 'node_version_source', 'node_detected_engine', 'node_detected_at', 'node_release'] as $key) {
+                foreach ([
+                    'selected_version',
+                    'node_version_source',
+                    'node_detected_engine',
+                    'node_detected_at',
+                    'node_release',
+                    'node_workloads',
+                    'node_backend_root',
+                    'node_frontend_root',
+                ] as $key) {
                     if (array_key_exists($key, $nodeVersionState) && $nodeVersionState[$key] !== null) {
                         $meta[$key] = $nodeVersionState[$key];
                     } else {
@@ -1285,11 +1319,13 @@ class ContainerGitRepositoryService
             }
 
             if (($service->effectiveContainerTemplate()?->slug ?? '') === 'nodejs') {
-                $this->deploymentService->waitForNodeApplicationReadiness(
-                    $ssh,
-                    $deployment,
-                    (int) config('containers.node_build.rollback_readiness_timeout_seconds', 90),
-                );
+                $timeout = (int) config('containers.node_build.rollback_readiness_timeout_seconds', 90);
+                $service->refresh();
+                if (data_get($service->service_meta, 'node_workloads.topology') === 'split_web_api') {
+                    $this->deploymentService->waitForNodeSplitStackReadiness($ssh, $deployment, $timeout);
+                } else {
+                    $this->deploymentService->waitForNodeApplicationReadiness($ssh, $deployment, $timeout);
+                }
             }
 
             if (is_string($state['stage_path'] ?? null)) {

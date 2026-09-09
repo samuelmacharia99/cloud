@@ -89,6 +89,8 @@ class ContainerDeploymentService
         $laravelDatabaseSyncMessage = null;
         $deployStartedAt = microtime(true);
         $operationLock = null;
+        $nodeRedeployRollback = null;
+        $nodeRedeployCutoverStarted = false;
 
         try {
             // Load relationships
@@ -163,6 +165,14 @@ class ContainerDeploymentService
             $existingDeployment = ContainerDeployment::where('service_id', $service->id)
                 ->orderByDesc('id')
                 ->first();
+            if (($template->slug ?? '') === 'nodejs' && $options->isRedeploy && $existingDeployment) {
+                $nodeRedeployRollback = [
+                    'compose' => (string) ($existingDeployment->docker_compose_content ?? ''),
+                    'deployment_status' => $existingDeployment->status,
+                    'service_status' => $service->status,
+                    'node_release' => data_get($service->service_meta, 'node_release'),
+                ];
+            }
             $envValues = $service->service_meta['env_values'] ?? [];
             if ($existingDeployment && is_array($existingDeployment->env_values)) {
                 $envValues = array_merge($existingDeployment->env_values, $envValues);
@@ -293,7 +303,7 @@ class ContainerDeploymentService
                     $this->recordDeploymentEvent($service, $deployment, 'database_volume_reset', [
                         'container_name' => $containerName,
                     ]);
-                } elseif ($options->isRedeploy) {
+                } elseif ($options->isRedeploy && ($template->slug ?? '') !== 'nodejs') {
                     $this->tearDownStack($ssh, $containerPath, removeVolumes: false);
                 }
 
@@ -313,6 +323,44 @@ class ContainerDeploymentService
                     );
                 }
 
+                $nodeTopology = null;
+                if (($template->slug ?? '') === 'nodejs' && $hostAppPath) {
+                    $service->refresh();
+                    $meta = is_array($service->service_meta) ? $service->service_meta : [];
+                    $nodeTopology = app(ContainerNodeWorkloadTopologyService::class)->resolve(
+                        $service,
+                        $ssh,
+                        $hostAppPath,
+                        is_string($meta['node_backend_root'] ?? null) ? $meta['node_backend_root'] : null,
+                        is_string($meta['node_frontend_root'] ?? null) ? $meta['node_frontend_root'] : null,
+                    );
+                    $selectedVersion = $this->resolveSplitNodeVersion(
+                        $service,
+                        $deployment,
+                        $template,
+                        $nodeTopology,
+                        $selectedVersion,
+                    );
+                    app(ContainerNodeWorkloadTopologyService::class)->persist($service, $nodeTopology);
+                    $this->recordDeploymentEvent($service, $deployment, 'node_workload_topology_resolved', [
+                        'topology' => $nodeTopology['topology'] ?? 'single',
+                        'backend_root' => data_get($nodeTopology, 'backend.root'),
+                        'frontend_root' => data_get($nodeTopology, 'frontend.root'),
+                        'selection_source' => $nodeTopology['selection_source'] ?? 'stack',
+                    ]);
+                    if (($nodeTopology['topology'] ?? 'single') === 'split_web_api') {
+                        $envVars['INTERNAL_API_URL'] ??= 'http://backend:'.ContainerNodeWorkloadTopologyService::BACKEND_PORT;
+                        $envVars['BACKEND_URL'] ??= $envVars['INTERNAL_API_URL'];
+                        $envVars['NEXT_PUBLIC_API_URL'] ??= '/api';
+                        $envVars['VITE_API_URL'] ??= '/api';
+                        $deployment->update(['env_values' => $envVars]);
+                        $ssh->upload(NodeWebGatewayProxy::scriptContents(), NodeWebGatewayProxy::scriptPath($hostAppPath));
+                        if (($nodeTopology['frontend_type'] ?? '') === 'vite-spa') {
+                            $ssh->upload(NodeWebGatewayProxy::viteConfig(), NodeWebGatewayProxy::viteConfigPath($hostAppPath));
+                        }
+                    }
+                }
+
                 $applicationRuntime = $this->resolveApplicationRuntime($ssh, $template, $hostAppPath);
                 $laravelDocumentRoot = ($template->slug ?? null) === 'laravel' && $hostAppPath
                     ? app(LaravelProjectPathResolver::class)->resolveDocumentRoot($ssh, $hostAppPath)
@@ -330,7 +378,8 @@ class ContainerDeploymentService
                     $selectedVersion,
                     $hostAppPath,
                     $applicationRuntime,
-                    $laravelDocumentRoot
+                    $laravelDocumentRoot,
+                    nodeTopology: $nodeTopology,
                 );
                 $deployment->update(['docker_compose_content' => $composeYaml]);
 
@@ -348,6 +397,13 @@ class ContainerDeploymentService
                         operationAlreadyLocked: true,
                     );
                 }
+                if ($options->isRedeploy && ($template->slug ?? '') === 'nodejs') {
+                    $nodeRedeployCutoverStarted = true;
+                    $this->recordDeploymentEvent($service, $deployment, 'node_cutover_started', [
+                        'topology' => $nodeTopology['topology'] ?? 'single',
+                    ]);
+                    $this->tearDownStack($ssh, $containerPath, removeVolumes: false);
+                }
 
                 // Quiet convert / reset: wipe volumes after compose exists so named volumes
                 // from prior failed attempts cannot keep a stale MySQL root password.
@@ -361,6 +417,9 @@ class ContainerDeploymentService
 
                 if ($this->runtimeImages->usesRuntimeImage($template)) {
                     $this->runtimeImages->ensureImage($ssh, $template, $selectedVersion, $service, $deployment);
+                }
+                if (($nodeTopology['topology'] ?? null) === 'split_web_api') {
+                    $this->ensureNodeWebSidecarImages($ssh, (string) ($nodeTopology['frontend_type'] ?? 'nextjs'));
                 }
 
                 if (($template->slug ?? '') === 'wordpress') {
@@ -411,7 +470,15 @@ class ContainerDeploymentService
                 try {
                     $this->waitForContainerHealth($ssh, $containerName, $healthTimeoutSeconds, $deployment);
                     if (($template->slug ?? '') === 'nodejs') {
-                        $this->waitForNodeApplicationReadiness($ssh, $deployment, $healthTimeoutSeconds);
+                        if (($nodeTopology['topology'] ?? null) === 'split_web_api') {
+                            $this->waitForNodeSplitStackReadiness($ssh, $deployment, $healthTimeoutSeconds);
+                            $this->recordDeploymentEvent($service, $deployment, 'node_split_cutover_ready', [
+                                'backend_root' => data_get($nodeTopology, 'backend.root'),
+                                'frontend_root' => data_get($nodeTopology, 'frontend.root'),
+                            ]);
+                        } else {
+                            $this->waitForNodeApplicationReadiness($ssh, $deployment, $healthTimeoutSeconds);
+                        }
                         app(ContainerNodeBuildService::class)->markHealthy($service, $deployment);
                     }
                     $this->recordDeploymentEvent($service, $deployment, 'health_check_passed', [
@@ -677,7 +744,33 @@ class ContainerDeploymentService
             } finally {
                 $ssh->disconnect();
             }
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
+            if (is_array($nodeRedeployRollback) && isset($existingDeployment, $node, $containerName)) {
+                try {
+                    $this->rollbackNodeRedeploy(
+                        $service,
+                        $existingDeployment,
+                        $node,
+                        $containerName,
+                        $nodeRedeployRollback,
+                        $nodeRedeployCutoverStarted,
+                    );
+                    $this->recordDeploymentEvent($service, $existingDeployment, 'node_redeploy_rolled_back', [
+                        'error' => $e->getMessage(),
+                        'cutover_started' => $nodeRedeployCutoverStarted,
+                    ]);
+                    throw $e;
+                } catch (\Throwable $rollbackError) {
+                    if ($rollbackError === $e) {
+                        throw $e;
+                    }
+                    \Log::critical('Node redeploy rollback failed', [
+                        'service_id' => $service->id,
+                        'error' => $rollbackError->getMessage(),
+                        'original_error' => $e->getMessage(),
+                    ]);
+                }
+            }
             // Ensure state is consistent even for non-SSH failures (e.g. health-check timeout).
             try {
                 $latestDeployment = ContainerDeployment::where('service_id', $service->id)
@@ -2056,6 +2149,7 @@ class ContainerDeploymentService
         bool $serveNextFrontend = false,
         string $nextFrontendRelativeDir = 'frontend',
         int $laravelApiPort = 8001,
+        ?array $nodeTopology = null,
     ): string {
         // Determine resource limits (override > template)
         $cpuLimit = $deployment?->cpu_limit ?? $template->required_cpu_cores ?? 1.0;
@@ -2240,12 +2334,26 @@ class ContainerDeploymentService
                 $deployment
             );
         }
+        $serveNodeWebFrontend = ($template->slug ?? null) === 'nodejs'
+            && ($nodeTopology['topology'] ?? null) === 'split_web_api';
+        if ($serveNodeWebFrontend) {
+            $this->attachNodeWebSidecarStack(
+                $compose,
+                $containerName,
+                $port,
+                $envVars,
+                $hostAppPath,
+                $nodeTopology,
+                (float) $cpuLimit,
+                (int) $memoryLimit,
+            );
+        }
 
         $this->ensureNamedVolumesDeclared($compose);
         $this->applyMysqlSidecarDatadirRepair($compose);
         $this->elasticResources->apply(
             $compose,
-            $serveNextFrontend ? LaravelNextGatewayProxy::BACKEND_SERVICE : $containerName,
+            ($serveNextFrontend || $serveNodeWebFrontend) ? LaravelNextGatewayProxy::BACKEND_SERVICE : $containerName,
             (float) $cpuLimit,
             (int) $memoryLimit
         );
@@ -2313,6 +2421,131 @@ class ContainerDeploymentService
             '-c',
             'if [ -d /var/lib/mysql ] && [ ! -d /var/lib/mysql/mysql ]; then find /var/lib/mysql -mindepth 1 -exec rm -rf {} + || true; fi; exec docker-entrypoint.sh "$@"',
             'talksasa-mysql',
+        ];
+    }
+
+    /**
+     * Promote a Node monorepo into API + web + edge services.
+     *
+     * @param  array<string, mixed>  $compose
+     * @param  array<string, string>  $envVars
+     * @param  array<string, mixed>  $topology
+     */
+    private function attachNodeWebSidecarStack(
+        array &$compose,
+        string $containerName,
+        int $publicPort,
+        array $envVars,
+        ?string $hostAppPath,
+        array $topology,
+        float $cpuLimit,
+        int $memoryLimitMb,
+    ): void {
+        if (! isset($compose['services'][$containerName]) || ! is_array($compose['services'][$containerName]) || ! $hostAppPath) {
+            throw new \DomainException('The split Node stack requires a bind-mounted application directory.');
+        }
+        if ($memoryLimitMb < 512 || $cpuLimit < 0.5) {
+            throw new \DomainException(
+                'A split Node backend/frontend stack requires at least 0.5 CPU and 512 MB RAM. Upgrade the service plan before redeploying.'
+            );
+        }
+
+        $backend = $compose['services'][$containerName];
+        unset($compose['services'][$containerName], $backend['ports']);
+        $backendCpu = max(0.1, round($cpuLimit * 0.55, 2));
+        $frontendCpu = max(0.1, round($cpuLimit * 0.40, 2));
+        $edgeCpu = max(0.05, round($cpuLimit * 0.05, 2));
+        $edgeMemory = max(32, (int) floor($memoryLimitMb * 0.05));
+        $frontendMemory = max(128, (int) floor($memoryLimitMb * 0.40));
+        $backendMemory = max(96, $memoryLimitMb - $frontendMemory - $edgeMemory);
+        $backendPort = (int) data_get($topology, 'backend.port', ContainerNodeWorkloadTopologyService::BACKEND_PORT);
+        $frontendPort = (int) data_get($topology, 'frontend.port', ContainerNodeWorkloadTopologyService::FRONTEND_PORT);
+        $frontendType = (string) ($topology['frontend_type'] ?? 'nextjs');
+
+        $backend['container_name'] = $containerName;
+        $backend['working_dir'] = (string) data_get($topology, 'backend.working_directory');
+        $backend['command'] = data_get($topology, 'backend.start_command');
+        $backend['expose'] = [(string) $backendPort];
+        $backend['environment'] = array_merge($envVars, [
+            'PORT' => (string) $backendPort,
+            'INTERNAL_API_URL' => 'http://backend:'.$backendPort,
+            'BACKEND_URL' => 'http://backend:'.$backendPort,
+        ]);
+        $this->setComposeResourceLimits($backend, $backendCpu, $backendMemory);
+
+        if ($frontendType === 'vite-spa') {
+            $frontend = [
+                'image' => 'nginx:1.27-alpine',
+                'container_name' => NodeWebGatewayProxy::frontendContainerName($containerName),
+                'restart' => $backend['restart'] ?? 'always',
+                'expose' => [(string) $frontendPort],
+                'volumes' => [
+                    $hostAppPath.'/'.data_get($topology, 'frontend.root').'/dist:/usr/share/nginx/html:ro',
+                    NodeWebGatewayProxy::viteConfigPath($hostAppPath).':/etc/nginx/conf.d/default.conf:ro',
+                ],
+                'depends_on' => [NodeWebGatewayProxy::BACKEND_SERVICE],
+            ];
+        } else {
+            $frontendEnv = array_merge($envVars, [
+                'PORT' => (string) $frontendPort,
+                'HOSTNAME' => '0.0.0.0',
+                'INTERNAL_API_URL' => 'http://backend:'.$backendPort,
+                'BACKEND_URL' => 'http://backend:'.$backendPort,
+                'NEXT_PUBLIC_API_URL' => $envVars['NEXT_PUBLIC_API_URL'] ?? '/api',
+            ]);
+            $frontend = [
+                'image' => $backend['image'],
+                'container_name' => NodeWebGatewayProxy::frontendContainerName($containerName),
+                'restart' => $backend['restart'] ?? 'always',
+                'working_dir' => (string) data_get($topology, 'frontend.working_directory'),
+                'command' => data_get($topology, 'frontend.start_command'),
+                'environment' => $frontendEnv,
+                'expose' => [(string) $frontendPort],
+                'volumes' => $backend['volumes'] ?? ["{$hostAppPath}:/app"],
+                'depends_on' => [NodeWebGatewayProxy::BACKEND_SERVICE],
+            ];
+        }
+        $this->setComposeResourceLimits($frontend, $frontendCpu, $frontendMemory);
+
+        $edge = [
+            'image' => 'node:22-alpine',
+            'container_name' => NodeWebGatewayProxy::edgeContainerName($containerName),
+            'restart' => $backend['restart'] ?? 'always',
+            'environment' => [
+                'GATEWAY_PORT' => (string) NodeWebGatewayProxy::EDGE_PORT,
+                'BACKEND_HOST' => NodeWebGatewayProxy::BACKEND_SERVICE,
+                'BACKEND_PORT' => (string) $backendPort,
+                'FRONTEND_HOST' => NodeWebGatewayProxy::FRONTEND_SERVICE,
+                'FRONTEND_PORT' => (string) $frontendPort,
+            ],
+            'ports' => ["{$publicPort}:".NodeWebGatewayProxy::EDGE_PORT],
+            'volumes' => [
+                NodeWebGatewayProxy::scriptPath($hostAppPath).':'.NodeWebGatewayProxy::containerScriptPath().':ro',
+            ],
+            'command' => ['node', NodeWebGatewayProxy::containerScriptPath()],
+            'depends_on' => [NodeWebGatewayProxy::BACKEND_SERVICE],
+        ];
+        $this->setComposeResourceLimits($edge, $edgeCpu, $edgeMemory);
+
+        $compose['services'][NodeWebGatewayProxy::BACKEND_SERVICE] = $backend;
+        $compose['services'][NodeWebGatewayProxy::FRONTEND_SERVICE] = $frontend;
+        $compose['services'][NodeWebGatewayProxy::EDGE_SERVICE] = $edge;
+    }
+
+    /**
+     * @param  array<string, mixed>  $service
+     */
+    private function setComposeResourceLimits(array &$service, float $cpu, int $memoryMb): void
+    {
+        $service['cpus'] = $cpu;
+        $service['mem_limit'] = $memoryMb.'M';
+        $service['deploy']['resources']['limits'] = [
+            'cpus' => (string) $cpu,
+            'memory' => $memoryMb.'M',
+        ];
+        $service['deploy']['resources']['reservations'] = [
+            'cpus' => (string) round($cpu * 0.5, 2),
+            'memory' => max(16, (int) floor($memoryMb * 0.5)).'M',
         ];
     }
 
@@ -2654,6 +2887,16 @@ class ContainerDeploymentService
             && str_contains($yaml, "\n  backend:\n");
     }
 
+    public function usesNodeWebSidecarStack(ContainerDeployment $deployment): bool
+    {
+        $meta = is_array($deployment->service?->service_meta) ? $deployment->service->service_meta : [];
+
+        return data_get($meta, 'node_workloads.topology') === 'split_web_api'
+            && str_contains((string) $deployment->docker_compose_content, "\n  frontend:\n")
+            && str_contains((string) $deployment->docker_compose_content, "\n  edge:\n")
+            && str_contains((string) $deployment->docker_compose_content, "\n  backend:\n");
+    }
+
     private function nextSidecarImage(string $key, string $default): string
     {
         try {
@@ -2782,6 +3025,53 @@ class ContainerDeploymentService
         throw new \RuntimeException(
             'Node application did not answer on 127.0.0.1:'.$port.' after '.$timeoutSeconds
             .' seconds.'.($diagnostic !== '' ? ' '.$diagnostic : '')
+        );
+    }
+
+    public function waitForNodeSplitStackReadiness(
+        SSHService $ssh,
+        ContainerDeployment $deployment,
+        int $timeoutSeconds = 180,
+    ): void {
+        $backend = $deployment->container_name;
+        $frontend = NodeWebGatewayProxy::frontendContainerName($backend);
+        $edge = NodeWebGatewayProxy::edgeContainerName($backend);
+        $port = (int) $deployment->assigned_port;
+        $deadline = time() + max(30, $timeoutSeconds);
+        $lastDiagnostic = '';
+
+        while (time() < $deadline) {
+            try {
+                foreach ([$backend, $frontend, $edge] as $container) {
+                    $this->waitForContainerRunning($ssh, $container, self::HEALTH_CHECK_DELAY * 2);
+                }
+                $ssh->exec(
+                    'front=$(curl -sS -D - -o /dev/null --connect-timeout 2 --max-time 5 '
+                    .escapeshellarg('http://127.0.0.1:'.$port.'/')." | tr -d '\\r'); "
+                    .'api=$(curl -sS -D - -o /dev/null --connect-timeout 2 --max-time 5 '
+                    .escapeshellarg('http://127.0.0.1:'.$port.'/api/health')." | tr -d '\\r'); "
+                    .'printf "%s" "$front" | grep -qi "^x-talksasa-upstream: frontend$"; '
+                    .'printf "%s" "$api" | grep -qi "^x-talksasa-upstream: backend$"',
+                    15,
+                );
+
+                return;
+            } catch (\Throwable $e) {
+                $lastDiagnostic = $e->getMessage();
+                sleep(self::HEALTH_CHECK_DELAY);
+            }
+        }
+
+        $logs = trim($ssh->exec(
+            'for c in '.escapeshellarg($backend).' '.escapeshellarg($frontend).' '.escapeshellarg($edge)
+            .'; do echo "=== $c ==="; docker inspect --format '
+            .escapeshellarg('{{.State.Status}} exit={{.State.ExitCode}} restarts={{.RestartCount}}')
+            .' "$c" 2>&1 || true; docker logs --tail 40 "$c" 2>&1 || true; done',
+            30,
+        ));
+
+        throw new \RuntimeException(
+            'Split Node stack did not become ready: '.mb_substr($lastDiagnostic."\n".$logs, 0, 4000)
         );
     }
 
@@ -6201,6 +6491,23 @@ class ContainerDeploymentService
         }
     }
 
+    private function ensureNodeWebSidecarImages(SSHService $ssh, string $frontendType): void
+    {
+        $images = ['node:22-alpine'];
+        if ($frontendType === 'vite-spa') {
+            $images[] = 'nginx:1.27-alpine';
+        }
+        foreach ($images as $image) {
+            $safe = escapeshellarg($image);
+            if (trim($ssh->exec(
+                'docker image inspect '.$safe.' >/dev/null 2>&1 && echo yes || echo no',
+                30,
+            )) !== 'yes') {
+                $ssh->exec('docker pull '.$safe, 600);
+            }
+        }
+    }
+
     /**
      * Re-upload sidecar compose + gateway script (no stack recreate).
      */
@@ -6355,6 +6662,56 @@ class ContainerDeploymentService
         );
     }
 
+    /**
+     * @param  array<string, mixed>  $rollback
+     */
+    private function rollbackNodeRedeploy(
+        Service $service,
+        ContainerDeployment $deployment,
+        Node $node,
+        string $containerName,
+        array $rollback,
+        bool $cutoverStarted,
+    ): void {
+        if (($rollback['compose'] ?? '') === '') {
+            throw new \RuntimeException('Previous Compose configuration is unavailable.');
+        }
+        $ssh = SSHService::forNode($node);
+        try {
+            $containerPath = self::CONTAINER_BASE_PATH.'/'.$containerName;
+            if ($cutoverStarted) {
+                $this->tearDownStack($ssh, $containerPath, removeVolumes: false);
+            }
+            $ssh->upload((string) $rollback['compose'], $containerPath.'/docker-compose.yml');
+            if (is_array($rollback['node_release'] ?? null)) {
+                $hostAppPath = $this->appDirectory->hostAppPath($deployment);
+                $ssh->mkdirp($hostAppPath.'/.talksasa');
+                $ssh->upload(
+                    json_encode($rollback['node_release'], JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT)."\n",
+                    $hostAppPath.'/'.ContainerNodeBuildService::MANIFEST_RELATIVE_PATH,
+                );
+            }
+            if ($cutoverStarted) {
+                $this->composeUp($ssh, $containerPath, true, useExplicitComposeFile: true);
+                $oldSplit = str_contains((string) $rollback['compose'], "\n  backend:\n")
+                    && str_contains((string) $rollback['compose'], "\n  frontend:\n")
+                    && str_contains((string) $rollback['compose'], "\n  edge:\n");
+                if ($oldSplit) {
+                    $this->waitForNodeSplitStackReadiness($ssh, $deployment, 120);
+                } else {
+                    $this->waitForNodeApplicationReadiness($ssh, $deployment, 120);
+                }
+            }
+            $deployment->update([
+                'docker_compose_content' => $rollback['compose'],
+                'status' => $rollback['deployment_status'] ?? 'running',
+            ]);
+            $service->update(['status' => $rollback['service_status'] ?? 'active']);
+        } finally {
+            $ssh->disconnect();
+        }
+    }
+
     private function resolveNodeVersionForDeployment(
         Service $service,
         ContainerDeployment $deployment,
@@ -6377,6 +6734,71 @@ class ContainerDeploymentService
         ]);
 
         return $selectedVersion;
+    }
+
+    /**
+     * @param  array<string, mixed>  $topology
+     */
+    public function resolveSplitNodeVersion(
+        Service $service,
+        ContainerDeployment $deployment,
+        $template,
+        array $topology,
+        ?string $current,
+    ): ?string {
+        if (($topology['topology'] ?? null) !== 'split_web_api') {
+            return $current;
+        }
+        $constraints = array_values(array_filter([
+            data_get($topology, 'backend.node_engine'),
+            data_get($topology, 'frontend.node_engine'),
+        ], fn ($value) => is_string($value) && trim($value) !== ''));
+        if ($constraints === []) {
+            return $current;
+        }
+
+        $versionService = app(ContainerNodeVersionService::class);
+        $allowed = method_exists($template, 'nodeRuntimeVersions')
+            ? $template::nodeRuntimeVersions()
+            : [];
+        $compatible = array_values(array_filter($allowed, function (string $version) use ($constraints, $versionService): bool {
+            $major = $versionService->majorFromVersion($version);
+
+            return $major !== null
+                && collect($constraints)->every(fn (string $constraint): bool => $versionService->majorSatisfies($major, $constraint));
+        }));
+        if ($compatible === []) {
+            throw new \DomainException(
+                'Backend and frontend Node engine requirements are incompatible with the platform runtimes: '
+                .implode(' and ', $constraints).'.'
+            );
+        }
+
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        $manual = ($meta['node_version_source'] ?? 'auto') === 'manual';
+        $currentMajor = $versionService->majorFromVersion($current);
+        if ($manual) {
+            if ($currentMajor === null || ! collect($constraints)->every(
+                fn (string $constraint): bool => $versionService->majorSatisfies($currentMajor, $constraint)
+            )) {
+                throw new \DomainException(
+                    'The manually selected Node runtime does not satisfy both workloads ('.implode(' and ', $constraints).').'
+                );
+            }
+
+            return $current;
+        }
+
+        $selected = in_array($current, $compatible, true) ? $current : $compatible[0];
+        if ($deployment->selected_version !== $selected) {
+            $deployment->update(['selected_version' => $selected]);
+        }
+        $meta['selected_version'] = $selected;
+        $meta['node_detected_engine'] = implode(' + ', $constraints);
+        $meta['node_detected_at'] = now()->toIso8601String();
+        $service->update(['service_meta' => $meta]);
+
+        return $selected;
     }
 
     public function refreshApplicationRuntimeCompose(Service $service, ContainerDeployment $deployment, SSHService $ssh): string
@@ -6403,8 +6825,30 @@ class ContainerDeploymentService
 
         $databaseTemplate = $this->resolveDatabaseTemplate($service, $template);
         $envVars = is_array($deployment->env_values) ? $deployment->env_values : [];
+        $nodeTopology = null;
         if (($template->slug ?? '') === 'nodejs') {
             unset($envVars['NPM_CONFIG_PRODUCTION'], $envVars['npm_config_production']);
+            $service->refresh();
+            $meta = is_array($service->service_meta) ? $service->service_meta : [];
+            $nodeTopology = app(ContainerNodeWorkloadTopologyService::class)->resolve(
+                $service,
+                $ssh,
+                $hostAppPath,
+                is_string($meta['node_backend_root'] ?? null) ? $meta['node_backend_root'] : null,
+                is_string($meta['node_frontend_root'] ?? null) ? $meta['node_frontend_root'] : null,
+            );
+            app(ContainerNodeWorkloadTopologyService::class)->persist($service, $nodeTopology);
+            if (($nodeTopology['topology'] ?? null) === 'split_web_api') {
+                $envVars['INTERNAL_API_URL'] ??= 'http://backend:'.ContainerNodeWorkloadTopologyService::BACKEND_PORT;
+                $envVars['BACKEND_URL'] ??= $envVars['INTERNAL_API_URL'];
+                $envVars['NEXT_PUBLIC_API_URL'] ??= '/api';
+                $envVars['VITE_API_URL'] ??= '/api';
+                $ssh->upload(NodeWebGatewayProxy::scriptContents(), NodeWebGatewayProxy::scriptPath($hostAppPath));
+                if (($nodeTopology['frontend_type'] ?? '') === 'vite-spa') {
+                    $ssh->upload(NodeWebGatewayProxy::viteConfig(), NodeWebGatewayProxy::viteConfigPath($hostAppPath));
+                }
+                $this->ensureNodeWebSidecarImages($ssh, (string) ($nodeTopology['frontend_type'] ?? 'nextjs'));
+            }
             $deployment->update(['env_values' => $envVars]);
         }
         $composeYaml = $this->renderCompose(
@@ -6416,7 +6860,8 @@ class ContainerDeploymentService
             $deployment,
             $deployment->selected_version,
             $hostAppPath,
-            $runtime
+            $runtime,
+            nodeTopology: $nodeTopology,
         );
 
         $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
@@ -6425,9 +6870,11 @@ class ContainerDeploymentService
 
         if (($template->slug ?? '') === 'nodejs') {
             $meta = is_array($service->service_meta) ? $service->service_meta : [];
-            $meta['node_project_root'] = $runtime->containerWorkdir === '/app'
-                ? ''
-                : trim(substr($runtime->containerWorkdir, strlen('/app')), '/');
+            $meta['node_project_root'] = ($nodeTopology['topology'] ?? null) === 'split_web_api'
+                ? (string) data_get($nodeTopology, 'backend.root')
+                : ($runtime->containerWorkdir === '/app'
+                    ? ''
+                    : trim(substr($runtime->containerWorkdir, strlen('/app')), '/'));
             $service->update(['service_meta' => $meta]);
         }
 
@@ -6435,7 +6882,17 @@ class ContainerDeploymentService
             $this->runtimeImages->ensureImage($ssh, $template, $deployment->selected_version, $service, $deployment);
         }
 
-        $this->restartAppService($ssh, $deployment->fresh());
+        if (($nodeTopology['topology'] ?? null) === 'split_web_api') {
+            $this->composeUp(
+                $ssh,
+                $containerPath,
+                $this->runtimeImages->usesRuntimeImage($template),
+                useExplicitComposeFile: true,
+            );
+            $this->waitForNodeSplitStackReadiness($ssh, $deployment->fresh(), 180);
+        } else {
+            $this->restartAppService($ssh, $deployment->fresh());
+        }
 
         return 'Application start command updated ('.$runtime->label.').';
     }
@@ -6445,6 +6902,8 @@ class ContainerDeploymentService
      */
     public function applyEnvironmentVariables(Service $service, ContainerDeployment $deployment): void
     {
+        $operationLock = null;
+        $cutoverStarted = false;
         $service->loadMissing('product.containerTemplate', 'containerDeployment.node');
         $deployment = $service->containerDeployment ?? $deployment;
 
@@ -6456,8 +6915,22 @@ class ContainerDeploymentService
         if (! $template) {
             throw new \DomainException('Container template is missing.');
         }
+        if (($template->slug ?? '') === 'nodejs') {
+            $operationLock = Cache::lock(
+                app(ContainerNodeBuildService::class)->lockName($service),
+                (int) config('containers.node_build.operation_lock_seconds', 1800),
+            );
+            $operationLock->block(10);
+        }
 
-        $ssh = SSHService::forNode($deployment->node);
+        try {
+            $ssh = SSHService::forNode($deployment->node);
+        } catch (\Throwable $e) {
+            $operationLock?->release();
+            throw $e;
+        }
+        $previousCompose = (string) ($deployment->docker_compose_content ?? '');
+        $previousRelease = data_get($service->service_meta, 'node_release');
 
         try {
             $hostAppPath = $this->resolveHostAppPath($template, $deployment->container_name);
@@ -6467,6 +6940,7 @@ class ContainerDeploymentService
             $runtime = $this->resolveApplicationRuntime($ssh, $template, $hostAppPath);
             $documentRoot = null;
             $serveNextFrontend = false;
+            $nodeTopology = null;
             $nextFrontendRelativeDir = 'frontend';
 
             if (($template->slug ?? null) === 'laravel' && $hostAppPath) {
@@ -6501,6 +6975,29 @@ class ContainerDeploymentService
                     $deployment->update(['env_values' => $envVars]);
                 }
             }
+            if (($template->slug ?? null) === 'nodejs' && $hostAppPath) {
+                $service->refresh();
+                $meta = is_array($service->service_meta) ? $service->service_meta : [];
+                $nodeTopology = app(ContainerNodeWorkloadTopologyService::class)->resolve(
+                    $service,
+                    $ssh,
+                    $hostAppPath,
+                    is_string($meta['node_backend_root'] ?? null) ? $meta['node_backend_root'] : null,
+                    is_string($meta['node_frontend_root'] ?? null) ? $meta['node_frontend_root'] : null,
+                );
+                app(ContainerNodeWorkloadTopologyService::class)->persist($service, $nodeTopology);
+                if (($nodeTopology['topology'] ?? null) === 'split_web_api') {
+                    $envVars['INTERNAL_API_URL'] ??= 'http://backend:'.ContainerNodeWorkloadTopologyService::BACKEND_PORT;
+                    $envVars['BACKEND_URL'] ??= $envVars['INTERNAL_API_URL'];
+                    $envVars['NEXT_PUBLIC_API_URL'] ??= '/api';
+                    $envVars['VITE_API_URL'] ??= '/api';
+                    $ssh->upload(NodeWebGatewayProxy::scriptContents(), NodeWebGatewayProxy::scriptPath($hostAppPath));
+                    if (($nodeTopology['frontend_type'] ?? '') === 'vite-spa') {
+                        $ssh->upload(NodeWebGatewayProxy::viteConfig(), NodeWebGatewayProxy::viteConfigPath($hostAppPath));
+                    }
+                    $deployment->update(['env_values' => $envVars]);
+                }
+            }
 
             $composeYaml = $this->renderCompose(
                 $template,
@@ -6515,6 +7012,7 @@ class ContainerDeploymentService
                 $documentRoot,
                 serveNextFrontend: $serveNextFrontend,
                 nextFrontendRelativeDir: $nextFrontendRelativeDir,
+                nodeTopology: $nodeTopology,
             );
 
             $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
@@ -6522,6 +7020,21 @@ class ContainerDeploymentService
             $ssh->upload($composeYaml, $containerPath.'/docker-compose.yml');
 
             app(ContainerEnvironmentService::class)->syncDotEnvFile($ssh, $service, $deployment, $envVars);
+            if (($nodeTopology['topology'] ?? null) === 'split_web_api') {
+                $service->refresh();
+                $oldChecksum = data_get($service->service_meta, 'node_release.frontend_env_checksum');
+                $newChecksum = app(ContainerNodeBuildService::class)->frontendBuildEnvironmentChecksum($deployment->fresh());
+                if (! is_string($oldChecksum) || ! hash_equals($oldChecksum, $newChecksum)) {
+                    app(ContainerNodeBuildService::class)->build(
+                        $service,
+                        $deployment->fresh(),
+                        $ssh,
+                        forceRebuild: true,
+                        operationAlreadyLocked: true,
+                        workloads: ['frontend'],
+                    );
+                }
+            }
 
             if ($this->runtimeImages->usesRuntimeImage($template)) {
                 $this->runtimeImages->ensureImage($ssh, $template, $deployment->selected_version, $service, $deployment);
@@ -6530,11 +7043,17 @@ class ContainerDeploymentService
             if ($serveNextFrontend) {
                 $this->ensureNextSidecarImages($ssh);
             }
+            if (($nodeTopology['topology'] ?? null) === 'split_web_api') {
+                $this->ensureNodeWebSidecarImages($ssh, (string) ($nodeTopology['frontend_type'] ?? 'nextjs'));
+            }
 
+            $cutoverStarted = true;
             @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml down --remove-orphans", self::DEPLOY_TIMEOUT);
             $this->composeUp($ssh, $containerPath, $this->runtimeImages->usesRuntimeImage($template), useExplicitComposeFile: true);
             if ($serveNextFrontend) {
                 $this->waitForLaravelNextSidecarHealth($ssh, $deployment->container_name, 180);
+            } elseif (($nodeTopology['topology'] ?? null) === 'split_web_api') {
+                $this->waitForNodeSplitStackReadiness($ssh, $deployment, 180);
             }
             $this->syncPhpExtensionsIfSupported($ssh, $service, $deployment);
             $this->syncDatabaseCredentialsAfterStart($ssh, $service, $deployment, $containerPath);
@@ -6549,8 +7068,34 @@ class ContainerDeploymentService
             }
 
             $deployment->update(['status' => 'running']);
+        } catch (\Throwable $e) {
+            if (($template->slug ?? '') === 'nodejs' && $previousCompose !== '') {
+                $this->rollbackNodeRedeploy(
+                    $service,
+                    $deployment,
+                    $deployment->node,
+                    $deployment->container_name,
+                    [
+                        'compose' => $previousCompose,
+                        'deployment_status' => 'running',
+                        'service_status' => $service->status,
+                        'node_release' => $previousRelease,
+                    ],
+                    $cutoverStarted,
+                );
+                $service->refresh();
+                $meta = is_array($service->service_meta) ? $service->service_meta : [];
+                if (is_array($previousRelease)) {
+                    $meta['node_release'] = $previousRelease;
+                } else {
+                    unset($meta['node_release']);
+                }
+                $service->update(['service_meta' => $meta]);
+            }
+            throw $e;
         } finally {
             $ssh->disconnect();
+            $operationLock?->release();
         }
     }
 

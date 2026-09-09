@@ -427,7 +427,11 @@ class ContainerMigrationService
 
         $slug = $service->effectiveContainerTemplate()?->slug;
         if ($slug === 'nodejs') {
-            $this->deploymentService->waitForNodeApplicationReadiness($ssh, $deployment, 180);
+            if (data_get($service->service_meta, 'node_workloads.topology') === 'split_web_api') {
+                $this->deploymentService->waitForNodeSplitStackReadiness($ssh, $deployment, 180);
+            } else {
+                $this->deploymentService->waitForNodeApplicationReadiness($ssh, $deployment, 180);
+            }
         } elseif ($slug === 'laravel') {
             $this->deploymentService->waitForLaravelHttpHealth($ssh, $deployment);
         } else {
@@ -516,8 +520,7 @@ class ContainerMigrationService
         SSHService $ssh,
         Node $targetNode,
         ContainerDeployment $deployment,
-    ): int
-    {
+    ): int {
         $domains = $deployment->domains()
             ->whereIn('status', ['active', 'pending'])
             ->get();

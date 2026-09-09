@@ -71,6 +71,34 @@
                                                     </div>
                                                 </template>
 
+                                                @if (($templateSlug ?? '') === 'nodejs')
+                                                    <div class="mb-4 rounded-lg border border-slate-200 dark:border-slate-700 p-3" x-show="selectedFrontend && selectedFrontend !== 'none'">
+                                                        <p class="text-sm font-semibold text-slate-900 dark:text-white">Advanced workload roots</p>
+                                                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 mb-3">
+                                                            Leave blank to detect both applications. A split stack runs backend and frontend separately behind this service's domain.
+                                                        </p>
+                                                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                            <label class="text-xs font-medium text-slate-700 dark:text-slate-300">
+                                                                Backend directory
+                                                                <input type="text" name="backend_root" x-model="backendRoot" placeholder="Auto (for example apps/api)"
+                                                                    class="mt-1 w-full rounded-lg border-slate-300 dark:border-slate-600 dark:bg-slate-800 text-sm">
+                                                            </label>
+                                                            <label class="text-xs font-medium text-slate-700 dark:text-slate-300">
+                                                                Frontend directory
+                                                                <input type="text" name="frontend_root" x-model="frontendRoot" placeholder="Auto (for example apps/web)"
+                                                                    class="mt-1 w-full rounded-lg border-slate-300 dark:border-slate-600 dark:bg-slate-800 text-sm">
+                                                            </label>
+                                                        </div>
+                                                        <template x-if="options.current?.node_workloads?.topology === 'split_web_api'">
+                                                            <p class="mt-3 text-xs text-emerald-700 dark:text-emerald-300">
+                                                                Current detection:
+                                                                <code x-text="options.current.node_workloads.backend?.root"></code>
+                                                                + <code x-text="options.current.node_workloads.frontend?.root"></code>
+                                                            </p>
+                                                        </template>
+                                                    </div>
+                                                @endif
+
                                                 <template x-if="options.version_picker?.show">
                                                     <div class="mb-4">
                                                         <p class="text-sm font-semibold text-slate-900 dark:text-white mb-2" x-text="options.version_picker.label || 'Runtime version'"></p>

@@ -448,7 +448,9 @@ class ContainerDoctorService
                 }
             }
 
-            if ($deploymentService->usesLaravelNextSidecarStack($deployment)) {
+            $laravelNextStack = $deploymentService->usesLaravelNextSidecarStack($deployment);
+            $nodeWebStack = $deploymentService->usesNodeWebSidecarStack($deployment);
+            if ($laravelNextStack || $nodeWebStack) {
                 $frontendName = LaravelNextGatewayProxy::frontendContainerName($deployment->container_name);
                 $edgeName = LaravelNextGatewayProxy::edgeContainerName($deployment->container_name);
                 $frontendRunning = trim($ssh->exec(
@@ -464,9 +466,11 @@ class ContainerDoctorService
 
                 if (! $frontendRunning || ! $edgeRunning) {
                     $findings[] = [
-                        'id' => 'live_next_sidecar_down',
+                        'id' => $nodeWebStack ? 'live_node_web_sidecar_down' : 'live_next_sidecar_down',
                         'severity' => 'critical',
-                        'title' => 'Next.js sidecar stack is incomplete',
+                        'title' => $nodeWebStack
+                            ? 'Node backend/frontend stack is incomplete'
+                            : 'Next.js sidecar stack is incomplete',
                         'summary' => 'This app uses separate frontend/edge containers. '
                             .(! $frontendRunning ? 'Frontend is not running. ' : '')
                             .(! $edgeRunning ? 'Edge router is not running. ' : '')
@@ -475,8 +479,8 @@ class ContainerDoctorService
                             $frontendRunning ? null : 'frontend container stopped: '.$frontendName,
                             $edgeRunning ? null : 'edge container stopped: '.$edgeName,
                         ]),
-                        'treat_action' => null,
-                        'treat_label' => null,
+                        'treat_action' => $nodeWebStack ? 'restart_application' : null,
+                        'treat_label' => $nodeWebStack ? 'Restart split stack' : null,
                         'manual_steps' => [
                             'Open Overview → Restart, or Redeploy stack (keep database).',
                             'Confirm docker compose ps shows backend, frontend, edge, and db.',
@@ -484,7 +488,8 @@ class ContainerDoctorService
                         'source' => 'live',
                     ];
                 } else {
-                    $apiUrl = rtrim((string) ($deployment->getAccessUrl() ?? ''), '/').'/api/v1/app/branding';
+                    $apiPath = $nodeWebStack ? '/api/health' : '/api/v1/app/branding';
+                    $apiUrl = rtrim((string) ($deployment->getAccessUrl() ?? ''), '/').$apiPath;
                     if (str_starts_with($apiUrl, 'http')) {
                         $apiCode = trim($ssh->exec(
                             'curl -s -o /dev/null -w "%{http_code}" --max-time 12 '.escapeshellarg($apiUrl).' || true',
@@ -497,11 +502,11 @@ class ContainerDoctorService
                                     'id' => 'live_api_via_edge_failed',
                                     'severity' => 'warning',
                                     'title' => 'API via edge returned HTTP '.$apiCode,
-                                    'summary' => 'Public /api traffic through the edge router is failing. Check Laravel logs on the backend container.',
+                                    'summary' => 'Public /api traffic through the edge router is failing. Check backend logs and its database/runtime environment.',
                                     'evidence' => ['GET '.$apiUrl.' → '.$apiCode],
                                     'treat_action' => null,
                                     'treat_label' => null,
-                                    'manual_steps' => ['Inspect backend logs and DATABASE_URL / APP_KEY.'],
+                                    'manual_steps' => ['Inspect backend logs and database/API environment variables.'],
                                     'source' => 'live',
                                 ];
                             }
@@ -3509,6 +3514,7 @@ PHP;
 
         $meta = is_array($service->service_meta) ? $service->service_meta : [];
         $release = is_array($meta['node_release'] ?? null) ? $meta['node_release'] : [];
+        $splitRelease = ($release['topology'] ?? null) === 'split_web_api';
         $state = (string) ($release['state'] ?? '');
         if ($state === 'building' && ! empty($release['updated_at'])) {
             try {
@@ -3538,6 +3544,8 @@ PHP;
             ! empty($checks['container_state_error']) ? 'runtime error: '.$checks['container_state_error'] : null,
             $lastRuntimeError ? 'last non-warning log: '.$lastRuntimeError : null,
             ! empty($release['error']) ? 'last build error: '.$release['error'] : null,
+            $splitRelease ? 'backend root: '.data_get($release, 'workloads.backend.root', 'missing') : null,
+            $splitRelease ? 'frontend root: '.data_get($release, 'workloads.frontend.root', 'missing') : null,
         ]));
 
         $replacement = match ($state) {
@@ -3553,7 +3561,9 @@ PHP;
                 'id' => 'node_release_start_failed',
                 'severity' => 'critical',
                 'title' => 'Built Node release did not start',
-                'summary' => 'Dependencies and production artifacts were built successfully, but the detected server command did not answer on the assigned port.',
+                'summary' => $splitRelease
+                    ? 'Both Node workloads were built, but backend, frontend, or edge routing did not pass readiness.'
+                    : 'Dependencies and production artifacts were built successfully, but the detected server command did not answer on the assigned port.',
                 'evidence' => $diagnosticEvidence,
                 'treat_action' => 'restart_application',
                 'treat_label' => 'Re-detect and restart',

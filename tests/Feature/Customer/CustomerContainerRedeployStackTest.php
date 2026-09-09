@@ -173,6 +173,45 @@ class CustomerContainerRedeployStackTest extends TestCase
             ->assertSessionHasErrors('selected_version');
     }
 
+    public function test_node_redeploy_persists_explicit_split_workload_roots(): void
+    {
+        [$customer, $service] = $this->makeNodeService();
+        $this->mock(ContainerDeploymentService::class, function ($mock) {
+            $mock->shouldReceive('deploy')->once()->andReturn(new ContainerDeployResult);
+        });
+
+        $this->actingAs($customer)
+            ->post(route('customer.services.container.redeploy', $service), [
+                'framework' => 'express',
+                'frontend' => 'vite-spa',
+                'selected_version' => '',
+                'backend_root' => 'apps/api',
+                'frontend_root' => 'apps/mobile',
+            ])
+            ->assertRedirect();
+
+        $service->refresh();
+        $this->assertSame('apps/api', $service->service_meta['node_backend_root']);
+        $this->assertSame('apps/mobile', $service->service_meta['node_frontend_root']);
+    }
+
+    public function test_node_redeploy_rejects_unsafe_workload_roots(): void
+    {
+        [$customer, $service] = $this->makeNodeService();
+        $this->mock(ContainerDeploymentService::class, function ($mock) {
+            $mock->shouldNotReceive('deploy');
+        });
+
+        $this->actingAs($customer)
+            ->post(route('customer.services.container.redeploy', $service), [
+                'framework' => 'express',
+                'frontend' => 'vite-spa',
+                'backend_root' => '../api',
+                'frontend_root' => 'apps/mobile',
+            ])
+            ->assertSessionHasErrors('backend_root');
+    }
+
     public function test_failed_node_redeploy_restores_the_previous_runtime_pin(): void
     {
         [$customer, $service] = $this->makeNodeService([
@@ -195,6 +234,35 @@ class CustomerContainerRedeployStackTest extends TestCase
         $this->assertSame('20-alpine', $service->service_meta['selected_version']);
         $this->assertSame('manual', $service->service_meta['node_version_source']);
         $this->assertSame('20-alpine', $service->containerDeployment->selected_version);
+    }
+
+    public function test_failed_split_redeploy_restores_previous_roots_and_release(): void
+    {
+        $previousRelease = ['schema' => 1, 'state' => 'healthy'];
+        [$customer, $service] = $this->makeNodeService([
+            'node_backend_root' => 'backend',
+            'node_frontend_root' => 'web',
+            'node_workloads' => ['topology' => 'split_web_api', 'backend' => ['root' => 'backend'], 'frontend' => ['root' => 'web']],
+            'node_release' => $previousRelease,
+        ]);
+        $this->mock(ContainerDeploymentService::class, function ($mock) {
+            $mock->shouldReceive('deploy')->once()->andThrow(new \RuntimeException('frontend failed readiness'));
+        });
+
+        $this->actingAs($customer)
+            ->post(route('customer.services.container.redeploy', $service), [
+                'framework' => 'express',
+                'frontend' => 'vite-spa',
+                'backend_root' => 'apps/api',
+                'frontend_root' => 'apps/mobile',
+            ])
+            ->assertSessionHasErrors('error');
+
+        $service->refresh();
+        $this->assertSame('backend', $service->service_meta['node_backend_root']);
+        $this->assertSame('web', $service->service_meta['node_frontend_root']);
+        $this->assertSame($previousRelease, $service->service_meta['node_release']);
+        $this->assertSame('web', $service->service_meta['node_workloads']['frontend']['root']);
     }
 
     /**

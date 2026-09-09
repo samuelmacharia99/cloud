@@ -48,7 +48,8 @@ class ContainerStackCommandService
 
     public function resolveAppComposeService(ContainerDeployment $deployment): string
     {
-        return $this->deploymentService()->usesLaravelNextSidecarStack($deployment)
+        return ($this->deploymentService()->usesLaravelNextSidecarStack($deployment)
+            || $this->deploymentService()->usesNodeWebSidecarStack($deployment))
             ? LaravelNextGatewayProxy::BACKEND_SERVICE
             : $deployment->container_name;
     }
@@ -459,25 +460,32 @@ class ContainerStackCommandService
         bool $forceRebuild = false,
         string $applicationRelativeDir = '',
     ): array {
-        $packageJsonPath = $hostAppPath.'/package.json';
-        if (! $this->hostFileExists($ssh, $packageJsonPath)) {
-            return ['No package.json found; skipped npm install.'];
-        }
-
-        $packageJson = $this->readHostFile($ssh, $packageJsonPath);
         $applicationRelativeDir = trim($applicationRelativeDir, '/');
         if ($applicationRelativeDir !== ''
             && (! preg_match('#^[a-zA-Z0-9._/-]+$#', $applicationRelativeDir)
                 || str_contains($applicationRelativeDir, '..'))) {
             throw new \InvalidArgumentException('Invalid Node application directory.');
         }
+        $packageJsonPath = $hostAppPath.'/package.json';
+        $packageJson = $this->readHostFile($ssh, $packageJsonPath);
         $projectPackageJson = $applicationRelativeDir !== ''
             ? $this->readHostFile($ssh, $hostAppPath.'/'.$applicationRelativeDir.'/package.json')
             : $packageJson;
-        $projectPackageJson ??= $packageJson;
+        if ($projectPackageJson === null) {
+            return ['No package.json found; skipped npm install.'];
+        }
+        $hasWorkspaceRoot = $packageJson !== null;
+        $packageJson ??= $projectPackageJson;
+        $installHostPath = $hasWorkspaceRoot || $applicationRelativeDir === ''
+            ? $hostAppPath
+            : $hostAppPath.'/'.$applicationRelativeDir;
+        if (! $hasWorkspaceRoot && $applicationRelativeDir !== '') {
+            $hostAppPath = $installHostPath;
+            $applicationRelativeDir = '';
+        }
         $packageManager = $this->detectHostNodePackageManager(
             $ssh,
-            $hostAppPath,
+            $installHostPath,
             $packageJson,
             $projectPackageJson,
         );
@@ -501,7 +509,7 @@ class ContainerStackCommandService
                     $ssh,
                     $containerPath,
                     $containerName,
-                    $hostAppPath,
+                    $installHostPath,
                     $projectPackageJson,
                     $buildEnv,
                     cleanBuildArtifacts: true,

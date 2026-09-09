@@ -5,62 +5,64 @@
     $maxTerminalTabs = max(1, (int) config('terminal.session.max_per_user_service', 3));
     $terminalDefaultCwd = app(\App\Services\Terminal\ContainerTerminalService::class)
         ->resolveAppRootFromTemplate($terminalTemplate);
+    $containerRunning = $deployment?->isRunning() ?? false;
+    $terminalHasSplitWorkloads = data_get($service->service_meta, 'node_workloads.topology') === 'split_web_api';
 @endphp
 <div
     x-data="containerTerminal()"
     x-init="init()"
-    class="space-y-4"
-    :class="fullscreen ? 'fixed inset-0 z-[90] p-4 bg-slate-950/95' : ''"
+    @container-tab-shown.window="onConsoleTabShown($event.detail)"
+    class="container-classic-terminal"
+    :class="fullscreen ? 'fixed inset-0 z-[90] p-3 sm:p-6 bg-black/70' : ''"
 >
-    <div class="flex flex-wrap items-center justify-between gap-2">
-        <h3 class="text-lg font-semibold text-slate-900 dark:text-white" :class="fullscreen ? 'text-white' : ''">Terminal</h3>
-        <div class="flex flex-wrap items-center gap-2">
-            <div x-show="terminalVisible" class="flex items-center gap-1.5 overflow-x-auto max-w-full pb-0.5">
-                <button type="button" @click="copySelection()" class="shrink-0 px-2.5 py-1.5 rounded text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700" title="Copy selection (Ctrl/Cmd+Shift+C)">Copy</button>
-                <button type="button" @click="pasteFromClipboard()" class="shrink-0 px-2.5 py-1.5 rounded text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700" title="Paste (Ctrl/Cmd+Shift+V)">Paste</button>
-                <button type="button" @click="fontSize = Math.max(10, fontSize - 1); applyFontSize()" class="shrink-0 px-2 py-1.5 rounded text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300" title="Decrease font">A−</button>
-                <button type="button" @click="fontSize = Math.min(24, fontSize + 1); applyFontSize()" class="shrink-0 px-2 py-1.5 rounded text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300" title="Increase font">A+</button>
-                <button type="button" @click="searchOpen = !searchOpen; $nextTick(() => { if (searchOpen) $refs.searchInput?.focus(); })" class="shrink-0 px-2.5 py-1.5 rounded text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300" title="Search (Ctrl/Cmd+Shift+F)">Find</button>
-                <select x-model="themeName" @change="applyTheme()" class="shrink-0 px-2 py-1.5 rounded text-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-0">
-                    <option value="slate">Slate</option>
-                    <option value="classic">Classic</option>
-                    <option value="light">Light</option>
-                </select>
-                <button type="button" @click="showShortcuts = !showShortcuts" class="shrink-0 px-2.5 py-1.5 rounded text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300" title="Keyboard shortcuts">?</button>
-                <button type="button" @click="extendSession()" class="shrink-0 px-2.5 py-1.5 rounded text-xs font-medium bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300" title="Extend session">Extend</button>
-                <button type="button" @click="toggleFullscreen()" class="shrink-0 px-2.5 py-1.5 rounded text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300" x-text="fullscreen ? 'Exit full screen' : 'Full screen'"></button>
-                <button type="button" @click="addTab()" :disabled="tabs.length >= maxTabs || sessionStarting" class="shrink-0 px-2.5 py-1.5 rounded text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 disabled:opacity-40" title="New tab">+ Tab</button>
+    <div
+        class="flex flex-col min-h-0 overflow-hidden bg-[#0b1209] text-[#41ff6b] shadow-[inset_0_0_0_1px_rgba(65,255,107,0.16)]"
+        :class="fullscreen ? 'h-full rounded-xl' : 'rounded-none md:rounded-b-2xl'"
+    >
+        <div class="flex items-center gap-3 px-3 py-2 bg-[#071109] border-b border-[#1d3a22]">
+            <div class="flex items-center gap-1.5 shrink-0" aria-hidden="true">
+                <span class="w-2.5 h-2.5 rounded-full bg-[#ff5f56]"></span>
+                <span class="w-2.5 h-2.5 rounded-full bg-[#ffbd2e]"></span>
+                <span class="w-2.5 h-2.5 rounded-full bg-[#27c93f]"></span>
             </div>
-            <button @click="toggleTerminal()" :class="terminalVisible ? 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300' : 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300'" class="px-3 py-1.5 rounded text-sm font-medium transition">
-                <span x-text="terminalVisible ? 'Close Terminal' : 'Open Terminal'"></span>
-            </button>
+            <p class="min-w-0 flex-1 font-mono text-xs text-[#7cff9a]/85 truncate" x-text="titleBarLabel()"></p>
+            <div class="flex items-center gap-1 shrink-0">
+                @if ($terminalHasSplitWorkloads)
+                    <select x-model="selectedWorkload" class="rounded border border-[#1d3a22] bg-[#08140b] text-[#7cff9a] text-[11px] py-1 pl-2 pr-6">
+                        <option value="backend">Backend</option>
+                        <option value="frontend">Frontend</option>
+                        <option value="edge">Edge</option>
+                    </select>
+                @endif
+                <button type="button" @click="searchOpen = !searchOpen; $nextTick(() => { if (searchOpen) $refs.searchInput?.focus(); })" class="px-2 py-1 rounded text-[11px] font-medium text-[#7cff9a]/80 hover:bg-[#14301a]" title="Find (Ctrl/Cmd+Shift+F)">Find</button>
+                <button type="button" @click="addTab()" :disabled="!containerRunning || tabs.length >= maxTabs || sessionStarting" class="px-2 py-1 rounded text-[11px] font-medium text-[#7cff9a]/80 hover:bg-[#14301a] disabled:opacity-40" title="New tab">+</button>
+                <button type="button" @click="toggleFullscreen()" class="px-2 py-1 rounded text-[11px] font-medium text-[#7cff9a]/80 hover:bg-[#14301a]" x-text="fullscreen ? 'Exit' : 'Full screen'"></button>
+            </div>
         </div>
-    </div>
 
-    <div x-show="terminalVisible" x-cloak class="bg-slate-900 rounded-lg overflow-hidden border border-slate-700 flex flex-col min-h-0" :class="fullscreen ? 'h-full rounded-xl' : ''">
-        <div class="flex items-center gap-1 px-2 pt-2 bg-slate-950 border-b border-slate-800 overflow-x-auto" x-show="tabs.length > 0">
+        <div class="flex items-center gap-1 px-2 bg-[#08140b] border-b border-[#1d3a22] overflow-x-auto" x-show="tabs.length > 1">
             <template x-for="(tab, index) in tabs" :key="tab.id">
                 <button
                     type="button"
                     @click="switchTab(index)"
-                    class="group inline-flex items-center gap-2 px-3 py-1.5 rounded-t text-xs font-medium whitespace-nowrap"
-                    :class="activeTabIndex === index ? 'bg-slate-900 text-slate-100' : 'bg-slate-800/60 text-slate-400 hover:text-slate-200'"
+                    class="group inline-flex items-center gap-2 px-3 py-1.5 text-xs font-mono whitespace-nowrap"
+                    :class="activeTabIndex === index ? 'text-[#7cff9a] border-b-2 border-[#41ff6b]' : 'text-[#4a8f5a] hover:text-[#7cff9a] border-b-2 border-transparent'"
                 >
                     <span x-text="tab.label"></span>
                     <span
                         class="w-1.5 h-1.5 rounded-full"
                         :class="{
-                            'bg-emerald-400': tab.connectionState === 'live',
+                            'bg-[#41ff6b]': tab.connectionState === 'live',
                             'bg-amber-400': ['connecting', 'reconnecting', 'http'].includes(tab.connectionState),
                             'bg-red-400': ['disconnected', 'expired', 'error'].includes(tab.connectionState),
                         }"
                     ></span>
-                    <span @click.stop="closeTab(index)" class="opacity-60 hover:opacity-100 text-slate-400 hover:text-red-300" title="Close tab">×</span>
+                    <span @click.stop="closeTab(index)" class="opacity-60 hover:opacity-100 hover:text-red-300" title="Close tab">×</span>
                 </button>
             </template>
         </div>
 
-        <div x-show="searchOpen" class="flex items-center gap-2 px-3 py-2 bg-slate-800 border-b border-slate-700">
+        <div x-show="searchOpen" class="flex items-center gap-2 px-3 py-2 bg-[#08140b] border-b border-[#1d3a22]">
             <input
                 x-ref="searchInput"
                 type="text"
@@ -68,80 +70,81 @@
                 @keydown.enter.prevent="findNext()"
                 @keydown.escape.prevent="searchOpen = false"
                 placeholder="Find in terminal…"
-                class="flex-1 rounded border-0 bg-slate-900 text-slate-100 text-xs px-2 py-1.5 focus:ring-1 focus:ring-blue-500"
+                class="flex-1 rounded border-0 bg-[#0b1209] text-[#41ff6b] font-mono text-xs px-2 py-1.5 focus:ring-1 focus:ring-[#41ff6b]/50"
             >
-            <button type="button" @click="findPrevious()" class="text-xs text-slate-300 px-2 py-1 hover:text-white">Prev</button>
-            <button type="button" @click="findNext()" class="text-xs text-slate-300 px-2 py-1 hover:text-white">Next</button>
-            <button type="button" @click="searchOpen = false; clearSearch()" class="text-xs text-slate-400 px-2 py-1">Esc</button>
-        </div>
-
-        <div x-show="showShortcuts" class="px-3 py-2 bg-slate-800/80 border-b border-slate-700 text-xs text-slate-300 space-y-1">
-            <p class="font-semibold text-slate-100">Shortcuts</p>
-            <p>Ctrl/Cmd+Shift+C — copy selection · Ctrl/Cmd+Shift+V — paste · Ctrl/Cmd+Shift+F — find</p>
-            <p>Ctrl+L — clear (HTTP mode) · Ctrl+C — interrupt · Esc — exit full screen / close find</p>
-            <p>Dangerous system commands are blocked when you press Enter; a hint explains safer alternatives.</p>
+            <button type="button" @click="findPrevious()" class="text-xs text-[#7cff9a]/80 px-2 py-1">Prev</button>
+            <button type="button" @click="findNext()" class="text-xs text-[#7cff9a]/80 px-2 py-1">Next</button>
+            <button type="button" @click="searchOpen = false; clearSearch()" class="text-xs text-[#4a8f5a] px-2 py-1">Esc</button>
         </div>
 
         <div
-            x-ref="panesHost"
-            class="relative text-sm font-mono text-slate-100 overflow-hidden bg-slate-950"
-            style="height: 480px;"
-            :style="fullscreen ? 'min-height: 0; height: 100%;' : 'height: 480px;'"
-            @contextmenu.prevent="onContextMenu($event)"
+            class="relative font-mono overflow-hidden bg-[#0b1209]"
+            style="height: 520px;"
+            :style="fullscreen ? 'min-height: 0; height: 100%;' : 'height: 520px;'"
         >
             <div
-                x-show="sessionStarting && tabs.length === 0"
-                class="absolute inset-0 z-10 flex items-center justify-center bg-slate-950/90"
+                x-ref="panesHost"
+                class="absolute inset-0 overflow-hidden"
+                @contextmenu.prevent="onContextMenu($event)"
+            ></div>
+            <div
+                x-show="!containerRunning"
+                class="absolute inset-0 z-20 flex items-center justify-center p-6 bg-[#0b1209]"
             >
-                <div class="inline-flex items-center gap-2 text-slate-300 text-sm">
-                    <div class="w-4 h-4 bg-blue-500 rounded-full animate-bounce"></div>
-                    <span>Starting terminal session...</span>
+                <p class="text-sm text-[#7cff9a]/90 text-center max-w-md">
+                    Start the app from Overview, then come back to Terminal.
+                </p>
+            </div>
+            <div
+                x-show="containerRunning && sessionStarting && tabs.length === 0"
+                class="absolute inset-0 z-10 flex items-center justify-center bg-[#0b1209]/90"
+            >
+                <div class="inline-flex items-center gap-2 text-[#7cff9a] text-sm font-mono">
+                    <span class="w-2 h-2 rounded-full bg-[#41ff6b] animate-pulse"></span>
+                    <span>Connecting…</span>
                 </div>
+            </div>
+            <div
+                x-show="containerRunning && !sessionStarting && tabs.length === 0 && hasAttemptedConnect"
+                class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 p-6 bg-[#0b1209]"
+            >
+                <p class="text-sm text-[#7cff9a]/90 font-mono text-center max-w-md" x-text="lastError || (connectionState === 'error' ? 'Could not open a session.' : 'Session closed.')"></p>
+                <button type="button" @click="openTerminal()" class="px-3 py-1.5 rounded border border-[#41ff6b]/40 text-xs font-mono text-[#41ff6b] hover:bg-[#14301a]">
+                    Reconnect
+                </button>
             </div>
         </div>
 
-        <div class="bg-slate-800 border-t border-slate-700 px-3 py-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
+        <div class="bg-[#071109] border-t border-[#1d3a22] px-3 py-1.5 flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono text-[#4a8f5a]">
             <div class="flex flex-wrap items-center gap-2 min-w-0">
-                <span class="inline-block w-2 h-2 rounded-full"
+                <span class="inline-block w-1.5 h-1.5 rounded-full"
                       :class="{
-                          'bg-emerald-500 animate-pulse': connectionState === 'live',
-                          'bg-amber-500 animate-pulse': ['connecting', 'reconnecting', 'http'].includes(connectionState),
+                          'bg-[#41ff6b] animate-pulse': connectionState === 'live',
+                          'bg-amber-400 animate-pulse': ['connecting', 'reconnecting', 'http'].includes(connectionState),
                           'bg-red-500': ['disconnected', 'expired', 'error', 'idle'].includes(connectionState),
                       }"></span>
                 <span x-text="statusLabel()"></span>
-                <span x-show="shellIdentity" class="font-mono text-slate-300 truncate" x-text="shellIdentity"></span>
                 <span x-show="mode === 'http' && commandBusy" class="text-amber-400">Running command…</span>
             </div>
             <div class="flex items-center gap-3 text-right">
-                <span x-show="mode === 'http'" x-text="`Commands: ${commandCount}`"></span>
                 <span x-show="sessionExpires" x-text="sessionExpires"></span>
             </div>
         </div>
-    </div>
-
-    <div x-show="!terminalVisible" class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 space-y-2">
-        <p class="text-sm text-blue-800 dark:text-blue-200">
-            @if (in_array($terminalTemplateSlug, ['laravel', 'php'], true))
-                Interactive shell for your app. Supports <code class="font-mono text-xs">composer</code>, <code class="font-mono text-xs">php artisan</code>, and file cleanup in <code class="font-mono text-xs">/app</code>.
-            @elseif ($terminalTemplateSlug === 'nodejs')
-                Interactive shell for your Node.js app. Run <code class="font-mono text-xs">npm</code>, <code class="font-mono text-xs">node</code>, and inspect files in <code class="font-mono text-xs">/app</code>.
-            @elseif ($terminalTemplateSlug === 'ollama')
-                Interactive shell for Ollama. Chat with the model on the <strong>Chat</strong> tab. Here you can run <code class="font-mono text-xs">ollama list</code> and <code class="font-mono text-xs">ollama pull</code>. Typing a question here runs it as a shell command, not as a chat.
-            @else
-                Interactive shell for your app. Run stack commands and inspect files in <code class="font-mono text-xs">{{ $terminalDefaultCwd }}</code>.
-            @endif
-        </p>
-        <p class="text-xs text-blue-700 dark:text-blue-400">
-            Opens as a full interactive PTY when the terminal service is available. If not, falls back to one command at a time with clear status.
-        </p>
-        <p class="text-xs text-blue-700 dark:text-blue-400">
-            Supports tabs, full screen, search, themes, and session extend. Dangerous host commands stay blocked.
-        </p>
     </div>
 </div>
 
 @push('scripts')
 {{-- Load outside Alpine x-if so browsers actually execute these scripts. --}}
+<style>
+    .container-classic-terminal .xterm {
+        padding: 10px 14px;
+        height: 100%;
+    }
+    .container-classic-terminal .xterm-viewport,
+    .container-classic-terminal .xterm-screen {
+        background-color: #0b1209 !important;
+    }
+</style>
 <link rel="stylesheet" href="{{ asset('css/xterm.min.css') }}">
 <script src="{{ asset('js/xterm/xterm.js') }}"></script>
 <script src="{{ asset('js/xterm/xterm-addon-fit.js') }}"></script>
@@ -157,15 +160,39 @@ function containerTerminal() {
     const TEMPLATE_SLUG = @json($terminalTemplateSlug);
     const MAX_TABS = {{ (int) $maxTerminalTabs }};
     const DEFAULT_CWD = @json($terminalDefaultCwd);
-    const THEMES = {
-        slate: { background: '#0f172a', foreground: '#e2e8f0', cursor: '#94a3b8', selectionBackground: '#334155' },
-        classic: { background: '#001100', foreground: '#33ff66', cursor: '#33ff66', selectionBackground: '#003300' },
-        light: { background: '#f8fafc', foreground: '#0f172a', cursor: '#2563eb', selectionBackground: '#cbd5e1' },
+    const CONTAINER_RUNNING = @json($containerRunning);
+    const HAS_SPLIT_WORKLOADS = @json($terminalHasSplitWorkloads);
+    const CLASSIC_THEME = {
+        background: '#0b1209',
+        foreground: '#41ff6b',
+        cursor: '#41ff6b',
+        cursorAccent: '#0b1209',
+        selectionBackground: '#1d6b32',
+        selectionForeground: '#d7ffe0',
+        black: '#0b1209',
+        red: '#ff5f5f',
+        green: '#41ff6b',
+        yellow: '#d7ef4a',
+        blue: '#6ab0ff',
+        magenta: '#d46bff',
+        cyan: '#4adede',
+        white: '#e8f5e9',
+        brightBlack: '#3d5c40',
+        brightRed: '#ff8080',
+        brightGreen: '#7cff9a',
+        brightYellow: '#f0ff7a',
+        brightBlue: '#8cc4ff',
+        brightMagenta: '#e090ff',
+        brightCyan: '#7aeeee',
+        brightWhite: '#ffffff',
     };
 
     return {
-        terminalVisible: false,
+        terminalVisible: true,
+        containerRunning: CONTAINER_RUNNING,
+        selectedWorkload: 'backend',
         sessionStarting: false,
+        hasAttemptedConnect: false,
         connected: false,
         connectionState: 'idle',
         mode: null,
@@ -177,7 +204,6 @@ function containerTerminal() {
         sessionExpires: null,
         fullscreen: false,
         fontSize: 14,
-        themeName: 'slate',
         searchOpen: false,
         searchQuery: '',
         showShortcuts: false,
@@ -187,17 +213,44 @@ function containerTerminal() {
         tabSeq: 0,
         websocketEnabled: true,
         expiryUpdateInterval: null,
+        lastError: '',
 
         get shellIdentity() {
-            if (!this.terminalVisible || !this.connected) {
+            if (!this.connected) {
                 return '';
             }
             return `${this.shellUser}@${this.containerName}:${this.cwd}`;
         },
 
+        titleBarLabel() {
+            if (!this.containerRunning) {
+                return `${CONTAINER_NAME} — stopped`;
+            }
+            if (this.shellIdentity) {
+                return this.shellIdentity;
+            }
+            return `${CONTAINER_NAME} — terminal`;
+        },
+
         init() {
             document.addEventListener('keydown', (event) => this.handleGlobalKeys(event));
             window.addEventListener('resize', () => this.fitAndResize());
+            if (this.containerRunning) {
+                this.openTerminal();
+            }
+        },
+
+        onConsoleTabShown(tab) {
+            if (tab !== 'terminal') {
+                return;
+            }
+            this.$nextTick(() => {
+                this.fitAndResize();
+                this.activeTab()?.terminal?.focus();
+                if (this.containerRunning && this.tabs.length === 0 && !this.sessionStarting) {
+                    this.openTerminal();
+                }
+            });
         },
 
         activeTab() {
@@ -205,10 +258,13 @@ function containerTerminal() {
         },
 
         statusLabel() {
+            if (!this.containerRunning) {
+                return 'App is not running';
+            }
             switch (this.connectionState) {
                 case 'connecting': return 'Connecting…';
-                case 'live': return 'Live PTY';
-                case 'http': return 'HTTP fallback (one command at a time)';
+                case 'live': return 'Connected';
+                case 'http': return 'Command mode (one line at a time)';
                 case 'reconnecting': return `Reconnecting… (${this.activeTab()?.reconnectAttempts || 0})`;
                 case 'expired': return 'Session expired';
                 case 'error': return 'Connection error';
@@ -248,17 +304,22 @@ function containerTerminal() {
             this.trackSessionExpiry(tab.expiresAtIso);
         },
 
-        async toggleTerminal() {
-            if (this.terminalVisible) {
-                await this.closeAllTabs();
-            } else {
-                await this.openTerminal();
-            }
-        },
-
         async openTerminal() {
+            if (!this.containerRunning) {
+                return;
+            }
+            if (this.tabs.length > 0) {
+                this.activeTab()?.terminal?.focus();
+                return;
+            }
+            if (this.sessionStarting) {
+                return;
+            }
+
+            this.hasAttemptedConnect = true;
             this.sessionStarting = true;
             this.terminalVisible = true;
+            this.lastError = '';
 
             try {
                 await this.$nextTick();
@@ -270,15 +331,9 @@ function containerTerminal() {
                 await this.createTabSession();
             } catch (error) {
                 this.sessionStarting = false;
+                this.connectionState = 'error';
+                this.lastError = 'Failed to start terminal: ' + (error?.message || 'unknown error');
                 console.error('Failed to open terminal:', error);
-                // Keep panel open so the user sees the error instead of a blank flash.
-                const host = this.$refs.panesHost;
-                if (host && !this.tabs.length) {
-                    const notice = document.createElement('div');
-                    notice.className = 'absolute inset-0 flex items-center justify-center p-4 text-sm text-red-300';
-                    notice.textContent = 'Failed to start terminal: ' + (error?.message || 'unknown error');
-                    host.appendChild(notice);
-                }
             }
         },
 
@@ -407,11 +462,12 @@ function containerTerminal() {
             }
 
             const terminal = new TerminalClass({
-                theme: THEMES[this.themeName] || THEMES.slate,
-                fontFamily: 'Menlo, Monaco, "Cascadia Code", "Ubuntu Mono", Consolas, monospace',
+                theme: CLASSIC_THEME,
+                fontFamily: 'Menlo, Monaco, "Cascadia Mono", "Ubuntu Mono", Consolas, monospace',
                 fontSize: this.fontSize,
                 cursorBlink: true,
-                convertEol: true,
+                cursorStyle: 'block',
+                convertEol: false,
                 scrollback: 5000,
                 rightClickSelectsWord: true,
                 allowProposedApi: true,
@@ -557,14 +613,18 @@ function containerTerminal() {
                 const response = await fetch(TERMINAL_URL, {
                     method: 'POST',
                     headers: this.csrfHeaders(),
+                    body: JSON.stringify({ workload: this.selectedWorkload }),
                 });
                 const { data, parseError } = await this.safeJsonResponse(response);
                 if (parseError || !response.ok) {
+                    const message = (data && data.error) || 'Failed to create terminal session';
+                    this.connectionState = 'error';
+                    this.lastError = message;
                     const active = this.activeTab();
                     if (active?.terminal) {
                         active.connectionState = 'error';
                         this.syncUiFromTab(active);
-                        active.terminal.write('\r\n❌ ' + ((data && data.error) || 'Failed to create terminal session') + '\r\n');
+                        active.terminal.write('\r\n❌ ' + message + '\r\n');
                     }
                     return;
                 }
@@ -572,7 +632,8 @@ function containerTerminal() {
                 this.tabSeq += 1;
                 const tab = {
                     id: `t${this.tabSeq}`,
-                    label: `Terminal ${this.tabSeq}`,
+                    label: HAS_SPLIT_WORKLOADS ? `${this.selectedWorkload} ${this.tabSeq}` : `Terminal ${this.tabSeq}`,
+                    workload: this.selectedWorkload,
                     sessionToken: data.session_token,
                     websocketUrl: data.websocket_url,
                     websocketPath: data.websocket_path || '/container-terminal',
@@ -619,7 +680,9 @@ function containerTerminal() {
                     tab.connected = true;
                     tab.connectionState = 'live';
                     tab.reconnectAttempts = 0;
-                    tab.terminal.write('✓ ' + (data.welcome_message || 'Connected.') + '\r\n');
+                    if (tab.terminal) {
+                        tab.terminal.options.convertEol = false;
+                    }
                     this.startKeepalive(tab);
                 } catch (error) {
                     this.enableHttpFallback(tab, data);
@@ -729,8 +792,10 @@ function containerTerminal() {
                     tab.connected = true;
                     tab.connectionState = 'live';
                     tab.reconnectAttempts = 0;
+                    if (tab.terminal) {
+                        tab.terminal.options.convertEol = false;
+                    }
                     this.startKeepalive(tab);
-                    tab.terminal?.write('\r\n\x1b[32m✓ Reconnected to PTY\x1b[0m\r\n');
                     if (this.activeTab()?.id === tab.id) {
                         this.syncUiFromTab(tab);
                     }
@@ -747,6 +812,10 @@ function containerTerminal() {
             tab.keepaliveInterval = setInterval(() => {
                 if (tab.mode === 'pty' && tab.ws && tab.ws.readyState === WebSocket.OPEN) {
                     tab.ws.send(JSON.stringify({ type: 'ping' }));
+                    return;
+                }
+                if (tab.mode === 'http' && tab.sessionToken) {
+                    this.extendSession({ silent: true, tab });
                 }
             }, 120000);
         },
@@ -758,37 +827,22 @@ function containerTerminal() {
                 tab.ws = null;
                 tab.intentionalClose = false;
             }
-            if (tab.keepaliveInterval) {
-                clearInterval(tab.keepaliveInterval);
-                tab.keepaliveInterval = null;
-            }
 
             tab.mode = 'http';
             tab.connected = true;
             tab.connectionState = 'http';
-            tab.terminal.write('\x1b[33m⚠ Interactive WebSocket unavailable. Using HTTP command mode (one line at a time).\x1b[0m\r\n');
-            tab.terminal.write('\x1b[90m  Long commands (artisan, composer, npm) show progress while running.\x1b[0m\r\n');
-            if (TEMPLATE_SLUG === 'laravel') {
-                tab.terminal.write('  Tip: use Overview → Clear /app if Initialize Laravel is blocked by leftover files.\r\n');
-            } else if (TEMPLATE_SLUG === 'nodejs') {
-                tab.terminal.write('  Tip: for Node apps, prefer Git → Pull with Force clean rebuild instead of manual npm run build.\r\n');
+            if (tab.terminal) {
+                tab.terminal.options.convertEol = true;
             }
-            if (data?.welcome_message) {
-                tab.terminal.write('✓ ' + data.welcome_message + '\r\n');
+            tab.terminal.write('\x1b[33mInteractive session unavailable. Command mode: type a line and press Enter.\x1b[0m\r\n');
+            if (TEMPLATE_SLUG === 'laravel') {
+                tab.terminal.write('\x1b[90m  php artisan migrate is rewritten with --force automatically.\x1b[0m\r\n');
             }
             this.writePrompt(tab);
+            this.startKeepalive(tab);
             if (this.activeTab()?.id === tab.id) {
                 this.syncUiFromTab(tab);
             }
-        },
-
-        applyTheme() {
-            const theme = THEMES[this.themeName] || THEMES.slate;
-            this.tabs.forEach((tab) => {
-                if (tab.terminal) {
-                    tab.terminal.options.theme = theme;
-                }
-            });
         },
 
         applyFontSize() {
@@ -1036,8 +1090,9 @@ function containerTerminal() {
             }, 30000);
         },
 
-        async extendSession() {
-            const tab = this.activeTab();
+        async extendSession(options = {}) {
+            const silent = !!options.silent;
+            const tab = options.tab || this.activeTab();
             if (!tab?.sessionToken) return;
             try {
                 const response = await fetch(TERMINAL_EXTEND_URL, {
@@ -1047,16 +1102,22 @@ function containerTerminal() {
                 });
                 const { data, parseError } = await this.safeJsonResponse(response);
                 if (parseError || !response.ok) {
-                    tab.terminal.write('\r\n❌ ' + ((data && data.error) || 'Could not extend session') + '\r\n');
-                    if (tab.mode === 'http') this.writePrompt(tab);
+                    if (!silent) {
+                        tab.terminal.write('\r\n❌ ' + ((data && data.error) || 'Could not extend session') + '\r\n');
+                        if (tab.mode === 'http') this.writePrompt(tab);
+                    }
                     return;
                 }
                 tab.expiresAtIso = data.expires_at;
                 this.trackSessionExpiry(data.expires_at);
-                tab.terminal.write('\r\n\x1b[32m✓ Session extended\x1b[0m\r\n');
-                if (tab.mode === 'http') this.writePrompt(tab);
+                if (!silent) {
+                    tab.terminal.write('\r\n\x1b[32m✓ Session extended\x1b[0m\r\n');
+                    if (tab.mode === 'http') this.writePrompt(tab);
+                }
             } catch (e) {
-                tab.terminal.write('\r\n❌ ' + e.message + '\r\n');
+                if (!silent) {
+                    tab.terminal.write('\r\n❌ ' + e.message + '\r\n');
+                }
             }
         },
 
@@ -1064,6 +1125,7 @@ function containerTerminal() {
             const response = await fetch(TERMINAL_URL, {
                 method: 'POST',
                 headers: this.csrfHeaders(),
+                    body: JSON.stringify({ workload: tab.workload || 'backend' }),
             });
             const { data, parseError } = await this.safeJsonResponse(response);
             if (parseError || !response.ok || !data?.session_token) {
@@ -1210,9 +1272,9 @@ function containerTerminal() {
             this.activeTabIndex = 0;
             this.connected = false;
             this.mode = null;
-            this.connectionState = 'idle';
+            this.connectionState = this.connectionState === 'error' ? 'error' : 'idle';
             this.commandBusy = false;
-            this.terminalVisible = false;
+            this.terminalVisible = true;
             this.fullscreen = false;
             this.searchOpen = false;
             this.showShortcuts = false;

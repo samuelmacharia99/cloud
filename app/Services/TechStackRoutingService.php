@@ -192,7 +192,7 @@ class TechStackRoutingService
                 'locked' => $definition['frontend']['locked'] ?? null,
                 'options' => self::availableFrontends($language, $roles['framework']),
                 'value' => $roles['frontend'],
-                'deferred_note' => 'Next.js starts a frontend sidecar plus an edge router on your public port. Laravel stays on an internal backend service; /api is routed automatically.',
+                'deferred_note' => 'A web frontend runs separately from the backend behind one edge router. The domain serves the frontend and /api routes to the backend automatically.',
             ],
             'database' => [
                 'show' => (bool) ($definition['database']['show'] ?? false),

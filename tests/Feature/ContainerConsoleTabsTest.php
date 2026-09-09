@@ -85,6 +85,34 @@ class ContainerConsoleTabsTest extends TestCase
     }
 
     #[Test]
+    public function a_deep_link_to_the_terminal_opens_that_tab_with_the_classic_shell(): void
+    {
+        [$admin, $customer, $service] = $this->containerService();
+
+        $html = $this->actingAs($admin)
+            ->get(route('admin.services.show', $service).'?tab=terminal')
+            ->assertOk()
+            ->getContent();
+
+        $this->assertSame('terminal', $this->initialTab($html));
+        $this->assertStringContainsString('container-classic-terminal', $html);
+        $this->assertStringContainsString('CLASSIC_THEME', $html);
+        $this->assertStringContainsString('this.openTerminal()', $html);
+        $this->assertStringNotContainsString('value="slate"', $html);
+        $this->assertStringNotContainsString('Open Terminal', $html);
+
+        $html = $this->actingAs($customer)
+            ->get(route('customer.services.container.show', $service).'?tab=terminal')
+            ->assertOk()
+            ->getContent();
+
+        $this->assertSame('terminal', $this->initialTab($html));
+        $this->assertStringContainsString('container-classic-terminal', $html);
+        $this->assertStringContainsString('CLASSIC_THEME', $html);
+        $this->assertStringContainsString("my\\/services\\/{$service->id}\\/terminal", $html);
+    }
+
+    #[Test]
     public function rendering_the_admin_console_does_not_leave_customer_pages_pointing_at_admin_routes(): void
     {
         [$admin, $customer, $service] = $this->containerService();
