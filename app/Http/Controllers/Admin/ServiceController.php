@@ -274,7 +274,7 @@ class ServiceController extends Controller
         ]);
 
         $containerConsole = $service->isContainerHosting()
-            ? app(CustomerContainerController::class)->consoleViewData($service, false)
+            ? app(CustomerContainerController::class)->consoleViewData($service, false, includeSecrets: false)
             : [];
 
         if ($containerConsole !== []) {

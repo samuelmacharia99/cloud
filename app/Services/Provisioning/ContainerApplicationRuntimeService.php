@@ -33,6 +33,44 @@ class ContainerApplicationRuntimeService
         };
     }
 
+    public function detectRuntimeAt(
+        SSHService $ssh,
+        string $hostAppPath,
+        string $relativeRoot,
+        string $slug,
+        int $defaultPort,
+        bool $includeNodeBootstrap = true,
+    ): ApplicationRuntime {
+        $relativeRoot = trim(str_replace('\\', '/', $relativeRoot), '/');
+        if ($relativeRoot === '' || $relativeRoot === '.') {
+            return $this->detectFromHost($ssh, $hostAppPath, $slug, $defaultPort, $includeNodeBootstrap);
+        }
+        if (str_contains($relativeRoot, '..')
+            || preg_match('#^[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*$#', $relativeRoot) !== 1) {
+            throw new \DomainException('Workload root must be a safe relative repository directory.');
+        }
+
+        $projectHost = rtrim($hostAppPath, '/').'/'.$relativeRoot;
+        if ($slug === 'nodejs') {
+            return $this->detectNodeRuntimeAt(
+                $ssh,
+                $hostAppPath,
+                $relativeRoot,
+                $defaultPort,
+                $includeNodeBootstrap,
+            );
+        }
+
+        $runtime = match ($slug) {
+            'python' => $this->detectPythonRuntime($ssh, $projectHost, $defaultPort),
+            'ruby' => $this->detectRubyRuntime($ssh, $projectHost, $defaultPort),
+            'go' => $this->detectGoRuntime($ssh, $projectHost, $defaultPort),
+            default => $this->fallbackRuntime($slug, $defaultPort),
+        };
+
+        return $this->withWorkdir($runtime, $relativeRoot);
+    }
+
     public function detectNodeRuntime(
         SSHService $ssh,
         string $hostAppPath,
@@ -743,6 +781,18 @@ class ContainerApplicationRuntimeService
             $label,
             $startDir
         );
+    }
+
+    private function withWorkdir(ApplicationRuntime $runtime, string $relativeRoot): ApplicationRuntime
+    {
+        $workdir = $this->sanitizeContainerWorkdir('/app/'.$relativeRoot);
+        $command = $runtime->command;
+        if (($command[0] ?? null) === 'sh' && ($command[1] ?? null) === '-lc' && isset($command[2])) {
+            $command[2] = preg_replace('/^cd \/app && /', 'cd '.$workdir.' && ', (string) $command[2], 1)
+                ?? $command[2];
+        }
+
+        return new ApplicationRuntime($command, $runtime->source, $runtime->label, $workdir);
     }
 
     public function sanitizeInnerCommand(string $command): string

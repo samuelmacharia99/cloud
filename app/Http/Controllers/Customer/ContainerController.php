@@ -96,7 +96,7 @@ class ContainerController extends Controller
      *
      * @return array<string, mixed>
      */
-    public function consoleViewData(Service $service, bool $probeStatus = true): array
+    public function consoleViewData(Service $service, bool $probeStatus = true, bool $includeSecrets = true): array
     {
         $service->loadMissing('containerDeployment', 'product.containerTemplate');
 
@@ -166,6 +166,10 @@ class ContainerController extends Controller
         $domainsMissingSsl = 0;
         $containerCronJobs = [];
         $environmentPanel = app(ContainerEnvironmentService::class)->buildPanelState($service, $deployment);
+        if (! $includeSecrets) {
+            $databaseContext = $this->redactDatabaseContext($databaseContext);
+            $environmentPanel = $this->redactEnvironmentPanel($environmentPanel);
+        }
         $autoDeployPanel = $supportsGitRepository
             ? app(ContainerAutoDeployService::class)->panelState($service)
             : null;
@@ -261,7 +265,7 @@ class ContainerController extends Controller
         } catch (\Exception $e) {
             \Log::error("Failed to restart container for service {$service->id}: ".$e->getMessage());
 
-            return back()->withErrors(['error' => 'Failed to restart container: '.$e->getMessage()]);
+            return back()->withErrors(['error' => 'Failed to restart container. Please try again or contact support.']);
         }
     }
 
@@ -294,7 +298,7 @@ class ContainerController extends Controller
         } catch (\Exception $e) {
             \Log::error("Failed to stop container for service {$service->id}: ".$e->getMessage());
 
-            return back()->withErrors(['error' => 'Failed to stop container: '.$e->getMessage()]);
+            return back()->withErrors(['error' => 'Failed to stop container. Please try again or contact support.']);
         }
     }
 
@@ -327,7 +331,7 @@ class ContainerController extends Controller
         } catch (\Exception $e) {
             \Log::error("Failed to start container for service {$service->id}: ".$e->getMessage());
 
-            return back()->withErrors(['error' => 'Failed to start container: '.$e->getMessage()]);
+            return back()->withErrors(['error' => 'Failed to start container. Please try again or contact support.']);
         }
     }
 
@@ -477,7 +481,7 @@ class ContainerController extends Controller
             }
             \Log::error("Failed to redeploy container for service {$service->id}: ".$e->getMessage());
 
-            return back()->withErrors(['error' => 'Failed to redeploy container: '.$e->getMessage()]);
+            return back()->withErrors(['error' => 'Failed to redeploy container. Please try again or contact support.']);
         }
     }
 
@@ -504,7 +508,7 @@ class ContainerController extends Controller
         } catch (\Exception $e) {
             \Log::error("Failed to start Laravel initialization for service {$service->id}: ".$e->getMessage());
 
-            return back()->withErrors(['error' => 'Failed to start initialization: '.$e->getMessage()]);
+            return back()->withErrors(['error' => 'Failed to start initialization. Please try again or contact support.']);
         }
     }
 
@@ -525,7 +529,7 @@ class ContainerController extends Controller
         } catch (\Exception $e) {
             \Log::error("Failed to clear /app for service {$service->id}: ".$e->getMessage());
 
-            return back()->withErrors(['error' => 'Failed to clear /app: '.$e->getMessage()]);
+            return back()->withErrors(['error' => 'Failed to clear /app. Please try again or contact support.']);
         }
     }
 
@@ -602,7 +606,7 @@ class ContainerController extends Controller
             \Log::error("Failed to update PHP extensions for service {$service->id}: ".$e->getMessage());
 
             $payload = [
-                'error' => 'Failed to update PHP extensions: '.$e->getMessage(),
+                'error' => 'Failed to update PHP extensions. Please try again or contact support.',
                 'extension' => [
                     'key' => (string) $request->input('extension'),
                     'enabled' => $request->boolean('enabled'),
@@ -616,7 +620,7 @@ class ContainerController extends Controller
         } catch (\Exception $e) {
             \Log::error("Failed to update PHP extensions for service {$service->id}: ".$e->getMessage());
 
-            $message = 'Failed to update PHP extensions: '.$e->getMessage();
+            $message = 'Failed to update PHP extensions. Please try again or contact support.';
 
             return $wantsJson
                 ? response()->json(['error' => $message], 500)
@@ -779,7 +783,7 @@ class ContainerController extends Controller
             ]);
 
             return $this->redirectToContainerTab($service, 'overview')
-                ->withErrors(['error' => 'Could not connect Ollama: '.$e->getMessage()]);
+                ->withErrors(['error' => 'Could not connect Ollama. Please try again or contact support.']);
         }
     }
 
@@ -812,7 +816,7 @@ class ContainerController extends Controller
         } catch (\Exception $e) {
             \Log::error("Failed to connect Git repository for service {$service->id}: ".$e->getMessage());
 
-            return back()->withErrors(['error' => 'Failed to save repository settings: '.$e->getMessage()]);
+            return back()->withErrors(['error' => 'Failed to save repository settings. Please try again or contact support.']);
         }
     }
 
@@ -871,10 +875,10 @@ class ContainerController extends Controller
             \Log::error("Failed to pull Git repository for service {$service->id}: ".$e->getMessage());
 
             if ($request->expectsJson()) {
-                return response()->json(['error' => 'Failed to start Git pull: '.$e->getMessage()], 500);
+                return response()->json(['error' => 'Failed to start Git pull. Please try again or contact support.'], 500);
             }
 
-            return back()->withErrors(['error' => 'Failed to start Git pull: '.$e->getMessage()]);
+            return back()->withErrors(['error' => 'Failed to start Git pull. Please try again or contact support.']);
         }
     }
 
@@ -970,10 +974,10 @@ class ContainerController extends Controller
             \Log::error("Failed to restart Git pull for service {$service->id}: ".$e->getMessage());
 
             if ($request->expectsJson()) {
-                return response()->json(['error' => 'Failed to restart Git pull: '.$e->getMessage()], 500);
+                return response()->json(['error' => 'Failed to restart Git pull. Please try again or contact support.'], 500);
             }
 
-            return back()->withErrors(['error' => 'Failed to restart Git pull: '.$e->getMessage()]);
+            return back()->withErrors(['error' => 'Failed to restart Git pull. Please try again or contact support.']);
         }
     }
 
@@ -1803,6 +1807,54 @@ class ContainerController extends Controller
             ],
             default => $fallback,
         };
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @return array<string, mixed>
+     */
+    private function redactDatabaseContext(array $context): array
+    {
+        unset($context['password']);
+
+        if (isset($context['connection'])) {
+            $context['connection'] = $this->redactConnectionString((string) $context['connection']);
+        }
+
+        $context['password_masked'] = $context['password_masked'] ?? '********';
+        $context['redacted'] = true;
+
+        return $context;
+    }
+
+    /**
+     * @param  array<string, mixed>  $panel
+     * @return array<string, mixed>
+     */
+    private function redactEnvironmentPanel(array $panel): array
+    {
+        $variables = is_array($panel['variables'] ?? null) ? $panel['variables'] : [];
+
+        $panel['variables'] = array_map(static function (array $row): array {
+            $row['value'] = '[redacted]';
+            $row['sensitive'] = true;
+
+            return $row;
+        }, $variables);
+        $panel['can_save'] = false;
+        $panel['can_apply'] = false;
+        $panel['redacted'] = true;
+
+        return $panel;
+    }
+
+    private function redactConnectionString(string $connection): string
+    {
+        if ($connection === '') {
+            return $connection;
+        }
+
+        return (string) preg_replace('#(://[^:/@\s]+:)[^@\s]+(@)#', '$1********$2', $connection);
     }
 
     /**

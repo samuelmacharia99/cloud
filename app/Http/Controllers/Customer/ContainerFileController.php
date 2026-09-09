@@ -51,7 +51,7 @@ class ContainerFileController extends Controller
         } catch (\Exception $e) {
             \Log::error("Failed to list container directory for service {$service->id}: ".$e->getMessage());
 
-            return response()->json(['error' => 'Failed to list directory: '.$e->getMessage()], 500);
+            return response()->json(['error' => 'Failed to list directory. Please try again or contact support.'], 500);
         }
     }
 
@@ -91,7 +91,7 @@ class ContainerFileController extends Controller
         } catch (\Exception $e) {
             \Log::error("Failed to read container file for service {$service->id}: ".$e->getMessage());
 
-            return response()->json(['error' => 'Failed to read file: '.$e->getMessage()], 500);
+            return response()->json(['error' => 'Failed to read file. Please try again or contact support.'], 500);
         }
     }
 
@@ -134,7 +134,7 @@ class ContainerFileController extends Controller
         } catch (\Exception $e) {
             \Log::error("Failed to save container file for service {$service->id}: ".$e->getMessage());
 
-            return response()->json(['error' => 'Failed to save file: '.$e->getMessage()], 500);
+            return response()->json(['error' => 'Failed to save file. Please try again or contact support.'], 500);
         }
     }
 
@@ -229,7 +229,7 @@ class ContainerFileController extends Controller
         } catch (\Exception $e) {
             \Log::error("Failed to upload container file for service {$service->id}: ".$e->getMessage());
 
-            return response()->json(['error' => 'Failed to upload file: '.$e->getMessage()], 500);
+            return response()->json(['error' => 'Failed to upload file. Please try again or contact support.'], 500);
         }
     }
 
@@ -266,7 +266,7 @@ class ContainerFileController extends Controller
         } catch (\Exception $e) {
             \Log::error("Failed to delete container path for service {$service->id}: ".$e->getMessage());
 
-            return response()->json(['error' => 'Failed to delete: '.$e->getMessage()], 500);
+            return response()->json(['error' => 'Failed to delete path. Please try again or contact support.'], 500);
         }
     }
 
@@ -303,7 +303,7 @@ class ContainerFileController extends Controller
         } catch (\Exception $e) {
             \Log::error("Failed to create directory for service {$service->id}: ".$e->getMessage());
 
-            return response()->json(['error' => 'Failed to create directory: '.$e->getMessage()], 500);
+            return response()->json(['error' => 'Failed to create directory. Please try again or contact support.'], 500);
         }
     }
 
@@ -343,7 +343,7 @@ class ContainerFileController extends Controller
         } catch (\Exception $e) {
             \Log::error("Failed to create container file for service {$service->id}: ".$e->getMessage());
 
-            return response()->json(['error' => 'Failed to create file: '.$e->getMessage()], 500);
+            return response()->json(['error' => 'Failed to create file. Please try again or contact support.'], 500);
         }
     }
 
@@ -385,7 +385,7 @@ class ContainerFileController extends Controller
         } catch (\Exception $e) {
             \Log::error("Failed to rename container path for service {$service->id}: ".$e->getMessage());
 
-            return response()->json(['error' => 'Failed to rename: '.$e->getMessage()], 500);
+            return response()->json(['error' => 'Failed to rename path. Please try again or contact support.'], 500);
         }
     }
 }

@@ -24,6 +24,12 @@
         Platform-managed database keys are editable but tied to your sidecar. Changing them restarts the stack and may require credential repair from the Database tab.
     </div>
 
+    @if (! empty($environmentPanel['redacted']))
+        <div class="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-4 text-sm text-blue-900 dark:text-blue-100">
+            Environment values are hidden in the operator console to avoid exposing customer secrets. Sign in as the customer or use an audited secret-reveal workflow when support genuinely needs a value.
+        </div>
+    @endif
+
     <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4">
         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
