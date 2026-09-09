@@ -56,8 +56,18 @@ class ContainerNodeWorkloadTopologyServiceTest extends TestCase
     }
 
     #[Test]
-    public function it_rejects_expo_as_a_browser_frontend(): void
+    public function it_deploys_the_api_when_the_only_other_app_is_expo(): void
     {
+        $runtime = Mockery::mock(ContainerApplicationRuntimeService::class);
+        $runtime->shouldReceive('detectNodeRuntimeAt')
+            ->once()
+            ->andReturn(new ApplicationRuntime(
+                ['sh', '-lc', 'cd /app/apps/api && exec npm start'],
+                'package-script',
+                'apps/api',
+                '/app/apps/api',
+            ));
+        $this->app->instance(ContainerApplicationRuntimeService::class, $runtime);
         $ssh = $this->sshForPackages([
             'apps/api' => [
                 'scripts' => ['start' => 'node server.js'],
@@ -69,13 +79,19 @@ class ContainerNodeWorkloadTopologyServiceTest extends TestCase
             ],
         ]);
 
-        $this->expectException(\DomainException::class);
-        $this->expectExceptionMessage('Expo/React Native');
-        (new ContainerNodeWorkloadTopologyService)->resolve(
+        $topology = (new ContainerNodeWorkloadTopologyService)->resolve(
             $this->nodeService('express', 'vite-spa'),
             $ssh,
             '/srv/app',
         );
+
+        $this->assertSame('single', $topology['topology']);
+        $this->assertSame('auto_api', $topology['selection_source']);
+        $this->assertSame('apps/api', $topology['backend']['root']);
+        $this->assertSame(['apps/mobile'], $topology['skipped_mobile']);
+        $this->assertTrue(ContainerNodeWorkloadTopologyService::isApiOnly(
+            $this->serviceWithTopology($topology, 'vite-spa')
+        ));
     }
 
     #[Test]
@@ -119,6 +135,41 @@ class ContainerNodeWorkloadTopologyServiceTest extends TestCase
     }
 
     #[Test]
+    public function it_uses_a_next_app_when_vite_was_selected_but_the_repo_ships_next(): void
+    {
+        $runtime = Mockery::mock(ContainerApplicationRuntimeService::class);
+        $runtime->shouldReceive('detectNodeRuntimeAt')
+            ->twice()
+            ->andReturnUsing(fn ($ssh, $host, $root, $port) => new ApplicationRuntime(
+                ['sh', '-lc', "cd /app/{$root} && exec npm start"],
+                'package-script',
+                $root,
+                '/app/'.$root,
+            ));
+        $this->app->instance(ContainerApplicationRuntimeService::class, $runtime);
+        $ssh = $this->sshForPackages([
+            'apps/api' => [
+                'scripts' => ['start' => 'node server.js'],
+                'dependencies' => ['express' => '^5.0'],
+            ],
+            'packages/web' => [
+                'scripts' => ['start' => 'next start'],
+                'dependencies' => ['next' => '^15.0'],
+            ],
+        ]);
+
+        $topology = (new ContainerNodeWorkloadTopologyService)->resolve(
+            $this->nodeService('express', 'vite-spa'),
+            $ssh,
+            '/srv/app',
+        );
+
+        $this->assertSame('split_web_api', $topology['topology']);
+        $this->assertSame('packages/web', $topology['frontend']['root']);
+        $this->assertSame('nextjs', $topology['frontend_type']);
+    }
+
+    #[Test]
     public function it_names_the_mobile_directory_when_an_override_points_at_it(): void
     {
         $ssh = $this->sshForPackages([
@@ -150,8 +201,8 @@ class ContainerNodeWorkloadTopologyServiceTest extends TestCase
                 'scripts' => ['start' => 'node server.js'],
                 'dependencies' => ['express' => '^5.0'],
             ],
-            'apps/mobile' => ['devDependencies' => ['vite' => '^7.0']],
             'apps/web' => ['devDependencies' => ['vite' => '^7.0']],
+            'frontend' => ['devDependencies' => ['vite' => '^7.0']],
         ]);
 
         $this->expectException(\DomainException::class);
@@ -172,12 +223,26 @@ class ContainerNodeWorkloadTopologyServiceTest extends TestCase
 
     private function nodeService(string $framework, string $frontend): Service
     {
-        $template = new ContainerTemplate(['slug' => 'nodejs']);
+        $template = new ContainerTemplate(['slug' => 'nodejs', 'default_port' => 3000]);
         $service = new Service([
             'service_meta' => compact('framework', 'frontend'),
         ]);
         $service->setRelation('product', new Product);
         $service->product->setRelation('containerTemplate', $template);
+
+        return $service;
+    }
+
+    /**
+     * @param  array<string, mixed>  $topology
+     */
+    private function serviceWithTopology(array $topology, string $frontend): Service
+    {
+        $service = $this->nodeService('express', $frontend);
+        $service->service_meta = array_merge($service->service_meta, [
+            'frontend' => $frontend,
+            'node_workloads' => $topology,
+        ]);
 
         return $service;
     }

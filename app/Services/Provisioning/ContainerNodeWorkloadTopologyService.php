@@ -13,6 +13,29 @@ class ContainerNodeWorkloadTopologyService
 
     public const FRONTEND_PORT = 3000;
 
+    /** @var list<string> */
+    private const BACKEND_CANDIDATES = ['apps/api', 'api', 'backend', 'server', 'apps/server', 'packages/api'];
+
+    /**
+     * Browser-app directories only. apps/mobile is never a Vite/Next host just
+     * because it sits next to the API — scanning it first used to abort deploys.
+     *
+     * @var list<string>
+     */
+    private const FRONTEND_CANDIDATES = [
+        'apps/web',
+        'packages/web',
+        'frontend',
+        'web',
+        'client',
+        'apps/frontend',
+        'apps/app',
+        'apps/site',
+        'www',
+        'site',
+        'apps/mobile',
+    ];
+
     /**
      * @return array<string, mixed>
      */
@@ -23,14 +46,48 @@ class ContainerNodeWorkloadTopologyService
         ?string $backendOverride = null,
         ?string $frontendOverride = null,
     ): array {
-        $meta = is_array($service->service_meta) ? $service->service_meta : [];
-        $frontend = strtolower((string) ($meta['frontend'] ?? 'none'));
-        if (($service->effectiveContainerTemplate()?->slug ?? '') !== 'nodejs' || $frontend === 'none') {
+        if (($service->effectiveContainerTemplate()?->slug ?? '') !== 'nodejs') {
             return [
                 'schema' => self::SCHEMA,
                 'topology' => 'single',
                 'selection_source' => 'stack',
             ];
+        }
+
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        $frontend = strtolower((string) ($meta['frontend'] ?? 'none'));
+        $framework = (string) ($meta['framework'] ?? 'other');
+        $discovered = $this->discoverPackageRoots($ssh, $hostAppPath);
+        $backendCandidates = $this->uniqueRoots([...self::BACKEND_CANDIDATES, ...$discovered]);
+        $frontendCandidates = $this->uniqueRoots([...self::FRONTEND_CANDIDATES, ...$discovered]);
+
+        if ($frontend === 'none') {
+            $backendRoot = $this->resolveRoot(
+                $ssh,
+                $hostAppPath,
+                'backend',
+                $backendOverride,
+                $backendCandidates,
+                fn (array $package): bool => $this->isBackend($package, $framework),
+                required: $backendOverride !== null && trim((string) $backendOverride) !== '',
+            );
+            if ($backendRoot === null) {
+                return [
+                    'schema' => self::SCHEMA,
+                    'topology' => 'single',
+                    'selection_source' => 'stack',
+                ];
+            }
+
+            return $this->apiOnlyTopology(
+                $service,
+                $ssh,
+                $hostAppPath,
+                $backendRoot,
+                $this->mobileRoots($ssh, $hostAppPath, $discovered),
+                'stack',
+                $frontend,
+            );
         }
 
         if (! in_array($frontend, ['nextjs', 'vite-spa'], true)) {
@@ -42,71 +99,64 @@ class ContainerNodeWorkloadTopologyService
             $hostAppPath,
             'backend',
             $backendOverride,
-            ['apps/api', 'api', 'backend', 'server', 'apps/server'],
-            fn (array $package): bool => $this->isBackend($package, (string) ($meta['framework'] ?? 'other')),
+            $backendCandidates,
+            fn (array $package): bool => $this->isBackend($package, $framework),
+            required: true,
         );
-        $frontendRoot = $this->resolveRoot(
+        $browser = $this->resolveBrowserFrontend(
             $ssh,
             $hostAppPath,
-            'frontend',
+            $frontend,
             $frontendOverride,
-            ['apps/mobile', 'apps/web', 'frontend', 'web', 'client', 'apps/app'],
-            fn (array $package): bool => $this->isWebFrontend($package, $frontend),
-            fn (array $rejected) => $this->explainMissingWebFrontend($rejected),
+            $frontendCandidates,
         );
 
-        if ($backendRoot === $frontendRoot) {
-            throw new \DomainException('Backend and frontend roots must be different directories.');
-        }
-        $backendPackage = $this->packageAt($ssh, $hostAppPath, $backendRoot);
-        $frontendPackage = $this->packageAt($ssh, $hostAppPath, $frontendRoot);
-        $versionService = app(ContainerNodeVersionService::class);
+        if ($browser !== null) {
+            if ($backendRoot === $browser['root']) {
+                throw new \DomainException('Backend and frontend roots must be different directories.');
+            }
 
-        $backendRuntime = app(ContainerApplicationRuntimeService::class)->detectNodeRuntimeAt(
+            return $this->splitTopology(
+                $ssh,
+                $hostAppPath,
+                $backendRoot,
+                $browser,
+                ($backendOverride || $frontendOverride) ? 'manual' : 'auto',
+                $framework,
+            );
+        }
+
+        return $this->apiOnlyTopology(
+            $service,
             $ssh,
             $hostAppPath,
             $backendRoot,
-            self::BACKEND_PORT,
-            includeBootstrap: false,
+            $this->mobileRoots($ssh, $hostAppPath, $discovered),
+            'auto_api',
+            $frontend,
         );
-        $frontendRuntime = app(ContainerApplicationRuntimeService::class)->detectNodeRuntimeAt(
-            $ssh,
-            $hostAppPath,
-            $frontendRoot,
-            self::FRONTEND_PORT,
-            includeBootstrap: false,
-        );
+    }
 
-        return [
-            'schema' => self::SCHEMA,
-            'topology' => 'split_web_api',
-            'selection_source' => ($backendOverride || $frontendOverride) ? 'manual' : 'auto',
-            'framework' => (string) ($meta['framework'] ?? 'other'),
-            'frontend_type' => $frontend,
-            'backend' => [
-                'root' => $backendRoot,
-                'port' => self::BACKEND_PORT,
-                'runtime_source' => $backendRuntime->source,
-                'runtime_label' => $backendRuntime->label,
-                'working_directory' => $backendRuntime->containerWorkdir,
-                'start_command' => $backendRuntime->command,
-                'node_engine' => $versionService->constraintFromPackageJson(
-                    json_encode($backendPackage, JSON_THROW_ON_ERROR),
-                ),
-            ],
-            'frontend' => [
-                'root' => $frontendRoot,
-                'port' => self::FRONTEND_PORT,
-                'runtime_source' => $frontendRuntime->source,
-                'runtime_label' => $frontendRuntime->label,
-                'working_directory' => $frontendRuntime->containerWorkdir,
-                'start_command' => $frontendRuntime->command,
-                'node_engine' => $versionService->constraintFromPackageJson(
-                    json_encode($frontendPackage, JSON_THROW_ON_ERROR),
-                ),
-            ],
-            'resolved_at' => now()->toIso8601String(),
-        ];
+    /**
+     * True when this service should expose a dedicated API hostname: the stack
+     * has no browser frontend, including when a mobile app was skipped.
+     */
+    public static function isApiOnly(Service $service): bool
+    {
+        if (($service->effectiveContainerTemplate()?->slug ?? '') !== 'nodejs') {
+            return false;
+        }
+
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        if (data_get($meta, 'node_workloads.topology') === 'split_web_api') {
+            return false;
+        }
+
+        if ((string) data_get($meta, 'frontend', 'none') === 'none') {
+            return true;
+        }
+
+        return data_get($meta, 'node_workloads.selection_source') === 'auto_api';
     }
 
     /**
@@ -117,14 +167,133 @@ class ContainerNodeWorkloadTopologyService
         $service->refresh();
         $meta = is_array($service->service_meta) ? $service->service_meta : [];
         $meta['node_workloads'] = $topology;
+        $backendRoot = data_get($topology, 'backend.root');
+        if (is_string($backendRoot) && trim($backendRoot) !== '' && empty($meta['node_backend_root'])) {
+            $meta['node_backend_root'] = $backendRoot;
+        }
         $service->update(['service_meta' => $meta]);
     }
 
     /**
+     * @param  array<string, mixed>  $browser
+     * @return array<string, mixed>
+     */
+    private function splitTopology(
+        SSHService $ssh,
+        string $hostAppPath,
+        string $backendRoot,
+        array $browser,
+        string $selectionSource,
+        string $framework,
+    ): array {
+        $backendPackage = $this->packageAt($ssh, $hostAppPath, $backendRoot);
+        $frontendPackage = $this->packageAt($ssh, $hostAppPath, $browser['root']);
+        $versionService = app(ContainerNodeVersionService::class);
+        $backendRuntime = app(ContainerApplicationRuntimeService::class)->detectNodeRuntimeAt(
+            $ssh,
+            $hostAppPath,
+            $backendRoot,
+            self::BACKEND_PORT,
+            includeBootstrap: false,
+        );
+        $frontendRuntime = app(ContainerApplicationRuntimeService::class)->detectNodeRuntimeAt(
+            $ssh,
+            $hostAppPath,
+            $browser['root'],
+            self::FRONTEND_PORT,
+            includeBootstrap: false,
+        );
+
+        return [
+            'schema' => self::SCHEMA,
+            'topology' => 'split_web_api',
+            'selection_source' => $selectionSource,
+            'framework' => $framework,
+            'frontend_type' => $browser['type'],
+            'backend' => $this->workloadPayload($backendRoot, self::BACKEND_PORT, $backendRuntime, $backendPackage, $versionService),
+            'frontend' => $this->workloadPayload($browser['root'], self::FRONTEND_PORT, $frontendRuntime, $frontendPackage, $versionService),
+            'resolved_at' => now()->toIso8601String(),
+        ];
+    }
+
+    /**
+     * @param  list<string>  $mobileRoots
+     * @return array<string, mixed>
+     */
+    private function apiOnlyTopology(
+        Service $service,
+        SSHService $ssh,
+        string $hostAppPath,
+        string $backendRoot,
+        array $mobileRoots,
+        string $selectionSource,
+        string $requestedFrontend,
+    ): array {
+        $backendPackage = $this->packageAt($ssh, $hostAppPath, $backendRoot);
+        $versionService = app(ContainerNodeVersionService::class);
+        $backendRuntime = app(ContainerApplicationRuntimeService::class)->detectNodeRuntimeAt(
+            $ssh,
+            $hostAppPath,
+            $backendRoot,
+            (int) ($service->effectiveContainerTemplate()?->default_port ?? 3000),
+            includeBootstrap: false,
+        );
+        $notes = [];
+        if ($mobileRoots !== []) {
+            $notes[] = 'Skipped Expo/React Native at '.implode(', ', $mobileRoots)
+                .'. The API at '.$backendRoot.' is what this host runs; build the mobile app with a mobile build service.';
+        } elseif ($requestedFrontend !== 'none') {
+            $notes[] = 'No browser frontend matched the selected stack. The API at '.$backendRoot.' is running on this host.';
+        }
+
+        return [
+            'schema' => self::SCHEMA,
+            'topology' => 'single',
+            'selection_source' => $selectionSource,
+            'frontend_type' => 'none',
+            'requested_frontend' => $requestedFrontend,
+            'backend' => $this->workloadPayload(
+                $backendRoot,
+                (int) ($service->effectiveContainerTemplate()?->default_port ?? 3000),
+                $backendRuntime,
+                $backendPackage,
+                $versionService,
+            ),
+            'skipped_mobile' => $mobileRoots,
+            'notes' => $notes,
+            'resolved_at' => now()->toIso8601String(),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $package
+     * @return array<string, mixed>
+     */
+    private function workloadPayload(
+        string $root,
+        int $port,
+        ApplicationRuntime $runtime,
+        ?array $package,
+        ContainerNodeVersionService $versionService,
+    ): array {
+        return [
+            'root' => $root,
+            'port' => $port,
+            'runtime_source' => $runtime->source,
+            'runtime_label' => $runtime->label,
+            'working_directory' => $runtime->containerWorkdir,
+            'start_command' => $runtime->command,
+            'node_engine' => $package === null
+                ? null
+                : $versionService->constraintFromPackageJson(
+                    json_encode($package, JSON_THROW_ON_ERROR),
+                ),
+        ];
+    }
+
+    /**
      * @param  list<string>  $candidates
-     * @param  (callable(array<string, array<string, mixed>>): void)|null  $explainNoMatch
-     *                                                                                      Given the directories that hold an application but were not accepted,
-     *                                                                                      may throw a more precise reason than "nothing matched".
+     * @param  (callable(array<string, mixed>): bool)  $accepts
      */
     private function resolveRoot(
         SSHService $ssh,
@@ -133,16 +302,12 @@ class ContainerNodeWorkloadTopologyService
         ?string $override,
         array $candidates,
         callable $accepts,
-        ?callable $explainNoMatch = null,
-    ): string {
+        bool $required,
+    ): ?string {
         if ($override !== null && trim($override) !== '') {
             $root = $this->sanitizeRelativeRoot($override);
             $package = $this->packageAt($ssh, $hostAppPath, $root);
             if ($package === null || ! $accepts($package)) {
-                if ($explainNoMatch !== null && $package !== null) {
-                    $explainNoMatch([$root => $package]);
-                }
-
                 throw new \DomainException("The selected {$role} root '{$root}' is not a valid {$role} application.");
             }
 
@@ -150,21 +315,15 @@ class ContainerNodeWorkloadTopologyService
         }
 
         $matches = [];
-        $rejected = [];
         foreach ($candidates as $candidate) {
             $package = $this->packageAt($ssh, $hostAppPath, $candidate);
-            if ($package === null) {
-                continue;
-            }
-            if ($accepts($package)) {
+            if ($package !== null && $accepts($package)) {
                 $matches[] = $candidate;
-            } else {
-                $rejected[$candidate] = $package;
             }
         }
         if ($matches === []) {
-            if ($explainNoMatch !== null) {
-                $explainNoMatch($rejected);
+            if (! $required) {
+                return null;
             }
 
             throw new \DomainException(
@@ -174,6 +333,71 @@ class ContainerNodeWorkloadTopologyService
         if (count($matches) > 1) {
             throw new \DomainException(
                 'Multiple '.$role.' applications were detected ('.implode(', ', $matches)
+                .'). Choose the intended directory in Advanced roots.'
+            );
+        }
+
+        return $matches[0];
+    }
+
+    /**
+     * @param  list<string>  $candidates
+     * @return array{root: string, type: string}|null
+     */
+    private function resolveBrowserFrontend(
+        SSHService $ssh,
+        string $hostAppPath,
+        string $requested,
+        ?string $override,
+        array $candidates,
+    ): ?array {
+        if ($override !== null && trim($override) !== '') {
+            $root = $this->sanitizeRelativeRoot($override);
+            $package = $this->packageAt($ssh, $hostAppPath, $root);
+            if ($package === null) {
+                throw new \DomainException("The selected frontend root '{$root}' is not a valid frontend application.");
+            }
+            if ($this->isMobileBundle($package)) {
+                throw new \DomainException(sprintf(
+                    "The frontend at '%s' is Expo/React Native, not a browser application. Deploy its API here"
+                    .' and build the mobile app through a mobile build service, or point Advanced roots at the'
+                    .' browser application if the repository also ships one.',
+                    $root,
+                ));
+            }
+            $kind = $this->browserFrontendKind($package);
+            if ($kind === null) {
+                throw new \DomainException("The selected frontend root '{$root}' is not a valid frontend application.");
+            }
+
+            return ['root' => $root, 'type' => $kind];
+        }
+
+        $preferred = [];
+        $other = [];
+        foreach ($candidates as $candidate) {
+            $package = $this->packageAt($ssh, $hostAppPath, $candidate);
+            if ($package === null) {
+                continue;
+            }
+            $kind = $this->browserFrontendKind($package);
+            if ($kind === null) {
+                continue;
+            }
+            if ($kind === $requested) {
+                $preferred[] = ['root' => $candidate, 'type' => $kind];
+            } else {
+                $other[] = ['root' => $candidate, 'type' => $kind];
+            }
+        }
+
+        $matches = $preferred !== [] ? $preferred : $other;
+        if ($matches === []) {
+            return null;
+        }
+        if (count($matches) > 1) {
+            throw new \DomainException(
+                'Multiple frontend applications were detected ('.implode(', ', array_column($matches, 'root'))
                 .'). Choose the intended directory in Advanced roots.'
             );
         }
@@ -191,6 +415,78 @@ class ContainerNodeWorkloadTopologyService
         }
 
         return $root;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function discoverPackageRoots(SSHService $ssh, string $hostAppPath): array
+    {
+        $host = rtrim($hostAppPath, '/');
+        $output = trim($ssh->exec(
+            'find '.escapeshellarg($host)
+            .' -maxdepth 4 \\( -name node_modules -o -name .git -o -name dist -o -name .next'
+            .' -o -name ios -o -name android -o -name vendor \\) -prune -o -type f -name package.json -print'
+            .' 2>/dev/null | head -n 40',
+            20,
+        ));
+        if ($output === '') {
+            return [];
+        }
+
+        $roots = [];
+        foreach (preg_split('/\r\n|\n|\r/', $output) ?: [] as $line) {
+            $line = str_replace('\\', '/', trim($line));
+            if ($line === '' || ! str_ends_with($line, '/package.json')) {
+                continue;
+            }
+            $relative = ltrim(substr($line, strlen($host)), '/');
+            $relative = preg_replace('#/package\.json$#', '', $relative) ?? $relative;
+            if ($relative === '' || $relative === '.') {
+                continue;
+            }
+            try {
+                $roots[] = $this->sanitizeRelativeRoot($relative);
+            } catch (\DomainException) {
+                continue;
+            }
+        }
+
+        return $this->uniqueRoots($roots);
+    }
+
+    /**
+     * @param  list<string>  $discovered
+     * @return list<string>
+     */
+    private function mobileRoots(SSHService $ssh, string $hostAppPath, array $discovered): array
+    {
+        $roots = [];
+        foreach ($this->uniqueRoots(['apps/mobile', 'mobile', 'apps/app', ...$discovered]) as $root) {
+            $package = $this->packageAt($ssh, $hostAppPath, $root);
+            if ($package !== null && $this->isMobileBundle($package)) {
+                $roots[] = $root;
+            }
+        }
+
+        return $roots;
+    }
+
+    /**
+     * @param  list<string>  $roots
+     * @return list<string>
+     */
+    private function uniqueRoots(array $roots): array
+    {
+        $seen = [];
+        foreach ($roots as $root) {
+            if (! is_string($root) || $root === '') {
+                continue;
+            }
+            $seen[$root] = $root;
+        }
+
+        return array_values($seen);
     }
 
     /**
@@ -224,40 +520,23 @@ class ContainerNodeWorkloadTopologyService
         $start = trim((string) ($package['scripts']['start'] ?? ''));
         $dev = trim((string) ($package['scripts']['dev'] ?? ''));
 
-        return $frameworkMatches && ($start !== '' || $dev !== '');
+        return $frameworkMatches && ($start !== '' || $dev !== '') && ! $this->isMobileBundle($package);
     }
 
     /**
      * @param  array<string, mixed>  $package
      */
-    private function isWebFrontend(array $package, string $frontend): bool
+    private function browserFrontendKind(array $package): ?string
     {
         $dependencies = $this->dependencies($package);
-
-        return $frontend === 'nextjs'
-            ? isset($dependencies['next'])
-            : isset($dependencies['vite']);
-    }
-
-    /**
-     * A repository may ship a mobile app beside its web app, and apps/mobile is
-     * scanned first. Rejecting that directory must not end the search, so the
-     * mobile bundle is only reported once no browser frontend was found at all.
-     *
-     * @param  array<string, array<string, mixed>>  $rejected
-     */
-    private function explainMissingWebFrontend(array $rejected): void
-    {
-        foreach ($rejected as $root => $package) {
-            if ($this->isMobileBundle($package)) {
-                throw new \DomainException(sprintf(
-                    "The frontend at '%s' is Expo/React Native, not a browser application. Deploy its API here"
-                    .' and build the mobile app through a mobile build service, or point Advanced roots at the'
-                    .' browser application if the repository also ships one.',
-                    $root,
-                ));
-            }
+        if (isset($dependencies['next'])) {
+            return 'nextjs';
         }
+        if (isset($dependencies['vite'])) {
+            return 'vite-spa';
+        }
+
+        return null;
     }
 
     /**

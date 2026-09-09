@@ -123,7 +123,12 @@ class ContainerNodeBuildService
             );
         }
 
-        $packageJsonPath = $hostAppPath.'/package.json';
+        $pinnedRoot = is_string(data_get($topology, 'backend.root'))
+            ? (string) data_get($topology, 'backend.root')
+            : '';
+        $packageJsonPath = $pinnedRoot !== ''
+            ? $hostAppPath.'/'.$pinnedRoot.'/package.json'
+            : $hostAppPath.'/package.json';
         if (trim($ssh->exec('test -f '.escapeshellarg($packageJsonPath).' && echo yes || echo no', 10)) !== 'yes') {
             return [
                 'state' => 'placeholder',
@@ -138,12 +143,20 @@ class ContainerNodeBuildService
         $this->persistState($service, 'building');
 
         try {
-            $runtime = $this->runtimeService->detectNodeRuntime(
-                $ssh,
-                $hostAppPath,
-                (int) ($service->effectiveContainerTemplate()?->default_port ?? 3000),
-                includeBootstrap: false,
-            );
+            $runtime = $pinnedRoot !== ''
+                ? $this->runtimeService->detectNodeRuntimeAt(
+                    $ssh,
+                    $hostAppPath,
+                    $pinnedRoot,
+                    (int) ($service->effectiveContainerTemplate()?->default_port ?? 3000),
+                    includeBootstrap: false,
+                )
+                : $this->runtimeService->detectNodeRuntime(
+                    $ssh,
+                    $hostAppPath,
+                    (int) ($service->effectiveContainerTemplate()?->default_port ?? 3000),
+                    includeBootstrap: false,
+                );
             $relativeRoot = $this->runtimeService->relativeDirUnderApp($runtime->containerWorkdir);
             $messages = $this->stackCommands->buildNodeApplication(
                 $service,

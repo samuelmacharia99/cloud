@@ -133,8 +133,7 @@ class ContainerDomainBindingService
         $service->loadMissing(['user', 'containerDeployment.node']);
         $deployment = $service->containerDeployment;
         if (($service->effectiveContainerTemplate()?->slug ?? '') !== 'nodejs'
-            || (string) data_get($service->service_meta, 'frontend', 'none') !== 'none'
-            || data_get($service->service_meta, 'node_workloads.topology') === 'split_web_api') {
+            || ! ContainerNodeWorkloadTopologyService::isApiOnly($service)) {
             throw new \DomainException(
                 'Dedicated API domains require an API-only Node.js service without a browser frontend.'
             );

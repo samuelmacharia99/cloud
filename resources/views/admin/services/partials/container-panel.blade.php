@@ -66,6 +66,15 @@
             </div>
         @endif
 
+        @if (is_array($meta['node_workloads']['notes'] ?? null) && $meta['node_workloads']['notes'] !== [])
+            <div class="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-4 py-3">
+                <p class="text-sm font-semibold text-amber-950 dark:text-amber-100">Runtime settled on the API</p>
+                @foreach ($meta['node_workloads']['notes'] as $note)
+                    <p class="mt-1 text-sm text-amber-900 dark:text-amber-200">{{ $note }}</p>
+                @endforeach
+            </div>
+        @endif
+
         @if ($deployment->migrated_at)
             <div class="rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 px-4 py-3 text-sm text-blue-900 dark:text-blue-100">
                 Last migrated {{ $deployment->migrated_at->format('M d, Y H:i') }}

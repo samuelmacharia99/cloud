@@ -84,6 +84,14 @@
                 <div class="p-8">
                     <!-- Overview Tab -->
                     <div x-show="activeTab === 'overview'" class="space-y-8">
+                        @if (is_array(data_get($service->service_meta, 'node_workloads.notes')) && data_get($service->service_meta, 'node_workloads.notes') !== [])
+                            <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-800 dark:bg-amber-950/30">
+                                <p class="text-sm font-semibold text-amber-950 dark:text-amber-100">This host is running the API</p>
+                                @foreach (data_get($service->service_meta, 'node_workloads.notes') as $note)
+                                    <p class="mt-1 text-sm text-amber-900 dark:text-amber-200">{{ $note }}</p>
+                                @endforeach
+                            </div>
+                        @endif
                         <!-- Quick Actions -->
                         <div class="flex gap-3 flex-wrap items-center">
                             @if ($deployment->isRunning())
@@ -296,9 +304,7 @@
                         <div class="space-y-6">
                             @php
                                 $domainTemplate = $service->effectiveContainerTemplate() ?? $service->product?->containerTemplate;
-                                $isApiOnlyNode = ($domainTemplate?->slug ?? '') === 'nodejs'
-                                    && (string) data_get($service->service_meta, 'frontend', 'none') === 'none'
-                                    && data_get($service->service_meta, 'node_workloads.topology') !== 'split_web_api';
+                                $isApiOnlyNode = \App\Services\Provisioning\ContainerNodeWorkloadTopologyService::isApiOnly($service);
                                 $apiEndpointDomain = $isApiOnlyNode
                                     ? $deployment->domains->firstWhere('purpose', \App\Models\ContainerDomain::PURPOSE_API)
                                     : null;

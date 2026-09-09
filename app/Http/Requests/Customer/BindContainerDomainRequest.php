@@ -4,6 +4,7 @@ namespace App\Http\Requests\Customer;
 
 use App\Models\ContainerDomain;
 use App\Models\Service;
+use App\Services\Provisioning\ContainerNodeWorkloadTopologyService;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
@@ -59,9 +60,7 @@ class BindContainerDomainRequest extends FormRequest
                 }
                 $service = $this->route('service');
                 if (! $service instanceof Service
-                    || ($service->effectiveContainerTemplate()?->slug ?? '') !== 'nodejs'
-                    || (string) data_get($service->service_meta, 'frontend', 'none') !== 'none'
-                    || data_get($service->service_meta, 'node_workloads.topology') === 'split_web_api') {
+                    || ! ContainerNodeWorkloadTopologyService::isApiOnly($service)) {
                     $validator->errors()->add(
                         'purpose',
                         'Dedicated API domains are available only for API-only Node.js services without a browser frontend.'

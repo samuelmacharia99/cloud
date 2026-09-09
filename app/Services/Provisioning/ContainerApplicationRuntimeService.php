@@ -124,9 +124,8 @@ class ContainerApplicationRuntimeService
             'src',
             'apps/web',
             'apps/api',
-            'apps/mobile',
-            'apps/app',
             'packages/web',
+            'packages/api',
         ];
     }
 
