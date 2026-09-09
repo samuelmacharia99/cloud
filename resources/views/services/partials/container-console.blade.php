@@ -443,7 +443,7 @@
                                                     <button type="button" @click="showDbPassword = !showDbPassword" class="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline">
                                                         <span x-text="showDbPassword ? 'Hide' : 'Show'"></span>
                                                     </button>
-                                                    <button type="button" onclick="navigator.clipboard.writeText(@js($databaseContext['password']))" class="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline">
+                                                    <button type="button" data-copy-value="{{ $databaseContext['password'] }}" onclick="navigator.clipboard.writeText(this.dataset.copyValue)" class="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline">
                                                         Copy
                                                     </button>
                                                 </div>

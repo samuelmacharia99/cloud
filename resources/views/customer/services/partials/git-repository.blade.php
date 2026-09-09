@@ -230,7 +230,7 @@
                     <p class="text-xs font-semibold text-amber-900 dark:text-amber-200">Copy your webhook secret now — it will not be shown again.</p>
                     <div class="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
                         <code class="flex-1 font-mono text-xs break-all bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-800 rounded px-3 py-2">{{ session('auto_deploy_secret') }}</code>
-                        <button type="button" onclick="navigator.clipboard.writeText(@js(session('auto_deploy_secret')))" class="px-3 py-2 text-xs font-medium rounded-lg bg-amber-600 hover:bg-amber-700 text-white">Copy</button>
+                        <button type="button" data-copy-value="{{ session('auto_deploy_secret') }}" onclick="navigator.clipboard.writeText(this.dataset.copyValue)" class="px-3 py-2 text-xs font-medium rounded-lg bg-amber-600 hover:bg-amber-700 text-white">Copy</button>
                     </div>
                 </div>
             @endif
@@ -239,7 +239,7 @@
                 <label class="block text-[10px] font-semibold uppercase tracking-wider text-slate-500">Webhook URL</label>
                 <div class="flex flex-col sm:flex-row gap-2">
                     <input type="text" readonly value="{{ $autoDeploy['webhook_url'] }}" class="flex-1 font-mono text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2">
-                    <button type="button" onclick="navigator.clipboard.writeText(@js($autoDeploy['webhook_url']))" class="px-3 py-2 text-xs font-medium rounded-lg border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800">Copy URL</button>
+                    <button type="button" data-copy-value="{{ $autoDeploy['webhook_url'] }}" onclick="navigator.clipboard.writeText(this.dataset.copyValue)" class="px-3 py-2 text-xs font-medium rounded-lg border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800">Copy URL</button>
                 </div>
             </div>
 
