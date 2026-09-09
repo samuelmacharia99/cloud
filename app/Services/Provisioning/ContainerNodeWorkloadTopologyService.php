@@ -52,6 +52,7 @@ class ContainerNodeWorkloadTopologyService
             $frontendOverride,
             ['apps/mobile', 'apps/web', 'frontend', 'web', 'client', 'apps/app'],
             fn (array $package): bool => $this->isWebFrontend($package, $frontend),
+            fn (array $rejected) => $this->explainMissingWebFrontend($rejected),
         );
 
         if ($backendRoot === $frontendRoot) {
@@ -121,6 +122,9 @@ class ContainerNodeWorkloadTopologyService
 
     /**
      * @param  list<string>  $candidates
+     * @param  (callable(array<string, array<string, mixed>>): void)|null  $explainNoMatch
+     *                                                                                      Given the directories that hold an application but were not accepted,
+     *                                                                                      may throw a more precise reason than "nothing matched".
      */
     private function resolveRoot(
         SSHService $ssh,
@@ -129,11 +133,16 @@ class ContainerNodeWorkloadTopologyService
         ?string $override,
         array $candidates,
         callable $accepts,
+        ?callable $explainNoMatch = null,
     ): string {
         if ($override !== null && trim($override) !== '') {
             $root = $this->sanitizeRelativeRoot($override);
             $package = $this->packageAt($ssh, $hostAppPath, $root);
             if ($package === null || ! $accepts($package)) {
+                if ($explainNoMatch !== null && $package !== null) {
+                    $explainNoMatch([$root => $package]);
+                }
+
                 throw new \DomainException("The selected {$role} root '{$root}' is not a valid {$role} application.");
             }
 
@@ -141,13 +150,23 @@ class ContainerNodeWorkloadTopologyService
         }
 
         $matches = [];
+        $rejected = [];
         foreach ($candidates as $candidate) {
             $package = $this->packageAt($ssh, $hostAppPath, $candidate);
-            if ($package !== null && $accepts($package)) {
+            if ($package === null) {
+                continue;
+            }
+            if ($accepts($package)) {
                 $matches[] = $candidate;
+            } else {
+                $rejected[$candidate] = $package;
             }
         }
         if ($matches === []) {
+            if ($explainNoMatch !== null) {
+                $explainNoMatch($rejected);
+            }
+
             throw new \DomainException(
                 "No {$role} application matched the selected stack. Choose its repository directory in Advanced roots."
             );
@@ -214,17 +233,43 @@ class ContainerNodeWorkloadTopologyService
     private function isWebFrontend(array $package, string $frontend): bool
     {
         $dependencies = $this->dependencies($package);
-        if ((isset($dependencies['expo']) || isset($dependencies['react-native']))
-            && ! isset($dependencies['next'])
-            && ! isset($dependencies['vite'])) {
-            throw new \DomainException(
-                'The selected frontend is Expo/React Native, not a browser application. Deploy its API here and build the mobile app through a mobile build service.'
-            );
-        }
 
         return $frontend === 'nextjs'
             ? isset($dependencies['next'])
             : isset($dependencies['vite']);
+    }
+
+    /**
+     * A repository may ship a mobile app beside its web app, and apps/mobile is
+     * scanned first. Rejecting that directory must not end the search, so the
+     * mobile bundle is only reported once no browser frontend was found at all.
+     *
+     * @param  array<string, array<string, mixed>>  $rejected
+     */
+    private function explainMissingWebFrontend(array $rejected): void
+    {
+        foreach ($rejected as $root => $package) {
+            if ($this->isMobileBundle($package)) {
+                throw new \DomainException(sprintf(
+                    "The frontend at '%s' is Expo/React Native, not a browser application. Deploy its API here"
+                    .' and build the mobile app through a mobile build service, or point Advanced roots at the'
+                    .' browser application if the repository also ships one.',
+                    $root,
+                ));
+            }
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $package
+     */
+    private function isMobileBundle(array $package): bool
+    {
+        $dependencies = $this->dependencies($package);
+
+        return (isset($dependencies['expo']) || isset($dependencies['react-native']))
+            && ! isset($dependencies['next'])
+            && ! isset($dependencies['vite']);
     }
 
     /**

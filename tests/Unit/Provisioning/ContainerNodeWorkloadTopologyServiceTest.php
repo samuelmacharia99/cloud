@@ -79,6 +79,70 @@ class ContainerNodeWorkloadTopologyServiceTest extends TestCase
     }
 
     #[Test]
+    public function it_deploys_the_web_app_of_a_repository_that_also_ships_a_mobile_app(): void
+    {
+        $runtime = Mockery::mock(ContainerApplicationRuntimeService::class);
+        $runtime->shouldReceive('detectNodeRuntimeAt')
+            ->twice()
+            ->andReturnUsing(fn ($ssh, $host, $root, $port) => new ApplicationRuntime(
+                ['sh', '-lc', "cd /app/{$root} && exec npm start"],
+                'package-script',
+                $root,
+                '/app/'.$root,
+            ));
+        $this->app->instance(ContainerApplicationRuntimeService::class, $runtime);
+        $ssh = $this->sshForPackages([
+            'apps/api' => [
+                'scripts' => ['start' => 'node server.js'],
+                'dependencies' => ['express' => '^5.0'],
+            ],
+            // Scanned before apps/web, and must not end the search.
+            'apps/mobile' => [
+                'scripts' => ['start' => 'expo start'],
+                'dependencies' => ['expo' => '^54.0', 'react-native' => '^0.81'],
+            ],
+            'apps/web' => [
+                'scripts' => ['build' => 'vite build'],
+                'devDependencies' => ['vite' => '^7.0'],
+            ],
+        ]);
+
+        $topology = (new ContainerNodeWorkloadTopologyService)->resolve(
+            $this->nodeService('express', 'vite-spa'),
+            $ssh,
+            '/srv/app',
+        );
+
+        $this->assertSame('split_web_api', $topology['topology']);
+        $this->assertSame('apps/api', $topology['backend']['root']);
+        $this->assertSame('apps/web', $topology['frontend']['root']);
+    }
+
+    #[Test]
+    public function it_names_the_mobile_directory_when_an_override_points_at_it(): void
+    {
+        $ssh = $this->sshForPackages([
+            'apps/api' => [
+                'scripts' => ['start' => 'node server.js'],
+                'dependencies' => ['express' => '^5.0'],
+            ],
+            'apps/mobile' => [
+                'scripts' => ['start' => 'expo start'],
+                'dependencies' => ['expo' => '^54.0', 'react-native' => '^0.81'],
+            ],
+        ]);
+
+        $this->expectException(\DomainException::class);
+        $this->expectExceptionMessage("The frontend at 'apps/mobile' is Expo/React Native");
+        (new ContainerNodeWorkloadTopologyService)->resolve(
+            $this->nodeService('express', 'vite-spa'),
+            $ssh,
+            '/srv/app',
+            frontendOverride: 'apps/mobile',
+        );
+    }
+
+    #[Test]
     public function it_requires_an_override_when_multiple_frontends_match(): void
     {
         $ssh = $this->sshForPackages([
