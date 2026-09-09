@@ -165,6 +165,8 @@ class ContainerDeploymentService
             $existingDeployment = ContainerDeployment::where('service_id', $service->id)
                 ->orderByDesc('id')
                 ->first();
+            $replaceExistingContainers = $existingDeployment !== null
+                && $existingDeployment->status !== 'terminated';
             if (($template->slug ?? '') === 'nodejs' && $options->isRedeploy && $existingDeployment) {
                 $nodeRedeployRollback = [
                     'compose' => (string) ($existingDeployment->docker_compose_content ?? ''),
@@ -226,15 +228,26 @@ class ContainerDeploymentService
                             $service->update(['node_id' => $lockedNode->id]);
                         }
 
-                        $port = $this->assignPort($node);
-                        $envVars = $this->buildEnvironmentVariables($template, $envValues, $service, $databaseTemplate, $port, $containerName);
-
                         // Always reuse the most recent deployment row for this service.
                         // Using an older row can violate unique(container_name) during redeploy.
                         $existingDeployment = ContainerDeployment::where('service_id', $service->id)
                             ->orderByDesc('id')
                             ->lockForUpdate()
                             ->first();
+
+                        $preferredPort = null;
+                        $ignoreDeploymentIds = [];
+                        if ($existingDeployment) {
+                            $ignoreDeploymentIds[] = (int) $existingDeployment->id;
+                            $existingPort = (int) ($existingDeployment->assigned_port ?? 0);
+                            if ($existingPort > 0 && (int) $existingDeployment->node_id === (int) $lockedNode->id) {
+                                $preferredPort = $existingPort;
+                            }
+                        }
+
+                        $port = $this->assignPort($lockedNode, $preferredPort, $ignoreDeploymentIds);
+                        $envVars = $this->buildEnvironmentVariables($template, $envValues, $service, $databaseTemplate, $port, $containerName);
+
                         if ($existingDeployment) {
                             $existingDeployment->update(array_merge([
                                 'node_id' => $node->id,
@@ -303,7 +316,7 @@ class ContainerDeploymentService
                     $this->recordDeploymentEvent($service, $deployment, 'database_volume_reset', [
                         'container_name' => $containerName,
                     ]);
-                } elseif ($options->isRedeploy && ($template->slug ?? '') !== 'nodejs') {
+                } elseif (($options->isRedeploy || $replaceExistingContainers) && ($template->slug ?? '') !== 'nodejs') {
                     $this->tearDownStack($ssh, $containerPath, removeVolumes: false);
                 }
 
@@ -361,7 +374,7 @@ class ContainerDeploymentService
                     }
                 }
 
-                $applicationRuntime = $this->resolveApplicationRuntime($ssh, $template, $hostAppPath);
+                $applicationRuntime = $this->resolveApplicationRuntime($ssh, $template, $hostAppPath, $nodeTopology);
                 $laravelDocumentRoot = ($template->slug ?? null) === 'laravel' && $hostAppPath
                     ? app(LaravelProjectPathResolver::class)->resolveDocumentRoot($ssh, $hostAppPath)
                     : null;
@@ -397,7 +410,7 @@ class ContainerDeploymentService
                         operationAlreadyLocked: true,
                     );
                 }
-                if ($options->isRedeploy && ($template->slug ?? '') === 'nodejs') {
+                if (($options->isRedeploy || $replaceExistingContainers) && ($template->slug ?? '') === 'nodejs') {
                     $nodeRedeployCutoverStarted = true;
                     $this->recordDeploymentEvent($service, $deployment, 'node_cutover_started', [
                         'topology' => $nodeTopology['topology'] ?? 'single',
@@ -430,6 +443,41 @@ class ContainerDeploymentService
                     app(StaticSiteDocrootService::class)->ensureNginxConfigFile($ssh, $containerName);
                 }
 
+                $availablePort = $this->ensurePublishedPortIsAvailable(
+                    $ssh,
+                    $node,
+                    $deployment,
+                    (int) $port,
+                    $containerName,
+                    $containerPath,
+                );
+                if ($availablePort !== (int) $port) {
+                    $port = $availablePort;
+                    $envVars['APP_PORT'] = (string) $port;
+                    $composeYaml = $this->renderCompose(
+                        $template,
+                        $containerName,
+                        $port,
+                        $envVars,
+                        $databaseTemplate,
+                        $deployment,
+                        $selectedVersion,
+                        $hostAppPath,
+                        $applicationRuntime,
+                        $laravelDocumentRoot,
+                        nodeTopology: $nodeTopology,
+                    );
+                    $deployment->update([
+                        'assigned_port' => $port,
+                        'env_values' => $envVars,
+                        'docker_compose_content' => $composeYaml,
+                    ]);
+                    $ssh->upload($composeYaml, $containerPath.'/docker-compose.yml');
+                    $this->recordDeploymentEvent($service, $deployment, 'port_reassigned', [
+                        'assigned_port' => $port,
+                    ]);
+                }
+
                 // Deploy container
                 $composeTimeout = $this->composeUpTimeoutSeconds($template);
                 $this->recordDeploymentEvent($service, $deployment, 'compose_up_started', [
@@ -443,6 +491,7 @@ class ContainerDeploymentService
                     $containerPath,
                     $this->runtimeImages->usesRuntimeImage($template),
                     timeoutSeconds: $composeTimeout,
+                    containerName: $containerName,
                 );
 
                 // Host mount is the source of truth for /app; ensure placeholders after compose is up.
@@ -1981,18 +2030,44 @@ class ContainerDeploymentService
     }
 
     /**
-     * Find and assign an available port
+     * Find and assign an available port on this host.
+     *
+     * @param  list<int>  $ignoreDeploymentIds  Rows being replaced (reuse their port).
+     * @param  list<int>  $alsoUsedPorts  Host ports known to be bound outside the DB map.
      */
-    private function assignPort(Node $node): int
-    {
-        $usedPorts = ContainerDeployment::where('node_id', $node->id)
+    public function assignPort(
+        Node $node,
+        ?int $preferredPort = null,
+        array $ignoreDeploymentIds = [],
+        array $alsoUsedPorts = [],
+    ): int {
+        $usedQuery = ContainerDeployment::where('node_id', $node->id)
             ->whereNotNull('assigned_port')
-            ->lockForUpdate()
+            ->lockForUpdate();
+
+        $ignoreDeploymentIds = array_values(array_filter(array_map('intval', $ignoreDeploymentIds)));
+        if ($ignoreDeploymentIds !== []) {
+            $usedQuery->whereNotIn('id', $ignoreDeploymentIds);
+        }
+
+        $usedPorts = $usedQuery
             ->pluck('assigned_port')
-            ->toArray();
+            ->map(fn ($port) => (int) $port)
+            ->merge(array_map('intval', $alsoUsedPorts))
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($preferredPort !== null
+            && $preferredPort >= self::PORT_RANGE_START
+            && $preferredPort <= self::PORT_RANGE_END
+            && ! in_array($preferredPort, $usedPorts, true)
+        ) {
+            return $preferredPort;
+        }
 
         for ($port = self::PORT_RANGE_START; $port <= self::PORT_RANGE_END; $port++) {
-            if (! in_array($port, $usedPorts)) {
+            if (! in_array($port, $usedPorts, true)) {
                 return $port;
             }
         }
@@ -3505,6 +3580,8 @@ class ContainerDeploymentService
     {
         $composeFile = escapeshellarg($containerPath.'/docker-compose.yml');
         $pathArg = escapeshellarg($containerPath);
+        $project = basename(rtrim($containerPath, '/'));
+        $safeProject = preg_replace('/[^a-zA-Z0-9_.-]/', '', $project) ?: '';
 
         try {
             $exists = trim($ssh->exec("[ -f {$composeFile} ] && echo yes || echo no", 10));
@@ -3513,6 +3590,20 @@ class ContainerDeploymentService
                 @$ssh->exec(
                     "cd {$pathArg} && docker compose -f docker-compose.yml down {$volumeFlag}--remove-orphans",
                     self::DEPLOY_TIMEOUT
+                );
+                $this->waitForRemovingDockerContainers($ssh, $containerPath);
+            }
+
+            // Compose down is a no-op when the file is missing or the project name
+            // changed. Exact container_name leftovers still hold the published port.
+            if ($safeProject !== '') {
+                @$ssh->exec(
+                    'docker rm -f '
+                    .escapeshellarg($safeProject).' '
+                    .escapeshellarg($safeProject.'-db').' '
+                    .escapeshellarg($safeProject.'-mysql').' '
+                    .'2>/dev/null || true',
+                    60
                 );
                 $this->waitForRemovingDockerContainers($ssh, $containerPath);
             }
@@ -5825,18 +5916,28 @@ class ContainerDeploymentService
         return $dockerImage;
     }
 
+    public function composeUpCommand(
+        string $containerPath,
+        bool $localRuntimeImage,
+        bool $useExplicitComposeFile = false,
+    ): string {
+        $fileFlag = $useExplicitComposeFile ? ' -f docker-compose.yml' : '';
+        $pullFlag = $localRuntimeImage ? ' --pull never' : '';
+
+        return "cd {$containerPath} && docker compose{$fileFlag} up -d --remove-orphans{$pullFlag}";
+    }
+
     private function composeUp(
         SSHService $ssh,
         string $containerPath,
         bool $localRuntimeImage,
         bool $useExplicitComposeFile = false,
         int $timeoutSeconds = self::DEPLOY_TIMEOUT,
+        ?string $containerName = null,
     ): void {
         $this->ensureSharedDockerNetwork($ssh);
 
-        $fileFlag = $useExplicitComposeFile ? ' -f docker-compose.yml' : '';
-        $pullFlag = $localRuntimeImage ? ' --pull never' : '';
-        $command = "cd {$containerPath} && docker compose{$fileFlag} up -d{$pullFlag}";
+        $command = $this->composeUpCommand($containerPath, $localRuntimeImage, $useExplicitComposeFile);
         $timeoutSeconds = max(self::DEPLOY_TIMEOUT, $timeoutSeconds);
         $maxAttempts = 3;
         $lastError = null;
@@ -5871,6 +5972,26 @@ class ContainerDeploymentService
                     continue;
                 }
 
+                if ($this->isDockerHostPortAllocated($message)) {
+                    $busyPort = $this->dockerHostPortFromBindError($message);
+                    \Log::warning('Docker compose up hit a published port still allocated; reclaiming leftovers and retrying', [
+                        'container_path' => $containerPath,
+                        'port' => $busyPort,
+                        'attempt' => $attempt,
+                        'error' => $message,
+                    ]);
+                    if ($busyPort !== null) {
+                        $this->reclaimStalePublishedPort(
+                            $ssh,
+                            $containerPath,
+                            $busyPort,
+                            $containerName ?: basename(rtrim($containerPath, '/'))
+                        );
+                    }
+
+                    continue;
+                }
+
                 if ($this->isDockerContainerNameConflict($message)) {
                     $project = basename(rtrim($containerPath, '/'));
                     \Log::warning('Docker compose up hit a container name conflict; clearing leftovers and retrying', [
@@ -5891,6 +6012,16 @@ class ContainerDeploymentService
         if ($lastError && $this->isDockerContainerMarkedForRemoval($lastError->getMessage())) {
             throw new \RuntimeException(
                 'Docker is still removing a previous copy of this container. Wait a minute, then try Start or Redeploy stack again.',
+                0,
+                $lastError
+            );
+        }
+
+        if ($lastError && $this->isDockerHostPortAllocated($lastError->getMessage())) {
+            $busyPort = $this->dockerHostPortFromBindError($lastError->getMessage());
+
+            throw new \RuntimeException(
+                'Host port'.($busyPort ? ' '.$busyPort : '').' is still in use after removing this stack\'s leftovers. Retry deploy, or ask an operator to free the port.',
                 0,
                 $lastError
             );
@@ -5994,6 +6125,113 @@ class ContainerDeploymentService
 
         return str_contains($message, 'fully subnetted')
             || str_contains($message, 'all predefined address pools');
+    }
+
+    public function isDockerHostPortAllocated(string $message): bool
+    {
+        return preg_match('/port is already allocated|Bind for 0\.0\.0\.0:\d+ failed/i', $message) === 1;
+    }
+
+    public function dockerHostPortFromBindError(string $message): ?int
+    {
+        if (preg_match('/Bind for 0\.0\.0\.0:(\d+) failed/i', $message, $matches)) {
+            $port = (int) $matches[1];
+
+            return $port > 0 && $port <= 65535 ? $port : null;
+        }
+
+        return null;
+    }
+
+    /**
+     * Remove leftover containers from this stack that still publish the host port.
+     * Never deletes another customer's container.
+     */
+    public function reclaimStalePublishedPort(
+        SSHService $ssh,
+        string $containerPath,
+        int $port,
+        string $containerName,
+    ): void {
+        $port = max(1, min(65535, $port));
+        $safeName = preg_replace('/[^a-zA-Z0-9_.-]/', '', $containerName) ?: '';
+        $safeProject = preg_replace('/[^a-zA-Z0-9_.-]/', '', basename(rtrim($containerPath, '/'))) ?: $safeName;
+        if ($safeName === '' || $safeProject === '') {
+            return;
+        }
+
+        $nameFmt = escapeshellarg('{{.Name}}');
+        $labelFmt = escapeshellarg('{{index .Config.Labels "com.docker.compose.project"}}');
+        $script = 'port='.escapeshellarg((string) $port).'; '
+            .'name='.escapeshellarg($safeName).'; '
+            .'proj='.escapeshellarg($safeProject).'; '
+            .'ids=$(docker ps -aq --filter publish="$port" 2>/dev/null || true); '
+            .'for id in $ids; do '
+            .'[ -z "$id" ] && continue; '
+            .'cname=$(docker inspect --format '.$nameFmt.' "$id" 2>/dev/null | sed "s#^/##"); '
+            .'cproj=$(docker inspect --format '.$labelFmt.' "$id" 2>/dev/null || true); '
+            .'if [ "$cname" = "$name" ] || [ "$cname" = "${name}-db" ] || [ "$cname" = "${name}-mysql" ] '
+            .'|| [ "$cproj" = "$proj" ] || [ "$cproj" = "$name" ] '
+            .'|| echo "$cname" | grep -Eq "^[a-fA-F0-9]+_${proj}$"; then '
+            .'docker rm -f "$id" >/dev/null 2>&1 || true; '
+            .'fi; '
+            .'done; '
+            .'docker rm -f "$name" "${name}-db" "${name}-mysql" >/dev/null 2>&1 || true';
+
+        try {
+            $ssh->exec($script, 60, false);
+        } catch (\Throwable $e) {
+            \Log::warning('Failed to reclaim stale published port bindings', [
+                'container_path' => $containerPath,
+                'port' => $port,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    public function publishedPortIsFree(SSHService $ssh, int $port): bool
+    {
+        $port = max(1, min(65535, $port));
+        $ids = trim($ssh->exec(
+            'docker ps -q --filter publish='.escapeshellarg((string) $port).' 2>/dev/null || true',
+            15,
+            false
+        ));
+
+        return $ids === '';
+    }
+
+    private function ensurePublishedPortIsAvailable(
+        SSHService $ssh,
+        Node $node,
+        ContainerDeployment $deployment,
+        int $port,
+        string $containerName,
+        string $containerPath,
+    ): int {
+        $busyPorts = [];
+
+        for ($attempt = 1; $attempt <= 8; $attempt++) {
+            $this->reclaimStalePublishedPort($ssh, $containerPath, $port, $containerName);
+            if ($this->publishedPortIsFree($ssh, $port)) {
+                return $port;
+            }
+
+            $busyPorts[] = $port;
+            $port = DB::transaction(function () use ($node, $deployment, $busyPorts) {
+                $lockedNode = Node::whereKey($node->id)->lockForUpdate()->firstOrFail();
+
+                return $this->assignPort($lockedNode, null, [(int) $deployment->id], $busyPorts);
+            });
+
+            \Log::warning('Published host port still allocated; reserved a replacement', [
+                'container' => $containerName,
+                'replacement_port' => $port,
+                'blocked_ports' => $busyPorts,
+            ]);
+        }
+
+        return $port;
     }
 
     /**
@@ -6119,7 +6357,7 @@ class ContainerDeploymentService
             $this->waitForRemovingDockerContainers($ssh, $containerPath);
         }
 
-        $this->composeUp($ssh, $containerPath, (bool) $usesRuntimeImage, useExplicitComposeFile: true);
+        $this->composeUp($ssh, $containerPath, (bool) $usesRuntimeImage, useExplicitComposeFile: true, containerName: $deployment->container_name);
         $this->syncPhpExtensionsIfSupported($ssh, $service, $deployment);
         $this->syncDatabaseCredentialsAfterStart($ssh, $service, $deployment, $containerPath);
 
@@ -6647,10 +6885,32 @@ class ContainerDeploymentService
         return null;
     }
 
-    private function resolveApplicationRuntime(SSHService $ssh, $template, ?string $hostAppPath): ?ApplicationRuntime
-    {
+    /**
+     * @param  array<string, mixed>|null  $nodeTopology
+     */
+    private function resolveApplicationRuntime(
+        SSHService $ssh,
+        $template,
+        ?string $hostAppPath,
+        ?array $nodeTopology = null,
+    ): ?ApplicationRuntime {
         if (! $hostAppPath || ! $this->applicationRuntime->supportsTemplate($template->slug ?? null)) {
             return null;
+        }
+
+        $pinned = $this->pinnedNodeBackendRoot($nodeTopology);
+        if (($template->slug ?? '') === 'nodejs' && $pinned !== null) {
+            $port = ($nodeTopology['topology'] ?? null) === 'split_web_api'
+                ? ContainerNodeWorkloadTopologyService::BACKEND_PORT
+                : (int) ($template->default_port ?? 3000);
+
+            return $this->applicationRuntime->detectNodeRuntimeAt(
+                $ssh,
+                $hostAppPath,
+                $pinned,
+                $port,
+                includeBootstrap: false,
+            );
         }
 
         return $this->applicationRuntime->detectFromHost(
@@ -6660,6 +6920,16 @@ class ContainerDeploymentService
             (int) ($template->default_port ?? 3000),
             includeNodeBootstrap: ($template->slug ?? null) !== 'nodejs',
         );
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $nodeTopology
+     */
+    private function pinnedNodeBackendRoot(?array $nodeTopology): ?string
+    {
+        $root = data_get($nodeTopology, 'backend.root');
+
+        return is_string($root) && trim($root) !== '' ? $root : null;
     }
 
     /**
@@ -6815,14 +7085,6 @@ class ContainerDeploymentService
             return '';
         }
 
-        $runtime = $this->applicationRuntime->detectFromHost(
-            $ssh,
-            $hostAppPath,
-            (string) $template->slug,
-            (int) ($template->default_port ?? 3000),
-            includeNodeBootstrap: ($template->slug ?? null) !== 'nodejs',
-        );
-
         $databaseTemplate = $this->resolveDatabaseTemplate($service, $template);
         $envVars = is_array($deployment->env_values) ? $deployment->env_values : [];
         $nodeTopology = null;
@@ -6870,9 +7132,8 @@ class ContainerDeploymentService
 
         if (($template->slug ?? '') === 'nodejs') {
             $meta = is_array($service->service_meta) ? $service->service_meta : [];
-            $meta['node_project_root'] = ($nodeTopology['topology'] ?? null) === 'split_web_api'
-                ? (string) data_get($nodeTopology, 'backend.root')
-                : ($runtime->containerWorkdir === '/app'
+            $meta['node_project_root'] = $this->pinnedNodeBackendRoot($nodeTopology)
+                ?? ($runtime->containerWorkdir === '/app'
                     ? ''
                     : trim(substr($runtime->containerWorkdir, strlen('/app')), '/'));
             $service->update(['service_meta' => $meta]);
@@ -6998,6 +7259,8 @@ class ContainerDeploymentService
                     $deployment->update(['env_values' => $envVars]);
                 }
             }
+
+            $runtime = $this->resolveApplicationRuntime($ssh, $template, $hostAppPath, $nodeTopology);
 
             $composeYaml = $this->renderCompose(
                 $template,

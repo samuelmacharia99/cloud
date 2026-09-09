@@ -122,6 +122,8 @@ class ContainerDeployProgressService
             'deploy_started' => 'Starting deploy'.(isset($payload['template_slug']) ? ' ('.$payload['template_slug'].')' : ''),
             'node_selected' => 'Host selected'.(isset($payload['node_hostname']) ? ': '.$payload['node_hostname'] : ''),
             'port_reserved' => 'Public port reserved',
+            'port_reassigned' => 'Host port was in use; reserved '
+                .(isset($payload['assigned_port']) ? (string) $payload['assigned_port'] : 'another port'),
             'compose_up_started' => 'Pulling image and starting containers'
                 .(isset($payload['timeout_seconds']) ? ' (up to '.$payload['timeout_seconds'].'s)' : '')
                 .'. Large images can take several minutes.',

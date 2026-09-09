@@ -2,8 +2,12 @@
 
 namespace Tests\Unit\Provisioning;
 
+use App\Exceptions\SSH\SSHCommandException;
 use App\Services\Provisioning\ContainerDeploymentService;
+use App\Services\SSH\SSHService;
+use Mockery;
 use PHPUnit\Framework\Attributes\Test;
+use ReflectionMethod;
 use Tests\TestCase;
 
 class ContainerDeploymentComposeConflictTest extends TestCase
@@ -44,5 +48,89 @@ class ContainerDeploymentComposeConflictTest extends TestCase
         $this->assertSame([
             'user-493-service-454-nodejs',
         ], $service->dockerContainerRefsFromComposeError($message));
+    }
+
+    #[Test]
+    public function it_detects_host_port_already_allocated(): void
+    {
+        $service = app(ContainerDeploymentService::class);
+
+        $message = 'Error response from daemon: failed to set up container networking: Bind for 0.0.0.0:30001 failed: port is already allocated';
+
+        $this->assertTrue($service->isDockerHostPortAllocated($message));
+        $this->assertSame(30001, $service->dockerHostPortFromBindError($message));
+        $this->assertFalse($service->isDockerHostPortAllocated('npm install failed'));
+        $this->assertNull($service->dockerHostPortFromBindError('npm install failed'));
+    }
+
+    #[Test]
+    public function compose_up_removes_orphan_services_from_a_previous_file(): void
+    {
+        $service = app(ContainerDeploymentService::class);
+
+        $this->assertSame(
+            'cd /opt/talksasa/containers/user-493-service-457-python && docker compose up -d --remove-orphans',
+            $service->composeUpCommand('/opt/talksasa/containers/user-493-service-457-python', false)
+        );
+        $this->assertStringContainsString(
+            '--pull never',
+            $service->composeUpCommand('/opt/talksasa/containers/user-1-service-1-laravel', true, true)
+        );
+        $this->assertStringContainsString(
+            '-f docker-compose.yml',
+            $service->composeUpCommand('/opt/talksasa/containers/user-1-service-1-laravel', true, true)
+        );
+    }
+
+    #[Test]
+    public function reclaim_script_only_targets_this_stack_on_the_busy_port(): void
+    {
+        $ssh = Mockery::mock(SSHService::class);
+        $ssh->shouldReceive('exec')
+            ->once()
+            ->withArgs(function (string $command) {
+                return str_contains($command, 'publish=')
+                    && str_contains($command, '30001')
+                    && str_contains($command, 'user-493-service-457-python')
+                    && str_contains($command, '${name}-db');
+            })
+            ->andReturn('');
+
+        app(ContainerDeploymentService::class)->reclaimStalePublishedPort(
+            $ssh,
+            '/opt/talksasa/containers/user-493-service-457-python',
+            30001,
+            'user-493-service-457-python'
+        );
+
+        $this->addToAssertionCount(1);
+    }
+
+    #[Test]
+    public function compose_up_retries_after_reclaiming_an_allocated_port(): void
+    {
+        $ssh = Mockery::mock(SSHService::class);
+        $portError = new SSHCommandException(
+            'cd /opt/talksasa/containers/user-493-service-457-python && docker compose up -d --remove-orphans',
+            "Container user-493-service-457-python-db Created\n"
+            .'Error response from daemon: Bind for 0.0.0.0:30001 failed: port is already allocated',
+            'Command exited with status 1'
+        );
+
+        $ssh->shouldReceive('exec')->once()->andReturn('ok');
+        $ssh->shouldReceive('exec')->once()->andThrow($portError);
+        $ssh->shouldReceive('exec')->once()->andReturn('');
+        $ssh->shouldReceive('exec')->once()->andReturn('');
+
+        $method = new ReflectionMethod(ContainerDeploymentService::class, 'composeUp');
+        $method->invoke(
+            app(ContainerDeploymentService::class),
+            $ssh,
+            '/opt/talksasa/containers/user-493-service-457-python',
+            false,
+            false,
+            120,
+            'user-493-service-457-python'
+        );
     }
 }
