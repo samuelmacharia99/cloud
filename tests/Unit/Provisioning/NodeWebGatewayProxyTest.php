@@ -9,6 +9,7 @@ use App\Models\Service;
 use App\Services\Provisioning\ApplicationRuntime;
 use App\Services\Provisioning\ContainerDeploymentService;
 use App\Services\Provisioning\NodeWebGatewayProxy;
+use App\Services\SSH\SSHService;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\Yaml\Yaml;
 use Tests\TestCase;
@@ -212,5 +213,43 @@ class NodeWebGatewayProxyTest extends TestCase
         $deployment->setRelation('service', $service);
 
         $this->assertTrue((new ContainerDeploymentService)->usesNodeWebSidecarStack($deployment));
+    }
+
+    #[Test]
+    public function split_backend_runtime_detection_uses_include_node_bootstrap(): void
+    {
+        $package = json_encode([
+            'scripts' => ['start' => 'node server.js'],
+            'dependencies' => ['express' => '^5.0'],
+        ], JSON_THROW_ON_ERROR);
+        $ssh = $this->createMock(SSHService::class);
+        $ssh->method('exec')->willReturnCallback(function (string $command) use ($package): string {
+            if (str_contains($command, '/srv/app/apps/api/package.json') && str_contains($command, 'head -c')) {
+                return $package;
+            }
+            if (str_contains($command, '[ -f ') && str_contains($command, '/srv/app/apps/api/package.json')) {
+                return 'yes';
+            }
+
+            return 'no';
+        });
+
+        $template = new ContainerTemplate(['slug' => 'nodejs', 'default_port' => 3000]);
+        $method = new \ReflectionMethod(ContainerDeploymentService::class, 'resolveApplicationRuntime');
+        $runtime = $method->invoke(
+            new ContainerDeploymentService,
+            $ssh,
+            $template,
+            '/srv/app',
+            [
+                'topology' => 'split_web_api',
+                'backend' => ['root' => 'apps/api'],
+            ],
+        );
+
+        $this->assertInstanceOf(ApplicationRuntime::class, $runtime);
+        $this->assertSame('/app/apps/api', $runtime->containerWorkdir);
+        $this->assertStringContainsString('exec npm start', $runtime->command[2]);
+        $this->assertStringNotContainsString('npm install', $runtime->command[2]);
     }
 }

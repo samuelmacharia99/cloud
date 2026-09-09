@@ -6929,7 +6929,7 @@ class ContainerDeploymentService
                 $pinned,
                 (string) $template->slug,
                 $port,
-                includeBootstrap: false,
+                includeNodeBootstrap: false,
             );
         }
 
