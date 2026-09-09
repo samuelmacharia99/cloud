@@ -930,4 +930,83 @@ class ContainerDeploymentComposeTest extends TestCase
         $this->assertSame(1200, $method->invoke($deployer, (object) ['slug' => 'ollama']));
         $this->assertSame(180, $method->invoke($deployer, (object) ['slug' => 'wordpress']));
     }
+
+    #[Test]
+    public function python_ruby_and_go_render_separate_backend_frontend_and_edge_services(): void
+    {
+        $runtimeImages = $this->createMock(RuntimeImageProvisioner::class);
+        $runtimeImages->method('usesRuntimeImage')->willReturn(false);
+        $deployer = new ContainerDeploymentService(
+            runtimeImages: $runtimeImages,
+            templateEnvironment: new ContainerTemplateEnvironmentService
+        );
+        $method = new ReflectionMethod(ContainerDeploymentService::class, 'renderCompose');
+        $method->setAccessible(true);
+
+        foreach ([
+            'python' => 'python:3.12-slim',
+            'ruby' => 'ruby:3.3-slim',
+            'go' => 'golang:1.23-alpine',
+        ] as $slug => $image) {
+            $hostApp = '/opt/talksasa/containers/user-1-service-30-'.$slug.'/app';
+            $runtime = new ApplicationRuntime(
+                ['sh', '-lc', 'cd /app/backend && exec backend-server'],
+                'detected',
+                ucfirst($slug).' backend',
+                '/app/backend',
+            );
+            $topology = [
+                'topology' => 'split_web_api',
+                'backend_slug' => $slug,
+                'frontend_type' => 'vite-spa',
+                'backend' => [
+                    'root' => 'backend',
+                    'port' => 8000,
+                    'working_directory' => '/app/backend',
+                    'start_command' => $runtime->command,
+                ],
+                'frontend' => [
+                    'root' => 'frontend',
+                    'port' => 3000,
+                    'working_directory' => '/app/frontend',
+                    'start_command' => ['sh', '-lc', 'npm start'],
+                ],
+            ];
+
+            $yaml = $method->invoke(
+                $deployer,
+                new ContainerTemplate([
+                    'slug' => $slug,
+                    'docker_image' => $image,
+                    'default_port' => 8000,
+                    'required_cpu_cores' => 1,
+                    'required_ram_mb' => 1024,
+                    'volume_paths' => ['app_data' => '/app'],
+                ]),
+                'user-1-service-30-'.$slug,
+                31030,
+                ['PORT' => '8000'],
+                null,
+                null,
+                null,
+                $hostApp,
+                $runtime,
+                null,
+                false,
+                'frontend',
+                8001,
+                $topology,
+            );
+
+            $this->assertStringContainsString("\n  backend:\n", $yaml);
+            $this->assertStringContainsString("\n  frontend:\n", $yaml);
+            $this->assertStringContainsString("\n  edge:\n", $yaml);
+            $this->assertStringContainsString($image, $yaml);
+            $this->assertStringContainsString('nginx:1.27-alpine', $yaml);
+            $this->assertStringContainsString("'31030:8080'", $yaml);
+            $this->assertStringContainsString('BACKEND_HOST: backend', $yaml);
+            $this->assertStringContainsString('FRONTEND_HOST: frontend', $yaml);
+            $this->assertStringNotContainsString("'31030:8000'", $yaml);
+        }
+    }
 }

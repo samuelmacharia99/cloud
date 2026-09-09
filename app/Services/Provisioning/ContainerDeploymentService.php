@@ -2545,6 +2545,9 @@ class ContainerDeploymentService
         $backendPort = (int) data_get($topology, 'backend.port', ContainerNodeWorkloadTopologyService::BACKEND_PORT);
         $frontendPort = (int) data_get($topology, 'frontend.port', ContainerNodeWorkloadTopologyService::FRONTEND_PORT);
         $frontendType = (string) ($topology['frontend_type'] ?? 'nextjs');
+        $frontendRuntimeImage = ($topology['backend_slug'] ?? 'nodejs') === 'nodejs'
+            ? $backend['image']
+            : 'node:22-alpine';
 
         $backend['container_name'] = $containerName;
         $backend['working_dir'] = (string) data_get($topology, 'backend.working_directory');
@@ -2578,7 +2581,7 @@ class ContainerDeploymentService
                 'NEXT_PUBLIC_API_URL' => $envVars['NEXT_PUBLIC_API_URL'] ?? '/api',
             ]);
             $frontend = [
-                'image' => $backend['image'],
+                'image' => $frontendRuntimeImage,
                 'container_name' => NodeWebGatewayProxy::frontendContainerName($containerName),
                 'restart' => $backend['restart'] ?? 'always',
                 'working_dir' => (string) data_get($topology, 'frontend.working_directory'),
