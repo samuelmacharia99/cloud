@@ -1,468 +1,240 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code (claude.ai/code) when working in this repository.
 
-## Overview
+## What this system is
 
-**Talksasa Cloud** is a Laravel 11 web hosting billing and provisioning platform. It manages customers, products, services, invoices, payments, domains, and support tickets with role-based access (Admin, Reseller, Customer).
+**Talksasa Cloud** is the control plane for a commercial hosting business. It is not only a billing
+app: it sells, provisions, operates, bills, and repairs live infrastructure that customers depend on.
+Changes here move real money and touch running customer workloads.
 
-**Tech Stack**: Laravel 11, PHP 8.2+, MySQL 8.0+, Tailwind CSS, Alpine.js, Vite
+Four product lines are provisioned from one Laravel 11 codebase:
 
----
+| Product line | Driver key | Backing technology |
+|---|---|---|
+| Application hosting (PaaS) | `container` | Docker Compose stacks on remote nodes, driven over SSH |
+| Shared hosting | `directadmin` | DirectAdmin accounts and packages |
+| Email hosting | `mailcow` | Mailcow mailboxes and mail DNS |
+| Dedicated / VPS | `server` | Direct server provisioning |
+| Domains | (none) | Registrar drivers: Cosmotown, Openprovider, manual, custom |
 
-## Setup & Development Commands
+On top sits a **white-label reseller tier** that is a genuine second tenant: its own storefront on its
+own domain, its own catalogue, pricing and margins, its own wallet and billing cycle, its own public
+API with scoped tokens and CORS, and its own SSL provisioning.
 
-### Initial Setup
-```bash
-composer install
-npm install
-cp .env.example .env
-php artisan key:generate
-php artisan migrate
-php artisan db:seed  # Load demo data (products, services, invoices, payments, settings)
-```
+**Tech stack**: Laravel 11, PHP 8.2+, MySQL 8.0+, Tailwind CSS, Alpine.js, Vite, Laravel Reverb
+(container terminal websocket), Sanctum (API tokens), phpseclib (SSH/SFTP to nodes).
 
-### Development Server
-```bash
-php artisan serve              # Backend on http://localhost:8000
-npm run dev                    # Frontend assets (Vite, auto-reload)
-```
-
-### Production Build
-```bash
-composer install --no-dev
-npm run build                  # Minified assets
-php artisan optimize          # Cache routes, config
-```
-
-### Code Quality
-```bash
-php artisan pint              # Format code (Laravel Pint)
-php artisan test              # Run all tests
-php artisan test --filter=PaymentTest  # Run specific test
-php artisan tinker            # Interactive shell (test models, logic)
-```
-
-### Database
-```bash
-php artisan migrate           # Run pending migrations
-php artisan migrate:fresh     # Rollback & re-run all migrations
-php artisan migrate:fresh --seed  # Fresh + demo data
-php artisan db:seed --class=PaymentSeeder  # Specific seeder
-php artisan make:migration create_table_name  # Create migration
-php artisan make:model ModelName -m -f  # Model + migration + factory
-```
-
-### Cache & Optimization
-```bash
-php artisan cache:clear
-php artisan view:cache        # Compile all Blade views
-php artisan route:cache       # Cache route definitions
-php artisan optimize
-```
+**Scale**: ~167k lines in `app/`, ~72k in Blade views, ~65k in tests (2,200+ tests). Over half of the
+service layer is provisioning. Treat this as a large, long-lived system, not a greenfield project.
 
 ---
 
-## Architecture Overview
+## Engineering bar
 
-### High-Level Flow
+This is production infrastructure with paying customers. Hold to it:
 
-1. **Request Entry** → Routes (web.php, api.php) → Middleware (auth, role-based)
-2. **Authorization** → Policies (permission checks before action)
-3. **Validation** → FormRequest classes (input validation & type casting)
-4. **Business Logic** → Controllers → Services (reusable business logic)
-5. **Database** → Models (Eloquent) → Migrations (schema)
-6. **Response** → Views/JSON (Blade templates, Resource classes)
-
-### Role-Based Access Control
-
-- **Admin**: Full platform access, can manage all resources
-- **Reseller**: Manage own customers & branded pricing
-- **Customer**: Access own services, invoices, domains, tickets
-
-Enforced via:
-- Middleware: `admin`, `reseller`, `customer` in routes
-- Policies: `app/Policies/*` (Authorization gates)
-- Scopes: Models have `byUser()`, `admin()` scopes for filtering
+- No placeholder, demo, or happy-path-only code. Handle failure, partial state, and retries explicitly.
+- Business logic lives in `app/Services`, never in controllers or Blade.
+- Authorization, tenancy scoping (reseller and customer), and input validation are part of "done".
+- New behaviour ships with tests. The suite is large and green; keep it that way.
+- Do not grow the known god classes (see *Known hazards*). Extract instead of appending.
+- Never widen what the customer terminal or file manager can reach without reviewing
+  `TerminalSecurityGuard` and `config/security.php`.
 
 ---
 
-## Directory Structure & Key Components
+## Commands
 
-### `app/Models/`
-Core Eloquent models representing database entities:
-- **User** (customer, admin, reseller)
-- **Service** (customer service subscriptions)
-- **Invoice**, **InvoiceItem**, **Payment** (billing)
-- **Domain**, **DnsZone**, **DnsRecord** (domain management)
-- **Product** (hosting products/plans)
-- **Order**, **OrderItem** (shopping orders)
-- **Ticket**, **TicketReply** (support)
-- **ContainerDeployment**, **ContainerMetric** (container hosting)
-- **Setting** (app configuration key-value store)
-
-**Key Pattern**: All models use Eloquent relationships (`hasMany`, `belongsTo`, etc.). Check model files for available methods and scopes.
-
-### `app/Http/Controllers/`
-Request handlers organized by role:
-
-**Admin Controllers** (`Admin/`):
-- Manage customers, products, services, invoices, payments, settings, resellers
-- Can create, update, delete resources
-- Access all data
-
-**Customer Controllers** (`Customer/`):
-- Service browsing & ordering (tech stack selection, cart, checkout)
-- Invoice & payment management
-- Domain management & transfer
-- Container/server management (start/stop/logs/metrics)
-- Support tickets
-
-**Reseller Controllers** (`Reseller/`):
-- Customer management
-- Product catalog (custom pricing)
-- Domain pricing overrides
-
-**Auth Controllers** (`Auth/`):
-- Login, register, password reset
-- Email verification
-- Two-factor authentication (SMS-based)
-
-### `app/Services/`
-Reusable business logic (not tied to HTTP):
-- **PaymentGateway/** - M-Pesa, Stripe, PayPal integration
-- **Provisioning/** - Container/server deployment, SSH commands
-- **SSH/** - Direct SSH execution for server management
-- **CurrencyConversionService** - Exchange rate calculation
-- **DomainTransferService** - Domain transfer workflows
-- **InvoicePdfService** - PDF generation (DomPDF)
-- **MpesaService** - M-Pesa payment processing
-- **TwoFactorService** - SMS-based 2FA logic
-- **CreditService** - Customer credit/wallet system
-- **NotificationService** - SMS alerts
-
-### `app/Enums/`
-Type-safe status & method definitions:
-- **PaymentStatus**: pending, completed, failed, reversed
-- **PaymentMethod**: mpesa, stripe, paypal, manual, wallet
-- **InvoiceStatus**: draft, unpaid, paid, overdue, cancelled
-- **ServiceStatus**: active, pending, provisioning, suspended, terminated, failed
-
-Usage: `PaymentStatus::Completed` instead of string `'completed'` (prevents typos, enables IDE autocomplete).
-
-### `app/Policies/`
-Authorization logic (who can do what):
-- **PaymentPolicy** - Only owner can view own payments
-- **ResellerPolicy** - Admin-only reseller actions
-- **SettingPolicy** - Admin-only settings
-- **ServicePolicy** - Owner/admin can manage service
-
-Pattern: `$this->authorize('view', $payment)` in controllers throws 403 if denied.
-
-### `app/Http/Requests/`
-Form validation & data transformation:
-- **StorePaymentRequest**, **UpdatePaymentRequest**
-- **UpdateSettingRequest**
-- Auto-validates before controller receives data
-- Centralized validation rules & messages
-
-### `resources/views/`
-Blade templates organized by role:
-- `admin/` - Admin dashboard views
-- `customer/` - Customer portal views
-- `reseller/` - Reseller views
-- `components/` - Reusable Blade components
-
-**Components** (use with `<x-component-name />`):
-- `payment-badge` - Color-coded payment method
-- `status-badge` - Status indicators (payment, invoice, service)
-- `currency-formatter` - KES currency display
-- `data-table` - Sortable/filterable tables
-- `modal` - Reusable modal dialogs
-
-### `database/migrations/`
-Database schema definitions. Always use migrations for schema changes:
+### Setup
 ```bash
-php artisan make:migration add_field_to_table
+composer install && npm install
+cp .env.example .env && php artisan key:generate
+php artisan migrate --seed
 ```
 
-### `database/seeders/`
-Demo data generators. Run with `php artisan db:seed`:
-- ProductSeeder (products with pricing)
-- ServiceSeeder (customer service subscriptions)
-- PaymentSeeder (sample payments)
-- SettingSeeder (default configuration)
-
-### `tests/`
-PHPUnit tests:
-- `Feature/` - End-to-end controller/route tests
-- `Unit/` - Model methods, enums, helpers
-
-Run: `php artisan test`
-
----
-
-## Key Patterns & Conventions
-
-### Model Relationships
-Models define relationships in the model file:
-```php
-class User extends Model {
-    public function services() { return $this->hasMany(Service::class); }
-    public function invoices() { return $this->hasMany(Invoice::class); }
-}
+### Development
+```bash
+php artisan serve                 # http://localhost:8000
+npm run dev                       # Vite
+php artisan queue:work            # REQUIRED for git pulls, provisioning, migrations, backups
+php artisan container:terminal-ws      # websocket PTY bridge for the browser terminal
 ```
 
-When querying, use eager loading to avoid N+1:
-```php
-$users = User::with('services', 'invoices')->get();  // Good
-$users = User::all(); foreach ($user->services) // Bad - loads on each iteration
+`QUEUE_CONNECTION=sync` in local `.env` runs jobs inline. Provisioning, git pulls, and DirectAdmin
+migrations are long-running; use a real queue connection and a worker when testing those paths.
+
+### Quality gates
+```bash
+php artisan test                          # full suite
+php artisan test --filter=ContainerDeploy  # focused
+./vendor/bin/pint                          # format (CI checks but does not block)
 ```
 
-### Authorization
-Always authorize before acting on a resource:
-```php
-$payment = Payment::find($id);
-$this->authorize('view', $payment);  // Throws 403 if not owner
-```
+Larastan is installed but has no `phpstan.neon` in the repository, so static analysis is not wired
+up. Add a config before relying on it.
 
-### Validation
-Use FormRequest for type-safe validation:
-```php
-public function store(StorePaymentRequest $request) {
-    // $request->validated() has been validated
-    $payment = Payment::create($request->validated());
-}
-```
+CI (`.github/workflows/test.yml`) runs migrations, seeders, and the full suite against MySQL 8 on
+push and PR to `main` / `develop`.
 
-### Services for Business Logic
-Don't put complex logic in controllers. Use services:
-```php
-// In controller:
-$service = new MpesaService();
-$result = $service->processPayment($invoice, $phone);
-
-// Service handles the actual payment logic
-```
-
-### Type Safety with Enums
-Use enums for status/method fields:
-```php
-$payment->status = PaymentStatus::Completed;  // Not 'completed' string
-if ($payment->status === PaymentStatus::Completed) { ... }
-```
-
-### Blade Components
-Reuse Blade components instead of repeating HTML:
-```blade
-<x-status-badge :status="$payment->status" type="payment" />
-<x-currency-formatter :amount="$invoice->total" currency="KES" />
+### Operations
+```bash
+php artisan cron:status            # scheduler health
+php artisan security:audit
+php artisan settings:audit
+php artisan schedule:list
 ```
 
 ---
 
-## Development Workflow
+## Request lifecycle
 
-### Adding a New Feature
+1. **Routing** — `routes/web.php` (~960 lines, grouped by role), `routes/api.php` (Sanctum),
+   `routes/auth.php`.
+2. **Global middleware** (`bootstrap/app.php`) — `ResolveResellerTenant`, `SecurityHeaders`,
+   `LogActivity`, plus a custom `VerifyCsrfToken` that exempts payment webhooks.
+3. **Route middleware aliases** — `admin`, `customer`, `reseller`, `reseller.limits`,
+   `reseller.billing`, `reseller.host`, `reseller.customer.catalog`, `reseller.public.api*`,
+   `skip.verification.if.impersonating`, `registration.throttle`, `admin.attention.seen`.
+4. **Policy check** — `$this->authorize('manageContainer', $service)` and friends.
+5. **FormRequest validation** — `app/Http/Requests` (53 classes).
+6. **Service layer** — `app/Services`.
+7. **Response** — Blade views by role, or JSON.
 
-1. **Create Migration** (if adding DB table/column):
-   ```bash
-   php artisan make:migration add_field_to_table
-   ```
+Custom exception rendering in `bootstrap/app.php` handles 419 session expiry, oversized container
+uploads (413), and Doctor treatment throttling (429). Extend there rather than in controllers.
 
-2. **Update Model** (add relationships, casts, scopes):
-   ```php
-   class Payment extends Model {
-       protected $casts = ['status' => PaymentStatus::class];
-       public function scopeByUser() { ... }
-   }
-   ```
+---
 
-3. **Create Controller** (route handlers):
-   ```bash
-   php artisan make:controller Admin/PaymentController
-   ```
+## Provisioning architecture (the core)
 
-4. **Create Policy** (authorization):
-   ```bash
-   php artisan make:policy PaymentPolicy --model=Payment
-   ```
+`ProvisioningService::provision()` is the single entry point. It reads
+`service.provisioning_driver_key` (falling back to the product's) and dispatches to the driver.
+On failure it records to `ProvisionFailureLedger`, marks the service failed, and notifies.
 
-5. **Create FormRequest** (validation):
-   ```bash
-   php artisan make:request StorePaymentRequest
-   ```
+For containers, `ContainerDeploymentService::deploy()` does the work over SSH:
 
-6. **Add Routes** (in `routes/web.php`):
-   ```php
-   Route::resource('admin/payments', Admin\PaymentController::class);
-   ```
+1. Select a node with capacity (`selectLeastLoadedHost`, `assertHostHasCapacity`).
+2. Assign a port from the reserved range.
+3. Detect the application runtime from the repository (`ContainerApplicationRuntimeService`,
+   `ContainerRuntimeInspector`, `ApplicationRuntime`).
+4. Generate and patch a Docker Compose file, including database and web sidecars.
+5. Push it to the node via `SSHService` (phpseclib), bring the stack up.
+6. Wait for readiness: container running, HTTP health, database sidecar reachable, credentials valid.
+7. Bind domains and provision SSL (`ContainerDomainBindingService`, `NginxProxyService`).
 
-7. **Create Views** (Blade templates):
-   ```blade
-   <!-- resources/views/admin/payments/index.blade.php -->
-   ```
+Supporting subsystems in `app/Services/Provisioning` (86 classes):
 
-8. **Write Tests**:
-   ```bash
-   php artisan make:test PaymentTest --feature
-   ```
+- **Runtime detection** for Laravel, WordPress, Node, Next, Expo, Vite SPAs, Python/FastAPI/Django,
+  Ruby/Rails, Go, PHP legacy and CodeIgniter, static sites. This is the active frontier and a long
+  tail of real-world repository shapes.
+- **`ContainerDoctorService`** — diagnoses and repairs broken deployments.
+- **Migration** — DirectAdmin to container, DirectAdmin to Mailcow, container to container across
+  nodes, WordPress convert-in-place.
+- **Node fleet** — capacity, hardware probes, evacuation, workload topology, version management.
+- **Backups** — container backups to Hetzner Storage Box with retention.
 
-### Making a Database Change
+### Editing rules for this area
 
-Always use migrations, never alter schema manually:
+- Compose YAML is patched through the dedicated `patchCompose*` / `mergeCompose*` helpers. Do not
+  hand-roll string manipulation on compose files.
+- Every remote command goes through `SSHService::exec` with an explicit timeout. Never interpolate
+  unescaped user input into a shell string.
+- Readiness is proven by polling a `waitFor*` helper, never by sleeping.
+
+---
+
+## Directory map
+
+| Path | Contents |
+|---|---|
+| `app/Models` (61) | `Service`, `Node`, `ContainerDeployment`, `Invoice`, `Payment`, `Domain`, `ResellerWallet`, `CustomerProject`, … |
+| `app/Http/Controllers` (120) | `Admin/`, `Customer/`, `Reseller/`, `Api/V1/`, `Auth/` |
+| `app/Services` (254) | See breakdown below |
+| `app/Console/Commands` (74) | Scheduled operations: invoicing, suspension, renewals, metrics, health |
+| `app/Console/Scheduling` | `ApplicationSchedule` — schedule is DB-driven from `CronJob` records |
+| `app/Jobs` (15) | Provisioning, git pull, backups, migrations, broadcast email, Telegram alerts |
+| `app/Enums` (14) | `ServiceStatus`, `InvoiceStatus`, `PaymentStatus`, `PaymentMethod`, `RegistrarDriver`, … |
+| `app/Policies` (12) | Ownership and role authorization |
+| `app/Support` | Cart, currency formatting, console tabs, production command guard |
+| `deploy/` | systemd units for scheduler and queue workers, nginx snippets, supervisor config |
+| `scripts/` | Node bootstrap, queue worker install, Mailcow and reseller SSL setup |
+| `docs/` (47) | Runbooks and roadmap; several are historical phase reports, trust the code first |
+
+### Service layer breakdown
+
+- `Provisioning/` (86) — everything above.
+- `PaymentGateway/` — M-Pesa (STK push + reconciliation), Stripe, PayPal, bank transfer, manual,
+  behind `PaymentGatewayInterface` / `PaymentGatewayFactory`.
+- `Registrar/` — `RegistrarDriverInterface` with Cosmotown, Openprovider, manual and custom drivers,
+  plus TLD price and inventory sync.
+- `Billing/`, `Checkout/` — invoice numbering, currency, settlement, renewal pricing, and the
+  per-product checkout paths (shared hosting, project hosting, email, domains).
+- `Terminal/` — websocket PTY bridge into containers, with `TerminalSecurityGuard` denylisting
+  privilege escalation, Docker control, and namespace escapes.
+- `Hosting/`, `Dns/`, `SSH/`, `Cron/`, `Telegram/`, `Admin/`, `Customer/`.
+- Top level (~100) — reseller subsystem, domains lifecycle, notifications, credit and wallet, tax,
+  currency, security, two-factor.
+
+---
+
+## Conventions
+
+**Enums over strings.** `$payment->status = PaymentStatus::Completed;` Models cast to enums.
+
+**Policies before action.** `$this->authorize('view', $payment);`
+
+**FormRequests for input.** Controllers receive validated data only.
+
+**Reseller scoping is not optional.** Any query reachable by a reseller or their customers must be
+scoped by tenant. `ResolveResellerTenant`, `ResellerScopeService` and the `reseller.*` middleware
+exist for this; use them rather than ad-hoc `where` clauses.
+
+**Blade components.** `<x-status-badge :status="..." type="payment" />`,
+`<x-currency-formatter :amount="..." currency="KES" />`, `<x-data-table>`, `<x-modal>`.
+
+**Migrations only** for schema (203 and counting). Never alter tables by hand.
+
+---
+
+## Payments
+
+| Method | Flow |
+|---|---|
+| M-Pesa | STK push, callback at `POST /mpesa/callback` (public, CSRF-exempt), plus a reconciliation service and a cron for pending payments |
+| Stripe | Hosted checkout, return to `/invoices/{invoice}/payment/stripe/success\|cancel` |
+| PayPal | Same shape, plus PayPal Connect for resellers |
+| Bank transfer / manual | Customer submits proof, admin approves |
+| Wallet / credit | Internal balance via `CreditService`, `ResellerWalletService` |
+
+Settlement is centralised in `Billing/InvoiceSettlementService`. Route payment completion through it
+so credit, tax, currency, and reseller margin stay consistent.
+
+---
+
+## Known hazards
+
+- **`ContainerDeploymentService`** (~339KB, 225 methods) and **`ContainerDoctorService`** (~344KB)
+  are god classes. They are the highest-risk files in the repository. Extract cohesive units rather
+  than adding methods.
+- **`resources/views/admin/settings/index.blade.php`** (~217KB) should be decomposed into
+  components before further growth.
+- **Documentation drift.** `docs/` holds completed phase reports from earlier milestones. Verify
+  against code before relying on any of them. `docs/CONTAINER_APP_HOSTING_ROADMAP.md` is the current
+  one.
+- **Pint is non-blocking in CI.** Run it locally before committing.
+
+---
+
+## Debugging
 
 ```bash
-php artisan make:migration add_status_to_payments_table
+php artisan tinker
+tail -f storage/logs/laravel.log
+tail -f storage/logs/cron.log      # rotate with: php artisan scheduler:rotate-log
+php artisan cron:status
 ```
 
-Edit the migration file:
-```php
-public function up() {
-    Schema::table('payments', function (Blueprint $table) {
-        $table->enum('status', ['pending', 'completed'])->default('pending');
-    });
-}
-```
-
-Run: `php artisan migrate`
-
-### Debugging
-
-- **Tinker** (interactive shell): `php artisan tinker`
-- **Logging**: Use `\Log::info()`, `\Log::error()` (saved in `storage/logs/`)
-- **Laravel Debugbar**: Included, shows queries/views/requests
-- **Browser Console**: Check for JS errors
-
----
-
-## Important Files & Their Purpose
-
-| File | Purpose |
-|------|---------|
-| `routes/web.php` | All web routes (define endpoints here) |
-| `config/auth.php` | Authentication configuration (guards, providers) |
-| `config/database.php` | Database connection settings |
-| `.env` | Environment variables (API keys, DB credentials) |
-| `app/Providers/AuthServiceProvider.php` | Register policies & gates |
-| `app/Providers/AppServiceProvider.php` | Register service containers, boot logic |
-| `app/Http/Middleware/` | Request preprocessing (auth, roles) |
-
----
-
-## Payment Gateway Integration
-
-Three payment methods are integrated:
-
-### M-Pesa (Kenya mobile money)
-- **Service**: `MpesaService` handles Safaricom API
-- **Flow**: Customer initiates → STK push to phone → verify callback
-- **Webhook**: POST `/mpesa/callback` (public, processes payment confirmation)
-
-### Stripe (Credit/Debit cards)
-- **Flow**: Customer → Stripe checkout page → return to success/cancel
-- **Routes**: `/invoices/{invoice}/payment/stripe/success|cancel`
-
-### PayPal
-- **Flow**: Customer → PayPal page → return to success/cancel
-- **Routes**: `/invoices/{invoice}/payment/paypal/success|cancel`
-
-### Manual Payment
-- **Flow**: Customer submits payment proof → Admin approves
-- **Route**: `/invoices/{invoice}/payment/manual`
-
----
-
-## Deployment Notes
-
-### Production Checklist
-```bash
-# Before deploying to production:
-php artisan optimize           # Cache routes/config
-npm run build                  # Minified frontend
-php artisan migrate --force    # Database schema
-php artisan db:seed            # If first deploy, seed demo data
-```
-
-### Environment Configuration
-Key `.env` variables:
-- `APP_DEBUG=false` (never true in production)
-- `APP_KEY=` (generated by `php artisan key:generate`)
-- `DB_*` (database credentials)
-- `MPESA_*`, `STRIPE_*`, `PAYPAL_*` (payment credentials)
-- `MAIL_*` (email configuration)
-- `SMS_API_KEY` (SMS service)
-
----
-
-## Testing
-
-### Unit Tests (Model logic, helpers)
-```bash
-php artisan test tests/Unit/Models/PaymentTest.php
-```
-
-### Feature Tests (Routes, controllers)
-```bash
-php artisan test tests/Feature/PaymentTest.php
-```
-
-### All Tests
-```bash
-php artisan test
-```
-
----
-
-## Common Tasks
-
-### Add a Payment Method
-1. Add enum value in `app/Enums/PaymentMethod.php`
-2. Update `label()`, `icon()`, `color()` methods
-3. Add controller logic in `Customer/PaymentController.php`
-4. Component auto-updates everywhere it's used
-
-### Change Authorization Rules
-1. Edit `app/Policies/PaymentPolicy.php`
-2. Test with `$this->authorize('action', $resource)`
-
-### Add a Settings Field
-1. Update admin settings form (add input field)
-2. Settings auto-save to DB via `Setting` model
-3. Retrieve with `setting('key_name')`
-
-### Export Invoice as PDF
-- Already built-in: `app/Services/InvoicePdfService`
-- Called from `Customer/InvoiceController@download`
-
----
-
-## Troubleshooting
-
-**"Call to undefined function setting()"**
-- Helper is in `app/Helpers/helpers.php`
-- Ensure `composer dump-autoload` was run
-
-**"RouteNotFoundException"**
-- Check route is defined in `routes/web.php`
-- Route name must match `@name('route.name')` in controller
-
-**"SQLSTATE[HY000]: General error"**
-- Run `php artisan migrate:fresh --seed`
-- Check `.env` database credentials
-
-**Payment webhook not working**
-- Check `/mpesa/callback` route is public (no auth middleware)
-- Verify API credentials in `.env`
-- Check logs: `storage/logs/laravel.log`
-
----
-
-## Documentation References
-
-Detailed docs in `docs/`:
-- `QUICK_START.md` - Next steps after setup
-- `PROJECT_STRUCTURE.md` - Full architecture details
-- `IMPLEMENTATION_GUIDE.md` - Feature implementation patterns
-- `SECURITY.md` - Security practices
-- `DEPLOYMENT_READY.md` - Production deployment guide
+Provisioning failures are recorded per service by `ProvisionFailureLedger` and classified by
+`ProvisionFailureClass`. Check there before reading raw logs. Container deployment progress and
+events are persisted in `container_deployment_events`.
