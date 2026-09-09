@@ -117,4 +117,59 @@ class MailcowServiceTest extends TestCase
 
         $this->assertSame('v=DKIM1;k=rsa;t=s;s=email;p=MIIBIjANBgkq', $txt);
     }
+
+    #[Test]
+    public function it_keeps_only_mailboxes_on_the_requested_domain(): void
+    {
+        Http::fake([
+            'mail.example.com/api/v1/get/mailbox/all/old.com' => Http::response([
+                ['username' => 'info@old.com', 'domain' => 'old.com', 'name' => 'Ours'],
+                ['username' => 'secret@other-customer.com', 'domain' => 'other-customer.com', 'name' => 'Leaked'],
+                ['username' => 'admin@talksasa.cloud', 'domain' => 'talksasa.cloud'],
+            ], 200),
+        ]);
+
+        $node = Node::factory()->mailcow()->create([
+            'api_url' => 'https://mail.example.com',
+        ]);
+
+        $result = MailcowService::forNode($node)->listMailboxes('old.com');
+
+        $this->assertTrue($result['success']);
+        $usernames = array_column($result['data'], 'username');
+        $this->assertSame(['info@old.com'], $usernames);
+    }
+
+    #[Test]
+    public function it_refuses_to_list_mailboxes_without_a_domain(): void
+    {
+        Http::fake();
+
+        $node = Node::factory()->mailcow()->create();
+        $result = MailcowService::forNode($node)->listMailboxes('');
+
+        $this->assertFalse($result['success']);
+        Http::assertNothingSent();
+    }
+
+    #[Test]
+    public function it_keeps_only_aliases_on_the_requested_domain(): void
+    {
+        Http::fake([
+            'mail.example.com/api/v1/get/alias/all/old.com' => Http::response([
+                ['id' => 1, 'address' => 'sales@old.com', 'goto' => 'info@old.com', 'domain' => 'old.com'],
+                ['id' => 99, 'address' => 'hidden@other.com', 'goto' => 'ceo@other.com', 'domain' => 'other.com'],
+            ], 200),
+        ]);
+
+        $node = Node::factory()->mailcow()->create([
+            'api_url' => 'https://mail.example.com',
+        ]);
+
+        $result = MailcowService::forNode($node)->listAliases('old.com');
+
+        $this->assertTrue($result['success']);
+        $this->assertCount(1, $result['data']);
+        $this->assertSame('sales@old.com', $result['data'][0]['address']);
+    }
 }

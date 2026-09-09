@@ -119,6 +119,74 @@ class EmailHostingDomainChangeTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_email_console_does_not_show_other_customers_mailboxes(): void
+    {
+        Http::fake([
+            '*' => function ($request) {
+                $url = $request->url();
+                if (str_contains($url, '/get/mailbox/all/')) {
+                    return Http::response([
+                        ['username' => 'info@old.com', 'domain' => 'old.com', 'name' => 'Our inbox'],
+                        ['username' => 'finance@winkairwaystraveladventure.co.ke', 'domain' => 'winkairwaystraveladventure.co.ke', 'name' => 'Secret finance'],
+                        ['username' => 'ceo@other-client.com', 'domain' => 'other-client.com', 'name' => 'Other CEO'],
+                    ], 200);
+                }
+                if (str_contains($url, '/get/alias/all/')) {
+                    return Http::response([
+                        ['id' => 1, 'address' => 'sales@old.com', 'domain' => 'old.com'],
+                        ['id' => 88, 'address' => 'hidden@other-client.com', 'domain' => 'other-client.com'],
+                    ], 200);
+                }
+
+                return Http::response([], 200);
+            },
+        ]);
+
+        [$customer, $service] = $this->emailService();
+
+        $this->actingAs($customer)
+            ->get(route('customer.services.email.show', $service))
+            ->assertOk()
+            ->assertSee('info@old.com')
+            ->assertSee('Our inbox')
+            ->assertSee('sales@old.com')
+            ->assertDontSee('finance@winkairwaystraveladventure.co.ke')
+            ->assertDontSee('Secret finance')
+            ->assertDontSee('ceo@other-client.com')
+            ->assertDontSee('hidden@other-client.com');
+    }
+
+    public function test_customer_cannot_delete_another_domains_alias_by_id(): void
+    {
+        Http::fake([
+            '*' => function ($request) {
+                $url = $request->url();
+                if (str_contains($url, '/get/alias/all/')) {
+                    return Http::response([
+                        ['id' => 1, 'address' => 'sales@old.com', 'domain' => 'old.com'],
+                    ], 200);
+                }
+                if (str_contains($url, '/delete/alias')) {
+                    return Http::response([['type' => 'success', 'msg' => 'ok']], 200);
+                }
+
+                return Http::response([], 200);
+            },
+        ]);
+
+        [$customer, $service] = $this->emailService();
+
+        $this->actingAs($customer)
+            ->from(route('customer.services.email.show', $service))
+            ->delete(route('customer.services.email.aliases.destroy', $service), [
+                'id' => '88',
+            ])
+            ->assertRedirect()
+            ->assertSessionHasErrors('error');
+
+        Http::assertNotSent(fn ($request) => str_contains($request->url(), '/delete/alias'));
+    }
+
     /**
      * @return array{0: User, 1: Service}
      */

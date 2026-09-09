@@ -193,7 +193,26 @@ class EmailHostingController extends Controller
         ]);
 
         try {
-            $result = $provisioning->clientForService($service)->deleteAlias($validated['id']);
+            $domain = $provisioning->domainForService($service);
+            $client = $provisioning->clientForService($service);
+            $listed = $client->listAliases($domain);
+            $ownedIds = [];
+            foreach ($listed['data'] ?? [] as $alias) {
+                if (! is_array($alias)) {
+                    continue;
+                }
+                $id = $alias['id'] ?? $alias['address'] ?? null;
+                if ($id !== null) {
+                    $ownedIds[] = (string) $id;
+                }
+            }
+
+            $requestedId = (string) $validated['id'];
+            if (! in_array($requestedId, $ownedIds, true)) {
+                return back()->withErrors(['error' => 'Alias does not belong to this mail domain.']);
+            }
+
+            $result = $client->deleteAlias($requestedId);
             if (! $result['success']) {
                 return back()->withErrors(['error' => $result['message']]);
             }

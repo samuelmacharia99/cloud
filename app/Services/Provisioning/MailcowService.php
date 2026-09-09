@@ -146,25 +146,39 @@ class MailcowService
      */
     public function listMailboxes(string $domain): array
     {
-        $response = $this->request('GET', '/api/v1/get/mailbox/all/'.$domain);
+        $domain = $this->scopedMailDomain($domain);
+        if ($domain === null) {
+            Log::warning('Refusing Mailcow mailbox list without a valid domain', [
+                'node_id' => $this->node->id,
+            ]);
+
+            return ['success' => false, 'message' => 'A valid mail domain is required to list mailboxes.'];
+        }
+
+        $response = $this->request('GET', '/api/v1/get/mailbox/all/'.rawurlencode($domain));
         if (! $response['success']) {
             return $response;
         }
 
-        $data = $response['data'] ?? [];
-        if (! is_array($data)) {
-            $data = [];
-        }
+        $kept = $this->filterRowsForMailDomain(
+            $this->normalizeList($response['data'] ?? []),
+            $domain,
+            ['username', 'email'],
+        );
 
-        // Normalise keyed object → list
-        if ($data !== [] && ! array_is_list($data)) {
-            $data = array_values($data);
+        if ($kept['dropped'] > 0) {
+            Log::warning('Dropped out-of-domain Mailcow mailboxes from listing', [
+                'node_id' => $this->node->id,
+                'domain' => $domain,
+                'returned' => $kept['returned'],
+                'kept' => count($kept['rows']),
+            ]);
         }
 
         return [
             'success' => true,
             'message' => 'OK',
-            'data' => $data,
+            'data' => $kept['rows'],
         ];
     }
 
@@ -202,23 +216,39 @@ class MailcowService
      */
     public function listAliases(string $domain): array
     {
-        $response = $this->request('GET', '/api/v1/get/alias/all/'.$domain);
+        $domain = $this->scopedMailDomain($domain);
+        if ($domain === null) {
+            Log::warning('Refusing Mailcow alias list without a valid domain', [
+                'node_id' => $this->node->id,
+            ]);
+
+            return ['success' => false, 'message' => 'A valid mail domain is required to list aliases.'];
+        }
+
+        $response = $this->request('GET', '/api/v1/get/alias/all/'.rawurlencode($domain));
         if (! $response['success']) {
             return $response;
         }
 
-        $data = $response['data'] ?? [];
-        if (! is_array($data)) {
-            $data = [];
-        }
-        if ($data !== [] && ! array_is_list($data)) {
-            $data = array_values($data);
+        $kept = $this->filterRowsForMailDomain(
+            $this->normalizeList($response['data'] ?? []),
+            $domain,
+            ['address'],
+        );
+
+        if ($kept['dropped'] > 0) {
+            Log::warning('Dropped out-of-domain Mailcow aliases from listing', [
+                'node_id' => $this->node->id,
+                'domain' => $domain,
+                'returned' => $kept['returned'],
+                'kept' => count($kept['rows']),
+            ]);
         }
 
         return [
             'success' => true,
             'message' => 'OK',
-            'data' => $data,
+            'data' => $kept['rows'],
         ];
     }
 
@@ -639,5 +669,95 @@ class MailcowService
         }
 
         return $message.' Add this app server IP (IPv4 and IPv6 if both are used) to Mailcow → Configuration → Access → API allowlist. Talksasa forces IPv4 for API calls when MAILCOW_FORCE_IPV4=true.';
+    }
+
+    /**
+     * Admin API keys can return every mailbox/alias on the node. Never list without
+     * a real domain, and drop any row that is not on that domain.
+     */
+    private function scopedMailDomain(string $domain): ?string
+    {
+        $domain = strtolower(trim($domain));
+        $domain = preg_replace('#^https?://#', '', $domain) ?? $domain;
+        $domain = explode('/', $domain)[0] ?? $domain;
+        $domain = rtrim($domain, '.');
+
+        if ($domain === '' || ! str_contains($domain, '.') || str_contains($domain, ' ') || str_contains($domain, '@')) {
+            return null;
+        }
+
+        return $domain;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function normalizeList(mixed $data): array
+    {
+        if (! is_array($data)) {
+            return [];
+        }
+
+        if ($data !== [] && ! array_is_list($data)) {
+            $data = array_values($data);
+        }
+
+        return array_values(array_filter($data, 'is_array'));
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $rows
+     * @param  list<string>  $addressKeys
+     * @return array{rows: list<array<string, mixed>>, returned: int, dropped: int}
+     */
+    private function filterRowsForMailDomain(array $rows, string $domain, array $addressKeys): array
+    {
+        $kept = [];
+        foreach ($rows as $row) {
+            if ($this->rowBelongsToMailDomain($row, $domain, $addressKeys)) {
+                $kept[] = $row;
+            }
+        }
+
+        return [
+            'rows' => $kept,
+            'returned' => count($rows),
+            'dropped' => count($rows) - count($kept),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @param  list<string>  $addressKeys
+     */
+    private function rowBelongsToMailDomain(array $row, string $domain, array $addressKeys): bool
+    {
+        $matchedAddress = false;
+        $sawAddress = false;
+
+        foreach ($addressKeys as $key) {
+            $address = strtolower(trim((string) ($row[$key] ?? '')));
+            if ($address === '') {
+                continue;
+            }
+            $sawAddress = true;
+            if ($this->addressBelongsToDomain($address, $domain)) {
+                $matchedAddress = true;
+                break;
+            }
+        }
+
+        if ($sawAddress) {
+            return $matchedAddress;
+        }
+
+        $rowDomain = strtolower(trim((string) ($row['domain'] ?? '')));
+
+        return $rowDomain !== '' && $rowDomain === $domain;
+    }
+
+    private function addressBelongsToDomain(string $address, string $domain): bool
+    {
+        return $address === '@'.$domain || str_ends_with($address, '@'.$domain);
     }
 }
