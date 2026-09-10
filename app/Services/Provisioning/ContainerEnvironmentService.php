@@ -45,12 +45,14 @@ class ContainerEnvironmentService
 
     /**
      * @return array{
-     *     variables: list<array{key: string, value: string, sensitive: bool, platform_managed: bool}>,
+     *     variables: list<array{key: string, value: string, sensitive: bool, platform_managed: bool, required_by_app: bool, unset: bool}>,
      *     can_save: bool,
      *     can_apply: bool,
      *     applies_dotenv: bool,
      *     template_slug: ?string,
-     *     deployment_status: ?string
+     *     deployment_status: ?string,
+     *     required_by_app: list<string>,
+     *     suggested_by_app: list<string>
      * }
      */
     public function buildPanelState(Service $service, ?ContainerDeployment $deployment): array
@@ -72,6 +74,27 @@ class ContainerEnvironmentService
                 'value' => (string) $value,
                 'sensitive' => $this->isSensitiveKey($key),
                 'platform_managed' => $this->isPlatformManagedKey($key),
+                'required_by_app' => false,
+                'unset' => false,
+            ];
+        }
+
+        // Keys the application asked for and nothing has set. Required ones are
+        // holding the app from starting; declared ones are optional settings its
+        // own example file mentions. Neither is written into the container until
+        // the customer supplies a value.
+        $requirements = app(ApplicationEnvironmentRequirements::class);
+        $required = $requirements->outstandingRequired($service, $deployment);
+        $suggested = $requirements->outstandingDeclared($service, $deployment);
+
+        foreach ([...$required, ...$suggested] as $key) {
+            $variables[] = [
+                'key' => $key,
+                'value' => '',
+                'sensitive' => $this->isSensitiveKey($key),
+                'platform_managed' => false,
+                'required_by_app' => in_array($key, $required, true),
+                'unset' => true,
             ];
         }
 
@@ -87,6 +110,8 @@ class ContainerEnvironmentService
             'applies_dotenv' => in_array($slug, ['laravel', 'php'], true),
             'template_slug' => $slug,
             'deployment_status' => $status,
+            'required_by_app' => $required,
+            'suggested_by_app' => $suggested,
         ];
     }
 

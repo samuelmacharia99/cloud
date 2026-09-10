@@ -7,6 +7,7 @@ enum ServiceStatus: string
     case Active = 'active';
     case Pending = 'pending';
     case Provisioning = 'provisioning';
+    case AwaitingConfiguration = 'awaiting_configuration';
     case Suspended = 'suspended';
     case Terminated = 'terminated';
     case Failed = 'failed';
@@ -18,6 +19,7 @@ enum ServiceStatus: string
             self::Active => 'Active',
             self::Pending => 'Pending',
             self::Provisioning => 'Provisioning',
+            self::AwaitingConfiguration => 'Awaiting configuration',
             self::Suspended => 'Suspended',
             self::Terminated => 'Terminated',
             self::Failed => 'Failed',
@@ -31,6 +33,7 @@ enum ServiceStatus: string
             self::Active => 'green',
             self::Pending => 'blue',
             self::Provisioning => 'cyan',
+            self::AwaitingConfiguration => 'amber',
             self::Suspended => 'red',
             self::Terminated => 'slate',
             self::Failed => 'red',
@@ -44,6 +47,7 @@ enum ServiceStatus: string
             self::Active => 'success',
             self::Pending => 'info',
             self::Provisioning => 'info',
+            self::AwaitingConfiguration => 'warning',
             self::Suspended => 'danger',
             self::Terminated => 'secondary',
             self::Failed => 'danger',

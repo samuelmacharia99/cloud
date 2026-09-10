@@ -12,6 +12,13 @@ class NodeWebGatewayProxy
 
     public const EDGE_PORT = 8080;
 
+    /**
+     * Set on the edge container to hold the site on a setup notice while the
+     * API waits for values only the customer can supply. Carries the missing
+     * variable names, comma separated, so the page can list them.
+     */
+    public const SETUP_REQUIRED_ENV = 'GATEWAY_SETUP_REQUIRED';
+
     public static function scriptPath(string $hostAppPath): string
     {
         return rtrim($hostAppPath, '/').'/.talksasa-node-gateway.js';
@@ -76,6 +83,54 @@ const backendPort = Number(process.env.BACKEND_PORT || 8000);
 const frontendHost = process.env.FRONTEND_HOST || 'frontend';
 const frontendPort = Number(process.env.FRONTEND_PORT || 3000);
 
+// Non-empty while the API is held for configuration. The app container is
+// stopped in that state, so proxying anywhere would only serve 502s.
+const setupRequired = String(process.env.GATEWAY_SETUP_REQUIRED || '').trim();
+const setupVariables = setupRequired
+  .split(',')
+  .map((name) => name.trim())
+  .filter(Boolean);
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  })[character]);
+}
+
+function setupPage() {
+  const items = setupVariables.length
+    ? '<ul>' + setupVariables.map((name) => '<li><code>' + escapeHtml(name) + '</code></li>').join('') + '</ul>'
+    : '';
+  return '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+    + '<meta name="viewport" content="width=device-width, initial-scale=1">'
+    + '<title>Configuration required</title><style>'
+    + ':root{color-scheme:light dark}'
+    + 'body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;'
+    + 'font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#0f172a;color:#e2e8f0;padding:24px}'
+    + 'main{max-width:34rem}h1{font-size:1.5rem;margin:0 0 .75rem}'
+    + 'p{margin:0 0 1rem;color:#94a3b8}ul{margin:0 0 1rem;padding-left:1.25rem}'
+    + 'li{margin:.25rem 0}code{background:#1e293b;color:#f8fafc;padding:.15rem .4rem;border-radius:.25rem;font-size:.9em}'
+    + '</style></head><body><main>'
+    + '<h1>Configuration required</h1>'
+    + '<p>This application is deployed but not started. It needs a few settings before it can run.</p>'
+    + items
+    + '<p>Add them under <strong>Environment</strong> in your hosting console, then apply. '
+    + 'The site starts as soon as they are saved.</p>'
+    + '</main></body></html>';
+}
+
+function serveSetupPage(res) {
+  const body = setupPage();
+  res.writeHead(503, {
+    'content-type': 'text/html; charset=utf-8',
+    'content-length': Buffer.byteLength(body),
+    'cache-control': 'no-store',
+    'retry-after': '120',
+    'x-talksasa-upstream': 'setup',
+  });
+  res.end(body);
+}
+
 function targetsBackend(path) {
   const hasPrefix = (prefix) => path === prefix || path.startsWith(prefix + '/');
   return path === '/health' || path === '/healthz' || path === '/up'
@@ -91,6 +146,10 @@ function target(req) {
 }
 
 const server = http.createServer((req, res) => {
+  if (setupRequired) {
+    serveSetupPage(res);
+    return;
+  }
   const upstreamTarget = target(req);
   const { role, ...connection } = upstreamTarget;
   const forwardedFor = [req.headers['x-forwarded-for'], req.socket.remoteAddress].filter(Boolean).join(', ');
@@ -125,6 +184,10 @@ const server = http.createServer((req, res) => {
 });
 
 server.on('upgrade', (req, socket, head) => {
+  if (setupRequired) {
+    socket.destroy();
+    return;
+  }
   const upstreamTarget = target(req);
   const { role, ...connection } = upstreamTarget;
   const upstream = http.request({

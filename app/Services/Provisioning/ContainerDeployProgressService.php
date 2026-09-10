@@ -26,8 +26,11 @@ class ContainerDeployProgressService
         $lines = $events->map(fn (ContainerDeploymentEvent $event) => $this->formatLine($event))->all();
         $steps = $this->stepsFor($service, $events);
         $completed = count(array_filter($steps, fn (array $step) => $step['status'] === 'completed'));
+        $awaitingConfiguration = $status === ServiceStatus::AwaitingConfiguration->value;
         $failed = $status === ServiceStatus::Failed->value || $events->contains(fn ($event) => $event->event === 'deploy_failed');
-        $active = in_array($status, [ServiceStatus::Pending->value, ServiceStatus::Provisioning->value], true) && ! $failed;
+        $active = in_array($status, [ServiceStatus::Pending->value, ServiceStatus::Provisioning->value], true)
+            && ! $failed
+            && ! $awaitingConfiguration;
         $percent = $failed
             ? max(8, (int) floor(($completed / max(count($steps), 1)) * 100))
             : ($status === ServiceStatus::Active->value
@@ -50,10 +53,20 @@ class ContainerDeployProgressService
             'steps' => $steps,
             'log' => implode("\n", $lines) ?: $this->waitingLog($service),
             'lines' => $lines,
-            'can_retry' => $failed,
-            'redirect' => $status === ServiceStatus::Active->value
-                ? route('customer.services.container.show', $service)
-                : null,
+            'is_awaiting_configuration' => $awaitingConfiguration,
+            'missing_variables' => $awaitingConfiguration
+                ? app(ApplicationEnvironmentRequirements::class)->outstandingRequired($service, $service->containerDeployment)
+                : [],
+            'can_retry' => $failed || $awaitingConfiguration,
+            // Send the customer straight to the tab where they can act.
+            'redirect' => match (true) {
+                $status === ServiceStatus::Active->value => route('customer.services.container.show', $service),
+                $awaitingConfiguration => route('customer.services.container.show', [
+                    'service' => $service,
+                    'tab' => 'environment',
+                ]),
+                default => null,
+            },
         ];
     }
 
@@ -147,6 +160,16 @@ class ContainerDeployProgressService
     {
         if ($status === ServiceStatus::Active->value) {
             return 'Your application is ready.';
+        }
+
+        if ($status === ServiceStatus::AwaitingConfiguration->value) {
+            $missing = app(ApplicationEnvironmentRequirements::class)
+                ->outstandingRequired($service, $service->containerDeployment);
+
+            return $missing === []
+                ? 'Your app needs a few settings before it starts. Add them under Environment.'
+                : 'Your app needs these settings before it starts: '.implode(', ', $missing)
+                    .'. Add them under Environment.';
         }
 
         if ($status === ServiceStatus::Failed->value || $latest?->event === 'deploy_failed') {

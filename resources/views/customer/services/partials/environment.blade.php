@@ -20,6 +20,34 @@
         </div>
     </div>
 
+    @if (! empty($environmentPanel['required_by_app']))
+        <div class="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 p-4 text-sm text-red-900 dark:text-red-100">
+            <p class="font-semibold">Your app is waiting on these settings.</p>
+            <p class="mt-1">
+                It stopped on start-up because these values are missing. Fill them in below and apply, and the app starts straight away.
+            </p>
+            <ul class="mt-2 space-y-1 font-mono text-xs">
+                @foreach ($environmentPanel['required_by_app'] as $requiredKey)
+                    <li>{{ $requiredKey }}</li>
+                @endforeach
+            </ul>
+        </div>
+    @endif
+
+    @if (! empty($environmentPanel['suggested_by_app']))
+        <div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 p-4 text-sm text-slate-700 dark:text-slate-300">
+            <p class="font-semibold text-slate-900 dark:text-white">Other settings your app mentions.</p>
+            <p class="mt-1">
+                Read from the example file in your repository. These are optional, so add them whenever you need them.
+            </p>
+            <ul class="mt-2 space-y-1 font-mono text-xs">
+                @foreach ($environmentPanel['suggested_by_app'] as $suggestedKey)
+                    <li>{{ $suggestedKey }}</li>
+                @endforeach
+            </ul>
+        </div>
+    @endif
+
     <div class="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-4 text-sm text-amber-900 dark:text-amber-100">
         Platform-managed database keys are editable but tied to your sidecar. Changing them restarts the stack and may require credential repair from the Database tab.
     </div>

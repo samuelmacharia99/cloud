@@ -2,6 +2,7 @@
 
 namespace App\Services\Provisioning;
 
+use App\Exceptions\ApplicationConfigurationRequiredException;
 use App\Exceptions\SSH\SSHCommandException;
 use App\Exceptions\SSH\SSHConnectionException;
 use App\Models\ContainerDeployment;
@@ -377,6 +378,19 @@ class ContainerDeploymentService
                         $deployment->update(['env_values' => $envVars]);
                         $this->syncNodeWebGatewayFiles($ssh, $hostAppPath, (string) ($nodeTopology['frontend_type'] ?? ''));
                     }
+                }
+
+                // Record what the application's own example file asks for, so the
+                // console can show the customer their settings before anything
+                // crashes. Nothing here blocks or fills in a value.
+                if ($hostAppPath) {
+                    $requirements = app(ApplicationEnvironmentRequirements::class);
+                    $requirements->rememberDeclared($service, $requirements->discoverDeclared(
+                        $ssh,
+                        $hostAppPath,
+                        (string) data_get($nodeTopology, 'backend.root', ''),
+                        $envVars,
+                    ));
                 }
 
                 $applicationRuntime = $this->resolveApplicationRuntime($ssh, $template, $hostAppPath, $nodeTopology);
@@ -768,6 +782,9 @@ class ContainerDeploymentService
                 // Increment container count on node
                 $node->increment('container_count');
 
+                // A previous attempt may have parked this service for configuration.
+                app(ContainerConfigurationHoldService::class)->release($service, $deployment);
+
                 // Notify user (skipped for admin quiet converts)
                 if (! $options->quiet) {
                     app(NotificationService::class)->notifyServiceActivated($service->fresh());
@@ -786,6 +803,17 @@ class ContainerDeploymentService
                 ]);
 
                 return new ContainerDeployResult($databaseReset, $laravelDatabaseSyncMessage);
+            } catch (ApplicationConfigurationRequiredException $e) {
+                // Everything the platform owns came up. Park the stack on the
+                // setup notice instead of tearing down a working deployment.
+                app(ContainerConfigurationHoldService::class)
+                    ->hold($service, $deployment, $ssh, $e->missingVariables());
+
+                $this->recordDeploymentEvent($service, $deployment, 'deploy_awaiting_configuration', [
+                    'missing_variables' => $e->missingVariables(),
+                ]);
+
+                return new ContainerDeployResult;
             } catch (SSHCommandException|SSHConnectionException $e) {
                 $deployment->update([
                     'status' => 'failed',
@@ -3219,7 +3247,7 @@ class ContainerDeploymentService
                 if ($attempt % 2 === 0 && $this->backendIsDown($ssh, $backend)) {
                     $fatal = $presenter->present($this->stackCommands->containerLogs($ssh, $backend));
                     if ($fatal !== null) {
-                        throw new \RuntimeException($fatal['message']);
+                        throw $this->readinessFailure($fatal);
                     }
                 }
 
@@ -3240,7 +3268,7 @@ class ContainerDeploymentService
 
         $fatal = $presenter->present($logs);
         if ($fatal !== null) {
-            throw new \RuntimeException($fatal['message']);
+            throw $this->readinessFailure($fatal);
         }
 
         // Summarise before truncating: a traceback names its exception on the last
@@ -3253,6 +3281,24 @@ class ContainerDeploymentService
                 4000
             )
         );
+    }
+
+    /**
+     * Missing customer credentials park the deploy for configuration. Anything
+     * else the presenter recognises is a genuine deployment failure.
+     *
+     * @param  array{message: string, missing_variables: list<string>}  $fatal
+     */
+    private function readinessFailure(array $fatal): \RuntimeException
+    {
+        if ($fatal['missing_variables'] !== []) {
+            return new ApplicationConfigurationRequiredException(
+                $fatal['missing_variables'],
+                $fatal['message'],
+            );
+        }
+
+        return new \RuntimeException($fatal['message']);
     }
 
     /**
@@ -7595,6 +7641,12 @@ class ContainerDeploymentService
             }
 
             $deployment->update(['status' => 'running']);
+            app(ContainerConfigurationHoldService::class)->release($service, $deployment);
+        } catch (ApplicationConfigurationRequiredException $e) {
+            app(ContainerConfigurationHoldService::class)
+                ->hold($service, $deployment, $ssh, $e->missingVariables());
+
+            return;
         } catch (\Throwable $e) {
             if (($template->slug ?? '') === 'nodejs' && $previousCompose !== '') {
                 $this->rollbackNodeRedeploy(

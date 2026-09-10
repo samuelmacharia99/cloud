@@ -295,7 +295,12 @@ class ServiceController extends Controller
             return redirect()->route('customer.services.container.show', $service);
         }
 
-        if (! in_array($status, [ServiceStatus::Failed, ServiceStatus::Provisioning, ServiceStatus::Pending], true)) {
+        if (! in_array($status, [
+            ServiceStatus::Failed,
+            ServiceStatus::Provisioning,
+            ServiceStatus::Pending,
+            ServiceStatus::AwaitingConfiguration,
+        ], true)) {
             return back()->withErrors(['error' => 'This service cannot be retried in its current state.']);
         }
 
