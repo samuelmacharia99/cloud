@@ -134,6 +134,72 @@ class ContainerDoctorFrontendBuildAnalyzerTest extends TestCase
         $this->assertStringContainsString('Nothing is removed from this API container', $steps);
     }
 
+    #[Test]
+    public function it_flags_an_api_address_that_only_resolves_on_the_container_network(): void
+    {
+        $offenders = $this->analyzer->unreachableFromBrowser(
+            ['EXPO_PUBLIC_API_URL' => 'http://user-493-service-454-nodejs:8000'],
+            siteUsesHttps: true,
+        );
+
+        $this->assertArrayHasKey('EXPO_PUBLIC_API_URL', $offenders);
+        $this->assertStringContainsString('container network', $offenders['EXPO_PUBLIC_API_URL']);
+    }
+
+    #[Test]
+    public function it_flags_plain_http_only_when_the_site_itself_is_https(): void
+    {
+        $value = ['VITE_API_URL' => 'http://api.example.com'];
+
+        $this->assertArrayHasKey('VITE_API_URL', $this->analyzer->unreachableFromBrowser($value, siteUsesHttps: true));
+        $this->assertSame([], $this->analyzer->unreachableFromBrowser($value, siteUsesHttps: false));
+    }
+
+    #[Test]
+    public function it_leaves_a_public_https_address_alone(): void
+    {
+        $this->assertSame([], $this->analyzer->unreachableFromBrowser(
+            ['EXPO_PUBLIC_API_URL' => 'https://api.carslynk.example.com'],
+            siteUsesHttps: true,
+        ));
+    }
+
+    #[Test]
+    public function it_ignores_a_value_that_is_not_an_absolute_url(): void
+    {
+        $this->assertSame([], $this->analyzer->unreachableFromBrowser(
+            ['EXPO_PUBLIC_API_KEY' => 'pk_live_0123456789'],
+            siteUsesHttps: true,
+        ));
+    }
+
+    #[Test]
+    public function the_unreachable_finding_offers_the_api_domain_when_there_is_one(): void
+    {
+        $finding = $this->analyzer->unreachableFinding(
+            ['EXPO_PUBLIC_API_URL' => 'resolves only on the container network'],
+            'https://api.example.com',
+        );
+
+        $this->assertSame('frontend_public_env_unreachable', $finding['id']);
+        $this->assertSame('critical', $finding['severity']);
+        $this->assertSame('point_public_env_at_api', $finding['treat_action']);
+        $this->assertSame(ContainerDoctorFrontendBuildAnalyzer::POINT_AT_API_TREAT_ACTION, $finding['treat_action']);
+        $this->assertStringContainsString('https://api.example.com', $finding['manual_steps'][0]);
+    }
+
+    #[Test]
+    public function the_unreachable_finding_asks_for_a_domain_when_the_api_has_none(): void
+    {
+        $finding = $this->analyzer->unreachableFinding(
+            ['EXPO_PUBLIC_API_URL' => 'resolves only on the container network'],
+            null,
+        );
+
+        $this->assertNull($finding['treat_action']);
+        $this->assertStringContainsString('Bind a domain to the API service', $finding['manual_steps'][0]);
+    }
+
     /**
      * @param  array<string, mixed>  $envValues
      */

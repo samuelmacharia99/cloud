@@ -2,6 +2,7 @@
 
 namespace App\Services\Provisioning;
 
+use App\Models\ContainerDeployment;
 use App\Models\ContainerTemplate;
 use App\Models\Service;
 use App\Services\AdminActivityService;
@@ -11,6 +12,17 @@ use Illuminate\Support\Carbon;
 class ContainerDoctorService
 {
     public const LOG_LINES = 2000;
+
+    /**
+     * Stacks whose schema comes from the application's own migration tool,
+     * which the platform never runs. Laravel is absent because it is migrated
+     * here; WordPress, Ghost and Strapi are absent because they create their
+     * own tables on first boot, and an empty schema there means the boot
+     * failed, which other findings already cover.
+     *
+     * @var list<string>
+     */
+    public const STACKS_WITH_APPLICATION_OWNED_SCHEMA = ['nodejs', 'python', 'ruby'];
 
     /**
      * @return array{
@@ -84,6 +96,7 @@ class ContainerDoctorService
                 'recreate_application',
                 'rebuild_frontend_bundle',
                 'move_public_env_to_web',
+                'point_public_env_at_api',
                 'fix_vite_production_runtime',
                 'upgrade_node_runtime',
                 'switch_php_production_runtime',
@@ -149,6 +162,7 @@ class ContainerDoctorService
             'fix_compose_interpolation' => $this->treatFixComposeInterpolation($service),
             'rebuild_frontend_bundle' => $this->treatRebuildFrontendBundle($service),
             'move_public_env_to_web' => $this->treatMovePublicEnvToWeb($service),
+            'point_public_env_at_api' => $this->treatPointPublicEnvAtApi($service),
             default => ['success' => false, 'message' => 'Unknown treatment action.'],
         };
 
@@ -5121,7 +5135,51 @@ PHP;
             ];
         }
 
+        if (in_array($stack, self::STACKS_WITH_APPLICATION_OWNED_SCHEMA, true)) {
+            return $this->schemaOwnedByApplicationFinding($databaseName, $stack);
+        }
+
         return null;
+    }
+
+    /**
+     * An empty schema on a stack whose migrations the platform does not run.
+     *
+     * Nothing here creates tables for Node, Python or Ruby: those live in the
+     * application's own tool. The state is invisible from the console, which is
+     * what makes it worth a finding — credentials are valid, Test Connection
+     * passes, the table browser shows an empty list that reads like a fresh
+     * install, and every write the application makes fails.
+     *
+     * No treat action: guessing a migration command and running it against a
+     * customer's database is not a repair Doctor can make safely.
+     *
+     * @return array<string, mixed>
+     */
+    public function schemaOwnedByApplicationFinding(string $databaseName, string $stack): array
+    {
+        return [
+            'id' => 'live_empty_database',
+            'severity' => 'warning',
+            'title' => 'Live check: database has no tables',
+            'summary' => 'Credentials work for "'.$databaseName.'" and the schema is empty. '
+                .'Tables for this stack come from your own migration step, which the platform does not run, '
+                .'so sign-up and every other write fails while the database itself keeps testing as healthy.',
+            'evidence' => [
+                'table_count=0',
+                'DB_DATABASE='.$databaseName,
+                'stack='.$stack,
+            ],
+            'treat_action' => null,
+            'treat_label' => null,
+            'manual_steps' => [
+                'Open Terminal and run your project\'s migration, such as npx prisma migrate deploy, '
+                    .'npx knex migrate:latest, alembic upgrade head, or bin/rails db:migrate.',
+                'Or load an existing schema under Database → Import SQL dump.',
+                'If your application creates its own tables at boot, restart it and read the logs for why it did not.',
+            ],
+            'source' => 'live',
+        ];
     }
 
     private function treatImportDaDatabase(Service $service): array
@@ -7492,6 +7550,62 @@ PHP;
             'message' => implode(', ', array_keys($toCopy)).' copied to '.$web->name
                 .' and applied there. Its bundle rebuilds with the new values; hard-refresh the site once it finishes.',
         ];
+    }
+
+    /**
+     * Replace a public API address the browser cannot follow with the API's own
+     * https domain, then let the environment apply rebuild the bundle.
+     *
+     * Only the offending keys are rewritten. A value that already points at a
+     * reachable address is the customer's choice and is left as it stands.
+     *
+     * @return array{success: bool, message: string}
+     */
+    private function treatPointPublicEnvAtApi(Service $service): array
+    {
+        $deployment = $service->containerDeployment;
+        if (! $deployment?->node) {
+            return ['success' => false, 'message' => 'Application is not deployed.'];
+        }
+
+        $analyzer = app(ContainerDoctorFrontendBuildAnalyzer::class);
+        $apiUrl = $analyzer->siblingApiUrl($service);
+        if ($apiUrl === null) {
+            return [
+                'success' => false,
+                'message' => 'The API has no domain with a certificate yet. Bind one under Domains on the API '
+                    .'service, issue its certificate, then run this repair.',
+            ];
+        }
+
+        $offenders = $analyzer->unreachableFromBrowser(
+            $analyzer->publicBuildValues($deployment),
+            $this->deploymentUsesHttps($deployment),
+        );
+        if ($offenders === []) {
+            return ['success' => false, 'message' => 'These settings already point at an address a browser can reach.'];
+        }
+
+        $replacements = array_fill_keys(array_keys($offenders), $apiUrl);
+
+        try {
+            app(ContainerEnvironmentService::class)->updateVariables($service, $replacements, restart: true);
+        } catch (\Throwable $e) {
+            return ['success' => false, 'message' => 'Could not apply the API address: '.$e->getMessage()];
+        }
+
+        return [
+            'success' => true,
+            'message' => implode(', ', array_keys($replacements)).' now points at '.$apiUrl
+                .'. The bundle rebuilds with it; hard-refresh the site once that finishes.',
+        ];
+    }
+
+    private function deploymentUsesHttps(ContainerDeployment $deployment): bool
+    {
+        $deployment->loadMissing('domains');
+
+        return $deployment->domains->contains(fn ($domain): bool => (bool) $domain->ssl_enabled);
     }
 
     private function treatRestartApplication(Service $service): array

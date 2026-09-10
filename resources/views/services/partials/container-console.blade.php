@@ -550,7 +550,7 @@
 
                                 <div class="flex items-center gap-4 flex-wrap" x-data="{ testing: false, syncing: false, result: null }">
                                     <button type="button"
-                                        @click="testing = true; result = null; fetch('{{ container_route('database.test', $service) }}', { method: 'POST', headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content, 'Accept': 'application/json' } }).then(r => r.json()).then(data => { result = data; testing = false; }).catch(() => { result = { success: false, message: 'Network error' }; testing = false; })"
+                                        @click="testing = true; result = null; postDatabaseAction('{{ container_route('database.test', $service) }}').then(data => { result = data; testing = false; })"
                                         :disabled="testing || syncing"
                                         class="px-4 py-2 bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white rounded-lg font-medium transition inline-flex items-center gap-2">
                                         <svg x-show="testing" class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
@@ -559,7 +559,7 @@
                                     </button>
                                     <template x-if="result && !result.success">
                                         <button type="button"
-                                            @click="syncing = true; fetch('{{ container_route('database.sync', $service) }}', { method: 'POST', headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content, 'Accept': 'application/json' } }).then(r => r.json()).then(data => { result = data; syncing = false; }).catch(() => { result = { success: false, message: 'Network error' }; syncing = false; })"
+                                            @click="syncing = true; postDatabaseAction('{{ container_route('database.sync', $service) }}').then(data => { result = data; syncing = false; })"
                                             :disabled="syncing"
                                             class="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-lg font-medium transition inline-flex items-center gap-2">
                                             <svg x-show="syncing" class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
@@ -585,15 +585,38 @@
                                     </template>
                                 </div>
 
+                                @php
+                                    $dbStackSlug = $service->effectiveContainerTemplate()?->slug
+                                        ?? $service->product?->containerTemplate?->slug;
+                                    $dbIsPostgres = ($databaseContext['type'] ?? null) === 'postgresql';
+                                    $dbSchemaIsYours = in_array(
+                                        $dbStackSlug,
+                                        \App\Services\Provisioning\ContainerDoctorService::STACKS_WITH_APPLICATION_OWNED_SCHEMA,
+                                        true,
+                                    );
+                                @endphp
                                 <p class="text-sm text-slate-600 dark:text-slate-400">
-                                    Database credentials are provisioned automatically on deploy and redeploy. Use host <code class="font-mono">db</code> from your application.
-                                    For Laravel, tick <strong>Reset database</strong> on redeploy to wipe data and auto-update <code class="font-mono">/app/.env</code> plus migrations when the app is already installed.
+                                    Database credentials are provisioned automatically on deploy and redeploy. Connect from your app on host <code class="font-mono">{{ $databaseContext['host'] }}</code>, port <code class="font-mono">{{ $databaseContext['port'] }}</code>.
+                                    @if ($dbStackSlug === 'laravel')
+                                        Tick <strong>Reset database</strong> on redeploy to wipe data and auto-update <code class="font-mono">/app/.env</code> plus migrations when the app is already installed.
+                                    @endif
                                 </p>
+
+                                @if ($dbSchemaIsYours)
+                                    <p class="text-sm text-slate-600 dark:text-slate-400">
+                                        The tables themselves come from your own migration step, which this platform does not run. Create them from the <strong>Terminal</strong> tab, or import a dump below. An empty database still passes <strong>Test Connection</strong>, because the credentials are valid either way.
+                                    </p>
+                                @endif
 
                                 <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/50">
                                     <h3 class="text-sm font-semibold text-slate-900 dark:text-white mb-2">Import SQL dump</h3>
                                     <p class="text-sm text-slate-600 dark:text-slate-400 mb-3">
-                                        Upload a <code class="font-mono">.sql</code> file to load tables and data into this service database (max {{ $dbImportMaxMb }} MB). Large dumps are uploaded in small chunks so they are not blocked by PHP’s {{ $dbImportPhpLimitLabel ?? 'upload' }} limit. DirectAdmin dumps that <code class="font-mono">CREATE DATABASE</code> / <code class="font-mono">USE</code> another name are rewritten into this sidecar. Existing tables with the same names may be overwritten.
+                                        Upload a <code class="font-mono">.sql</code> file to load tables and data into this service database (max {{ $dbImportMaxMb }} MB). Large dumps are uploaded in small chunks so they are not blocked by PHP’s {{ $dbImportPhpLimitLabel ?? 'upload' }} limit. Existing tables with the same names may be overwritten.
+                                        @if ($dbIsPostgres)
+                                            The file is piped into <code class="font-mono">psql</code> and stops at the first error. Plain SQL only: export with <code class="font-mono">pg_dump --format=plain</code>, since a <code class="font-mono">-Fc</code> archive is not accepted here.
+                                        @else
+                                            DirectAdmin dumps that <code class="font-mono">CREATE DATABASE</code> / <code class="font-mono">USE</code> another name are rewritten into this sidecar.
+                                        @endif
                                     </p>
                                     <div class="flex flex-wrap items-center gap-3">
                                         <input type="file" id="db-import-file" accept=".sql,text/plain" class="text-sm text-slate-700 dark:text-slate-300">
@@ -633,7 +656,11 @@
 
                                 <div class="p-4 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-700">
                                     <p class="text-sm text-amber-900 dark:text-amber-200">
-                                        Read-only SQL console: only <code>SELECT</code>, <code>SHOW</code>, <code>DESCRIBE</code>, and <code>EXPLAIN</code> are allowed.
+                                        @if ($dbIsPostgres)
+                                            Read-only SQL console: only <code>SELECT</code> and <code>EXPLAIN</code> reach Postgres. <code>SHOW TABLES</code> and <code>DESCRIBE table</code> are translated to their <code>pg_catalog</code> equivalents for you.
+                                        @else
+                                            Read-only SQL console: only <code>SELECT</code>, <code>SHOW</code>, <code>DESCRIBE</code>, and <code>EXPLAIN</code> are allowed.
+                                        @endif
                                     </p>
                                 </div>
 

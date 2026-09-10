@@ -2200,6 +2200,45 @@ LOG;
         ));
     }
 
+    #[Test]
+    public function empty_database_finding_reports_a_node_schema_the_platform_never_creates(): void
+    {
+        $service = new Service;
+        $service->provisioning_driver_key = 'container';
+        $service->service_meta = [];
+
+        $finding = app(ContainerDoctorService::class)->emptyDatabaseFinding(
+            $service,
+            's454_db',
+            false,
+            'nodejs',
+            null
+        );
+
+        $this->assertNotNull($finding);
+        $this->assertSame('live_empty_database', $finding['id']);
+        $this->assertSame('warning', $finding['severity']);
+        $this->assertNull($finding['treat_action']);
+        $this->assertStringContainsString('your own migration step', $finding['summary']);
+        $this->assertStringContainsString('stack=nodejs', $finding['evidence'][2]);
+    }
+
+    #[Test]
+    public function empty_database_finding_stays_quiet_for_a_stack_that_installs_itself(): void
+    {
+        $service = new Service;
+        $service->provisioning_driver_key = 'container';
+        $service->service_meta = [];
+
+        $this->assertNull(app(ContainerDoctorService::class)->emptyDatabaseFinding(
+            $service,
+            's454_db',
+            false,
+            'wordpress',
+            null
+        ));
+    }
+
     /**
      * @param  array<string, mixed>  $release
      */

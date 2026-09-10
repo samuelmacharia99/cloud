@@ -8616,18 +8616,55 @@ class ContainerDeploymentService
         }
 
         $port = $deployment->host_port ?: 8000;
-        $url = str_starts_with($host, 'http') ? $host : "http://{$host}:{$port}";
+        $internal = str_starts_with($host, 'http') ? $host : "http://{$host}:{$port}";
 
         // Only fill what the customer has not chosen. Overwriting these
         // discarded deliberate values, such as an external API origin a mobile
         // build has to reach, on every redeploy.
         $link = [];
-        foreach (['BACKEND_URL', 'NEXT_PUBLIC_API_URL', 'EXPO_PUBLIC_API_URL', 'API_URL'] as $key) {
+        foreach (['BACKEND_URL', 'API_URL'] as $key) {
             if (trim((string) ($envValues[$key] ?? '')) === '') {
-                $link[$key] = $url;
+                $link[$key] = $internal;
+            }
+        }
+
+        // NEXT_PUBLIC_ and EXPO_PUBLIC_ values are baked into the JavaScript a
+        // visitor downloads. Their browser cannot resolve a Docker hostname,
+        // and an https page blocks a plain http request outright, so the API
+        // container's own address is the one address that can never work here.
+        // With no public address bound yet, writing nothing leaves the console
+        // asking for the value instead of shipping one that cannot answer.
+        $browserReachable = $this->browserReachableApiUrl($deployment);
+        if ($browserReachable !== null) {
+            foreach (['NEXT_PUBLIC_API_URL', 'EXPO_PUBLIC_API_URL'] as $key) {
+                if (trim((string) ($envValues[$key] ?? '')) === '') {
+                    $link[$key] = $browserReachable;
+                }
             }
         }
 
         return $link;
+    }
+
+    /**
+     * The API as a visitor's browser can reach it: a bound domain that holds a
+     * certificate. A node IP and port is deliberately rejected — it is plain
+     * http, which an https page blocks as mixed content.
+     */
+    public function browserReachableApiUrl(ContainerDeployment $deployment): ?string
+    {
+        $deployment->loadMissing('domains');
+
+        $usable = $deployment->domains->filter(
+            fn (ContainerDomain $domain): bool => (bool) $domain->ssl_enabled
+                && $domain->status === 'active'
+                && trim((string) $domain->domain) !== ''
+        );
+
+        $domain = $usable->firstWhere('purpose', ContainerDomain::PURPOSE_API) ?? $usable->first();
+
+        return $domain instanceof ContainerDomain
+            ? 'https://'.ltrim(trim((string) $domain->domain), '/')
+            : null;
     }
 }

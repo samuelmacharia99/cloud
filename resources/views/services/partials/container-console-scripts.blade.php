@@ -431,6 +431,35 @@ function containerDoctor(config = {}) {
 
 @include('services.partials.container-redeploy-scripts')
 
+// One POST for the Database tab's buttons. Test Connection and Repair
+// Credentials are rate limited per minute, and the raw throttle body ("Too Many
+// Attempts.") reached the panel with no hint that waiting is the answer.
+async function postDatabaseAction(url) {
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'X-CSRF-TOKEN': document.head.querySelector('meta[name="csrf-token"]').content,
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+        });
+
+        if (response.status === 429) {
+            return { success: false, message: 'Too many attempts in one minute. Wait a moment, then try again.' };
+        }
+
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            return { success: false, message: data.message || data.error || ('Request failed (HTTP ' + response.status + ').') };
+        }
+
+        return data;
+    } catch (error) {
+        return { success: false, message: 'Network error. Check your connection and try again.' };
+    }
+}
+
 async function runDatabaseQuery(format = 'text') {
     const queryEl = document.getElementById('db-query');
     const outEl = document.getElementById('db-query-output');
@@ -457,10 +486,15 @@ async function runDatabaseQuery(format = 'text') {
             body: JSON.stringify({ query, format })
         });
 
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
+        if (response.status === 429) {
+            statusEl.textContent = 'Rate limited';
+            outEl.textContent = 'Too many queries in one minute. Wait a moment, then run it again.';
+            return;
+        }
         if (!response.ok) {
             statusEl.textContent = 'Failed';
-            outEl.textContent = data.error || 'Query failed';
+            outEl.textContent = data.error || data.message || 'Query failed';
             return;
         }
 

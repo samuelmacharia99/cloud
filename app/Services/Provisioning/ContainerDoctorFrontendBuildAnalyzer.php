@@ -25,6 +25,8 @@ class ContainerDoctorFrontendBuildAnalyzer
 
     public const MOVE_TREAT_ACTION = 'move_public_env_to_web';
 
+    public const POINT_AT_API_TREAT_ACTION = 'point_public_env_at_api';
+
     /** @var list<string> */
     public const PUBLIC_BUILD_PREFIXES = ['EXPO_PUBLIC_', 'NEXT_PUBLIC_', 'VITE_', 'NUXT_PUBLIC_', 'REACT_APP_'];
 
@@ -54,6 +56,13 @@ class ContainerDoctorFrontendBuildAnalyzer
         // is redeployed. That is a placement problem, not a stale build.
         if ($role === ContainerExclusiveApplicationPin::ROLE_BACKEND) {
             return $this->misplacedOnApiFindings($service, array_keys($candidates));
+        }
+
+        // A value the browser cannot follow fails before the bundle's age
+        // matters, so it is reported whether or not anything has been exported.
+        $unreachable = $this->unreachableFromBrowser($candidates, $this->siteUsesHttps($deployment));
+        if ($unreachable !== []) {
+            return [$this->unreachableFinding($unreachable, $this->siblingApiUrl($service))];
         }
 
         $frontendRoot = $this->frontendRoot($service);
@@ -165,6 +174,108 @@ class ContainerDoctorFrontendBuildAnalyzer
             ],
             'source' => 'live',
         ];
+    }
+
+    /**
+     * Public values pointing somewhere a visitor's browser cannot follow.
+     *
+     * Two kinds, both fatal before a single request leaves the page. A host
+     * with no dot in it is a Docker service or container name, which resolves
+     * only inside the node's own network. A plain http URL is blocked outright
+     * when the page itself was served over https, and the browser reports it as
+     * mixed content rather than as a failed request.
+     *
+     * @param  array<string, string>  $candidates
+     * @return array<string, string> offending key => the reason it cannot work
+     */
+    public function unreachableFromBrowser(array $candidates, bool $siteUsesHttps): array
+    {
+        $offenders = [];
+
+        foreach ($candidates as $key => $value) {
+            if (preg_match('#^https?://#i', $value) !== 1) {
+                continue;
+            }
+
+            $host = (string) parse_url($value, PHP_URL_HOST);
+            if ($host === '') {
+                continue;
+            }
+
+            if (! str_contains($host, '.') && strtolower($host) !== 'localhost') {
+                $offenders[$key] = $host.' resolves only on the container network';
+
+                continue;
+            }
+
+            if ($siteUsesHttps && str_starts_with(strtolower($value), 'http://')) {
+                $offenders[$key] = 'plain http is blocked as mixed content on an https site';
+            }
+        }
+
+        return $offenders;
+    }
+
+    /**
+     * @param  array<string, string>  $offenders  key => reason
+     * @return array<string, mixed>
+     */
+    public function unreachableFinding(array $offenders, ?string $suggestion = null): array
+    {
+        $names = implode(', ', array_keys($offenders));
+
+        return [
+            'id' => 'frontend_public_env_unreachable',
+            'severity' => 'critical',
+            'title' => 'The frontend points at an address browsers cannot reach',
+            'summary' => "{$names} is baked into the JavaScript your visitors download, and the address it "
+                .'holds only works from inside the node. Every request the app makes fails in the browser '
+                .'before it reaches the API, which is what a "failed to fetch" or "network error" on sign-in '
+                .'usually is. It needs the API\'s own public https address.',
+            'evidence' => array_map(
+                fn (string $key): string => $key.': '.$offenders[$key],
+                array_keys($offenders),
+            ),
+            'treat_action' => $suggestion !== null ? self::POINT_AT_API_TREAT_ACTION : null,
+            'treat_label' => $suggestion !== null ? 'Point at the API domain' : null,
+            'manual_steps' => $suggestion !== null
+                ? [
+                    'Click Point at the API domain — writes '.$suggestion.' into these settings and rebuilds the bundle.',
+                    'Hard-refresh the site afterwards so the browser drops the old JavaScript.',
+                    'Native mobile builds are built on your own machine, so rebuild and resubmit those separately.',
+                ]
+                : [
+                    'Bind a domain to the API service under Domains and issue its certificate.',
+                    'Then set these to https://that-domain under Environment here and apply.',
+                    'An address without a certificate will not do: an https page blocks plain http requests.',
+                ],
+            'source' => 'live',
+        ];
+    }
+
+    /**
+     * The API sibling's public address, when this service is the Web half of a
+     * split project and that API has a certificate of its own.
+     */
+    public function siblingApiUrl(Service $service): ?string
+    {
+        $sibling = app(ContainerExclusiveApplicationPin::class)->sibling($service);
+        $deployment = $sibling?->containerDeployment;
+
+        return $deployment
+            ? app(ContainerDeploymentService::class)->browserReachableApiUrl($deployment)
+            : null;
+    }
+
+    /**
+     * Whether visitors reach this site over https, which is what makes a plain
+     * http API address unusable rather than merely unwise.
+     */
+    private function siteUsesHttps(ContainerDeployment $deployment): bool
+    {
+        $deployment->loadMissing('domains');
+
+        return $deployment->domains->contains(fn ($domain): bool => (bool) $domain->ssl_enabled);
     }
 
     /**

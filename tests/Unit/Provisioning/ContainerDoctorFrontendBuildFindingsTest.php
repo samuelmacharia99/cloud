@@ -6,6 +6,7 @@ use App\Models\ContainerDeployment;
 use App\Models\Service;
 use App\Services\Provisioning\ContainerDoctorFrontendBuildAnalyzer;
 use App\Services\SSH\SSHService;
+use Illuminate\Support\Collection;
 use Mockery;
 use Mockery\MockInterface;
 use PHPUnit\Framework\Attributes\Test;
@@ -81,6 +82,9 @@ class ContainerDoctorFrontendBuildFindingsTest extends TestCase
         $deployment = new ContainerDeployment;
         $deployment->container_name = 'user-493-service-458-nodejs';
         $deployment->env_values = ['EXPO_PUBLIC_API_URL' => 'https://api.sameplan.example.com'];
+        // No bound domains, so the site is plain http and an https API address
+        // is reachable either way. Set explicitly to keep the probe off the DB.
+        $deployment->setRelation('domains', new Collection);
 
         /** @var SSHService&MockInterface $ssh */
         $ssh = Mockery::mock(SSHService::class);

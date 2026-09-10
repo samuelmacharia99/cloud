@@ -1206,7 +1206,7 @@ class ContainerController extends Controller
             \Log::warning("Database query failed for service {$service->id}: ".$e->getMessage());
             $this->logDatabaseQuery($service, $query, $format, false);
 
-            return response()->json(['error' => 'Query failed. Please try again or contact support.'], 500);
+            return response()->json(['error' => 'Query failed. '.$this->databaseErrorDetail($e)], 500);
         }
     }
 
@@ -1391,9 +1391,11 @@ class ContainerController extends Controller
                 'details' => $output,
             ]);
         } catch (\Exception $e) {
+            \Log::warning("Database connection test failed for service {$service->id}: ".$e->getMessage());
+
             return response()->json([
                 'success' => false,
-                'message' => 'Connection failed. Please try again or contact support.',
+                'message' => 'Connection failed. '.$this->databaseErrorDetail($e),
             ]);
         }
     }
@@ -1444,9 +1446,11 @@ class ContainerController extends Controller
                 'message' => 'Credentials synced successfully. Try testing the connection again.',
             ]);
         } catch (\Exception $e) {
+            \Log::warning("Database credential sync failed for service {$service->id}: ".$e->getMessage());
+
             return response()->json([
                 'success' => false,
-                'message' => 'Sync failed. Please try again or contact support.',
+                'message' => 'Sync failed. '.$this->databaseErrorDetail($e),
             ]);
         }
     }
@@ -1954,6 +1958,48 @@ class ContainerController extends Controller
         }
 
         throw new \RuntimeException('Interactive query is not supported for this database type yet');
+    }
+
+    /**
+     * What the database engine actually said, in a form safe to hand back.
+     *
+     * The customer owns this database, and "contact support" told them nothing
+     * about a schema, a role or a password they could fix themselves. Only the
+     * wrapper is removed: the SSH command line carries the sidecar password and
+     * the host path, and neither belongs in a browser.
+     */
+    private function databaseErrorDetail(\Throwable $e): string
+    {
+        $lines = preg_split('/\R/', SSHCommandException::redactSensitive($e->getMessage())) ?: [];
+
+        $useful = [];
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if ($line === '' || str_starts_with($line, 'SSH command failed')) {
+                continue;
+            }
+            // The exit status alone says nothing the engine's own words do not.
+            if (str_starts_with($line, 'Error: Command exited with status')) {
+                continue;
+            }
+            foreach (['Output: ', 'Error: '] as $marker) {
+                if (str_starts_with($line, $marker)) {
+                    $line = substr($line, strlen($marker));
+                }
+            }
+            if (str_contains($line, ContainerDeploymentService::CONTAINER_BASE_PATH)
+                || preg_match('/\b(?:PGPASSWORD|MYSQL_PWD)=/', $line) === 1) {
+                continue;
+            }
+
+            $useful[] = ltrim($line, '-');
+        }
+
+        $detail = trim(preg_replace('/\s+/', ' ', implode(' ', $useful)) ?? '');
+
+        return $detail === ''
+            ? 'The database sidecar gave no reason; check the container logs.'
+            : mb_strimwidth($detail, 0, 300, '…');
     }
 
     private function tabSeparatedToCsv(string $input): string
