@@ -2093,7 +2093,11 @@ class ContainerDeploymentService
      */
     private function buildEnvironmentVariables($template, array $userValues, Service $service, ?DatabaseTemplate $databaseTemplate = null, ?int $port = null, ?string $appContainerName = null): array
     {
-        $env = [];
+        // Customer-supplied and previously generated values are the base. Seeding
+        // only template-declared keys silently dropped every variable the app
+        // itself needs (API credentials, signing keys) on the next redeploy.
+        // Platform-owned keys are re-derived below and still overwrite these.
+        $env = $this->templateEnvironment->normalizeCustomerValues($userValues);
 
         // Add template defaults
         if ($template->environment_variables) {
@@ -3183,6 +3187,8 @@ class ContainerDeploymentService
         $port = (int) $deployment->assigned_port;
         $deadline = time() + max(30, $timeoutSeconds);
         $lastDiagnostic = '';
+        $presenter = app(PythonRuntimeErrorPresenter::class);
+        $attempt = 0;
 
         while (time() < $deadline) {
             try {
@@ -3204,6 +3210,19 @@ class ContainerDeploymentService
                 return;
             } catch (\Throwable $e) {
                 $lastDiagnostic = $e->getMessage();
+                $attempt++;
+
+                // An import-time crash never recovers by waiting, so stop burning
+                // the timeout once the backend's own log names the cause. Only a
+                // backend that is genuinely down is read this way — a healthy app
+                // may log and swallow an import error of its own.
+                if ($attempt % 2 === 0 && $this->backendIsDown($ssh, $backend)) {
+                    $fatal = $presenter->present($this->stackCommands->containerLogs($ssh, $backend));
+                    if ($fatal !== null) {
+                        throw new \RuntimeException($fatal['message']);
+                    }
+                }
+
                 sleep(self::HEALTH_CHECK_DELAY);
             }
         }
@@ -3219,9 +3238,36 @@ class ContainerDeploymentService
             30,
         ));
 
+        $fatal = $presenter->present($logs);
+        if ($fatal !== null) {
+            throw new \RuntimeException($fatal['message']);
+        }
+
+        // Summarise before truncating: a traceback names its exception on the last
+        // line, so keeping the head of a raw pip transcript discards the cause.
         throw new \RuntimeException(
-            'Split web/API stack did not become ready: '.mb_substr($lastDiagnostic."\n".$logs, 0, 4000)
+            'Split web/API stack did not become ready: '
+            .mb_substr(
+                $lastDiagnostic."\n".$this->applicationRuntime->summarizePythonContainerLogs($logs),
+                0,
+                4000
+            )
         );
+    }
+
+    /**
+     * True when the API container is crash-looping or has given up, rather than
+     * merely waiting on a sibling that has not finished booting.
+     */
+    private function backendIsDown(SSHService $ssh, string $containerName): bool
+    {
+        try {
+            $inspect = app(ContainerRuntimeInspector::class)->inspect($ssh, $containerName);
+        } catch (\Throwable) {
+            return false;
+        }
+
+        return in_array((string) ($inspect['state'] ?? ''), ['restarting', 'exited', 'dead'], true);
     }
 
     /**

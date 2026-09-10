@@ -54,6 +54,24 @@ class ContainerStackCommandService
             : $deployment->container_name;
     }
 
+    /**
+     * Tail one container's own output. `docker compose logs` interleaves every
+     * service in the stack, which buries the traceback of the one that crashed.
+     * Diagnostics must never fail the caller, so an unreachable container is an
+     * empty string rather than an exception.
+     */
+    public function containerLogs(SSHService $ssh, string $containerName, int $lines = 80): string
+    {
+        try {
+            return trim($ssh->exec(
+                'docker logs --tail '.max(1, $lines).' '.escapeshellarg($containerName).' 2>&1',
+                20,
+            ));
+        } catch (\Throwable) {
+            return '';
+        }
+    }
+
     public function isSafeCommand(string $command): bool
     {
         $cmd = trim($command);

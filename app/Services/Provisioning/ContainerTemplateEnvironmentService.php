@@ -52,6 +52,10 @@ class ContainerTemplateEnvironmentService
             $env = $this->prepareOllamaEnvironment($env, $service);
         }
 
+        if (($template->slug ?? '') === 'python') {
+            $env = $this->preparePythonEnvironment($env);
+        }
+
         if (in_array($template->slug ?? '', ['laravel', 'php'], true)) {
             // Customer Terminal + npm run as www-data; avoid root-owned /var/www/.npm.
             $env['HOME'] = $env['HOME'] ?? '/tmp';
@@ -67,6 +71,36 @@ class ContainerTemplateEnvironmentService
         }
 
         return $env;
+    }
+
+    /**
+     * Everything the customer supplied at checkout, added under Environment, or
+     * that a previous deploy generated. A rebuild starts from this so variables
+     * the stack template does not declare survive a redeploy; platform-owned
+     * keys are re-derived afterwards and still win.
+     *
+     * @param  array<array-key, mixed>  $userValues
+     * @return array<string, string>
+     */
+    public function normalizeCustomerValues(array $userValues): array
+    {
+        $values = [];
+
+        foreach ($userValues as $key => $value) {
+            $key = (string) $key;
+
+            if (preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $key) !== 1) {
+                continue;
+            }
+
+            if (is_array($value) || is_object($value) || $value === null) {
+                continue;
+            }
+
+            $values[$key] = is_bool($value) ? ($value ? '1' : '0') : (string) $value;
+        }
+
+        return $values;
     }
 
     public function templateDefinesDatabaseSidecar(object $template): bool
@@ -231,6 +265,41 @@ class ContainerTemplateEnvironmentService
         }
 
         return $env;
+    }
+
+    /**
+     * Python web apps build their settings object at import time, so a missing
+     * signing key or synchronous database URL crashes uvicorn before it serves
+     * a request. Supply the two the platform can derive on its own; anything
+     * tied to a third-party account stays the customer's to provide.
+     *
+     * @param  array<string, string>  $env
+     * @return array<string, string>
+     */
+    private function preparePythonEnvironment(array $env): array
+    {
+        $env['PYTHONUNBUFFERED'] = $this->filledOr($env, 'PYTHONUNBUFFERED', '1');
+
+        if (trim((string) ($env['SECRET_KEY'] ?? '')) === '') {
+            $env['SECRET_KEY'] = Str::random(50);
+        }
+
+        $databaseUrl = trim((string) ($env['DATABASE_URL'] ?? ''));
+        if ($databaseUrl !== '' && trim((string) ($env['SYNC_DATABASE_URL'] ?? '')) === '') {
+            $env['SYNC_DATABASE_URL'] = $this->synchronousDatabaseUrl($databaseUrl);
+        }
+
+        return $env;
+    }
+
+    /**
+     * SQLAlchemy reads a bare scheme as the synchronous driver; async stacks pin
+     * one explicitly (postgresql+asyncpg). Alembic and other synchronous callers
+     * need that suffix gone.
+     */
+    private function synchronousDatabaseUrl(string $databaseUrl): string
+    {
+        return preg_replace('/^([A-Za-z0-9]+)\+[A-Za-z0-9_]+:\/\//', '$1://', $databaseUrl) ?? $databaseUrl;
     }
 
     /**
