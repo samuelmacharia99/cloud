@@ -17,7 +17,7 @@
     <!-- Header -->
     <div>
         <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Add to Catalog</h1>
-        <p class="text-slate-600 dark:text-slate-400 mt-1">Add platform shared hosting, container packages, VPS, and dedicated servers to your catalog. Set your retail prices — application hosting is billed against your disk pool.</p>
+        <p class="text-slate-600 dark:text-slate-400 mt-1">Resell a platform package, or create your own plan at your own price: your DirectAdmin hosting, servers you supply yourself, certificates. Application hosting is billed against your disk pool.</p>
     </div>
 
     <!-- Mode Toggle -->
@@ -27,7 +27,7 @@
                 Add from Admin Catalog
             </button>
             <button @click="mode = 'custom'" :class="{ 'bg-purple-600 text-white': mode === 'custom', 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300': mode !== 'custom' }" class="px-6 py-2 font-medium rounded-lg transition">
-                Create Custom Product
+                Create Your Own Plan
             </button>
         </div>
     </div>
@@ -254,6 +254,20 @@
                             @error('type')
                                 <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
                             @enderror
+
+                            {{-- What the reseller is actually signing up for, per type.
+                                 Only shared hosting linked to their own DirectAdmin
+                                 package provisions itself; the rest are sold and
+                                 invoiced here, then fulfilled by the reseller. --}}
+                            <p x-show="customType === 'shared_hosting'" x-cloak class="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                                Your plan, your price. Link it to one of your own DirectAdmin packages below and customer accounts are created on your DirectAdmin server automatically.
+                            </p>
+                            <p x-show="customType && customType !== 'shared_hosting'" x-cloak class="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                                Sold and invoiced through your portal. Talksasa does not provision this one, so you deliver it yourself and mark the invoice paid as usual.
+                            </p>
+                            <p x-show="!customType" x-cloak class="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                                Application hosting is not here: a container needs a stack from the platform catalogue, so add those from <span class="font-medium">Add from Admin Catalog</span>.
+                            </p>
                         </div>
 
                         <div x-show="customType === 'shared_hosting'" x-cloak>

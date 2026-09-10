@@ -165,8 +165,13 @@ class CatalogController extends Controller
             'percent' => $diskUsage->poolUsagePercent($reseller),
         ];
 
+        // A reseller prices their own book. They can list anything the platform
+        // does not have to build for them: their own DirectAdmin plans, servers
+        // they resell from elsewhere, certificates. Only application hosting is
+        // held back, because a container needs a stack template that lives on an
+        // admin product and cannot be invented here.
         $customProductTypes = collect(Product::TYPES)
-            ->except([...self::ADMIN_CATALOG_TYPES, ...self::DISALLOWED_CUSTOM_TYPES])
+            ->except([...self::DISALLOWED_CUSTOM_TYPES, 'container_hosting'])
             ->all();
 
         return [

@@ -132,9 +132,11 @@
     @endif
 
     <!-- Customers list -->
-    <div class="ui-card overflow-hidden w-fit max-w-full">
+    <div class="ui-card overflow-hidden w-full">
         <div class="overflow-x-auto">
-            <table class="w-auto text-sm">
+            {{-- min-w-full so the table fills the card, and still scrolls inside
+                 the overflow wrapper when the columns need more room. --}}
+            <table class="min-w-full text-sm">
                 <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800">
                     <tr>
                         <th class="px-4 py-3 text-left font-semibold text-slate-900 dark:text-white whitespace-nowrap">Customer</th>

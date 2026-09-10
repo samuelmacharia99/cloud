@@ -198,6 +198,96 @@ class ResellerCatalogControllerTest extends TestCase
             ->assertSessionHasErrors('product_id');
     }
 
+    public function test_a_reseller_can_create_their_own_plan_for_anything_the_platform_does_not_build(): void
+    {
+        $reseller = $this->reseller();
+
+        $this->actingAs($reseller)
+            ->get(route('reseller.catalog.create'))
+            ->assertOk()
+            ->assertSee('Shared (email &amp; legacy)', false)
+            ->assertSee('VPS Server')
+            ->assertSee('Dedicated Server')
+            ->assertSee('SSL Certificate');
+    }
+
+    public function test_a_reseller_creates_a_shared_hosting_plan_linked_to_their_own_directadmin_package(): void
+    {
+        $reseller = $this->reseller();
+
+        $this->mock(ResellerDirectAdminService::class, function ($mock) {
+            $mock->shouldReceive('hasDirectAdminBinding')->andReturn(true);
+            $mock->shouldReceive('listAssignablePackages')->andReturn([
+                'packages' => [['name' => 'gold', 'disk_quota' => 20]],
+                'error' => null,
+            ]);
+            $mock->shouldReceive('resolveNode')->andReturn(null);
+        });
+
+        $this->actingAs($reseller)
+            ->post(route('reseller.catalog.store'), [
+                'name' => 'Gold Hosting',
+                'type' => 'shared_hosting',
+                'direct_admin_package_name' => 'gold',
+                'monthly_price' => 1500,
+                'yearly_price' => 15000,
+                'is_active' => true,
+            ])
+            ->assertRedirect(route('reseller.catalog.index'));
+
+        $listing = ResellerProduct::where('reseller_id', $reseller->id)->firstOrFail();
+
+        $this->assertSame('shared_hosting', $listing->type);
+        $this->assertSame('gold', $listing->direct_admin_package_name);
+        $this->assertNull($listing->product_id, 'Their own plan is not tied to a platform product.');
+        $this->assertSame('1500.00', (string) $listing->monthly_price);
+        $this->assertTrue($listing->usesDirectAdminPackage());
+    }
+
+    public function test_a_shared_hosting_plan_must_name_a_package_the_reseller_actually_has(): void
+    {
+        $reseller = $this->reseller();
+
+        $this->mock(ResellerDirectAdminService::class, function ($mock) {
+            $mock->shouldReceive('hasDirectAdminBinding')->andReturn(true);
+            $mock->shouldReceive('listAssignablePackages')->andReturn([
+                'packages' => [['name' => 'gold', 'disk_quota' => 20]],
+                'error' => null,
+            ]);
+            $mock->shouldReceive('resolveNode')->andReturn(null);
+        });
+
+        $this->actingAs($reseller)
+            ->post(route('reseller.catalog.store'), [
+                'name' => 'Imaginary Hosting',
+                'type' => 'shared_hosting',
+                'direct_admin_package_name' => 'platinum',
+                'monthly_price' => 1500,
+                'is_active' => true,
+            ])
+            ->assertSessionHasErrors('direct_admin_package_name');
+    }
+
+    public function test_a_reseller_can_sell_a_server_the_platform_does_not_provision(): void
+    {
+        $reseller = $this->reseller();
+
+        $this->actingAs($reseller)
+            ->post(route('reseller.catalog.store'), [
+                'name' => 'Bare Metal 32GB',
+                'type' => 'dedicated_server',
+                'monthly_price' => 45000,
+                'is_active' => true,
+            ])
+            ->assertRedirect(route('reseller.catalog.index'));
+
+        $listing = ResellerProduct::where('reseller_id', $reseller->id)->firstOrFail();
+
+        $this->assertSame('dedicated_server', $listing->type);
+        $this->assertNull($listing->product_id);
+        $this->assertFalse($listing->isOrderable(), 'Nothing provisions it, so it is billed rather than ordered.');
+    }
+
     public function test_catalog_index_shows_tech_stack_for_container_listings(): void
     {
         $reseller = $this->reseller();
