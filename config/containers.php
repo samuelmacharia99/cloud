@@ -59,6 +59,22 @@ return [
     | Laravel application initialization
     |--------------------------------------------------------------------------
     */
+    /*
+    |--------------------------------------------------------------------------
+    | PostgreSQL extension images
+    |--------------------------------------------------------------------------
+    |
+    | A dump that needs PostGIS cannot load into the stock postgres image, which
+    | ships no extension files for it. The swap keeps the major version and the
+    | C library of what is already on disk: a data directory initialised under
+    | musl carries musl's collation, and reading it back under glibc can order a
+    | text index differently. {major} is filled from the image in use.
+    |
+    */
+    'postgres_extensions' => [
+        'postgis_image' => env('CONTAINER_POSTGIS_IMAGE', 'postgis/postgis:{major}-3.4-alpine'),
+    ],
+
     'laravel_init' => [
         'composer_constraint' => env('LARAVEL_INIT_COMPOSER_CONSTRAINT', '^12.0'),
         'command_timeout_seconds' => (int) env('LARAVEL_INIT_COMMAND_TIMEOUT', 600),

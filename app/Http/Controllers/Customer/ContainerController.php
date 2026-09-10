@@ -30,6 +30,7 @@ use App\Services\Customer\ProjectNodeWebSplitService;
 use App\Services\Dns\DomainCloudflareDnsService;
 use App\Services\Provisioning\ContainerAutoDeployService;
 use App\Services\Provisioning\ContainerBackupService;
+use App\Services\Provisioning\ContainerCommandOutputPresenter;
 use App\Services\Provisioning\ContainerCronService;
 use App\Services\Provisioning\ContainerDatabaseMigrationService;
 use App\Services\Provisioning\ContainerDeploymentService;
@@ -45,6 +46,7 @@ use App\Services\Provisioning\ContainerHermesOllamaLinkService;
 use App\Services\Provisioning\ContainerNodeWorkloadTopologyService;
 use App\Services\Provisioning\ContainerOllamaModelService;
 use App\Services\Provisioning\ContainerPhpExtensionsService;
+use App\Services\Provisioning\ContainerPostgresExtensionService;
 use App\Services\Provisioning\ContainerSqlDumpImportService;
 use App\Services\Provisioning\ContainerSslErrorPresenter;
 use App\Services\Provisioning\ContainerStagingService;
@@ -1261,19 +1263,7 @@ class ContainerController extends Controller
         $databaseContext = $this->buildDatabaseContext($service, $deployment);
         $expected = (string) ($databaseContext['username'] ?? '');
 
-        $request->validate([
-            'confirm_username' => [
-                'required',
-                'string',
-                function (string $attribute, mixed $value, \Closure $fail) use ($expected): void {
-                    if (trim((string) $value) !== $expected) {
-                        $fail('The database username does not match. Type it exactly as shown above.');
-                    }
-                },
-            ],
-        ], [
-            'confirm_username.required' => 'Type the database username to confirm.',
-        ]);
+        $this->validateDatabaseUsername($request, $expected);
 
         $migrations = app(ContainerDatabaseMigrationService::class);
         $ssh = SSHService::forNode($deployment->node);
@@ -1307,6 +1297,68 @@ class ContainerController extends Controller
             'output' => $result['output'],
             'tables_before' => $result['tables_before'],
             'tables_after' => $result['tables_after'],
+        ]);
+    }
+
+    /**
+     * Move this database onto an image that carries PostGIS.
+     *
+     * Confirmed the same way a migration is, because the database restarts.
+     */
+    public function databaseEnablePostgis(Service $service, Request $request): JsonResponse
+    {
+        $this->authorize('manageContainer', $service);
+
+        $guard = $this->guardDatabaseMigration($service);
+        if ($guard instanceof JsonResponse) {
+            return $guard;
+        }
+
+        $deployment = $service->containerDeployment;
+        $databaseContext = $this->buildDatabaseContext($service, $deployment);
+
+        if (($databaseContext['type'] ?? null) !== 'postgresql') {
+            return response()->json(['success' => false, 'message' => 'This service does not run PostgreSQL.'], 400);
+        }
+
+        $this->validateDatabaseUsername($request, (string) ($databaseContext['username'] ?? ''));
+
+        $ssh = SSHService::forNode($deployment->node);
+
+        try {
+            $message = app(ContainerPostgresExtensionService::class)->enablePostgis($service, $deployment, $ssh);
+        } catch (\Throwable $e) {
+            \Log::warning("Enabling PostGIS failed for service {$service->id}: ".$e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Could not enable PostGIS. '.$this->databaseErrorDetail($e),
+                'output' => $this->databaseFailureOutput($e),
+            ], 500);
+        } finally {
+            $ssh->disconnect();
+        }
+
+        return response()->json(['success' => true, 'message' => $message]);
+    }
+
+    /**
+     * The typed database username, checked here rather than in the browser.
+     */
+    private function validateDatabaseUsername(Request $request, string $expected): void
+    {
+        $request->validate([
+            'confirm_username' => [
+                'required',
+                'string',
+                function (string $attribute, mixed $value, \Closure $fail) use ($expected): void {
+                    if (trim((string) $value) !== $expected) {
+                        $fail('The database username does not match. Type it exactly as shown above.');
+                    }
+                },
+            ],
+        ], [
+            'confirm_username.required' => 'Type the database username to confirm.',
         ]);
     }
 
@@ -2118,21 +2170,16 @@ class ContainerController extends Controller
      * wrapper is removed: the SSH command line carries the sidecar password and
      * the host path, and neither belongs in a browser.
      */
+    /**
+     * One line for the banner: the program's own words, not the plumbing's.
+     */
     private function databaseErrorDetail(\Throwable $e): string
     {
-        $lines = $this->databaseFailureLines($e);
-        if ($lines === []) {
-            return 'The database sidecar gave no reason; check the container logs.';
-        }
-
-        // The reason a command failed is its last words, not its first. Reading
-        // from the front spent the whole budget on Compose's start-up chatter
-        // and cut the error off.
-        $detail = trim(preg_replace('/\s+/', ' ', implode(' ', array_slice($lines, -6))) ?? '');
+        $detail = app(ContainerCommandOutputPresenter::class)->summary($e->getMessage());
 
         return $detail === ''
             ? 'The database sidecar gave no reason; check the container logs.'
-            : $this->tailWithin($detail, 300);
+            : $detail;
     }
 
     /**
@@ -2140,68 +2187,7 @@ class ContainerController extends Controller
      */
     private function databaseFailureOutput(\Throwable $e): string
     {
-        return $this->tailWithin(implode("\n", $this->databaseFailureLines($e)), 4000);
-    }
-
-    /**
-     * The command's own output, with the plumbing removed.
-     *
-     * Docker Compose narrates every run on stderr, and phpseclib folds that in
-     * with the output that matters. Left in, a volume warning and three
-     * container status lines are all the customer ever sees.
-     *
-     * @return list<string>
-     */
-    private function databaseFailureLines(\Throwable $e): array
-    {
-        $lines = preg_split('/\R/', SSHCommandException::redactSensitive($e->getMessage())) ?: [];
-
-        $useful = [];
-        foreach ($lines as $line) {
-            $line = trim($line);
-            if ($line === '' || str_starts_with($line, 'SSH command failed')) {
-                continue;
-            }
-            // The exit status alone says nothing the engine's own words do not.
-            if (str_starts_with($line, 'Error: Command exited with status')) {
-                continue;
-            }
-            foreach (['Output: ', 'Error: '] as $marker) {
-                if (str_starts_with($line, $marker)) {
-                    $line = substr($line, strlen($marker));
-                }
-            }
-            if (str_contains($line, ContainerDeploymentService::CONTAINER_BASE_PATH)
-                || preg_match('/\b(?:PGPASSWORD|MYSQL_PWD)=/', $line) === 1
-                || $this->isComposeProgressLine($line)) {
-                continue;
-            }
-
-            $useful[] = ltrim($line, '-');
-        }
-
-        return $useful;
-    }
-
-    /**
-     * Compose's own narration: the docker CLI's warning log lines, and the
-     * per-resource progress it prints while bringing a stack up.
-     */
-    private function isComposeProgressLine(string $line): bool
-    {
-        return preg_match('/^time="[^"]*"\s+level=/', $line) === 1
-            || preg_match(
-                '/^(?:Container|Network|Volume|Image)\s+\S+\s+'
-                .'(?:Running|Created|Creating|Started|Starting|Recreated|Recreating|Healthy|Waiting|Existing|Pulling|Pulled|Built|Building|Removed|Removing|Stopped|Stopping)\b/',
-                $line
-            ) === 1;
-    }
-
-    private function tailWithin(string $text, int $limit): string
-    {
-        return mb_strlen($text) <= $limit
-            ? $text
-            : '…'.mb_substr($text, -($limit - 1));
+        return app(ContainerCommandOutputPresenter::class)->full($e->getMessage());
     }
 
     private function tabSeparatedToCsv(string $input): string

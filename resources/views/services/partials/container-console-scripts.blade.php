@@ -457,7 +457,13 @@ async function postDatabaseAction(url, body = null) {
 
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
-            return { success: false, message: data.message || data.error || ('Request failed (HTTP ' + response.status + ').') };
+            // Keep whatever else came back: a failed run still returns its
+            // output, and rebuilding the object from scratch threw it away.
+            return {
+                ...data,
+                success: false,
+                message: data.message || data.error || ('Request failed (HTTP ' + response.status + ').'),
+            };
         }
 
         return data;
@@ -708,6 +714,33 @@ function dbMigrationRunner(planUrl, runUrl, dbUsername) {
             } finally {
                 this.detecting = false;
             }
+        },
+        async run() {
+            if (!this.canRun) return;
+
+            this.running = true;
+            this.result = null;
+            this.result = await postDatabaseAction(this.runUrl, { confirm_username: this.confirmation.trim() });
+            this.running = false;
+
+            if (this.result?.success) {
+                this.confirmation = '';
+            }
+        },
+    };
+}
+
+// Swapping the database image restarts Postgres, so it is confirmed the same
+// way a migration is: the database username, typed.
+function dbPostgisEnabler(runUrl, dbUsername) {
+    return {
+        runUrl,
+        dbUsername,
+        running: false,
+        confirmation: '',
+        result: null,
+        get canRun() {
+            return !this.running && this.confirmation.trim() === this.dbUsername;
         },
         async run() {
             if (!this.canRun) return;

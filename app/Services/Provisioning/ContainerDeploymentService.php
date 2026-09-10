@@ -2170,13 +2170,30 @@ class ContainerDeploymentService
     }
 
     /**
+     * An image this service was deliberately moved to, such as the PostGIS
+     * build of its own Postgres version. Only ever a swap the platform made.
+     */
+    private function rememberedDatabaseImage(?ContainerDeployment $deployment): ?string
+    {
+        if (! $deployment) {
+            return null;
+        }
+
+        $deployment->loadMissing('service');
+        $image = trim((string) data_get($deployment->service?->service_meta, 'database_image', ''));
+
+        return $image === '' ? null : $image;
+    }
+
+    /**
      * Inject database sidecar service into compose array
      */
     private function injectDatabaseSidecar(
         array &$compose,
         DatabaseTemplate $db,
         array $envVars,
-        string $appServiceName
+        string $appServiceName,
+        ?string $imageOverride = null
     ): void {
         $dbEnv = match ($db->type) {
             'mysql', 'mariadb' => [
@@ -2208,7 +2225,10 @@ class ContainerDeploymentService
         };
 
         $compose['services']['db'] = array_filter([
-            'image' => $db->docker_image,
+            // A service that had its image swapped for one carrying an
+            // extension keeps it: rendering the stock image again would take
+            // PostGIS away from a schema that depends on it.
+            'image' => $imageOverride ?? $db->docker_image,
             'container_name' => $appServiceName.'-db',
             'restart' => 'always',
             'mem_limit' => '512M',
@@ -2437,7 +2457,13 @@ class ContainerDeploymentService
 
         // Inject database sidecar if selected and template does not already define one
         if ($databaseTemplate && ! $this->templateEnvironment->templateDefinesDatabaseSidecar($template)) {
-            $this->injectDatabaseSidecar($compose, $databaseTemplate, $envVars, $containerName);
+            $this->injectDatabaseSidecar(
+                $compose,
+                $databaseTemplate,
+                $envVars,
+                $containerName,
+                $this->rememberedDatabaseImage($deployment),
+            );
         }
 
         if ($serveNextFrontend && ($template->slug ?? null) === 'laravel') {

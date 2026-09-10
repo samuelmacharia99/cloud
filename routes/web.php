@@ -424,6 +424,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/services/{service}/container/database/sync-credentials', [App\Http\Controllers\Customer\ContainerController::class, 'databaseSyncCredentials'])->name('admin.services.container.database.sync');
         Route::get('admin/services/{service}/container/database/migration-plan', [App\Http\Controllers\Customer\ContainerController::class, 'databaseMigrationPlan'])->name('admin.services.container.database.migration-plan');
         Route::post('admin/services/{service}/container/database/migrate', [App\Http\Controllers\Customer\ContainerController::class, 'databaseMigrate'])->name('admin.services.container.database.migrate');
+        Route::post('admin/services/{service}/container/database/enable-postgis', [App\Http\Controllers\Customer\ContainerController::class, 'databaseEnablePostgis'])->name('admin.services.container.database.enable-postgis');
 
         Route::get('admin/services/{service}/container/files', [ContainerFileController::class, 'index'])->name('admin.services.container.files.index');
         Route::get('admin/services/{service}/container/files/content', [ContainerFileController::class, 'content'])->name('admin.services.container.files.content');
@@ -879,6 +880,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('my/services/{service}/container/database/sync-credentials', [App\Http\Controllers\Customer\ContainerController::class, 'databaseSyncCredentials'])->middleware('throttle:3,1')->name('customer.services.container.database.sync');
         Route::get('my/services/{service}/container/database/migration-plan', [App\Http\Controllers\Customer\ContainerController::class, 'databaseMigrationPlan'])->middleware('throttle:20,1')->name('customer.services.container.database.migration-plan');
         Route::post('my/services/{service}/container/database/migrate', [App\Http\Controllers\Customer\ContainerController::class, 'databaseMigrate'])->middleware('throttle:3,1')->name('customer.services.container.database.migrate');
+        Route::post('my/services/{service}/container/database/enable-postgis', [App\Http\Controllers\Customer\ContainerController::class, 'databaseEnablePostgis'])->middleware('throttle:2,1')->name('customer.services.container.database.enable-postgis');
 
         // Container file manager (throttled)
         Route::middleware(['throttle:60,1'])->group(function () {

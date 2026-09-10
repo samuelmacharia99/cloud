@@ -604,6 +604,25 @@ class ContainerSqlDumpImportService
         }
 
         if ($dbType === 'postgresql') {
+            // psql stops on first error, so a missing extension loses the whole
+            // import halfway through. Check before touching the database, and
+            // name what is missing rather than leaving psql to say it.
+            $extensions = app(ContainerPostgresExtensionService::class);
+            $missing = $extensions->missingExtensions(
+                $ssh,
+                $deployment,
+                $extensions->requiredExtensions($sql),
+            );
+            if ($missing !== []) {
+                throw new \InvalidArgumentException(
+                    'This dump needs the '.implode(', ', $missing).' extension'
+                    .(count($missing) > 1 ? 's' : '').', which this database does not have. '
+                    .(in_array('postgis', $missing, true)
+                        ? 'Use Enable PostGIS on this tab, then import again.'
+                        : 'Ask support to add it to the database image.')
+                );
+            }
+
             $importDir = $containerPath.'/.db-imports';
             $ssh->mkdirp($importDir);
             $localDump = tempnam(sys_get_temp_dir(), 'ts-sql-import-');

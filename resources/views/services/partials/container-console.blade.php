@@ -608,6 +608,39 @@
                                     </p>
                                 @endif
 
+                                @if ($dbIsPostgres)
+                                    <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/40"
+                                         x-data="dbPostgisEnabler(@js(container_route('database.enable-postgis', $service)), @js((string) ($databaseContext['username'] ?? '')))">
+                                        <h3 class="text-sm font-semibold text-slate-900 dark:text-white">PostGIS</h3>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                            The stock PostgreSQL image ships no PostGIS, so a dump that creates the extension stops on the first error. This moves the database onto the PostGIS build of the same PostgreSQL version, keeping your data in place.
+                                        </p>
+
+                                        <label class="mt-3 block text-sm text-slate-700 dark:text-slate-300">
+                                            Type the database username <span class="font-mono font-semibold">{{ $databaseContext['username'] }}</span> to confirm
+                                            <input type="text" x-model="confirmation" autocomplete="off" spellcheck="false"
+                                                placeholder="Database username"
+                                                class="mt-1.5 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 font-mono text-sm text-slate-900 dark:text-white">
+                                        </label>
+
+                                        <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">The database restarts, so the app loses its connections for a few seconds.</p>
+
+                                        <button type="button" @click="run()" :disabled="!canRun"
+                                            class="mt-3 px-4 py-2 rounded-lg bg-teal-700 hover:bg-teal-800 disabled:opacity-40 text-white text-sm font-medium transition">
+                                            <span x-text="running ? 'Switching image…' : 'Enable PostGIS'"></span>
+                                        </button>
+
+                                        <template x-if="result">
+                                            <div class="mt-3 space-y-2">
+                                                <p class="text-sm font-medium"
+                                                   :class="result.success ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400'"
+                                                   x-text="result.message"></p>
+                                                <pre x-show="result.output" class="max-h-64 overflow-auto rounded-lg bg-slate-900 p-3 text-xs text-slate-200" x-text="result.output"></pre>
+                                            </div>
+                                        </template>
+                                    </div>
+                                @endif
+
                                 <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/40"
                                      x-data="dbMigrationRunner(
                                         @js(container_route('database.migration-plan', $service)),
