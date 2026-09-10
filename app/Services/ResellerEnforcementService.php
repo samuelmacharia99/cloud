@@ -130,6 +130,18 @@ class ResellerEnforcementService
                 "Provisioning blocked: reseller \"{$reseller->name}\" has exceeded the disk pool ({$diskUsage->diskPoolGb($reseller)} GB included)."
             );
         }
+
+        // Backstop only. Order-time checks refuse a plan that would not fit;
+        // this catches what slipped past them, such as several unpaid orders
+        // that each fitted on their own. Deliberately an over-pool check and
+        // not a headroom check: this service is already inside the allocation
+        // sum by the time it provisions, so headroom would double-count it.
+        $computeUsage = app(ResellerComputeUsageService::class);
+        if ($computeUsage->isOverPool($reseller)) {
+            throw new \RuntimeException(
+                "Provisioning blocked: reseller \"{$reseller->name}\" has exceeded the compute pool included in their package."
+            );
+        }
     }
 
     /**

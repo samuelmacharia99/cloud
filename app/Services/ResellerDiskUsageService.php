@@ -56,7 +56,12 @@ class ResellerDiskUsageService
 
     public function recordDailySnapshot(User $reseller, ?Carbon $date = null): ResellerDiskUsageSnapshot
     {
-        $date = ($date ?? now())->toDateString();
+        // Carbon, not a Y-m-d string. The model casts period_date to a date,
+        // so it stores "2026-09-10 00:00:00" while a bare date string binds as
+        // "2026-09-10" and matches nothing. Every run after the first each day
+        // therefore tried to insert a second row and hit the unique key, which
+        // the collector's per-reseller catch swallowed as a warning.
+        $date = ($date ?? now())->startOfDay();
         $usage = $this->collectCurrentUsage($reseller);
 
         return ResellerDiskUsageSnapshot::updateOrCreate(

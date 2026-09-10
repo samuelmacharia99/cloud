@@ -12,7 +12,11 @@
         $customerSubtitle .= ' · '.($unlinkedDaCount).' unlinked';
     }
     $maxUsers = $resellerPackage->max_users ?? 0;
-    $hasServerPulse = ($directAdminMonitor['connected'] ?? false) || ($hasDirectAdmin ?? false);
+    $health = $hostingHealth ?? ['failed_services' => 0, 'suspended_services' => 0, 'containers_down' => 0, 'total_services' => 0];
+    $applicationCount = (int) ($platformHosting['container_count'] ?? 0);
+    // A reseller selling only application hosting used to get no infrastructure
+    // view at all, because this panel was gated on a DirectAdmin binding.
+    $hasServerPulse = ($directAdminMonitor['connected'] ?? false) || ($hasDirectAdmin ?? false) || $applicationCount > 0;
     $defaultDashboardTab = $hasServerPulse ? 'server' : 'activity';
 @endphp
 
@@ -35,6 +39,7 @@
         :max-services="$maxServices"
         :customer-count="$customerCount"
         :max-users="$maxUsers"
+        :compute-pool="$computePool ?? null"
         :disk-pool-percent="$diskPoolPercent"
         :disk-pool-gb="$diskPoolGb ?? 0"
         :disk-used-gb="$diskUsedGb ?? 0"
@@ -131,8 +136,19 @@
 
         <div class="p-5 sm:p-6">
             @if ($hasServerPulse)
-                <div x-show="dashboardTab === 'server'" x-cloak>
-                    @include('reseller.dashboard.partials.directadmin-monitor', ['directAdminMonitor' => $directAdminMonitor ?? []])
+                <div x-show="dashboardTab === 'server'" x-cloak class="space-y-6">
+                    @if (($directAdminMonitor['connected'] ?? false) || ($hasDirectAdmin ?? false))
+                        @include('reseller.dashboard.partials.directadmin-monitor', ['directAdminMonitor' => $directAdminMonitor ?? []])
+                    @endif
+
+                    @if ($applicationCount > 0)
+                        @include('reseller.dashboard.partials.application-hosting-pulse', [
+                            'applicationCount' => $applicationCount,
+                            'health' => $health,
+                            'containerDiskGb' => $diskContainerGb ?? 0,
+                            'diskPoolGb' => $diskPoolGb ?? 0,
+                        ])
+                    @endif
                 </div>
             @endif
 

@@ -15,6 +15,15 @@ use Illuminate\Support\Collection;
 
 class ResellerCustomerCatalogService
 {
+    /**
+     * Listing types that put a customer on hosting, whichever platform serves
+     * it. Anything asking "does this reseller sell hosting yet" reads this, so
+     * adding a product line does not mean hunting for literals.
+     *
+     * @var list<string>
+     */
+    public const HOSTING_CATALOG_TYPES = ['shared_hosting', 'container_hosting'];
+
     public function isResellerCustomer(?User $user): bool
     {
         return $user !== null && $user->reseller_id !== null;
@@ -378,6 +387,6 @@ class ResellerCustomerCatalogService
 
     public function isHostingCatalogType(?string $type): bool
     {
-        return in_array($type, ['shared_hosting', 'container_hosting'], true);
+        return in_array($type, self::HOSTING_CATALOG_TYPES, true);
     }
 }

@@ -8560,9 +8560,16 @@ class ContainerDeploymentService
     }
 
     /**
+     * What this service is contracted to get: reseller catalogue limits, else
+     * the product's included limits, scaled by any project resource share.
+     *
+     * Public because it is the only implementation of that precedence, and a
+     * reseller compute rollup has to agree with it exactly. A second copy would
+     * drift the day either side changed.
+     *
      * @return array{cpu_limit?: float, memory_limit_mb?: int}
      */
-    private function containerResourceLimitsForService(Service $service): array
+    public function containerResourceLimitsForService(Service $service): array
     {
         $service->loadMissing('product.containerTemplate', 'containerDeployment');
 

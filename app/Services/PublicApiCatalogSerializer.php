@@ -137,11 +137,21 @@ class PublicApiCatalogSerializer
             'max_users' => $package->max_users,
             'disk_pool_gb' => $package->disk_pool_gb,
             'disk_overage_rate' => (float) ($package->disk_overage_rate ?? 0),
-            'features' => [
+            'cpu_pool_cores' => (float) ($package->cpu_pool_cores ?? 0),
+            'memory_pool_mb' => (int) ($package->memory_pool_mb ?? 0),
+            'features' => array_values(array_filter([
                 'Up to '.$package->max_users.' customers',
-                'Up to '.$package->max_services.' DirectAdmin hosting users',
+                'Up to '.$package->max_services.' hosting users',
                 number_format($package->disk_pool_gb).' GB disk pool',
-            ],
+                // Only listed when the plan actually carries one; a package
+                // with no compute pool would otherwise advertise "0 vCPU".
+                (float) $package->cpu_pool_cores > 0
+                    ? rtrim(rtrim(number_format((float) $package->cpu_pool_cores, 2), '0'), '.').' vCPU for application hosting'
+                    : null,
+                (int) $package->memory_pool_mb > 0
+                    ? number_format(((int) $package->memory_pool_mb) / 1024, 1).' GB RAM for application hosting'
+                    : null,
+            ])),
         ];
     }
 

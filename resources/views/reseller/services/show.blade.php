@@ -209,12 +209,20 @@
                 <a href="{{ $managementLinks['panel_url'] }}" target="_blank" rel="noopener" class="inline-block mt-4 px-4 py-2 border border-slate-300 dark:border-slate-600 text-sm font-medium rounded-lg">Open DirectAdmin (legacy)</a>
             @endif
             @if ($managementLinks['container_deployment'])
-                <p class="text-xs text-slate-500 mt-2">Container deployment #{{ $managementLinks['container_deployment'] }} — customer manages via their portal.</p>
+                <p class="text-xs text-slate-500 mt-2">Container deployment #{{ $managementLinks['container_deployment'] }} — the customer deploys and restarts it from their portal.</p>
             @endif
             @if (! ($managementLinks['billing_ready'] ?? true) && ($managementLinks['driver'] ?? '') === 'directadmin')
                 <p class="text-xs text-amber-600 mt-3">Connect a catalog package from the <a href="{{ route('reseller.customers.index') }}" class="underline">customer directory</a> to enable auto-billing.</p>
             @endif
         </div>
+
+    @endif
+
+    {{-- Outside the hosting account card on purpose: that card only renders for
+         a DirectAdmin account, and an application hosting service has neither a
+         panel username nor a panel URL. --}}
+    @if ($managementLinks['container_deployment'])
+        @include('reseller.services.partials.application-diagnosis', ['service' => $service])
     @endif
 
     @if ($service->latestDaAccountSnapshot)

@@ -15,6 +15,8 @@ class ResellerPackage extends Model
         'max_services',
         'disk_pool_gb',
         'disk_overage_rate',
+        'cpu_pool_cores',
+        'memory_pool_mb',
         'max_users',
         'price',
         'active',
@@ -27,6 +29,8 @@ class ResellerPackage extends Model
         'max_services' => 'integer',
         'disk_pool_gb' => 'integer',
         'disk_overage_rate' => 'decimal:4',
+        'cpu_pool_cores' => 'decimal:2',
+        'memory_pool_mb' => 'integer',
         'max_users' => 'integer',
     ];
 

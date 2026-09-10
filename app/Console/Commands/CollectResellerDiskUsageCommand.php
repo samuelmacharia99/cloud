@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Services\NotificationService;
+use App\Services\ResellerComputeUsageService;
 use App\Services\ResellerDiskUsageService;
 use App\Services\ResellerEnforcementService;
 
@@ -10,10 +11,11 @@ class CollectResellerDiskUsageCommand extends BaseCronCommand
 {
     protected $signature = 'cron:collect-reseller-disk-usage';
 
-    protected $description = 'Record daily disk usage snapshots for resellers (DirectAdmin + containers)';
+    protected $description = 'Record daily disk and compute usage snapshots for resellers (DirectAdmin + containers)';
 
     public function __construct(
         private ResellerDiskUsageService $diskUsage,
+        private ResellerComputeUsageService $computeUsage,
     ) {
         parent::__construct();
     }
@@ -31,6 +33,10 @@ class CollectResellerDiskUsageCommand extends BaseCronCommand
             try {
                 $usage = $this->diskUsage->collectCurrentUsage($reseller);
                 $this->diskUsage->recordDailySnapshot($reseller);
+                // Same row, same day, different columns. Recorded from the
+                // start so the history exists whenever compute starts billing;
+                // it cannot be backfilled after the fact.
+                $this->computeUsage->recordDailySnapshot($reseller);
                 $count++;
 
                 if ($enforcement->enforceDiskPoolLimit($reseller)) {

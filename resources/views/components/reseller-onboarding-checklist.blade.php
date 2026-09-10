@@ -23,7 +23,10 @@
     </div>
     <ul class="space-y-2">
         @foreach ($steps as $step)
-            @if (($step['key'] ?? '') !== 'link_accounts' || $hasDirectAdmin)
+            {{-- DirectAdmin steps are only shown to a reseller who has a binding.
+                 Both are done for them by platform admin, so a reseller selling
+                 application hosting is looking at instructions they cannot act on. --}}
+            @if (! in_array($step['key'] ?? '', ['link_accounts', 'directadmin'], true) || $hasDirectAdmin)
                 <li>
                     <a href="{{ $step['url'] ?? '#' }}" class="flex items-center gap-3 p-2.5 rounded-lg hover:bg-amber-100/80 dark:hover:bg-amber-900/30 transition {{ ($step['done'] ?? false) ? 'opacity-60' : '' }}">
                         @if ($step['done'] ?? false)

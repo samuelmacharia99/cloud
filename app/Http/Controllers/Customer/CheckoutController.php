@@ -94,7 +94,7 @@ class CheckoutController extends Controller
 
         if (app(ResellerCustomerCatalogService::class)->isResellerCustomer($user)) {
             try {
-                app(ResellerCheckoutGuardService::class)->assertCheckoutAllowed($user);
+                app(ResellerCheckoutGuardService::class)->assertCartAllowed($user, $cart);
             } catch (\InvalidArgumentException $e) {
                 return redirect()->route('customer.cart.index')->with('error', $e->getMessage());
             }
@@ -280,7 +280,7 @@ class CheckoutController extends Controller
 
         if (app(ResellerCustomerCatalogService::class)->isResellerCustomer($user)) {
             try {
-                app(ResellerCheckoutGuardService::class)->assertCheckoutAllowed($user);
+                app(ResellerCheckoutGuardService::class)->assertCartAllowed($user, $cart);
             } catch (\InvalidArgumentException $e) {
                 return back()->with('error', $e->getMessage());
             }
@@ -1146,7 +1146,7 @@ class CheckoutController extends Controller
             }
 
             if (app(ResellerCustomerCatalogService::class)->isResellerCustomer($user)) {
-                app(ResellerCheckoutGuardService::class)->assertCheckoutAllowed($user);
+                app(ResellerCheckoutGuardService::class)->assertCartAllowed($user, $cart);
             }
 
             if ($request) {

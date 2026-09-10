@@ -35,6 +35,24 @@ class ResellerScopeService
     }
 
     /**
+     * Whether this reseller manages this one service.
+     *
+     * The single definition of that question. It was hand-rolled inside
+     * ManagedServiceController, which meant tenancy had two implementations
+     * that could drift apart, and only one of them was the one under test.
+     */
+    public function managesService(User $reseller, Service $service): bool
+    {
+        if ((int) $service->reseller_id === (int) $reseller->id) {
+            return true;
+        }
+
+        $service->loadMissing('user');
+
+        return $service->user !== null && (int) $service->user->reseller_id === (int) $reseller->id;
+    }
+
+    /**
      * @return Builder<Payment>
      */
     public function managedPaymentsQuery(User $reseller): Builder

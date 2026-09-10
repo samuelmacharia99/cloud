@@ -6,6 +6,7 @@ use App\Enums\ServiceStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Service;
 use App\Models\User;
+use App\Services\Provisioning\ContainerDoctorService;
 use App\Services\Provisioning\ProvisioningService;
 use App\Services\ResellerManagedServiceUpdateService;
 use App\Services\ResellerManagedServiceUsageService;
@@ -14,6 +15,7 @@ use App\Services\ServiceDeletionService;
 use App\Services\ServiceEnforcementInsightService;
 use App\Services\ServiceInfrastructureProbeService;
 use App\Services\ServiceTransferService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -327,13 +329,36 @@ class ManagedServiceController extends Controller
         return back()->with('success', $result['success_message']);
     }
 
+    /**
+     * Read-only diagnosis of a customer's application.
+     *
+     * A reseller supporting an application hosting customer had two options
+     * before this: impersonate them, or tell them to look themselves. Doctor
+     * already produces a curated, evidence-backed read; this hands the same
+     * read to the provider without handing over the controls. There is no
+     * treat endpoint here on purpose, and no log tail: application logs carry
+     * customer secrets in stack traces.
+     */
+    public function diagnose(Service $service, ContainerDoctorService $doctor): JsonResponse
+    {
+        $this->ensureManaged($service);
+        $this->authorize('diagnoseContainer', $service);
+
+        try {
+            return response()->json($doctor->diagnose($service));
+        } catch (\Throwable $e) {
+            \Log::warning("Reseller diagnosis failed for service {$service->id}: ".$e->getMessage());
+
+            return response()->json([
+                'error' => 'Diagnosis failed',
+                'message' => 'Could not reach this application right now. Try again shortly.',
+            ], 500);
+        }
+    }
+
     private function ensureManaged(Service $service): void
     {
-        $reseller = auth()->user();
-        $owned = $service->reseller_id === $reseller->id
-            || ($service->user && $service->user->reseller_id === $reseller->id);
-
-        if (! $owned) {
+        if (! $this->scope->managesService(auth()->user(), $service)) {
             abort(404);
         }
     }

@@ -69,6 +69,26 @@
             <input type="number" name="disk_overage_rate" step="0.01" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" min="0" value="{{ old('disk_overage_rate', $package->disk_overage_rate) }}">
         </div>
 
+        <!-- Compute pool -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">vCPU pool</label>
+                <input type="number" name="cpu_pool_cores" step="0.25" min="0" max="1024" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" value="{{ old('cpu_pool_cores', $package->cpu_pool_cores) }}">
+                <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">Total vCPU across the reseller's application hosting plans. 0 = unmetered.</p>
+                @error('cpu_pool_cores')
+                    <p class="text-red-600 dark:text-red-400 text-xs mt-1">{{ $message }}</p>
+                @enderror
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">RAM pool (MB)</label>
+                <input type="number" name="memory_pool_mb" step="256" min="0" max="4194304" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" value="{{ old('memory_pool_mb', $package->memory_pool_mb) }}">
+                <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">Shared hosting has no CPU or RAM allocation, so this covers containers only. 0 = unmetered.</p>
+                @error('memory_pool_mb')
+                    <p class="text-red-600 dark:text-red-400 text-xs mt-1">{{ $message }}</p>
+                @enderror
+            </div>
+        </div>
+
         <!-- Max Users -->
         <div>
             <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Maximum Users</label>

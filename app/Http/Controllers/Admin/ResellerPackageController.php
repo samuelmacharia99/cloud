@@ -35,12 +35,18 @@ class ResellerPackageController extends Controller
             'max_services' => 'required|integer|min:1|max:10000',
             'disk_pool_gb' => 'required|integer|min:1|max:100000',
             'disk_overage_rate' => 'nullable|numeric|min:0|max:999999',
+            'cpu_pool_cores' => 'nullable|numeric|min:0|max:1024',
+            'memory_pool_mb' => 'nullable|integer|min:0|max:4194304',
             'max_users' => 'required|integer|min:1|max:1000',
             'price' => 'required|numeric|min:0|max:999999.99',
             'active' => 'boolean',
         ]);
 
         $validated['storage_space'] = $validated['disk_pool_gb'];
+        // Zero means unmetered, so an omitted field must not become null and
+        // silently turn enforcement off in a way that reads like a value.
+        $validated['cpu_pool_cores'] = $validated['cpu_pool_cores'] ?? 0;
+        $validated['memory_pool_mb'] = $validated['memory_pool_mb'] ?? 0;
 
         ResellerPackage::create($validated);
 
@@ -62,12 +68,18 @@ class ResellerPackageController extends Controller
             'max_services' => 'required|integer|min:1|max:10000',
             'disk_pool_gb' => 'required|integer|min:1|max:100000',
             'disk_overage_rate' => 'nullable|numeric|min:0|max:999999',
+            'cpu_pool_cores' => 'nullable|numeric|min:0|max:1024',
+            'memory_pool_mb' => 'nullable|integer|min:0|max:4194304',
             'max_users' => 'required|integer|min:1|max:1000',
             'price' => 'required|numeric|min:0|max:999999.99',
             'active' => 'boolean',
         ]);
 
         $validated['storage_space'] = $validated['disk_pool_gb'];
+        // Zero means unmetered, so an omitted field must not become null and
+        // silently turn enforcement off in a way that reads like a value.
+        $validated['cpu_pool_cores'] = $validated['cpu_pool_cores'] ?? 0;
+        $validated['memory_pool_mb'] = $validated['memory_pool_mb'] ?? 0;
 
         $reseller_package->update($validated);
 

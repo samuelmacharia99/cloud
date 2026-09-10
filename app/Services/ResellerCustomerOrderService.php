@@ -31,6 +31,7 @@ class ResellerCustomerOrderService
         private DomainPushService $domainPush,
         private ResellerHostingSetupService $hostingSetup,
         private NotificationService $notifications,
+        private ResellerComputeUsageService $computeUsage,
     ) {}
 
     /**
@@ -55,6 +56,11 @@ class ResellerCustomerOrderService
         if (! $adminProduct instanceof Product) {
             throw new \InvalidArgumentException('This catalog item cannot be auto-provisioned. Create a manual invoice instead.');
         }
+
+        // Compute is the pool nothing counted before: application plans reserve
+        // node CPU and memory that no package limit covered.
+        $requested = $this->computeUsage->requestedAllocationForListing($catalogProduct, $adminProduct);
+        $this->computeUsage->assertHeadroom($reseller, $requested['cpu_cores'], $requested['memory_mb']);
 
         $retailPrice = $catalogProduct->priceForBillingCycle($billingCycle);
         $description = "{$catalogProduct->name} ({$billingCycle})";
@@ -137,6 +143,11 @@ class ResellerCustomerOrderService
         if (! $adminProduct instanceof Product) {
             throw new \InvalidArgumentException('This catalog item cannot be auto-provisioned. Bill the customer or choose a linked platform product.');
         }
+
+        // Compute is the pool nothing counted before: application plans reserve
+        // node CPU and memory that no package limit covered.
+        $requested = $this->computeUsage->requestedAllocationForListing($catalogProduct, $adminProduct);
+        $this->computeUsage->assertHeadroom($reseller, $requested['cpu_cores'], $requested['memory_mb']);
 
         return DB::transaction(function () use (
             $reseller,

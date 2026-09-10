@@ -146,6 +146,7 @@
 
                     @if (($diskPool['pool_gb'] ?? 0) > 0)
                         @include('reseller.partials.disk-pool-meter', ['diskPool' => $diskPool, 'compact' => false])
+                        @include('reseller.partials.compute-pool-meter', ['computePool' => $computePool ?? [], 'compact' => false])
                     @endif
                 </div>
 

@@ -11,6 +11,7 @@
     'maxServices' => 0,
     'customerCount' => 0,
     'maxUsers' => 0,
+    'computePool' => null,
     'diskPoolPercent' => null,
     'diskPoolGb' => 0,
     'diskUsedGb' => 0,
@@ -97,8 +98,9 @@
     </a>
 </div>
 
-@if ($maxServices > 0 || $maxUsers > 0 || (int) $diskPoolGb > 0)
-<div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+@php $showComputePool = (($computePool['cpu']['pool'] ?? 0) > 0 || ($computePool['memory']['pool'] ?? 0) > 0); @endphp
+@if ($maxServices > 0 || $maxUsers > 0 || (int) $diskPoolGb > 0 || $showComputePool)
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-3">
     @if ($maxServices > 0)
         <div class="p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs">
             <div class="flex justify-between mb-1"><span class="text-slate-500">Service slots</span><span>{{ $activeServices }}/{{ $maxServices }}</span></div>
@@ -129,6 +131,11 @@
                     'percent' => $diskPoolPercent,
                 ],
             ])
+        </div>
+    @endif
+    @if ($showComputePool)
+        <div class="p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs">
+            @include('reseller.partials.compute-pool-meter', ['compact' => true, 'computePool' => $computePool])
         </div>
     @endif
 </div>

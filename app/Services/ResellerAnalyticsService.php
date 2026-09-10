@@ -80,6 +80,9 @@ class ResellerAnalyticsService
         $diskUsageSnapshot = $diskUsage->collectCurrentUsage($reseller);
         $diskPoolPercent = $diskUsage->poolUsagePercent($reseller, $diskUsageSnapshot);
 
+        $hostingHealth = app(ResellerHostingHealthService::class)->snapshot($reseller);
+        $computePool = app(ResellerComputeUsageService::class)->poolPresentation($reseller);
+
         $directAdminMonitor = app(ResellerDirectAdminMonitorService::class)->panelShell($reseller);
         $daBinding = app(ResellerDirectAdminService::class);
         $hasDa = $daBinding->hasDirectAdminBinding($reseller);
@@ -111,7 +114,9 @@ class ResellerAnalyticsService
             'hasDirectAdmin' => $hasDa,
             'directAdminDiskIncludesAllUsers' => $reseller->resellerUserCountUsesDirectAdmin(),
             'billingHealth' => $billingHealth,
-            'actionQueue' => $this->actionQueue($reseller, $customerIds, $unlinkedDaCount, $billingHealth, $diskUsageSnapshot, $diskPoolGb),
+            'actionQueue' => $this->actionQueue($reseller, $customerIds, $unlinkedDaCount, $billingHealth, $diskUsageSnapshot, $diskPoolGb, $hostingHealth, $computePool),
+            'hostingHealth' => $hostingHealth,
+            'computePool' => $computePool,
             'activityFeed' => [],
             'activityFeedHasMore' => true,
             'activityFeedNextOffset' => 0,
@@ -271,10 +276,12 @@ class ResellerAnalyticsService
         $hasDa ??= app(ResellerDirectAdminService::class)->hasDirectAdminBinding($reseller);
         $unlinkedDaCount ??= $hasDa ? $this->cachedUnlinkedDirectAdminCount($reseller) : 0;
 
+        // Any hosting listing counts. Counting only shared hosting told a
+        // reseller who sells application hosting that they had not started.
         $hostingCatalogCount = ResellerProduct::query()
             ->where('reseller_id', $reseller->id)
             ->where('is_active', true)
-            ->where('type', 'shared_hosting')
+            ->whereIn('type', ResellerCustomerCatalogService::HOSTING_CATALOG_TYPES)
             ->count();
 
         $steps = [
@@ -298,15 +305,20 @@ class ResellerAnalyticsService
             ],
             [
                 'key' => 'catalog',
-                'label' => 'Add shared hosting to your catalog',
+                'label' => 'Add a hosting plan to your catalogue',
                 'done' => $hostingCatalogCount > 0,
                 'url' => route('reseller.catalog.index'),
             ],
             [
+                // Optional until a binding exists. A reseller selling only
+                // application hosting has nothing to connect, and holding
+                // onboarding open forever on a step they cannot take made the
+                // panel argue for a product line they had not chosen.
                 'key' => 'directadmin',
                 'label' => 'Connect DirectAdmin (via platform admin)',
                 'done' => $hasDa,
                 'url' => route('reseller.settings.index', ['tab' => 'hosting']),
+                'optional' => ! $hasDa,
             ],
             [
                 'key' => 'link_accounts',
@@ -485,6 +497,8 @@ class ResellerAnalyticsService
         array $billingHealth,
         ?array $diskUsageSnapshot = null,
         ?int $diskPoolGb = null,
+        ?array $hostingHealth = null,
+        ?array $computePool = null,
     ): array {
         $queue = [];
         $customerIdCollection = collect($customerIds);
@@ -592,9 +606,47 @@ class ResellerAnalyticsService
             }
         }
 
-        $suspendedServicesCount = $this->scope->managedServicesQuery($reseller)
-            ->where('status', ServiceStatus::Suspended)
-            ->count();
+        $computePool ??= app(ResellerComputeUsageService::class)->poolPresentation($reseller);
+
+        foreach (['cpu' => 'vCPU', 'memory' => 'RAM'] as $key => $label) {
+            $percent = $computePool[$key]['percent'] ?? null;
+            if ($percent === null || $percent < 90) {
+                continue;
+            }
+
+            $queue[] = [
+                'label' => sprintf('%s pool at %s%%', $label, rtrim(rtrim(number_format($percent, 1), '0'), '.')),
+                'count' => 1,
+                'url' => route('reseller.packages.index'),
+                'severity' => $percent >= 100 ? 'danger' : 'warning',
+            ];
+        }
+
+        // Hosting, not money. A reseller used to hear about a broken site from
+        // the customer, because nothing in this queue watched the hosting.
+        $hostingHealth ??= app(ResellerHostingHealthService::class)->snapshot($reseller);
+
+        if (($hostingHealth['containers_down'] ?? 0) > 0) {
+            $downCount = (int) $hostingHealth['containers_down'];
+            $queue[] = [
+                'label' => "{$downCount} application(s) not running",
+                'count' => $downCount,
+                'url' => route('reseller.services.index', ['status' => 'active']),
+                'severity' => 'danger',
+            ];
+        }
+
+        if (($hostingHealth['failed_services'] ?? 0) > 0) {
+            $failedCount = (int) $hostingHealth['failed_services'];
+            $queue[] = [
+                'label' => "{$failedCount} customer service(s) failed to provision",
+                'count' => $failedCount,
+                'url' => route('reseller.services.index', ['status' => 'failed']),
+                'severity' => 'danger',
+            ];
+        }
+
+        $suspendedServicesCount = (int) ($hostingHealth['suspended_services'] ?? 0);
 
         if ($suspendedServicesCount > 0) {
             $queue[] = [

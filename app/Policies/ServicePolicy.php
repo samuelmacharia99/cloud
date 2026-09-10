@@ -5,6 +5,7 @@ namespace App\Policies;
 use App\Enums\ServiceStatus;
 use App\Models\Service;
 use App\Models\User;
+use App\Services\ResellerScopeService;
 use Illuminate\Auth\Access\Response;
 
 class ServicePolicy
@@ -149,6 +150,29 @@ class ServicePolicy
         return $user->is_admin || $user->id === $service->user_id
             ? Response::allow()
             : Response::deny('You can only manage your own container services.');
+    }
+
+    /**
+     * Read a container's diagnosis: the owner, an admin, or the reseller who
+     * manages the service.
+     *
+     * Kept apart from manageContainer, which gates every mutating container
+     * route. A reseller supporting a customer needs to see what is wrong; that
+     * is not the same as being allowed to restart or rebuild someone's site.
+     */
+    public function diagnoseContainer(User $user, Service $service): Response
+    {
+        if ($service->product?->type !== 'container_hosting') {
+            return Response::deny('This action is only available for container services.');
+        }
+
+        if ($user->is_admin || $user->id === $service->user_id) {
+            return Response::allow();
+        }
+
+        return $user->is_reseller && app(ResellerScopeService::class)->managesService($user, $service)
+            ? Response::allow()
+            : Response::deny('You can only diagnose container services you own or manage.');
     }
 
     /**
