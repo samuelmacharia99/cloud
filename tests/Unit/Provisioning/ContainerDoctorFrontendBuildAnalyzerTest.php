@@ -104,6 +104,36 @@ class ContainerDoctorFrontendBuildAnalyzerTest extends TestCase
         $this->assertStringContainsString('Native mobile builds', $steps);
     }
 
+    #[Test]
+    public function it_reports_a_public_setting_stranded_on_an_api_container(): void
+    {
+        $finding = $this->analyzer->misplacedFinding(['EXPO_PUBLIC_API_URL'], 'Sameplan-Web');
+
+        $this->assertSame('frontend_public_env_on_api_container', $finding['id']);
+        $this->assertSame('warning', $finding['severity']);
+        $this->assertSame('move_public_env_to_web', $finding['treat_action']);
+        $this->assertSame(ContainerDoctorFrontendBuildAnalyzer::MOVE_TREAT_ACTION, $finding['treat_action']);
+        $this->assertStringContainsString('Sameplan-Web', $finding['summary']);
+        $this->assertStringContainsString('EXPO_PUBLIC_API_URL', $finding['summary']);
+        $this->assertStringContainsString('unset on the Web container', $finding['evidence'][0]);
+    }
+
+    #[Test]
+    public function it_still_explains_the_placement_when_the_web_service_has_no_name(): void
+    {
+        $finding = $this->analyzer->misplacedFinding(['VITE_API_URL'], null);
+
+        $this->assertStringContainsString('the Web container in this project', $finding['summary']);
+    }
+
+    #[Test]
+    public function it_promises_not_to_touch_the_api_container(): void
+    {
+        $steps = implode(' ', $this->analyzer->misplacedFinding(['VITE_API_URL'], 'Web')['manual_steps']);
+
+        $this->assertStringContainsString('Nothing is removed from this API container', $steps);
+    }
+
     /**
      * @param  array<string, mixed>  $envValues
      */

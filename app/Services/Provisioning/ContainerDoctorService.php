@@ -83,6 +83,7 @@ class ContainerDoctorService
             && ! in_array($action, [
                 'recreate_application',
                 'rebuild_frontend_bundle',
+                'move_public_env_to_web',
                 'fix_vite_production_runtime',
                 'upgrade_node_runtime',
                 'switch_php_production_runtime',
@@ -147,6 +148,7 @@ class ContainerDoctorService
             'tune_request_concurrency' => $this->treatTuneRequestConcurrency($service),
             'fix_compose_interpolation' => $this->treatFixComposeInterpolation($service),
             'rebuild_frontend_bundle' => $this->treatRebuildFrontendBundle($service),
+            'move_public_env_to_web' => $this->treatMovePublicEnvToWeb($service),
             default => ['success' => false, 'message' => 'Unknown treatment action.'],
         };
 
@@ -7407,6 +7409,66 @@ PHP;
         } finally {
             $ssh->disconnect();
         }
+    }
+
+    /**
+     * Copy public build settings from an API container onto the Web container
+     * that actually builds the browser app. Applying them there recreates the
+     * stack and rebuilds the bundle, so the value reaches the browser.
+     *
+     * Nothing already set on the Web container is overwritten, and nothing is
+     * removed from the API container; a leftover copy there is inert.
+     */
+    private function treatMovePublicEnvToWeb(Service $service): array
+    {
+        $deployment = $service->containerDeployment;
+        if (! $deployment?->node) {
+            return ['success' => false, 'message' => 'Application is not deployed.'];
+        }
+
+        $pin = app(ContainerExclusiveApplicationPin::class);
+        if ($pin->role($service) !== ContainerExclusiveApplicationPin::ROLE_BACKEND) {
+            return ['success' => false, 'message' => 'This repair applies to the API container of a split project.'];
+        }
+
+        $web = $pin->sibling($service);
+        if (! $web instanceof Service) {
+            return ['success' => false, 'message' => 'No Web container is linked to this API container.'];
+        }
+
+        $web->loadMissing('containerDeployment');
+        if (! $web->containerDeployment) {
+            return ['success' => false, 'message' => 'The Web container has not been deployed yet.'];
+        }
+
+        $analyzer = app(ContainerDoctorFrontendBuildAnalyzer::class);
+        $webEnv = is_array($web->containerDeployment->env_values) ? $web->containerDeployment->env_values : [];
+
+        $toCopy = [];
+        foreach ($analyzer->publicBuildValues($deployment) as $key => $value) {
+            if (trim((string) ($webEnv[$key] ?? '')) === '') {
+                $toCopy[$key] = $value;
+            }
+        }
+
+        if ($toCopy === []) {
+            return ['success' => false, 'message' => 'The Web container already has a value for each of these settings.'];
+        }
+
+        try {
+            app(ContainerEnvironmentService::class)->updateVariables($web, $toCopy, restart: true);
+        } catch (\Throwable $e) {
+            return [
+                'success' => false,
+                'message' => 'Could not apply the settings to the Web container: '.$e->getMessage(),
+            ];
+        }
+
+        return [
+            'success' => true,
+            'message' => implode(', ', array_keys($toCopy)).' copied to '.$web->name
+                .' and applied there. Its bundle rebuilds with the new values; hard-refresh the site once it finishes.',
+        ];
     }
 
     private function treatRestartApplication(Service $service): array

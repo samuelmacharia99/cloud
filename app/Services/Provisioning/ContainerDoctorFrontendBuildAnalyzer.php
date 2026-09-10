@@ -23,6 +23,8 @@ class ContainerDoctorFrontendBuildAnalyzer
 {
     public const TREAT_ACTION = 'rebuild_frontend_bundle';
 
+    public const MOVE_TREAT_ACTION = 'move_public_env_to_web';
+
     /** @var list<string> */
     public const PUBLIC_BUILD_PREFIXES = ['EXPO_PUBLIC_', 'NEXT_PUBLIC_', 'VITE_', 'NUXT_PUBLIC_', 'REACT_APP_'];
 
@@ -40,13 +42,22 @@ class ContainerDoctorFrontendBuildAnalyzer
         ContainerDeployment $deployment,
         SSHService $ssh,
     ): array {
-        $frontendRoot = $this->frontendRoot($service);
-        if ($frontendRoot === null) {
+        $candidates = $this->publicBuildValues($deployment);
+        if ($candidates === []) {
             return [];
         }
 
-        $candidates = $this->publicBuildValues($deployment);
-        if ($candidates === []) {
+        $role = app(ContainerExclusiveApplicationPin::class)->role($service);
+
+        // An API container in a split project never builds the browser app, so a
+        // public value saved here cannot reach any bundle no matter how often it
+        // is redeployed. That is a placement problem, not a stale build.
+        if ($role === ContainerExclusiveApplicationPin::ROLE_BACKEND) {
+            return $this->misplacedOnApiFindings($service, array_keys($candidates));
+        }
+
+        $frontendRoot = $this->frontendRoot($service, $role);
+        if ($frontendRoot === null) {
             return [];
         }
 
@@ -156,19 +167,86 @@ class ContainerDoctorFrontendBuildAnalyzer
     }
 
     /**
-     * The browser app's directory in a split stack. Anything else has no
-     * separately built frontend for this check to reason about.
+     * Public build keys sitting on an API container whose sibling Web container
+     * does not have them. Once the sibling has a value the placement is fixed,
+     * so a leftover copy here stops being worth reporting.
+     *
+     * @param  list<string>  $keys
+     * @return list<array<string, mixed>>
      */
-    private function frontendRoot(Service $service): ?string
+    public function misplacedOnApiFindings(Service $service, array $keys): array
     {
-        $meta = $service->service_meta;
-        if (data_get($meta, 'node_workloads.topology') !== 'split_web_api') {
-            return null;
+        $sibling = app(ContainerExclusiveApplicationPin::class)->sibling($service);
+        $siblingEnv = is_array($sibling?->containerDeployment?->env_values)
+            ? $sibling->containerDeployment->env_values
+            : [];
+
+        $missingOnWeb = array_values(array_filter(
+            $keys,
+            fn (string $key): bool => trim((string) ($siblingEnv[$key] ?? '')) === '',
+        ));
+
+        if ($missingOnWeb === []) {
+            return [];
         }
 
-        $root = trim((string) data_get($meta, 'node_workloads.frontend.root', ''), '/');
+        return [$this->misplacedFinding($missingOnWeb, $sibling?->name)];
+    }
 
-        return $root === '' ? null : $root;
+    /**
+     * @param  list<string>  $keys
+     * @return array<string, mixed>
+     */
+    public function misplacedFinding(array $keys, ?string $webServiceName = null): array
+    {
+        $names = implode(', ', $keys);
+        $target = $webServiceName !== null && trim($webServiceName) !== ''
+            ? 'the Web container ('.trim($webServiceName).')'
+            : 'the Web container in this project';
+
+        return [
+            'id' => 'frontend_public_env_on_api_container',
+            'severity' => 'warning',
+            'title' => 'Frontend settings are saved on the API container',
+            'summary' => "{$names} only take effect where the browser app is built, and this service is the API. "
+                .'Each container in a split project has its own environment, so a value saved here never reaches '
+                ."the frontend and the app keeps reporting it as missing. It belongs on {$target}.",
+            'evidence' => array_map(
+                fn (string $key): string => $key.' is set on this API container and unset on the Web container',
+                $keys,
+            ),
+            'treat_action' => self::MOVE_TREAT_ACTION,
+            'treat_label' => 'Copy to Web container',
+            'manual_steps' => [
+                'Click Copy to Web container — writes these onto the Web service and rebuilds its bundle.',
+                'Or open the Web service yourself and add them under Environment, then apply.',
+                'Nothing is removed from this API container; a leftover copy here is harmless.',
+            ],
+            'source' => 'live',
+        ];
+    }
+
+    /**
+     * Where the browser app is built. A split stack keeps it beside the API; a
+     * split project gives the Web container its own pinned root.
+     */
+    private function frontendRoot(Service $service, ?string $role): ?string
+    {
+        $meta = $service->service_meta;
+
+        if (data_get($meta, 'node_workloads.topology') === 'split_web_api') {
+            $root = trim((string) data_get($meta, 'node_workloads.frontend.root', ''), '/');
+
+            return $root === '' ? null : $root;
+        }
+
+        if ($role === ContainerExclusiveApplicationPin::ROLE_FRONTEND) {
+            $root = trim((string) data_get($meta, 'node_workloads.backend.root', ''), '/');
+
+            return $root === '' ? '.' : $root;
+        }
+
+        return null;
     }
 
     private function buildDirectory(SSHService $ssh, string $frontendPath): ?string
