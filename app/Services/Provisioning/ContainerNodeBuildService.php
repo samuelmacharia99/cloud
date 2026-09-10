@@ -261,6 +261,10 @@ class ContainerNodeBuildService
                 'node_engine' => $serviceMeta['node_detected_engine'] ?? null,
                 'artifact_check' => $artifactMissingCheck,
                 'artifact_root' => $relativeRoot,
+                // A single container builds the browser bundle too, so its
+                // public build values have to be recorded here or nothing can
+                // tell later that the bundle predates the current settings.
+                'frontend_env_checksum' => $this->frontendBuildEnvironmentChecksum($deployment),
                 'typescript_config_validated' => $hasTypeScriptNextConfig,
                 'working_directory' => $runtime->containerWorkdir,
                 'start_command' => $runtime->command,
@@ -448,6 +452,17 @@ class ContainerNodeBuildService
 
     public function frontendBuildEnvironmentChecksum(ContainerDeployment $deployment): string
     {
+        return hash('sha256', json_encode($this->frontendBuildEnvironment($deployment), JSON_THROW_ON_ERROR));
+    }
+
+    /**
+     * The values that are substituted into the bundle at build time, in a
+     * stable order.
+     *
+     * @return array<string, string>
+     */
+    public function frontendBuildEnvironment(ContainerDeployment $deployment): array
+    {
         $analyzer = app(ContainerDoctorFrontendBuildAnalyzer::class);
         $values = [];
         foreach (is_array($deployment->env_values) ? $deployment->env_values : [] as $key => $value) {
@@ -460,7 +475,7 @@ class ContainerNodeBuildService
         }
         ksort($values);
 
-        return hash('sha256', json_encode($values, JSON_THROW_ON_ERROR));
+        return $values;
     }
 
     /**

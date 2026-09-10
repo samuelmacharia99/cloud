@@ -33,6 +33,12 @@ class ApplicationEnvironmentRequirements
      * Keys the platform owns. An example file listing these is describing the
      * wiring we already do, not asking the customer for anything.
      *
+     * The public API URLs are deliberately absent: the platform supplies those
+     * only to a split stack, where the sibling API is reachable at a known
+     * address. One container serving its own export has no such sibling, so
+     * treating them as supplied hid the one setting the app needed most.
+     * Anything already carrying a value is filtered out by unsatisfied().
+     *
      * @var list<string>
      */
     private const PLATFORM_SUPPLIED_PREFIXES = ['DB_', 'MYSQL_', 'POSTGRES_', 'MONGO_', 'TALKSASA_'];
@@ -44,9 +50,6 @@ class ApplicationEnvironmentRequirements
         'INTERNAL_API_URL',
         'BACKEND_URL',
         'API_URL',
-        'NEXT_PUBLIC_API_URL',
-        'VITE_API_URL',
-        'EXPO_PUBLIC_API_URL',
         'PORT',
         'APP_PORT',
         'SECRET_KEY',

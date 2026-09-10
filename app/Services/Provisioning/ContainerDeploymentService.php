@@ -7583,30 +7583,22 @@ class ContainerDeploymentService
             $ssh->upload($composeYaml, $containerPath.'/docker-compose.yml');
 
             app(ContainerEnvironmentService::class)->syncDotEnvFile($ssh, $service, $deployment, $envVars);
-            if (($nodeTopology['topology'] ?? null) === 'split_web_api') {
-                if (($template->slug ?? '') === 'nodejs') {
-                    $service->refresh();
-                    $oldChecksum = data_get($service->service_meta, 'node_release.frontend_env_checksum');
-                    $newChecksum = app(ContainerNodeBuildService::class)->frontendBuildEnvironmentChecksum($deployment->fresh());
-                    if (! is_string($oldChecksum) || ! hash_equals($oldChecksum, $newChecksum)) {
-                        app(ContainerNodeBuildService::class)->build(
-                            $service,
-                            $deployment->fresh(),
-                            $ssh,
-                            forceRebuild: true,
-                            operationAlreadyLocked: true,
-                            workloads: ['frontend'],
-                        );
-                    }
-                } else {
-                    $this->prepareSplitWebApiRelease(
-                        $service,
-                        $deployment->fresh(),
-                        $ssh,
-                        $nodeTopology,
-                        forceRebuild: true,
-                    );
-                }
+            $splitWebApi = ($nodeTopology['topology'] ?? null) === 'split_web_api';
+            if (($template->slug ?? '') === 'nodejs') {
+                // A public build value reaches the browser only through a
+                // rebuild. Recreating the stack with the new environment and no
+                // rebuild is what leaves an app reporting a setting as missing
+                // moments after it was saved, and one container that builds and
+                // serves its own export is as exposed to that as a split pair.
+                $this->rebuildNodeBundleForChangedPublicEnv($service, $deployment, $ssh, $splitWebApi);
+            } elseif ($splitWebApi) {
+                $this->prepareSplitWebApiRelease(
+                    $service,
+                    $deployment->fresh(),
+                    $ssh,
+                    $nodeTopology,
+                    forceRebuild: true,
+                );
             }
 
             if ($this->runtimeImages->usesRuntimeImage($template)) {
@@ -7676,6 +7668,46 @@ class ContainerDeploymentService
             $ssh->disconnect();
             $operationLock?->release();
         }
+    }
+
+    /**
+     * Rebuild the browser bundle when a build-time public value has changed
+     * since the last release was built.
+     *
+     * Nothing is rebuilt for an application that has no such values, and
+     * nothing is rebuilt when they are unchanged, so an ordinary environment
+     * edit still costs one stack recreate.
+     */
+    private function rebuildNodeBundleForChangedPublicEnv(
+        Service $service,
+        ContainerDeployment $deployment,
+        SSHService $ssh,
+        bool $splitWebApi,
+    ): void {
+        $builder = app(ContainerNodeBuildService::class);
+        $deployment = $deployment->fresh() ?? $deployment;
+
+        if ($builder->frontendBuildEnvironment($deployment) === []) {
+            return;
+        }
+
+        $service->refresh();
+        $built = data_get($service->service_meta, 'node_release.frontend_env_checksum');
+        $current = $builder->frontendBuildEnvironmentChecksum($deployment);
+        if (is_string($built) && hash_equals($built, $current)) {
+            return;
+        }
+
+        $builder->build(
+            $service,
+            $deployment,
+            $ssh,
+            forceRebuild: true,
+            operationAlreadyLocked: true,
+            // A split pair rebuilds only the workload that ships the bundle;
+            // one container has a single release to rebuild.
+            workloads: $splitWebApi ? ['frontend'] : null,
+        );
     }
 
     public function persistProvisionTemplateSlug(Service $service, string $slug): void

@@ -54,6 +54,36 @@ class FrontendBuildEnvironmentChecksumTest extends TestCase
         );
     }
 
+    #[Test]
+    public function an_application_with_no_public_values_has_nothing_to_rebuild_for(): void
+    {
+        $this->assertSame([], $this->buildEnvironment(['AT_API_KEY' => 'one', 'DATABASE_URL' => 'mysql://x']));
+    }
+
+    #[Test]
+    public function it_collects_the_values_that_are_baked_into_the_bundle(): void
+    {
+        $this->assertSame(
+            ['EXPO_PUBLIC_API_URL' => 'https://api.example.com'],
+            $this->buildEnvironment([
+                'AT_API_KEY' => 'one',
+                'EXPO_PUBLIC_API_URL' => 'https://api.example.com',
+            ]),
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $envValues
+     * @return array<string, string>
+     */
+    private function buildEnvironment(array $envValues): array
+    {
+        $deployment = new ContainerDeployment;
+        $deployment->env_values = $envValues;
+
+        return app(ContainerNodeBuildService::class)->frontendBuildEnvironment($deployment);
+    }
+
     /**
      * @param  array<string, mixed>  $envValues
      */

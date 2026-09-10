@@ -56,7 +56,7 @@ class ContainerDoctorFrontendBuildAnalyzer
             return $this->misplacedOnApiFindings($service, array_keys($candidates));
         }
 
-        $frontendRoot = $this->frontendRoot($service, $role);
+        $frontendRoot = $this->frontendRoot($service);
         if ($frontendRoot === null) {
             return [];
         }
@@ -142,6 +142,7 @@ class ContainerDoctorFrontendBuildAnalyzer
     public function finding(array $keys, string $frontendRoot): array
     {
         $names = implode(', ', $keys);
+        $where = $frontendRoot === '.' || $frontendRoot === '' ? 'the application' : $frontendRoot.'/';
 
         return [
             'id' => 'frontend_public_env_stale',
@@ -152,7 +153,7 @@ class ContainerDoctorFrontendBuildAnalyzer
                 .'does not change what visitors download. The app will keep reporting them as missing '
                 .'until the frontend is rebuilt.',
             'evidence' => array_map(
-                fn (string $key): string => $key.' is set on the service but absent from '.$frontendRoot.'/ build output',
+                fn (string $key): string => $key.' is set on the service but absent from '.$where.' build output',
                 $keys,
             ),
             'treat_action' => self::TREAT_ACTION,
@@ -227,10 +228,16 @@ class ContainerDoctorFrontendBuildAnalyzer
     }
 
     /**
-     * Where the browser app is built. A split stack keeps it beside the API; a
-     * split project gives the Web container its own pinned root.
+     * Where the browser app is built. A split stack keeps the frontend beside
+     * the API under its own root; every other shape builds in the one root the
+     * container runs from, which is '.' when nothing narrower is pinned.
+     *
+     * A single container serving its own export — an Expo web build, a Vite
+     * SPA — bakes public values exactly like a split stack does, so it belongs
+     * here too. What keeps an API-only stack from being reported is the build
+     * directory probe and the source reference probe, not the topology.
      */
-    private function frontendRoot(Service $service, ?string $role): ?string
+    private function frontendRoot(Service $service): ?string
     {
         $meta = $service->service_meta;
 
@@ -240,13 +247,9 @@ class ContainerDoctorFrontendBuildAnalyzer
             return $root === '' ? null : $root;
         }
 
-        if ($role === ContainerExclusiveApplicationPin::ROLE_FRONTEND) {
-            $root = trim((string) data_get($meta, 'node_workloads.backend.root', ''), '/');
+        $root = trim((string) data_get($meta, 'node_workloads.backend.root', ''), '/');
 
-            return $root === '' ? '.' : $root;
-        }
-
-        return null;
+        return $root === '' ? '.' : $root;
     }
 
     private function buildDirectory(SSHService $ssh, string $frontendPath): ?string

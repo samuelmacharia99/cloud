@@ -7356,7 +7356,7 @@ PHP;
 
         $topology = data_get($service->service_meta, 'node_workloads');
         if (($topology['topology'] ?? null) !== 'split_web_api') {
-            return ['success' => false, 'message' => 'This service has no separately built frontend.'];
+            return $this->rebuildSingleContainerFrontend($service);
         }
 
         $frontendRoot = trim((string) data_get($topology, 'frontend.root', ''), '/');
@@ -7409,6 +7409,29 @@ PHP;
         } finally {
             $ssh->disconnect();
         }
+    }
+
+    /**
+     * One container builds and serves its own bundle, so the frontend rebuild
+     * is the Node release rebuild: same install, same build environment, same
+     * readiness wait. Only the wording changes, because the customer asked for
+     * a frontend that reflects a setting rather than for a release.
+     *
+     * @return array{success: bool, message: string}
+     */
+    private function rebuildSingleContainerFrontend(Service $service): array
+    {
+        if ($this->resolveStackSlug($service) !== 'nodejs') {
+            return ['success' => false, 'message' => 'This service has no separately built frontend.'];
+        }
+
+        $result = $this->treatRebuildNodeApplication($service);
+        if ($result['success']) {
+            $result['message'] = 'Frontend rebuilt with the current environment and restarted. '
+                .'Hard-refresh the site to drop the old bundle from your browser cache.';
+        }
+
+        return $result;
     }
 
     /**
