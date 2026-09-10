@@ -1294,6 +1294,7 @@ class ContainerController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Migration failed. '.$this->databaseErrorDetail($e),
+                'output' => $this->databaseFailureOutput($e),
             ], 500);
         } finally {
             $ssh->disconnect();
@@ -1451,7 +1452,7 @@ class ContainerController extends Controller
             \Log::warning("Database import failed for service {$service->id}: ".$e->getMessage());
             $this->logDatabaseImport($service, $originalName, $bytes, false);
 
-            return response()->json(['error' => 'Import failed. Please try again or contact support.'], 500);
+            return response()->json(['error' => 'Import failed. '.$this->databaseErrorDetail($e)], 500);
         } finally {
             if ($uploadId !== '') {
                 $importer->forgetUpload((int) $service->id, $uploadId);
@@ -2119,6 +2120,40 @@ class ContainerController extends Controller
      */
     private function databaseErrorDetail(\Throwable $e): string
     {
+        $lines = $this->databaseFailureLines($e);
+        if ($lines === []) {
+            return 'The database sidecar gave no reason; check the container logs.';
+        }
+
+        // The reason a command failed is its last words, not its first. Reading
+        // from the front spent the whole budget on Compose's start-up chatter
+        // and cut the error off.
+        $detail = trim(preg_replace('/\s+/', ' ', implode(' ', array_slice($lines, -6))) ?? '');
+
+        return $detail === ''
+            ? 'The database sidecar gave no reason; check the container logs.'
+            : $this->tailWithin($detail, 300);
+    }
+
+    /**
+     * The whole failure, for a panel that has room to show it.
+     */
+    private function databaseFailureOutput(\Throwable $e): string
+    {
+        return $this->tailWithin(implode("\n", $this->databaseFailureLines($e)), 4000);
+    }
+
+    /**
+     * The command's own output, with the plumbing removed.
+     *
+     * Docker Compose narrates every run on stderr, and phpseclib folds that in
+     * with the output that matters. Left in, a volume warning and three
+     * container status lines are all the customer ever sees.
+     *
+     * @return list<string>
+     */
+    private function databaseFailureLines(\Throwable $e): array
+    {
         $lines = preg_split('/\R/', SSHCommandException::redactSensitive($e->getMessage())) ?: [];
 
         $useful = [];
@@ -2137,18 +2172,36 @@ class ContainerController extends Controller
                 }
             }
             if (str_contains($line, ContainerDeploymentService::CONTAINER_BASE_PATH)
-                || preg_match('/\b(?:PGPASSWORD|MYSQL_PWD)=/', $line) === 1) {
+                || preg_match('/\b(?:PGPASSWORD|MYSQL_PWD)=/', $line) === 1
+                || $this->isComposeProgressLine($line)) {
                 continue;
             }
 
             $useful[] = ltrim($line, '-');
         }
 
-        $detail = trim(preg_replace('/\s+/', ' ', implode(' ', $useful)) ?? '');
+        return $useful;
+    }
 
-        return $detail === ''
-            ? 'The database sidecar gave no reason; check the container logs.'
-            : mb_strimwidth($detail, 0, 300, '…');
+    /**
+     * Compose's own narration: the docker CLI's warning log lines, and the
+     * per-resource progress it prints while bringing a stack up.
+     */
+    private function isComposeProgressLine(string $line): bool
+    {
+        return preg_match('/^time="[^"]*"\s+level=/', $line) === 1
+            || preg_match(
+                '/^(?:Container|Network|Volume|Image)\s+\S+\s+'
+                .'(?:Running|Created|Creating|Started|Starting|Recreated|Recreating|Healthy|Waiting|Existing|Pulling|Pulled|Built|Building|Removed|Removing|Stopped|Stopping)\b/',
+                $line
+            ) === 1;
+    }
+
+    private function tailWithin(string $text, int $limit): string
+    {
+        return mb_strlen($text) <= $limit
+            ? $text
+            : '…'.mb_substr($text, -($limit - 1));
     }
 
     private function tabSeparatedToCsv(string $input): string

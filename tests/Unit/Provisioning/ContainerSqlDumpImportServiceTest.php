@@ -145,6 +145,42 @@ SQL;
     }
 
     #[Test]
+    public function it_drops_the_owner_of_a_dump_taken_on_someone_else_machine(): void
+    {
+        $dump = <<<'SQL'
+CREATE TABLE public.users (id integer NOT NULL);
+ALTER TABLE public.users OWNER TO macharia;
+ALTER SEQUENCE public.users_id_seq OWNER TO macharia;
+INSERT INTO public.users VALUES (1);
+SQL;
+
+        $rewritten = $this->importer()->postgresClientDump($dump);
+
+        $this->assertStringNotContainsString('OWNER TO', $rewritten);
+        $this->assertStringContainsString('CREATE TABLE public.users', $rewritten);
+        $this->assertStringContainsString('INSERT INTO public.users VALUES (1);', $rewritten);
+    }
+
+    #[Test]
+    public function it_drops_session_authorization_which_also_names_a_missing_role(): void
+    {
+        $rewritten = $this->importer()->postgresClientDump(
+            "SET SESSION AUTHORIZATION 'macharia';\nCREATE TABLE t (id int);\nRESET SESSION AUTHORIZATION;\n"
+        );
+
+        $this->assertStringNotContainsString('SESSION AUTHORIZATION', $rewritten);
+        $this->assertStringContainsString('CREATE TABLE t (id int);', $rewritten);
+    }
+
+    #[Test]
+    public function it_leaves_a_row_that_merely_mentions_an_owner_alone(): void
+    {
+        $dump = "INSERT INTO audit VALUES (1, 'ALTER TABLE x OWNER TO bob;');\n";
+
+        $this->assertStringContainsString('OWNER TO bob', $this->importer()->postgresClientDump($dump));
+    }
+
+    #[Test]
     public function it_assembles_upload_chunks_in_order(): void
     {
         $importer = $this->importer();

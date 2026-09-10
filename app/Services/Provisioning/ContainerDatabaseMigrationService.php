@@ -88,16 +88,32 @@ class ContainerDatabaseMigrationService
 
         $before = $this->countTables($service, $deployment, $ssh);
 
+        $composeService = $commands->resolveAppComposeService($deployment);
+
         try {
-            $output = $commands->runOneOffInContainer(
-                $ssh,
-                $containerPath,
-                $commands->resolveAppComposeService($deployment),
-                $plan->command,
-                $plan->workDir,
-                self::TIMEOUT_SECONDS,
-                $plan->environment,
-            );
+            // Prefer the container that is already up: it is the environment the
+            // application itself runs in, and it spares the stack a second copy
+            // of the app plus Compose's start-up narration. A stopped stack is
+            // exactly the case a missing schema causes, so `run --rm` remains
+            // the fallback — it starts the database sidecar on its own.
+            $output = $deployment->isRunning()
+                ? $commands->execInContainer(
+                    $ssh,
+                    $containerPath,
+                    $composeService,
+                    $this->commandWithEnvironment($plan),
+                    $plan->workDir,
+                    self::TIMEOUT_SECONDS,
+                )
+                : $commands->runOneOffInContainer(
+                    $ssh,
+                    $containerPath,
+                    $composeService,
+                    $plan->command,
+                    $plan->workDir,
+                    self::TIMEOUT_SECONDS,
+                    $plan->environment,
+                );
         } finally {
             $lock->release();
         }
@@ -111,6 +127,31 @@ class ContainerDatabaseMigrationService
             'tables_before' => $before,
             'tables_after' => $after,
         ];
+    }
+
+    /**
+     * `docker compose exec` inherits the running container's environment but
+     * takes no per-run overrides through this helper, so a plan that needs one
+     * carries it in the command itself. `env` keeps that a single command, and
+     * the values are the same restricted shape Compose flags accept.
+     */
+    public function commandWithEnvironment(ContainerMigrationPlan $plan): string
+    {
+        if ($plan->environment === []) {
+            return $plan->command;
+        }
+
+        $prefix = 'env';
+        foreach ($plan->environment as $key => $value) {
+            if (preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', (string) $key) !== 1
+                || preg_match('/^[A-Za-z0-9._-]+$/', (string) $value) !== 1) {
+                throw new \InvalidArgumentException('Invalid migration environment value.');
+            }
+
+            $prefix .= ' '.$key.'='.$value;
+        }
+
+        return $prefix.' '.$plan->command;
     }
 
     /**
@@ -321,6 +362,7 @@ class ContainerDatabaseMigrationService
             'payload' => $plan->toArray() + [
                 'tables_before' => $before,
                 'tables_after' => $after,
+                'ran_in' => $deployment->isRunning() ? 'running container' : 'one-off container',
                 'actor_id' => auth()->id(),
             ],
             'recorded_at' => now(),

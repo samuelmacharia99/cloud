@@ -81,6 +81,28 @@ class ContainerDatabaseMigrationPlanTest extends TestCase
     }
 
     #[Test]
+    public function a_plan_with_no_environment_runs_as_written(): void
+    {
+        $plan = $this->plan('nodejs', [
+            '/app/package.json' => '{}',
+            '/app/knexfile.js' => 'module.exports = {}',
+        ]);
+
+        $this->assertSame($plan->command, $this->service()->commandWithEnvironment($plan));
+    }
+
+    #[Test]
+    public function an_environment_travels_with_the_command_into_a_running_container(): void
+    {
+        $plan = $this->plan('ruby', ['/app/bin/rails' => 'ruby', '/app/db/migrate' => 'dir']);
+
+        $this->assertSame(
+            'env RAILS_ENV=production bin/rails db:migrate',
+            $this->service()->commandWithEnvironment($plan),
+        );
+    }
+
+    #[Test]
     public function prisma_with_committed_migrations_is_deployed_rather_than_pushed(): void
     {
         $plan = $this->plan('nodejs', [

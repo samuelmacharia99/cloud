@@ -611,7 +611,7 @@ class ContainerSqlDumpImportService
                 throw new \RuntimeException('Could not create a temporary file for the SQL dump.');
             }
             $localDump .= '.sql';
-            file_put_contents($localDump, $sql);
+            file_put_contents($localDump, $this->postgresClientDump($sql));
             $remotePath = $importDir.'/import_'.time().'_'.bin2hex(random_bytes(4)).'.sql';
             try {
                 $ssh->uploadFromLocal($localDump, $remotePath);
@@ -820,6 +820,30 @@ class ContainerSqlDumpImportService
         }
 
         return null;
+    }
+
+    /**
+     * Rewrite a pg_dump so it loads as the sidecar's own role.
+     *
+     * A dump taken on a laptop names the role that owned the objects there.
+     * The sidecar has never heard of it, so the first `ALTER TABLE ... OWNER TO`
+     * raises "role does not exist", and psql stops on first error, which loses
+     * the whole import over a line that changes no data. This is what
+     * `pg_dump --no-owner --no-privileges` would have written; doing it here
+     * means the customer does not have to know that flag exists.
+     */
+    public function postgresClientDump(string $sql): string
+    {
+        $rewritten = preg_replace(
+            [
+                '/^\s*ALTER\s+[^;\n]*\bOWNER\s+TO\b[^;\n]*;\s*$/im',
+                '/^\s*(?:SET|RESET)\s+SESSION\s+AUTHORIZATION\b[^;\n]*;\s*$/im',
+            ],
+            '',
+            $sql
+        );
+
+        return is_string($rewritten) ? $rewritten : $sql;
     }
 
     /**
