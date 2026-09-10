@@ -82,6 +82,7 @@ class ContainerDoctorService
         if (! $deployment->isRunning()
             && ! in_array($action, [
                 'recreate_application',
+                'rebuild_frontend_bundle',
                 'fix_vite_production_runtime',
                 'upgrade_node_runtime',
                 'switch_php_production_runtime',
@@ -145,6 +146,7 @@ class ContainerDoctorService
             'use_file_cache' => $this->treatUseFileCache($service),
             'tune_request_concurrency' => $this->treatTuneRequestConcurrency($service),
             'fix_compose_interpolation' => $this->treatFixComposeInterpolation($service),
+            'rebuild_frontend_bundle' => $this->treatRebuildFrontendBundle($service),
             default => ['success' => false, 'message' => 'Unknown treatment action.'],
         };
 
@@ -377,6 +379,13 @@ class ContainerDoctorService
             $checks['bootstrap_in_progress'] = is_string($upstream['bootstrapping'] ?? null);
 
             $findings = app(ContainerDoctorInfrastructureAnalyzer::class)->findings($logs, $stack, $snapshot);
+
+            // A public build-time setting saved after the last export never
+            // reaches the bundle, so the app reports it missing while the
+            // console shows it set.
+            foreach (app(ContainerDoctorFrontendBuildAnalyzer::class)->findings($service, $deployment, $ssh) as $staleBuild) {
+                $findings[] = $staleBuild;
+            }
 
             $containerReady = ($snapshot['running'] ?? false) === true
                 && ($snapshot['restarting'] ?? false) !== true;
@@ -7325,6 +7334,75 @@ PHP;
             return [
                 'success' => false,
                 'message' => 'Node rebuild failed before readiness: '.$e->getMessage(),
+            ];
+        } finally {
+            $ssh->disconnect();
+        }
+    }
+
+    /**
+     * Rebuild the browser app with the environment as it stands now. The build
+     * path differs by backend: a Node API shares one build pipeline with its
+     * frontend, while a Python, Ruby or Go API has its web app built separately.
+     */
+    private function treatRebuildFrontendBundle(Service $service): array
+    {
+        $deployment = $service->containerDeployment;
+        if (! $deployment?->node) {
+            return ['success' => false, 'message' => 'Application is not deployed.'];
+        }
+
+        $topology = data_get($service->service_meta, 'node_workloads');
+        if (($topology['topology'] ?? null) !== 'split_web_api') {
+            return ['success' => false, 'message' => 'This service has no separately built frontend.'];
+        }
+
+        $frontendRoot = trim((string) data_get($topology, 'frontend.root', ''), '/');
+        if ($frontendRoot === '') {
+            return ['success' => false, 'message' => 'The frontend directory for this stack is not known.'];
+        }
+
+        $ssh = SSHService::forNode($deployment->node);
+
+        try {
+            if ($this->resolveStackSlug($service) === 'nodejs') {
+                app(ContainerNodeBuildService::class)->build(
+                    $service,
+                    $deployment,
+                    $ssh,
+                    forceRebuild: true,
+                    workloads: ['frontend'],
+                );
+            } else {
+                app(ContainerStackCommandService::class)->buildSplitWebFrontend(
+                    $deployment,
+                    $ssh,
+                    $frontendRoot,
+                    forceRebuild: true,
+                );
+            }
+
+            // Recreate only the frontend container so it serves the new bundle.
+            // A static Vite site picks the files up from its bind mount, but a
+            // Next or Expo web server holds the old build in memory.
+            $deploymentService = app(ContainerDeploymentService::class);
+            $ssh->exec(
+                $deploymentService->composeRestartAppCommand(
+                    ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name,
+                    NodeWebGatewayProxy::FRONTEND_SERVICE,
+                ),
+                180,
+            );
+
+            return [
+                'success' => true,
+                'message' => 'Frontend rebuilt from '.$frontendRoot.' with the current environment and restarted. '
+                    .'Hard-refresh the site to drop the old bundle from your browser cache.',
+            ];
+        } catch (\Throwable $e) {
+            return [
+                'success' => false,
+                'message' => 'Frontend rebuild failed: '.$e->getMessage(),
             ];
         } finally {
             $ssh->disconnect();
