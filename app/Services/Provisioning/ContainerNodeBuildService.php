@@ -448,9 +448,13 @@ class ContainerNodeBuildService
 
     public function frontendBuildEnvironmentChecksum(ContainerDeployment $deployment): string
     {
+        $analyzer = app(ContainerDoctorFrontendBuildAnalyzer::class);
         $values = [];
         foreach (is_array($deployment->env_values) ? $deployment->env_values : [] as $key => $value) {
-            if (is_string($key) && (str_starts_with($key, 'NEXT_PUBLIC_') || str_starts_with($key, 'VITE_'))) {
+            // Every public prefix is baked into the bundle, so a change to any of
+            // them has to trigger a rebuild. Watching only NEXT_PUBLIC_ and VITE_
+            // left Expo and Nuxt apps serving a bundle with the old value.
+            if (is_string($key) && $analyzer->isPublicBuildKey($key)) {
                 $values[$key] = is_scalar($value) || $value === null ? (string) $value : '';
             }
         }

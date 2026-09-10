@@ -180,7 +180,7 @@ class ContainerDeploymentService
             if ($existingDeployment && is_array($existingDeployment->env_values)) {
                 $envValues = array_merge($existingDeployment->env_values, $envValues);
             }
-            $envValues = array_merge($envValues, $this->projectRoleLinkEnv($service));
+            $envValues = array_merge($envValues, $this->projectRoleLinkEnv($service, $envValues));
             $envVars = [];
 
             // Validate a manual Node pin against the existing source before
@@ -8554,9 +8554,10 @@ class ContainerDeploymentService
     }
 
     /**
+     * @param  array<string, mixed>  $envValues  values already resolved for this service
      * @return array<string, string>
      */
-    private function projectRoleLinkEnv(Service $service): array
+    private function projectRoleLinkEnv(Service $service, array $envValues = []): array
     {
         $meta = is_array($service->service_meta) ? $service->service_meta : [];
         if (($meta['project_role'] ?? null) !== 'frontend') {
@@ -8585,11 +8586,16 @@ class ContainerDeploymentService
         $port = $deployment->host_port ?: 8000;
         $url = str_starts_with($host, 'http') ? $host : "http://{$host}:{$port}";
 
-        return [
-            'BACKEND_URL' => $url,
-            'NEXT_PUBLIC_API_URL' => $url,
-            'EXPO_PUBLIC_API_URL' => $url,
-            'API_URL' => $url,
-        ];
+        // Only fill what the customer has not chosen. Overwriting these
+        // discarded deliberate values, such as an external API origin a mobile
+        // build has to reach, on every redeploy.
+        $link = [];
+        foreach (['BACKEND_URL', 'NEXT_PUBLIC_API_URL', 'EXPO_PUBLIC_API_URL', 'API_URL'] as $key) {
+            if (trim((string) ($envValues[$key] ?? '')) === '') {
+                $link[$key] = $url;
+            }
+        }
+
+        return $link;
     }
 }
