@@ -434,15 +434,21 @@ function containerDoctor(config = {}) {
 // One POST for the Database tab's buttons. Test Connection and Repair
 // Credentials are rate limited per minute, and the raw throttle body ("Too Many
 // Attempts.") reached the panel with no hint that waiting is the answer.
-async function postDatabaseAction(url) {
+async function postDatabaseAction(url, body = null) {
     try {
+        const headers = {
+            'X-CSRF-TOKEN': document.head.querySelector('meta[name="csrf-token"]').content,
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+        };
+        if (body !== null) {
+            headers['Content-Type'] = 'application/json';
+        }
+
         const response = await fetch(url, {
             method: 'POST',
-            headers: {
-                'X-CSRF-TOKEN': document.head.querySelector('meta[name="csrf-token"]').content,
-                'Accept': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest',
-            },
+            headers,
+            body: body === null ? undefined : JSON.stringify(body),
         });
 
         if (response.status === 429) {
@@ -659,6 +665,63 @@ async function loadDatabaseHistory() {
     } catch (error) {
         historyEl.innerHTML = '<div class="p-3 text-sm text-red-600">Failed to load history</div>';
     }
+}
+
+// The Database tab's migration step. Detection runs once when the tab opens,
+// the same way the table browser lists tables, so the command is on screen
+// before anyone reaches for it.
+function dbMigrationRunner(planUrl, runUrl, dbUsername) {
+    return {
+        planUrl,
+        runUrl,
+        dbUsername,
+        detecting: true,
+        running: false,
+        plan: null,
+        error: '',
+        confirmation: '',
+        result: null,
+        init() {
+            this.detect();
+        },
+        get canRun() {
+            return !!this.plan && !this.running && this.confirmation.trim() === this.dbUsername;
+        },
+        async detect() {
+            this.detecting = true;
+            this.error = '';
+
+            try {
+                const response = await fetch(this.planUrl, {
+                    headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                });
+                const data = await response.json().catch(() => ({}));
+
+                if (!response.ok) {
+                    this.error = data.error || data.message || 'Could not check this application for migrations.';
+                    return;
+                }
+
+                this.plan = data.available ? data.plan : null;
+            } catch (error) {
+                this.error = 'Network error while checking for migrations.';
+            } finally {
+                this.detecting = false;
+            }
+        },
+        async run() {
+            if (!this.canRun) return;
+
+            this.running = true;
+            this.result = null;
+            this.result = await postDatabaseAction(this.runUrl, { confirm_username: this.confirmation.trim() });
+            this.running = false;
+
+            if (this.result?.success) {
+                this.confirmation = '';
+            }
+        },
+    };
 }
 
 function dbTableBrowser(dbType) {

@@ -422,6 +422,8 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('admin/services/{service}/container/database/history', [App\Http\Controllers\Customer\ContainerController::class, 'databaseHistory'])->name('admin.services.container.database.history');
         Route::post('admin/services/{service}/container/database/test-connection', [App\Http\Controllers\Customer\ContainerController::class, 'databaseTestConnection'])->name('admin.services.container.database.test');
         Route::post('admin/services/{service}/container/database/sync-credentials', [App\Http\Controllers\Customer\ContainerController::class, 'databaseSyncCredentials'])->name('admin.services.container.database.sync');
+        Route::get('admin/services/{service}/container/database/migration-plan', [App\Http\Controllers\Customer\ContainerController::class, 'databaseMigrationPlan'])->name('admin.services.container.database.migration-plan');
+        Route::post('admin/services/{service}/container/database/migrate', [App\Http\Controllers\Customer\ContainerController::class, 'databaseMigrate'])->name('admin.services.container.database.migrate');
 
         Route::get('admin/services/{service}/container/files', [ContainerFileController::class, 'index'])->name('admin.services.container.files.index');
         Route::get('admin/services/{service}/container/files/content', [ContainerFileController::class, 'content'])->name('admin.services.container.files.content');
@@ -875,6 +877,8 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('my/services/{service}/container/database/history', [App\Http\Controllers\Customer\ContainerController::class, 'databaseHistory'])->middleware('throttle:20,1')->name('customer.services.container.database.history');
         Route::post('my/services/{service}/container/database/test-connection', [App\Http\Controllers\Customer\ContainerController::class, 'databaseTestConnection'])->middleware('throttle:5,1')->name('customer.services.container.database.test');
         Route::post('my/services/{service}/container/database/sync-credentials', [App\Http\Controllers\Customer\ContainerController::class, 'databaseSyncCredentials'])->middleware('throttle:3,1')->name('customer.services.container.database.sync');
+        Route::get('my/services/{service}/container/database/migration-plan', [App\Http\Controllers\Customer\ContainerController::class, 'databaseMigrationPlan'])->middleware('throttle:20,1')->name('customer.services.container.database.migration-plan');
+        Route::post('my/services/{service}/container/database/migrate', [App\Http\Controllers\Customer\ContainerController::class, 'databaseMigrate'])->middleware('throttle:3,1')->name('customer.services.container.database.migrate');
 
         // Container file manager (throttled)
         Route::middleware(['throttle:60,1'])->group(function () {

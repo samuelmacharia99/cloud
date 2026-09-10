@@ -608,6 +608,61 @@
                                     </p>
                                 @endif
 
+                                <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/40"
+                                     x-data="dbMigrationRunner(
+                                        @js(container_route('database.migration-plan', $service)),
+                                        @js(container_route('database.migrate', $service)),
+                                        @js((string) ($databaseContext['username'] ?? ''))
+                                     )">
+                                    <h3 class="text-sm font-semibold text-slate-900 dark:text-white">Run migrations</h3>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                        Creates and updates tables using the migration step your project already declares. Read from your files, never guessed.
+                                    </p>
+
+                                    <p x-show="detecting" x-cloak class="mt-3 text-sm text-slate-500 dark:text-slate-400">Checking this application for a migration step…</p>
+                                    <p x-show="error" x-cloak class="mt-3 text-sm text-red-600 dark:text-red-400" x-text="error"></p>
+
+                                    <template x-if="!detecting && !plan && !error">
+                                        <p class="mt-3 text-sm text-slate-600 dark:text-slate-400">
+                                            No migration step was found in this application. Run yours from the <strong>Terminal</strong> tab.
+                                        </p>
+                                    </template>
+
+                                    <template x-if="plan">
+                                        <div class="mt-3 space-y-3">
+                                            <div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-3">
+                                                <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Detected</p>
+                                                <p class="mt-1 text-sm font-semibold text-slate-900 dark:text-white" x-text="plan.tool"></p>
+                                                <code class="mt-2 block break-all rounded bg-slate-900 px-3 py-2 font-mono text-xs text-slate-200" x-text="plan.command"></code>
+                                                <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                                                    Runs in <span class="font-mono" x-text="plan.work_dir"></span>, from <span class="font-mono" x-text="plan.source"></span>.
+                                                </p>
+                                            </div>
+
+                                            <label class="block text-sm text-slate-700 dark:text-slate-300">
+                                                Type the database username <span class="font-mono font-semibold">{{ $databaseContext['username'] }}</span> to confirm
+                                                <input type="text" x-model="confirmation" autocomplete="off" spellcheck="false"
+                                                    placeholder="Database username"
+                                                    class="mt-1.5 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 font-mono text-sm text-slate-900 dark:text-white">
+                                            </label>
+
+                                            <button type="button" @click="run()" :disabled="!canRun"
+                                                class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-sm font-medium transition">
+                                                <span x-text="running ? 'Running…' : 'Run migrations'"></span>
+                                            </button>
+
+                                            <template x-if="result">
+                                                <div class="space-y-2">
+                                                    <p class="text-sm font-medium"
+                                                       :class="result.success ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400'"
+                                                       x-text="result.message"></p>
+                                                    <pre x-show="result.output" class="max-h-64 overflow-auto rounded-lg bg-slate-900 p-3 text-xs text-slate-200" x-text="result.output"></pre>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </template>
+                                </div>
+
                                 <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/50">
                                     <h3 class="text-sm font-semibold text-slate-900 dark:text-white mb-2">Import SQL dump</h3>
                                     <p class="text-sm text-slate-600 dark:text-slate-400 mb-3">

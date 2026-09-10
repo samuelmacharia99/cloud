@@ -31,6 +31,7 @@ use App\Services\Dns\DomainCloudflareDnsService;
 use App\Services\Provisioning\ContainerAutoDeployService;
 use App\Services\Provisioning\ContainerBackupService;
 use App\Services\Provisioning\ContainerCronService;
+use App\Services\Provisioning\ContainerDatabaseMigrationService;
 use App\Services\Provisioning\ContainerDeploymentService;
 use App\Services\Provisioning\ContainerDeployOptions;
 use App\Services\Provisioning\ContainerDoctorService;
@@ -1208,6 +1209,154 @@ class ContainerController extends Controller
 
             return response()->json(['error' => 'Query failed. '.$this->databaseErrorDetail($e)], 500);
         }
+    }
+
+    /**
+     * What this project's own migration command is, read from the repository.
+     */
+    public function databaseMigrationPlan(Service $service): JsonResponse
+    {
+        $this->authorize('manageContainer', $service);
+
+        $guard = $this->guardDatabaseMigration($service);
+        if ($guard instanceof JsonResponse) {
+            return $guard;
+        }
+
+        $deployment = $service->containerDeployment;
+        $ssh = SSHService::forNode($deployment->node);
+
+        try {
+            $plan = app(ContainerDatabaseMigrationService::class)->plan($service, $deployment, $ssh);
+        } catch (\Throwable $e) {
+            \Log::warning("Migration detection failed for service {$service->id}: ".$e->getMessage());
+
+            return response()->json(['available' => false, 'error' => 'Could not read the application files.'], 500);
+        } finally {
+            $ssh->disconnect();
+        }
+
+        return response()->json([
+            'available' => $plan !== null,
+            'plan' => $plan?->toArray(),
+        ]);
+    }
+
+    /**
+     * Run that command, once the customer has typed the database username.
+     *
+     * The typed name is checked here rather than in the browser: it is the step
+     * that proves the person meant this database and not another tab's.
+     */
+    public function databaseMigrate(Service $service, Request $request): JsonResponse
+    {
+        $this->authorize('manageContainer', $service);
+
+        $guard = $this->guardDatabaseMigration($service);
+        if ($guard instanceof JsonResponse) {
+            return $guard;
+        }
+
+        $deployment = $service->containerDeployment;
+        $databaseContext = $this->buildDatabaseContext($service, $deployment);
+        $expected = (string) ($databaseContext['username'] ?? '');
+
+        $request->validate([
+            'confirm_username' => [
+                'required',
+                'string',
+                function (string $attribute, mixed $value, \Closure $fail) use ($expected): void {
+                    if (trim((string) $value) !== $expected) {
+                        $fail('The database username does not match. Type it exactly as shown above.');
+                    }
+                },
+            ],
+        ], [
+            'confirm_username.required' => 'Type the database username to confirm.',
+        ]);
+
+        $migrations = app(ContainerDatabaseMigrationService::class);
+        $ssh = SSHService::forNode($deployment->node);
+
+        try {
+            $plan = $migrations->plan($service, $deployment, $ssh);
+            if ($plan === null) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No migration command was found in this application. Run yours from the Terminal tab.',
+                ], 422);
+            }
+
+            $result = $migrations->run($service, $deployment, $ssh, $plan);
+        } catch (\Throwable $e) {
+            \Log::warning("Database migration failed for service {$service->id}: ".$e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Migration failed. '.$this->databaseErrorDetail($e),
+            ], 500);
+        } finally {
+            $ssh->disconnect();
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => $this->migrationOutcomeMessage($plan->tool, $result),
+            'plan' => $plan->toArray(),
+            'output' => $result['output'],
+            'tables_before' => $result['tables_before'],
+            'tables_after' => $result['tables_after'],
+        ]);
+    }
+
+    /**
+     * @return JsonResponse|null a refusal, or null when the service can migrate
+     */
+    private function guardDatabaseMigration(Service $service): ?JsonResponse
+    {
+        if (! $this->isDatabaseConsoleEnabled()) {
+            return response()->json(['error' => 'Database console is disabled by administrator'], 403);
+        }
+
+        if ($service->product?->type !== 'container_hosting') {
+            return response()->json(['error' => 'Invalid service type'], 400);
+        }
+
+        $deployment = $service->containerDeployment;
+        if (! $deployment || $deployment->status === 'terminated') {
+            return response()->json(['error' => 'Application is not deployed.'], 400);
+        }
+
+        if (! $deployment->node || ! $deployment->node->ssh_username || (! $deployment->node->ssh_password && ! $deployment->node->da_login_key)) {
+            return response()->json(['error' => 'Container host is not properly configured'], 400);
+        }
+
+        if (! $this->buildDatabaseContext($service, $deployment)['available']) {
+            return response()->json(['error' => 'No database sidecar configured for this service'], 400);
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array{output: string, tables_before: ?int, tables_after: ?int}  $result
+     */
+    private function migrationOutcomeMessage(string $tool, array $result): string
+    {
+        $before = $result['tables_before'];
+        $after = $result['tables_after'];
+
+        if ($before === null || $after === null) {
+            return $tool.' migrations ran.';
+        }
+
+        if ($after > $before) {
+            return $tool.' migrations ran. Tables went from '.$before.' to '.$after.'.';
+        }
+
+        return $after === 0
+            ? $tool.' migrations ran, but the database still has no tables. Read the output below.'
+            : $tool.' migrations ran. The table count is unchanged at '.$after.', so there was nothing new to apply.';
     }
 
     public function databaseImport(Service $service, ImportContainerDatabaseRequest $request): JsonResponse
