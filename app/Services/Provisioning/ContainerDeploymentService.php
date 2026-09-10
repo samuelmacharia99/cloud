@@ -1779,7 +1779,36 @@ class ContainerDeploymentService
         } catch (\Throwable) {
         }
 
-        $ssh->exec($this->composeRestartAppCommand($containerPath, $serviceName), self::DEPLOY_TIMEOUT);
+        $command = $this->composeRestartAppCommand($containerPath, $serviceName);
+
+        try {
+            $ssh->exec($command, self::DEPLOY_TIMEOUT);
+
+            return;
+        } catch (\Throwable $e) {
+            if (! $this->isDockerContainerNameConflict($e->getMessage())) {
+                throw $e;
+            }
+
+            $conflict = $e->getMessage();
+        }
+
+        // A recreate that died between compose renaming the old container and
+        // creating the new one leaves "<hash>_<project>" behind. Every later
+        // recreate then tries to take the same temporary name and is refused,
+        // so a site stays down and the alert repeats every couple of minutes
+        // until somebody removes it by hand. compose up already recovers from
+        // this; restart did not, which is the only reason it was fatal here.
+        $project = basename(rtrim($containerPath, '/'));
+        \Log::warning('App restart hit a container name conflict; clearing leftovers and retrying', [
+            'container_path' => $containerPath,
+            'project' => $project,
+        ]);
+
+        $this->clearDockerComposeNameConflicts($ssh, $project, $conflict);
+        $this->waitForRemovingDockerContainers($ssh, $containerPath);
+
+        $ssh->exec($command, self::DEPLOY_TIMEOUT);
     }
 
     /**
@@ -6555,24 +6584,46 @@ class ContainerDeploymentService
         $name = self::SHARED_DOCKER_NETWORK;
         $quoted = escapeshellarg($name);
 
+        // One idempotent command rather than inspect-then-create. Split across
+        // two round trips, an SSH hiccup on the inspect made the create run
+        // against a network that already existed, and a create that lost its
+        // exit status turned a healthy host into a failed auto-restart check.
+        $ensure = 'docker network inspect '.$quoted.' >/dev/null 2>&1'
+            .' || docker network create --driver bridge '.$quoted;
+
         try {
-            $ssh->exec('docker network inspect '.$quoted, 15);
+            $ssh->exec($ensure, 30);
 
             return;
-        } catch (\Throwable) {
-        }
-
-        try {
-            $ssh->exec('docker network create --driver bridge '.$quoted, 30);
         } catch (\Throwable $e) {
+            // The network being there is the outcome we wanted. Whether this
+            // call created it, raced another one that did, or simply lost its
+            // exit status on the way back does not change that.
+            if ($this->sharedDockerNetworkExists($ssh)) {
+                return;
+            }
+
             if (! $this->isDockerAddressPoolExhausted($e->getMessage())) {
                 throw $e;
             }
+        }
 
-            $ssh->exec(
-                'docker network create --driver bridge --subnet 10.201.0.0/16 '.$quoted,
-                30
-            );
+        $ssh->exec(
+            'docker network create --driver bridge --subnet 10.201.0.0/16 '.$quoted,
+            30
+        );
+    }
+
+    private function sharedDockerNetworkExists(SSHService $ssh): bool
+    {
+        try {
+            return trim($ssh->exec(
+                'docker network inspect '.escapeshellarg(self::SHARED_DOCKER_NETWORK)
+                .' >/dev/null 2>&1 && echo yes || echo no',
+                15
+            )) === 'yes';
+        } catch (\Throwable) {
+            return false;
         }
     }
 
