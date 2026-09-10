@@ -240,7 +240,12 @@ class NodeWebGatewayProxyTest extends TestCase
 
         $this->assertSame('node:22-alpine', $compose['services']['frontend']['image']);
         $this->assertSame('/app/apps/mobile', $compose['services']['frontend']['working_dir']);
-        $this->assertSame($frontendCommand, $compose['services']['frontend']['command']);
+        // Compose interpolates ${VAR} before the container starts, so the rendered
+        // file carries $$ and the shell inside the container sees a single $.
+        $this->assertSame(
+            ['sh', '-lc', 'npx --yes serve@14 dist -s --listen tcp://0.0.0.0:$${PORT:-3000}'],
+            $compose['services']['frontend']['command'],
+        );
         $this->assertSame('/api', $compose['services']['frontend']['environment']['EXPO_PUBLIC_API_URL']);
         $this->assertSame(['30123:8080'], $compose['services']['edge']['ports']);
         $this->assertArrayNotHasKey('ports', $compose['services']['frontend']);
