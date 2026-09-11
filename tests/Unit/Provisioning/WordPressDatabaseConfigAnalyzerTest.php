@@ -121,6 +121,27 @@ class WordPressDatabaseConfigAnalyzerTest extends TestCase
     }
 
     #[Test]
+    public function the_shared_hostname_is_reported_whatever_a_probe_happened_to_return(): void
+    {
+        // "mysql" resolves to this project's own database inside one compose
+        // project and to whichever sidecar Docker picked on a shared node, so a
+        // probe that passed this second proves nothing about the next one.
+        $analyzer = app(WordPressDatabaseConfigAnalyzer::class);
+
+        $this->assertTrue($analyzer->hostIsShared('mysql'));
+        $this->assertTrue($analyzer->hostIsShared('db'));
+        $this->assertTrue($analyzer->hostIsShared('localhost'));
+        $this->assertFalse($analyzer->hostIsShared('user-5-service-130-wordpress-mysql'));
+
+        $finding = $analyzer->sharedHostFinding('mysql', 'user-5-service-130-wordpress-mysql');
+
+        $this->assertSame('wordpress_config_shared_database_host', $finding['id']);
+        $this->assertSame('critical', $finding['severity']);
+        $this->assertSame('sync_database_credentials', $finding['treat_action']);
+        $this->assertStringContainsString('user-5-service-130-wordpress-mysql', $finding['summary']);
+    }
+
+    #[Test]
     public function it_does_not_claim_a_platform_result_nobody_measured(): void
     {
         // The site this was built for showed "DB: n/a": the platform could not

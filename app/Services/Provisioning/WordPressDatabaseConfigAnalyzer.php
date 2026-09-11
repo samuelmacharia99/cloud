@@ -90,6 +90,22 @@ class WordPressDatabaseConfigAnalyzer
             'wordpress_config_differs' => $differences !== [],
         ];
 
+        $host = trim((string) ($wordpress['DB_HOST'] ?? ''));
+        $checks['wordpress_db_host'] = $host;
+
+        // Checked before the probe result, because a shared name can resolve to
+        // the right database this second and the wrong one next. A passing
+        // probe is not evidence that this is fine.
+        if ($host !== '' && $this->hostIsShared($host)) {
+            return [
+                'findings' => [$this->sharedHostFinding(
+                    $host,
+                    app(ContainerDeploymentService::class)->sidecarDnsHost($containerName),
+                )],
+                'checks' => $checks,
+            ];
+        }
+
         if (! $probe['ok']) {
             return [
                 'findings' => [$this->unreachableFinding($differences, (string) $probe['error'], $platformProbeOk)],
@@ -97,7 +113,11 @@ class WordPressDatabaseConfigAnalyzer
             ];
         }
 
-        if ($differences !== [] && $platformProbeOk === true) {
+        // Reported whatever the platform's own probe did or did not manage. It
+        // was gated on that probe having succeeded, so on a service the platform
+        // could not test at all — the exact state a broken site is in — a real
+        // disagreement was found, shown in the checks row, and then dropped.
+        if ($differences !== []) {
             return ['findings' => [$this->mismatchFinding($differences)], 'checks' => $checks];
         }
 
@@ -151,30 +171,84 @@ class WordPressDatabaseConfigAnalyzer
      */
     private function probe(SSHService $ssh, ContainerDeployment $deployment, array $wordpress): array
     {
-        $deployments = app(ContainerDeploymentService::class);
-
-        $env = [
-            'WORDPRESS_DB_HOST' => $wordpress['DB_HOST'] ?? '',
-            'WORDPRESS_DB_NAME' => $wordpress['DB_NAME'] ?? '',
-            'WORDPRESS_DB_USER' => $wordpress['DB_USER'] ?? '',
-            'WORDPRESS_DB_PASSWORD' => $wordpress['DB_PASSWORD'] ?? '',
-        ];
-
-        try {
-            $result = $deployments->probeApplicationDatabaseAccess(
-                $ssh,
-                (string) $deployment->container_name,
-                'mysql',
-                array_filter($env, static fn (string $value): bool => $value !== ''),
-                'wordpress',
-                ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name,
-            );
-
-            return ['ok' => (bool) ($result['ok'] ?? false), 'error' => $result['error'] ?? null];
-        } catch (\Throwable $e) {
-            // A probe that could not run is not a failed connection.
+        $host = trim((string) ($wordpress['DB_HOST'] ?? ''));
+        if ($host === '') {
+            // Nothing to dial. Not a failure we measured.
             return ['ok' => true, 'error' => null];
         }
+
+        $deployments = app(ContainerDeploymentService::class);
+        $port = 3306;
+        if (preg_match('/^(.+):(\d+)$/', $host, $matched) === 1) {
+            $host = $matched[1];
+            $port = (int) $matched[2];
+        }
+
+        // The literal host, never a corrected one. The platform's own probe
+        // rewrites an ambiguous name such as "mysql" to this stack's unique
+        // sidecar DNS before dialling, which is helpful when you want to know
+        // whether the database is alive and actively misleading when you want
+        // to know whether WordPress can reach it. Asking WordPress's question
+        // means dialling exactly the string WordPress holds, from inside the
+        // container WordPress runs in.
+        $script = $deployments->phpWordpressMysqliEvalScript(
+            $host,
+            $port,
+            (string) ($wordpress['DB_NAME'] ?? ''),
+            (string) ($wordpress['DB_USER'] ?? ''),
+            (string) ($wordpress['DB_PASSWORD'] ?? ''),
+        );
+
+        try {
+            $ssh->exec(
+                $deployments->phpDatabaseProbeCommand((string) $deployment->container_name, $script, 'wordpress'),
+                20,
+            );
+
+            return ['ok' => true, 'error' => null];
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'error' => mb_substr(trim($e->getMessage()), -300)];
+        }
+    }
+
+    /**
+     * A host every WordPress sidecar on the shared network answers to.
+     *
+     * Inside one compose project "mysql" resolves to that project's own
+     * database, which is why this can look fine for months. On a node where
+     * every stack shares one network it resolves to whichever sidecar Docker
+     * picked, so the site works, then does not, for no reason anybody can see.
+     */
+    public function hostIsShared(string $host): bool
+    {
+        return app(ContainerDeploymentService::class)->isAmbiguousSharedNetworkDatabaseHost($host);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function sharedHostFinding(string $host, string $uniqueHost): array
+    {
+        return [
+            'id' => 'wordpress_config_shared_database_host',
+            'severity' => 'critical',
+            'title' => 'wp-config.php points at the shared database hostname',
+            'summary' => 'wp-config.php has DB_HOST set to "'.$host.'". Every WordPress sidecar on this node '
+                .'answers to that name, so Docker resolves it to whichever database it feels like, and the site '
+                .'shows "Error establishing a database connection" whenever that is not its own. It needs this '
+                .'stack\'s own name, '.$uniqueHost.'. Repair writes it into wp-config.php and keeps the data.',
+            'evidence' => [
+                'wp-config DB_HOST='.$host,
+                'this stack\'s database='.$uniqueHost,
+            ],
+            'treat_action' => 'sync_database_credentials',
+            'treat_label' => 'Repair DB credentials',
+            'manual_steps' => [
+                'Click Repair DB credentials — it pins the unique database name in wp-config.php.',
+                'The database volume is untouched; nothing is dropped or recreated.',
+            ],
+            'source' => 'live',
+        ];
     }
 
     /**

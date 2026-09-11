@@ -177,6 +177,21 @@ class ContainerDoctorService
             }
         }
 
+        // "Treatment applied" over a site that is still down reads as a lie.
+        // The action did what it says; it just did not fix anything, and the
+        // customer is owed that sentence rather than a green banner.
+        if (($result['success'] ?? false) === true && isset($result['diagnosis'])) {
+            $remaining = collect($result['diagnosis']['findings'] ?? [])
+                ->filter(fn ($finding) => ($finding['severity'] ?? '') === 'critical')
+                ->count();
+
+            if ($remaining > 0) {
+                $result['message'] = rtrim((string) $result['message'], ' .').'. '
+                    .'The site still reports '.$remaining.' critical issue'.($remaining === 1 ? '' : 's')
+                    .' below, so this was not the cause.';
+            }
+        }
+
         return $result;
     }
 
@@ -1362,11 +1377,19 @@ class ContainerDoctorService
                         'evidence' => $evidence,
                         'treat_action' => $treat['treat_action'],
                         'treat_label' => $treat['treat_label'],
-                        'manual_steps' => [
-                            'In Terminal: tail -n 40 storage/logs/laravel.log',
-                            'Re-scan after treating — leftover 1045/2002 lines in an old log tail are not the live cause when DB: connected.',
-                            'This card stays until the public URL stops returning HTTP 5xx.',
-                        ],
+                        // Laravel's log path on a WordPress site sent customers
+                        // looking for a file that was never going to exist.
+                        'manual_steps' => $stack === 'wordpress'
+                            ? [
+                                'Read the database findings on this scan first — a WordPress 500 is usually wp-config.php, not the container.',
+                                'In Terminal: tail -n 40 /var/www/html/wp-content/debug.log (present only when WP_DEBUG_LOG is on).',
+                                'This card stays until the public URL stops returning HTTP 5xx.',
+                            ]
+                            : [
+                                'In Terminal: tail -n 40 storage/logs/laravel.log',
+                                'Re-scan after treating — leftover 1045/2002 lines in an old log tail are not the live cause when DB: connected.',
+                                'This card stays until the public URL stops returning HTTP 5xx.',
+                            ],
                         'source' => 'live',
                     ];
                 }
