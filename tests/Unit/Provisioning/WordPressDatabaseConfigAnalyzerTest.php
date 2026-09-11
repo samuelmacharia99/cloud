@@ -3,6 +3,7 @@
 namespace Tests\Unit\Provisioning;
 
 use App\Services\Provisioning\ContainerDeploymentService;
+use App\Services\Provisioning\ContainerDoctorService;
 use App\Services\Provisioning\WordPressDatabaseConfigAnalyzer;
 use App\Services\SSH\SSHService;
 use Mockery;
@@ -153,6 +154,30 @@ class WordPressDatabaseConfigAnalyzerTest extends TestCase
         $this->assertStringNotContainsString('the platform stores work', $finding['summary']);
         $this->assertStringNotContainsString('platform credentials also fail', implode(' ', $finding['evidence']));
         $this->assertContains('the platform has no database recorded for this service to test', $finding['evidence']);
+    }
+
+    #[Test]
+    public function the_repair_the_shared_host_finding_offers_is_one_doctor_can_actually_run(): void
+    {
+        // The finding and the repair are written in different files, and a
+        // treat_action nobody handles produces a button that reports success
+        // and changes nothing. That is how this defect survived on two dozen
+        // sites while the panel said it was fixable.
+        $finding = app(WordPressDatabaseConfigAnalyzer::class)
+            ->sharedHostFinding('mysql', 'user-5-service-130-wordpress-mysql');
+
+        $actions = new \ReflectionMethod(ContainerDoctorService::class, 'treat');
+        $source = implode('', array_slice(
+            file($actions->getFileName()),
+            $actions->getStartLine(),
+            $actions->getEndLine() - $actions->getStartLine(),
+        ));
+
+        $this->assertStringContainsString(
+            "'".$finding['treat_action']."' =>",
+            $source,
+            'The shared-host finding offers a repair that Doctor::treat() does not dispatch.'
+        );
     }
 
     /**
