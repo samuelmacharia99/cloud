@@ -27,7 +27,7 @@ class ContainerRuntimeCrashReader
     ) {}
 
     /**
-     * @return array{message: string, missing_variables: list<string>, recognised: bool}
+     * @return array{message: string, missing_variables: list<string>, unparsable_variables: list<string>, recognised: bool}
      */
     public function read(?string $stackSlug, string $logs): array
     {
@@ -41,6 +41,7 @@ class ContainerRuntimeCrashReader
                     .'which means it failed before your code ran. The usual cause is the start command '
                     .'not finding the file it expected.',
                 'missing_variables' => [],
+                'unparsable_variables' => [],
                 'recognised' => false,
             ];
         }
@@ -51,6 +52,7 @@ class ContainerRuntimeCrashReader
                 return [
                     'message' => $presented['message'],
                     'missing_variables' => $presented['missing_variables'],
+                    'unparsable_variables' => $presented['unparsable_variables'] ?? [],
                     'recognised' => true,
                 ];
             }
@@ -59,6 +61,7 @@ class ContainerRuntimeCrashReader
         return [
             'message' => $this->runtime->summarizePythonContainerLogs($logs, 3000),
             'missing_variables' => [],
+            'unparsable_variables' => [],
             'recognised' => false,
         ];
     }

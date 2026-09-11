@@ -24,6 +24,8 @@ class ContainerDoctorService
      */
     public const STACKS_WITH_APPLICATION_OWNED_SCHEMA = ['nodejs', 'python', 'ruby'];
 
+    public const FIX_TRUST_LIST_ACTION = 'fix_trust_list_settings';
+
     /**
      * @return array{
      *     scanned_at: string,
@@ -107,6 +109,10 @@ class ContainerDoctorService
                 'link_codeigniter_system',
                 'heal_codeigniter_runtime',
                 'install_ospos_application',
+                // A container that cannot parse its settings is crash-looping
+                // by definition, so requiring it to be running first would
+                // refuse the one repair that fixes it.
+                self::FIX_TRUST_LIST_ACTION,
             ], true)) {
             return ['success' => false, 'message' => 'Application must be running before applying a fix.'];
         }
@@ -129,6 +135,7 @@ class ContainerDoctorService
 
         $result = match ($action) {
             'sync_database_credentials' => $this->treatSyncDatabaseCredentials($service),
+            self::FIX_TRUST_LIST_ACTION => $this->treatFixTrustListSettings($service),
             'ensure_pdo_pgsql' => $this->treatEnsurePdoPgsql($service),
             'ensure_gd' => $this->treatEnsureGd($service),
             'ensure_node' => $this->treatEnsureNode($service),
@@ -416,6 +423,14 @@ class ContainerDoctorService
             // console shows it set.
             foreach (app(ContainerDoctorFrontendBuildAnalyzer::class)->findings($service, $deployment, $ssh) as $staleBuild) {
                 $findings[] = $staleBuild;
+            }
+
+            // A trust list the application cannot parse. The platform knows the
+            // answer from the domains bound to this service, so this one is
+            // repairable rather than only reportable.
+            $unreadableSetting = $this->unreadableTrustListFinding($stack, $logs, $deployment);
+            if ($unreadableSetting !== null) {
+                $findings[] = $unreadableSetting;
             }
 
             $containerReady = ($snapshot['running'] ?? false) === true
@@ -3542,6 +3557,119 @@ PHP;
      *
      * @return array{treat_action: string, treat_label: string, summary: string, manual_steps: list<string>}
      */
+    /**
+     * A setting the application reads as a list and cannot parse, whose correct
+     * value is a trust list of this service's own domains.
+     *
+     * Reported separately from the generic crash loop because this one has an
+     * answer the platform can write. A customer staring at fifteen frames of
+     * importlib has no way to know that the fix is one field in the Environment
+     * tab, let alone what to put in it.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function unreadableTrustListFinding(string $stack, string $logs, ContainerDeployment $deployment): ?array
+    {
+        if (trim($logs) === '') {
+            return null;
+        }
+
+        $crash = app(ContainerRuntimeCrashReader::class)->read($stack, $logs);
+        $origins = app(ContainerOriginSettingsService::class);
+
+        $repairable = array_values(array_filter(
+            $crash['unparsable_variables'] ?? [],
+            fn (string $key): bool => $origins->supports($key) && $origins->valueFor($deployment, $key) !== null,
+        ));
+
+        if ($repairable === []) {
+            return null;
+        }
+
+        $suggestion = (string) $origins->suggestion($deployment, $repairable);
+
+        return [
+            'id' => 'unreadable_trust_list_setting',
+            'severity' => 'critical',
+            'title' => 'A setting is written in a format the application cannot read',
+            'summary' => $crash['message'].' '.$suggestion
+                .' Repair writes exactly that and recreates the app; nothing else in your settings is touched.',
+            'evidence' => array_map(
+                fn (string $key): string => $key.' should be '.(string) $origins->valueFor($deployment, $key),
+                $repairable,
+            ),
+            'treat_action' => self::FIX_TRUST_LIST_ACTION,
+            'treat_label' => 'Set from this service\'s domains',
+        ];
+    }
+
+    /**
+     * Write the trust-list settings this service's own domains imply.
+     *
+     * Narrow on purpose. It only touches names the platform recognises as
+     * origin or hostname lists, and only when the service has a live domain to
+     * build the answer from, so it cannot quietly rewrite anything else a
+     * customer typed.
+     *
+     * @return array{success: bool, message: string}
+     */
+    private function treatFixTrustListSettings(Service $service): array
+    {
+        $deployment = $service->containerDeployment;
+        $origins = app(ContainerOriginSettingsService::class);
+        $envVars = is_array($deployment->env_values) ? $deployment->env_values : [];
+
+        $candidates = array_values(array_unique(array_merge(
+            app(ApplicationEnvironmentRequirements::class)->declared($service),
+            array_keys($envVars),
+        )));
+
+        $written = [];
+        foreach ($candidates as $key) {
+            if (! $origins->supports((string) $key)) {
+                continue;
+            }
+
+            $value = $origins->valueFor($deployment, (string) $key);
+            if ($value === null || trim((string) ($envVars[$key] ?? '')) === $value) {
+                continue;
+            }
+
+            $envVars[$key] = $value;
+            $written[$key] = $value;
+        }
+
+        if ($written === []) {
+            return [
+                'success' => false,
+                'message' => 'There is no trust-list setting to repair here, or this service has no live domain to build one from. Bind a domain first.',
+            ];
+        }
+
+        $deployment->update(['env_values' => $envVars]);
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        $meta['env_values'] = array_merge(is_array($meta['env_values'] ?? null) ? $meta['env_values'] : [], $envVars);
+        $service->update(['service_meta' => $meta]);
+
+        try {
+            app(ContainerDeploymentService::class)->applyEnvironmentVariables($service->fresh(), $deployment->fresh());
+        } catch (\Throwable $e) {
+            return [
+                'success' => false,
+                'message' => 'Saved '.implode(', ', array_keys($written))
+                    .' but the application could not be recreated: '.mb_substr(trim($e->getMessage()), 0, 300),
+            ];
+        }
+
+        return [
+            'success' => true,
+            'message' => 'Set '.implode(', ', array_map(
+                fn (string $key): string => $key.'='.$written[$key],
+                array_keys($written),
+            )).' from this service\'s domains and recreated the application.',
+        ];
+    }
+
     public function unreachableUpstreamTreatment(string $stack): array
     {
         if (in_array($stack, ['nodejs', 'python', 'ruby', 'go'], true)) {

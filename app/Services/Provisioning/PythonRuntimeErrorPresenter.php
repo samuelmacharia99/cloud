@@ -17,7 +17,7 @@ class PythonRuntimeErrorPresenter
      * Null when the output carries no recognisable Python start-up failure, so
      * the caller can fall back to the raw container log.
      *
-     * @return array{message: string, missing_variables: list<string>}|null
+     * @return array{message: string, missing_variables: list<string>, unparsable_variables: list<string>}|null
      */
     public function present(string $output): ?array
     {
@@ -32,6 +32,7 @@ class PythonRuntimeErrorPresenter
                     .implode(', ', $missing)
                     .'. Add them under Environment on this service, then redeploy.',
                 'missing_variables' => $missing,
+                'unparsable_variables' => [],
             ];
         }
 
@@ -50,6 +51,7 @@ class PythonRuntimeErrorPresenter
                 // notice listing nothing: the hold lists what is unset, and
                 // every one of these is set. Wrongly, but set.
                 'missing_variables' => [],
+                'unparsable_variables' => $unparsable,
             ];
         }
 
@@ -60,6 +62,7 @@ class PythonRuntimeErrorPresenter
                     .'Check that the package lives inside the application root this container builds, '
                     .'and that every dependency it needs is listed in that root\'s requirements.txt.',
                 'missing_variables' => [],
+                'unparsable_variables' => [],
             ];
         }
 

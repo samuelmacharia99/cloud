@@ -863,6 +863,14 @@ class ContainerGitRepositoryService
         $declared = $requirements->discoverDeclared($ssh, $hostAppPath, $backendRoot, $envVars);
         $requirements->rememberDeclared($service, $declared);
 
+        // The one family of settings the platform can answer for itself: a
+        // trust list of the service's own domains. Only ever fills a blank,
+        // and the runtime step after this one bakes it into compose.
+        $filled = app(ContainerOriginSettingsService::class)->fillUnset($deployment, $declared, $envVars);
+        if ($filled !== []) {
+            $deployment->update(['env_values' => $envVars]);
+        }
+
         $added = array_values(array_diff($declared, $before));
         $removed = array_values(array_diff($before, $declared));
 
@@ -874,6 +882,7 @@ class ContainerGitRepositoryService
                 'declared_count' => count($declared),
                 'added' => $added,
                 'removed' => $removed,
+                'filled' => array_keys($filled),
             ],
         );
 
@@ -884,6 +893,7 @@ class ContainerGitRepositoryService
             'declared_count' => count($declared),
             'added' => $added,
             'removed' => $removed,
+            'filled' => array_keys($filled),
         ]);
 
         if ($declared === []) {
@@ -896,6 +906,9 @@ class ContainerGitRepositoryService
         }
         if ($removed !== []) {
             $summary .= ' No longer asked for: '.implode(', ', $removed).'.';
+        }
+        if ($filled !== []) {
+            $summary .= ' Set from this service\'s own domains: '.implode(', ', array_keys($filled)).'.';
         }
 
         return $summary;

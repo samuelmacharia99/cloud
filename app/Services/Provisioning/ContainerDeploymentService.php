@@ -384,12 +384,23 @@ class ContainerDeploymentService
                 // crashes. Nothing here blocks or fills in a value.
                 if ($hostAppPath) {
                     $requirements = app(ApplicationEnvironmentRequirements::class);
-                    $requirements->rememberDeclared($service, $requirements->discoverDeclared(
+                    $declared = $requirements->discoverDeclared(
                         $ssh,
                         $hostAppPath,
                         (string) data_get($nodeTopology, 'backend.root', ''),
                         $envVars,
-                    ));
+                    );
+                    $requirements->rememberDeclared($service, $declared);
+
+                    // A trust list of the service's own domains is the one
+                    // family of settings the platform can answer for itself.
+                    // Only ever fills a blank, and this runs before the compose
+                    // below is rendered, so the value reaches the container.
+                    $filled = app(ContainerOriginSettingsService::class)
+                        ->fillUnset($deployment, $declared, $envVars);
+                    if ($filled !== []) {
+                        $deployment->update(['env_values' => $envVars]);
+                    }
                 }
 
                 $applicationRuntime = $this->resolveApplicationRuntime($ssh, $template, $hostAppPath, $nodeTopology);
@@ -3330,7 +3341,7 @@ class ContainerDeploymentService
                 if ($attempt % 2 === 0 && $this->backendIsDown($ssh, $backend)) {
                     $fatal = $presenter->present($this->stackCommands->containerLogs($ssh, $backend));
                     if ($fatal !== null) {
-                        throw $this->readinessFailure($fatal);
+                        throw $this->readinessFailure($fatal, $deployment);
                     }
                 }
 
@@ -3351,7 +3362,7 @@ class ContainerDeploymentService
 
         $fatal = $presenter->present($logs);
         if ($fatal !== null) {
-            throw $this->readinessFailure($fatal);
+            throw $this->readinessFailure($fatal, $deployment);
         }
 
         // The summariser already keeps the end of the log, where the exception
@@ -3371,7 +3382,7 @@ class ContainerDeploymentService
      *
      * @param  array{message: string, missing_variables: list<string>}  $fatal
      */
-    private function readinessFailure(array $fatal): \RuntimeException
+    private function readinessFailure(array $fatal, ?ContainerDeployment $deployment = null): \RuntimeException
     {
         if ($fatal['missing_variables'] !== []) {
             return new ApplicationConfigurationRequiredException(
@@ -3380,7 +3391,19 @@ class ContainerDeploymentService
             );
         }
 
-        return new \RuntimeException($fatal['message']);
+        // A setting the application could not parse is one the platform can
+        // often answer from the domains already bound to this service, so the
+        // message carries the value rather than leaving it as an exercise.
+        $message = $fatal['message'];
+        if ($deployment !== null) {
+            $suggestion = app(ContainerOriginSettingsService::class)
+                ->suggestion($deployment, $fatal['unparsable_variables'] ?? []);
+            if ($suggestion !== null) {
+                $message = trim($message.' '.$suggestion);
+            }
+        }
+
+        return new \RuntimeException($message);
     }
 
     /**

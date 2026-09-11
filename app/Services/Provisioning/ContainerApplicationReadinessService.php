@@ -296,6 +296,9 @@ class ContainerApplicationReadinessService
             );
         }
 
+        $suggestion = app(ContainerOriginSettingsService::class)
+            ->suggestion($deployment, $crash['unparsable_variables'] ?? []);
+
         $prefix = $outcome['reason'] === 'crash_loop'
             ? 'The application started and exited '.$outcome['restart_count'].' time(s) while the platform watched, '
                 .'so it is not staying up. '
@@ -308,7 +311,7 @@ class ContainerApplicationReadinessService
             $outcome,
             $elapsed,
             $crash['missing_variables'],
-            $prefix.$crash['message'],
+            trim($prefix.$crash['message'].($suggestion !== null ? ' '.$suggestion : '')),
         );
     }
 
