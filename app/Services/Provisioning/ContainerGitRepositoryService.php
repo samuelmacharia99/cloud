@@ -991,9 +991,11 @@ class ContainerGitRepositoryService
         ApplicationConfigurationRequiredException $exception,
     ): void {
         $missing = $exception->missingVariables();
+        $invalid = $exception->invalidVariables();
 
         try {
-            app(ContainerConfigurationHoldService::class)->hold($service, $deployment, $ssh, $missing);
+            app(ContainerConfigurationHoldService::class)
+                ->hold($service, $deployment, $ssh, $missing, $invalid);
         } catch (\Throwable $e) {
             // Never lose the cause to a failure in reporting it.
             $pull->appendLog('Could not park the application for configuration: '.$e->getMessage());
@@ -1001,6 +1003,9 @@ class ContainerGitRepositoryService
 
         if ($missing !== []) {
             $pull->appendLog('Application configuration required: '.implode(', ', $missing));
+        }
+        if ($invalid !== []) {
+            $pull->appendLog('Application rejected the value set for: '.implode(', ', $invalid));
         }
 
         $this->failPull($pull, $exception->getMessage());

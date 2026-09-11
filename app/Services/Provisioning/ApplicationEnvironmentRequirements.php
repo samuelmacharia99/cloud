@@ -26,6 +26,8 @@ class ApplicationEnvironmentRequirements
 
     public const DECLARED_META_KEY = 'declared_env_keys';
 
+    public const INVALID_META_KEY = 'invalid_env_keys';
+
     /** @var list<string> */
     private const EXAMPLE_FILES = ['.env.example', '.env.sample', '.env.template', 'env.example'];
 
@@ -140,6 +142,33 @@ class ApplicationEnvironmentRequirements
     }
 
     /**
+     * Names the application rejected the value of.
+     *
+     * Kept apart from the required list because everything that reports what is
+     * unset filters these out: they are set. That is the whole problem with
+     * them, and it is why a customer staring at a value they can see was being
+     * told to add it.
+     *
+     * @param  list<string>  $keys
+     */
+    public function rememberInvalid(Service $service, array $keys): void
+    {
+        if ($keys === []) {
+            return;
+        }
+
+        $this->store($service, self::INVALID_META_KEY, $keys);
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function invalid(Service $service): array
+    {
+        return $this->recall($service, self::INVALID_META_KEY);
+    }
+
+    /**
      * @param  list<string>  $keys
      */
     public function rememberDeclared(Service $service, array $keys): void
@@ -196,11 +225,19 @@ class ApplicationEnvironmentRequirements
     public function forgetRequired(Service $service): void
     {
         $meta = is_array($service->service_meta) ? $service->service_meta : [];
-        if (! array_key_exists(self::REQUIRED_META_KEY, $meta)) {
+        $present = array_filter(
+            [self::REQUIRED_META_KEY, self::INVALID_META_KEY],
+            fn (string $key): bool => array_key_exists($key, $meta),
+        );
+
+        if ($present === []) {
             return;
         }
 
-        unset($meta[self::REQUIRED_META_KEY]);
+        foreach ($present as $key) {
+            unset($meta[$key]);
+        }
+
         $service->update(['service_meta' => $meta]);
     }
 

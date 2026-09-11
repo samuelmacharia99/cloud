@@ -836,7 +836,7 @@ class ContainerDeploymentService
                 // Everything the platform owns came up. Park the stack on the
                 // setup notice instead of tearing down a working deployment.
                 app(ContainerConfigurationHoldService::class)
-                    ->hold($service, $deployment, $ssh, $e->missingVariables());
+                    ->hold($service, $deployment, $ssh, $e->missingVariables(), $e->invalidVariables());
 
                 $this->recordDeploymentEvent($service, $deployment, 'deploy_awaiting_configuration', [
                     'missing_variables' => $e->missingVariables(),
@@ -3384,23 +3384,29 @@ class ContainerDeploymentService
      */
     private function readinessFailure(array $fatal, ?ContainerDeployment $deployment = null): \RuntimeException
     {
-        if ($fatal['missing_variables'] !== []) {
-            return new ApplicationConfigurationRequiredException(
-                $fatal['missing_variables'],
-                $fatal['message'],
-            );
-        }
+        $unparsable = $fatal['unparsable_variables'] ?? [];
 
         // A setting the application could not parse is one the platform can
         // often answer from the domains already bound to this service, so the
         // message carries the value rather than leaving it as an exercise.
         $message = $fatal['message'];
-        if ($deployment !== null) {
-            $suggestion = app(ContainerOriginSettingsService::class)
-                ->suggestion($deployment, $fatal['unparsable_variables'] ?? []);
+        if ($deployment !== null && $unparsable !== []) {
+            $suggestion = app(ContainerOriginSettingsService::class)->suggestion($deployment, $unparsable);
             if ($suggestion !== null) {
                 $message = trim($message.' '.$suggestion);
             }
+        }
+
+        // Either way the customer holds the answer, so the site is parked on a
+        // notice naming the settings rather than left crash-looping behind a
+        // 502. A value the application rejected is as much a configuration
+        // problem as one nobody supplied.
+        if ($fatal['missing_variables'] !== [] || $unparsable !== []) {
+            return new ApplicationConfigurationRequiredException(
+                $fatal['missing_variables'],
+                $message,
+                array_values(array_diff($unparsable, $fatal['missing_variables'])),
+            );
         }
 
         return new \RuntimeException($message);
@@ -7775,7 +7781,7 @@ class ContainerDeploymentService
             app(ContainerConfigurationHoldService::class)->release($service, $deployment);
         } catch (ApplicationConfigurationRequiredException $e) {
             app(ContainerConfigurationHoldService::class)
-                ->hold($service, $deployment, $ssh, $e->missingVariables());
+                ->hold($service, $deployment, $ssh, $e->missingVariables(), $e->invalidVariables());
 
             return;
         } catch (\Throwable $e) {

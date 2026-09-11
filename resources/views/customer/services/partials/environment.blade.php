@@ -34,6 +34,22 @@
         </div>
     @endif
 
+    @if (! empty($environmentPanel['rejected_by_app']))
+        <div class="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 p-4 text-sm text-red-900 dark:text-red-100">
+            <p class="font-semibold">Your app cannot use the value set for these.</p>
+            <p class="mt-1">
+                These have a value, so they are already in the list below. Your app rejected what is in them on start-up.
+                A setting it reads as a number wants digits only, one it reads as true or false wants true or false,
+                and one it reads as a list wants JSON. Correct them below and apply.
+            </p>
+            <ul class="mt-2 space-y-1 font-mono text-xs">
+                @foreach ($environmentPanel['rejected_by_app'] as $rejectedKey)
+                    <li>{{ $rejectedKey }}</li>
+                @endforeach
+            </ul>
+        </div>
+    @endif
+
     @if (! empty($environmentPanel['suggested_by_app']))
         <div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 p-4 text-sm text-slate-700 dark:text-slate-300">
             <p class="font-semibold text-slate-900 dark:text-white">Other settings your app mentions.</p>

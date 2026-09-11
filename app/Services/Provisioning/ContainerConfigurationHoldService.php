@@ -26,29 +26,43 @@ class ContainerConfigurationHoldService
     ) {}
 
     /**
-     * @param  list<string>  $missingVariables
+     * @param  list<string>  $missingVariables  names with no value
+     * @param  list<string>  $invalidVariables  names whose value the application rejected
      */
     public function hold(
         Service $service,
         ContainerDeployment $deployment,
         SSHService $ssh,
         array $missingVariables,
+        array $invalidVariables = [],
     ): void {
         $this->requirements->rememberRequired($service, $missingVariables);
-        $outstanding = $this->requirements->outstandingRequired($service->fresh() ?? $service, $deployment);
+        $this->requirements->rememberInvalid($service, $invalidVariables);
+
+        $service = $service->fresh() ?? $service;
+        $outstanding = $this->requirements->outstandingRequired($service, $deployment);
+
+        // Recomputed for what is unset, then joined with what is set and
+        // unusable. Everything that reports missing settings filters the second
+        // group out, because they are set: that is the whole problem with them,
+        // and a site that says nothing at all is the result.
+        $toFix = array_values(array_unique([...$outstanding, ...$invalidVariables]));
 
         $this->stopApplicationContainer($ssh, $deployment);
-        $this->showSetupNotice($ssh, $deployment, $outstanding);
+        $this->showSetupNotice($ssh, $deployment, $toFix);
 
         $deployment->update([
             'status' => 'stopped',
             'last_status_check_at' => now(),
-            'last_status_check_output' => ApplicationConfigurationRequiredException::describe($outstanding),
+            'last_status_check_output' => ApplicationConfigurationRequiredException::describe(
+                $outstanding,
+                $invalidVariables,
+            ),
         ]);
 
         $service->update(['status' => ServiceStatus::AwaitingConfiguration]);
 
-        $this->notifyCustomer($service, $outstanding);
+        $this->notifyCustomer($service, $outstanding, $invalidVariables);
     }
 
     /**
@@ -129,8 +143,9 @@ class ContainerConfigurationHoldService
 
     /**
      * @param  list<string>  $missingVariables
+     * @param  list<string>  $invalidVariables
      */
-    private function notifyCustomer(Service $service, array $missingVariables): void
+    private function notifyCustomer(Service $service, array $missingVariables, array $invalidVariables = []): void
     {
         $user = $service->loadMissing('user')->user;
         if ($user === null) {
@@ -142,9 +157,13 @@ class ContainerConfigurationHoldService
                 $user,
                 'service_awaiting_configuration',
                 'Your app needs a few settings before it starts',
-                ApplicationConfigurationRequiredException::describe($missingVariables),
+                ApplicationConfigurationRequiredException::describe($missingVariables, $invalidVariables),
                 route('customer.services.show', $service->id),
-                ['service_id' => $service->id, 'missing_variables' => $missingVariables],
+                [
+                    'service_id' => $service->id,
+                    'missing_variables' => $missingVariables,
+                    'invalid_variables' => $invalidVariables,
+                ],
             );
         } catch (\Throwable $e) {
             Log::warning('Could not notify the customer about a configuration hold', [

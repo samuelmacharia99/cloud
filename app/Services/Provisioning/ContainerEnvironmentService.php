@@ -75,6 +75,7 @@ class ContainerEnvironmentService
                 'sensitive' => $this->isSensitiveKey($key),
                 'platform_managed' => $this->isPlatformManagedKey($key),
                 'required_by_app' => false,
+                'rejected_by_app' => false,
                 'unset' => false,
             ];
         }
@@ -87,6 +88,15 @@ class ContainerEnvironmentService
         $required = $requirements->outstandingRequired($service, $deployment);
         $suggested = $requirements->outstandingDeclared($service, $deployment);
 
+        // Names the application rejected the value of. They are set, so they
+        // are already rows above; this marks them rather than adding them.
+        $rejected = $requirements->invalid($service);
+        foreach ($variables as $index => $variable) {
+            if (in_array($variable['key'], $rejected, true)) {
+                $variables[$index]['rejected_by_app'] = true;
+            }
+        }
+
         foreach ([...$required, ...$suggested] as $key) {
             $variables[] = [
                 'key' => $key,
@@ -94,6 +104,7 @@ class ContainerEnvironmentService
                 'sensitive' => $this->isSensitiveKey($key),
                 'platform_managed' => false,
                 'required_by_app' => in_array($key, $required, true),
+                'rejected_by_app' => false,
                 'unset' => true,
             ];
         }
@@ -112,6 +123,7 @@ class ContainerEnvironmentService
             'deployment_status' => $status,
             'required_by_app' => $required,
             'suggested_by_app' => $suggested,
+            'rejected_by_app' => $rejected,
         ];
     }
 

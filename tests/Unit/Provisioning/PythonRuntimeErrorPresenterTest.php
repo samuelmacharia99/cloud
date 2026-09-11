@@ -290,7 +290,12 @@ class PythonRuntimeErrorPresenterTest extends TestCase
         $this->assertStringContainsString('present but empty', $result['message']);
         $this->assertStringContainsString('ENABLE_SMS', $result['message']);
         $this->assertStringContainsString('RIDER_LOCATION_MAX_AGE_SECONDS', $result['message']);
-        $this->assertSame([], $result['missing_variables']);
+
+        // Reported as missing, because to the customer they are: an empty box
+        // and no box at all are the same request. Reporting them parks the site
+        // on a notice naming them, which beats a crash loop the visitor reads
+        // as a broken site.
+        $this->assertSame(['ENABLE_SMS', 'RIDER_LOCATION_MAX_AGE_SECONDS'], $result['missing_variables']);
     }
 
     #[Test]

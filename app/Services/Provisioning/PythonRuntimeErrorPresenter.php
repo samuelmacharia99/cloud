@@ -44,7 +44,11 @@ class PythonRuntimeErrorPresenter
                     .' present but empty, and the application needs a real value: '.implode(', ', $blank)
                     .'. Give each one a value under Environment on this service, or delete the row entirely '
                     .'if the application has a default for it. An empty box is not the same as an absent setting.',
-                'missing_variables' => [],
+                // Reported as missing, because to the customer they are: an
+                // empty box and no box at all are the same request. Reporting
+                // them holds the site on a notice naming them, which beats a
+                // crash loop the visitor sees as a broken site.
+                'missing_variables' => $blank,
                 'unparsable_variables' => $blank,
             ];
         }

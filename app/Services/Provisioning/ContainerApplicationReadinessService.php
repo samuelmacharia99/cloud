@@ -275,10 +275,19 @@ class ContainerApplicationReadinessService
 
         $crash = $this->crashReader->read($stack, $this->stackCommands->containerLogs($ssh, $containerName));
 
-        if ($crash['missing_variables'] !== []) {
+        $unparsable = $crash['unparsable_variables'] ?? [];
+        $suggestion = app(ContainerOriginSettingsService::class)->suggestion($deployment, $unparsable);
+
+        // A value the application rejected is as much a configuration problem
+        // as one nobody supplied, so both park the site on a notice naming the
+        // settings rather than leaving a visitor to meet a crash loop.
+        if ($crash['missing_variables'] !== [] || $unparsable !== []) {
+            $invalid = array_values(array_diff($unparsable, $crash['missing_variables']));
+
             $this->events->record($service, $deployment, 'application_readiness_awaiting_configuration', [
                 'stack' => $stack,
                 'missing_variables' => $crash['missing_variables'],
+                'invalid_variables' => $invalid,
                 'elapsed_seconds' => $elapsed,
             ]);
 
@@ -288,16 +297,15 @@ class ContainerApplicationReadinessService
                 'container_name' => $containerName,
                 'stack' => $stack,
                 'missing_variables' => $crash['missing_variables'],
+                'invalid_variables' => $invalid,
             ]);
 
             return new ApplicationConfigurationRequiredException(
                 $crash['missing_variables'],
-                $crash['message'],
+                trim($crash['message'].($suggestion !== null ? ' '.$suggestion : '')),
+                $invalid,
             );
         }
-
-        $suggestion = app(ContainerOriginSettingsService::class)
-            ->suggestion($deployment, $crash['unparsable_variables'] ?? []);
 
         $prefix = $outcome['reason'] === 'crash_loop'
             ? 'The application started and exited '.$outcome['restart_count'].' time(s) while the platform watched, '
