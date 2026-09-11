@@ -120,6 +120,20 @@ class WordPressDatabaseConfigAnalyzerTest extends TestCase
         $this->assertContains('platform credentials also fail', $finding['evidence']);
     }
 
+    #[Test]
+    public function it_does_not_claim_a_platform_result_nobody_measured(): void
+    {
+        // The site this was built for showed "DB: n/a": the platform could not
+        // resolve a database to test at all. Saying its credentials also failed
+        // would be inventing a verdict.
+        $finding = app(WordPressDatabaseConfigAnalyzer::class)
+            ->unreachableFinding(['DB_PASSWORD'], 'Access denied for user', platformProbeOk: null);
+
+        $this->assertStringNotContainsString('the platform stores work', $finding['summary']);
+        $this->assertStringNotContainsString('platform credentials also fail', implode(' ', $finding['evidence']));
+        $this->assertContains('the platform has no database recorded for this service to test', $finding['evidence']);
+    }
+
     /**
      * @return array<string, string>
      */

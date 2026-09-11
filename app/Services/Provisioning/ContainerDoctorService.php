@@ -748,24 +748,6 @@ class ContainerDoctorService
                     $checks['db_ok'] = $probe['ok'];
                     $checks['db_error'] = $probe['error'];
 
-                    // The probe above asks the platform's question. WordPress
-                    // reads wp-config.php, which the official image writes once
-                    // and never updates, so the two can disagree and the panel
-                    // would happily report a connected database to somebody
-                    // staring at "Error establishing a database connection".
-                    if ($stack === 'wordpress' && in_array((string) $databaseTemplate->type, ['mysql', 'mariadb'], true)) {
-                        $wordpressDb = app(WordPressDatabaseConfigAnalyzer::class)->analyze(
-                            $ssh,
-                            $deployment,
-                            $mergedEnv,
-                            (bool) $probe['ok'],
-                        );
-                        $checks = array_merge($checks, $wordpressDb['checks']);
-                        foreach ($wordpressDb['findings'] as $wordpressFinding) {
-                            $findings[] = $wordpressFinding;
-                        }
-                    }
-
                     $configuredDbHost = (string) (
                         $mergedEnv['WORDPRESS_DB_HOST']
                         ?? $platformEnv['WORDPRESS_DB_HOST']
@@ -925,6 +907,32 @@ class ContainerDoctorService
                                 $findings[] = $empty;
                             }
                         }
+                    }
+                }
+
+                // Outside the block above on purpose. That one needs the platform
+                // to resolve a database template and see a sidecar in compose,
+                // and when either is missing every database check is skipped —
+                // which is exactly the state a site showing "Error establishing
+                // a database connection" tends to be in. WordPress carries its
+                // own credentials in wp-config.php and needs none of ours.
+                if ($stack === 'wordpress' && $containerReady) {
+                    try {
+                        $wordpressDb = app(WordPressDatabaseConfigAnalyzer::class)->analyze(
+                            $ssh,
+                            $deployment,
+                            $mergedEnv,
+                            ($checks['db_ok'] ?? null) === true,
+                        );
+                        $checks = array_merge($checks, $wordpressDb['checks']);
+                        foreach ($wordpressDb['findings'] as $wordpressFinding) {
+                            $findings[] = $wordpressFinding;
+                        }
+                    } catch (\Throwable $e) {
+                        \Log::warning('WordPress database configuration check failed', [
+                            'service_id' => $service->id,
+                            'error' => $e->getMessage(),
+                        ]);
                     }
                 }
 
@@ -6057,11 +6065,24 @@ PHP;
             ];
         }
 
+        if ($stack === 'wordpress') {
+            return [
+                'treat_action' => 'restart_application',
+                'treat_label' => 'Restart application',
+                'summary' => 'The container is up and answering on its port, but WordPress itself returns HTTP '
+                    .$httpStatus.'. If the page reads "Error establishing a database connection", the cause is '
+                    .'wp-config.php rather than anything in this container: check the database findings on this '
+                    .'scan. This card stays until the URL returns 2xx/3xx.',
+            ];
+        }
+
+        $tableCount = $checks['table_count'] ?? null;
+
         return [
             'treat_action' => 'restart_application',
             'treat_label' => 'Restart application',
             'summary' => 'The container is up and answering on its port, but the app itself returns HTTP '.$httpStatus
-                .' (tables: '.((string) ($checks['table_count'] ?? '?')).'). '
+                .($tableCount === null ? '' : ' (tables: '.$tableCount.')').'. '
                 .'This is an application exception — this card stays until the URL returns 2xx/3xx.',
         ];
     }

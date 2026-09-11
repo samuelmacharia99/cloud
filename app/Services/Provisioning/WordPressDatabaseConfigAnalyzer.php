@@ -70,7 +70,7 @@ class WordPressDatabaseConfigAnalyzer
         SSHService $ssh,
         ContainerDeployment $deployment,
         array $platformEnv,
-        bool $platformProbeOk,
+        ?bool $platformProbeOk,
     ): array {
         $empty = ['findings' => [], 'checks' => []];
         $containerName = (string) $deployment->container_name;
@@ -97,7 +97,7 @@ class WordPressDatabaseConfigAnalyzer
             ];
         }
 
-        if ($differences !== [] && $platformProbeOk) {
+        if ($differences !== [] && $platformProbeOk === true) {
             return ['findings' => [$this->mismatchFinding($differences)], 'checks' => $checks];
         }
 
@@ -181,25 +181,37 @@ class WordPressDatabaseConfigAnalyzer
      * @param  list<string>  $differences
      * @return array<string, mixed>
      */
-    public function unreachableFinding(array $differences, string $error, bool $platformProbeOk): array
+    public function unreachableFinding(array $differences, string $error, ?bool $platformProbeOk): array
     {
         $named = $differences === []
             ? 'The values match what the platform stores, so the database itself refused them.'
             : 'wp-config.php disagrees with the platform on: '.implode(', ', $differences).'.';
 
+        // Three states, not two. Null means the platform never tested a
+        // database for this service, and claiming its credentials also failed
+        // would be inventing a result nobody measured.
+        $platformNote = match ($platformProbeOk) {
+            true => ', while the ones the platform stores work',
+            false => ', and so do the ones the platform stores',
+            default => '',
+        };
+
         return [
             'id' => 'wordpress_config_cannot_reach_database',
             'severity' => 'critical',
             'title' => 'WordPress cannot reach the database with its own settings',
-            'summary' => 'The credentials inside wp-config.php fail to connect'
-                .($platformProbeOk ? ', while the ones the platform stores work' : '').'. '
+            'summary' => 'The credentials inside wp-config.php fail to connect'.$platformNote.'. '
                 .'WordPress reads that file, not the container environment, so the site shows '
                 .'"Error establishing a database connection" whatever the panel says. '
                 .$named.' Repair rewrites wp-config.php to credentials that authenticate and keeps the data.',
             'evidence' => array_values(array_filter([
                 $differences === [] ? null : 'wp-config differs on '.implode(', ', $differences),
                 $error !== '' ? mb_substr($error, 0, 300) : null,
-                $platformProbeOk ? 'platform credentials connect' : 'platform credentials also fail',
+                match ($platformProbeOk) {
+                    true => 'platform credentials connect',
+                    false => 'platform credentials also fail',
+                    default => 'the platform has no database recorded for this service to test',
+                },
             ])),
             'treat_action' => 'sync_database_credentials',
             'treat_label' => 'Repair DB credentials',
