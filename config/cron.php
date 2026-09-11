@@ -43,6 +43,20 @@ return [
     | working — compounding load and leaving "running" cron logs forever.
     |
     */
+    /*
+    |--------------------------------------------------------------------------
+    | Node Doctor
+    |--------------------------------------------------------------------------
+    |
+    | A node down at three in the morning must not send thirty messages before
+    | anybody wakes up. An alert fires when a finding first appears, and this is
+    | the floor before the same finding on the same node can speak again.
+    |
+    */
+    'node_doctor' => [
+        'alert_cooldown_minutes' => (int) env('NODE_DOCTOR_ALERT_COOLDOWN_MINUTES', 60),
+    ],
+
     'overlap_expires_minutes' => [
         'default' => 60,
         'cron:backup-containers' => 15,
@@ -53,6 +67,7 @@ return [
         'cron:run-container-jobs' => 15,
         'cron:sync-service-live-status' => 20,
         'cron:poll-node-health' => 5,
+        'cron:scan-node-health' => 10,
         'cron:auto-restart-containers' => 15,
     ],
 

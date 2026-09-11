@@ -226,6 +226,8 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/nodes/{node}/status', [NodeController::class, 'updateStatus'])->name('admin.nodes.update-status');
         Route::post('admin/nodes/{node}/test-connection', [NodeController::class, 'testConnection'])->name('admin.nodes.test-connection');
         Route::post('admin/nodes/{node}/test-health', [NodeController::class, 'testHealth'])->name('admin.nodes.test-health');
+        Route::post('admin/nodes/{node}/health-scan', [NodeController::class, 'healthScan'])->name('admin.nodes.health-scan');
+        Route::post('admin/nodes/{node}/health-repair', [NodeController::class, 'healthRepair'])->name('admin.nodes.health-repair');
         Route::post('admin/nodes/{node}/utilization', [NodeController::class, 'updateUtilization'])->name('admin.nodes.update-utilization');
         Route::post('admin/nodes/{node}/heartbeat', [NodeController::class, 'heartbeat'])->name('admin.nodes.heartbeat');
         Route::post('admin/nodes/{node}/sync-packages', [NodeController::class, 'syncDirectAdminPackages'])->name('admin.nodes.sync-packages');

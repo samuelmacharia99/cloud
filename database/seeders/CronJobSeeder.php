@@ -130,6 +130,13 @@ class CronJobSeeder extends Seeder
                 'enabled' => true,
             ],
             [
+                'name' => 'Scan Node Health',
+                'description' => 'Checks DirectAdmin node services, disks, inodes and task queue, and alerts on what changed.',
+                'command' => 'cron:scan-node-health',
+                'schedule' => '*/5 * * * *',
+                'enabled' => true,
+            ],
+            [
                 'name' => 'Check Node Health',
                 'description' => 'Sets monitored nodes to offline/degraded based on last heartbeat (disabled if using polling).',
                 'command' => 'cron:check-node-health',

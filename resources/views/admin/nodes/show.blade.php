@@ -102,6 +102,10 @@
         @include('admin.nodes.partials.container-analytics', ['containerAnalytics' => $containerAnalytics, 'node' => $node])
     @endif
 
+    @if ($node->type === 'directadmin')
+        @include('admin.nodes.partials.node-doctor', ['node' => $node, 'nodeEvents' => $nodeEvents ?? collect()])
+    @endif
+
     <!-- Utilization (not for DirectAdmin or container hosts — container hosts use live host usage above) -->
     @if($node->type !== 'directadmin' && $node->type !== 'container_host')
     <div class="ui-card p-8">
@@ -925,3 +929,70 @@
     </div>
 </div>
 @endsection
+
+@push('scripts')
+<script>
+function nodeDoctor(scanUrl, repairUrl) {
+    const csrf = () => document.querySelector('meta[name=csrf-token]')?.content || '';
+
+    return {
+        scanning: false,
+        repairing: null,
+        scanned: false,
+        findings: [],
+        error: '',
+        async scan() {
+            this.scanning = true;
+            this.error = '';
+            try {
+                const response = await fetch(scanUrl, {
+                    method: 'POST',
+                    headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': csrf() },
+                });
+                if (!response.ok) {
+                    throw new Error('The scan could not be run (' + response.status + ').');
+                }
+                const data = await response.json();
+                this.findings = data.findings || [];
+                this.scanned = true;
+            } catch (e) {
+                // Saying nothing here would read as a healthy server, which is
+                // the failure this whole panel exists to stop.
+                this.error = e.message || 'The scan could not be run.';
+            } finally {
+                this.scanning = false;
+            }
+        },
+        async repair(finding) {
+            this.repairing = finding.id;
+            this.error = '';
+            try {
+                const response = await fetch(repairUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': csrf(),
+                    },
+                    body: JSON.stringify({
+                        action: finding.treat_action,
+                        unit: finding.treat_payload?.unit || null,
+                    }),
+                });
+                const data = await response.json();
+                if (!data.success) {
+                    this.error = data.message || 'The repair did not work.';
+                }
+                // Re-scan either way. The node decides whether it worked, not
+                // the command that asked it to.
+                await this.scan();
+            } catch (e) {
+                this.error = e.message || 'The repair could not be sent.';
+            } finally {
+                this.repairing = null;
+            }
+        },
+    };
+}
+</script>
+@endpush

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\DirectAdminPackage;
 use App\Models\Node;
+use App\Models\NodeEvent;
 use App\Models\NodeMonitoring;
 use App\Models\Service;
 use App\Models\User;
@@ -12,9 +13,12 @@ use App\Services\Provisioning\ContainerNodeAnalyticsService;
 use App\Services\Provisioning\DirectAdminService;
 use App\Services\Provisioning\InfrastructureStorageBoxService;
 use App\Services\Provisioning\MailcowService;
+use App\Services\Provisioning\NodeDoctorService;
 use App\Services\Provisioning\NodeHardwareProbeService;
+use App\Services\Provisioning\NodeIncidentRecorder;
 use App\Services\Provisioning\NodeServiceRelocationService;
 use App\Services\ResellerDirectAdminService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\View\View;
@@ -278,6 +282,15 @@ class NodeController extends Controller
         $ramPercentage = $node->getRamUsagePercentage();
         $storagePercentage = $node->getStorageUsagePercentage();
 
+        // The last scan, not a fresh one. Opening a page must not SSH into a
+        // server: the scheduled scan owns that, and this shows what it found.
+        $nodeEvents = $node->type === 'directadmin'
+            ? NodeEvent::where('node_id', $node->id)
+                ->orderByDesc('recorded_at')
+                ->limit(25)
+                ->get()
+            : collect();
+
         return view('admin.nodes.show', compact(
             'node',
             'nodeServices',
@@ -290,7 +303,46 @@ class NodeController extends Controller
             'resellerPackagesError',
             'nodeResellers',
             'containerAnalytics',
+            'nodeEvents',
         ));
+    }
+
+    /**
+     * Run a scan now and return its findings.
+     *
+     * Separate from show() and behind its own request because it opens an SSH
+     * connection to a live server, which is not something a page load should do
+     * every time somebody glances at it.
+     */
+    public function healthScan(Node $node, NodeDoctorService $doctor): JsonResponse
+    {
+        if (! $doctor->supports($node)) {
+            return response()->json(['supported' => false, 'findings' => []]);
+        }
+
+        $diagnosis = $doctor->diagnose($node);
+        app(NodeIncidentRecorder::class)->reconcile($node, $diagnosis);
+
+        return response()->json($diagnosis + ['supported' => true]);
+    }
+
+    public function healthRepair(Request $request, Node $node, NodeDoctorService $doctor): JsonResponse
+    {
+        $validated = $request->validate([
+            'action' => ['required', 'string', 'max:64'],
+            'unit' => ['nullable', 'string', 'max:64'],
+        ]);
+
+        $result = $doctor->treat($node, $validated['action'], ['unit' => $validated['unit'] ?? '']);
+
+        app(NodeIncidentRecorder::class)->record(
+            $node,
+            $result['success'] ? 'node_repair_applied' : 'node_repair_failed',
+            $result['success'] ? 'info' : 'warning',
+            ['action' => $validated['action'], 'unit' => $validated['unit'] ?? null, 'message' => $result['message']],
+        );
+
+        return response()->json($result);
     }
 
     /**
