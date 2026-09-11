@@ -36,6 +36,32 @@ class PythonRuntimeErrorPresenter
             ];
         }
 
+        $blank = $this->settingsSetToNothing($output);
+        if ($blank !== []) {
+            return [
+                'message' => 'The application could not start because '
+                    .(count($blank) === 1 ? 'this setting is' : 'these settings are')
+                    .' present but empty, and the application needs a real value: '.implode(', ', $blank)
+                    .'. Give each one a value under Environment on this service, or delete the row entirely '
+                    .'if the application has a default for it. An empty box is not the same as an absent setting.',
+                'missing_variables' => [],
+                'unparsable_variables' => $blank,
+            ];
+        }
+
+        $wrongType = $this->settingsOfTheWrongType($output);
+        if ($wrongType !== []) {
+            return [
+                'message' => 'The application could not start because '
+                    .(count($wrongType) === 1 ? 'this setting holds' : 'these settings hold')
+                    .' a value of the wrong kind: '.implode(', ', $wrongType)
+                    .'. A setting the application reads as a number wants digits only, and one it reads as '
+                    .'true or false wants true or false. Correct the value under Environment on this service.',
+                'missing_variables' => [],
+                'unparsable_variables' => $wrongType,
+            ];
+        }
+
         $unparsable = $this->unparsableSettings($output);
         if ($unparsable !== []) {
             return [
@@ -67,6 +93,75 @@ class PythonRuntimeErrorPresenter
         }
 
         return null;
+    }
+
+    /**
+     * A setting whose box exists and is empty.
+     *
+     * Worth its own sentence because it is the one shape a customer cannot see
+     * from the outside. An absent setting and a setting present with an empty
+     * string look identical in a settings list, and pydantic treats them
+     * completely differently: the first falls back to a default, the second is
+     * handed to the parser, which refuses it.
+     *
+     * @return list<string>
+     */
+    private function settingsSetToNothing(string $output): array
+    {
+        return $this->pydanticFieldsWhere(
+            $output,
+            fn (string $detail): bool => preg_match('/input_value=(\'\'|"")/', $detail) === 1,
+        );
+    }
+
+    /**
+     * A setting holding a value the declared type cannot accept, which pydantic
+     * reports as bool_parsing, int_parsing, float_parsing and friends.
+     *
+     * @return list<string>
+     */
+    private function settingsOfTheWrongType(string $output): array
+    {
+        return $this->pydanticFieldsWhere(
+            $output,
+            fn (string $detail): bool => preg_match('/\[type=[a-z_]*(parsing|type)/i', $detail) === 1,
+        );
+    }
+
+    /**
+     * pydantic prints every validation error as a bare field name followed by
+     * an indented sentence about it. Which sentence it is decides what to tell
+     * the customer, so the pairing is read once and asked different questions.
+     *
+     * @param  callable(string): bool  $matches
+     * @return list<string>
+     */
+    private function pydanticFieldsWhere(string $output, callable $matches): array
+    {
+        if (! str_contains($output, 'validation error')) {
+            return [];
+        }
+
+        $lines = preg_split('/\R/', $output) ?: [];
+        $fields = [];
+
+        foreach ($lines as $index => $line) {
+            $name = trim($line);
+            if (preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $name) !== 1) {
+                continue;
+            }
+
+            $detail = $lines[$index + 1] ?? '';
+            if (trim($detail) === '' || preg_match('/^\s+\S/', $detail) !== 1) {
+                continue;
+            }
+
+            if ($matches($detail)) {
+                $fields[$name] = true;
+            }
+        }
+
+        return array_keys($fields);
     }
 
     /**

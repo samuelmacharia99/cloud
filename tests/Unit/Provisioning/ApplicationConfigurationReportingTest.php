@@ -98,4 +98,30 @@ class ApplicationConfigurationReportingTest extends TestCase
         $this->assertStringContainsString("No module named 'app.core'", $summary);
         $this->assertStringNotContainsString('Requirement already satisfied', $summary);
     }
+
+    #[Test]
+    public function the_summary_keeps_the_setting_names_and_drops_pydantics_link_farm(): void
+    {
+        // pydantic prints a documentation URL under every validation error. The
+        // URL contains the word "errors", so the priority pass scored it as a
+        // cause, and four of them filled the budget while the lines naming the
+        // fields were dropped. The customer was told there were four problems
+        // and never which settings they were.
+        $log = <<<'LOG'
+        pydantic_core._pydantic_core.ValidationError: 4 validation errors for Settings
+        ENABLE_SMS
+          Input should be a valid boolean, unable to interpret input [type=bool_parsing, input_value='', input_type=str]
+            For further information visit https://errors.pydantic.dev/2.13/v/bool_parsing
+        RIDER_LOCATION_MAX_AGE_SECONDS
+          Input should be a valid integer, unable to parse string as an integer [type=int_parsing, input_value='', input_type=str]
+            For further information visit https://errors.pydantic.dev/2.13/v/int_parsing
+        LOG;
+
+        $summary = app(ContainerApplicationRuntimeService::class)->summarizePythonContainerLogs($log, 3000);
+
+        $this->assertStringContainsString('ENABLE_SMS', $summary);
+        $this->assertStringContainsString('RIDER_LOCATION_MAX_AGE_SECONDS', $summary);
+        $this->assertStringContainsString('valid boolean', $summary);
+        $this->assertStringNotContainsString('errors.pydantic.dev', $summary);
+    }
 }

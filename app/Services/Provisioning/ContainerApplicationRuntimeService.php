@@ -867,13 +867,30 @@ class ContainerApplicationRuntimeService
             ) === 1) {
                 continue;
             }
+            // pydantic prints a documentation URL under every single validation
+            // error. The URL contains the word "errors", so the priority pass
+            // below scored it as a cause, and four of them filled the budget
+            // while the lines naming the fields were dropped as uninteresting.
+            if (str_starts_with($trim, 'For further information visit https://errors.pydantic.dev')) {
+                continue;
+            }
             $kept[] = $line;
         }
 
         $priority = [];
+        $previousWasName = false;
         foreach ($kept as $line) {
-            if (preg_match(
-                '/Traceback|Error|Exception|ModuleNotFound|ImportError|File "|exit=|restarting|uvicorn|Error loading ASGI/i',
+            // A pydantic validation error is two lines: a bare field name, then
+            // an indented sentence about it. Neither contains the word "error",
+            // so both were being thrown away, leaving a customer with a count
+            // of four problems and no way to learn which settings they were.
+            $isName = preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', trim($line)) === 1;
+            $isValidationDetail = $previousWasName
+                && preg_match('/^\s+\S/', $line) === 1;
+            $previousWasName = $isName;
+
+            if ($isName || $isValidationDetail || preg_match(
+                '/Traceback|Error|Exception|ModuleNotFound|ImportError|File "|exit=|restarting|uvicorn|Error loading ASGI|Input should be|validation error/i',
                 $line
             ) === 1) {
                 $priority[] = $line;

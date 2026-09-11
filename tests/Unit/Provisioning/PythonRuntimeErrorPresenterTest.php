@@ -269,4 +269,57 @@ class PythonRuntimeErrorPresenterTest extends TestCase
 
         $this->assertSame(['NES_API_KEY'], $result['missing_variables']);
     }
+
+    #[Test]
+    public function it_says_a_setting_is_empty_rather_than_counting_four_problems(): void
+    {
+        // The shape a customer cannot see from the outside: an absent setting
+        // and one present with an empty string look identical in a settings
+        // list, and pydantic treats them completely differently.
+        $result = $this->presenter->present(<<<'LOG'
+        pydantic_core._pydantic_core.ValidationError: 4 validation errors for Settings
+        ENABLE_SMS
+          Input should be a valid boolean, unable to interpret input [type=bool_parsing, input_value='', input_type=str]
+            For further information visit https://errors.pydantic.dev/2.13/v/bool_parsing
+        RIDER_LOCATION_MAX_AGE_SECONDS
+          Input should be a valid integer, unable to parse string as an integer [type=int_parsing, input_value='', input_type=str]
+            For further information visit https://errors.pydantic.dev/2.13/v/int_parsing
+        LOG);
+
+        $this->assertNotNull($result);
+        $this->assertStringContainsString('present but empty', $result['message']);
+        $this->assertStringContainsString('ENABLE_SMS', $result['message']);
+        $this->assertStringContainsString('RIDER_LOCATION_MAX_AGE_SECONDS', $result['message']);
+        $this->assertSame([], $result['missing_variables']);
+    }
+
+    #[Test]
+    public function a_value_of_the_wrong_kind_is_not_reported_as_an_empty_one(): void
+    {
+        $result = $this->presenter->present(<<<'LOG'
+        pydantic_core._pydantic_core.ValidationError: 1 validation error for Settings
+        RIDER_LOCATION_MAX_AGE_SECONDS
+          Input should be a valid integer, unable to parse string as an integer [type=int_parsing, input_value='two minutes', input_type=str]
+        LOG);
+
+        $this->assertStringContainsString('wrong kind', $result['message']);
+        $this->assertStringNotContainsString('present but empty', $result['message']);
+        $this->assertStringContainsString('RIDER_LOCATION_MAX_AGE_SECONDS', $result['message']);
+    }
+
+    #[Test]
+    public function an_absent_setting_still_outranks_an_empty_one(): void
+    {
+        // A name nobody has set parks the stack; a name set to nothing fails
+        // the pull. When both appear, the one that parks it wins.
+        $result = $this->presenter->present(<<<'LOG'
+        pydantic_core._pydantic_core.ValidationError: 2 validation errors for Settings
+        NES_API_KEY
+          Field required [type=missing, input_value={}, input_type=dict]
+        ENABLE_SMS
+          Input should be a valid boolean, unable to interpret input [type=bool_parsing, input_value='', input_type=str]
+        LOG);
+
+        $this->assertSame(['NES_API_KEY'], $result['missing_variables']);
+    }
 }

@@ -117,7 +117,7 @@ class ContainerEnvironmentService
 
     /**
      * @param  list<array{key?: string, value?: string|null}>|array<string, string>  $incoming
-     * @return array{updated: int, message: string}
+     * @return array{updated: int, skipped: list<string>, applied: bool, message: string}
      */
     public function updateVariables(Service $service, array $incoming, bool $restart = true): array
     {
@@ -130,12 +130,29 @@ class ContainerEnvironmentService
 
         $normalized = $this->normalizeIncoming($incoming);
         $current = is_array($deployment->env_values) ? $deployment->env_values : [];
+        $skipped = [];
 
         foreach ($normalized as $key => $value) {
             if ($this->isPlatformManagedKey($key) && array_key_exists($key, $current) && (string) $current[$key] !== $value) {
                 // Allow updates to platform keys but keep them — customer may fix APP_URL etc.
                 // DB_* changes require compose recreate + credential awareness.
             }
+
+            // A blank for a key that has never had a value is the panel's own
+            // suggestion row being saved untouched, not a decision. Writing it
+            // is worse than ignoring it: an absent setting falls back to the
+            // application's default, while one present and empty is handed to
+            // the parser, which refuses it and crash-loops the container. That
+            // is how a service ended up rejecting its own ENABLE_SMS.
+            //
+            // Clearing a key that does exist is still a real instruction, so
+            // only the first case is dropped.
+            if ($value === '' && ! array_key_exists($key, $current)) {
+                $skipped[] = $key;
+
+                continue;
+            }
+
             $current[$key] = $value;
         }
 
@@ -146,6 +163,11 @@ class ContainerEnvironmentService
         $service->update(['service_meta' => $meta]);
 
         $message = 'Environment variables saved.';
+        if ($skipped !== []) {
+            $message .= ' '.implode(', ', $skipped).' had no value, so '
+                .(count($skipped) === 1 ? 'it was' : 'they were')
+                .' left unset rather than saved empty.';
+        }
         $applied = false;
 
         if ($restart) {
@@ -168,7 +190,8 @@ class ContainerEnvironmentService
         }
 
         return [
-            'updated' => count($normalized),
+            'updated' => count($normalized) - count($skipped),
+            'skipped' => $skipped,
             'applied' => $applied,
             'message' => $message,
         ];
