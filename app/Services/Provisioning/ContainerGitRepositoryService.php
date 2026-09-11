@@ -456,7 +456,9 @@ class ContainerGitRepositoryService
                 $this->runPullStep($pull, 'runtime', function () use ($service, $deployment, $ssh) {
                     $message = $this->deploymentService->refreshApplicationRuntimeCompose($service, $deployment, $ssh);
 
-                    return $message !== '' ? $message : 'Application runtime refreshed.';
+                    // An empty answer means the stack had nothing to refresh.
+                    // Reporting it as a refresh made a no-op read like work.
+                    return $message !== '' ? $message : 'No runtime change was needed for this stack.';
                 });
             }
 
@@ -487,6 +489,16 @@ class ContainerGitRepositoryService
             $meta = is_array($service->service_meta) ? $service->service_meta : [];
             $meta['source_repo_synced_at'] = now()->toIso8601String();
             $service->update(['service_meta' => $meta]);
+
+            // The application started, so whatever it was once missing it is not
+            // missing now. Only deploys released a hold before, which left a
+            // customer who fixed their code with a pull still being asked for
+            // variables their application had stopped wanting.
+            try {
+                app(ContainerConfigurationHoldService::class)->release($service->fresh(), $deployment->fresh());
+            } catch (\Throwable $e) {
+                $pull->appendLog('Could not clear the configuration hold: '.$e->getMessage());
+            }
 
             $pull->update([
                 'status' => ContainerGitPull::STATUS_COMPLETED,

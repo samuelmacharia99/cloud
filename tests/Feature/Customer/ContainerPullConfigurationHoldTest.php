@@ -106,6 +106,29 @@ class ContainerPullConfigurationHoldTest extends TestCase
         $this->assertStringContainsString('MPESA_SHORTCODE', (string) $pull->error_message);
     }
 
+    public function test_a_variable_the_application_stopped_needing_is_forgotten(): void
+    {
+        [$service, $deployment, $pull] = $this->pullInProgress();
+        $requirements = app(ApplicationEnvironmentRequirements::class);
+
+        $requirements->rememberRequired($service, ['MPESA_SHORTCODE', 'NES_API_KEY']);
+
+        // The customer deleted the M-Pesa integration and pulled. The next hold
+        // reports only what is left, and that is the whole list now.
+        app(ContainerGitRepositoryService::class)->holdPullForConfiguration(
+            $pull,
+            $service->fresh(),
+            $deployment,
+            $this->ssh(),
+            new ApplicationConfigurationRequiredException(['NES_API_KEY']),
+        );
+
+        $outstanding = $requirements->outstandingRequired($service->fresh(), $deployment->fresh());
+
+        $this->assertSame(['NES_API_KEY'], $outstanding);
+        $this->assertNotContains('MPESA_SHORTCODE', $outstanding);
+    }
+
     /**
      * @return array{0: Service, 1: ContainerDeployment, 2: ContainerGitPull}
      */

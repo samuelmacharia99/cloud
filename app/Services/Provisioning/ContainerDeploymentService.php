@@ -3341,15 +3341,14 @@ class ContainerDeploymentService
             throw $this->readinessFailure($fatal);
         }
 
-        // Summarise before truncating: a traceback names its exception on the last
-        // line, so keeping the head of a raw pip transcript discards the cause.
+        // The summariser already keeps the end of the log, where the exception
+        // is. Budget the diagnostic first and give the rest to the summary, so
+        // this outer cut cannot throw away the cause the summariser preserved.
+        $diagnostic = mb_substr(trim($lastDiagnostic), 0, 800);
+        $summary = $this->applicationRuntime->summarizePythonContainerLogs($logs, 3000);
+
         throw new \RuntimeException(
-            'Split web/API stack did not become ready: '
-            .mb_substr(
-                $lastDiagnostic."\n".$this->applicationRuntime->summarizePythonContainerLogs($logs),
-                0,
-                4000
-            )
+            'Split web/API stack did not become ready: '.trim($diagnostic."\n".$summary)
         );
     }
 

@@ -116,11 +116,27 @@ class ApplicationEnvironmentRequirements
     }
 
     /**
+     * What the application asked for the last time it refused to start.
+     *
+     * This replaces the stored list rather than adding to it. Merging meant a
+     * variable stayed "required" forever: a customer who deleted one from their
+     * code still saw the platform demanding it, and could not tell which of the
+     * names in front of them their application actually wanted. The most recent
+     * crash is the only current answer.
+     *
+     * An empty list is not an answer, so it leaves the previous one alone; that
+     * is a hold whose cause could not be read, not an application that suddenly
+     * needs nothing.
+     *
      * @param  list<string>  $keys
      */
     public function rememberRequired(Service $service, array $keys): void
     {
-        $this->store($service, self::REQUIRED_META_KEY, [...$this->required($service), ...$keys]);
+        if ($keys === []) {
+            return;
+        }
+
+        $this->store($service, self::REQUIRED_META_KEY, $keys);
     }
 
     /**

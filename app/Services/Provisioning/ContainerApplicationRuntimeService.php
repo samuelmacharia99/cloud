@@ -888,7 +888,16 @@ class ContainerApplicationRuntimeService
             $summary = trim($logs);
         }
 
-        return mb_substr($summary, 0, max(200, $maxChars));
+        $limit = max(200, $maxChars);
+        if (mb_strlen($summary) <= $limit) {
+            return $summary;
+        }
+
+        // From the end, never the front. A Python traceback names its exception
+        // on the last line and spends everything above it on File " lines, so
+        // cutting the head threw away the one line that said what was wrong and
+        // left an alert full of paths.
+        return '…'.mb_substr($summary, -($limit - 1));
     }
 
     public function detectGoRuntime(
