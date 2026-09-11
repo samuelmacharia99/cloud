@@ -35,6 +35,24 @@ class PythonRuntimeErrorPresenter
             ];
         }
 
+        $unparsable = $this->unparsableSettings($output);
+        if ($unparsable !== []) {
+            return [
+                'message' => 'The application could not start because '
+                    .(count($unparsable) === 1 ? 'this setting is' : 'these settings are')
+                    .' set to a value it cannot read: '.implode(', ', $unparsable)
+                    .'. A setting the application treats as a list or an object has to be written as JSON, '
+                    .'so a list of origins is ["https://one.example","https://two.example"] rather than '
+                    .'one,two, and a blank is not a valid list. Correct the value under Environment on this '
+                    .'service, apply it, then pull again.',
+                // Deliberately not reported as missing. These names already hold
+                // a value, so parking the stack would show the customer a setup
+                // notice listing nothing: the hold lists what is unset, and
+                // every one of these is set. Wrongly, but set.
+                'missing_variables' => [],
+            ];
+        }
+
         $module = $this->unimportableModule($output);
         if ($module !== null) {
             return [
@@ -46,6 +64,43 @@ class PythonRuntimeErrorPresenter
         }
 
         return null;
+    }
+
+    /**
+     * A setting that is present and unreadable, which pydantic reports in a
+     * different exception from the one it raises for an absent setting:
+     *
+     *     pydantic_settings.exceptions.SettingsError: error parsing value for
+     *     field "ALLOWED_ORIGINS" from source "EnvSettingsSource"
+     *
+     * pydantic parses anything it treats as a list or an object as JSON, so a
+     * comma-separated list of origins, or an empty string, fails here while a
+     * plain string setting beside it is fine. The traceback is fifteen frames
+     * of importlib with the cause on the last line, and nothing in it says the
+     * word "environment", so the customer sees a library crash rather than
+     * their own value.
+     *
+     * @return list<string>
+     */
+    private function unparsableSettings(string $output): array
+    {
+        if (! preg_match_all(
+            '/error parsing value for field\s+["\']([^"\']+)["\']/i',
+            $output,
+            $matches,
+        )) {
+            return [];
+        }
+
+        $fields = [];
+        foreach ($matches[1] as $name) {
+            $name = trim((string) $name);
+            if ($name !== '') {
+                $fields[$name] = true;
+            }
+        }
+
+        return array_keys($fields);
     }
 
     /**

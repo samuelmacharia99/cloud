@@ -222,4 +222,51 @@ class PythonRuntimeErrorPresenterTest extends TestCase
     {
         return app(PythonRuntimeErrorPresenter::class);
     }
+
+    #[Test]
+    public function it_names_a_setting_that_is_present_and_unreadable(): void
+    {
+        // pydantic raises a different exception for a value it cannot parse
+        // than for a value that is absent, and the traceback is fifteen frames
+        // of importlib with the cause on the last line. Nothing in it says the
+        // word "environment", so the customer sees a library crash rather than
+        // their own value.
+        $result = $this->presenter->present(<<<'LOG'
+          File "/app/apps/backend/app/core/config.py", line 106, in get_settings
+          File "/usr/local/lib/python3.11/site-packages/pydantic_settings/sources/base.py", line 610, in __call__
+            raise SettingsError(
+        pydantic_settings.exceptions.SettingsError: error parsing value for field "ALLOWED_ORIGINS" from source "EnvSettingsSource"
+        LOG);
+
+        $this->assertNotNull($result);
+        $this->assertStringContainsString('ALLOWED_ORIGINS', $result['message']);
+        $this->assertStringContainsString('JSON', $result['message']);
+    }
+
+    #[Test]
+    public function an_unreadable_setting_is_never_reported_as_a_missing_one(): void
+    {
+        // The hold lists what is unset, and this name is set. Wrongly, but set.
+        // Parking the stack on it would show a setup notice listing nothing.
+        $result = $this->presenter->present(
+            'pydantic_settings.exceptions.SettingsError: error parsing value for field "ALLOWED_ORIGINS" from source "EnvSettingsSource"'
+        );
+
+        $this->assertSame([], $result['missing_variables']);
+    }
+
+    #[Test]
+    public function an_absent_setting_still_wins_over_an_unreadable_one(): void
+    {
+        // Both can appear in one boot. A name nobody has set is the one the
+        // customer has to act on first, and it is the one that parks the stack.
+        $result = $this->presenter->present(<<<'LOG'
+        pydantic_core._pydantic_core.ValidationError: 1 validation error for Settings
+        NES_API_KEY
+          Field required [type=missing, input_value={}, input_type=dict]
+        pydantic_settings.exceptions.SettingsError: error parsing value for field "ALLOWED_ORIGINS" from source "EnvSettingsSource"
+        LOG);
+
+        $this->assertSame(['NES_API_KEY'], $result['missing_variables']);
+    }
 }
