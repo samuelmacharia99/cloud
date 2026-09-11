@@ -433,6 +433,23 @@ class ContainerDoctorService
                 $findings[] = $unreadableSetting;
             }
 
+            // Why it is crash-looping, rather than that it is. When the
+            // application said something readable, that supersedes the generic
+            // finding: "read the boot error in Logs" is poor advice next to a
+            // sentence that already read it.
+            $crashCause = $this->runtimeCrashFinding($stack, $logs, $deployment, $snapshot);
+            if ($crashCause !== null) {
+                $findings = array_values(array_filter(
+                    $findings,
+                    fn (array $finding): bool => ! in_array(
+                        $finding['id'] ?? '',
+                        ['container_crash_loop', 'container_exits_without_output'],
+                        true,
+                    ),
+                ));
+                $findings[] = $crashCause;
+            }
+
             $containerReady = ($snapshot['running'] ?? false) === true
                 && ($snapshot['restarting'] ?? false) !== true;
 
@@ -1555,7 +1572,12 @@ class ContainerDoctorService
         $merged = array_values($byId);
         $ids = array_column($merged, 'id');
         $drop = [];
-        if (in_array('nginx_boot_failed', $ids, true)) {
+        // Checked before everything below, because it is the only finding here
+        // built from what the application itself said. "Read the boot error in
+        // Logs" is poor advice sitting under a sentence that already read it.
+        if (in_array('runtime_crash_cause', $ids, true)) {
+            $drop = ['container_crash_loop', 'container_exits_without_output', 'live_upstream_unreachable', 'live_bootstrap_in_progress'];
+        } elseif (in_array('nginx_boot_failed', $ids, true)) {
             $drop = ['php_builtin_dev_server', 'container_crash_loop', 'live_upstream_unreachable', 'stale_php_runtime_image'];
         } elseif (in_array('mysql_unix_socket_missing', $ids, true)) {
             $drop = ['mysql_connection_refused', 'live_db_connection_failed'];
@@ -3557,6 +3579,103 @@ PHP;
      *
      * @return array{treat_action: string, treat_label: string, summary: string, manual_steps: list<string>}
      */
+    /**
+     * Why a Python, Ruby or Go container is crash-looping, in the application's
+     * own words.
+     *
+     * Doctor could say "crash-looping" and nothing more. The presenter that
+     * reads a Python traceback was wired into the deploy and pull paths only,
+     * so the one screen a customer opens when their site is down was the one
+     * place that could not tell them the cause. This is that screen asking the
+     * same question the pull already asks.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function runtimeCrashFinding(
+        string $stack,
+        string $logs,
+        ContainerDeployment $deployment,
+        array $snapshot,
+    ): ?array {
+        if (! app(ContainerApplicationReadinessService::class)->supports($stack)) {
+            return null;
+        }
+
+        // Only while it is actually failing. The six-hour log window keeps a
+        // traceback long after the deploy that fixed it, and a finding built
+        // from one of those would send somebody after a problem they solved.
+        $crashing = ($snapshot['restarting'] ?? false) === true
+            || ($snapshot['running'] ?? true) === false;
+        if (! $crashing || ! empty($snapshot['oom'])) {
+            return null;
+        }
+
+        $crash = app(ContainerRuntimeCrashReader::class)->read($stack, $logs);
+        if (! $crash['recognised']) {
+            // An unreadable log leaves the existing crash-loop finding alone.
+            // Repeating it back with no more insight would be noise wearing the
+            // clothes of a diagnosis.
+            return null;
+        }
+
+        $missing = $crash['missing_variables'];
+        $unparsable = $crash['unparsable_variables'];
+
+        $treatable = array_values(array_filter(
+            $unparsable,
+            fn (string $key): bool => app(ContainerOriginSettingsService::class)->supports($key)
+                && app(ContainerOriginSettingsService::class)->valueFor($deployment, $key) !== null,
+        ));
+
+        $evidence = [];
+        if ($missing !== []) {
+            $evidence[] = 'settings with no value: '.implode(', ', $missing);
+        }
+        if ($unparsable !== []) {
+            $evidence[] = 'settings the application refused: '.implode(', ', $unparsable);
+        }
+        if ($evidence === []) {
+            $evidence[] = mb_substr(trim($crash['message']), 0, 280);
+        }
+
+        [$action, $label, $steps] = match (true) {
+            $treatable !== [] => [
+                self::FIX_TRUST_LIST_ACTION,
+                'Set from this service\'s domains',
+                ['Click the repair — it writes the value this service\'s own domains imply, and recreates the app.'],
+            ],
+            $missing !== [] || $unparsable !== [] => [
+                null,
+                null,
+                [
+                    'Open the Environment tab. The settings named above are marked there.',
+                    'A setting present and empty is not the same as one that is absent: delete the row to let your application\'s own default apply.',
+                    'Save and apply. The container starts as soon as the values are right.',
+                ],
+            ],
+            default => [
+                'restart_application',
+                'Restart application',
+                [
+                    'Fix the cause above in your repository, then pull again.',
+                    'Restart application re-detects the start command and recreates only the app.',
+                ],
+            ],
+        };
+
+        return array_filter([
+            'id' => 'runtime_crash_cause',
+            'severity' => 'critical',
+            'title' => 'The application is crash-looping, and this is why',
+            'summary' => $crash['message'],
+            'evidence' => $evidence,
+            'treat_action' => $action,
+            'treat_label' => $label,
+            'manual_steps' => $steps,
+            'source' => 'live',
+        ], fn ($value): bool => $value !== null);
+    }
+
     /**
      * A setting the application reads as a list and cannot parse, whose correct
      * value is a trust list of this service's own domains.

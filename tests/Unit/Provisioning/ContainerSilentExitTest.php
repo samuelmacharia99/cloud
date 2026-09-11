@@ -78,6 +78,12 @@ class ContainerSilentExitTest extends TestCase
     #[Test]
     public function a_container_that_did_explain_itself_keeps_the_ordinary_crash_loop_finding(): void
     {
+        // The analyzer's own answer, which Doctor now supersedes one layer up:
+        // a ModuleNotFoundError is a cause the crash reader can name, and
+        // runtime_crash_cause replaces this finding when it does. See
+        // ContainerDoctorRuntimeCrashFindingTest. The analyzer in isolation
+        // still behaves as it always did.
+
         $findings = app(ContainerDoctorInfrastructureAnalyzer::class)->findings(
             "Traceback (most recent call last):\nModuleNotFoundError: No module named 'app'",
             'python',

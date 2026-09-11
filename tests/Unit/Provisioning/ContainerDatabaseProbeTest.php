@@ -30,7 +30,7 @@ class ContainerDatabaseProbeTest extends TestCase
             'postgresql',
             $env
         );
-        $tcp = $service->nodeDatabaseTcpProbeCommand(
+        $tcp = $service->databaseTcpProbeCommand(
             'user-231-service-351-nodejs',
             $env,
             'postgresql'
@@ -222,5 +222,77 @@ class ContainerDatabaseProbeTest extends TestCase
 
         $split = $service->splitDatabaseHostAndPort('mysql:3306', '3306');
         $this->assertSame(['host' => 'mysql', 'port' => '3306'], $split);
+    }
+
+    #[Test]
+    public function the_tcp_probe_does_not_assume_the_container_has_node(): void
+    {
+        // A Python image has no node, so the old probe died with
+        // "executable file not found" and the caller reported that as the
+        // customer's application being unable to reach its own database.
+        $command = app(ContainerDeploymentService::class)->databaseTcpProbeCommand(
+            'user-493-service-457-python',
+            ['DB_HOST' => 'user-493-service-457-python-db', 'DB_PORT' => '5432'],
+            'postgresql',
+        );
+
+        $this->assertNotNull($command);
+        $this->assertStringContainsString('command -v python3', $command);
+        $this->assertStringContainsString('command -v ruby', $command);
+        $this->assertStringContainsString('command -v node', $command);
+        $this->assertStringContainsString('user-493-service-457-python-db', $command);
+        $this->assertStringNotContainsString('docker exec \'user-493-service-457-python\' node ', $command);
+    }
+
+    #[Test]
+    public function a_container_with_no_interpreter_says_so_instead_of_guessing(): void
+    {
+        $command = app(ContainerDeploymentService::class)->databaseTcpProbeCommand(
+            'user-1-service-2-go',
+            ['DB_HOST' => 'user-1-service-2-go-db', 'DB_PORT' => '5432'],
+            'postgresql',
+        );
+
+        // The exit status the caller reads as "the platform could not test",
+        // which is a different sentence from "your app cannot reach its
+        // database" and the whole reason this distinction exists.
+        $this->assertStringContainsString('exit '.ContainerDeploymentService::PROBE_UNAVAILABLE_EXIT, $command);
+        $this->assertStringContainsString('probe_unavailable', $command);
+    }
+
+    #[Test]
+    public function a_host_name_that_is_really_a_shell_command_is_refused(): void
+    {
+        // The whole probe is one escapeshellarg'd sh -c string, and DB_HOST is
+        // customer-editable. The node form escaped this by accident through
+        // json_encode; nc and /dev/tcp would not have.
+        $service = app(ContainerDeploymentService::class);
+
+        $this->assertTrue($service->databaseProbeHostIsSafe('user-1-service-2-python-db'));
+        $this->assertFalse($service->databaseProbeHostIsSafe('db; rm -rf /'));
+        $this->assertFalse($service->databaseProbeHostIsSafe('db$(id)'));
+        $this->assertFalse($service->databaseProbeHostIsSafe('db`id`'));
+
+        $this->assertNull($service->databaseTcpProbeCommand(
+            'user-1-service-2-python',
+            ['DB_HOST' => 'db; rm -rf /', 'DB_PORT' => '5432'],
+            'postgresql',
+        ));
+    }
+
+    #[Test]
+    public function the_probe_never_carries_the_password(): void
+    {
+        $command = app(ContainerDeploymentService::class)->databaseTcpProbeCommand(
+            'user-1-service-2-python',
+            [
+                'DB_HOST' => 'user-1-service-2-python-db',
+                'DB_PORT' => '5432',
+                'DB_PASSWORD' => 'p$ecret',
+            ],
+            'postgresql',
+        );
+
+        $this->assertStringNotContainsString('p$ecret', (string) $command);
     }
 }

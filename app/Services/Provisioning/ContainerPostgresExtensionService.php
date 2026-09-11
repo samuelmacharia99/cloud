@@ -253,21 +253,32 @@ class ContainerPostgresExtensionService
     private function createExtension(SSHService $ssh, string $containerPath, ContainerDeployment $deployment): string
     {
         $env = is_array($deployment->env_values) ? $deployment->env_values : [];
-        $user = escapeshellarg((string) ($env['DB_USERNAME'] ?? $env['POSTGRES_USER'] ?? 'appuser'));
         $database = escapeshellarg((string) ($env['DB_DATABASE'] ?? $env['POSTGRES_DB'] ?? 'appdb'));
         $password = escapeshellarg((string) ($env['DB_PASSWORD'] ?? $env['POSTGRES_PASSWORD'] ?? ''));
 
-        // The application role is not a superuser, so the extension is created
-        // as postgres, which owns the sidecar.
-        $ssh->exec(
-            'cd '.escapeshellarg($containerPath).' && docker compose exec -T -e PGPASSWORD='.$password
-            .' db psql -U postgres -d '.$database.' -c '
-            .escapeshellarg('CREATE EXTENSION IF NOT EXISTS postgis').' || '
-            .'cd '.escapeshellarg($containerPath).' && docker compose exec -T -e PGPASSWORD='.$password
-            .' db psql -U '.$user.' -d '.$database.' -c '
-            .escapeshellarg('CREATE EXTENSION IF NOT EXISTS postgis'),
-            120
+        // The application role first, and `postgres` only as a fallback.
+        //
+        // This ran as `postgres` first, on the assumption that the app role is
+        // not a superuser. On a volume created with a custom POSTGRES_USER
+        // there is no `postgres` role at all: the app user owns the cluster. So
+        // the first attempt always failed, Postgres logged
+        // `FATAL: role "postgres" does not exist`, and the fallback succeeded.
+        // Doctor then read six hours of logs, found the line the platform had
+        // just written, and raised it to the customer as a critical fault.
+        $roles = app(ContainerDeploymentService::class)->postgresqlAdminRoleCandidates(
+            $env,
+            (string) ($env['DB_USERNAME'] ?? $env['POSTGRES_USER'] ?? 'appuser'),
         );
+
+        $attempts = array_map(
+            fn (string $role): string => 'cd '.escapeshellarg($containerPath)
+                .' && docker compose exec -T -e PGPASSWORD='.$password
+                .' db psql -U '.escapeshellarg($role).' -d '.$database.' -c '
+                .escapeshellarg('CREATE EXTENSION IF NOT EXISTS postgis'),
+            $roles,
+        );
+
+        $ssh->exec(implode(' || ', $attempts), 120);
 
         return 'PostGIS is available in this database.';
     }

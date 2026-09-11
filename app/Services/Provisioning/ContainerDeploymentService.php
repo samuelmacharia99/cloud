@@ -4200,14 +4200,61 @@ class ContainerDeploymentService
     /**
      * @param  array<string, mixed>  $envVars
      */
-    public function nodeDatabaseTcpProbeCommand(string $containerName, array $envVars, string $databaseType): string
+    /** Exit status meaning the container has nothing that can open a socket. */
+    public const PROBE_UNAVAILABLE_EXIT = 97;
+
+    /**
+     * Can this host name be put in a shell command without becoming one?
+     *
+     * DB_HOST is customer-editable, and the probe below is a single `sh -c`
+     * string. The Node form escaped this by accident, through json_encode; the
+     * `nc` and /dev/tcp forms would not have.
+     */
+    public function databaseProbeHostIsSafe(string $host): bool
+    {
+        return preg_match('/^[A-Za-z0-9._-]{1,253}$/', $host) === 1;
+    }
+
+    /**
+     * Open a socket to the database from inside the application container,
+     * using whatever that container actually has.
+     *
+     * The old form ran `node -e`, whatever the stack was written in. On a
+     * Python image the exec failed with "node: executable file not found", and
+     * the caller reported that as the customer's application being unable to
+     * reach its own database. It could not reach it either.
+     *
+     * Nothing here is chosen from the template slug. The container is asked.
+     */
+    public function databaseTcpProbeCommand(string $containerName, array $envVars, string $databaseType): ?string
     {
         [$host, $port] = $this->applicationDatabaseEndpoint($envVars, $databaseType);
-        $script = 'const n=require("net");const s=n.connect({host:'.json_encode($host).',port:'.$port.'},()=>{process.stdout.write("ok");s.end();process.exit(0)});'
+        if (! $this->databaseProbeHostIsSafe((string) $host)) {
+            return null;
+        }
+
+        $quotedHost = json_encode((string) $host);
+        $port = (int) $port;
+
+        $python = 'import socket,sys;s=socket.create_connection(('.$quotedHost.','.$port.'),5);s.close();sys.stdout.write("ok")';
+        $ruby = 'require "socket";TCPSocket.new('.$quotedHost.','.$port.').close;print "ok"';
+        $node = 'const n=require("net");const s=n.connect({host:'.$quotedHost.',port:'.$port.'},()=>{process.stdout.write("ok");s.end();process.exit(0)});'
             .'s.setTimeout(5000,()=>{process.stderr.write("tcp timeout");process.exit(1)});'
             .'s.on("error",e=>{process.stderr.write(String(e&&e.message?e.message:e));process.exit(1)});';
 
-        return 'docker exec '.escapeshellarg($containerName).' node -e '.escapeshellarg($script);
+        $script = 'if command -v python3 >/dev/null 2>&1; then exec python3 -c '.escapeshellarg($python).'; '
+            .'elif command -v python >/dev/null 2>&1; then exec python -c '.escapeshellarg($python).'; '
+            .'elif command -v ruby >/dev/null 2>&1; then exec ruby -e '.escapeshellarg($ruby).'; '
+            .'elif command -v node >/dev/null 2>&1; then exec node -e '.escapeshellarg($node).'; '
+            .'elif command -v nc >/dev/null 2>&1; then exec nc -z -w 5 '.escapeshellarg((string) $host).' '.$port.'; '
+            .'elif command -v bash >/dev/null 2>&1; then exec bash -c '
+                .escapeshellarg('exec 3<>/dev/tcp/'.$host.'/'.$port).'; '
+            // A Go binary on scratch has no shell at all and never reaches this
+            // line, but an image with a shell and nothing else does. Saying so
+            // beats inventing a verdict about the customer's network.
+            .'else echo probe_unavailable >&2; exit '.self::PROBE_UNAVAILABLE_EXIT.'; fi';
+
+        return 'docker exec '.escapeshellarg($containerName).' sh -c '.escapeshellarg($script);
     }
 
     /**
@@ -4450,10 +4497,11 @@ class ContainerDeploymentService
             return $node;
         }
 
-        $tcp = $this->execProbeCommand(
-            $ssh,
-            $this->nodeDatabaseTcpProbeCommand($containerName, $envVars, $databaseType)
-        );
+        $command = $this->databaseTcpProbeCommand($containerName, $envVars, $databaseType);
+        $tcp = $command === null
+            ? ['ok' => false, 'error' => 'unsafe host name', 'driver_missing' => false, 'probe_unavailable' => true]
+            : $this->execProbeCommand($ssh, $command);
+
         if ($containerPath !== null && $containerPath !== '') {
             $auth = $this->execProbeCommand(
                 $ssh,
@@ -4465,6 +4513,21 @@ class ContainerDeploymentService
             if (! $auth['ok']) {
                 return $auth;
             }
+
+            // The credentials are good and the container has nothing that can
+            // open a socket. That is the platform being unable to run its own
+            // check, and reporting it as the customer's application failing to
+            // reach its database is how somebody spends an afternoon on a fault
+            // that was never theirs.
+            if ($this->probeCouldNotRun($tcp)) {
+                return [
+                    'ok' => true,
+                    'error' => null,
+                    'driver_missing' => false,
+                    'probe_unavailable' => true,
+                ];
+            }
+
             if (! $tcp['ok']) {
                 [$host] = $this->applicationDatabaseEndpoint($envVars, $databaseType);
 
@@ -4476,7 +4539,27 @@ class ContainerDeploymentService
             }
         }
 
-        return $node;
+        return $this->probeCouldNotRun($tcp)
+            ? ['ok' => true, 'error' => null, 'driver_missing' => false, 'probe_unavailable' => true]
+            : $node;
+    }
+
+    /**
+     * The container had nothing that could open a socket, as opposed to having
+     * tried and failed.
+     *
+     * @param  array<string, mixed>  $probe
+     */
+    private function probeCouldNotRun(array $probe): bool
+    {
+        if (! empty($probe['probe_unavailable'])) {
+            return true;
+        }
+
+        $error = strtolower((string) ($probe['error'] ?? ''));
+
+        return str_contains($error, 'probe_unavailable')
+            || str_contains($error, 'exit status '.self::PROBE_UNAVAILABLE_EXIT);
     }
 
     /**
