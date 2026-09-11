@@ -4676,25 +4676,40 @@ PHP;
         $deploymentService = app(ContainerDeploymentService::class);
         $databaseTemplate = $deploymentService->resolveDatabaseTemplateForService($service);
 
-        if (! $databaseTemplate) {
+        // Read the stack before judging it. A DatabaseTemplate record exists
+        // only when the database was bought at checkout, and templates that
+        // ship their own sidecar — WordPress above all — never get one. Asking
+        // for the record here is how Repair DB credentials came to refuse
+        // sites whose MySQL container was running and healthy.
+        $liveCompose = '';
+        try {
+            $liveCompose = trim((string) $ssh->exec(
+                'cat '.escapeshellarg($containerPath.'/docker-compose.yml'),
+                15
+            ));
+        } catch (\Throwable) {
+            $liveCompose = (string) ($deployment->docker_compose_content ?? '');
+        }
+
+        $databaseType = app(ContainerDatabaseSidecarResolver::class)
+            ->typeForService($service, $liveCompose);
+
+        if ($databaseType === null) {
             return ['success' => false, 'message' => 'No database sidecar is configured for this service.'];
         }
 
         try {
-            $liveCompose = '';
-            try {
-                $liveCompose = trim((string) $ssh->exec(
-                    'cat '.escapeshellarg($containerPath.'/docker-compose.yml'),
-                    15
-                ));
-            } catch (\Throwable) {
-                $liveCompose = (string) ($deployment->docker_compose_content ?? '');
-            }
             if (! $deploymentService->composeDefinesDatabaseSidecar($liveCompose)) {
-                if (! in_array((string) $databaseTemplate->type, ['mysql', 'mariadb'], true)) {
+                if (! in_array($databaseType, ['mysql', 'mariadb'], true)) {
                     return [
                         'success' => false,
-                        'message' => 'This stack has no database container. Repair cannot invent a '.$databaseTemplate->type.' sidecar from here.',
+                        'message' => 'This stack has no database container. Repair cannot invent a '.$databaseType.' sidecar from here.',
+                    ];
+                }
+                if (! $databaseTemplate) {
+                    return [
+                        'success' => false,
+                        'message' => 'This stack has no database container and no database plan to build one from. Redeploy the application, or add a database to the service first.',
                     ];
                 }
                 $message = $deploymentService->ensureMysqlSidecarForDeployment(
@@ -4708,8 +4723,8 @@ PHP;
                 $probe = $deploymentService->probeApplicationDatabaseAccess(
                     $ssh,
                     $deployment->container_name,
-                    (string) $databaseTemplate->type,
-                    $this->envForRuntimeDatabaseProbe($envVars, (string) $databaseTemplate->type),
+                    $databaseType,
+                    $this->envForRuntimeDatabaseProbe($envVars, $databaseType),
                     $this->resolveStackSlug($service),
                     $containerPath
                 );
@@ -4778,7 +4793,7 @@ PHP;
             $workingPassword = $this->discoverWorkingDatabasePassword(
                 $ssh,
                 $deployment,
-                $databaseTemplate->type,
+                $databaseType,
                 $rawEnv
             );
             if ($workingPassword !== null) {
@@ -4790,13 +4805,13 @@ PHP;
             $normalized = $deploymentService->normalizeDatabaseEnvironment(
                 $service,
                 $rawEnv,
-                (string) $databaseTemplate->type
+                $databaseType
             );
             $envVars = $normalized['env'];
             $envVars = $deploymentService->pinApplicationDatabaseHost(
                 $envVars,
                 (string) $deployment->container_name,
-                (string) $databaseTemplate->type
+                $databaseType
             );
             $platformAdminUser = (string) ($rawEnv['TALKSASA_PLATFORM_DB_USERNAME'] ?? '');
             $platformAdminPassword = (string) ($rawEnv['TALKSASA_PLATFORM_DB_PASSWORD'] ?? '');
@@ -4820,7 +4835,7 @@ PHP;
                 $syncEnv['TALKSASA_PLATFORM_DB_PASSWORD'] = $platformAdminPassword;
             }
 
-            if (in_array((string) $databaseTemplate->type, ['mysql', 'mariadb'], true)) {
+            if (in_array($databaseType, ['mysql', 'mariadb'], true)) {
                 try {
                     $deploymentService->persistLaravelRuntimeDriversOnCompose(
                         $ssh,
@@ -4836,14 +4851,14 @@ PHP;
                 }
             }
 
-            match ($databaseTemplate->type) {
+            match ($databaseType) {
                 'mysql', 'mariadb' => $deploymentService
                     ->syncMysqlSidecarCredentials($ssh, $containerPath, $syncEnv),
                 'postgresql' => $deploymentService
                     ->syncPostgresqlSidecarCredentials($ssh, $containerPath, $syncEnv, $service),
                 'mongodb' => $deploymentService
                     ->syncMongodbSidecarCredentials($ssh, $containerPath, $syncEnv),
-                default => throw new \RuntimeException('Unsupported database type: '.$databaseTemplate->type),
+                default => throw new \RuntimeException('Unsupported database type: '.$databaseType),
             };
 
             $stack = $this->resolveStackSlug($service);
@@ -4885,7 +4900,7 @@ PHP;
                     ]);
                 }
 
-                if (in_array((string) $databaseTemplate->type, ['mysql', 'mariadb'], true)) {
+                if (in_array($databaseType, ['mysql', 'mariadb'], true)) {
                     try {
                         $deploymentService->syncMysqlSidecarCredentials($ssh, $containerPath, $syncEnv);
                     } catch (\Throwable $e) {
@@ -4942,7 +4957,7 @@ PHP;
                     ]);
                 }
 
-                if ($stack === 'wordpress' && in_array((string) $databaseTemplate->type, ['mysql', 'mariadb'], true)) {
+                if ($stack === 'wordpress' && in_array($databaseType, ['mysql', 'mariadb'], true)) {
                     try {
                         $deploymentService->syncMysqlSidecarCredentials($ssh, $containerPath, $syncEnv);
                     } catch (\Throwable $e) {
@@ -4957,8 +4972,8 @@ PHP;
             $probe = $deploymentService->probeApplicationDatabaseAccess(
                 $ssh,
                 $deployment->container_name,
-                (string) $databaseTemplate->type,
-                $this->envForRuntimeDatabaseProbe($envVars, (string) $databaseTemplate->type),
+                $databaseType,
+                $this->envForRuntimeDatabaseProbe($envVars, $databaseType),
                 $stack,
                 $containerPath
             );
@@ -4978,7 +4993,7 @@ PHP;
                 return [
                     'success' => false,
                     'message' => $this->databaseRepairLiveFailureMessage(
-                        (string) $databaseTemplate->type,
+                        $databaseType,
                         $message,
                         (string) ($probe['error'] ?? 'unknown error'),
                         (string) ($envVars['DB_HOST'] ?? 'db'),
@@ -4987,7 +5002,7 @@ PHP;
                             $ssh,
                             $containerPath,
                             $envVars,
-                            (string) $databaseTemplate->type
+                            $databaseType
                         )
                     ),
                 ];
@@ -4996,7 +5011,7 @@ PHP;
             $tableCount = $deploymentService->countApplicationDatabaseTables(
                 $ssh,
                 $deployment->container_name,
-                (string) $databaseTemplate->type,
+                $databaseType,
                 $envVars,
                 $stack,
                 $containerPath
