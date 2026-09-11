@@ -16,6 +16,10 @@ class ContainerDoctorInfrastructureAnalyzer
     public function findings(string $logs, string $stack, array $snapshot = []): array
     {
         $haystack = $this->haystack($logs, $snapshot);
+        // Matchers only see the haystack, which always carries status and image
+        // strings and so is never empty. Whether the application itself printed
+        // anything is a separate fact, and a decisive one.
+        $snapshot['app_said_nothing'] = $this->logIsSilent($logs, $snapshot);
         $findings = [];
         $emitted = [];
 
@@ -50,6 +54,14 @@ class ContainerDoctorInfrastructureAnalyzer
         }
 
         $ids = array_column($findings, 'id');
+        if (in_array('container_exits_without_output', $ids, true)) {
+            // "Read the boot error in Logs" is a dead end when there is no log.
+            $findings = array_values(array_filter(
+                $findings,
+                fn (array $f) => ($f['id'] ?? '') !== 'container_crash_loop'
+            ));
+        }
+
         if (in_array('nginx_boot_failed', $ids, true)) {
             $findings = array_values(array_filter(
                 $findings,
@@ -63,6 +75,29 @@ class ContainerDoctorInfrastructureAnalyzer
         }
 
         return array_values($findings);
+    }
+
+    /**
+     * True when the container produced no output of its own.
+     *
+     * Docker's own restart notices are not the application speaking, so they
+     * are stripped before deciding. A handful of characters is still silence.
+     *
+     * @param  array<string, mixed>  $snapshot
+     */
+    public function logIsSilent(string $logs, array $snapshot = []): bool
+    {
+        $lines = array_filter(
+            preg_split('/\R/', $logs."\n".implode("\n", $snapshot['crash_logs'] ?? [])) ?: [],
+            static function (string $line): bool {
+                $line = trim($line);
+
+                return $line !== ''
+                    && preg_match('/^(Restarting|Container\s|Attaching to|\S+\s+exited with code)/i', $line) !== 1;
+            }
+        );
+
+        return $lines === [];
     }
 
     /**
@@ -459,6 +494,36 @@ class ContainerDoctorInfrastructureAnalyzer
                 'manual_steps' => [
                     'Recreate containers (keeps the database volume).',
                     'If MySQL keeps restarting, check host disk and the DB sidecar logs.',
+                ],
+            ],
+            [
+                // A crash loop with an empty log is the hardest failure there is
+                // to explain, because the usual advice — read the boot error —
+                // has nothing to read. It nearly always means the start command
+                // died before the application ran.
+                'id' => 'container_exits_without_output',
+                'severity' => 'critical',
+                'stacks' => ['*'],
+                'patterns' => ['/Restarting \(\d+\)/i'],
+                'match' => function (string $haystack, array $snapshot): bool {
+                    if (! empty($snapshot['oom'])) {
+                        return false;
+                    }
+
+                    return ($snapshot['restarting'] ?? false) === true
+                        && ($snapshot['app_said_nothing'] ?? false) === true;
+                },
+                'title' => 'The container is exiting before it prints anything',
+                'summary' => 'The app container restarts with a non-zero exit and an empty log, which means it '
+                    .'failed before your application ran. The usual cause is the start command not finding what it '
+                    .'expected: a dependency file such as requirements.txt or package.json that moved or was renamed, '
+                    .'or an application directory that is no longer where the last deploy pinned it.',
+                'treat_action' => 'recreate_application',
+                'treat_label' => 'Recreate containers',
+                'manual_steps' => [
+                    'In Files, confirm your dependency file is inside the directory shown in the start command above.',
+                    'If you moved the application into a different folder, redeploy so the platform re-detects the root.',
+                    'Then Recreate containers and run this check again.',
                 ],
             ],
             [

@@ -2450,18 +2450,28 @@ class ContainerApplicationRuntimeService
         $buildBranch = $installForBuild.' && '.$binFix.' && '.$prepareStep.$buildCommand
             .($pruneStep !== '' ? ' && '.$pruneStep : '');
 
-        return $openssl.'[ -f package.json ] && { if '.$artifactMissingCheck.'; then rm -rf node_modules && '.$buildBranch.'; else '.$steadyStateInstall.' && '.$binFix.'; fi; }';
+        // Same shape as the Python and Ruby bootstraps: an absent manifest skips
+        // the install rather than killing the shell before the app ever runs. A
+        // failed install still returns non-zero and still stops the boot.
+        return $openssl.'if [ -f package.json ]; then if '.$artifactMissingCheck.'; then rm -rf node_modules && '.$buildBranch.'; else '.$steadyStateInstall.' && '.$binFix.'; fi; fi';
     }
 
     private function rubyBootstrap(): string
     {
-        return '[ -f Gemfile ] && bundle install --without development test';
+        return 'if [ -f Gemfile ]; then bundle install --without development test; fi';
     }
 
     private function pythonBootstrap(): string
     {
         // Ensure local packages (app/, src/) import when uvicorn loads the ASGI module.
+        //
+        // `if/fi`, never `[ -f x ] && install`. Chained with &&, a missing
+        // requirements.txt made the test itself the failure: the shell exited 1
+        // before reaching the app, printing absolutely nothing, and Docker
+        // restarted it forever. A crash-loop with an empty log is the hardest
+        // thing there is to diagnose, and the platform was manufacturing it.
+        // Skipping the install instead lets the app start and say what is wrong.
         return 'export PYTHONPATH=.:${PYTHONPATH:-} && '
-            .'[ -f requirements.txt ] && pip install --no-cache-dir -r requirements.txt';
+            .'if [ -f requirements.txt ]; then pip install --no-cache-dir -r requirements.txt; fi';
     }
 }
