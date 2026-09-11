@@ -2,6 +2,7 @@
 
 namespace App\Services\Provisioning;
 
+use App\Exceptions\ApplicationConfigurationRequiredException;
 use App\Models\ContainerDeployment;
 use App\Models\ContainerGitPull;
 use App\Models\Service;
@@ -498,6 +499,8 @@ class ContainerGitRepositoryService
                 $this->deleteRemotePathQuietly($ssh, $previousAppPath);
             }
             $this->clearReplacementState($pull);
+        } catch (ApplicationConfigurationRequiredException $e) {
+            $this->holdPullForConfiguration($pull, $service, $deployment, $ssh, $e);
         } catch (\Throwable $e) {
             $pull->refresh();
             $replacementState = is_array($pull->options)
@@ -841,6 +844,38 @@ class ContainerGitRepositoryService
     {
         $pull->updateStep($key, 'skipped', $message);
         $pull->appendLog('Step skipped: '.$message);
+    }
+
+    /**
+     * The code pulled; what is missing are values only the customer holds.
+     *
+     * Park the stack on the setup notice exactly as a deploy does, record the
+     * variable names so the Environment tab lists them, and end the pull with a
+     * message naming them. Previously this surfaced as a raw traceback under a
+     * failed step, which invited a retry that could not succeed until the
+     * values were set.
+     */
+    public function holdPullForConfiguration(
+        ContainerGitPull $pull,
+        Service $service,
+        ContainerDeployment $deployment,
+        SSHService $ssh,
+        ApplicationConfigurationRequiredException $exception,
+    ): void {
+        $missing = $exception->missingVariables();
+
+        try {
+            app(ContainerConfigurationHoldService::class)->hold($service, $deployment, $ssh, $missing);
+        } catch (\Throwable $e) {
+            // Never lose the cause to a failure in reporting it.
+            $pull->appendLog('Could not park the application for configuration: '.$e->getMessage());
+        }
+
+        if ($missing !== []) {
+            $pull->appendLog('Application configuration required: '.implode(', ', $missing));
+        }
+
+        $this->failPull($pull, $exception->getMessage());
     }
 
     private function failPull(ContainerGitPull $pull, string $message): void

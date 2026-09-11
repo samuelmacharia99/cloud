@@ -35,6 +35,19 @@ class ContainerGitPullErrorPresenter
         $message = strtolower($details);
         $step = $this->failedStepKey($pull);
 
+        // Checked before anything else: the words below also appear in genuine
+        // build failures, and a customer who needs to add an API key should not
+        // first be told to check their dependencies.
+        if (str_contains($message, 'environment variables before it can start')
+            || str_contains($message, 'environment variables that have not been set')) {
+            return $this->result(
+                'Your application needs configuration before it can start.',
+                'The code pulled successfully. Add the variables named below under Environment on this service, '
+                    .'apply them, then start the pull again. Your site shows a setup notice until they are set.',
+                $details,
+            );
+        }
+
         if ($this->contains($message, [
             'authentication failed',
             'could not read username',

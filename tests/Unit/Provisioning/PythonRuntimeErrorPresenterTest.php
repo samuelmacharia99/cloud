@@ -141,4 +141,85 @@ class PythonRuntimeErrorPresenterTest extends TestCase
             For further information visit https://errors.pydantic.dev/2.13/v/missing
         LOG;
     }
+
+    #[Test]
+    public function it_reads_an_application_that_lists_its_own_missing_configuration(): void
+    {
+        $result = $this->presenter()->present(<<<'LOG'
+        Traceback (most recent call last):
+          File "/app/apps/backend/app/core/config.py", line 106, in get_settings
+          File "/usr/local/lib/python3.11/site-packages/pydantic/main.py", line 263, in __init__
+        pydantic_core._pydantic_core.ValidationError: 1 validation error for Settings
+          Value error, Missing required production config: MPESA_CONSUMER_KEY, MPESA_CONSUMER_SECRET, MPESA_SHORTCODE, MPESA_PASSKEY, MPESA_CALLBACK_URL, NES_API_KEY [type=value_error, input_value={'SECRET_KEY': 'tlSVdtmEd...python-db:5432/s457_db'}, input_type=dict]
+        LOG);
+
+        $this->assertNotNull($result);
+        $this->assertSame([
+            'MPESA_CONSUMER_KEY',
+            'MPESA_CONSUMER_SECRET',
+            'MPESA_SHORTCODE',
+            'MPESA_PASSKEY',
+            'MPESA_CALLBACK_URL',
+            'NES_API_KEY',
+        ], $result['missing_variables']);
+    }
+
+    #[Test]
+    public function it_never_reports_a_value_the_customer_already_supplied(): void
+    {
+        // pydantic echoes the settings it DID receive in input_value. Reading
+        // past "[type=" would name SECRET_KEY as missing when it is present.
+        $result = $this->presenter()->present(
+            'ValidationError: 1 validation error for Settings'."\n"
+            .'  Value error, Missing required production config: NES_API_KEY '
+            .'[type=value_error, input_value={\'SECRET_KEY\': \'abc\', \'DATABASE_URL\': \'postgres://x\'}, input_type=dict]'
+        );
+
+        $this->assertSame(['NES_API_KEY'], $result['missing_variables']);
+    }
+
+    #[Test]
+    public function it_reads_django_asking_for_an_environment_variable(): void
+    {
+        $result = $this->presenter()->present(
+            "django.core.exceptions.ImproperlyConfigured: Set the SECRET_KEY environment variable\n"
+        );
+
+        $this->assertNotNull($result);
+        $this->assertSame(['SECRET_KEY'], $result['missing_variables']);
+    }
+
+    #[Test]
+    public function it_reads_a_bare_environment_lookup_that_raised(): void
+    {
+        $result = $this->presenter()->present(<<<'LOG'
+        Traceback (most recent call last):
+          File "/app/settings.py", line 12, in <module>
+            STRIPE_KEY = os.environ['STRIPE_SECRET_KEY']
+        KeyError: 'STRIPE_SECRET_KEY'
+        LOG);
+
+        $this->assertNotNull($result);
+        $this->assertSame(['STRIPE_SECRET_KEY'], $result['missing_variables']);
+    }
+
+    #[Test]
+    public function a_key_error_on_an_ordinary_dictionary_is_left_alone(): void
+    {
+        // An application bug, not a missing setting. Naming it would send the
+        // customer looking for a variable that was never meant to exist.
+        $result = $this->presenter()->present(<<<'LOG'
+        Traceback (most recent call last):
+          File "/app/apps/backend/app/services/pricing.py", line 40, in rate
+            return table['PREMIUM_TIER']
+        KeyError: 'PREMIUM_TIER'
+        LOG);
+
+        $this->assertNull($result);
+    }
+
+    private function presenter(): PythonRuntimeErrorPresenter
+    {
+        return app(PythonRuntimeErrorPresenter::class);
+    }
 }

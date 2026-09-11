@@ -49,6 +49,140 @@ class PythonRuntimeErrorPresenter
     }
 
     /**
+     * The names an application says it is missing, whichever way it says it.
+     *
+     * @return list<string>
+     */
+    private function missingSettingsFields(string $output): array
+    {
+        $fields = $this->pydanticRequiredFields($output);
+        if ($fields !== []) {
+            return $fields;
+        }
+
+        $fields = $this->namedMissingConfiguration($output);
+        if ($fields !== []) {
+            return $fields;
+        }
+
+        $fields = $this->djangoImproperlyConfigured($output);
+        if ($fields !== []) {
+            return $fields;
+        }
+
+        return $this->environmentKeyError($output);
+    }
+
+    /**
+     * An application that checks its own configuration reports every absent
+     * name in one sentence rather than as pydantic fields:
+     *
+     *     Value error, Missing required production config: MPESA_SHORTCODE, NES_API_KEY [type=value_error, input_value={...}]
+     *
+     * Unreadable before, because it contains no "Field required" and the
+     * traceback around it says nothing about configuration at all.
+     *
+     * @return list<string>
+     */
+    private function namedMissingConfiguration(string $output): array
+    {
+        $fields = [];
+
+        foreach (preg_split('/\R/', $output) ?: [] as $line) {
+            if (stripos($line, 'missing') === false) {
+                continue;
+            }
+
+            // pydantic appends "[type=..., input_value={...}]", and input_value
+            // echoes the settings that WERE supplied. Reading past this point
+            // would report the values the customer already set as missing ones.
+            $line = (string) preg_replace('/\s*\[type=.*$/s', '', $line);
+
+            $separator = strrpos($line, ':');
+            if ($separator === false) {
+                continue;
+            }
+
+            foreach (explode(',', substr($line, $separator + 1)) as $candidate) {
+                $name = trim($candidate, " \t\n\r\0\x0B.\"'");
+                if ($this->looksLikeEnvironmentName($name)) {
+                    $fields[$name] = true;
+                }
+            }
+        }
+
+        return array_keys($fields);
+    }
+
+    /**
+     * Django's way of saying the same thing:
+     *
+     *     ImproperlyConfigured: Set the SECRET_KEY environment variable
+     *
+     * The name is embedded in a sentence rather than listed, so it is read as a
+     * token. An underscore is required and the sentence has to be about a
+     * setting, which keeps acronyms such as WSGI out of the answer.
+     *
+     * @return list<string>
+     */
+    private function djangoImproperlyConfigured(string $output): array
+    {
+        if (! preg_match('/ImproperlyConfigured:(.*)$/mi', $output, $matches)) {
+            return [];
+        }
+
+        $message = trim($matches[1]);
+        if (stripos($message, 'environment') === false && stripos($message, 'setting') === false) {
+            return [];
+        }
+
+        if (! preg_match_all('/\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/', $message, $names)) {
+            return [];
+        }
+
+        return array_values(array_unique($names[0]));
+    }
+
+    /**
+     * A bare lookup on the environment, which raises KeyError with the name.
+     *
+     * Guarded on the traceback actually touching the environment: a KeyError on
+     * an ordinary dictionary is a bug in the application, not a missing setting,
+     * and telling a customer to go and add it would waste their afternoon.
+     *
+     * @return list<string>
+     */
+    private function environmentKeyError(string $output): array
+    {
+        if (! preg_match('/\b(?:os\.environ|getenv|environ\[)/i', $output)) {
+            return [];
+        }
+
+        if (! preg_match_all('/KeyError:\s*[\'"]([^\'"]+)[\'"]/', $output, $matches)) {
+            return [];
+        }
+
+        $fields = [];
+        foreach ($matches[1] as $name) {
+            $name = trim((string) $name);
+            if ($this->looksLikeEnvironmentName($name)) {
+                $fields[$name] = true;
+            }
+        }
+
+        return array_keys($fields);
+    }
+
+    /**
+     * Conservative on purpose. Naming something that is not a variable sends a
+     * customer looking for a setting that does not exist.
+     */
+    private function looksLikeEnvironmentName(string $name): bool
+    {
+        return preg_match('/^[A-Z][A-Z0-9_]{2,}$/', $name) === 1;
+    }
+
+    /**
      * pydantic-settings prints each unsatisfied field as its own bare line,
      * followed by an indented "Field required" line:
      *
@@ -57,7 +191,7 @@ class PythonRuntimeErrorPresenter
      *
      * @return list<string>
      */
-    private function missingSettingsFields(string $output): array
+    private function pydanticRequiredFields(string $output): array
     {
         if (! str_contains($output, 'Field required')) {
             return [];

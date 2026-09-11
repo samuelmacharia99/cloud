@@ -35,6 +35,23 @@ class ContainerGitPullErrorPresenterTest extends TestCase
     }
 
     #[Test]
+    public function it_tells_a_customer_to_add_configuration_rather_than_debug_a_traceback(): void
+    {
+        $pull = $this->failedPull(
+            'runtime',
+            'Refresh application runtime',
+            'The application needs these environment variables before it can start: '
+                .'MPESA_CONSUMER_KEY, MPESA_SHORTCODE, NES_API_KEY.',
+        );
+
+        $error = $this->presenter->present($pull);
+
+        $this->assertSame('Your application needs configuration before it can start.', $error['title']);
+        $this->assertStringContainsString('under Environment', $error['guidance']);
+        $this->assertStringContainsString('MPESA_SHORTCODE', $error['details']);
+    }
+
+    #[Test]
     public function it_uses_the_failed_pipeline_step_for_actionable_guidance(): void
     {
         $pull = $this->failedPull(
