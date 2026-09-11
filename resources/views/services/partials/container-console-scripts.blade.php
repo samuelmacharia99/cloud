@@ -9,6 +9,8 @@ function containerEnvironmentPanel(initialRows) {
             value: row.value || '',
             sensitive: !!row.sensitive,
             platform_managed: !!row.platform_managed,
+            suggested: !!row.suggested,
+            state: row.state || 'set',
             reveal: false,
             isNew: false,
         })),
@@ -23,9 +25,36 @@ function containerEnvironmentPanel(initialRows) {
                 value: '',
                 sensitive: false,
                 platform_managed: false,
+                suggested: false,
+                state: 'set',
                 reveal: true,
                 isNew: true,
             });
+        },
+        // A row that looks like every other row is why somebody could not tell
+        // which four settings had stopped their application.
+        stateLabel(row) {
+            if (row.isNew) return '';
+            return ({
+                needs_value: 'Needs a value',
+                rejected: 'Value rejected by your app',
+                suggested: 'Suggested by your repository',
+                platform: 'Platform-managed',
+            })[row.state] || '';
+        },
+        stateBadgeClass(row) {
+            return ({
+                needs_value: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200',
+                rejected: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200',
+                suggested: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
+                platform: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200',
+            })[row.state] || 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300';
+        },
+        rowClass(row) {
+            if (row.state === 'needs_value' || row.state === 'rejected') {
+                return 'bg-red-50/60 dark:bg-red-900/10';
+            }
+            return 'bg-white dark:bg-slate-900';
         },
         removeRow(index) {
             const row = this.rows[index];
@@ -37,7 +66,14 @@ function containerEnvironmentPanel(initialRows) {
                 return;
             }
 
-            if (!confirm(`Remove ${row.key}? The app will restart to apply.`)) {
+            // Dismissing a suggestion changes nothing about the running
+            // container, so promising a restart would be a second lie on top of
+            // the one where the button did nothing at all.
+            const prompt = row.suggested
+                ? `Stop suggesting ${row.key}? It will not be offered again.`
+                : `Remove ${row.key}? The app will restart to apply.`;
+
+            if (!confirm(prompt)) {
                 return;
             }
 

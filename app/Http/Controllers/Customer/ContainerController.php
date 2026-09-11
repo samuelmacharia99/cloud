@@ -2088,6 +2088,12 @@ class ContainerController extends Controller
         $variables = is_array($panel['variables'] ?? null) ? $panel['variables'] : [];
 
         $panel['variables'] = array_map(static function (array $row): array {
+            // A suggestion has no value to hide, and "[redacted]" on one tells
+            // an operator a secret is set where none is.
+            if (! empty($row['suggested'])) {
+                return $row;
+            }
+
             $row['value'] = '[redacted]';
             $row['sensitive'] = true;
 

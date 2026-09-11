@@ -130,6 +130,13 @@ class ContainerStagingService
             if (! empty($row['platform_managed'])) {
                 continue;
             }
+            // A suggestion is a prompt, not a value. Copying one into staging
+            // writes an empty setting, which an application treats as a real
+            // answer and refuses, where no setting at all falls back to its own
+            // default.
+            if (! empty($row['suggested'])) {
+                continue;
+            }
             $variables[$key] = (string) ($row['value'] ?? '');
         }
 

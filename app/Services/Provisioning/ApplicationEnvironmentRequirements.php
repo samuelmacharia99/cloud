@@ -28,6 +28,8 @@ class ApplicationEnvironmentRequirements
 
     public const INVALID_META_KEY = 'invalid_env_keys';
 
+    public const DISMISSED_META_KEY = 'dismissed_env_keys';
+
     /** @var list<string> */
     private const EXAMPLE_FILES = ['.env.example', '.env.sample', '.env.template', 'env.example'];
 
@@ -169,6 +171,36 @@ class ApplicationEnvironmentRequirements
     }
 
     /**
+     * Suggestions the customer has waved away.
+     *
+     * Permanent, and safe to be permanent only because this list is never
+     * consulted for what the application actually stops on. A dismissed name
+     * that later appears in a crash comes straight back as something to fix,
+     * however many times it was dismissed as a suggestion.
+     *
+     * @param  list<string>  $keys
+     */
+    public function rememberDismissed(Service $service, array $keys): void
+    {
+        if ($keys === []) {
+            return;
+        }
+
+        $this->store($service, self::DISMISSED_META_KEY, array_values(array_unique([
+            ...$this->dismissed($service),
+            ...$keys,
+        ])));
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function dismissed(Service $service): array
+    {
+        return $this->recall($service, self::DISMISSED_META_KEY);
+    }
+
+    /**
      * @param  list<string>  $keys
      */
     public function rememberDeclared(Service $service, array $keys): void
@@ -215,6 +247,10 @@ class ApplicationEnvironmentRequirements
         return array_values(array_diff(
             $this->unsatisfied($this->declared($service), $this->environmentOf($deployment)),
             $required,
+            // Waved away on purpose. Unlike the required list, a suggestion is
+            // the platform volunteering something, and a customer who has said
+            // no once should not have to say it after every pull.
+            $this->dismissed($service),
         ));
     }
 

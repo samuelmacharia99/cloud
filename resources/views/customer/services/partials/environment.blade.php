@@ -141,7 +141,7 @@
                 </thead>
                 <tbody class="divide-y divide-slate-200 dark:divide-slate-700">
                     <template x-for="(row, index) in rows" :key="row._id">
-                        <tr class="bg-white dark:bg-slate-900">
+                        <tr :class="rowClass(row)">
                             <td class="px-4 py-3 align-top">
                                 <input
                                     type="text"
@@ -152,7 +152,12 @@
                                     placeholder="MY_KEY"
                                     required
                                 >
-                                <p x-show="row.platform_managed" class="mt-1 text-[11px] text-slate-500 dark:text-slate-400">Platform-managed</p>
+                                <p
+                                    x-show="stateLabel(row)"
+                                    class="mt-1 inline-block rounded px-1.5 py-0.5 text-[11px] font-medium"
+                                    :class="stateBadgeClass(row)"
+                                    x-text="stateLabel(row)"
+                                ></p>
                             </td>
                             <td class="px-4 py-3 align-top">
                                 <div class="flex gap-2">
@@ -161,7 +166,7 @@
                                         :name="'variables[' + index + '][value]'"
                                         x-model="row.value"
                                         class="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 font-mono text-xs text-slate-900 dark:text-white"
-                                        placeholder="value"
+                                        :placeholder="row.suggested ? 'not set — your app falls back to its own default' : 'value'"
                                     >
                                     <button
                                         type="button"
@@ -177,10 +182,10 @@
                                     type="button"
                                     x-show="!row.platform_managed"
                                     @click="removeRow(index)"
-                                    class="text-xs text-red-600 dark:text-red-400 hover:underline"
-                                >
-                                    Remove
-                                </button>
+                                    class="text-xs text-red-600 dark:text-red-400 hover:underline disabled:opacity-40 disabled:no-underline disabled:cursor-not-allowed"
+                                    x-text="row.suggested ? 'Dismiss' : 'Remove'"
+                                    @if (! $canSaveEnvironment) disabled @endif
+                                ></button>
                             </td>
                         </tr>
                     </template>

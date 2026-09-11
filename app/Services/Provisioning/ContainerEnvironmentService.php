@@ -10,6 +10,21 @@ use Illuminate\Validation\ValidationException;
 
 class ContainerEnvironmentService
 {
+    /** The application named it on start-up and it still has no usable value. */
+    public const STATE_NEEDS_VALUE = 'needs_value';
+
+    /** It holds a value the application refused. */
+    public const STATE_REJECTED = 'rejected';
+
+    /** The repository's example file mentions it and nobody ever set it. */
+    public const STATE_SUGGESTED = 'suggested';
+
+    /** Database wiring and the like: editable, but the platform owns it. */
+    public const STATE_PLATFORM = 'platform';
+
+    /** An ordinary value the customer chose. */
+    public const STATE_SET = 'set';
+
     /**
      * Keys owned by the platform (DB sidecar / URLs). Editable only with apply + sync.
      *
@@ -62,52 +77,55 @@ class ContainerEnvironmentService
 
         ksort($env);
 
+        $requirements = app(ApplicationEnvironmentRequirements::class);
+
+        // Three questions with three different answers. Required means the
+        // application named it on start-up and it still has no usable value.
+        // Rejected means it has one the application refused. Suggested means
+        // the repository's example file mentions it and nobody ever set it.
+        $required = $requirements->outstandingRequired($service, $deployment);
+        $rejected = $requirements->invalid($service);
+        $suggested = $requirements->outstandingDeclared($service, $deployment);
+
         $variables = [];
+        $seen = [];
+
         foreach ($env as $key => $value) {
             $key = (string) $key;
             if ($key === '') {
                 continue;
             }
 
-            $variables[] = [
-                'key' => $key,
-                'value' => (string) $value,
-                'sensitive' => $this->isSensitiveKey($key),
-                'platform_managed' => $this->isPlatformManagedKey($key),
-                'required_by_app' => false,
-                'rejected_by_app' => false,
-                'unset' => false,
-            ];
+            $seen[$key] = true;
+            $variables[] = $this->panelRow(
+                $key,
+                (string) $value,
+                required: in_array($key, $required, true),
+                rejected: in_array($key, $rejected, true),
+                suggested: false,
+            );
         }
 
-        // Keys the application asked for and nothing has set. Required ones are
-        // holding the app from starting; declared ones are optional settings its
-        // own example file mentions. Neither is written into the container until
-        // the customer supplies a value.
-        $requirements = app(ApplicationEnvironmentRequirements::class);
-        $required = $requirements->outstandingRequired($service, $deployment);
-        $suggested = $requirements->outstandingDeclared($service, $deployment);
-
-        // Names the application rejected the value of. They are set, so they
-        // are already rows above; this marks them rather than adding them.
-        $rejected = $requirements->invalid($service);
-        foreach ($variables as $index => $variable) {
-            if (in_array($variable['key'], $rejected, true)) {
-                $variables[$index]['rejected_by_app'] = true;
-            }
-        }
-
+        // Only the names with no row yet. A setting present and empty is both
+        // stored and outstanding, and appending it here as well put it on the
+        // screen twice: the same key, two identical empty boxes, on exactly the
+        // settings a customer had come to the page to fix.
         foreach ([...$required, ...$suggested] as $key) {
-            $variables[] = [
-                'key' => $key,
-                'value' => '',
-                'sensitive' => $this->isSensitiveKey($key),
-                'platform_managed' => false,
-                'required_by_app' => in_array($key, $required, true),
-                'rejected_by_app' => false,
-                'unset' => true,
-            ];
+            if (isset($seen[$key])) {
+                continue;
+            }
+
+            $seen[$key] = true;
+            $variables[] = $this->panelRow(
+                $key,
+                '',
+                required: in_array($key, $required, true),
+                rejected: false,
+                suggested: ! in_array($key, $required, true),
+            );
         }
+
+        $variables = $this->attentionFirst($variables);
 
         $status = $deployment?->status;
         $canSave = $deployment !== null && ! in_array($status, ['terminated'], true);
@@ -125,6 +143,72 @@ class ContainerEnvironmentService
             'suggested_by_app' => $suggested,
             'rejected_by_app' => $rejected,
         ];
+    }
+
+    /**
+     * One row, and the single word the view switches on.
+     *
+     * Ranked rather than combined: a setting that is both rejected and missing
+     * is missing, because supplying it is the one action that fixes both.
+     *
+     * @return array<string, mixed>
+     */
+    private function panelRow(
+        string $key,
+        string $value,
+        bool $required,
+        bool $rejected,
+        bool $suggested,
+    ): array {
+        $platformManaged = $this->isPlatformManagedKey($key);
+
+        $state = match (true) {
+            $required => self::STATE_NEEDS_VALUE,
+            $rejected => self::STATE_REJECTED,
+            $suggested => self::STATE_SUGGESTED,
+            $platformManaged => self::STATE_PLATFORM,
+            default => self::STATE_SET,
+        };
+
+        return [
+            'key' => $key,
+            'value' => $value,
+            'sensitive' => $this->isSensitiveKey($key),
+            'platform_managed' => $platformManaged,
+            'required_by_app' => $required,
+            'rejected_by_app' => $rejected,
+            'unset' => $suggested || ($required && trim($value) === ''),
+            'suggested' => $suggested,
+            'state' => $state,
+        ];
+    }
+
+    /**
+     * Put the rows holding the application down where they can be seen.
+     *
+     * usort is stable in PHP 8, so the alphabetical order the environment was
+     * read in survives inside each group. Twenty platform keys no longer sit
+     * between a customer and the four settings their site is stopped on.
+     *
+     * @param  list<array<string, mixed>>  $variables
+     * @return list<array<string, mixed>>
+     */
+    private function attentionFirst(array $variables): array
+    {
+        $weight = [
+            self::STATE_NEEDS_VALUE => 0,
+            self::STATE_REJECTED => 1,
+            self::STATE_SET => 2,
+            self::STATE_PLATFORM => 3,
+            self::STATE_SUGGESTED => 4,
+        ];
+
+        usort(
+            $variables,
+            fn (array $a, array $b): int => ($weight[$a['state']] ?? 2) <=> ($weight[$b['state']] ?? 2),
+        );
+
+        return $variables;
     }
 
     /**
@@ -215,7 +299,7 @@ class ContainerEnvironmentService
 
     /**
      * @param  list<string>  $keys
-     * @return array{deleted: int, message: string}
+     * @return array{deleted: int, dismissed: list<string>, message: string}
      */
     public function deleteVariables(Service $service, array $keys, bool $restart = true): array
     {
@@ -227,11 +311,27 @@ class ContainerEnvironmentService
         }
 
         $current = is_array($deployment->env_values) ? $deployment->env_values : [];
+        $requirements = app(ApplicationEnvironmentRequirements::class);
+        $declared = $requirements->declared($service);
         $deleted = 0;
+        $dismissed = [];
 
         foreach ($keys as $key) {
             $key = strtoupper(trim((string) $key));
-            if ($key === '' || ! array_key_exists($key, $current)) {
+            if ($key === '') {
+                continue;
+            }
+
+            if (! array_key_exists($key, $current)) {
+                // A name the repository suggests and nobody ever set. There is
+                // nothing to delete, and reporting that removed nothing left
+                // the row on screen after every reload, because the panel
+                // rebuilds it from the example file. Remembering the refusal is
+                // what the customer was actually asking for.
+                if (in_array($key, $declared, true)) {
+                    $dismissed[] = $key;
+                }
+
                 continue;
             }
 
@@ -251,9 +351,21 @@ class ContainerEnvironmentService
         $meta['env_values'] = $current;
         $service->update(['service_meta' => $meta]);
 
-        $message = $deleted === 1
-            ? 'Environment variable removed.'
-            : "{$deleted} environment variables removed.";
+        if ($dismissed !== []) {
+            $requirements->rememberDismissed($service->fresh() ?? $service, $dismissed);
+        }
+
+        $message = match (true) {
+            $deleted === 0 && $dismissed !== [] => count($dismissed) === 1
+                ? 'Suggestion dismissed. It will not be offered again.'
+                : count($dismissed).' suggestions dismissed. They will not be offered again.',
+            $deleted === 1 => 'Environment variable removed.',
+            default => "{$deleted} environment variables removed.",
+        };
+
+        if ($deleted > 0 && $dismissed !== []) {
+            $message .= ' '.count($dismissed).' suggestion(s) dismissed.';
+        }
 
         if ($restart && $deleted > 0) {
             $confirmed = app(ContainerDeploymentService::class)
@@ -265,6 +377,7 @@ class ContainerEnvironmentService
 
         return [
             'deleted' => $deleted,
+            'dismissed' => $dismissed,
             'message' => $message,
         ];
     }

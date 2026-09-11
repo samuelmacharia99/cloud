@@ -79,9 +79,16 @@ class ContainerEnvironmentServiceTest extends TestCase
 
         $panel = (new ContainerEnvironmentService)->buildPanelState($service, $deployment);
 
-        $this->assertSame(['APP_ENV', 'DB_PASSWORD', 'ZZ_CUSTOM'], array_column($panel['variables'], 'key'));
-        $this->assertTrue($panel['variables'][1]['sensitive']);
-        $this->assertTrue($panel['variables'][1]['platform_managed']);
+        // Alphabetical within a group, but the platform's own database wiring
+        // sinks below the customer's values. On a service with twenty of these,
+        // the rows somebody came to the page to fix were buried among them.
+        $this->assertSame(['APP_ENV', 'ZZ_CUSTOM', 'DB_PASSWORD'], array_column($panel['variables'], 'key'));
+
+        $password = collect($panel['variables'])->firstWhere('key', 'DB_PASSWORD');
+        $this->assertTrue($password['sensitive']);
+        $this->assertTrue($password['platform_managed']);
+        $this->assertSame(ContainerEnvironmentService::STATE_PLATFORM, $password['state']);
+        $this->assertSame(ContainerEnvironmentService::STATE_SET, $panel['variables'][0]['state']);
         $this->assertTrue($panel['can_save']);
         $this->assertTrue($panel['can_apply']);
     }
