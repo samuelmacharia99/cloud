@@ -97,6 +97,23 @@ class PythonRuntimeErrorPresenter
             ];
         }
 
+        $syncDriver = $this->synchronousDriverOnAsyncEngine($output);
+        if ($syncDriver !== null) {
+            return [
+                'message' => 'The application opens an asynchronous database connection, but its database URL '
+                    ."named the synchronous {$syncDriver} driver, so it refused to start. The platform writes that "
+                    .'URL, and it now names an async driver whenever your dependency list ships one. Pull again to '
+                    .'pick up the corrected URL. If it still fails, add an async driver to the requirements file in '
+                    .'your application root: asyncpg for PostgreSQL, asyncmy or aiomysql for MySQL.',
+                // Nothing here is the customer's to type. The name involved is
+                // DATABASE_URL, which the platform owns, so reporting it as a
+                // missing or unreadable setting would send somebody to the
+                // Environment tab to fix a row they cannot edit.
+                'missing_variables' => [],
+                'unparsable_variables' => [],
+            ];
+        }
+
         $module = $this->unimportableModule($output);
         if ($module !== null) {
             return [
@@ -109,6 +126,28 @@ class PythonRuntimeErrorPresenter
         }
 
         return null;
+    }
+
+    /**
+     * SQLAlchemy's async engine refusing the driver its URL named:
+     *
+     *     sqlalchemy.exc.InvalidRequestError: The asyncio extension requires an
+     *     async driver to be used. The loaded 'psycopg2' is not async.
+     *
+     * Always the platform's fault rather than the customer's, because the
+     * platform is what composes DATABASE_URL.
+     *
+     * @return string|null the synchronous driver that was loaded
+     */
+    private function synchronousDriverOnAsyncEngine(string $output): ?string
+    {
+        $pattern = "/asyncio extension requires an async driver.*?loaded '([A-Za-z0-9_]+)' is not async/is";
+
+        if (preg_match($pattern, $output, $matches) !== 1) {
+            return null;
+        }
+
+        return $matches[1];
     }
 
     /**

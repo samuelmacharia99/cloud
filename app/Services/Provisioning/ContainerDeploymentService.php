@@ -398,8 +398,32 @@ class ContainerDeploymentService
                     // below is rendered, so the value reaches the container.
                     $filled = app(ContainerOriginSettingsService::class)
                         ->fillUnset($deployment, $declared, $envVars);
-                    if ($filled !== []) {
+
+                    // SQLAlchemy reads a bare scheme as the synchronous driver,
+                    // so an application built on create_async_engine cannot
+                    // import against the URL this platform composes. Name the
+                    // driver, but only one the checkout actually ships.
+                    $driverOutcome = ['changed' => [], 'driver' => null, 'status' => 'skipped', 'message' => ''];
+                    if (($template->slug ?? '') === 'python') {
+                        $driverOutcome = app(PythonDatabaseDriverService::class)->align(
+                            $ssh,
+                            $hostAppPath,
+                            (string) data_get($nodeTopology, 'backend.root', ''),
+                            $envVars,
+                        );
+                    }
+
+                    if ($filled !== [] || $driverOutcome['changed'] !== []) {
                         $deployment->update(['env_values' => $envVars]);
+                    }
+
+                    if ($driverOutcome['changed'] !== [] || $driverOutcome['status'] === 'driver_missing') {
+                        $this->recordDeploymentEvent($service, $deployment, 'python_database_driver_resolved', [
+                            'status' => $driverOutcome['status'],
+                            'driver' => $driverOutcome['driver'],
+                            'changed' => $driverOutcome['changed'],
+                            'message' => $driverOutcome['message'],
+                        ]);
                     }
                 }
 
@@ -3704,14 +3728,14 @@ class ContainerDeploymentService
             $env['DB_CONNECTION'] = 'pgsql';
             $env['DB_HOST'] = (string) (($env['DB_HOST'] ?? '') !== '' ? $env['DB_HOST'] : 'db');
             $env['DB_PORT'] = (string) (($env['DB_PORT'] ?? '') !== '' ? $env['DB_PORT'] : '5432');
-            $env['DATABASE_URL'] = sprintf(
+            $env['DATABASE_URL'] = $this->preserveDatabaseUrlDriver(sprintf(
                 'postgresql://%s:%s@%s:%s/%s',
                 rawurlencode($env['DB_USERNAME']),
                 rawurlencode($password),
                 $env['DB_HOST'],
                 $env['DB_PORT'],
                 rawurlencode($database)
-            );
+            ), $env['DATABASE_URL'] ?? null);
         } elseif (in_array($databaseType, ['mysql', 'mariadb'], true)) {
             $dbPassword = trim((string) ($env['DB_PASSWORD'] ?? ''));
             $sidecarPassword = trim((string) ($env['MYSQL_PASSWORD'] ?? ''));
@@ -3750,14 +3774,14 @@ class ContainerDeploymentService
                 $env['WORDPRESS_DB_USER'] = $env['DB_USERNAME'];
                 $env['WORDPRESS_DB_PASSWORD'] = $password;
             }
-            $env['DATABASE_URL'] = sprintf(
+            $env['DATABASE_URL'] = $this->preserveDatabaseUrlDriver(sprintf(
                 'mysql://%s:%s@%s:%s/%s',
                 rawurlencode($env['DB_USERNAME']),
                 rawurlencode($password),
                 $env['DB_HOST'],
                 $env['DB_PORT'],
                 rawurlencode($database)
-            );
+            ), $env['DATABASE_URL'] ?? null);
         }
 
         return [
@@ -5991,28 +6015,60 @@ class ContainerDeploymentService
             $port = (string) (($env['DB_PORT'] ?? '') !== '' ? $env['DB_PORT'] : '3306');
             $env['DB_PORT'] = $port;
             $env['MYSQL_HOST'] = $host;
-            $env['DATABASE_URL'] = sprintf(
+            $env['DATABASE_URL'] = $this->preserveDatabaseUrlDriver(sprintf(
                 'mysql://%s:%s@%s:%s/%s',
                 rawurlencode($username),
                 rawurlencode($password),
                 $host,
                 $port,
                 rawurlencode($database)
-            );
+            ), $env['DATABASE_URL'] ?? null);
         } elseif ($databaseType === 'postgresql') {
             $port = (string) (($env['DB_PORT'] ?? '') !== '' ? $env['DB_PORT'] : '5432');
             $env['DB_PORT'] = $port;
-            $env['DATABASE_URL'] = sprintf(
+            $env['DATABASE_URL'] = $this->preserveDatabaseUrlDriver(sprintf(
                 'postgresql://%s:%s@%s:%s/%s',
                 rawurlencode($username),
                 rawurlencode($password),
                 $host,
                 $port,
                 rawurlencode($database)
-            );
+            ), $env['DATABASE_URL'] ?? null);
         }
 
         return $env;
+    }
+
+    /**
+     * Rebuilding the database URL must not silently un-pin its driver.
+     *
+     * SQLAlchemy reads a bare scheme as the synchronous driver, so a Python
+     * stack on create_async_engine needs `postgresql+asyncpg`. Every rebuild
+     * here composes a bare scheme from the credentials it just aligned, and
+     * dropping the suffix is what crash-looped uvicorn at import time.
+     */
+    private function preserveDatabaseUrlDriver(string $rebuilt, ?string $previous): string
+    {
+        $previous = trim((string) $previous);
+        if ($previous === '') {
+            return $rebuilt;
+        }
+
+        $resolver = app(PythonDatabaseDriverService::class);
+        $driver = $resolver->pinnedDriverOf($previous);
+        $scheme = $resolver->schemeOf($rebuilt);
+
+        if ($driver === null || $scheme === null) {
+            return $rebuilt;
+        }
+
+        // Only carry a driver across when the scheme itself is unchanged. A
+        // stack moved from Postgres to MySQL must not keep asyncpg.
+        if ($scheme !== $resolver->schemeOf($previous)) {
+            return $rebuilt;
+        }
+
+        return preg_replace('#^[A-Za-z0-9]+://#', $scheme.'+'.$driver.'://', $rebuilt, 1) ?? $rebuilt;
     }
 
     /**

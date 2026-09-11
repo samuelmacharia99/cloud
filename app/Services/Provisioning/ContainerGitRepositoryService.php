@@ -867,7 +867,18 @@ class ContainerGitRepositoryService
         // trust list of the service's own domains. Only ever fills a blank,
         // and the runtime step after this one bakes it into compose.
         $filled = app(ContainerOriginSettingsService::class)->fillUnset($deployment, $declared, $envVars);
-        if ($filled !== []) {
+
+        // SQLAlchemy reads a bare scheme as the synchronous driver, and an
+        // application built on create_async_engine refuses to import against
+        // one. The platform composes this URL, so the platform is what has to
+        // name the driver, and it does that from the checkout just synced.
+        $driverOutcome = ['changed' => [], 'driver' => null, 'status' => 'skipped', 'message' => ''];
+        if (($service->effectiveContainerTemplate()?->slug ?? '') === 'python') {
+            $driverOutcome = app(PythonDatabaseDriverService::class)
+                ->align($ssh, $hostAppPath, $backendRoot, $envVars);
+        }
+
+        if ($filled !== [] || $driverOutcome['changed'] !== []) {
             $deployment->update(['env_values' => $envVars]);
         }
 
@@ -883,6 +894,8 @@ class ContainerGitRepositoryService
                 'added' => $added,
                 'removed' => $removed,
                 'filled' => array_keys($filled),
+                'database_driver_status' => $driverOutcome['status'],
+                'database_driver' => $driverOutcome['driver'],
             ],
         );
 
@@ -894,10 +907,16 @@ class ContainerGitRepositoryService
             'added' => $added,
             'removed' => $removed,
             'filled' => array_keys($filled),
+            'database_driver_status' => $driverOutcome['status'],
+            'database_driver' => $driverOutcome['driver'],
         ]);
 
+        $driverNote = in_array($driverOutcome['status'], ['aligned', 'driver_missing'], true)
+            ? ' '.$driverOutcome['message']
+            : '';
+
         if ($declared === []) {
-            return 'No example environment file in the repository; nothing to suggest.';
+            return trim('No example environment file in the repository; nothing to suggest.'.$driverNote);
         }
 
         $summary = count($declared).' setting(s) declared by the repository.';
@@ -911,7 +930,7 @@ class ContainerGitRepositoryService
             $summary .= ' Set from this service\'s own domains: '.implode(', ', array_keys($filled)).'.';
         }
 
-        return $summary;
+        return $summary.$driverNote;
     }
 
     /**

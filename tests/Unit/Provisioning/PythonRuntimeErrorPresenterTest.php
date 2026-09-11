@@ -327,4 +327,35 @@ class PythonRuntimeErrorPresenterTest extends TestCase
 
         $this->assertSame(['NES_API_KEY'], $result['missing_variables']);
     }
+
+    #[Test]
+    public function it_names_the_async_driver_crash_as_the_platform_s_own_to_fix(): void
+    {
+        $result = $this->presenter->present(<<<'LOG'
+          File "/app/apps/backend/app/db/session.py", line 22, in <module>
+          File "/usr/local/lib/python3.11/site-packages/sqlalchemy/ext/asyncio/engine.py", line 121, in create_async_engine
+            raise exc.InvalidRequestError(
+        sqlalchemy.exc.InvalidRequestError: The asyncio extension requires an async driver to be used. The loaded 'psycopg2' is not async.
+        LOG);
+
+        $this->assertNotNull($result);
+        $this->assertStringContainsString('psycopg2', $result['message']);
+        $this->assertStringContainsString('asyncpg', $result['message']);
+        // DATABASE_URL is the platform's to write, so nothing here may be
+        // reported as a setting the customer has to type. Doing so parks the
+        // site on a notice telling somebody to fix a row they cannot edit.
+        $this->assertSame([], $result['missing_variables']);
+        $this->assertSame([], $result['unparsable_variables']);
+    }
+
+    #[Test]
+    public function it_does_not_read_an_unrelated_import_error_as_the_async_driver_crash(): void
+    {
+        $result = $this->presenter->present(<<<'LOG'
+        ModuleNotFoundError: No module named 'asyncpg'
+        LOG);
+
+        $this->assertNotNull($result);
+        $this->assertStringNotContainsString('asynchronous database connection', $result['message']);
+    }
 }
