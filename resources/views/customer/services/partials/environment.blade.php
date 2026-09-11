@@ -180,12 +180,21 @@
                             <td class="px-4 py-3 align-top text-right">
                                 <button
                                     type="button"
-                                    x-show="!row.platform_managed"
-                                    @click="removeRow(index)"
-                                    class="text-xs text-red-600 dark:text-red-400 hover:underline disabled:opacity-40 disabled:no-underline disabled:cursor-not-allowed"
-                                    x-text="row.suggested ? 'Dismiss' : 'Remove'"
-                                    @if (! $canSaveEnvironment) disabled @endif
-                                ></button>
+                                    x-show="row.isNew"
+                                    @click="discardRow(index)"
+                                    class="text-xs text-slate-600 dark:text-slate-300 hover:underline"
+                                >
+                                    Discard
+                                </button>
+                                <label x-show="!row.isNew && !row.platform_managed" class="inline-flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+                                    <input
+                                        type="checkbox"
+                                        x-model="row.selected"
+                                        class="rounded border-slate-300 dark:border-slate-600 text-red-600 focus:ring-red-500 disabled:opacity-40 disabled:cursor-not-allowed"
+                                        @if (! $canSaveEnvironment) disabled @endif
+                                    >
+                                    <span x-text="row.suggested ? 'Dismiss' : 'Remove'"></span>
+                                </label>
                             </td>
                         </tr>
                     </template>
@@ -202,6 +211,14 @@
             <button type="button" @click="addRow()" class="px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg text-sm font-medium hover:bg-slate-200 dark:hover:bg-slate-600" @if (! $canSaveEnvironment) disabled @endif>
                 Add variable
             </button>
+            <button
+                type="button"
+                x-show="selectedCount() > 0"
+                @click="removeSelected()"
+                class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium"
+                x-text="'Remove selected (' + selectedCount() + ')'"
+                @if (! $canSaveEnvironment) disabled @endif
+            ></button>
             <button
                 type="submit"
                 class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"

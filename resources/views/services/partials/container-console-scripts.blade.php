@@ -11,6 +11,7 @@ function containerEnvironmentPanel(initialRows) {
             platform_managed: !!row.platform_managed,
             suggested: !!row.suggested,
             state: row.state || 'set',
+            selected: false,
             reveal: false,
             isNew: false,
         })),
@@ -27,6 +28,7 @@ function containerEnvironmentPanel(initialRows) {
                 platform_managed: false,
                 suggested: false,
                 state: 'set',
+                selected: false,
                 reveal: true,
                 isNew: true,
             });
@@ -56,35 +58,64 @@ function containerEnvironmentPanel(initialRows) {
             }
             return 'bg-white dark:bg-slate-900';
         },
-        removeRow(index) {
-            const row = this.rows[index];
-            if (!row) return;
-            if (row.platform_managed && !row.isNew) return;
+        discardRow(index) {
+            // A row that was never saved. Nothing to tell the node about.
+            this.rows.splice(index, 1);
+        },
+        removableRows() {
+            return this.rows.filter((row) => row.selected && !row.isNew && row.key && !row.platform_managed);
+        },
+        selectedCount() {
+            return this.removableRows().length;
+        },
+        // One restart, however many rows. Removing four settings used to mean
+        // four confirm dialogs and four recreates of the same stack, which is
+        // most of a coffee break to undo one afternoon's mistake.
+        removeSelected() {
+            const rows = this.removableRows();
+            if (rows.length === 0) return;
 
-            if (row.isNew || !row.key) {
-                this.rows.splice(index, 1);
+            // The endpoint accepts fifty at a time. Saying so beats a validation
+            // redirect that loses the selection and explains nothing.
+            if (rows.length > 50) {
+                alert(`Select up to 50 at a time. You have ${rows.length} selected.`);
                 return;
             }
 
-            // Dismissing a suggestion changes nothing about the running
-            // container, so promising a restart would be a second lie on top of
-            // the one where the button did nothing at all.
-            const prompt = row.suggested
-                ? `Stop suggesting ${row.key}? It will not be offered again.`
-                : `Remove ${row.key}? The app will restart to apply.`;
+            const dismissing = rows.filter((row) => row.suggested).map((row) => row.key);
+            const deleting = rows.filter((row) => !row.suggested).map((row) => row.key);
 
-            if (!confirm(prompt)) {
+            const parts = [];
+            if (deleting.length) {
+                parts.push(`remove ${deleting.join(', ')}`);
+            }
+            if (dismissing.length) {
+                parts.push(`stop suggesting ${dismissing.join(', ')}`);
+            }
+
+            // Only a real deletion restarts anything, so only a real deletion
+            // gets to say so.
+            const consequence = deleting.length
+                ? ' The app will restart once to apply.'
+                : ' Nothing restarts.';
+
+            if (!confirm(`This will ${parts.join(', and ')}.${consequence}`)) {
                 return;
             }
+
+            const token = document.querySelector('meta[name=csrf-token]')?.content || '';
+            const keyInputs = rows
+                .map((row) => `<input type="hidden" name="keys[]" value="${row.key}">`)
+                .join('');
 
             const form = document.createElement('form');
             form.method = 'POST';
             form.action = @js(container_route('environment.delete', $service));
             form.innerHTML = `
-                <input type="hidden" name="_token" value="${document.querySelector('meta[name=csrf-token]')?.content || ''}">
+                <input type="hidden" name="_token" value="${token}">
                 <input type="hidden" name="_method" value="DELETE">
-                <input type="hidden" name="keys[]" value="${row.key}">
-                <input type="hidden" name="restart" value="1">
+                ${keyInputs}
+                <input type="hidden" name="restart" value="${deleting.length ? 1 : 0}">
             `;
             document.body.appendChild(form);
             form.submit();

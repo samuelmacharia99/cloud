@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Services\Provisioning\ApplicationEnvironmentRequirements;
 use App\Services\Provisioning\ContainerEnvironmentService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
 /**
@@ -127,6 +128,62 @@ class ContainerEnvironmentPanelStateTest extends TestCase
         $this->assertSame(1, $result['deleted']);
         $this->assertSame([], $result['dismissed']);
         $this->assertArrayNotHasKey('SENTRY_DSN', $deployment->fresh()->env_values);
+    }
+
+    public function test_a_mixed_batch_deletes_what_is_stored_and_dismisses_what_is_only_offered(): void
+    {
+        // Four settings used to mean four confirm dialogs and four recreates of
+        // the same stack. The endpoint always took a list; only the page sent
+        // them one at a time.
+        [$service, $deployment] = $this->deployedService([
+            'ENABLE_SMS' => '',
+            'MPESA_ENV' => '',
+            'APP_ENV' => 'production',
+        ]);
+        app(ApplicationEnvironmentRequirements::class)->rememberDeclared($service, ['SENTRY_DSN', 'REDIS_URL']);
+
+        $result = app(ContainerEnvironmentService::class)->deleteVariables(
+            $service->fresh(),
+            ['ENABLE_SMS', 'MPESA_ENV', 'SENTRY_DSN'],
+            restart: false,
+        );
+
+        $this->assertSame(2, $result['deleted']);
+        $this->assertSame(['SENTRY_DSN'], $result['dismissed']);
+        $this->assertStringContainsString('2 environment variables removed', $result['message']);
+        $this->assertStringContainsString('1 suggestion(s) dismissed', $result['message']);
+
+        $env = $deployment->fresh()->env_values;
+        $this->assertArrayNotHasKey('ENABLE_SMS', $env);
+        $this->assertArrayNotHasKey('MPESA_ENV', $env);
+        $this->assertSame('production', $env['APP_ENV']);
+
+        $keys = array_column($this->rowsFor($service->fresh(), $deployment), 'key');
+        $this->assertNotContains('SENTRY_DSN', $keys);
+        $this->assertContains('REDIS_URL', $keys);
+    }
+
+    public function test_a_platform_key_in_a_batch_stops_the_whole_batch(): void
+    {
+        // Refusing the one and quietly deleting the rest would leave a customer
+        // guessing which half of their click took effect.
+        [$service, $deployment] = $this->deployedService([
+            'DB_PASSWORD' => 'secret',
+            'APP_ENV' => 'production',
+        ]);
+
+        try {
+            app(ContainerEnvironmentService::class)->deleteVariables(
+                $service->fresh(),
+                ['APP_ENV', 'DB_PASSWORD'],
+                restart: false,
+            );
+            $this->fail('A platform-managed key must be refused.');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString('DB_PASSWORD', implode(' ', $e->errors()['keys'] ?? []));
+        }
+
+        $this->assertSame('production', $deployment->fresh()->env_values['APP_ENV']);
     }
 
     public function test_the_operator_console_offers_no_remove_and_hides_no_value_that_does_not_exist(): void
