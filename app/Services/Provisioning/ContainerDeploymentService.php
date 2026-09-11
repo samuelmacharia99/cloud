@@ -6,7 +6,6 @@ use App\Exceptions\ApplicationConfigurationRequiredException;
 use App\Exceptions\SSH\SSHCommandException;
 use App\Exceptions\SSH\SSHConnectionException;
 use App\Models\ContainerDeployment;
-use App\Models\ContainerDeploymentEvent;
 use App\Models\ContainerDomain;
 use App\Models\ContainerTemplate;
 use App\Models\DatabaseTemplate;
@@ -558,6 +557,12 @@ class ContainerDeploymentService
                         ]);
                     } elseif (($template->slug ?? '') === 'nodejs') {
                         $this->waitForNodeApplicationReadiness($ssh, $deployment, $healthTimeoutSeconds);
+                    } elseif (app(ContainerApplicationReadinessService::class)->supports($template->slug ?? null)) {
+                        // Hand over an application that is up, or park it for
+                        // configuration. Handing over one that is crash-looping
+                        // was the third option and it should never have been.
+                        app(ContainerApplicationReadinessService::class)
+                            ->assertReady($ssh, $service, $deployment, $healthTimeoutSeconds);
                     }
                     if (($template->slug ?? '') === 'nodejs') {
                         app(ContainerNodeBuildService::class)->markHealthy($service, $deployment);
@@ -568,6 +573,14 @@ class ContainerDeploymentService
                         'timeout_seconds' => $healthTimeoutSeconds,
                     ]);
                 } catch (\Exception $healthException) {
+                    // Settings only the customer can supply are not a health
+                    // check that ran long. Relaxed mode exists to tolerate a
+                    // slow start, and swallowing this one would hand over a
+                    // stack that is never going to start on its own.
+                    if ($healthException instanceof ApplicationConfigurationRequiredException) {
+                        throw $healthException;
+                    }
+
                     if ($strictHealthCheck) {
                         throw $healthException;
                     }
@@ -7548,6 +7561,11 @@ class ContainerDeploymentService
             );
             $this->waitForNodeSplitStackReadiness($ssh, $deployment->fresh(), 180);
         } else {
+            // No readiness wait here on purpose. Doctor calls this method inside
+            // an HTTP request, and blocking one for up to three minutes would
+            // time the request out rather than repair anything. The Git pull
+            // runs its own readiness check in the health step immediately after
+            // this one, which is where a restart that did not take is caught.
             $this->restartAppService($ssh, $deployment->fresh());
         }
 
@@ -8497,21 +8515,7 @@ class ContainerDeploymentService
      */
     private function recordDeploymentEvent(Service $service, ?ContainerDeployment $deployment, string $event, array $payload = []): void
     {
-        try {
-            ContainerDeploymentEvent::create([
-                'service_id' => $service->id,
-                'container_deployment_id' => $deployment?->id,
-                'event' => $event,
-                'payload' => $payload ?: null,
-                'recorded_at' => now(),
-            ]);
-        } catch (\Throwable $e) {
-            \Log::warning("Failed to record container deployment event '{$event}'", [
-                'service_id' => $service->id,
-                'deployment_id' => $deployment?->id,
-                'error' => $e->getMessage(),
-            ]);
-        }
+        app(ContainerDeploymentEventRecorder::class)->record($service, $deployment, $event, $payload);
     }
 
     private function purgeBackupsForService(Service $service): void

@@ -48,6 +48,29 @@ class ContainerGitPullErrorPresenter
             );
         }
 
+        // A pull whose code arrived and whose application then refused to stay
+        // up. The repository is fine; the diagnosis is in the container log the
+        // readiness check already read, so point at that rather than at Git.
+        if ($step === 'health' && $this->contains($message, [
+            'it is not staying up',
+            'did not come up within',
+            'stopped without writing anything to its log',
+            'more memory than its plan allows',
+        ])) {
+            $guidance = str_contains($message, 'more memory than its plan allows')
+                ? 'The code pulled successfully, but the application ran out of memory while starting. '
+                    .'Upgrade the plan, or reduce what the application loads at start-up, then pull again.'
+                : 'The code pulled successfully, but the application exits as soon as it starts. '
+                    .'The cause it reported is below. Fix it in your repository and pull again, or open '
+                    .'Diagnose on this service for a closer look.';
+
+            return $this->result(
+                'Your code pulled, but the application will not start.',
+                $guidance,
+                $details,
+            );
+        }
+
         if ($this->contains($message, [
             'authentication failed',
             'could not read username',

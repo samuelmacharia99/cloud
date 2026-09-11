@@ -150,6 +150,15 @@ class ContainerDeployProgressService
             'ollama_model_pull_failed' => 'Model pull failed: '.($payload['error'] ?? 'unknown error'),
             'deploy_succeeded' => 'Deploy finished',
             'deploy_failed' => 'Deploy failed: '.($payload['error'] ?? $payload['message'] ?? 'unknown error'),
+            // Cased rather than left to the default arm below, which would show
+            // the customer the raw event name with its underscores stripped.
+            'application_readiness_started' => 'Checking that the application starts and stays up'
+                .(isset($payload['timeout_seconds']) ? ' (up to '.$payload['timeout_seconds'].'s)' : ''),
+            'application_readiness_passed' => 'Application is running and staying up',
+            'application_readiness_failed' => 'Application did not stay up: '
+                .($payload['cause'] === 'crash_loop' ? 'it keeps restarting' : (string) ($payload['cause'] ?? 'unknown')),
+            'application_readiness_awaiting_configuration' => 'Application needs settings before it can start',
+            'application_environment_keys_refreshed' => 'Read the settings this repository asks for',
             default => str_replace('_', ' ', $event->event),
         };
 

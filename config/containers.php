@@ -182,6 +182,19 @@ return [
         'prepare_before_build' => (bool) env('NODE_BUILD_PREPARE_BEFORE_BUILD', true),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Application readiness (Python / Ruby / Go)
+    |--------------------------------------------------------------------------
+    |
+    | Longer than the Node default because the Python bootstrap runs pip install
+    | on every container start, so a cold boot is legitimately slower.
+    |
+    */
+    'application_readiness' => [
+        'timeout_seconds' => (int) env('APPLICATION_READINESS_TIMEOUT_SECONDS', 180),
+    ],
+
     'git_pull' => [
         'pending_timeout_minutes' => (int) env('CONTAINER_GIT_PENDING_TIMEOUT_MINUTES', 30),
         'running_timeout_minutes' => (int) env('CONTAINER_GIT_RUNNING_TIMEOUT_MINUTES', 75),

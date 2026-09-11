@@ -13,14 +13,19 @@ class ContainerRuntimeInspector
      *     running: bool,
      *     state: string,
      *     oom_killed: bool,
-     *     exit_code: int|null
+     *     exit_code: int|null,
+     *     restarting: bool,
+     *     restart_count: int
      * }
      */
     public function inspect(SSHService $ssh, string $containerName, bool $retry = true): array
     {
         $safeName = escapeshellarg($containerName);
+        // Restarting and RestartCount ride along on the inspect that was already
+        // being made. Without them a caller can only see that a container is
+        // running, which a crash-looping one is, for a second, between restarts.
         $output = trim($ssh->exec(
-            "docker inspect --type container --format '{{.State.Status}}|{{.State.Running}}|{{.State.OOMKilled}}|{{.State.ExitCode}}' {$safeName} 2>/dev/null || echo ''",
+            "docker inspect --type container --format '{{.State.Status}}|{{.State.Running}}|{{.State.OOMKilled}}|{{.State.ExitCode}}|{{.State.Restarting}}|{{.RestartCount}}' {$safeName} 2>/dev/null || echo ''",
             10,
             $retry
         ));
@@ -32,10 +37,18 @@ class ContainerRuntimeInspector
                 'state' => 'unknown',
                 'oom_killed' => false,
                 'exit_code' => null,
+                'restarting' => false,
+                'restart_count' => 0,
             ];
         }
 
-        [$state, $runningRaw, $oomRaw, $exitCodeRaw] = array_pad(explode('|', $output, 4), 4, '');
+        // Padded to six so an older node, or a docker that answers with fewer
+        // fields, degrades to the previous four rather than throwing.
+        [$state, $runningRaw, $oomRaw, $exitCodeRaw, $restartingRaw, $restartCountRaw] = array_pad(
+            explode('|', $output, 6),
+            6,
+            '',
+        );
         $state = trim($state) !== '' ? trim($state) : 'unknown';
 
         return [
@@ -44,6 +57,8 @@ class ContainerRuntimeInspector
             'state' => $state,
             'oom_killed' => strtolower(trim($oomRaw)) === 'true',
             'exit_code' => is_numeric(trim($exitCodeRaw)) ? (int) trim($exitCodeRaw) : null,
+            'restarting' => strtolower(trim($restartingRaw)) === 'true' || $state === 'restarting',
+            'restart_count' => is_numeric(trim($restartCountRaw)) ? (int) trim($restartCountRaw) : 0,
         ];
     }
 

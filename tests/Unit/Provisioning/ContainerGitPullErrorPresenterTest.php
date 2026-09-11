@@ -19,6 +19,57 @@ class ContainerGitPullErrorPresenterTest extends TestCase
     }
 
     #[Test]
+    public function it_separates_code_that_pulled_from_an_app_that_will_not_start(): void
+    {
+        // The repository is fine. Pointing this customer at their Git settings
+        // would send them to the one place the problem is not.
+        $pull = $this->failedPull(
+            'health',
+            'Verify application health',
+            'The application started and exited 3 time(s) while the platform watched, '
+                .'so it is not staying up. ModuleNotFoundError: No module named \'app.settings\'',
+        );
+
+        $error = $this->presenter->present($pull);
+
+        $this->assertSame('Your code pulled, but the application will not start.', $error['title']);
+        $this->assertStringContainsString('exits as soon as it starts', $error['guidance']);
+        $this->assertStringContainsString('ModuleNotFoundError', $error['details']);
+    }
+
+    #[Test]
+    public function it_sends_an_out_of_memory_app_to_its_plan_and_not_to_its_code(): void
+    {
+        $pull = $this->failedPull(
+            'health',
+            'Verify application health',
+            'The application container was killed for using more memory than its plan allows. '
+                .'Upgrade the plan, or reduce what the application loads at start-up.',
+        );
+
+        $error = $this->presenter->present($pull);
+
+        $this->assertSame('Your code pulled, but the application will not start.', $error['title']);
+        $this->assertStringContainsString('ran out of memory', $error['guidance']);
+    }
+
+    #[Test]
+    public function a_missing_credential_still_wins_over_the_readiness_wording(): void
+    {
+        // Both messages can surface from the same failed health step, and a
+        // customer who needs to add an API key should be told that first.
+        $pull = $this->failedPull(
+            'health',
+            'Verify application health',
+            'The application needs these environment variables before it can start: NES_API_KEY.',
+        );
+
+        $error = $this->presenter->present($pull);
+
+        $this->assertSame('Your application needs configuration before it can start.', $error['title']);
+    }
+
+    #[Test]
     public function it_explains_git_authentication_failures_without_discarding_details(): void
     {
         $pull = $this->failedPull(

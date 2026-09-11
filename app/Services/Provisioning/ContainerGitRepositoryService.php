@@ -435,6 +435,17 @@ class ContainerGitRepositoryService
 
                     return implode(' ', $messages) ?: 'Post-pull steps completed.';
                 });
+
+                // Discovery used to run once, at first deploy, and never again.
+                // A customer who added or deleted a variable in their example
+                // file kept being shown the list from the day the service was
+                // created, with no way to tell which names their code still
+                // wanted. The checkout that was just synced is the answer now.
+                $this->runPullStep($pull, 'environment', fn () => $this->refreshDeclaredEnvironment(
+                    $service,
+                    $deployment,
+                    $ssh,
+                ));
             }
 
             $this->runPullStep($pull, 'permissions', function () use ($ssh, $deployment, $service) {
@@ -470,17 +481,45 @@ class ContainerGitRepositoryService
                     return 'Container and Laravel HTTP health checks passed.';
                 }
 
-                if (($service->effectiveContainerTemplate()?->slug ?? '') === 'nodejs') {
-                    $timeout = (int) config('containers.node_build.readiness_timeout_seconds', 120);
-                    $service->refresh();
-                    if (data_get($service->service_meta, 'node_workloads.topology') === 'split_web_api') {
-                        $this->deploymentService->waitForNodeSplitStackReadiness($ssh, $deployment, $timeout);
-                    } else {
-                        $this->deploymentService->waitForNodeApplicationReadiness($ssh, $deployment, $timeout);
+                $service->refresh();
+                $stack = $service->effectiveContainerTemplate()?->slug;
+
+                // Topology before language. A split stack has a frontend and an
+                // edge that must also be up and routing, whatever it is written
+                // in, and that check already reads Python tracebacks.
+                if (data_get($service->service_meta, 'node_workloads.topology') === 'split_web_api') {
+                    $this->deploymentService->waitForNodeSplitStackReadiness(
+                        $ssh,
+                        $deployment,
+                        (int) config('containers.node_build.readiness_timeout_seconds', 120),
+                    );
+                    if ($stack === 'nodejs') {
+                        app(ContainerNodeBuildService::class)->markHealthy($service, $deployment);
                     }
+
+                    return 'Split web and API stack is up and routing.';
+                }
+
+                if ($stack === 'nodejs') {
+                    $this->deploymentService->waitForNodeApplicationReadiness(
+                        $ssh,
+                        $deployment,
+                        (int) config('containers.node_build.readiness_timeout_seconds', 120),
+                    );
                     app(ContainerNodeBuildService::class)->markHealthy($service, $deployment);
 
                     return 'Container and Node application readiness checks passed.';
+                }
+
+                // Python, Ruby and Go used to stop at the first line of this
+                // step, which returns as soon as Docker says "running" once. A
+                // crash-looping container is running, briefly, between restarts,
+                // so a pull that left the application dead reported success.
+                $readiness = app(ContainerApplicationReadinessService::class);
+                if ($readiness->supports($stack)) {
+                    $readiness->assertReady($ssh, $service, $deployment);
+
+                    return 'Application is running and staying up.';
                 }
 
                 return 'Application container is running.';
@@ -785,6 +824,7 @@ class ContainerGitRepositoryService
                 $steps[] = $this->makeStep('runtime_version');
             }
             $steps[] = $this->makeStep('post_pull');
+            $steps[] = $this->makeStep('environment');
         }
 
         $steps[] = $this->makeStep('permissions');
@@ -796,6 +836,69 @@ class ContainerGitRepositoryService
         $steps[] = $this->makeStep('health');
 
         return $steps;
+    }
+
+    /**
+     * Re-read the application's own example file and record what it now asks
+     * for, so the Environment tab describes the code that is checked out rather
+     * than the code that was there on day one.
+     *
+     * Never fills a value in. A blank would satisfy a "required string" check
+     * and turn a clean stop into an application that boots looking healthy and
+     * misbehaves later.
+     */
+    private function refreshDeclaredEnvironment(
+        Service $service,
+        ContainerDeployment $deployment,
+        SSHService $ssh,
+    ): string {
+        $requirements = app(ApplicationEnvironmentRequirements::class);
+        $before = $requirements->declared($service);
+
+        $hostAppPath = $this->appDirectory->hostAppPath($deployment);
+        $envVars = is_array($deployment->env_values) ? $deployment->env_values : [];
+        $service->refresh();
+        $backendRoot = (string) data_get($service->service_meta, 'node_workloads.backend.root', '');
+
+        $declared = $requirements->discoverDeclared($ssh, $hostAppPath, $backendRoot, $envVars);
+        $requirements->rememberDeclared($service, $declared);
+
+        $added = array_values(array_diff($declared, $before));
+        $removed = array_values(array_diff($before, $declared));
+
+        app(ContainerDeploymentEventRecorder::class)->record(
+            $service,
+            $deployment,
+            'application_environment_keys_refreshed',
+            [
+                'declared_count' => count($declared),
+                'added' => $added,
+                'removed' => $removed,
+            ],
+        );
+
+        \Log::info('Declared environment keys refreshed from the current checkout', [
+            'service_id' => $service->id,
+            'deployment_id' => $deployment->id,
+            'container_name' => $deployment->container_name,
+            'declared_count' => count($declared),
+            'added' => $added,
+            'removed' => $removed,
+        ]);
+
+        if ($declared === []) {
+            return 'No example environment file in the repository; nothing to suggest.';
+        }
+
+        $summary = count($declared).' setting(s) declared by the repository.';
+        if ($added !== []) {
+            $summary .= ' New since the last pull: '.implode(', ', $added).'.';
+        }
+        if ($removed !== []) {
+            $summary .= ' No longer asked for: '.implode(', ', $removed).'.';
+        }
+
+        return $summary;
     }
 
     /**
