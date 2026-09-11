@@ -184,8 +184,12 @@ class ContainerEnvironmentService
 
         if ($restart) {
             try {
-                app(ContainerDeploymentService::class)->applyEnvironmentVariables($service->fresh(), $deployment->fresh());
-                $message = 'Environment variables saved and applied to the running stack.';
+                $confirmed = app(ContainerDeploymentService::class)
+                    ->applyEnvironmentVariables($service->fresh(), $deployment->fresh());
+                $message = $confirmed
+                    ? 'Environment variables saved and applied to the running stack.'
+                    : 'Environment variables saved and applied. The application had not finished starting yet, '
+                        .'so watch the Logs tab or run Diagnose if the site does not come back shortly.';
                 $applied = true;
             } catch (\Throwable $e) {
                 Log::error('Environment variables saved but stack apply failed', [
@@ -252,8 +256,11 @@ class ContainerEnvironmentService
             : "{$deleted} environment variables removed.";
 
         if ($restart && $deleted > 0) {
-            app(ContainerDeploymentService::class)->applyEnvironmentVariables($service->fresh(), $deployment->fresh());
-            $message .= ' Stack restarted to apply changes.';
+            $confirmed = app(ContainerDeploymentService::class)
+                ->applyEnvironmentVariables($service->fresh(), $deployment->fresh());
+            $message .= $confirmed
+                ? ' Stack restarted to apply changes.'
+                : ' Stack restarted. The application had not finished starting yet, so watch the Logs tab.';
         }
 
         return [

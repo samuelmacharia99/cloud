@@ -7603,8 +7603,15 @@ class ContainerDeploymentService
 
     /**
      * Rewrite compose from current env_values, sync .env when applicable, and recreate the stack.
+     *
+     * Returns whether the application was confirmed up before the answer was
+     * owed. Every caller is a synchronous web request, so the verification has
+     * a budget a request can survive: by the time it runs the stack is already
+     * recreated with the new values, and waiting three minutes to say so timed
+     * the request out and told the customer their save had failed when it had
+     * not. False means applied but not yet confirmed, never applied and broken.
      */
-    public function applyEnvironmentVariables(Service $service, ContainerDeployment $deployment): void
+    public function applyEnvironmentVariables(Service $service, ContainerDeployment $deployment): bool
     {
         $operationLock = null;
         $cutoverStarted = false;
@@ -7760,11 +7767,32 @@ class ContainerDeploymentService
             $cutoverStarted = true;
             @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml down --remove-orphans", self::DEPLOY_TIMEOUT);
             $this->composeUp($ssh, $containerPath, $this->runtimeImages->usesRuntimeImage($template), useExplicitComposeFile: true);
-            if ($serveNextFrontend) {
-                $this->waitForLaravelNextSidecarHealth($ssh, $deployment->container_name, 180);
-            } elseif (($nodeTopology['topology'] ?? null) === 'split_web_api') {
-                $this->waitForNodeSplitStackReadiness($ssh, $deployment, 180);
+
+            $readinessBudget = max(10, (int) config('containers.application_readiness.apply_timeout_seconds', 45));
+            $confirmed = true;
+            try {
+                if ($serveNextFrontend) {
+                    $this->waitForLaravelNextSidecarHealth($ssh, $deployment->container_name, $readinessBudget);
+                } elseif (($nodeTopology['topology'] ?? null) === 'split_web_api') {
+                    $this->waitForNodeSplitStackReadiness($ssh, $deployment, $readinessBudget);
+                }
+            } catch (ApplicationConfigurationRequiredException $e) {
+                // Settings only the customer can supply. Still worth parking the
+                // site on a notice naming them, so this one is not swallowed.
+                throw $e;
+            } catch (\Throwable $e) {
+                // A slow start is not a failed save. The new values are already
+                // in compose and the stack is already up on them; all that is
+                // unknown is whether the application has finished booting.
+                $confirmed = false;
+                Log::warning('Environment applied but the application had not come up yet', [
+                    'service_id' => $service->id,
+                    'container_name' => $deployment->container_name,
+                    'waited_seconds' => $readinessBudget,
+                    'error' => mb_substr(trim($e->getMessage()), 0, 500),
+                ]);
             }
+
             $this->syncPhpExtensionsIfSupported($ssh, $service, $deployment);
             $this->syncDatabaseCredentialsAfterStart($ssh, $service, $deployment, $containerPath);
 
@@ -7779,11 +7807,13 @@ class ContainerDeploymentService
 
             $deployment->update(['status' => 'running']);
             app(ContainerConfigurationHoldService::class)->release($service, $deployment);
+
+            return $confirmed;
         } catch (ApplicationConfigurationRequiredException $e) {
             app(ContainerConfigurationHoldService::class)
                 ->hold($service, $deployment, $ssh, $e->missingVariables(), $e->invalidVariables());
 
-            return;
+            return false;
         } catch (\Throwable $e) {
             if (($template->slug ?? '') === 'nodejs' && $previousCompose !== '') {
                 $this->rollbackNodeRedeploy(

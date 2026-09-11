@@ -193,6 +193,12 @@ return [
     */
     'application_readiness' => [
         'timeout_seconds' => (int) env('APPLICATION_READINESS_TIMEOUT_SECONDS', 180),
+
+        // Saving settings from the console is a synchronous web request, so
+        // the verification after it has to finish inside one. The stack is
+        // already up with the new values by then; this only decides how long
+        // the platform waits to confirm it before saying so.
+        'apply_timeout_seconds' => (int) env('APPLICATION_APPLY_READINESS_TIMEOUT_SECONDS', 45),
     ],
 
     'git_pull' => [
