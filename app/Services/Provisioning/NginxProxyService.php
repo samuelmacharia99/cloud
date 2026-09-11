@@ -15,7 +15,18 @@ class NginxProxyService
     /**
      * Bump when the generated vhost changes so existing sites are rewritten.
      */
-    public const VHOST_REVISION = 'v7';
+    public const VHOST_REVISION = 'v8';
+
+    /**
+     * Platform-owned http-context directives. Vhost files land in sites-enabled
+     * or conf.d, and the stock nginx.conf includes conf.d in the http context in
+     * either layout, so this is where a cache path and a rate-limit zone can
+     * live. The 00 prefix sorts it ahead of every vhost.
+     */
+    public const SHARED_CONFIG_PATH = '/etc/nginx/conf.d/00-talksasa-shared.conf';
+
+    /** Cache entries live this long. No purge hook exists, so staleness is bounded here. */
+    public const PAGE_CACHE_TTL_SECONDS = 60;
 
     /**
      * Shared static pages on each container node. Suspended sites stop proxying
@@ -43,7 +54,6 @@ class NginxProxyService
             // already has certificate paths configured.
             $withSsl = (bool) ($domain->ssl_enabled && $domain->ssl_certificate_path && $domain->ssl_key_path);
             $suspended ??= $this->domainShouldServeSuspendedPage($domain);
-            $config = $this->generateConfig($domain, $withSsl, $suspended);
 
             // Connect to node via SSH
             $ssh = SSHService::forNode($node);
@@ -56,6 +66,12 @@ class NginxProxyService
             }
 
             $this->ensureEdgePages($ssh, $this->edgeBrandingForDomain($domain));
+
+            // Before the vhost, never after. A vhost naming a cache zone that
+            // does not exist fails nginx -t and takes the site down, so the
+            // vhost only asks for what this node is confirmed to have.
+            $shared = $this->ensureSharedNginxConfig($ssh);
+            $config = $this->generateConfig($domain, $withSsl, $suspended, $shared);
 
             $configDir = $this->resolveNginxConfigDir($ssh);
             $ssh->exec('mkdir -p '.escapeshellarg($configDir));
@@ -299,13 +315,163 @@ class NginxProxyService
     }
 
     /**
+     * Write the http-context directives every accelerated vhost depends on.
+     *
+     * Returns false when the node would not accept them, in which case vhosts
+     * are generated without any reference to them and the site keeps serving
+     * exactly what it serves today. The file is removed again on failure so a
+     * half-written zone cannot break the next unrelated reload.
+     */
+    public function ensureSharedNginxConfig(SSHService $ssh): bool
+    {
+        try {
+            $ssh->exec('mkdir -p '.escapeshellarg(dirname(self::SHARED_CONFIG_PATH)), 15);
+            $ssh->upload($this->sharedNginxConfig(), self::SHARED_CONFIG_PATH);
+            $this->testNginxConfig($ssh);
+
+            return true;
+        } catch (\Throwable $e) {
+            \Log::warning('Shared nginx directives were rejected by the node; vhosts will omit them', [
+                'error' => $e->getMessage(),
+            ]);
+
+            try {
+                $ssh->exec('rm -f '.escapeshellarg(self::SHARED_CONFIG_PATH), 15);
+            } catch (\Throwable) {
+            }
+
+            return false;
+        }
+    }
+
+    public function sharedNginxConfig(): string
+    {
+        $ttl = self::PAGE_CACHE_TTL_SECONDS;
+
+        return <<<EOL
+# talksasa-shared {$this->sharedConfigRevision()}
+# Managed by Talksasa. Do not edit: this file is rewritten on every domain bind.
+
+# Anonymous WordPress pages. keys_zone holds the index; max_size caps the disk.
+# inactive is deliberately longer than the TTL: proxy_cache_use_stale can only
+# serve an expired entry while it is still on disk.
+proxy_cache_path /var/cache/nginx/talksasa levels=1:2 keys_zone=talksasa_wp:32m max_size=2g inactive=10m use_temp_path=off;
+
+# wp-login.php and xmlrpc.php are attacked continuously. 20 a minute per address
+# is far above what a person types and far below what a password list needs.
+limit_req_zone \$binary_remote_addr zone=talksasa_wp_login:10m rate=20r/m;
+EOL;
+    }
+
+    public function sharedConfigRevision(): string
+    {
+        return 'v1';
+    }
+
+    /**
+     * WordPress, not switched off for this service, and not switched off for the
+     * platform. Anything else proxies exactly as it did before.
+     */
+    public function shouldAccelerateWordPress(?Service $service): bool
+    {
+        if (! $service instanceof Service || ! $service->isWordPressContainer()) {
+            return false;
+        }
+
+        if (! $this->pageCacheEnabledPlatformWide()) {
+            return false;
+        }
+
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+
+        return ($meta['wordpress_page_cache'] ?? true) !== false;
+    }
+
+    private function pageCacheEnabledPlatformWide(): bool
+    {
+        $value = strtolower((string) setting('wordpress_page_cache_enabled', 'true'));
+
+        return in_array($value, ['1', 'true', 'yes', 'on'], true);
+    }
+
+    /**
+     * Cache an anonymous page for a minute, and bypass on anything that could
+     * belong to one visitor rather than all of them.
+     *
+     * Three defences, not one. These rules are the first. nginx already refuses
+     * to store a response carrying Set-Cookie, and WordPress sends no-cache to
+     * logged-in users, which nginx honours; both are left in place rather than
+     * overridden with proxy_ignore_headers.
+     */
+    private function pageCacheDirectives(): string
+    {
+        $ttl = self::PAGE_CACHE_TTL_SECONDS;
+
+        return <<<EOL
+
+        set \$talksasa_skip_cache 0;
+        if (\$request_method !~ ^(GET|HEAD)\$) { set \$talksasa_skip_cache 1; }
+        if (\$http_cookie ~* "wordpress_logged_in|wordpress_sec|wp-postpass|comment_author|woocommerce_items_in_cart|woocommerce_cart_hash|wp_woocommerce_session") { set \$talksasa_skip_cache 1; }
+        if (\$request_uri ~* "^/(wp-admin|wp-login\\.php|xmlrpc\\.php|wp-cron\\.php|wp-json)") { set \$talksasa_skip_cache 1; }
+        if (\$request_uri ~* "sitemap.*\\.xml") { set \$talksasa_skip_cache 1; }
+        if (\$arg_preview = "true") { set \$talksasa_skip_cache 1; }
+        proxy_cache talksasa_wp;
+        proxy_cache_key "\$scheme\$request_method\$host\$request_uri";
+        proxy_cache_valid 200 {$ttl}s;
+        proxy_cache_bypass \$talksasa_skip_cache;
+        proxy_no_cache \$talksasa_skip_cache;
+        proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;
+        proxy_cache_lock on;
+        add_header X-Talksasa-Cache \$upstream_cache_status always;
+EOL;
+    }
+
+    /**
+     * The two endpoints worth rate limiting, proxied exactly like everything
+     * else. burst absorbs a legitimate person mistyping a password; nodelay
+     * keeps the honest request fast rather than queued.
+     */
+    private function wordPressLoginLocations(int $port): string
+    {
+        $proxy = <<<EOL
+        limit_req zone=talksasa_wp_login burst=10 nodelay;
+        proxy_pass http://127.0.0.1:{$port};
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_redirect off;
+        proxy_read_timeout 300s;
+        proxy_buffer_size 128k;
+        proxy_buffers 4 256k;
+        proxy_busy_buffers_size 256k;
+EOL;
+
+        return <<<EOL
+    location = /wp-login.php {
+{$proxy}
+    }
+
+    location = /xmlrpc.php {
+{$proxy}
+    }
+EOL;
+    }
+
+    /**
      * Generate nginx configuration for a domain.
      *
      * Suspended mode serves HTTP 503 from the shared edge page instead of
      * proxy_pass (a stopped container otherwise becomes the stock nginx 502).
      */
-    public function generateConfig(ContainerDomain $domain, bool $withSsl = false, ?bool $suspended = null): string
-    {
+    public function generateConfig(
+        ContainerDomain $domain,
+        bool $withSsl = false,
+        ?bool $suspended = null,
+        bool $sharedDirectivesAvailable = false,
+    ): string {
         $deployment = $domain->deployment;
         $port = $deployment->assigned_port;
 
@@ -317,9 +483,15 @@ class NginxProxyService
         $modeMarker = $suspended ? '# talksasa-edge-suspended' : '# talksasa-edge-proxy';
 
         $edgeRoot = $this->edgePagesRoot($this->edgeBrandingForDomain($domain));
+        $wordpress = ! $suspended
+            && $sharedDirectivesAvailable
+            && $this->shouldAccelerateWordPress($domain->deployment?->service);
+
         $location = $suspended
             ? $this->suspendedLocation($edgeRoot)
-            : $this->proxyPassLocation((int) $port)."\n".$this->unavailableErrorPageLocation($edgeRoot);
+            : $this->proxyPassLocation((int) $port, $wordpress)
+                .($wordpress ? "\n".$this->wordPressLoginLocations((int) $port) : '')
+                ."\n".$this->unavailableErrorPageLocation($edgeRoot);
 
         $httpBlock = <<<EOL
 # talksasa-vhost {$revision}
@@ -374,10 +546,12 @@ EOL;
      * Hermes / OpenClaw / n8n chat UIs need a real WebSocket upgrade. Clearing
      * Connection (HTTP keepalive) makes the browser see close code 1006.
      */
-    public function proxyPassLocation(int $port): string
+    public function proxyPassLocation(int $port, bool $withPageCache = false): string
     {
+        $cache = $withPageCache ? $this->pageCacheDirectives() : '';
+
         return <<<EOL
-    location / {
+    location / {{$cache}
         proxy_pass http://127.0.0.1:{$port};
         proxy_http_version 1.1;
         proxy_set_header Host \$host;

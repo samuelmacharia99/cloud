@@ -464,6 +464,11 @@ class ContainerDeploymentService
 
                 if (($template->slug ?? '') === 'wordpress') {
                     $this->wordpressHardening->ensureUploadsIniFile($ssh, $containerName);
+                    $this->wordpressHardening->ensureApacheWorkersFile(
+                        $ssh,
+                        $containerName,
+                        (int) ($deployment->memory_limit_mb ?: $template->required_ram_mb ?: 0),
+                    );
                 }
 
                 if (($template->slug ?? '') === 'static-site') {
@@ -2461,9 +2466,13 @@ class ContainerDeploymentService
 
         if (($template->slug ?? '') === 'wordpress') {
             $compose['services'][$containerName]['volumes'] ??= [];
-            $uploadsMount = $this->wordpressHardening->uploadsIniVolumeMount($containerName);
-            if (! in_array($uploadsMount, $compose['services'][$containerName]['volumes'], true)) {
-                $compose['services'][$containerName]['volumes'][] = $uploadsMount;
+            foreach ([
+                $this->wordpressHardening->uploadsIniVolumeMount($containerName),
+                $this->wordpressHardening->apacheWorkersVolumeMount($containerName),
+            ] as $mount) {
+                if (! in_array($mount, $compose['services'][$containerName]['volumes'], true)) {
+                    $compose['services'][$containerName]['volumes'][] = $mount;
+                }
             }
         }
 
@@ -2482,7 +2491,13 @@ class ContainerDeploymentService
             }
         }
 
-        $this->templateEnvironment->syncEmbeddedDatabaseSidecar($compose, $template, $envVars, $containerName);
+        $this->templateEnvironment->syncEmbeddedDatabaseSidecar(
+            $compose,
+            $template,
+            $envVars,
+            $containerName,
+            (int) $memoryLimit,
+        );
 
         // Inject database sidecar if selected and template does not already define one
         if ($databaseTemplate && ! $this->templateEnvironment->templateDefinesDatabaseSidecar($template)) {
@@ -6713,7 +6728,14 @@ class ContainerDeploymentService
         }
 
         if (($template?->slug ?? '') === 'wordpress') {
+            // Both files are bind-mounted. A missing one makes Docker create a
+            // directory at the mount point, which Apache then refuses to start on.
             $this->wordpressHardening->ensureUploadsIniFile($ssh, $deployment->container_name);
+            $this->wordpressHardening->ensureApacheWorkersFile(
+                $ssh,
+                $deployment->container_name,
+                (int) ($deployment->memory_limit_mb ?: $template?->required_ram_mb ?: 0),
+            );
         }
 
         if ($recreate) {
@@ -8354,17 +8376,28 @@ class ContainerDeploymentService
             return;
         }
 
+        // The buffer pool is sized from the plan now, so this can no longer test
+        // for one literal value: a correct 737M stack would look permanently
+        // stale and a small one permanently fresh.
+        // Exactly the expression renderCompose uses. Any difference here makes a
+        // correct stack look stale on every single deploy.
+        $expectedMysqlFlags = $this->templateEnvironment->mysqlTuningFlags(
+            (int) ($deployment->memory_limit_mb ?? $template->required_ram_mb ?? 256)
+        );
+        $expectedBufferPool = (string) collect($expectedMysqlFlags)
+            ->first(fn (string $flag): bool => str_starts_with($flag, '--innodb-buffer-pool-size='));
+
         $needsRefresh = $existing === ''
-            || str_contains($existing, 'innodb-buffer-pool-size=512M')
             || ! preg_match('/^\s*restart:\s*[\'"]?always[\'"]?\s*$/mi', $existing)
             || str_contains($existing, 'service_healthy')
             || ! str_contains($existing, 'service_started')
-            || ! str_contains($existing, 'innodb-buffer-pool-size=256M')
+            || ! str_contains($existing, ltrim($expectedBufferPool, '-'))
             || ! str_contains($existing, '127.0.0.1')
             || str_contains($existing, "-h', 'localhost'")
             || str_contains($existing, '-h localhost')
             || ! str_contains($existing, 'start_period: 300s')
             || ! str_contains($existing, 'uploads.ini')
+            || ! str_contains($existing, 'talksasa-workers.conf')
             || ! str_contains($existing, 'talksasa-mysql')
             || ! str_contains($existing, 'innodb-use-native-aio=0');
 
@@ -8392,6 +8425,11 @@ class ContainerDeploymentService
 
         try {
             $this->wordpressHardening->ensureUploadsIniFile($ssh, $containerName);
+            $this->wordpressHardening->ensureApacheWorkersFile(
+                $ssh,
+                $containerName,
+                (int) ($deployment->memory_limit_mb ?: $template->required_ram_mb ?: 0),
+            );
             $composeYaml = $this->renderCompose(
                 $template,
                 $containerName,

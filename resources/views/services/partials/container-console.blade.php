@@ -92,6 +92,28 @@
                                 @endforeach
                             </div>
                         @endif
+                        @if ($service->isWordPressContainer())
+                            @php $pageCacheOn = (($service->service_meta['wordpress_page_cache'] ?? true) !== false); @endphp
+                            <div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-4 flex flex-wrap items-start justify-between gap-3">
+                                <div class="min-w-0">
+                                    <p class="text-sm font-semibold text-slate-900 dark:text-white">Page cache</p>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-xl">
+                                        Visitors who are not logged in are served a copy of each page for up to a minute, so most traffic never reaches WordPress. Logged-in users, carts, comments and everything under wp-admin always bypass it. A published change appears within a minute.
+                                    </p>
+                                    <p class="text-xs mt-1 {{ $pageCacheOn ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400' }}">
+                                        Currently {{ $pageCacheOn ? 'on' : 'off' }}.
+                                    </p>
+                                </div>
+                                <form method="POST" action="{{ container_route('page-cache', $service) }}" class="shrink-0">
+                                    @csrf
+                                    <input type="hidden" name="enabled" value="{{ $pageCacheOn ? '0' : '1' }}">
+                                    <button type="submit" class="px-4 py-2 rounded-lg text-sm font-medium transition {{ $pageCacheOn ? 'bg-slate-200 hover:bg-slate-300 text-slate-800 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-slate-100' : 'bg-emerald-600 hover:bg-emerald-700 text-white' }}">
+                                        {{ $pageCacheOn ? 'Turn off' : 'Turn on' }}
+                                    </button>
+                                </form>
+                            </div>
+                        @endif
+
                         <!-- Quick Actions -->
                         <div class="flex gap-3 flex-wrap items-center">
                             @if ($deployment->isRunning())

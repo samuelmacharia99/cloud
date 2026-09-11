@@ -379,6 +379,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::resource('admin/container-templates', ContainerTemplateController::class)->names('admin.container-templates');
         Route::resource('admin/database-templates', DatabaseTemplateController::class)->except(['show'])->names('admin.database-templates');
         Route::post('admin/services/{service}/container/restart', [ContainerController::class, 'restart'])->name('admin.services.container.restart');
+        Route::post('admin/services/{service}/container/page-cache', [App\Http\Controllers\Customer\ContainerController::class, 'toggleWordPressPageCache'])->name('admin.services.container.page-cache');
         Route::post('admin/services/{service}/container/suspend', [ContainerController::class, 'suspend'])->name('admin.services.container.suspend');
         Route::post('admin/services/{service}/container/stop', [ContainerController::class, 'stop'])->name('admin.services.container.stop');
         Route::post('admin/services/{service}/container/start', [ContainerController::class, 'start'])->name('admin.services.container.start');
@@ -845,6 +846,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('my/services/{service}/container', [App\Http\Controllers\Customer\ContainerController::class, 'show'])->name('customer.services.container.show');
         Route::delete('my/services/{service}/container', [App\Http\Controllers\Customer\ContainerController::class, 'destroy'])->name('customer.services.container.destroy');
         Route::post('my/services/{service}/container/restart', [App\Http\Controllers\Customer\ContainerController::class, 'restart'])->name('customer.services.container.restart');
+        Route::post('my/services/{service}/container/page-cache', [App\Http\Controllers\Customer\ContainerController::class, 'toggleWordPressPageCache'])->middleware('throttle:10,1')->name('customer.services.container.page-cache');
         Route::post('my/services/{service}/container/redeploy', [App\Http\Controllers\Customer\ContainerController::class, 'redeploy'])->middleware('throttle:10,10')->name('customer.services.container.redeploy');
         Route::post('my/services/{service}/container/initialize-laravel', [App\Http\Controllers\Customer\ContainerController::class, 'initializeLaravel'])->middleware('throttle:laravel-container-actions')->name('customer.services.container.initialize-laravel');
         Route::post('my/services/{service}/container/clear-app', [App\Http\Controllers\Customer\ContainerController::class, 'clearAppDirectory'])->middleware('throttle:laravel-container-actions')->name('customer.services.container.clear-app');

@@ -74,6 +74,7 @@ class SettingSeeder extends Seeder
             ['key' => 'reseller_enforce_limits_on_provision', 'value' => 'true', 'description' => 'Block provisioning when reseller is at limit or suspended'],
             ['key' => 'reseller_suspend_on_disk_pool_overquota', 'value' => 'true', 'description' => 'Automatically suspend resellers when total managed disk usage exceeds package pool'],
             ['key' => 'reseller_enforce_compute_pool', 'value' => 'true', 'description' => 'Refuse new reseller hosting orders that would exceed the package CPU or RAM pool'],
+            ['key' => 'wordpress_page_cache_enabled', 'value' => 'true', 'description' => 'Serve anonymous WordPress pages from the node nginx cache for one minute'],
             ['key' => 'reseller_suspend_on_user_overquota', 'value' => 'true', 'description' => 'Automatically suspend resellers when hosted user count exceeds package max_users'],
             ['key' => 'suspend_on_disk_overquota', 'value' => 'true', 'description' => 'Suspend DirectAdmin hosting when disk quota is exceeded (legacy toggle; see suspend_on_package_overquota)'],
             ['key' => 'suspend_on_package_overquota', 'value' => 'true', 'description' => 'Automatically suspend shared hosting when disk, bandwidth, or database limits are exceeded'],

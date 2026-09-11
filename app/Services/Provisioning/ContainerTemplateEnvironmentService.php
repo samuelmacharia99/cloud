@@ -125,8 +125,52 @@ class ContainerTemplateEnvironmentService
      * @param  array<string, mixed>  $compose
      * @param  array<string, string>  $envVars
      */
-    public function syncEmbeddedDatabaseSidecar(array &$compose, object $template, array $envVars, string $appServiceName): void
+    /**
+     * Share of a plan's memory the database sidecar is reserved.
+     */
+    public static function databaseMemoryMb(int $planMemoryMb): int
     {
+        return max(64, (int) floor($planMemoryMb * ContainerElasticResourceService::DATABASE_SHARE));
+    }
+
+    /**
+     * MySQL command flags for a plan.
+     *
+     * The buffer pool takes most of the database's own reservation, which is
+     * where InnoDB wants to live; the rest covers connections, the table cache
+     * and the server itself. Without a plan the historical fixed values are
+     * returned unchanged, so any caller that does not know the plan keeps
+     * exactly today's behaviour.
+     *
+     * @return list<string>
+     */
+    public function mysqlTuningFlags(?int $planMemoryMb = null): array
+    {
+        $bufferPoolMb = 256;
+        $maxConnections = 50;
+
+        if ($planMemoryMb !== null && $planMemoryMb > 0) {
+            $databaseMb = self::databaseMemoryMb($planMemoryMb);
+            $bufferPoolMb = max(128, min(2048, (int) floor($databaseMb * 0.6)));
+            $maxConnections = max(50, min(300, (int) floor($databaseMb / 4)));
+        }
+
+        return [
+            '--innodb-buffer-pool-size='.$bufferPoolMb.'M',
+            '--max-connections='.$maxConnections,
+            '--table-open-cache=200',
+            '--performance-schema=OFF',
+            '--innodb-use-native-aio=0',
+        ];
+    }
+
+    public function syncEmbeddedDatabaseSidecar(
+        array &$compose,
+        object $template,
+        array $envVars,
+        string $appServiceName,
+        ?int $planMemoryMb = null,
+    ): void {
         $this->inheritEnvironmentIntoSameImageSidecars($compose, $template, $envVars, $appServiceName);
         $this->syncChatwootSidecars($compose, $template, $envVars);
         $this->syncErpnextSidecars($compose, $template, $envVars);
@@ -164,14 +208,9 @@ class ContainerTemplateEnvironmentService
         unset($compose['services']['mysql']['mem_limit'], $compose['services']['mysql']['cpus']);
         $compose['services']['mysql']['mem_reservation'] = '256M';
 
-        // Keep InnoDB comfortably inside the 512M container budget.
-        $compose['services']['mysql']['command'] = [
-            '--innodb-buffer-pool-size=256M',
-            '--max-connections=50',
-            '--table-open-cache=200',
-            '--performance-schema=OFF',
-            '--innodb-use-native-aio=0',
-        ];
+        // Sized from the plan, not fixed. A fixed 256M pool meant a customer on
+        // four gigabytes ran the same database as one on one gigabyte.
+        $compose['services']['mysql']['command'] = $this->mysqlTuningFlags($planMemoryMb);
 
         $compose['services']['mysql']['networks'] = [
             'default' => [

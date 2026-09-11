@@ -41,6 +41,63 @@ class WordPressContainerHardeningService
         ]);
     }
 
+    /**
+     * How many requests Apache may run at once, from the plan.
+     *
+     * The image ships mpm_prefork with a default ceiling in the hundreds. With
+     * mod_php each of those workers can claim the PHP memory limit, so on a
+     * small plan a traffic spike is how a node runs out of memory. Budgeting
+     * 64 MB per worker is deliberately generous for WordPress; the page cache
+     * in front means most anonymous traffic never reaches Apache at all.
+     */
+    public function maxRequestWorkers(?int $planMemoryMb = null): int
+    {
+        if ($planMemoryMb === null || $planMemoryMb <= 0) {
+            return 16;
+        }
+
+        $appMemoryMb = (int) floor($planMemoryMb * (1 - ContainerElasticResourceService::DATABASE_SHARE));
+
+        return max(8, min(64, (int) floor($appMemoryMb / 64)));
+    }
+
+    public function apacheWorkersConfContents(?int $planMemoryMb = null): string
+    {
+        $workers = $this->maxRequestWorkers($planMemoryMb);
+
+        return implode("\n", [
+            '# Managed by Talksasa — sized from the plan this site is on.',
+            '<IfModule mpm_prefork_module>',
+            '    StartServers 2',
+            '    MinSpareServers 2',
+            "    MaxSpareServers {$workers}",
+            "    MaxRequestWorkers {$workers}",
+            '    MaxConnectionsPerChild 500',
+            '</IfModule>',
+            '',
+        ]);
+    }
+
+    public function apacheWorkersHostPath(string $containerName): string
+    {
+        return ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$containerName.'/php/talksasa-workers.conf';
+    }
+
+    public function apacheWorkersVolumeMount(string $containerName): string
+    {
+        return $this->apacheWorkersHostPath($containerName).':/etc/apache2/conf-enabled/talksasa-workers.conf:ro';
+    }
+
+    /**
+     * Write the worker ceiling on the host so compose can bind-mount it.
+     */
+    public function ensureApacheWorkersFile(SSHService $ssh, string $containerName, ?int $planMemoryMb = null): void
+    {
+        $hostPath = $this->apacheWorkersHostPath($containerName);
+        $ssh->exec('mkdir -p '.escapeshellarg(dirname($hostPath)), 15);
+        $ssh->upload($this->apacheWorkersConfContents($planMemoryMb), $hostPath);
+    }
+
     public function uploadsIniHostPath(string $containerName): string
     {
         return ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$containerName.'/php/uploads.ini';
@@ -78,6 +135,9 @@ if (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROT
 if (! defined('DISABLE_WP_CRON')) {
     define('DISABLE_WP_CRON', true);
 }
+if (! defined('WP_AUTO_UPDATE_CORE')) {
+    define('WP_AUTO_UPDATE_CORE', 'minor');
+}
 $sessionDir = '/var/www/html/wp-content/uploads/sessions';
 if (is_dir($sessionDir) || @mkdir($sessionDir, 0775, true)) {
     @ini_set('session.save_path', $sessionDir);
@@ -99,11 +159,20 @@ SNIP;
             .'     $text = "<?php\\n".$snippet.$text;'
             .'   }'
             .'   $changed = true;'
-            .' } elseif (! str_contains($text, \'DISABLE_WP_CRON\')) {'
-            .'   $insert = "if (! defined(\'DISABLE_WP_CRON\')) {\\n    define(\'DISABLE_WP_CRON\', true);\\n}\\n";'
-            .'   $count = 0;'
-            .'   $text = preg_replace(\'/(\\/\\* TALKASA_PROXY_HTTPS \\*\\/\\n)/\', \'$1\'.$insert, $text, 1, $count);'
-            .'   if ($count > 0) { $changed = true; }'
+            .' } else {'
+            // Back-fill each constant independently on a file hardened by an
+            // older deploy. One elseif per constant meant every new one needed
+            // its own special case and only the first ever landed.
+            .'   $constants = ['
+            .'     "DISABLE_WP_CRON" => "if (! defined(\'DISABLE_WP_CRON\')) {\\n    define(\'DISABLE_WP_CRON\', true);\\n}\\n",'
+            .'     "WP_AUTO_UPDATE_CORE" => "if (! defined(\'WP_AUTO_UPDATE_CORE\')) {\\n    define(\'WP_AUTO_UPDATE_CORE\', \'minor\');\\n}\\n",'
+            .'   ];'
+            .'   foreach ($constants as $name => $insert) {'
+            .'     if (str_contains($text, $name)) { continue; }'
+            .'     $count = 0;'
+            .'     $text = preg_replace(\'/(\\/\\* TALKASA_PROXY_HTTPS \\*\\/\\n)/\', \'$1\'.$insert, $text, 1, $count);'
+            .'     if ($count > 0) { $changed = true; }'
+            .'   }'
             .' }'
             .' if ($changed) { file_put_contents($cfg, $text); }'
             .' exit(0);';
@@ -202,6 +271,11 @@ SNIP;
         string $containerPath
     ): void {
         $this->ensureUploadsIniFile($ssh, $containerName);
+        $this->ensureApacheWorkersFile(
+            $ssh,
+            $containerName,
+            (int) ($service->containerDeployment?->memory_limit_mb ?: 0),
+        );
         $this->ensureWpConfigHardening($ssh, $containerPath, $containerName);
         $hostAppPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$containerName.'/app';
         $this->wrapHtaccessOnHost($ssh, $hostAppPath);

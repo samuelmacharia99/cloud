@@ -244,6 +244,40 @@ class ContainerController extends Controller
     /**
      * Restart container
      */
+    /**
+     * Turn the anonymous page cache on or off for one WordPress site.
+     *
+     * The cache lives in the node's nginx, so the switch is a vhost rewrite
+     * rather than anything inside the container.
+     */
+    public function toggleWordPressPageCache(Service $service, Request $request): RedirectResponse
+    {
+        $this->authorize('manageContainer', $service);
+
+        if (! $service->isWordPressContainer()) {
+            return back()->withErrors(['error' => 'Page caching is only available for WordPress sites.']);
+        }
+
+        $enabled = $request->boolean('enabled');
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        $meta['wordpress_page_cache'] = $enabled;
+        $service->update(['service_meta' => $meta]);
+
+        try {
+            app(NginxProxyService::class)->refreshBoundDomainVhosts($service->fresh(), force: true);
+        } catch (\Throwable $e) {
+            \Log::warning("Could not refresh vhosts after a page cache toggle for service {$service->id}: ".$e->getMessage());
+
+            return back()->withErrors([
+                'error' => 'The setting was saved but the web server could not be updated. Try again shortly.',
+            ]);
+        }
+
+        return back()->with('success', $enabled
+            ? 'Page caching is on. Anonymous visitors are served a cached copy for up to a minute.'
+            : 'Page caching is off. Every request now reaches WordPress.');
+    }
+
     public function restart(Service $service): RedirectResponse
     {
         $this->authorize('manageContainer', $service);

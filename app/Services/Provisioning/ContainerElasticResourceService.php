@@ -16,6 +16,12 @@ class ContainerElasticResourceService
     public const POLICY_VERSION = 'elastic-v1';
 
     /**
+     * Share of a plan reserved for the database sidecar. Public because engine
+     * tuning has to agree with the reservation it is sized against.
+     */
+    public const DATABASE_SHARE = 0.30;
+
+    /**
      * @param  array<string, mixed>  $compose
      */
     public function apply(array &$compose, string $appServiceName, float $includedCpu, int $includedMemoryMb): void
@@ -132,7 +138,7 @@ class ContainerElasticResourceService
             true
         )));
         $weights = array_fill_keys($names, 0.0);
-        $databaseShare = $databaseNames === [] ? 0.0 : 0.30;
+        $databaseShare = $databaseNames === [] ? 0.0 : self::DATABASE_SHARE;
         foreach ($databaseNames as $name) {
             $weights[$name] = $databaseShare / count($databaseNames);
         }
