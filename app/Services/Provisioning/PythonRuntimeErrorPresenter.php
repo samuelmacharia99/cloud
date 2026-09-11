@@ -85,6 +85,18 @@ class PythonRuntimeErrorPresenter
             ];
         }
 
+        $ownRules = $this->applicationRejectedItsOwnConfiguration($output);
+        if ($ownRules !== []) {
+            return [
+                'message' => 'The application refused to start because its own configuration check failed: '
+                    .implode(' ', $ownRules)
+                    .' That sentence is written in your code, so it names a rule your settings do not satisfy. '
+                    .'Correct the values under Environment on this service, then start it again.',
+                'missing_variables' => [],
+                'unparsable_variables' => [],
+            ];
+        }
+
         $module = $this->unimportableModule($output);
         if ($module !== null) {
             return [
@@ -97,6 +109,52 @@ class PythonRuntimeErrorPresenter
         }
 
         return null;
+    }
+
+    /**
+     * A rule the application enforces on its own settings, which pydantic
+     * reports without naming any field:
+     *
+     *     pydantic_core._pydantic_core.ValidationError: 1 validation error for Settings
+     *       Value error, Production config must use the M-Pesa production environment
+     *
+     * A model-level validator has no field to blame, so every reader here that
+     * looks for a field name followed by a message found nothing, and a
+     * customer got fifty frames of uvicorn and click instead of the one
+     * sentence their own code had written for exactly this moment.
+     *
+     * The message is passed through as the application wrote it. Nothing here
+     * knows what the rule means, and paraphrasing somebody's own words is how
+     * a diagnosis becomes a guess.
+     *
+     * @return list<string>
+     */
+    private function applicationRejectedItsOwnConfiguration(string $output): array
+    {
+        if (! str_contains($output, 'validation error')) {
+            return [];
+        }
+
+        if (! preg_match_all('/^\s*Value error,\s*(.+)$/m', $output, $matches)) {
+            return [];
+        }
+
+        $messages = [];
+        foreach ($matches[1] as $message) {
+            // pydantic appends "[type=value_error, input_value={...}]", and
+            // input_value echoes the settings that were supplied. Keeping it
+            // would print the customer's configuration into an alert.
+            $message = (string) preg_replace('/\s*\[type=.*$/s', '', (string) $message);
+            $message = trim($message);
+
+            if ($message === '') {
+                continue;
+            }
+
+            $messages[rtrim($message, '.').'.'] = true;
+        }
+
+        return array_keys($messages);
     }
 
     /**

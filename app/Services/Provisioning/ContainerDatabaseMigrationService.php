@@ -96,7 +96,14 @@ class ContainerDatabaseMigrationService
             // of the app plus Compose's start-up narration. A stopped stack is
             // exactly the case a missing schema causes, so `run --rm` remains
             // the fallback — it starts the database sidecar on its own.
-            $output = $deployment->isRunning()
+            // The live container, not the row. A crash-looping container is
+            // recorded as running, because Docker reports it running for the
+            // second between restarts, and `docker compose exec` into one
+            // refuses with "is restarting, wait until the container is
+            // running". Migrations are exactly what somebody reaches for when
+            // their application will not boot, so the one state where they were
+            // refused was the state that needed them.
+            $output = $this->appContainerAcceptsExec($ssh, $deployment)
                 ? $commands->execInContainer(
                     $ssh,
                     $containerPath,
@@ -127,6 +134,31 @@ class ContainerDatabaseMigrationService
             'tables_before' => $before,
             'tables_after' => $after,
         ];
+    }
+
+    /**
+     * Whether the application container will accept `docker compose exec`.
+     *
+     * Restarting counts as no. The daemon refuses an exec into a container that
+     * is between restarts, and a one-off container does the same work without
+     * needing the application to stay up.
+     */
+    private function appContainerAcceptsExec(SSHService $ssh, ContainerDeployment $deployment): bool
+    {
+        try {
+            $inspect = app(ContainerRuntimeInspector::class)->inspect($ssh, (string) $deployment->container_name);
+        } catch (\Throwable) {
+            // Unknown is treated as running, which is what the platform assumed
+            // before it could ask. A wrong guess here costs one clear error.
+            return $deployment->isRunning();
+        }
+
+        if (($inspect['missing'] ?? false) === true) {
+            return false;
+        }
+
+        return ($inspect['running'] ?? false) === true
+            && ($inspect['restarting'] ?? false) !== true;
     }
 
     /**

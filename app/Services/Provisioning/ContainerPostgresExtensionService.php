@@ -265,10 +265,7 @@ class ContainerPostgresExtensionService
         // `FATAL: role "postgres" does not exist`, and the fallback succeeded.
         // Doctor then read six hours of logs, found the line the platform had
         // just written, and raised it to the customer as a critical fault.
-        $roles = app(ContainerDeploymentService::class)->postgresqlAdminRoleCandidates(
-            $env,
-            (string) ($env['DB_USERNAME'] ?? $env['POSTGRES_USER'] ?? 'appuser'),
-        );
+        $roles = $this->superuserCandidates($env);
 
         $attempts = array_map(
             fn (string $role): string => 'cd '.escapeshellarg($containerPath)
@@ -278,9 +275,86 @@ class ContainerPostgresExtensionService
             $roles,
         );
 
-        $ssh->exec(implode(' || ', $attempts), 120);
+        try {
+            $ssh->exec(implode(' || ', $attempts), 120);
+        } catch (\Throwable $e) {
+            // The goal is the extension existing, not a command exiting zero.
+            // One failed login among several attempts is not a failure if the
+            // extension is there afterwards, and reporting it as one sent a
+            // customer back to a button that had already done its job.
+            if (! $this->extensionInstalled($ssh, $containerPath, $env, 'postgis')) {
+                throw $e;
+            }
+        }
 
         return 'PostGIS is available in this database.';
+    }
+
+    /**
+     * Roles that might own this cluster, the likeliest first.
+     *
+     * The official image creates exactly one superuser, named by POSTGRES_USER,
+     * and no `postgres` role at all unless that is the name chosen. Trying
+     * `postgres` first therefore failed every time on these volumes, logged
+     * `FATAL: role "postgres" does not exist`, and Doctor read that line back
+     * to the customer as a critical fault the platform had just invented.
+     *
+     * Deliberately not postgresqlAdminRoleCandidates(): that one leads with a
+     * platform admin name which is itself sometimes `postgres`, which would put
+     * the failing login back at the front.
+     *
+     * @param  array<string, mixed>  $env
+     * @return list<string>
+     */
+    private function superuserCandidates(array $env): array
+    {
+        $roles = [];
+
+        foreach ([
+            $env['POSTGRES_USER'] ?? null,
+            $env['DB_USERNAME'] ?? null,
+            $env['TALKSASA_PLATFORM_DB_USERNAME'] ?? null,
+            'postgres',
+        ] as $role) {
+            $role = trim((string) $role);
+            if ($role !== '') {
+                $roles[$role] = true;
+            }
+        }
+
+        return array_keys($roles);
+    }
+
+    /**
+     * @param  array<string, mixed>  $env
+     */
+    private function extensionInstalled(
+        SSHService $ssh,
+        string $containerPath,
+        array $env,
+        string $extension,
+    ): bool {
+        $database = escapeshellarg((string) ($env['DB_DATABASE'] ?? $env['POSTGRES_DB'] ?? 'appdb'));
+        $password = escapeshellarg((string) ($env['DB_PASSWORD'] ?? $env['POSTGRES_PASSWORD'] ?? ''));
+
+        foreach ($this->superuserCandidates($env) as $role) {
+            try {
+                $found = trim((string) $ssh->exec(
+                    'cd '.escapeshellarg($containerPath).' && docker compose exec -T -e PGPASSWORD='.$password
+                    .' db psql -U '.escapeshellarg($role).' -d '.$database.' -tAc '
+                    .escapeshellarg("SELECT 1 FROM pg_extension WHERE extname = '".$extension."'"),
+                    30
+                ));
+            } catch (\Throwable) {
+                continue;
+            }
+
+            if (str_contains($found, '1')) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function readCompose(SSHService $ssh, string $containerPath, ContainerDeployment $deployment): string
