@@ -748,6 +748,24 @@ class ContainerDoctorService
                     $checks['db_ok'] = $probe['ok'];
                     $checks['db_error'] = $probe['error'];
 
+                    // The probe above asks the platform's question. WordPress
+                    // reads wp-config.php, which the official image writes once
+                    // and never updates, so the two can disagree and the panel
+                    // would happily report a connected database to somebody
+                    // staring at "Error establishing a database connection".
+                    if ($stack === 'wordpress' && in_array((string) $databaseTemplate->type, ['mysql', 'mariadb'], true)) {
+                        $wordpressDb = app(WordPressDatabaseConfigAnalyzer::class)->analyze(
+                            $ssh,
+                            $deployment,
+                            $mergedEnv,
+                            (bool) $probe['ok'],
+                        );
+                        $checks = array_merge($checks, $wordpressDb['checks']);
+                        foreach ($wordpressDb['findings'] as $wordpressFinding) {
+                            $findings[] = $wordpressFinding;
+                        }
+                    }
+
                     $configuredDbHost = (string) (
                         $mergedEnv['WORDPRESS_DB_HOST']
                         ?? $platformEnv['WORDPRESS_DB_HOST']

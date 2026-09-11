@@ -75,6 +75,8 @@
                 <span x-show="liveChecks.http_status_home" x-text="'HTTP /home ' + liveChecks.http_status_home"></span>
                 <span x-show="liveChecks.http_status_home_origin" x-text="'HTTP /home origin ' + liveChecks.http_status_home_origin"></span>
                 <span x-text="liveChecks.db_ok === true ? 'DB: connected' : (liveChecks.db_ok === false ? 'DB: failed' : 'DB: n/a')"></span>
+                <span x-show="liveChecks.wordpress_db_ok === false" class="text-red-700 dark:text-red-300 font-semibold">wp-config DB: failed</span>
+                <span x-show="liveChecks.wordpress_db_ok === true && liveChecks.wordpress_config_differs" class="text-amber-700 dark:text-amber-300">wp-config DB: differs</span>
                 <span x-show="liveChecks.table_count !== null && liveChecks.table_count !== undefined" x-text="'Tables: ' + liveChecks.table_count"></span>
                 <span x-show="liveChecks.env_source" x-text="'Env: ' + liveChecks.env_source"></span>
                 <span x-show="liveChecks.upstream_reachable !== null && liveChecks.upstream_reachable !== undefined"

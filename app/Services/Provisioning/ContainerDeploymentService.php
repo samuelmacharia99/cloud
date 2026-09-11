@@ -5755,7 +5755,7 @@ class ContainerDeploymentService
         );
     }
 
-    private function readWordPressConfigFile(SSHService $ssh, string $containerName): string
+    public function readWordPressConfigFile(SSHService $ssh, string $containerName): string
     {
         $hostPath = self::CONTAINER_BASE_PATH.'/'.$containerName.'/app/wp-config.php';
         try {
