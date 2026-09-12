@@ -292,8 +292,10 @@ Backup Logs: /var/log/backup.log
 | AppArmor Profiles | ✅ |
 | RAID 1 Redundancy | ✅ |
 | Automated Backups | ✅ |
-| SSL/TLS for Domains | ✅ |
-| Network Isolation | ✅ |
+| SSL/TLS for Domains | ✅ (customer domains per hostname, platform hostnames from one wildcard per node) |
+| Network Isolation | ✅ one private Docker network per stack, subnet allocated by the platform; `talksasa-net` only for templates that opt in |
+| Published Ports | ✅ bound to 127.0.0.1; host nginx is the only front door |
+| Container Hardening | ✅ `no-new-privileges`, `cap_drop` (NET_RAW, MKNOD, AUDIT_WRITE, SYS_CHROOT, SETFCAP), `pids_limit` on every service |
 | Resource Limits | ✅ |
 
 ### Deployment Security
@@ -301,10 +303,10 @@ Backup Logs: /var/log/backup.log
 | Layer | Protection |
 |-------|-----------|
 | Transport | SSH with key auth only |
-| Deployment | Docker user namespace isolation |
-| Network | UFW firewall + Docker user-defined networks |
+| Deployment | `ContainerIsolationPolicy` on every render; `containers:apply-isolation` moves stacks that predate it |
+| Network | Per-stack bridge networks; loopback-only publishing; UFW for the host itself |
 | Storage | RAID 1 + daily backups |
-| Secrets | Environment variables encrypted at rest |
+| Secrets | `env_values`, rendered compose and hosting credentials encrypted at rest; no plaintext mirror in `service_meta` |
 
 ---
 

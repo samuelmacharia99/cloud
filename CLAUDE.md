@@ -141,6 +141,12 @@ Supporting subsystems in `app/Services/Provisioning` (86 classes):
 - Every remote command goes through `SSHService::exec` with an explicit timeout. Never interpolate
   unescaped user input into a shell string.
 - Readiness is proven by polling a `waitFor*` helper, never by sleeping.
+- Ports, networks and capabilities are set only by `ContainerIsolationPolicy`, which runs last in
+  `renderCompose`. Do not add `ports`, `networks`, `cap_*` or `security_opt` keys elsewhere. A
+  re-render of a running stack passes `rerenderKeepsIsolation` / `rerenderSubnet` back in; only
+  deploy, redeploy and `containers:apply-isolation` move a stack off the shared bridge.
+- Secrets never go into `service_meta`. Checkout values wait in `ContainerEnvironmentSeed`; a
+  deployed service's environment lives only in `container_deployments.env_values`.
 
 ---
 

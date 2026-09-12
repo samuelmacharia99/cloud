@@ -65,6 +65,20 @@ class ContainerIsolationPolicy
     }
 
     /**
+     * The compose service that is the application. Gateway stacks key it
+     * `backend` and give the published port to `edge`; every other stack keys
+     * it by container name. The rollout and live migration re-apply the
+     * policy to files they did not render, so they need the same answer the
+     * renderer had.
+     */
+    public static function appServiceKey(string $yaml, string $containerName): string
+    {
+        return str_contains($yaml, "\n  ".LaravelNextGatewayProxy::BACKEND_SERVICE.":\n")
+            ? LaravelNextGatewayProxy::BACKEND_SERVICE
+            : $containerName;
+    }
+
+    /**
      * @param  array<string, mixed>  $compose
      */
     public function apply(

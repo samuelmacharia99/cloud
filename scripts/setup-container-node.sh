@@ -88,7 +88,7 @@ else
     log_success "Docker already installed"
 fi
 
-apt-get install -y nginx certbot python3-certbot-nginx
+apt-get install -y nginx certbot python3-certbot-nginx python3-certbot-dns-cloudflare
 systemctl enable --now nginx
 
 log_success "System updated and tools installed"
@@ -245,7 +245,8 @@ log_success "System limits and kernel parameters optimized"
 
 log_info "=== SECTION 6: Networking ==="
 
-# Create custom Docker network
+# The shared bridge. Stacks run on their own networks; only templates that
+# opt in (Ollama, Hermes) attach their app container here as well.
 docker network create talksasa-net 2>/dev/null || log_warn "Network may already exist"
 
 log_success "Docker network configured"
@@ -268,9 +269,10 @@ ufw allow 22/tcp > /dev/null
 ufw allow 80/tcp > /dev/null
 ufw allow 443/tcp > /dev/null
 
-# Allow container ports (30000-40000)
-ufw allow 30000:40000/tcp > /dev/null
-ufw allow 30000:40000/udp > /dev/null
+# Stack ports are published on loopback only; nginx on this host is the front
+# door. Remove the range an older setup opened.
+ufw delete allow 30000:40000/tcp > /dev/null 2>&1 || true
+ufw delete allow 30000:40000/udp > /dev/null 2>&1 || true
 
 # Allow Docker metrics
 ufw allow 9323/tcp > /dev/null

@@ -55,8 +55,8 @@ cat > /etc/docker/daemon.json <<'EOF'
 EOF
 systemctl restart docker
 
-log "Installing Nginx + Certbot for domain binding/SSL"
-apt-get install -y nginx certbot python3-certbot-nginx
+log "Installing Nginx + Certbot for domain binding/SSL (DNS plugin for the platform wildcard)"
+apt-get install -y nginx certbot python3-certbot-nginx python3-certbot-dns-cloudflare
 systemctl enable --now nginx
 
 log "Preparing Talksasa container directories"
@@ -77,8 +77,10 @@ ufw default allow outgoing >/dev/null
 ufw allow 22/tcp >/dev/null
 ufw allow 80/tcp >/dev/null
 ufw allow 443/tcp >/dev/null
-ufw allow 30000:40000/tcp >/dev/null
-ufw allow 30000:40000/udp >/dev/null
+# Stack ports are published on loopback only; nginx on this host is the front
+# door. Remove the range an older bootstrap opened.
+ufw delete allow 30000:40000/tcp >/dev/null 2>&1 || true
+ufw delete allow 30000:40000/udp >/dev/null 2>&1 || true
 
 log "Ensuring Fail2ban service is enabled"
 systemctl enable --now fail2ban

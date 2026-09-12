@@ -377,10 +377,7 @@ class ContainerMigrationService
         }
 
         $subnet = $this->deploymentService->stackNetworkAllocator()->allocate($targetNode, $deployment->id);
-        // Gateway stacks key the app service `backend`; everything else keys it by container name.
-        $appService = str_contains($yaml, "\n  backend:\n")
-            ? LaravelNextGatewayProxy::BACKEND_SERVICE
-            : (string) $deployment->container_name;
+        $appService = ContainerIsolationPolicy::appServiceKey($yaml, (string) $deployment->container_name);
         $slug = $deployment->service?->effectiveContainerTemplate()?->slug;
         $patched = $policy->applyToYaml($yaml, $appService, (string) $deployment->container_name, $subnet, $slug);
 

@@ -450,8 +450,14 @@ DNSSEC=no
 
 ### 4. Container Networking
 
+Every stack runs on its own bridge network (`{container}-net`, subnet allocated by the
+platform from `containers.isolation.stack_subnet_base`) with its ports published on
+`127.0.0.1` only. `talksasa-net` is the shared bridge that templates opting in (Ollama,
+Hermes) attach their app container to so same-node links resolve by container name; it is
+still created on every host.
+
 ```bash
-# Create custom bridge network for containers
+# Create the shared bridge (opt-in only; stacks get their own network from Compose)
 docker network create --driver bridge talksasa-net
 
 # Optional: Configure MTU if needed (for some networks)
