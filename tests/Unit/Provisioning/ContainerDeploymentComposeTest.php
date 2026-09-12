@@ -15,33 +15,25 @@ use App\Services\Provisioning\ContainerStackCommandService;
 use App\Services\Provisioning\ContainerTemplateEnvironmentService;
 use App\Services\Provisioning\RuntimeImageProvisioner;
 use App\Services\SSH\SSHService;
-use Illuminate\Container\Container;
-use Illuminate\Log\Logger;
-use Illuminate\Support\Facades\Facade;
-use Monolog\Handler\NullHandler;
-use Monolog\Logger as Monolog;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
 use Symfony\Component\Yaml\Yaml;
+use Tests\Support\BootsBareFacades;
 
 class ContainerDeploymentComposeTest extends TestCase
 {
+    use BootsBareFacades;
+
     protected function setUp(): void
     {
         parent::setUp();
-
-        // These are container-free unit tests, but the deployment service logs recovery
-        // steps, so give the Log facade somewhere harmless to write.
-        $container = new Container;
-        $container->instance('log', new Logger(new Monolog('testing', [new NullHandler])));
-        Facade::setFacadeApplication($container);
+        $this->bootBareFacades();
     }
 
     protected function tearDown(): void
     {
-        Facade::clearResolvedInstances();
-        Facade::setFacadeApplication(null);
+        $this->tearDownBareFacades();
 
         parent::tearDown();
     }

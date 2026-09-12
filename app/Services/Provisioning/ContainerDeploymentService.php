@@ -51,6 +51,8 @@ class ContainerDeploymentService
 
     private ContainerElasticResourceService $elasticResources;
 
+    private ContainerEnvironmentSeed $environmentSeed;
+
     private const PORT_RANGE_START = 30000;
 
     private const PORT_RANGE_END = 40000;
@@ -69,6 +71,7 @@ class ContainerDeploymentService
         ?ContainerApplicationRuntimeService $applicationRuntime = null,
         ?WordPressContainerHardeningService $wordpressHardening = null,
         ?ContainerElasticResourceService $elasticResources = null,
+        ?ContainerEnvironmentSeed $environmentSeed = null,
     ) {
         $this->runtimeImages = $runtimeImages ?? new RuntimeImageProvisioner;
         $this->appDirectory = $appDirectory ?? new ContainerAppDirectoryService;
@@ -77,6 +80,7 @@ class ContainerDeploymentService
         $this->applicationRuntime = $applicationRuntime ?? new ContainerApplicationRuntimeService;
         $this->wordpressHardening = $wordpressHardening ?? new WordPressContainerHardeningService;
         $this->elasticResources = $elasticResources ?? new ContainerElasticResourceService;
+        $this->environmentSeed = $environmentSeed ?? new ContainerEnvironmentSeed;
     }
 
     /**
@@ -175,7 +179,7 @@ class ContainerDeploymentService
                     'node_release' => data_get($service->service_meta, 'node_release'),
                 ];
             }
-            $envValues = $service->service_meta['env_values'] ?? [];
+            $envValues = $this->environmentSeed->read($service);
             if ($existingDeployment && is_array($existingDeployment->env_values)) {
                 $envValues = array_merge($existingDeployment->env_values, $envValues);
             }
@@ -292,6 +296,9 @@ class ContainerDeploymentService
                 'node_id' => $node->id,
                 'assigned_port' => $port,
             ]);
+
+            // The deployment row now owns the environment; nothing else keeps a copy.
+            $this->environmentSeed->clear($service);
 
             // Render docker-compose.yml with deployment
             $hostAppPath = $this->resolveHostAppPath($template, $containerName);
@@ -5550,7 +5557,6 @@ class ContainerDeploymentService
         if ((int) ($databaseTemplate->id ?? 0) > 0) {
             $meta['database_id'] = (int) $databaseTemplate->id;
         }
-        $meta['env_values'] = array_merge(is_array($meta['env_values'] ?? null) ? $meta['env_values'] : [], $envVars);
         $service->update(['service_meta' => $meta]);
         $deployment->update([
             'docker_compose_content' => $patched,
@@ -7228,7 +7234,6 @@ class ContainerDeploymentService
         ]);
 
         $meta = is_array($service->service_meta) ? $service->service_meta : [];
-        $meta['env_values'] = $envVars;
         $meta['frontend'] = $meta['frontend'] ?? 'nextjs';
         $service->update(['service_meta' => $meta]);
 

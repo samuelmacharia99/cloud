@@ -4,8 +4,10 @@ namespace Tests\Unit\Provisioning;
 
 use App\Models\ContainerDeployment;
 use App\Models\Service;
+use App\Services\Provisioning\ContainerDeploymentService;
 use App\Services\Provisioning\ContainerEnvironmentService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use ReflectionMethod;
 use Tests\TestCase;
@@ -91,6 +93,34 @@ class ContainerEnvironmentServiceTest extends TestCase
         $this->assertSame(ContainerEnvironmentService::STATE_SET, $panel['variables'][0]['state']);
         $this->assertTrue($panel['can_save']);
         $this->assertTrue($panel['can_apply']);
+    }
+
+    public function test_saving_variables_writes_the_deployment_row_only(): void
+    {
+        // service_meta used to receive a full plaintext copy of the
+        // environment on every save. The deployment row is the only owner now.
+        $service = Service::factory()->create(['service_meta' => ['domain' => 'example.com']]);
+        ContainerDeployment::factory()->create([
+            'service_id' => $service->id,
+            'env_values' => ['APP_ENV' => 'production'],
+        ]);
+        $this->mock(ContainerDeploymentService::class, function ($mock) {
+            $mock->shouldReceive('applyEnvironmentVariables')->andReturn(true);
+        });
+
+        $envService = new ContainerEnvironmentService;
+        $envService->updateVariables($service->fresh(['containerDeployment']), [
+            ['key' => 'API_TOKEN', 'value' => 'secret-token'],
+        ]);
+        $envService->deleteVariables($service->fresh(['containerDeployment']), ['APP_ENV']);
+
+        $fresh = $service->fresh(['containerDeployment']);
+        $this->assertSame(['API_TOKEN' => 'secret-token'], $fresh->containerDeployment->env_values);
+        $this->assertSame(['domain' => 'example.com'], $fresh->service_meta);
+        $this->assertStringNotContainsString(
+            'secret-token',
+            (string) DB::table('services')->where('id', $service->id)->value('service_meta')
+        );
     }
 
     public function test_build_panel_state_allows_save_while_deploying(): void

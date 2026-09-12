@@ -547,7 +547,7 @@
 
                         return $meta;
                     };
-                    $envCount = is_array($containerMeta['env_values'] ?? null) ? count($containerMeta['env_values']) : 0;
+                    $envCount = is_array($containerDeployment?->env_values) ? count($containerDeployment->env_values) : 0;
                 @endphp
                 <div class="ui-card p-6">
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Application</h2>

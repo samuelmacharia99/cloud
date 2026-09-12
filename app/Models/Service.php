@@ -185,6 +185,7 @@ class Service extends Model
 
     protected $casts = [
         'service_meta' => 'array',
+        'credentials' => 'encrypted',
         'next_due_date' => 'datetime',
         'commenced_at' => 'datetime',
         'suspend_date' => 'datetime',

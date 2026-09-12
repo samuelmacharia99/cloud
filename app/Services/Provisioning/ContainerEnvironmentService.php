@@ -254,10 +254,6 @@ class ContainerEnvironmentService
 
         $deployment->update(['env_values' => $current]);
 
-        $meta = is_array($service->service_meta) ? $service->service_meta : [];
-        $meta['env_values'] = $current;
-        $service->update(['service_meta' => $meta]);
-
         $message = 'Environment variables saved.';
         if ($skipped !== []) {
             $message .= ' '.implode(', ', $skipped).' had no value, so '
@@ -346,10 +342,6 @@ class ContainerEnvironmentService
         }
 
         $deployment->update(['env_values' => $current]);
-
-        $meta = is_array($service->service_meta) ? $service->service_meta : [];
-        $meta['env_values'] = $current;
-        $service->update(['service_meta' => $meta]);
 
         if ($dismissed !== []) {
             $requirements->rememberDismissed($service->fresh() ?? $service, $dismissed);

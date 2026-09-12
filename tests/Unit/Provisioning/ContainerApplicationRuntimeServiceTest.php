@@ -7,15 +7,26 @@ use App\Services\Provisioning\ContainerApplicationRuntimeService;
 use App\Services\Provisioning\ContainerStackCommandService;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Tests\Support\BootsBareFacades;
 
 class ContainerApplicationRuntimeServiceTest extends TestCase
 {
+    use BootsBareFacades;
+
     private ContainerApplicationRuntimeService $service;
 
     protected function setUp(): void
     {
         parent::setUp();
+        $this->bootBareFacades();
         $this->service = new ContainerApplicationRuntimeService;
+    }
+
+    protected function tearDown(): void
+    {
+        $this->tearDownBareFacades();
+
+        parent::tearDown();
     }
 
     #[Test]

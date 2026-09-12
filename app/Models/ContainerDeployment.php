@@ -37,7 +37,8 @@ class ContainerDeployment extends Model
     ];
 
     protected $casts = [
-        'env_values' => 'array',
+        'env_values' => 'encrypted:array',
+        'docker_compose_content' => 'encrypted',
         'assigned_port' => 'integer',
         'deployed_at' => 'datetime',
         'terminated_at' => 'datetime',

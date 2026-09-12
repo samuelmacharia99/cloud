@@ -3766,9 +3766,6 @@ PHP;
         }
 
         $deployment->update(['env_values' => $envVars]);
-        $meta = is_array($service->service_meta) ? $service->service_meta : [];
-        $meta['env_values'] = array_merge(is_array($meta['env_values'] ?? null) ? $meta['env_values'] : [], $envVars);
-        $service->update(['service_meta' => $meta]);
 
         try {
             app(ContainerDeploymentService::class)->applyEnvironmentVariables($service->fresh(), $deployment->fresh());
@@ -5068,9 +5065,6 @@ PHP;
             );
 
             $deployment->update(['env_values' => array_merge($platformEnv, $envVars)]);
-            $meta = is_array($service->service_meta) ? $service->service_meta : [];
-            $meta['env_values'] = array_merge($platformEnv, $envVars);
-            $service->update(['service_meta' => $meta]);
             $deployment->refresh();
             $service->setRelation('containerDeployment', $deployment);
 
@@ -5117,10 +5111,6 @@ PHP;
                     is_array($deployment->env_values) ? $deployment->env_values : [],
                     $envVars
                 )]);
-                $meta = is_array($service->service_meta) ? $service->service_meta : [];
-                $metaEnv = is_array($meta['env_values'] ?? null) ? $meta['env_values'] : [];
-                $meta['env_values'] = array_merge($metaEnv, $envVars);
-                $service->update(['service_meta' => $meta]);
                 $deployment->refresh();
 
                 try {
@@ -6977,14 +6967,6 @@ PHP;
             $env['CACHE_STORE'] = 'file';
             $env['CACHE_DRIVER'] = 'file';
             $deployment->update(['env_values' => $env]);
-            $meta = is_array($service->service_meta) ? $service->service_meta : [];
-            $metaEnv = is_array($meta['env_values'] ?? null) ? $meta['env_values'] : [];
-            $meta['env_values'] = array_merge($metaEnv, [
-                'SESSION_DRIVER' => 'file',
-                'CACHE_STORE' => 'file',
-                'CACHE_DRIVER' => 'file',
-            ]);
-            $service->update(['service_meta' => $meta]);
             app(ContainerEnvironmentService::class)
                 ->syncDotEnvFile($ssh, $service, $deployment->fresh(), $env);
 

@@ -33,6 +33,7 @@ use App\Services\DomainTransferService;
 use App\Services\EmailVerificationService;
 use App\Services\NotificationService;
 use App\Services\PaymentGateway\PaymentGatewayFactory;
+use App\Services\Provisioning\ContainerEnvironmentSeed;
 use App\Services\Provisioning\ContainerGitRepositoryService;
 use App\Services\RegistrationGuardService;
 use App\Services\ResellerBrandingResolver;
@@ -409,8 +410,9 @@ class CheckoutController extends Controller
                         if ($product->type === 'container_hosting') {
                             $envValuesKey = "env_values[{$item['key']}]";
                             $envValues = $request->input($envValuesKey, []);
-                            if (! empty($envValues)) {
-                                $serviceMeta['env_values'] = $envValues;
+                            $envSeed = is_array($envValues) ? app(ContainerEnvironmentSeed::class)->encode($envValues) : null;
+                            if ($envSeed !== null) {
+                                $serviceMeta[ContainerEnvironmentSeed::META_KEY] = $envSeed;
                             }
 
                             // Store selected version for templated containers
@@ -1279,8 +1281,9 @@ class CheckoutController extends Controller
                         if ($product->type === 'container_hosting' && $request) {
                             $envValuesKey = "env_values[{$item['key']}]";
                             $envValues = $request->input($envValuesKey, []);
-                            if (! empty($envValues)) {
-                                $serviceMeta['env_values'] = $envValues;
+                            $envSeed = is_array($envValues) ? app(ContainerEnvironmentSeed::class)->encode($envValues) : null;
+                            if ($envSeed !== null) {
+                                $serviceMeta[ContainerEnvironmentSeed::META_KEY] = $envSeed;
                             }
 
                             // Store selected version for templated containers

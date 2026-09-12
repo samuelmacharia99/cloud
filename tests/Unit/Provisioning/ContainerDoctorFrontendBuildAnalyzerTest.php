@@ -6,16 +6,27 @@ use App\Models\ContainerDeployment;
 use App\Services\Provisioning\ContainerDoctorFrontendBuildAnalyzer;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Tests\Support\BootsBareFacades;
 
 class ContainerDoctorFrontendBuildAnalyzerTest extends TestCase
 {
+    use BootsBareFacades;
+
     private ContainerDoctorFrontendBuildAnalyzer $analyzer;
 
     protected function setUp(): void
     {
         parent::setUp();
+        $this->bootBareFacades();
 
         $this->analyzer = new ContainerDoctorFrontendBuildAnalyzer;
+    }
+
+    protected function tearDown(): void
+    {
+        $this->tearDownBareFacades();
+
+        parent::tearDown();
     }
 
     #[Test]
