@@ -43,6 +43,48 @@ class ContainerDatabaseMigrationService
     private const UNSAFE_SCRIPT = '/\bmigrate\s+dev\b|\bmigrate\s+reset\b|\bmigrate:fresh\b|\bmigrate:rollback\b'
         .'|\bdb:drop\b|\bdb:wipe\b|\bdrop-schema\b|--accept-data-loss|--force-reset/i';
 
+    /**
+     * Run the repository's migrations before anything judges the application
+     * healthy.
+     *
+     * An application whose health route touches its own tables answers 500
+     * until its schema exists, and a readiness check that runs before the
+     * migration can never pass. So this waits only for the process to be
+     * listening, which is the moment the tool can be run inside it, and lets
+     * the caller's readiness check come after. Null when the repository
+     * declares no migration tool, which is not a fault.
+     *
+     * @return array{plan: ContainerMigrationPlan, output: string, tables_before: ?int, tables_after: ?int}|null
+     */
+    public function runBeforeReadiness(
+        Service $service,
+        ContainerDeployment $deployment,
+        SSHService $ssh,
+        ContainerDeploymentService $deployments,
+        bool $operationAlreadyLocked,
+    ): ?array {
+        $plan = $this->plan($service, $deployment, $ssh);
+        if ($plan === null) {
+            return null;
+        }
+
+        $deployments->waitForApplicationListening($ssh, $deployment, $this->listeningPath($service));
+
+        return ['plan' => $plan] + $this->run($service, $deployment, $ssh, $plan, $operationAlreadyLocked);
+    }
+
+    /**
+     * The route that proves the backend process is up. A split stack is
+     * reached through its edge, which serves the frontend at "/" whether or
+     * not the backend is there, so the backend is asked directly.
+     */
+    public function listeningPath(Service $service): string
+    {
+        return data_get($service->service_meta, 'node_workloads.topology') === 'split_web_api'
+            ? '/api/health'
+            : '/';
+    }
+
     public function plan(Service $service, ContainerDeployment $deployment, SSHService $ssh): ?ContainerMigrationPlan
     {
         $hostAppPath = rtrim(app(ContainerAppDirectoryService::class)->hostAppPath($deployment), '/');

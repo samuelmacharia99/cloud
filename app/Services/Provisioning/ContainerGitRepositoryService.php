@@ -465,7 +465,13 @@ class ContainerGitRepositoryService
 
             if (! $this->isLaravelService($service)) {
                 $this->runPullStep($pull, 'runtime', function () use ($service, $deployment, $ssh) {
-                    $message = $this->deploymentService->refreshApplicationRuntimeCompose($service, $deployment, $ssh);
+                    // Readiness is judged in the health step, after migrations.
+                    $message = $this->deploymentService->refreshApplicationRuntimeCompose(
+                        $service,
+                        $deployment,
+                        $ssh,
+                        awaitReadiness: false,
+                    );
 
                     // An empty answer means the stack had nothing to refresh.
                     // Reporting it as a refresh made a no-op read like work.
@@ -967,20 +973,24 @@ class ContainerGitRepositoryService
         ContainerDeployment $deployment,
         SSHService $ssh,
     ): string {
-        $migrations = app(ContainerDatabaseMigrationService::class);
-        $plan = $migrations->plan($service, $deployment, $ssh);
+        // The pull already holds the node build lock this service takes, so it
+        // must not block on a lock it owns itself.
+        $result = app(ContainerDatabaseMigrationService::class)->runBeforeReadiness(
+            $service,
+            $deployment,
+            $ssh,
+            $this->deploymentService,
+            operationAlreadyLocked: true,
+        );
 
-        if ($plan === null) {
+        if ($result === null) {
             // Not every application has migrations, and one that does not is
             // not a broken one. Saying so beats failing a step on a stack that
             // was never going to have a command to run.
             return 'No migration tool detected in this repository.';
         }
 
-        // The pull already holds the node build lock this service takes, so it
-        // must not block on a lock it owns itself.
-        $result = $migrations->run($service, $deployment, $ssh, $plan, operationAlreadyLocked: true);
-
+        $plan = $result['plan'];
         $summary = $plan->tool.' migrations applied ('.$plan->command.').';
         if ($result['tables_before'] !== null && $result['tables_after'] !== null) {
             $summary .= ' Tables: '.$result['tables_before'].' → '.$result['tables_after'].'.';

@@ -615,6 +615,26 @@ class ContainerDeploymentService
                 $deployment->touch();
                 try {
                     $this->waitForContainerHealth($ssh, $containerName, $healthTimeoutSeconds, $deployment);
+                    // Applications that own their schema get it before anyone
+                    // asks whether they are healthy. This deploy holds the
+                    // service's operation lock already.
+                    if (! in_array($template->slug ?? '', ['laravel', 'php', 'wordpress'], true)) {
+                        $migrated = app(ContainerDatabaseMigrationService::class)->runBeforeReadiness(
+                            $service,
+                            $deployment,
+                            $ssh,
+                            $this,
+                            operationAlreadyLocked: true,
+                        );
+                        if ($migrated !== null) {
+                            $this->recordDeploymentEvent($service, $deployment, 'application_migrations_ran', [
+                                'tool' => $migrated['plan']->tool,
+                                'command' => $migrated['plan']->command,
+                                'tables_before' => $migrated['tables_before'],
+                                'tables_after' => $migrated['tables_after'],
+                            ]);
+                        }
+                    }
                     if (($nodeTopology['topology'] ?? null) === 'split_web_api') {
                         $this->waitForNodeSplitStackReadiness($ssh, $deployment, $healthTimeoutSeconds);
                         $this->recordDeploymentEvent($service, $deployment, 'split_web_cutover_ready', [
@@ -3402,6 +3422,57 @@ class ContainerDeploymentService
         throw new \RuntimeException(
             'Laravel HTTP health check failed after '.$timeoutSeconds.' seconds'
             .($lastError ? ': '.$lastError->getMessage() : '.')
+        );
+    }
+
+    /**
+     * Wait until the application answers at all, whatever it answers.
+     *
+     * Readiness asks for a healthy status. This asks less: that the process
+     * behind the published port is up and responding, which is the moment a
+     * migration can be run inside it. A 500 counts, because an application
+     * whose schema is missing answers exactly that until the migration runs.
+     * The gateway's own 502/503/504 do not count: they mean the backend is
+     * not there yet, which on a Python stack is pip still installing.
+     */
+    public function waitForApplicationListening(
+        SSHService $ssh,
+        ContainerDeployment $deployment,
+        string $path = '/',
+        int $timeoutSeconds = 180,
+    ): void {
+        $port = (int) $deployment->assigned_port;
+        $path = '/'.ltrim($path, '/');
+        $maxAttempts = max(1, (int) ceil($timeoutSeconds / self::HEALTH_CHECK_DELAY));
+        $probe = 'code=$(curl -sS -o /dev/null -w "%{http_code}" --connect-timeout 2 --max-time 6 '
+            .escapeshellarg('http://127.0.0.1:'.$port.$path).' 2>/dev/null || true); '
+            .'case "$code" in 502|503|504|000|"") exit 1;; [1-5][0-9][0-9]) exit 0;; esac; exit 1';
+
+        for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
+            $deployment->touch();
+            try {
+                $this->waitForContainerRunning($ssh, $deployment->container_name, self::HEALTH_CHECK_DELAY * 2);
+                $ssh->exec('sh -lc '.escapeshellarg($probe), 15);
+
+                return;
+            } catch (\Throwable) {
+                if ($attempt < $maxAttempts - 1) {
+                    sleep(self::HEALTH_CHECK_DELAY);
+                }
+            }
+        }
+
+        $diagnostic = trim($ssh->exec(
+            'docker inspect --format '
+                .escapeshellarg('status={{.State.Status}} exit={{.State.ExitCode}} command={{json .Config.Cmd}}')
+                .' '.escapeshellarg($deployment->container_name).' 2>&1 || true; '
+                .'docker logs --tail 40 '.escapeshellarg($deployment->container_name).' 2>&1 | tail -n 20',
+            20
+        ));
+
+        throw new \RuntimeException(
+            'Application did not start listening on 127.0.0.1:'.$port.$path.' within '.$timeoutSeconds
+            .' seconds.'.($diagnostic !== '' ? ' '.$diagnostic : '')
         );
     }
 
@@ -7859,8 +7930,17 @@ class ContainerDeploymentService
         return $selected;
     }
 
-    public function refreshApplicationRuntimeCompose(Service $service, ContainerDeployment $deployment, SSHService $ssh): string
-    {
+    /**
+     * @param  bool  $awaitReadiness  False when the caller runs its own readiness
+     *                                check afterwards and has work to do first, such as
+     *                                migrations an application's health route needs.
+     */
+    public function refreshApplicationRuntimeCompose(
+        Service $service,
+        ContainerDeployment $deployment,
+        SSHService $ssh,
+        bool $awaitReadiness = true,
+    ): string {
         $service->loadMissing('product.containerTemplate');
         $template = $this->resolveContainerTemplate($service);
 
@@ -7951,7 +8031,13 @@ class ContainerDeploymentService
                 $this->runtimeImages->usesRuntimeImage($template),
                 useExplicitComposeFile: true,
             );
-            $this->waitForNodeSplitStackReadiness($ssh, $deployment->fresh(), 180);
+            // A pull passes false: its migrations step comes next and the
+            // application's health route may need the schema that step
+            // creates. Waiting for health here first was a deadlock nobody
+            // could pull their way out of.
+            if ($awaitReadiness) {
+                $this->waitForNodeSplitStackReadiness($ssh, $deployment->fresh(), 180);
+            }
         } else {
             // No readiness wait here on purpose. Doctor calls this method inside
             // an HTTP request, and blocking one for up to three minutes would
