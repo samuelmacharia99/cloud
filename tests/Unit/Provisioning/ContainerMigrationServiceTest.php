@@ -9,13 +9,16 @@ use App\Models\Product;
 use App\Models\Service;
 use App\Models\User;
 use App\Services\Provisioning\ContainerDeploymentService;
+use App\Services\Provisioning\ContainerIsolationPolicy;
 use App\Services\Provisioning\ContainerMigrationBundleService;
 use App\Services\Provisioning\ContainerMigrationService;
+use App\Services\Provisioning\ContainerStackNetworkAllocator;
 use App\Services\SSH\SSHService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\MockObject\MockObject;
+use Symfony\Component\Yaml\Yaml;
 use Tests\TestCase;
 
 class ContainerMigrationServiceTest extends TestCase
@@ -194,6 +197,122 @@ class ContainerMigrationServiceTest extends TestCase
 
         $this->assertSame('failed', $service->fresh()->status->value);
         $this->assertSame('failed', $deployment->fresh()->status);
+    }
+
+    #[Test]
+    public function an_isolated_stack_is_re_addressed_on_the_target_before_it_starts(): void
+    {
+        [$service, $deployment, $source, $target] = $this->migrationModels();
+        [$sourceYaml] = $this->isolateOnSource($deployment);
+        // The block the source handed out is already taken on the target.
+        ContainerDeployment::factory()->create([
+            'service_id' => Service::factory()->create()->id,
+            'node_id' => $target->id,
+            'network_subnet' => '10.210.0.0/24',
+        ]);
+
+        $uploaded = [];
+        [$migration, $bundle, $deploy] = $this->isolatedMigrationService($source, $target, $sourceYaml, $uploaded);
+        $bundle->method('preflight')->willReturn(['source_bytes' => 1000, 'target_free_bytes' => 100000, 'required_bytes' => 2000, 'volumes' => []]);
+        $bundle->method('create')->willReturn($this->bundle());
+        $bundle->method('transfer');
+        $bundle->method('restore');
+        $bundle->method('cleanup');
+        $bundle->method('stopAndRemoveTarget');
+        $deploy->method('ensureComposeFileExists');
+        $deploy->method('startComposeStack');
+        $deploy->method('waitForContainerRunning');
+        $deploy->method('rebindDeploymentDomainsStrict');
+
+        $migration->migrate($service, $target, 'rebalancing');
+
+        $fresh = $deployment->fresh();
+        $this->assertSame($target->id, $fresh->node_id);
+        $this->assertSame('10.210.1.0/24', $fresh->network_subnet);
+        $this->assertStringContainsString('10.210.1.0/24', $fresh->docker_compose_content);
+        $this->assertCount(1, $uploaded);
+        $this->assertSame('/opt/talksasa/containers/'.$deployment->container_name.'/docker-compose.yml', $uploaded[0]['path']);
+        $this->assertStringContainsString('subnet: 10.210.1.0/24', $uploaded[0]['content']);
+        $this->assertStringNotContainsString('10.210.0.0/24', $uploaded[0]['content']);
+    }
+
+    #[Test]
+    public function a_failed_migration_leaves_the_source_subnet_and_compose_untouched(): void
+    {
+        [$service, $deployment, $source, $target] = $this->migrationModels();
+        [$sourceYaml] = $this->isolateOnSource($deployment);
+
+        $uploaded = [];
+        [$migration, $bundle, $deploy] = $this->isolatedMigrationService($source, $target, $sourceYaml, $uploaded);
+        $bundle->method('preflight')->willReturn(['source_bytes' => 1000, 'target_free_bytes' => 100000, 'required_bytes' => 2000, 'volumes' => []]);
+        $bundle->method('create')->willReturn($this->bundle());
+        $bundle->method('transfer');
+        $bundle->method('restore');
+        $bundle->method('cleanup');
+        $bundle->method('stopAndRemoveTarget');
+        $deploy->method('ensureComposeFileExists');
+        $deploy->method('startComposeStack');
+        $readiness = 0;
+        $deploy->method('waitForContainerRunning')->willReturnCallback(function () use (&$readiness): void {
+            if (++$readiness === 1) {
+                throw new \RuntimeException('target unhealthy');
+            }
+        });
+
+        try {
+            $migration->migrate($service, $target, 'manual');
+            $this->fail('Expected target readiness to fail.');
+        } catch (\Exception $e) {
+            $this->assertStringContainsString('target unhealthy', $e->getMessage());
+        }
+
+        $fresh = $deployment->fresh();
+        $this->assertSame($source->id, $fresh->node_id);
+        $this->assertSame('10.210.0.0/24', $fresh->network_subnet);
+        $this->assertSame($sourceYaml, $fresh->docker_compose_content);
+    }
+
+    /**
+     * @return array{0: string}
+     */
+    private function isolateOnSource(ContainerDeployment $deployment): array
+    {
+        $policy = new ContainerIsolationPolicy;
+        $legacy = Yaml::dump(['services' => [$deployment->container_name => ['image' => 'nginx:alpine', 'ports' => ['31010:80']]]], 10, 2);
+        $yaml = $policy->applyToYaml($legacy, $deployment->container_name, $deployment->container_name, '10.210.0.0/24');
+        $deployment->forceFill(['network_subnet' => '10.210.0.0/24', 'docker_compose_content' => $yaml])->save();
+
+        return [$yaml];
+    }
+
+    /**
+     * Like migrationService(), but with a real isolation policy and allocator
+     * behind the deployment double, and the target's uploads captured.
+     *
+     * @param  list<array{content: string, path: string}>  $uploaded
+     * @return array{0: ContainerMigrationService, 1: ContainerMigrationBundleService&MockObject, 2: ContainerDeploymentService&MockObject}
+     */
+    private function isolatedMigrationService(Node $source, Node $target, string $liveYaml, array &$uploaded): array
+    {
+        $sourceSsh = $this->createMock(SSHService::class);
+        $targetSsh = $this->createMock(SSHService::class);
+        $sourceSsh->method('disconnect');
+        $targetSsh->method('disconnect');
+        $targetSsh->method('upload')->willReturnCallback(function (string $content, string $path) use (&$uploaded): void {
+            $uploaded[] = ['content' => $content, 'path' => $path];
+        });
+        $bundle = $this->createMock(ContainerMigrationBundleService::class);
+        $deploy = $this->createMock(ContainerDeploymentService::class);
+        $deploy->method('isolationPolicy')->willReturn(new ContainerIsolationPolicy);
+        $deploy->method('stackNetworkAllocator')->willReturn(new ContainerStackNetworkAllocator);
+        $deploy->method('liveComposeYaml')->willReturn($liveYaml);
+        $migration = new ContainerMigrationService(
+            $deploy,
+            $bundle,
+            fn (Node $node): SSHService => $node->id === $source->id ? $sourceSsh : $targetSsh,
+        );
+
+        return [$migration, $bundle, $deploy];
     }
 
     /**

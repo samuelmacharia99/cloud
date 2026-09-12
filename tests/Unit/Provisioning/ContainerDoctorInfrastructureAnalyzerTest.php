@@ -44,6 +44,35 @@ LOG;
     }
 
     #[Test]
+    public function it_names_the_busy_port_whether_the_bind_was_public_or_loopback(): void
+    {
+        foreach (['0.0.0.0', '127.0.0.1'] as $address) {
+            $findings = $this->analyzer()->findings(
+                "Error response from daemon: driver failed programming external connectivity on endpoint x: Bind for {$address}:31012 failed: port is already allocated",
+                'nodejs',
+                ['restarting' => false, 'running' => false]
+            );
+
+            $this->assertNotNull(collect($findings)->firstWhere('id', 'port_already_allocated'), $address);
+        }
+    }
+
+    #[Test]
+    public function a_capability_the_policy_dropped_points_at_the_override_rather_than_the_app(): void
+    {
+        $findings = $this->analyzer()->findings(
+            'mount: /data: operation not permitted.',
+            'nodejs',
+            ['restarting' => true, 'running' => false]
+        );
+
+        $finding = collect($findings)->firstWhere('id', 'capability_denied');
+        $this->assertNotNull($finding);
+        $this->assertStringContainsString('cap_overrides', $finding['summary']);
+        $this->assertNull($finding['treat_action']);
+    }
+
+    #[Test]
     public function it_flags_php_dash_s_when_the_wrapper_fell_back(): void
     {
         $logs = 'Talksasa: nginx/php-fpm unavailable (nginx=missing php-fpm=missing), falling back to php -S (single-threaded)';

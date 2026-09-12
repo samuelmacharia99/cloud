@@ -287,20 +287,37 @@ class ContainerDoctorInfrastructureAnalyzer
                     return preg_match('/network [^\n]*not found/i', $haystack) === 1;
                 },
                 'title' => 'Docker network is missing on this host',
-                'summary' => 'Compose cannot attach the app to talksasa-net. Recreate the stack after the shared bridge exists on the node.',
+                'summary' => 'Compose cannot attach the app to its network. Recreate the stack; Compose creates the stack network itself, and the shared talksasa-net bridge comes from node bootstrap.',
                 'treat_action' => 'recreate_application',
                 'treat_label' => 'Recreate containers',
                 'manual_steps' => [
-                    'Recreate containers. If it still fails, the container host needs the talksasa-net bridge (node bootstrap).',
+                    'Recreate containers. If the missing network is talksasa-net, the container host needs the shared bridge (node bootstrap).',
+                ],
+            ],
+            [
+                'id' => 'capability_denied',
+                'severity' => 'warning',
+                'stacks' => ['*'],
+                'patterns' => ['/operation not permitted/i'],
+                'match' => function (string $haystack): bool {
+                    return preg_match('/operation not permitted/i', $haystack) === 1;
+                },
+                'title' => 'The container was refused an operation by the kernel',
+                'summary' => 'Stacks run with a trimmed capability set. If this image genuinely needs more, grant it per template in containers.isolation.cap_overrides and recreate.',
+                'treat_action' => null,
+                'treat_label' => null,
+                'manual_steps' => [
+                    'Check the container logs for which call was refused (mknod, raw sockets, chroot are dropped by default).',
+                    'Add the capability under containers.isolation.cap_overrides for this template slug, then recreate containers.',
                 ],
             ],
             [
                 'id' => 'port_already_allocated',
                 'severity' => 'critical',
                 'stacks' => ['*'],
-                'patterns' => ['/port is already allocated/i', '/Bind for 0\.0\.0\.0:\d+ failed/i', '/EADDRINUSE/i'],
+                'patterns' => ['/port is already allocated/i', '/Bind for [\d.]+:\d+ failed/i', '/EADDRINUSE/i'],
                 'match' => function (string $haystack): bool {
-                    return preg_match('/port is already allocated|Bind for 0\.0\.0\.0:\d+ failed|EADDRINUSE|address already in use/i', $haystack) === 1;
+                    return preg_match('/port is already allocated|Bind for [\d.]+:\d+ failed|EADDRINUSE|address already in use/i', $haystack) === 1;
                 },
                 'title' => 'Host port is already in use',
                 'summary' => 'Another container (or a stale copy of this one) still holds the published port, so Compose cannot start this stack.',

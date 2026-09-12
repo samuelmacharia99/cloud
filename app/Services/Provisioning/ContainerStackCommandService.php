@@ -12,8 +12,10 @@ class ContainerStackCommandService
 
     public function __construct(
         private ?ContainerApplicationRuntimeService $runtimeService = null,
+        private ?ContainerStackNetworkLocator $networkLocator = null,
     ) {
         $this->runtimeService ??= new ContainerApplicationRuntimeService;
+        $this->networkLocator ??= new ContainerStackNetworkLocator;
     }
 
     private function deploymentService(): ContainerDeploymentService
@@ -1760,14 +1762,15 @@ class ContainerStackCommandService
             .$this->corepackEnablePrefix()
             .$command;
         $commandArg = escapeshellarg($wrapped);
-        $network = ContainerDeploymentService::SHARED_DOCKER_NETWORK;
-        if (! preg_match('/^[a-z0-9][a-z0-9.-]*$/', $network)) {
+        // The stack's own network once it has one, the shared bridge until
+        // then: collect-page-data Prisma clients must resolve {app}-db.
+        $network = $this->networkLocator->forHostAppPath($ssh, $hostAppPath);
+        if (! preg_match('/^[a-z0-9][a-z0-9_.-]*$/', $network)) {
             throw new \InvalidArgumentException('Unsafe Docker network name.');
         }
         $networkArg = ' --network '.escapeshellarg($network);
 
         // 2>&1: Next.js writes compile/page-data failures to stderr; phpseclib keeps stdout.
-        // talksasa-net: collect-page-data Prisma clients must resolve {app}-db.
         return trim($ssh->exec(
             "docker run --rm{$networkArg} -v {$volumeArg} -w {$workDirArg} {$imageArg} sh -c {$commandArg} 2>&1",
             $timeout

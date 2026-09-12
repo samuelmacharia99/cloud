@@ -561,10 +561,12 @@ class ContainerDoctorService
                     ];
                 } else {
                     $apiPath = $nodeWebStack ? '/api/health' : '/api/v1/app/branding';
-                    $apiUrl = rtrim((string) ($deployment->getAccessUrl() ?? ''), '/').$apiPath;
+                    $apiUrl = rtrim((string) ($deployment->loopbackUrl() ?? ''), '/').$apiPath;
                     if (str_starts_with($apiUrl, 'http')) {
                         $apiCode = trim($ssh->exec(
-                            'curl -s -o /dev/null -w "%{http_code}" --max-time 12 '.escapeshellarg($apiUrl).' || true',
+                            'curl -s -o /dev/null -w "%{http_code}" --max-time 12 '
+                            .$this->hostHeaderArgument($deployment->probeHostHeader())
+                            .escapeshellarg($apiUrl).' || true',
                             20
                         ));
                         if (preg_match('/^\d{3}$/', $apiCode) === 1) {
@@ -686,7 +688,7 @@ class ContainerDoctorService
                         'severity' => 'critical',
                         'title' => 'Laravel is still connecting to hostname db',
                         'summary' => 'Doctor PDO can reach this stack’s sidecar (unique DNS '.$unique
-                            .'), but Laravel bootstrapped config still uses `db`. On talksasa-net that alias is shared by every site, so the public URL 1045s or 2002s while live checks say DB OK. '
+                            .'), but Laravel bootstrapped config still uses `db`. On a stack that still shares the talksasa-net bridge that alias belongs to every site, so the public URL 1045s or 2002s while live checks say DB OK. '
                             .'Restart writes DB_HOST='.$unique.' into compose and recreates the app — MySQL stays up.',
                         'evidence' => [
                             'laravel database.host='.$runtimeDbHost,
@@ -809,7 +811,7 @@ class ContainerDoctorService
                             'id' => 'live_shared_mysql_hostname',
                             'severity' => 'critical',
                             'title' => 'WordPress is using the shared mysql hostname',
-                            'summary' => 'WORDPRESS_DB_HOST is `'.explode(':', $configuredDbHost, 2)[0].'`. On talksasa-net that alias is shared by every WordPress sidecar, so Docker DNS round-robins to other customers’ MySQL. The site returns HTTP 200 then 500 on its own even when a live probe is lucky. Repair pins WORDPRESS_DB_HOST to '.$unique.' in compose and wp-config.php (the database volume is kept).',
+                            'summary' => 'WORDPRESS_DB_HOST is `'.explode(':', $configuredDbHost, 2)[0].'`. On a stack that still shares the talksasa-net bridge that alias belongs to every WordPress sidecar, so Docker DNS round-robins to other customers’ MySQL. The site returns HTTP 200 then 500 on its own even when a live probe is lucky. Repair pins WORDPRESS_DB_HOST to '.$unique.' in compose and wp-config.php (the database volume is kept).',
                             'evidence' => [
                                 'WORDPRESS_DB_HOST='.$configuredDbHost,
                                 'unique sidecar DNS='.$unique,
@@ -1001,7 +1003,7 @@ class ContainerDoctorService
                             'title' => 'This PHP app has no MySQL sidecar',
                             'summary' => 'Compose has no database container, but Repair previously pointed DB_HOST at `'
                                 .($hostName !== '' ? $hostName : $unique)
-                                .'`, which cannot resolve on talksasa-net. Add a MySQL sidecar — files stay; the new volume is empty (import the DirectAdmin dump if you need existing tables).',
+                                .'`, which resolves to nothing on this stack’s network. Add a MySQL sidecar — files stay; the new volume is empty (import the DirectAdmin dump if you need existing tables).',
                             'evidence' => array_values(array_filter([
                                 $configuredDbHost !== '' ? 'DB_HOST='.$configuredDbHost : 'DB_HOST=(empty)',
                                 'sidecar DNS='.$unique,
@@ -1030,8 +1032,8 @@ class ContainerDoctorService
             $checks['http_status'] = $httpStatus;
 
             if ($stack === 'nodejs' && $httpStatus !== null && $httpStatus >= 200 && $httpStatus < 400) {
-                $liveUrl = (string) ($deployment->getAccessUrl() ?? '');
-                $html = $liveUrl !== '' ? $this->probeHttpBody($ssh, $liveUrl) : null;
+                $probeUrl = (string) ($deployment->loopbackUrl() ?? '');
+                $html = $probeUrl !== '' ? $this->probeHttpBody($ssh, $probeUrl, $deployment->probeHostHeader()) : null;
                 if (is_string($html) && str_contains($html, 'Talksasa: add your Node.js app to /app')) {
                     $findings[] = [
                         'id' => 'node_placeholder_runtime',
@@ -1162,8 +1164,8 @@ class ContainerDoctorService
                     && $httpStatus >= 200
                     && $httpStatus < 400
                     && ! $this->findingsContain($findings, ['static_site_empty_docroot', 'static_site_placeholder_homepage', 'static_site_php_on_nginx'])) {
-                    $liveUrl = (string) ($deployment->getAccessUrl() ?? '');
-                    $html = $liveUrl !== '' ? $this->probeHttpBody($ssh, $liveUrl) : null;
+                    $probeUrl = (string) ($deployment->loopbackUrl() ?? '');
+                    $html = $probeUrl !== '' ? $this->probeHttpBody($ssh, $probeUrl, $deployment->probeHostHeader()) : null;
                     if (app(ContainerAppDirectoryService::class)->htmlLooksLikePlaceholder($html)) {
                         $findings[] = [
                             'id' => 'static_site_placeholder_homepage',
@@ -1193,7 +1195,8 @@ class ContainerDoctorService
                 && $httpStatus < 400
                 && ! $this->findingsContain($findings, ['laravel_docroot_not_public'])) {
                 $liveUrl = (string) ($deployment->getAccessUrl() ?? '');
-                $html = $liveUrl !== '' ? $this->probeHttpBody($ssh, $liveUrl) : null;
+                $probeUrl = (string) ($deployment->loopbackUrl() ?? '');
+                $html = $probeUrl !== '' ? $this->probeHttpBody($ssh, $probeUrl, $deployment->probeHostHeader()) : null;
                 if (! $this->findingsContain($findings, ['live_mixed_content_app_url'])) {
                     $mixedFinding = $this->laravelMixedContentFinding($checks, $html, $liveUrl);
                     if ($mixedFinding !== null) {
@@ -1212,7 +1215,9 @@ class ContainerDoctorService
                 && $httpStatus !== null
                 && $httpStatus < 500) {
                 $loginUrl = $this->laravelLoginProbeUrl($deployment);
-                $loginStatus = $loginUrl !== null ? $this->probeHttpStatusAt($ssh, $loginUrl) : null;
+                $loginStatus = $loginUrl !== null
+                    ? $this->probeHttpStatusAt($ssh, $loginUrl, $deployment->probeHostHeader())
+                    : null;
                 if ($loginStatus !== null) {
                     $checks['http_status_home'] = $loginStatus;
                 }
@@ -2160,7 +2165,7 @@ PHP;
     {
         if ($stack === 'wordpress') {
             return [
-                'Click Repair DB credentials — creates the missing DB, resets the WordPress role password with mysql_native_password, pins WORDPRESS_DB_HOST to this stack’s unique mysql container name (not the shared talksasa-net alias `mysql`), rewrites wp-config.php and compose, and recreates the app (the database volume is kept).',
+                'Click Repair DB credentials — creates the missing DB, resets the WordPress role password with mysql_native_password, pins WORDPRESS_DB_HOST to this stack’s unique mysql container name (not the alias `mysql`, which on the shared talksasa-net bridge belonged to every site), rewrites wp-config.php and compose, and recreates the app (the database volume is kept).',
                 'Do not Reset database — that wipes existing tables. Re-scan and Repair again if 1045 persists.',
             ];
         }
@@ -2508,14 +2513,15 @@ PHP);
 
     private function probeHttpErrorSnippet(SSHService $ssh, $deployment): ?string
     {
-        $url = $deployment->getAccessUrl();
+        $url = $deployment->loopbackUrl();
         if (! is_string($url) || $url === '') {
             return null;
         }
 
         try {
             $body = trim($ssh->exec(
-                'curl -sL --max-time 12 '.escapeshellarg($url).' | tr "\\n" " " | head -c 500 || true',
+                'curl -sL --max-time 12 '.$this->hostHeaderArgument($deployment->probeHostHeader())
+                .escapeshellarg($url).' | tr "\\n" " " | head -c 500 || true',
                 20
             ));
             if ($body === '') {
@@ -2666,17 +2672,21 @@ PHP);
 
     private function probeHttpStatus(SSHService $ssh, $deployment): ?int
     {
-        $url = $deployment->getAccessUrl();
+        $url = $deployment->loopbackUrl();
         if (! is_string($url) || $url === '') {
             return null;
         }
 
-        return $this->probeHttpStatusAt($ssh, $url);
+        return $this->probeHttpStatusAt($ssh, $url, $deployment->probeHostHeader());
     }
 
+    /**
+     * Probed from the node, so it targets the published port on loopback:
+     * the public hostname is only reachable through nginx from outside.
+     */
     public function laravelLoginProbeUrl($deployment): ?string
     {
-        $url = $deployment->getAccessUrl();
+        $url = $deployment->loopbackUrl();
         if (! is_string($url) || $url === '') {
             return null;
         }
@@ -2698,10 +2708,22 @@ PHP);
             .escapeshellarg('http://127.0.0.1/home').' || true';
     }
 
-    public function homepageBodyProbeCommand(string $url): string
+    public function homepageBodyProbeCommand(string $url, ?string $host = null): string
     {
         return 'curl -sL --max-time 12 -A '.escapeshellarg('Talksasa-Doctor/1.0')
-            .' '.escapeshellarg($url).' | head -c 200000 || true';
+            .' '.$this->hostHeaderArgument($host).escapeshellarg($url).' | head -c 200000 || true';
+    }
+
+    /**
+     * Probes run on the node hit the stack on loopback, where nginx is not in
+     * the path, so the application only sees the name it is served under if
+     * the probe says it.
+     */
+    private function hostHeaderArgument(?string $host): string
+    {
+        $host = trim((string) $host);
+
+        return $host === '' ? '' : '-H '.escapeshellarg('Host: '.$host).' ';
     }
 
     /**
@@ -2977,14 +2999,14 @@ PHP);
         ];
     }
 
-    private function probeHttpBody(SSHService $ssh, string $url): ?string
+    private function probeHttpBody(SSHService $ssh, string $url, ?string $host = null): ?string
     {
         if ($url === '' || ! str_starts_with($url, 'http')) {
             return null;
         }
 
         try {
-            $body = (string) $ssh->exec($this->homepageBodyProbeCommand($url), 20);
+            $body = (string) $ssh->exec($this->homepageBodyProbeCommand($url, $host), 20);
 
             return $body !== '' ? $body : null;
         } catch (\Throwable) {
@@ -3001,11 +3023,12 @@ PHP);
             && in_array($loginStatus, [502, 503], true);
     }
 
-    private function probeHttpStatusAt(SSHService $ssh, string $url): ?int
+    private function probeHttpStatusAt(SSHService $ssh, string $url, ?string $host = null): ?int
     {
         try {
             $code = trim($ssh->exec(
-                'curl -s -o /dev/null -w "%{http_code}" --max-time 12 '.escapeshellarg($url).' || true',
+                'curl -s -o /dev/null -w "%{http_code}" --max-time 12 '.$this->hostHeaderArgument($host)
+                .escapeshellarg($url).' || true',
                 20
             ));
             if (preg_match('/^\d{3}$/', $code) === 1) {
@@ -4714,11 +4737,27 @@ PHP;
                     '/network [^\n]*not found/i',
                 ],
                 'title' => 'Docker network is missing on this host',
-                'summary' => 'Compose cannot attach the app to talksasa-net. Recreate the stack after the shared bridge exists on the node.',
+                'summary' => 'Compose cannot attach the app to its network. Recreate the stack; Compose creates the stack network itself, and the shared talksasa-net bridge comes from node bootstrap.',
                 'treat_action' => 'recreate_application',
                 'treat_label' => 'Recreate containers',
                 'manual_steps' => [
-                    'Recreate containers. If it still fails, the container host needs the talksasa-net bridge (node bootstrap).',
+                    'Recreate containers. If the missing network is talksasa-net, the container host needs the shared bridge (node bootstrap).',
+                ],
+            ],
+            [
+                'id' => 'capability_denied',
+                'severity' => 'warning',
+                'stacks' => ['*'],
+                'patterns' => [
+                    '/operation not permitted/i',
+                ],
+                'title' => 'The container was refused an operation by the kernel',
+                'summary' => 'Stacks run with a trimmed capability set. If this image genuinely needs more, grant it per template in containers.isolation.cap_overrides and recreate.',
+                'treat_action' => null,
+                'treat_label' => null,
+                'manual_steps' => [
+                    'Check the container logs for which call was refused (mknod, raw sockets, chroot are dropped by default).',
+                    'Add the capability under containers.isolation.cap_overrides for this template slug, then recreate containers.',
                 ],
             ],
             [
@@ -4727,7 +4766,7 @@ PHP;
                 'stacks' => ['*'],
                 'patterns' => [
                     '/port is already allocated/i',
-                    '/Bind for 0\.0\.0\.0:\d+ failed/i',
+                    '/Bind for [\d.]+:\d+ failed/i',
                     '/EADDRINUSE/i',
                     '/address already in use/i',
                 ],
@@ -6166,7 +6205,7 @@ PHP;
                     'treat_label' => 'Restart application',
                     'summary' => 'Live PDO works (tables: '.(string) ($checks['table_count'] ?? '?')
                         .') because Doctor uses this stack’s unique sidecar DNS, but Laravel still connects to `mysql:host=db`. '
-                        .'That alias is shared on talksasa-net, which is why the public URL 500s (1045/2002) while this card says DB OK. '
+                        .'On a stack that still shares the talksasa-net bridge that alias belongs to every site, which is why the public URL 500s (1045/2002) while this card says DB OK. '
                         .'Restart writes DB_HOST to the unique *-db name and recreates the app — MySQL stays up.',
                 ];
             }

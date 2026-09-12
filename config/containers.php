@@ -43,6 +43,36 @@ return [
         'evacuate_lock_seconds' => (int) env('CONTAINER_NODE_EVACUATE_LOCK_SECONDS', 1800),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Tenant isolation
+    |--------------------------------------------------------------------------
+    |
+    | Applied by ContainerIsolationPolicy as the last step of every render and
+    | by containers:apply-isolation to stacks that predate it. Published ports
+    | bind to loopback (host nginx is the only front door), every stack gets a
+    | private network with a subnet from stack_subnet_base, and every service
+    | runs with no-new-privileges, the cap_drop list and a pids ceiling.
+    |
+    | shared_network_slugs: templates whose app service may also join the
+    | shared talksasa-net bridge, for same-node links that resolve another
+    | stack by container name (Hermes to Ollama). Nothing else joins it.
+    |
+    | cap_overrides: per template slug, ['cap_add' => [...], 'cap_drop' =>
+    | [...], 'pids_limit' => int] for an image that genuinely needs more.
+    |
+    */
+    'isolation' => [
+        'publish_bind_address' => env('CONTAINER_PUBLISH_BIND_ADDRESS', '127.0.0.1'),
+        'stack_subnet_base' => env('CONTAINER_STACK_SUBNET_BASE', '10.210.0.0/16'),
+        'stack_subnet_prefix' => (int) env('CONTAINER_STACK_SUBNET_PREFIX', 24),
+        'no_new_privileges' => (bool) env('CONTAINER_NO_NEW_PRIVILEGES', true),
+        'pids_limit' => (int) env('CONTAINER_PIDS_LIMIT', 1024),
+        'cap_drop' => ['NET_RAW', 'MKNOD', 'AUDIT_WRITE', 'SYS_CHROOT', 'SETFCAP'],
+        'shared_network_slugs' => ['ollama', 'hermes'],
+        'cap_overrides' => [],
+    ],
+
     'runtime_templates' => [
         'laravel' => [
             'runtime' => 'laravel',

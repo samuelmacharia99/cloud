@@ -17,6 +17,7 @@ class ContainerDeployment extends Model
         'status',
         'docker_compose_content',
         'assigned_port',
+        'network_subnet',
         'internal_ip',
         'domain',
         'env_values',
@@ -147,6 +148,28 @@ class ContainerDeployment extends Model
         }
 
         return null;
+    }
+
+    /**
+     * Where a probe run on the node itself reaches this stack. Published ports
+     * are bound to loopback, so the public URL is not reachable from the host
+     * without going through nginx; this is.
+     */
+    public function loopbackUrl(): ?string
+    {
+        return $this->assigned_port ? "http://127.0.0.1:{$this->assigned_port}" : null;
+    }
+
+    /**
+     * The Host header a loopback probe should carry so the application sees
+     * the name it is normally served under.
+     */
+    public function probeHostHeader(): ?string
+    {
+        $this->loadMissing('domains');
+        $domain = $this->domains->firstWhere('status', 'active');
+
+        return $domain ? ltrim((string) $domain->domain, '/') : null;
     }
 
     // Uptime helper

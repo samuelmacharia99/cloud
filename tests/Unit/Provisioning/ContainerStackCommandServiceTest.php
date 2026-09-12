@@ -4,6 +4,7 @@ namespace Tests\Unit\Provisioning;
 
 use App\Services\Provisioning\ContainerApplicationRuntimeService;
 use App\Services\Provisioning\ContainerStackCommandService;
+use App\Services\Provisioning\ContainerStackNetworkLocator;
 use App\Services\SSH\SSHService;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -169,6 +170,33 @@ class ContainerStackCommandServiceTest extends TestCase
             'node:20-alpine',
             '/var/lib/talksasa/containers/user-1-service-1/app',
             'env -i HOME=/tmp NPM_CONFIG_CACHE=/tmp/.npm PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin npm_config_omit= NODE_OPTIONS=--max-old-space-size=4096 NODE_ENV=production node ./node_modules/next/dist/bin/next build',
+            '/app',
+            900
+        );
+    }
+
+    #[Test]
+    public function it_runs_builds_on_the_stack_network_once_the_stack_has_one(): void
+    {
+        $locator = $this->createMock(ContainerStackNetworkLocator::class);
+        $locator->expects($this->once())
+            ->method('forHostAppPath')
+            ->with($this->anything(), '/opt/talksasa/containers/user-1-service-1/app')
+            ->willReturn('user-1-service-1-net');
+        $service = new ContainerStackCommandService(null, $locator);
+
+        $ssh = $this->createMock(SSHService::class);
+        $ssh->expects($this->once())
+            ->method('exec')
+            ->with($this->callback(fn (string $command): bool => str_contains($command, "docker run --rm --network 'user-1-service-1-net'")
+                && ! str_contains($command, 'talksasa-net')))
+            ->willReturn('');
+
+        $service->runUnlimitedMemoryNodeCommand(
+            $ssh,
+            'node:20-alpine',
+            '/opt/talksasa/containers/user-1-service-1/app',
+            'env -i HOME=/tmp /usr/local/bin/npm ci --include=dev',
             '/app',
             900
         );

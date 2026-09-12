@@ -92,7 +92,13 @@ class ContainerMigrationService
             'migrated_from_node_id' => $oldDeployment->migrated_from_node_id,
             'migrated_at' => $oldDeployment->migrated_at,
             'migration_reason' => $oldDeployment->migration_reason,
+            // Spread back by rollback() after a committed cutover, so the
+            // row returns to the source node's subnet and compose too.
+            'network_subnet' => $oldDeployment->network_subnet,
+            'docker_compose_content' => $oldDeployment->docker_compose_content,
         ];
+        $targetSubnet = null;
+        $targetCompose = null;
         $archiveName = 'migrate-'.$service->id.'-'.now()->format('YmdHis').'.tar.gz';
         $remoteArchive = ContainerMigrationBundleService::MIGRATION_PATH.'/'.$archiveName;
         $localArchive = storage_path('app/migrations/'.$archiveName);
@@ -177,6 +183,10 @@ class ContainerMigrationService
 
             $this->progress->phase($service, 'start', 'Starting the stack on '.$targetNode->hostname);
             $this->deploymentService->ensureComposeFileExists($targetSsh, $oldDeployment);
+            [$targetSubnet, $targetCompose] = $this->renetworkOnTarget($targetSsh, $targetNode, $oldDeployment);
+            if ($targetSubnet !== null) {
+                $this->progress->log($service, 'Stack network re-addressed to '.$targetSubnet.' on '.$targetNode->hostname.'.');
+            }
             $this->deploymentService->startComposeStack($targetSsh, $service, $oldDeployment);
 
             $this->progress->phase($service, 'verify', 'Waiting for every container to report healthy');
@@ -196,6 +206,8 @@ class ContainerMigrationService
                 $oldNodeId,
                 $reason,
                 $oldServiceStatus,
+                $targetSubnet,
+                $targetCompose,
             ): void {
                 $lockedService = Service::query()->lockForUpdate()->findOrFail($service->id);
                 $lockedDeployment = ContainerDeployment::query()->lockForUpdate()->findOrFail($oldDeployment->id);
@@ -206,13 +218,18 @@ class ContainerMigrationService
                     'node_id' => $targetNode->id,
                     'status' => $oldServiceStatus,
                 ]);
-                $lockedDeployment->update([
+                $lockedDeployment->update(array_merge([
                     'node_id' => $targetNode->id,
                     'migrated_from_node_id' => $oldNodeId,
                     'migrated_at' => now(),
                     'migration_reason' => $reason,
                     'status' => 'running',
-                ]);
+                ], $targetSubnet !== null ? [
+                    // Written only now, with node_id: the unique index is per
+                    // node, and this block may already be taken on the source.
+                    'network_subnet' => $targetSubnet,
+                    'docker_compose_content' => $targetCompose,
+                ] : []));
                 $lockedSource->update([
                     'container_count' => max(0, (int) $lockedSource->container_count - 1),
                 ]);
@@ -337,6 +354,42 @@ class ContainerMigrationService
                 @unlink($localArchive);
             }
         }
+    }
+
+    /**
+     * Give an isolated stack a subnet that is free on the target.
+     *
+     * The compose file travels in the bundle with the block the source node
+     * allocated, and that block may already belong to another stack on the
+     * target. The file on the target is patched before the first start; the
+     * row keeps the source values until cutover, because the unique index is
+     * per node and the row still says source. Legacy stacks on the shared
+     * bridge have no subnet and are left exactly as they were.
+     *
+     * @return array{0: ?string, 1: ?string} subnet and patched compose, or nulls
+     */
+    private function renetworkOnTarget(SSHService $targetSsh, Node $targetNode, ContainerDeployment $deployment): array
+    {
+        $policy = $this->deploymentService->isolationPolicy();
+        $yaml = $this->deploymentService->liveComposeYaml($targetSsh, $deployment);
+        if ($yaml === '' || ! $policy->isCurrent($yaml)) {
+            return [null, null];
+        }
+
+        $subnet = $this->deploymentService->stackNetworkAllocator()->allocate($targetNode, $deployment->id);
+        // Gateway stacks key the app service `backend`; everything else keys it by container name.
+        $appService = str_contains($yaml, "\n  backend:\n")
+            ? LaravelNextGatewayProxy::BACKEND_SERVICE
+            : (string) $deployment->container_name;
+        $slug = $deployment->service?->effectiveContainerTemplate()?->slug;
+        $patched = $policy->applyToYaml($yaml, $appService, (string) $deployment->container_name, $subnet, $slug);
+
+        $targetSsh->upload(
+            $patched,
+            ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name.'/docker-compose.yml'
+        );
+
+        return [$subnet, $patched];
     }
 
     /**

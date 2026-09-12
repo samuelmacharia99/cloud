@@ -615,7 +615,7 @@ class ContainerDeploymentComposeTest extends TestCase
             $yaml
         );
         $this->assertStringContainsString($hostApp.':/app', $yaml);
-        $this->assertStringContainsString("ports:\n      - '31012:8080'", $yaml);
+        $this->assertStringContainsString("ports:\n      - '127.0.0.1:31012:8080'", $yaml);
         $this->assertStringContainsString('$$BACKEND_DIR', $yaml);
         $this->assertStringNotContainsString('The "BACKEND_DIR" variable', $yaml);
         // Public port belongs to edge only (backend uses expose, not host ports).
@@ -659,7 +659,7 @@ class ContainerDeploymentComposeTest extends TestCase
     }
 
     #[Test]
-    public function render_compose_joins_the_shared_host_network_instead_of_a_new_subnet(): void
+    public function render_compose_gives_each_stack_its_own_network_and_keeps_the_pool_exhaustion_signal(): void
     {
         $template = new ContainerTemplate([
             'slug' => 'static-site',
@@ -692,9 +692,14 @@ class ContainerDeploymentComposeTest extends TestCase
             null
         );
 
-        $this->assertStringContainsString('talksasa-net', $yaml);
-        $this->assertStringContainsString('external: true', $yaml);
-        $this->assertStringNotContainsString('talksasa-user-67-service-253-static-site', $yaml);
+        // Private per stack, never the shared bridge unless the template opts in.
+        // The stack has no row here, so Docker picks the subnet; a real deploy
+        // hands it one from the allocator so the pool below never runs dry.
+        $this->assertTrue($deployer->isolationPolicy()->isCurrent($yaml));
+        $this->assertStringContainsString('name: user-67-service-253-static-site-net', $yaml);
+        $this->assertStringNotContainsString('talksasa-net', $yaml);
+        $this->assertStringNotContainsString('external: true', $yaml);
+        $this->assertStringContainsString("ports:\n      - '127.0.0.1:30100:80'", $yaml);
         $this->assertTrue($deployer->isDockerAddressPoolExhausted(
             'failed to create network talksasa-user-67-service-253-static-site: Error response from daemon: all predefined address pools have been fully subnetted'
         ));
@@ -744,7 +749,9 @@ class ContainerDeploymentComposeTest extends TestCase
         $this->assertStringContainsString('nousresearch/hermes-agent:latest', $hermesYaml);
         $this->assertStringContainsString("command:\n      - gateway\n      - run", $hermesYaml);
         $this->assertStringContainsString('hermes_data:/opt/data', $hermesYaml);
-        $this->assertStringContainsString("ports:\n      - '31010:9119'", $hermesYaml);
+        $this->assertStringContainsString("ports:\n      - '127.0.0.1:31010:9119'", $hermesYaml);
+        // Hermes reaches a same-node Ollama by container name, so it also joins the shared bridge.
+        $this->assertStringContainsString("name: talksasa-net\n    external: true", $hermesYaml);
 
         $openClawYaml = $method->invoke(
             $deployer,
@@ -773,7 +780,7 @@ class ContainerDeploymentComposeTest extends TestCase
         $this->assertStringContainsString('--bind', $openClawYaml);
         $this->assertStringContainsString('lan', $openClawYaml);
         $this->assertStringContainsString('openclaw_state:/home/node/.openclaw', $openClawYaml);
-        $this->assertStringContainsString("ports:\n      - '31011:18789'", $openClawYaml);
+        $this->assertStringContainsString("ports:\n      - '127.0.0.1:31011:18789'", $openClawYaml);
     }
 
     #[Test]
@@ -907,7 +914,8 @@ class ContainerDeploymentComposeTest extends TestCase
         $this->assertStringContainsString('ollama/ollama:latest', $yaml);
         $this->assertStringNotContainsString('ollama/ollama:8b', $yaml);
         $this->assertStringContainsString('ollama_data:/root/.ollama', $yaml);
-        $this->assertStringContainsString("ports:\n      - '31025:11434'", $yaml);
+        $this->assertStringContainsString("ports:\n      - '127.0.0.1:31025:11434'", $yaml);
+        $this->assertStringContainsString("name: talksasa-net\n    external: true", $yaml);
         $this->assertStringContainsString('ministral-3:8b', $yaml);
     }
 
@@ -996,7 +1004,7 @@ class ContainerDeploymentComposeTest extends TestCase
             $this->assertStringContainsString("\n  edge:\n", $yaml);
             $this->assertStringContainsString($image, $yaml);
             $this->assertStringContainsString('nginx:1.27-alpine', $yaml);
-            $this->assertStringContainsString("'31030:8080'", $yaml);
+            $this->assertStringContainsString("'127.0.0.1:31030:8080'", $yaml);
             $this->assertStringContainsString('BACKEND_HOST: backend', $yaml);
             $this->assertStringContainsString('FRONTEND_HOST: frontend', $yaml);
             $this->assertStringNotContainsString("'31030:8000'", $yaml);

@@ -299,6 +299,7 @@ class NodeServiceRelocationService
                         'found' => $found,
                         'running' => (bool) ($inspect['running'] ?? false),
                         'published_port' => $publishedPort,
+                        'network_subnet' => $found ? $this->readStackSubnet($ssh, $containerName) : null,
                         'message' => $found
                             ? (($inspect['running'] ?? false) ? 'Found running on destination.' : 'Found on destination (not running).')
                             : 'Container not found on destination.',
@@ -553,6 +554,25 @@ class NodeServiceRelocationService
                 $updates['assigned_port'] = $publishedPort;
             }
 
+            $liveSubnet = isset($scanRow['network_subnet']) && is_string($scanRow['network_subnet']) && $scanRow['network_subnet'] !== ''
+                ? $scanRow['network_subnet']
+                : null;
+            if ($liveSubnet !== null) {
+                $subnetConflict = ContainerDeployment::query()
+                    ->where('node_id', $target->id)
+                    ->where('network_subnet', $liveSubnet)
+                    ->where('id', '!=', $deployment->id)
+                    ->exists();
+
+                if ($subnetConflict) {
+                    throw new Exception(
+                        "Stack subnet {$liveSubnet} is already assigned on destination for another deployment."
+                    );
+                }
+
+                $updates['network_subnet'] = $liveSubnet;
+            }
+
             $deployment->forceFill($updates)->save();
             $service->update(['node_id' => $target->id]);
         });
@@ -591,6 +611,26 @@ class NodeServiceRelocationService
                 ]);
             }
         }
+    }
+
+    /**
+     * The subnet of the stack's own network on this host, null for a stack
+     * still on the shared bridge.
+     */
+    private function readStackSubnet(SSHService $ssh, string $containerName): ?string
+    {
+        try {
+            $network = ContainerIsolationPolicy::stackNetworkName($containerName);
+        } catch (\InvalidArgumentException) {
+            return null;
+        }
+
+        $subnet = trim($ssh->exec(
+            "docker network inspect --format '{{(index .IPAM.Config 0).Subnet}}' ".escapeshellarg($network)." 2>/dev/null || echo ''",
+            10
+        ));
+
+        return preg_match('#^\d{1,3}(\.\d{1,3}){3}/\d{1,2}$#', $subnet) === 1 ? $subnet : null;
     }
 
     private function readPublishedHostPort(SSHService $ssh, string $containerName): ?int

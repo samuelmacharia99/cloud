@@ -13,6 +13,9 @@ use App\Services\EmailRateLimiter;
 use App\Services\InAppNotificationService;
 use App\Services\NotificationPreferenceService;
 use App\Services\NotificationService;
+use App\Services\Provisioning\ContainerIsolationOptions;
+use App\Services\Provisioning\ContainerIsolationPolicy;
+use App\Services\Provisioning\ContainerStackNetworkAllocator;
 use App\Services\ResellerAnalyticsService;
 use App\Services\ResellerBrandingResolver;
 use App\Services\ResellerDomainTransferService;
@@ -59,6 +62,15 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(InvoiceCurrencyService::class);
         $this->app->singleton(TalksasaSmsService::class);
         $this->app->alias(TalksasaSmsService::class, 'talksasa-sms-service');
+
+        // Both read config here so the classes themselves stay usable from
+        // container-free unit tests, where a bare `new` gets hard defaults.
+        $this->app->bind(ContainerIsolationPolicy::class, function () {
+            return new ContainerIsolationPolicy(
+                ContainerIsolationOptions::fromArray((array) config('containers.isolation', []))
+            );
+        });
+        $this->app->bind(ContainerStackNetworkAllocator::class, fn () => ContainerStackNetworkAllocator::fromConfig());
     }
 
     public function boot(): void

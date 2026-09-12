@@ -92,7 +92,7 @@ class NodeWebGatewayProxyTest extends TestCase
 
         $this->assertSame(['8000'], $compose['services']['backend']['expose']);
         $this->assertArrayNotHasKey('ports', $compose['services']['backend']);
-        $this->assertSame(['30123:8080'], $compose['services']['edge']['ports']);
+        $this->assertSame(['127.0.0.1:30123:8080'], $compose['services']['edge']['ports']);
         $this->assertArrayNotHasKey('ports', $compose['services']['frontend']);
         $this->assertSame('nginx:1.27-alpine', $compose['services']['frontend']['image']);
         $this->assertContains(
@@ -247,7 +247,7 @@ class NodeWebGatewayProxyTest extends TestCase
             $compose['services']['frontend']['command'],
         );
         $this->assertSame('/api', $compose['services']['frontend']['environment']['EXPO_PUBLIC_API_URL']);
-        $this->assertSame(['30123:8080'], $compose['services']['edge']['ports']);
+        $this->assertSame(['127.0.0.1:30123:8080'], $compose['services']['edge']['ports']);
         $this->assertArrayNotHasKey('ports', $compose['services']['frontend']);
         $this->assertArrayNotHasKey('ports', $compose['services']['backend']);
     }

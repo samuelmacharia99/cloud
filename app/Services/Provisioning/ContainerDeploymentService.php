@@ -53,6 +53,12 @@ class ContainerDeploymentService
 
     private ContainerEnvironmentSeed $environmentSeed;
 
+    private ContainerIsolationPolicy $isolation;
+
+    private ContainerStackNetworkAllocator $stackNetworks;
+
+    private ContainerStackNetworkLocator $networkLocator;
+
     private const PORT_RANGE_START = 30000;
 
     private const PORT_RANGE_END = 40000;
@@ -72,6 +78,9 @@ class ContainerDeploymentService
         ?WordPressContainerHardeningService $wordpressHardening = null,
         ?ContainerElasticResourceService $elasticResources = null,
         ?ContainerEnvironmentSeed $environmentSeed = null,
+        ?ContainerIsolationPolicy $isolation = null,
+        ?ContainerStackNetworkAllocator $stackNetworks = null,
+        ?ContainerStackNetworkLocator $networkLocator = null,
     ) {
         $this->runtimeImages = $runtimeImages ?? new RuntimeImageProvisioner;
         $this->appDirectory = $appDirectory ?? new ContainerAppDirectoryService;
@@ -81,6 +90,9 @@ class ContainerDeploymentService
         $this->wordpressHardening = $wordpressHardening ?? new WordPressContainerHardeningService;
         $this->elasticResources = $elasticResources ?? new ContainerElasticResourceService;
         $this->environmentSeed = $environmentSeed ?? new ContainerEnvironmentSeed;
+        $this->isolation = $isolation ?? new ContainerIsolationPolicy;
+        $this->stackNetworks = $stackNetworks ?? new ContainerStackNetworkAllocator;
+        $this->networkLocator = $networkLocator ?? new ContainerStackNetworkLocator;
     }
 
     /**
@@ -1430,9 +1442,10 @@ class ContainerDeploymentService
 
         $unique = $this->sidecarDnsHost((string) $deployment->container_name);
         try {
-            $this->attachSidecarNetworkAlias($ssh, $unique, $unique);
+            $network = $this->networkLocator->forContainer($ssh, (string) $deployment->container_name);
+            $this->attachSidecarNetworkAlias($ssh, $unique, $unique, $network);
         } catch (\Throwable $e) {
-            Log::warning('Could not attach unique sidecar DNS alias on talksasa-net', [
+            Log::warning('Could not attach unique sidecar DNS alias on the stack network', [
                 'container' => $deployment->container_name,
                 'alias' => $unique,
                 'error' => $e->getMessage(),
@@ -1566,10 +1579,12 @@ class ContainerDeploymentService
     }
 
     /**
-     * Re-attach the sidecar on talksasa-net with a unique DNS alias without
-     * skip-grant-tables. Volume stays mounted.
+     * Re-attach the sidecar on the stack's network with a unique DNS alias
+     * without skip-grant-tables. Volume stays mounted. The network is the
+     * stack's own once it has one, the shared bridge until then; callers
+     * resolve it through ContainerStackNetworkLocator.
      */
-    public function attachSidecarNetworkAlias(SSHService $ssh, string $sidecarContainerName, string $alias): void
+    public function attachSidecarNetworkAlias(SSHService $ssh, string $sidecarContainerName, string $alias, ?string $network = null): void
     {
         $sidecarContainerName = trim($sidecarContainerName);
         $alias = trim($alias);
@@ -1577,7 +1592,7 @@ class ContainerDeploymentService
             return;
         }
 
-        $net = escapeshellarg(self::SHARED_DOCKER_NETWORK);
+        $net = escapeshellarg($network ?: self::SHARED_DOCKER_NETWORK);
         $name = escapeshellarg($sidecarContainerName);
         $aliasArg = escapeshellarg($alias);
 
@@ -2305,6 +2320,10 @@ class ContainerDeploymentService
             default => [],
         };
 
+        $dbCommand = $db->type === 'redis' && trim((string) ($envVars['REDIS_PASSWORD'] ?? '')) !== ''
+            ? ['redis-server', '--requirepass', (string) $envVars['REDIS_PASSWORD']]
+            : null;
+
         $mountPath = match ($db->type) {
             'mysql', 'mariadb' => '/var/lib/mysql',
             'postgresql' => '/var/lib/postgresql/data',
@@ -2321,6 +2340,7 @@ class ContainerDeploymentService
             'container_name' => $appServiceName.'-db',
             'restart' => 'always',
             'mem_limit' => '512M',
+            'command' => $dbCommand,
             'environment' => $dbEnv ?: null,
             'volumes' => ["db_data:{$mountPath}"],
             'networks' => [
@@ -2379,6 +2399,8 @@ class ContainerDeploymentService
         string $nextFrontendRelativeDir = 'frontend',
         int $laravelApiPort = 8001,
         ?array $nodeTopology = null,
+        ?string $networkSubnet = null,
+        bool $applyIsolation = true,
     ): string {
         // Determine resource limits (override > template)
         $cpuLimit = $deployment?->cpu_limit ?? $template->required_cpu_cores ?? 1.0;
@@ -2602,9 +2624,92 @@ class ContainerDeploymentService
             (float) $cpuLimit,
             (int) $memoryLimit
         );
+        // Last, so nothing rendered above escapes it: every published port on
+        // loopback, one private network per stack, capabilities trimmed.
+        if ($applyIsolation) {
+            $this->isolation->apply(
+                $compose,
+                ($serveNextFrontend || $serveNodeWebFrontend) ? LaravelNextGatewayProxy::BACKEND_SERVICE : $containerName,
+                $containerName,
+                $networkSubnet ?? $this->stackSubnetFor($deployment),
+                $template->slug ?? null,
+            );
+        }
         $this->escapeComposeShellDollars($compose);
 
         return Yaml::dump($compose, 10, 2);
+    }
+
+    /**
+     * The subnet a stack renders with: what its row already holds, else a
+     * fresh block on its node. Container-free tests render without a row and
+     * get a network Docker sizes itself.
+     */
+    private function stackSubnetFor(?ContainerDeployment $deployment): ?string
+    {
+        if (! $deployment || ! $deployment->exists) {
+            return null;
+        }
+
+        return $this->stackNetworks->ensureFor($deployment);
+    }
+
+    /**
+     * Whether a re-render of a stack that already runs keeps it isolated.
+     *
+     * A stack still on the shared bridge stays there. Only deploy, redeploy
+     * and containers:apply-isolation move a stack onto its own network, so a
+     * WordPress refresh or a runtime switch never changes a tenant's layout
+     * as a side effect of something else, least of all at three in the
+     * morning from auto-restart.
+     */
+    public function rerenderKeepsIsolation(ContainerDeployment $deployment, ?string $liveYaml = null): bool
+    {
+        $yaml = trim((string) ($liveYaml ?? $deployment->docker_compose_content ?? ''));
+
+        return $yaml !== '' && $this->isolation->isCurrent($yaml);
+    }
+
+    /**
+     * The subnet a re-render keeps, read from the live file so a stack being
+     * migrated renders with the block its target node allocated rather than
+     * the one its row still carries from the source.
+     */
+    public function rerenderSubnet(ContainerDeployment $deployment, ?string $liveYaml = null): ?string
+    {
+        $yaml = trim((string) ($liveYaml ?? $deployment->docker_compose_content ?? ''));
+
+        return $yaml !== '' ? $this->isolation->subnetFromYaml($yaml) : null;
+    }
+
+    /**
+     * docker-compose.yml as the node has it, falling back to the panel copy.
+     * The file on disk is what Compose runs; the panel copy is what it ran last.
+     */
+    public function liveComposeYaml(SSHService $ssh, ContainerDeployment $deployment): string
+    {
+        $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+
+        try {
+            $yaml = trim((string) $ssh->exec(
+                'cat '.escapeshellarg($containerPath.'/docker-compose.yml').' 2>/dev/null || true',
+                15
+            ));
+        } catch (\Throwable) {
+            $yaml = '';
+        }
+
+        return $yaml !== '' ? $yaml : trim((string) ($deployment->docker_compose_content ?? ''));
+    }
+
+    public function isolationPolicy(): ContainerIsolationPolicy
+    {
+        return $this->isolation;
+    }
+
+    public function stackNetworkAllocator(): ContainerStackNetworkAllocator
+    {
+        return $this->stackNetworks;
     }
 
     /**
@@ -5571,7 +5676,12 @@ class ContainerDeploymentService
         );
 
         $dns = $this->sidecarDnsHost($deployment->container_name);
-        $this->attachSidecarNetworkAlias($ssh, $dns, $dns);
+        $this->attachSidecarNetworkAlias(
+            $ssh,
+            $dns,
+            $dns,
+            $this->networkLocator->forContainer($ssh, (string) $deployment->container_name),
+        );
 
         app(DirectAdminToContainerMigrationService::class)->waitForComposeMysql(
             $ssh,
@@ -6672,12 +6782,13 @@ class ContainerDeploymentService
 
     public function isDockerHostPortAllocated(string $message): bool
     {
-        return preg_match('/port is already allocated|Bind for 0\.0\.0\.0:\d+ failed/i', $message) === 1;
+        return preg_match('/port is already allocated|Bind for [\d.]+:\d+ failed/i', $message) === 1;
     }
 
     public function dockerHostPortFromBindError(string $message): ?int
     {
-        if (preg_match('/Bind for 0\.0\.0\.0:(\d+) failed/i', $message, $matches)) {
+        // Loopback-bound stacks report "Bind for 127.0.0.1:PORT failed".
+        if (preg_match('/Bind for [\d.]+:(\d+) failed/i', $message, $matches)) {
             $port = (int) $matches[1];
 
             return $port > 0 && $port <= 65535 ? $port : null;
@@ -7210,6 +7321,7 @@ class ContainerDeploymentService
             $envVars['API_URL'] = $envVars['NEXT_PUBLIC_API_URL'];
         }
 
+        $liveYaml = $this->liveComposeYaml($ssh, $deployment);
         $composeYaml = $this->renderCompose(
             $template,
             $deployment->container_name,
@@ -7224,6 +7336,8 @@ class ContainerDeploymentService
             serveNextFrontend: true,
             nextFrontendRelativeDir: $relativeDir,
             laravelApiPort: LaravelNextGatewayProxy::BACKEND_PORT,
+            networkSubnet: $this->rerenderSubnet($deployment, $liveYaml),
+            applyIsolation: $this->rerenderKeepsIsolation($deployment, $liveYaml),
         );
 
         $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
@@ -7361,6 +7475,7 @@ class ContainerDeploymentService
             $envVars['API_URL'] = $envVars['API_URL'] ?? $envVars['NEXT_PUBLIC_API_URL'];
         }
 
+        $liveYaml = $this->liveComposeYaml($ssh, $deployment);
         $composeYaml = $this->renderCompose(
             $template,
             $deployment->container_name,
@@ -7375,6 +7490,8 @@ class ContainerDeploymentService
             serveNextFrontend: true,
             nextFrontendRelativeDir: $relativeDir,
             laravelApiPort: LaravelNextGatewayProxy::BACKEND_PORT,
+            networkSubnet: $this->rerenderSubnet($deployment, $liveYaml),
+            applyIsolation: $this->rerenderKeepsIsolation($deployment, $liveYaml),
         );
 
         $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
@@ -7690,6 +7807,7 @@ class ContainerDeploymentService
             $deployment->update(['env_values' => $envVars]);
         }
         $runtime = $this->resolveApplicationRuntime($ssh, $template, $hostAppPath, $nodeTopology);
+        $liveYaml = $this->liveComposeYaml($ssh, $deployment);
         $composeYaml = $this->renderCompose(
             $template,
             $deployment->container_name,
@@ -7701,6 +7819,8 @@ class ContainerDeploymentService
             $hostAppPath,
             $runtime,
             nodeTopology: $nodeTopology,
+            networkSubnet: $this->rerenderSubnet($deployment, $liveYaml),
+            applyIsolation: $this->rerenderKeepsIsolation($deployment, $liveYaml),
         );
 
         $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
@@ -7858,6 +7978,7 @@ class ContainerDeploymentService
 
             $runtime = $this->resolveApplicationRuntime($ssh, $template, $hostAppPath, $nodeTopology);
 
+            $liveYaml = $this->liveComposeYaml($ssh, $deployment);
             $composeYaml = $this->renderCompose(
                 $template,
                 $deployment->container_name,
@@ -7872,6 +7993,8 @@ class ContainerDeploymentService
                 serveNextFrontend: $serveNextFrontend,
                 nextFrontendRelativeDir: $nextFrontendRelativeDir,
                 nodeTopology: $nodeTopology,
+                networkSubnet: $this->rerenderSubnet($deployment, $liveYaml),
+                applyIsolation: $this->rerenderKeepsIsolation($deployment, $liveYaml),
             );
 
             $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
@@ -8092,6 +8215,7 @@ class ContainerDeploymentService
             ? $deployment->selected_version
             : null;
 
+        $liveYaml = $this->liveComposeYaml($ssh, $deployment);
         $composeYaml = $this->renderCompose(
             $template,
             $deployment->container_name,
@@ -8103,6 +8227,8 @@ class ContainerDeploymentService
             $hostAppPath,
             null,
             $documentRoot,
+            networkSubnet: $this->rerenderSubnet($deployment, $liveYaml),
+            applyIsolation: $this->rerenderKeepsIsolation($deployment, $liveYaml),
         );
 
         $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
@@ -8180,6 +8306,7 @@ class ContainerDeploymentService
 
         $databaseTemplate = $this->resolveDatabaseTemplate($service, $template);
         $envVars = is_array($deployment->env_values) ? $deployment->env_values : [];
+        $liveYaml = $this->liveComposeYaml($ssh, $deployment);
         $composeYaml = $this->renderCompose(
             $template,
             $deployment->container_name,
@@ -8193,6 +8320,8 @@ class ContainerDeploymentService
             $documentRoot,
             serveNextFrontend: $serveNextFrontend,
             nextFrontendRelativeDir: $nextFrontendRelativeDir,
+            networkSubnet: $this->rerenderSubnet($deployment, $liveYaml),
+            applyIsolation: $this->rerenderKeepsIsolation($deployment, $liveYaml),
         );
 
         $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
@@ -8389,13 +8518,32 @@ class ContainerDeploymentService
             'mysql', 'mariadb' => $this->mysqlEnvironmentVariables($env, $service, $appContainerName),
             'postgresql' => $this->postgresqlEnvironmentVariables($env, $service, $appContainerName),
             'mongodb' => $this->mongodbEnvironmentVariables($env, $service),
-            'redis' => [
-                'REDIS_HOST' => 'db',
-                'REDIS_PORT' => '6379',
-                'REDIS_URL' => 'redis://db:6379',
-            ],
+            'redis' => $this->redisEnvironmentVariables($env),
             default => [],
         };
+    }
+
+    /**
+     * A Redis sidecar used to start with no password at all, on a bridge every
+     * other tenant on the node could reach. The stack's private network is the
+     * fix for that; the password is defence in depth. Generated once and kept
+     * in env_values so a redeploy does not rotate it under a running app.
+     *
+     * @return array<string, string>
+     */
+    private function redisEnvironmentVariables(array $env): array
+    {
+        $password = trim((string) ($env['REDIS_PASSWORD'] ?? ''));
+        if ($password === '') {
+            $password = Str::random(32);
+        }
+
+        return [
+            'REDIS_HOST' => 'db',
+            'REDIS_PORT' => '6379',
+            'REDIS_PASSWORD' => $password,
+            'REDIS_URL' => 'redis://:'.rawurlencode($password).'@db:6379',
+        ];
     }
 
     /**
@@ -8563,7 +8711,7 @@ class ContainerDeploymentService
             return;
         }
 
-        $existing = (string) ($deployment->docker_compose_content ?? '');
+        $existing = $this->liveComposeYaml($ssh, $deployment);
         $containerName = $deployment->container_name;
         $containerPath = self::CONTAINER_BASE_PATH.'/'.$containerName;
 
@@ -8612,7 +8760,7 @@ class ContainerDeploymentService
             || str_contains($existing, 'service_healthy')
             || ! str_contains($existing, 'service_started')
             || ! str_contains($existing, ltrim($expectedBufferPool, '-'))
-            || ! str_contains($existing, '127.0.0.1')
+            || ! str_contains($existing, 'mysqladmin ping -h 127.0.0.1')
             || str_contains($existing, "-h', 'localhost'")
             || str_contains($existing, '-h localhost')
             || ! str_contains($existing, 'start_period: 300s')
@@ -8660,7 +8808,9 @@ class ContainerDeploymentService
                 $deployment->selected_version,
                 $hostAppPath,
                 null,
-                null
+                null,
+                networkSubnet: $this->rerenderSubnet($deployment, $existing),
+                applyIsolation: $this->rerenderKeepsIsolation($deployment, $existing),
             );
         } catch (\Throwable $e) {
             \Log::warning('WordPress compose refresh failed', [
