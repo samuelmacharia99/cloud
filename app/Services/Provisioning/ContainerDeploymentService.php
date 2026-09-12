@@ -3302,7 +3302,7 @@ class ContainerDeploymentService
 
         if ($deployment) {
             $deployment->loadMissing('node', 'domains');
-            $active = $deployment->domains->firstWhere('status', 'active');
+            $active = $deployment->preferredDomain();
             if ($active && ! empty($active->domain)) {
                 return 'https://'.ltrim((string) $active->domain, '/');
             }

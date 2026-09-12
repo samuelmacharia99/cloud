@@ -4,10 +4,12 @@ namespace App\Console\Commands;
 
 use App\Enums\ServiceStatus;
 use App\Models\ContainerDeployment;
+use App\Models\ContainerDomain;
 use App\Models\Node;
 use App\Models\Service;
 use App\Services\Provisioning\ContainerDeploymentEventRecorder;
 use App\Services\Provisioning\ContainerDeploymentService;
+use App\Services\Provisioning\ContainerDoctorService;
 use App\Services\Provisioning\ContainerIsolationPolicy;
 use App\Services\Provisioning\ContainerStackNetworkAllocator;
 use App\Services\Provisioning\PlatformAppsDomainService;
@@ -212,9 +214,10 @@ class ApplyContainerIsolationCommand extends Command
             }
 
             if (! $this->option('skip-platform-domain')) {
-                $this->platformHostnames->attach(
+                $hostname = $this->platformHostnames->attach(
                     $service->fresh(['user', 'containerDeployment.node', 'containerDeployment.domains'])
                 );
+                $this->pointWordPressAtItsHostname($service, $deployment, $slug, $hostname);
             }
 
             $network = ContainerIsolationPolicy::stackNetworkName($containerName);
@@ -231,6 +234,30 @@ class ApplyContainerIsolationCommand extends Command
             return $this->record($target, false, mb_substr(trim($e->getMessage()), 0, 300));
         } finally {
             $ssh->disconnect();
+        }
+    }
+
+    /**
+     * A WordPress site with no domain of its own has node:port written into
+     * home/siteurl, which stops answering the moment its port moves to
+     * loopback. Once it has a platform hostname, that is what the site must
+     * redirect to. Best effort: the move succeeded either way, and Doctor's
+     * "Fix site URLs" is the same repair on demand.
+     */
+    private function pointWordPressAtItsHostname(Service $service, ContainerDeployment $deployment, ?string $slug, ?ContainerDomain $hostname): void
+    {
+        if ($slug !== 'wordpress' || ! $hostname || $hostname->status !== 'active') {
+            return;
+        }
+
+        try {
+            $result = app(ContainerDoctorService::class)->treat(
+                $service->fresh(['containerDeployment.node', 'containerDeployment.domains']),
+                'fix_wordpress_site_url',
+            );
+            $this->line('      WordPress URLs: '.(string) ($result['message'] ?? 'updated'));
+        } catch (\Throwable $e) {
+            $this->warn('      WordPress URLs were not updated: '.$e->getMessage().' (run Fix site URLs from Doctor)');
         }
     }
 

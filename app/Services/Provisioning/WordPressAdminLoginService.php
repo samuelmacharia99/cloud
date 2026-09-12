@@ -122,9 +122,8 @@ class WordPressAdminLoginService
             return null;
         }
 
-        $domain = $deployment->relationLoaded('domains')
-            ? $deployment->domains->first(fn ($d) => ($d->status ?? null) === 'active')
-            : $deployment->primaryDomain();
+        // The customer's own domain before the platform hostname.
+        $domain = $deployment->preferredDomain();
         if ($domain) {
             $scheme = $domain->ssl_enabled ? 'https' : 'http';
 

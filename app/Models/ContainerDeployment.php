@@ -125,11 +125,7 @@ class ContainerDeployment extends Model
     {
         $this->loadMissing(['domains', 'node']);
 
-        $active = $this->domains->where('status', 'active');
-
-        // A customer's own domain first, the platform hostname second.
-        $preferred = $active->first(fn (ContainerDomain $domain): bool => ! $domain->isPlatformHostname() && filled($domain->domain))
-            ?? $active->first(fn (ContainerDomain $domain): bool => $domain->isPlatformHostname() && filled($domain->domain));
+        $preferred = $this->preferredDomain();
 
         if ($preferred) {
             return 'https://'.ltrim((string) $preferred->domain, '/');
@@ -139,12 +135,11 @@ class ContainerDeployment extends Model
             return 'https://'.ltrim((string) $this->domain, '/');
         }
 
-        // An isolated stack publishes on loopback only; node:port would be a
-        // dead link. It is still the address of a stack on the old layout.
-        if (filled($this->network_subnet)) {
-            return null;
-        }
-
+        // Last resort, and on an isolated stack a poor one: the port is bound
+        // to loopback, so this answers only from the node itself. Installers
+        // still need a URL to write into the application, and the platform
+        // hostname above is what makes it a reachable one. Returning nothing
+        // here failed every WordPress install on a host with no apps zone set.
         $node = $this->node;
         if ($node && $this->assigned_port) {
             $host = filled($node->hostname) ? $node->hostname : $node->ip_address;
@@ -172,10 +167,26 @@ class ContainerDeployment extends Model
      */
     public function probeHostHeader(): ?string
     {
-        $this->loadMissing('domains');
-        $domain = $this->domains->firstWhere('status', 'active');
+        $domain = $this->preferredDomain();
 
         return $domain ? ltrim((string) $domain->domain, '/') : null;
+    }
+
+    /**
+     * The hostname this stack is best known by: a customer's own active
+     * domain first, the platform hostname only when there is none. The
+     * platform row is created at deploy, so "the first active domain" would
+     * otherwise be it forever, even after the customer bound their own.
+     */
+    public function preferredDomain(): ?ContainerDomain
+    {
+        $this->loadMissing('domains');
+        $active = $this->domains->filter(
+            fn (ContainerDomain $domain): bool => $domain->status === 'active' && filled($domain->domain)
+        );
+
+        return $active->first(fn (ContainerDomain $domain): bool => ! $domain->isPlatformHostname())
+            ?? $active->first(fn (ContainerDomain $domain): bool => $domain->isPlatformHostname());
     }
 
     // Uptime helper
@@ -197,6 +208,6 @@ class ContainerDeployment extends Model
     // Primary domain helper
     public function primaryDomain(): ?ContainerDomain
     {
-        return $this->domains()->where('status', 'active')->first();
+        return $this->preferredDomain();
     }
 }

@@ -4,6 +4,7 @@ namespace Tests\Feature\Console;
 
 use App\Console\Commands\ApplyContainerIsolationCommand;
 use App\Models\ContainerDeployment;
+use App\Models\ContainerDomain;
 use App\Models\ContainerTemplate;
 use App\Models\Node;
 use App\Models\Product;
@@ -11,6 +12,7 @@ use App\Models\Service;
 use App\Models\User;
 use App\Services\Provisioning\ContainerDeploymentEventRecorder;
 use App\Services\Provisioning\ContainerDeploymentService;
+use App\Services\Provisioning\ContainerDoctorService;
 use App\Services\Provisioning\ContainerIsolationPolicy;
 use App\Services\Provisioning\ContainerStackNetworkAllocator;
 use App\Services\Provisioning\PlatformAppsDomainService;
@@ -105,6 +107,35 @@ class ApplyContainerIsolationCommandTest extends TestCase
             'event' => ApplyContainerIsolationCommand::EVENT_APPLIED,
         ]);
         $this->assertStringContainsString("docker ps -a --filter label=com.docker.compose.project='user-1-service-1'", implode("\n", $this->commands));
+    }
+
+    #[Test]
+    public function a_domainless_wordpress_site_is_pointed_at_its_new_platform_hostname(): void
+    {
+        $node = Node::factory()->containerHost()->create();
+        [$deployment, $service] = $this->runningStack($node, 'user-1-service-1', 'wordpress');
+        $this->stubLiveCompose(['user-1-service-1' => $this->legacyYaml('user-1-service-1')]);
+        $this->hostIpByContainer = ['user-1-service-1' => '127.0.0.1'];
+
+        $hostname = new ContainerDomain([
+            'container_deployment_id' => $deployment->id,
+            'domain' => 'user-1-service-1.apps.example.com',
+            'purpose' => ContainerDomain::PURPOSE_PLATFORM,
+            'status' => 'active',
+        ]);
+        $this->platformHostnames->shouldReceive('attach')->once()->andReturn($hostname);
+
+        $doctor = Mockery::mock(ContainerDoctorService::class);
+        $doctor->shouldReceive('treat')
+            ->once()
+            ->withArgs(fn (Service $s, string $action): bool => $s->is($service) && $action === 'fix_wordpress_site_url')
+            ->andReturn(['success' => true, 'message' => 'WordPress now points at https://user-1-service-1.apps.example.com.']);
+        $this->app->instance(ContainerDoctorService::class, $doctor);
+
+        [$code, $output] = $this->runRollout(['--force' => true]);
+
+        $this->assertSame(0, $code, $output);
+        $this->assertStringContainsString('WordPress URLs: WordPress now points at', $output);
     }
 
     #[Test]
@@ -253,9 +284,9 @@ class ApplyContainerIsolationCommandTest extends TestCase
     /**
      * @return array{0: ContainerDeployment, 1: Service}
      */
-    private function runningStack(Node $node, string $containerName): array
+    private function runningStack(Node $node, string $containerName, ?string $slug = null): array
     {
-        $template = ContainerTemplate::factory()->create(['slug' => 'static-site-'.$containerName]);
+        $template = ContainerTemplate::factory()->create(['slug' => $slug ?? 'static-site-'.$containerName]);
         $service = Service::factory()->create([
             'user_id' => User::factory()->create()->id,
             'product_id' => Product::factory()->containerHosting()->create(['container_template_id' => $template->id])->id,
