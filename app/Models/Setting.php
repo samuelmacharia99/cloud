@@ -26,6 +26,7 @@ class Setting extends Model
         'paypal_partner_client_secret',
         'recaptcha_secret_key',
         'telegram_bot_token',
+        'platform_apps_dns_api_token',
         'cloudflare_api_token',
         'hetzner_storage_password',
     ];

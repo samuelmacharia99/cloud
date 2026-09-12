@@ -1052,6 +1052,15 @@ HTML;
         return $result !== '' ? $result : '/etc/nginx/sites-enabled';
     }
 
+    /**
+     * Validate and reload nginx on a node after something outside a vhost
+     * write changed what it serves, such as a renewed certificate.
+     */
+    public function reload(SSHService $ssh, Node $node): void
+    {
+        $this->testAndReloadNginx($ssh, $node);
+    }
+
     private function testAndReloadNginx(SSHService $ssh, Node $node): void
     {
         $this->testNginxConfig($ssh, $node);

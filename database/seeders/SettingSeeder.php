@@ -179,6 +179,11 @@ class SettingSeeder extends Seeder
             ['key' => 'cloudflare_branded_ns3', 'value' => '', 'description' => 'Cloudflare branded nameserver 3'],
             ['key' => 'cloudflare_branded_ns4', 'value' => '', 'description' => 'Cloudflare branded nameserver 4'],
 
+            // Platform app hostnames ({name}.{zone} for every stack)
+            ['key' => 'platform_apps_zone', 'value' => '', 'description' => 'Zone every application stack gets a hostname under, e.g. apps.example.com. Empty keeps the feature off.'],
+            ['key' => 'platform_apps_cloudflare_zone_id', 'value' => '', 'description' => 'Cloudflare zone ID of the registered domain that holds the apps zone'],
+            ['key' => 'platform_apps_dns_api_token', 'value' => '', 'description' => 'Cloudflare token (Zone → DNS → Edit on the apps zone only) written to container hosts for wildcard certificate issuance'],
+
             // Domain nameserver settings
             ['key' => 'domain_ns1', 'value' => 'ns1.talksasa.cloud', 'description' => 'Default nameserver 1 for domain registrations'],
             ['key' => 'domain_ns2', 'value' => 'ns2.talksasa.cloud', 'description' => 'Default nameserver 2 for domain registrations'],

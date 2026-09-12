@@ -8895,6 +8895,10 @@ class ContainerDeploymentService
             try {
                 $isApiEndpoint = $domain->isApiEndpoint();
                 $hostname = (string) $domain->domain;
+                if ($domain->isPlatformHostname()) {
+                    // Record first, while the row still names the service.
+                    app(PlatformAppsDomainService::class)->release($domain);
+                }
                 if ($domain->deployment?->node) {
                     $nginxService->unbind($domain);
                 } else {
@@ -8949,6 +8953,12 @@ class ContainerDeploymentService
                 'error' => $e->getMessage(),
             ]);
         }
+
+        // The hostname every stack has whether or not the customer bound one.
+        // Never throws; a failure lands on the row and in the event timeline.
+        app(PlatformAppsDomainService::class)->attach(
+            $service->fresh(['user', 'containerDeployment.node', 'containerDeployment.domains'])
+        );
     }
 
     private function reattachAndRebindDomains(
@@ -8963,6 +8973,19 @@ class ContainerDeploymentService
 
             if ($domains->isEmpty()) {
                 return;
+            }
+
+            // The platform vhost names the node's wildcard certificate, so on a
+            // node the stack just moved to the files must exist before nginx
+            // is asked to load a vhost that points at them.
+            try {
+                app(PlatformAppsDomainService::class)->ensureCertificateOnNode($latestDeployment->fresh(['node']));
+            } catch (\Throwable $certificateError) {
+                \Log::warning('Platform wildcard certificate could not be ensured before rebinding', [
+                    'service_id' => $service->id,
+                    'deployment_id' => $latestDeployment->id,
+                    'error' => $certificateError->getMessage(),
+                ]);
             }
 
             $nginxService = new NginxProxyService;

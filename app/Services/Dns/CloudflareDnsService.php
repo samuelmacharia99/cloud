@@ -194,9 +194,11 @@ class CloudflareDnsService
     /**
      * @return array{success: bool, message: string, records?: list<array<string, mixed>>}
      */
-    public function listRecords(string $zoneId): array
+    public function listRecords(string $zoneId, array $filters = []): array
     {
-        $response = $this->request('GET', '/zones/'.$zoneId.'/dns_records', ['per_page' => 100]);
+        // A zone with more records than one page can hold is only searchable
+        // with a filter; callers looking for one hostname pass type and name.
+        $response = $this->request('GET', '/zones/'.$zoneId.'/dns_records', array_merge(['per_page' => 100], $filters));
 
         if (! $response['success']) {
             return $response;

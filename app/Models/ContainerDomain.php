@@ -12,6 +12,12 @@ class ContainerDomain extends Model
 
     public const PURPOSE_API = 'api';
 
+    /**
+     * The {name}.{apps zone} hostname every stack gets at deploy. Owned by the
+     * platform: customers cannot rename, remove or re-issue it.
+     */
+    public const PURPOSE_PLATFORM = 'platform';
+
     protected $fillable = [
         'container_deployment_id',
         'domain',
@@ -57,6 +63,11 @@ class ContainerDomain extends Model
     public function isApiEndpoint(): bool
     {
         return $this->purpose === self::PURPOSE_API;
+    }
+
+    public function isPlatformHostname(): bool
+    {
+        return $this->purpose === self::PURPOSE_PLATFORM;
     }
 
     /**

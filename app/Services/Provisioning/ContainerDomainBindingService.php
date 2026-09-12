@@ -15,6 +15,7 @@ class ContainerDomainBindingService
     public function __construct(
         private NginxProxyService $nginx,
         private DomainCloudflareDnsService $dns,
+        private PlatformAppsDomainService $platformHostnames,
     ) {}
 
     /**
@@ -292,6 +293,23 @@ class ContainerDomainBindingService
         $domains = $deployment->domains ?? collect();
         foreach ($domains as $domain) {
             if (! in_array($domain->status, ['active', 'pending'], true)) {
+                continue;
+            }
+
+            // The platform hostname lives on the platform's zone, not on a
+            // zone the customer registered, so it does not go through the
+            // customer-zone lookup below (which would return nothing for it).
+            if ($domain->isPlatformHostname()) {
+                try {
+                    $this->platformHostnames->pointAt($domain, $nodeIp);
+                } catch (\Throwable $e) {
+                    Log::warning('Platform hostname A record was not updated', [
+                        'service_id' => $service->id,
+                        'domain' => $domain->domain,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+
                 continue;
             }
 

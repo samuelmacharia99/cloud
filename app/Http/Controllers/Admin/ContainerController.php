@@ -260,6 +260,10 @@ class ContainerController extends Controller
                 return back()->withErrors(['error' => 'Domain does not belong to this service']);
             }
 
+            if ($domain->isPlatformHostname()) {
+                return back()->withErrors(['error' => "{$domain->domain} is the platform hostname for this app and is removed with the service, not on its own."]);
+            }
+
             $domainName = $domain->domain;
             $wasApiEndpoint = $domain->isApiEndpoint();
             $dnsWarning = null;
@@ -295,6 +299,10 @@ class ContainerController extends Controller
 
             if ($domain->container_deployment_id !== $service->containerDeployment?->id) {
                 return back()->withErrors(['error' => 'Domain does not belong to this service']);
+            }
+
+            if ($domain->isPlatformHostname()) {
+                return back()->withErrors(['error' => "{$domain->domain} is served by the node's platform wildcard certificate; it is not issued per hostname."]);
             }
 
             if (! $domain->canRequestSsl()) {

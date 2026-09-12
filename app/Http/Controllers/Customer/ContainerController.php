@@ -2678,6 +2678,12 @@ class ContainerController extends Controller
             return $this->domainsTabRedirect($service)->withErrors(['error' => 'Domain does not belong to this service']);
         }
 
+        if ($domain->isPlatformHostname()) {
+            return $this->domainsTabRedirect($service)->withErrors([
+                'error' => "{$domain->domain} is the platform hostname for this app. It cannot be renamed, removed or re-issued; bind your own domain alongside it instead.",
+            ]);
+        }
+
         return null;
     }
 

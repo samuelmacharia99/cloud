@@ -430,6 +430,9 @@
                                                             @if ($domain->isApiEndpoint())
                                                                 <span class="px-2 py-1 rounded text-xs font-semibold bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200">API endpoint</span>
                                                             @endif
+                                                            @if ($domain->isPlatformHostname())
+                                                                <span class="px-2 py-1 rounded text-xs font-semibold bg-slate-200 text-slate-800 dark:bg-slate-600 dark:text-slate-100" title="Assigned by the platform. Always points at this app, even before you bind a domain of your own.">Platform hostname</span>
+                                                            @endif
                                                             @if ($domain->ssl_enabled && $domain->status === 'active')
                                                                 <span class="px-2 py-1 rounded text-xs font-semibold bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">🔒 SSL</span>
                                                             @elseif ($domain->canRequestSsl())
@@ -457,12 +460,12 @@
                                                     </form>
                                                 </div>
                                                 <div class="flex flex-wrap gap-2 shrink-0">
-                                                    @unless ($domain->isApiEndpoint())
+                                                    @unless ($domain->isApiEndpoint() || $domain->isPlatformHostname())
                                                         <button type="button" x-show="!editing" @click="editing = true" class="px-3 py-1 bg-slate-200 dark:bg-slate-600 text-slate-800 dark:text-slate-200 text-sm rounded hover:bg-slate-300 dark:hover:bg-slate-500">
                                                             Edit
                                                         </button>
                                                     @endunless
-                                                    @if ($domain->canRequestSsl())
+                                                    @if ($domain->canRequestSsl() && ! $domain->isPlatformHostname())
                                                         <form method="POST" action="{{ container_route('domains.ssl', $service, $domain) }}" class="inline">
                                                             @csrf
                                                             <button type="submit" class="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">
@@ -470,13 +473,15 @@
                                                             </button>
                                                         </form>
                                                     @endif
-                                                    <form method="POST" action="{{ container_route('domains.unbind', $service, $domain) }}" class="inline" onsubmit="return confirm('Remove {{ $domain->domain }} from this app? This also removes routing and SSL for that hostname.');">
-                                                        @csrf
-                                                        @method('DELETE')
-                                                        <button type="submit" class="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700">
-                                                            Remove
-                                                        </button>
-                                                    </form>
+                                                    @unless ($domain->isPlatformHostname())
+                                                        <form method="POST" action="{{ container_route('domains.unbind', $service, $domain) }}" class="inline" onsubmit="return confirm('Remove {{ $domain->domain }} from this app? This also removes routing and SSL for that hostname.');">
+                                                            @csrf
+                                                            @method('DELETE')
+                                                            <button type="submit" class="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700">
+                                                                Remove
+                                                            </button>
+                                                        </form>
+                                                    @endunless
                                                 </div>
                                             </div>
                                             @php
@@ -495,6 +500,9 @@
                                         </div>
                                     @endforeach
                                 </div>
+                                @if ($deployment->domains->every(fn ($domain) => $domain->isPlatformHostname()))
+                                    <p class="mt-3 text-sm text-slate-600 dark:text-slate-400">No custom domains bound yet. Your app answers on its platform hostname; add your own domain below once DNS is configured.</p>
+                                @endif
                             @else
                                 <p class="text-sm text-slate-600 dark:text-slate-400">No custom domains bound yet. Add one below after DNS is configured.</p>
                             @endif

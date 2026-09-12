@@ -125,18 +125,24 @@ class ContainerDeployment extends Model
     {
         $this->loadMissing(['domains', 'node']);
 
-        $activeDomain = $this->relationLoaded('domains')
-            ? $this->domains->firstWhere('status', 'active')
-            : $this->domains()->where('status', 'active')->first();
+        $active = $this->domains->where('status', 'active');
 
-        if ($activeDomain && filled($activeDomain->domain)) {
-            $host = ltrim((string) $activeDomain->domain, '/');
+        // A customer's own domain first, the platform hostname second.
+        $preferred = $active->first(fn (ContainerDomain $domain): bool => ! $domain->isPlatformHostname() && filled($domain->domain))
+            ?? $active->first(fn (ContainerDomain $domain): bool => $domain->isPlatformHostname() && filled($domain->domain));
 
-            return 'https://'.$host;
+        if ($preferred) {
+            return 'https://'.ltrim((string) $preferred->domain, '/');
         }
 
         if (filled($this->domain)) {
             return 'https://'.ltrim((string) $this->domain, '/');
+        }
+
+        // An isolated stack publishes on loopback only; node:port would be a
+        // dead link. It is still the address of a stack on the old layout.
+        if (filled($this->network_subnet)) {
+            return null;
         }
 
         $node = $this->node;

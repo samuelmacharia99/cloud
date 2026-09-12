@@ -73,6 +73,7 @@ class SettingController extends Controller
             'suspend_on_disk_overquota', 'disk_overquota_threshold_percent',
             'cloudflare_enabled', 'cloudflare_api_token', 'cloudflare_account_id',
             'cloudflare_branded_ns1', 'cloudflare_branded_ns2', 'cloudflare_branded_ns3', 'cloudflare_branded_ns4',
+            'platform_apps_zone', 'platform_apps_cloudflare_zone_id', 'platform_apps_dns_api_token',
             'backup_storage_driver',
             'hetzner_storage_host', 'hetzner_storage_port', 'hetzner_storage_username',
             'hetzner_storage_password', 'hetzner_storage_path',
@@ -210,7 +211,7 @@ class SettingController extends Controller
         'max_', 'auto_', 'suspend_', 'terminate_', 'grace_',
         'provisioning_', 'directadmin_', 'timezone', 'date_format',
         'reseller_', 'service_', 'currency', 'telegram_', 'cloudflare_',
-        'backup_', 'hetzner_',
+        'backup_', 'hetzner_', 'platform_',
     ];
 
     public function update(Request $request)
@@ -237,6 +238,7 @@ class SettingController extends Controller
             'directadmin_api_password', 'stripe_key', 'stripe_secret_key', 'stripe_webhook_secret',
             'paypal_client_secret', 'paypal_partner_client_secret', 'recaptcha_secret_key',
             'telegram_bot_token', 'cloudflare_api_token', 'hetzner_storage_password',
+            'platform_apps_dns_api_token',
         ];
 
         foreach ($settings as $key => $value) {
