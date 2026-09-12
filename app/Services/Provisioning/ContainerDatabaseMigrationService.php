@@ -140,7 +140,33 @@ class ContainerDatabaseMigrationService
         $composeService = $commands->resolveAppComposeService($deployment);
 
         try {
-            $output = $this->executeWithRetry($service, $deployment, $ssh, $plan, $containerPath, $composeService);
+            try {
+                $output = $this->executeWithRetry($service, $deployment, $ssh, $plan, $containerPath, $composeService);
+            } catch (\Throwable $e) {
+                // A migration that stops because Postgres lacks an extension is
+                // not wrong; the database is. Supply the extension and let the
+                // migration say what it thinks a second time.
+                $extension = $this->extensionTheDatabaseLacks($service, $deployment, $e);
+                if ($extension === null) {
+                    throw $e;
+                }
+
+                $enabled = app(ContainerPostgresExtensionService::class)
+                    ->enableExtension($service, $deployment, $ssh, $extension);
+                app(ContainerDeploymentEventRecorder::class)->record($service, $deployment, 'database_extension_enabled', [
+                    'extension' => $extension,
+                    'tool' => $plan->tool,
+                    'message' => $enabled,
+                ]);
+                Log::info('Database extension enabled for a migration', [
+                    'service_id' => $service->id,
+                    'deployment_id' => $deployment->id,
+                    'extension' => $extension,
+                ]);
+
+                $output = $enabled."\n"
+                    .$this->executeWithRetry($service, $deployment, $ssh, $plan, $containerPath, $composeService);
+            }
         } finally {
             $lock?->release();
         }
@@ -237,6 +263,26 @@ class ContainerDatabaseMigrationService
                 self::TIMEOUT_SECONDS,
                 $plan->environment,
             );
+    }
+
+    /**
+     * The Postgres extension a failed migration named, when the sidecar is
+     * Postgres. Null for every other kind of failure, and for MySQL, where the
+     * same words never appear.
+     */
+    private function extensionTheDatabaseLacks(Service $service, ContainerDeployment $deployment, \Throwable $e): ?string
+    {
+        $extension = app(ContainerPostgresExtensionService::class)->extensionRequiredByError($e->getMessage());
+        if ($extension === null) {
+            return null;
+        }
+
+        $type = app(ContainerDatabaseSidecarResolver::class)->typeForService(
+            $service,
+            (string) ($deployment->docker_compose_content ?? ''),
+        );
+
+        return $type === 'postgresql' ? $extension : null;
     }
 
     /**

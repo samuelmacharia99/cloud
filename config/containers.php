@@ -103,6 +103,9 @@ return [
     */
     'postgres_extensions' => [
         'postgis_image' => env('CONTAINER_POSTGIS_IMAGE', 'postgis/postgis:{major}-3.4-alpine'),
+        // pgvector publishes Debian builds only. Reaching an Alpine sidecar
+        // crosses C libraries; the swap rebuilds the database's indexes.
+        'vector_image' => env('CONTAINER_PGVECTOR_IMAGE', 'pgvector/pgvector:pg{major}'),
     ],
 
     'laravel_init' => [

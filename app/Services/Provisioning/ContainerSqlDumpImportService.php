@@ -613,14 +613,20 @@ class ContainerSqlDumpImportService
                 $deployment,
                 $extensions->requiredExtensions($sql),
             );
-            if ($missing !== []) {
-                throw new \InvalidArgumentException(
-                    'This dump needs the '.implode(', ', $missing).' extension'
-                    .(count($missing) > 1 ? 's' : '').', which this database does not have. '
-                    .(in_array('postgis', $missing, true)
-                        ? 'Use Enable PostGIS on this tab, then import again.'
-                        : 'Ask support to add it to the database image.')
-                );
+            // Supply them before psql is asked to. A swap restarts the
+            // database, which is fine: nothing has been imported yet, and the
+            // alternative was a dump that stopped halfway with the customer
+            // told to press a button and try again.
+            $deployment->loadMissing('service');
+            foreach ($missing as $name) {
+                try {
+                    $extensions->enableExtension($deployment->service, $deployment, $ssh, $name);
+                } catch (\Throwable $e) {
+                    throw new \InvalidArgumentException(
+                        'This dump needs the '.$name.' extension, which this database does not have and could not be given: '
+                        .$e->getMessage()
+                    );
+                }
             }
 
             $importDir = $containerPath.'/.db-imports';

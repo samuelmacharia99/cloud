@@ -87,6 +87,43 @@ class ContainerPostgresExtensionServiceTest extends TestCase
         $this->assertNull($this->service()->databaseImage($yaml));
     }
 
+    #[Test]
+    public function it_names_the_extension_a_failed_migration_was_missing(): void
+    {
+        $service = $this->service();
+
+        $this->assertSame('vector', $service->extensionRequiredByError(
+            "sqlalchemy.exc.InternalError: (psycopg2.errors.RaiseException) pgvector extension is required before this migration\nCONTEXT:  PL/pgSQL function inline_code_block line 4 at RAISE"
+        ));
+        $this->assertSame('vector', $service->extensionRequiredByError('ERROR:  type "vector" does not exist'));
+        $this->assertSame('vector', $service->extensionRequiredByError('ERROR:  extension "vector" is not available'));
+        $this->assertSame('postgis', $service->extensionRequiredByError(
+            'could not open extension control file "/usr/local/share/postgresql/extension/postgis.control": No such file'
+        ));
+        $this->assertSame('uuid-ossp', $service->extensionRequiredByError('ERROR:  permission denied to create extension "uuid-ossp"'));
+        $this->assertSame('postgis', $service->extensionRequiredByError('ERROR:  function st_geomfromtext(unknown) does not exist'));
+        $this->assertNull($service->extensionRequiredByError('ERROR:  relation "users" does not exist'));
+        $this->assertNull($service->extensionRequiredByError('ERROR:  permission denied to create extension "plpgsql"'));
+    }
+
+    #[Test]
+    public function pgvector_reaches_an_alpine_sidecar_only_when_the_caller_will_rebuild_the_indexes(): void
+    {
+        $service = $this->service();
+
+        // Debian build only, so an Alpine data directory crosses C libraries.
+        $this->assertNull($service->imageFor('postgres:16-alpine', 'vector'));
+        $this->assertSame('pgvector/pgvector:pg16', $service->imageFor('postgres:16-alpine', 'vector', allowLibcChange: true));
+        $this->assertTrue($service->swapChangesLibc('postgres:16-alpine', 'pgvector/pgvector:pg16'));
+
+        // Same library, no rebuild needed.
+        $this->assertSame('pgvector/pgvector:pg15', $service->imageFor('postgres:15.4', 'vector'));
+        $this->assertFalse($service->swapChangesLibc('postgres:15.4', 'pgvector/pgvector:pg15'));
+
+        $this->assertNull($service->imageFor('pgvector/pgvector:pg16', 'vector'));
+        $this->assertNull($service->imageFor('postgres:16-alpine', 'no-such-extension'));
+    }
+
     private function service(): ContainerPostgresExtensionService
     {
         return app(ContainerPostgresExtensionService::class);
