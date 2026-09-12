@@ -27,13 +27,25 @@ use Symfony\Component\Yaml\Yaml;
  */
 class ContainerDeploymentService
 {
+    /**
+     * Statuses that prove an application is serving. 4xx is deliberate: an API
+     * root that answers 401 or 404 is running correctly, and failing a deploy
+     * over a route the customer never defined helps nobody.
+     *
+     * @var list<string>
+     */
+    public const READY_HTTP_STATUSES = ['200', '204', '301', '302', '401', '403', '404', '405', '422'];
+
+    /** How far back a running container's log is read for a live fault. */
+    public const RECENT_LOG_WINDOW = '120s';
+
     public const CONTAINER_BASE_PATH = '/opt/talksasa/containers';
 
     /**
      * One bridge per container host. Per-compose default networks each take a
      * /16 from Docker IPAM and exhaust the host after a few dozen sites.
      */
-    public const SHARED_DOCKER_NETWORK = 'talksasa-net';
+    public const SHARED_DOCKER_NETWORK = ContainerIsolationPolicy::SHARED_NETWORK_NAME;
 
     public const VITE_ALLOWED_HOSTS_ENV = '__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS';
 
@@ -3434,6 +3446,91 @@ class ContainerDeploymentService
         );
     }
 
+    /**
+     * Ask the edge what it is actually doing, rather than asserting silently.
+     *
+     * The old probe chained three greps with `;`, so the shell returned only
+     * the last one's status and the two routing assertions never affected the
+     * verdict. Worse, every curl wrote to /dev/null and every grep was quiet,
+     * so a failure arrived as the command text and "exited with status 1": a
+     * setup page, a dead upstream and a broken application were one message.
+     *
+     * This asks once and reports four facts. Deciding on them is PHP's job,
+     * where saying which check failed costs nothing.
+     *
+     * @return array{front_status: string, front_upstream: string, api_status: string, api_upstream: string}
+     */
+    public function probeSplitStack(SSHService $ssh, int $port): array
+    {
+        $base = 'http://127.0.0.1:'.$port;
+        $curl = 'curl -sS -D - -o /dev/null --connect-timeout 2 --max-time 5 ';
+        $status = "sed -n 's|^HTTP/[0-9.]* \\([0-9][0-9][0-9]\\).*|\\1|p' | tail -n 1";
+        $upstream = "sed -n 's/^[Xx]-[Tt]alksasa-[Uu]pstream:[[:space:]]*//p' | tail -n 1";
+
+        // Always exits zero. A probe that fails by exit status is what threw
+        // the evidence away in the first place.
+        $output = $ssh->exec(
+            'front=$('.$curl.escapeshellarg($base.'/')." 2>/dev/null | tr -d '\\r'); "
+            .'api=$('.$curl.escapeshellarg($base.'/api/health')." 2>/dev/null | tr -d '\\r'); "
+            .'printf "front_status=%s\\nfront_upstream=%s\\napi_status=%s\\napi_upstream=%s\\n" '
+            .'"$(printf "%s" "$front" | '.$status.')" '
+            .'"$(printf "%s" "$front" | '.$upstream.')" '
+            .'"$(printf "%s" "$api" | '.$status.')" '
+            .'"$(printf "%s" "$api" | '.$upstream.')"',
+            20,
+        );
+
+        $probe = ['front_status' => '', 'front_upstream' => '', 'api_status' => '', 'api_upstream' => ''];
+
+        foreach (preg_split('/\R/', $output) ?: [] as $line) {
+            [$key, $value] = array_pad(explode('=', trim($line), 2), 2, '');
+            if (array_key_exists($key, $probe)) {
+                $probe[$key] = strtolower(trim($value));
+            }
+        }
+
+        return $probe;
+    }
+
+    /**
+     * Null when the stack is serving, otherwise a sentence naming the check
+     * that failed and what the server answered.
+     *
+     * @param  array{front_status: string, front_upstream: string, api_status: string, api_upstream: string}  $probe
+     */
+    public function describeSplitStackProbe(array $probe): ?string
+    {
+        if ($probe['front_status'] === '' && $probe['api_status'] === '') {
+            return 'The edge did not answer on the service port at all.';
+        }
+
+        // The edge answers on its own behalf while settings are outstanding,
+        // and that is a hold rather than a fault. Naming it stops somebody
+        // debugging a routing problem that is not there.
+        if ($probe['front_upstream'] === 'setup' || $probe['api_upstream'] === 'setup') {
+            return 'The edge is serving the setup page, so the application is still waiting for its settings.';
+        }
+
+        if ($probe['front_upstream'] !== 'frontend') {
+            return 'The site root was not routed to the frontend'
+                .($probe['front_upstream'] === '' ? ' and the edge named no upstream' : ', it went to '.$probe['front_upstream'])
+                .' (HTTP '.($probe['front_status'] ?: 'no response').').';
+        }
+
+        if ($probe['api_upstream'] !== 'backend') {
+            return '/api/health was not routed to the backend'
+                .($probe['api_upstream'] === '' ? ' and the edge named no upstream' : ', it went to '.$probe['api_upstream'])
+                .' (HTTP '.($probe['api_status'] ?: 'no response').').';
+        }
+
+        if (! in_array($probe['api_status'], self::READY_HTTP_STATUSES, true)) {
+            return 'The edge routed correctly, but the backend answered /api/health with HTTP '
+                .($probe['api_status'] ?: 'no response').'.';
+        }
+
+        return null;
+    }
+
     public function waitForNodeSplitStackReadiness(
         SSHService $ssh,
         ContainerDeployment $deployment,
@@ -3454,28 +3551,30 @@ class ContainerDeploymentService
                     $this->waitForStableContainerRunning($ssh, $container, self::HEALTH_CHECK_DELAY * 2);
                 }
                 // Edge must own the public port and route UI → frontend, /api → backend.
-                $ssh->exec(
-                    'front=$(curl -sS -D - -o /dev/null --connect-timeout 2 --max-time 5 '
-                    .escapeshellarg('http://127.0.0.1:'.$port.'/')." | tr -d '\\r'); "
-                    .'api=$(curl -sS -D - -o /dev/null --connect-timeout 2 --max-time 5 '
-                    .escapeshellarg('http://127.0.0.1:'.$port.'/api/health')." | tr -d '\\r'); "
-                    .'printf "%s" "$front" | grep -qi "^x-talksasa-upstream: frontend$"; '
-                    .'printf "%s" "$api" | grep -qi "^x-talksasa-upstream: backend$"; '
-                    .'printf "%s" "$api" | grep -Eiq "^HTTP/[0-9.]+ (200|204|301|302|401|403|404|405|422)$"',
-                    15,
-                );
+                $failure = $this->describeSplitStackProbe($this->probeSplitStack($ssh, $port));
+                if ($failure === null) {
+                    return;
+                }
 
-                return;
+                throw new \RuntimeException($failure);
             } catch (\Throwable $e) {
                 $lastDiagnostic = $e->getMessage();
                 $attempt++;
 
                 // An import-time crash never recovers by waiting, so stop burning
-                // the timeout once the backend's own log names the cause. Only a
-                // backend that is genuinely down is read this way — a healthy app
-                // may log and swallow an import error of its own.
-                if ($attempt % 2 === 0 && $this->backendIsDown($ssh, $backend)) {
-                    $fatal = $presenter->present($this->stackCommands->containerLogs($ssh, $backend));
+                // the timeout once the backend's own log names the cause.
+                //
+                // A backend that stays up while every request fails is the same
+                // dead end and used to be invisible here, because only a dead
+                // one was read. It is read too now, but only its last two
+                // minutes: a running container's log also holds errors it
+                // handled and moved past, and the whole reason the old gate
+                // existed was to avoid diagnosing a stack from those.
+                if ($attempt % 2 === 0) {
+                    $fatal = $presenter->present($this->backendIsDown($ssh, $backend)
+                        ? $this->stackCommands->containerLogs($ssh, $backend)
+                        : $this->stackCommands->containerLogs($ssh, $backend, 80, self::RECENT_LOG_WINDOW));
+
                     if ($fatal !== null) {
                         throw $this->readinessFailure($fatal, $deployment);
                     }

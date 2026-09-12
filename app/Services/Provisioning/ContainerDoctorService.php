@@ -24,6 +24,14 @@ class ContainerDoctorService
      */
     public const STACKS_WITH_APPLICATION_OWNED_SCHEMA = ['nodejs', 'python', 'ruby'];
 
+    /**
+     * Migrations for a stack that is not Laravel. The Laravel treatment runs
+     * artisan and nothing else; this one reads the command out of the
+     * repository, which is the only way to migrate a stack whose tool the
+     * platform does not choose.
+     */
+    public const RUN_APPLICATION_MIGRATIONS_ACTION = 'run_application_migrations';
+
     public const FIX_TRUST_LIST_ACTION = 'fix_trust_list_settings';
 
     /**
@@ -122,6 +130,7 @@ class ContainerDoctorService
             'use_file_cache',
             'clear_laravel_caches',
             'run_migrations',
+            self::RUN_APPLICATION_MIGRATIONS_ACTION,
             'migrate_fresh',
             'ensure_storage_link',
             'fix_storage_permissions',
@@ -158,6 +167,7 @@ class ContainerDoctorService
             'upgrade_node_runtime' => $this->treatUpgradeNodeRuntime($service),
             'switch_php_production_runtime' => $this->treatSwitchPhpProductionRuntime($service),
             'run_migrations' => $this->treatRunMigrations($service),
+            self::RUN_APPLICATION_MIGRATIONS_ACTION => $this->treatApplicationMigrations($service),
             'migrate_fresh' => $this->treatMigrateFresh($service),
             'import_da_database' => $this->treatImportDaDatabase($service),
             'import_da_codeigniter_app' => $this->treatImportDaCodeIgniterApp($service),
@@ -1282,6 +1292,16 @@ class ContainerDoctorService
                 ]);
 
                 $appErrors = $containerReady ? $this->readRecentApplicationErrors($ssh, $deployment) : [];
+
+                // That reader greps Laravel and CodeIgniter log files. A stack
+                // that writes to stdout leaves it empty, so every 500 on a
+                // Node, Python or Ruby service fell through to a generic
+                // "application exception" and a manual step naming a Laravel
+                // log the container does not have.
+                if ($containerReady && $appErrors === []
+                    && in_array($stack, self::STACKS_WITH_APPLICATION_OWNED_SCHEMA, true)) {
+                    $appErrors = $this->recentContainerErrorLines($ssh, $deployment);
+                }
                 $phpProbeLines = [];
                 if ($containerReady && in_array($stack, ['laravel', 'php'], true)) {
                     try {
@@ -1422,11 +1442,17 @@ class ContainerDoctorService
                                 'In Terminal: tail -n 40 /var/www/html/wp-content/debug.log (present only when WP_DEBUG_LOG is on).',
                                 'This card stays until the public URL stops returning HTTP 5xx.',
                             ]
-                            : [
-                                'In Terminal: tail -n 40 storage/logs/laravel.log',
-                                'Re-scan after treating — leftover 1045/2002 lines in an old log tail are not the live cause when DB: connected.',
-                                'This card stays until the public URL stops returning HTTP 5xx.',
-                            ],
+                            : (in_array($stack, self::STACKS_WITH_APPLICATION_OWNED_SCHEMA, true)
+                                ? [
+                                    'Open the Logs tab — this application writes its errors to the container output, not to a file.',
+                                    'If the error names a table or relation that does not exist, run the migrations from the Database tab.',
+                                    'This card stays until the public URL stops returning HTTP 5xx.',
+                                ]
+                                : [
+                                    'In Terminal: tail -n 40 storage/logs/laravel.log',
+                                    'Re-scan after treating — leftover 1045/2002 lines in an old log tail are not the live cause when DB: connected.',
+                                    'This card stays until the public URL stops returning HTTP 5xx.',
+                                ]),
                         'source' => 'live',
                     ];
                 }
@@ -2359,6 +2385,39 @@ PHP;
     /**
      * @return list<string>
      */
+    /**
+     * The recent tail of a container's own output, as error-ish lines.
+     *
+     * Only the last half hour, because a container that has been up for days
+     * holds startup noise and handled errors that have nothing to do with the
+     * 500 happening now.
+     *
+     * @return list<string>
+     */
+    private function recentContainerErrorLines(SSHService $ssh, ContainerDeployment $deployment): array
+    {
+        $logs = app(ContainerStackCommandService::class)->containerLogs(
+            $ssh,
+            (string) $deployment->container_name,
+            120,
+            '30m',
+        );
+
+        if (trim($logs) === '') {
+            return [];
+        }
+
+        $lines = [];
+        foreach (preg_split("/\r\n|\n|\r/", $logs) ?: [] as $line) {
+            $line = trim($line);
+            if ($line !== '') {
+                $lines[] = $line;
+            }
+        }
+
+        return array_slice($lines, -120);
+    }
+
     private function readRecentApplicationErrors(SSHService $ssh, $deployment): array
     {
         $scripts = [
@@ -5385,6 +5444,59 @@ PHP;
     /**
      * @return array{success: bool, message: string}
      */
+    /**
+     * Run whatever migration command the repository declares.
+     *
+     * A Node, Python or Ruby stack owns its own schema and its own tool, so
+     * this reads the command from the checkout, refuses the destructive
+     * variants, and reports the table count either side of the run.
+     */
+    private function treatApplicationMigrations(Service $service): array
+    {
+        $deployment = $service->containerDeployment;
+        if ($deployment === null) {
+            return ['success' => false, 'message' => 'This service has no container deployment.'];
+        }
+
+        $ssh = SSHService::forNode($deployment->node);
+        $migrations = app(ContainerDatabaseMigrationService::class);
+
+        try {
+            $plan = $migrations->plan($service, $deployment, $ssh);
+            if ($plan === null) {
+                return [
+                    'success' => false,
+                    'message' => 'No migration tool was found in this repository, so the platform has no command '
+                        .'to run. Create the schema from the Terminal tab.',
+                ];
+            }
+
+            $result = $migrations->run($service, $deployment, $ssh, $plan);
+
+            // Migrations that exit zero and create nothing are the shape of an
+            // empty revision directory, and calling that a repair sends
+            // somebody back to a button that already did all it could.
+            if ($result['tables_after'] === 0) {
+                return [
+                    'success' => false,
+                    'message' => $plan->tool.' ran but the database still has no tables. '
+                        .'Check that the migration history in the repository is not empty.',
+                ];
+            }
+
+            $message = $plan->tool.' migrations applied.';
+            if ($result['tables_before'] !== null && $result['tables_after'] !== null) {
+                $message .= ' Tables: '.$result['tables_before'].' → '.$result['tables_after'].'.';
+            }
+
+            return ['success' => true, 'message' => $message];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'message' => 'Migrations failed: '.$e->getMessage()];
+        } finally {
+            $ssh->disconnect();
+        }
+    }
+
     private function treatRunMigrations(Service $service): array
     {
         $deployment = $service->containerDeployment;
@@ -5503,18 +5615,23 @@ PHP;
             'severity' => 'warning',
             'title' => 'Live check: database has no tables',
             'summary' => 'Credentials work for "'.$databaseName.'" and the schema is empty. '
-                .'Tables for this stack come from your own migration step, which the platform does not run, '
-                .'so sign-up and every other write fails while the database itself keeps testing as healthy.',
+                .'Tables for this stack come from your own migration step, so sign-up and every other write '
+                .'fails while the database itself keeps testing as healthy. The platform reads the migration '
+                .'command out of your repository and can run it for you.',
             'evidence' => [
                 'table_count=0',
                 'DB_DATABASE='.$databaseName,
                 'stack='.$stack,
             ],
-            'treat_action' => null,
-            'treat_label' => null,
+            // This used to offer nothing, because nothing could run a migration
+            // for a stack whose tool the platform does not choose. It reads the
+            // command out of the checkout now, and refuses the destructive
+            // variants rather than guessing at one.
+            'treat_action' => self::RUN_APPLICATION_MIGRATIONS_ACTION,
+            'treat_label' => 'Run migrations',
             'manual_steps' => [
-                'Open Terminal and run your project\'s migration, such as npx prisma migrate deploy, '
-                    .'npx knex migrate:latest, alembic upgrade head, or bin/rails db:migrate.',
+                'Run migrations offers the command your repository declares, such as alembic upgrade head, '
+                    .'npx prisma migrate deploy or bin/rails db:migrate.',
                 'Or load an existing schema under Database → Import SQL dump.',
                 'If your application creates its own tables at boot, restart it and read the logs for why it did not.',
             ],
@@ -6185,6 +6302,20 @@ PHP;
         }
 
         if ($looksLikeMissingTable) {
+            // migrate:fresh is artisan, and so is run_migrations. A stack that
+            // owns its own schema needs the command its own repository
+            // declares, which is the one thing the platform can read rather
+            // than assume.
+            if (in_array($stack, self::STACKS_WITH_APPLICATION_OWNED_SCHEMA, true)) {
+                return [
+                    'treat_action' => self::RUN_APPLICATION_MIGRATIONS_ACTION,
+                    'treat_label' => 'Run migrations',
+                    'summary' => 'The database connects and the credentials are right, but the tables the application '
+                        .'queries are not there. Its migrations have not run, or have not caught up with the code '
+                        .'that was last deployed.',
+                ];
+            }
+
             return [
                 'treat_action' => $hasTables ? 'run_migrations' : 'migrate_fresh',
                 'treat_label' => $hasTables ? 'Run migrations' : 'Rebuild schema (migrate:fresh)',
@@ -6601,6 +6732,7 @@ PHP;
             'use_file_cache',
             'clear_laravel_caches',
             'run_migrations',
+            self::RUN_APPLICATION_MIGRATIONS_ACTION,
             'migrate_fresh',
             'ensure_storage_link',
             'fix_storage_permissions',

@@ -247,4 +247,81 @@ class ContainerApplicationReadinessTest extends TestCase
 
         return [$service, $deployment];
     }
+
+    #[Test]
+    public function a_container_that_is_up_but_answers_5xx_is_not_ready(): void
+    {
+        // The gap this closes. Docker reports the container running and stable,
+        // so the old check called it ready about two seconds in while every
+        // request to the application returned a server error.
+        [$service, $deployment] = $this->pythonService();
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('answered HTTP 500');
+
+        $this->readiness()->assertReady(
+            $this->sshAnswering(['running|true|false|0|false|3'], '500'),
+            $service,
+            $deployment,
+            5,
+        );
+    }
+
+    #[Test]
+    public function an_api_with_no_route_at_the_site_root_is_still_ready(): void
+    {
+        // A 404 from an API that only serves /api is a correct answer, and
+        // failing a deploy over a route the customer never defined helps
+        // nobody.
+        [$service, $deployment] = $this->pythonService();
+
+        $this->readiness()->assertReady(
+            $this->sshAnswering(['running|true|false|0|false|3'], '404'),
+            $service,
+            $deployment,
+        );
+
+        $this->assertTrue($this->recorded($service, 'application_readiness_passed'));
+    }
+
+    #[Test]
+    public function a_container_with_nothing_listening_is_still_ready(): void
+    {
+        // curl writes 000 when it never got a response. A worker container with
+        // no web server has always passed this check, and newly failing those
+        // would break stacks that work today.
+        [$service, $deployment] = $this->pythonService();
+
+        $this->readiness()->assertReady(
+            $this->sshAnswering(['running|true|false|0|false|3'], '000'),
+            $service,
+            $deployment,
+        );
+
+        $this->assertTrue($this->recorded($service, 'application_readiness_passed'));
+    }
+
+    /**
+     * A node that answers `docker inspect` from the script and every HTTP probe
+     * with one status code.
+     *
+     * @param  list<string>  $inspectLines
+     */
+    private function sshAnswering(array $inspectLines, string $httpCode): SSHService
+    {
+        $ssh = Mockery::mock(SSHService::class);
+        $ssh->shouldReceive('exec')->andReturnUsing(
+            function (string $command) use (&$inspectLines, $httpCode): string {
+                if (str_contains($command, 'docker inspect')) {
+                    return count($inspectLines) > 1
+                        ? (string) array_shift($inspectLines)
+                        : (string) ($inspectLines[0] ?? '');
+                }
+
+                return str_contains($command, 'curl') ? $httpCode : '';
+            }
+        );
+
+        return $ssh;
+    }
 }

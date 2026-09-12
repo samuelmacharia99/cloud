@@ -2218,7 +2218,13 @@ LOG;
         $this->assertNotNull($finding);
         $this->assertSame('live_empty_database', $finding['id']);
         $this->assertSame('warning', $finding['severity']);
-        $this->assertNull($finding['treat_action']);
+        // This offered no repair for as long as nothing could run a migration
+        // for a stack whose tool the platform does not choose. It reads the
+        // command out of the repository now, so the button exists.
+        $this->assertSame(
+            ContainerDoctorService::RUN_APPLICATION_MIGRATIONS_ACTION,
+            $finding['treat_action'],
+        );
         $this->assertStringContainsString('your own migration step', $finding['summary']);
         $this->assertStringContainsString('stack=nodejs', $finding['evidence'][2]);
     }
@@ -2254,5 +2260,37 @@ LOG;
         $service->setRelation('containerDeployment', null);
 
         return $service;
+    }
+
+    #[Test]
+    public function a_python_stack_missing_its_tables_is_offered_its_own_migration_command(): void
+    {
+        // migrate:fresh and run_migrations are both artisan. A stack that owns
+        // its own schema needs the command its own repository declares, and
+        // offering it Laravel's used to be the only thing on the card.
+        $treat = app(ContainerDoctorService::class)->resolveHttp500Treatment(
+            ['db_ok' => true, 'table_count' => 0, 'http_status' => 500],
+            ['sqlalchemy.exc.ProgrammingError: relation "users" does not exist'],
+            'python',
+        );
+
+        $this->assertSame(
+            ContainerDoctorService::RUN_APPLICATION_MIGRATIONS_ACTION,
+            $treat['treat_action'],
+        );
+        $this->assertSame('Run migrations', $treat['treat_label']);
+        $this->assertStringContainsString('migrations have not run', strtolower($treat['summary']));
+    }
+
+    #[Test]
+    public function laravel_keeps_the_artisan_treatment_for_the_same_evidence(): void
+    {
+        $treat = app(ContainerDoctorService::class)->resolveHttp500Treatment(
+            ['db_ok' => true, 'table_count' => 12, 'http_status' => 500],
+            ['SQLSTATE[42S02]: Base table or view not found'],
+            'laravel',
+        );
+
+        $this->assertSame('run_migrations', $treat['treat_action']);
     }
 }

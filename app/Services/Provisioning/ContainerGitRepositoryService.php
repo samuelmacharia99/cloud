@@ -471,6 +471,14 @@ class ContainerGitRepositoryService
                     // Reporting it as a refresh made a no-op read like work.
                     return $message !== '' ? $message : 'No runtime change was needed for this stack.';
                 });
+
+                if ($runMigrations) {
+                    $this->runPullStep($pull, 'migrations', fn (): string => $this->runApplicationMigrations(
+                        $service,
+                        $deployment,
+                        $ssh,
+                    ));
+                }
             }
 
             $this->runPullStep($pull, 'health', function () use ($service, $deployment, $ssh) {
@@ -831,6 +839,14 @@ class ContainerGitRepositoryService
 
         if (! $this->isLaravelService($service)) {
             $steps[] = $this->makeStep('runtime');
+
+            // After the runtime refresh, never before it. The environment step
+            // corrects DATABASE_URL, but the container only carries that once
+            // compose has been rewritten and it has been recreated, so a
+            // migration run any earlier runs against the previous environment.
+            if ($runMigrations) {
+                $steps[] = $this->makeStep('migrations');
+            }
         }
 
         $steps[] = $this->makeStep('health');
@@ -931,6 +947,56 @@ class ContainerGitRepositoryService
         }
 
         return $summary.$driverNote;
+    }
+
+    /**
+     * Run the migration command the repository itself declares.
+     *
+     * Every stack but Laravel used to install its migration tool during the
+     * pull and then never run it. A Python API arrived with credentials, an
+     * empty schema, and an application whose every query raised an error the
+     * platform reported as "did not become ready".
+     *
+     * Nothing new is invented here. `ContainerDatabaseMigrationService` already
+     * reads the command out of the checkout for Node, Python and Ruby, refuses
+     * the destructive variants, counts tables either side, and records the run.
+     * It was only ever reachable from the Database tab.
+     */
+    private function runApplicationMigrations(
+        Service $service,
+        ContainerDeployment $deployment,
+        SSHService $ssh,
+    ): string {
+        $migrations = app(ContainerDatabaseMigrationService::class);
+        $plan = $migrations->plan($service, $deployment, $ssh);
+
+        if ($plan === null) {
+            // Not every application has migrations, and one that does not is
+            // not a broken one. Saying so beats failing a step on a stack that
+            // was never going to have a command to run.
+            return 'No migration tool detected in this repository.';
+        }
+
+        // The pull already holds the node build lock this service takes, so it
+        // must not block on a lock it owns itself.
+        $result = $migrations->run($service, $deployment, $ssh, $plan, operationAlreadyLocked: true);
+
+        $summary = $plan->tool.' migrations applied ('.$plan->command.').';
+        if ($result['tables_before'] !== null && $result['tables_after'] !== null) {
+            $summary .= ' Tables: '.$result['tables_before'].' → '.$result['tables_after'].'.';
+        }
+
+        \Log::info('Application migrations ran during a pull', [
+            'service_id' => $service->id,
+            'deployment_id' => $deployment->id,
+            'tool' => $plan->tool,
+            'command' => $plan->command,
+            'work_dir' => $plan->workDir,
+            'tables_before' => $result['tables_before'],
+            'tables_after' => $result['tables_after'],
+        ]);
+
+        return $summary;
     }
 
     /**

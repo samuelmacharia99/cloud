@@ -114,6 +114,20 @@ class PythonRuntimeErrorPresenter
             ];
         }
 
+        $schema = $this->databaseSchemaIsMissing($output);
+        if ($schema !== null) {
+            return [
+                'message' => 'The application started, but its database does not have the schema its code expects'
+                    .$schema.'. Migrations have not run against this database, or they have not caught up with '
+                    .'the code that was just pulled. Pull again to run them, or run them from the Database tab '
+                    .'of this service.',
+                // The customer has no variable to set here. The credentials are
+                // right, the connection works, and the tables are absent.
+                'missing_variables' => [],
+                'unparsable_variables' => [],
+            ];
+        }
+
         $module = $this->unimportableModule($output);
         if ($module !== null) {
             return [
@@ -126,6 +140,44 @@ class PythonRuntimeErrorPresenter
         }
 
         return null;
+    }
+
+    /**
+     * A database the application can reach but whose tables are not there.
+     *
+     * This is what an unmigrated stack looks like from the outside: the
+     * container is up, the credentials are right, the connection succeeds, and
+     * every query fails. The application usually keeps running, which is
+     * exactly why nothing here used to notice it.
+     *
+     *     sqlalchemy.exc.ProgrammingError: (psycopg.errors.UndefinedTable)
+     *     relation "users" does not exist
+     *
+     * @return string|null a phrase naming the relation, or an empty string when
+     *                     the log only gives the error class
+     */
+    private function databaseSchemaIsMissing(string $output): ?string
+    {
+        $recognised = '/\b(?:UndefinedTable|UndefinedColumn|ProgrammingError)\b'
+            .'|relation "[^"]+" does not exist'
+            .'|no such table'
+            ."|Table '[^']+' doesn't exist/i";
+
+        if (preg_match($recognised, $output) !== 1) {
+            return null;
+        }
+
+        foreach ([
+            '/relation "([^"]+)" does not exist/i',
+            "/Table '(?:[^.']*\.)?([^.']+)' doesn't exist/i",
+            '/no such table:? ([A-Za-z0-9_]+)/i',
+        ] as $pattern) {
+            if (preg_match($pattern, $output, $matches) === 1) {
+                return ': the table "'.$matches[1].'" does not exist';
+            }
+        }
+
+        return '';
     }
 
     /**

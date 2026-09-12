@@ -48,6 +48,14 @@ class ContainerApplicationReadinessService
      */
     private const RESTART_ABORT_THRESHOLD = 2;
 
+    /**
+     * Consecutive server errors before the wait is abandoned. An application
+     * doing work on its first request may answer 500 once; one that answers 500
+     * three polls running is not warming up, it is broken, and the remaining
+     * timeout buys nothing but a later version of the same answer.
+     */
+    private const HTTP_ERROR_ABORT_THRESHOLD = 3;
+
     public function __construct(
         private ContainerRuntimeInspector $inspector,
         private ContainerRuntimeCrashReader $crashReader,
@@ -135,6 +143,8 @@ class ContainerApplicationReadinessService
         $baselineRestarts = null;
         $attempt = 0;
         $last = null;
+        $httpErrors = 0;
+        $httpStatus = null;
 
         while (time() < $deadline) {
             $attempt++;
@@ -156,7 +166,22 @@ class ContainerApplicationReadinessService
             if ($last['running'] && ! $last['restarting']) {
                 $confirmed = $this->confirmStillUp($ssh, $containerName, $last['restart_count']);
                 if ($confirmed !== null) {
-                    return $this->verdict(true, 'ready', $attempt, $confirmed, $baselineRestarts);
+                    // A container that stays up is not the same as an
+                    // application that works. This used to return ready here on
+                    // container state alone, about two seconds in, so a stack
+                    // answering 500 on every request deployed green.
+                    $status = $this->probeApplicationHttp($ssh, $deployment);
+
+                    if ($status === null || ! $this->isServerError($status)) {
+                        return $this->verdict(true, 'ready', $attempt, $confirmed, $baselineRestarts);
+                    }
+
+                    $httpStatus = $status;
+                    $httpErrors++;
+
+                    if ($httpErrors >= self::HTTP_ERROR_ABORT_THRESHOLD) {
+                        return $this->verdict(false, 'http_error', $attempt, $confirmed, $baselineRestarts, $httpStatus);
+                    }
                 }
 
                 $last = $this->inspect($ssh, $containerName);
@@ -177,10 +202,11 @@ class ContainerApplicationReadinessService
 
         return $this->verdict(
             false,
-            'timeout',
+            $httpStatus !== null ? 'http_error' : 'timeout',
             $attempt,
             $last ?? $this->inspect($ssh, $containerName),
             $baselineRestarts ?? 0,
+            $httpStatus,
         );
     }
 
@@ -205,10 +231,16 @@ class ContainerApplicationReadinessService
 
     /**
      * @param  array<string, mixed>  $inspect
-     * @return array{ready: bool, reason: string, attempt: int, restart_count: int, state: string, exit_code: int|null, oom_killed: bool}
+     * @return array{ready: bool, reason: string, attempt: int, restart_count: int, state: string, exit_code: int|null, oom_killed: bool, http_status: string|null}
      */
-    private function verdict(bool $ready, string $reason, int $attempt, array $inspect, int $baselineRestarts): array
-    {
+    private function verdict(
+        bool $ready,
+        string $reason,
+        int $attempt,
+        array $inspect,
+        int $baselineRestarts,
+        ?string $httpStatus = null,
+    ): array {
         return [
             'ready' => $ready,
             'reason' => $reason,
@@ -217,7 +249,44 @@ class ContainerApplicationReadinessService
             'state' => (string) ($inspect['state'] ?? 'unknown'),
             'exit_code' => $inspect['exit_code'] ?? null,
             'oom_killed' => (bool) ($inspect['oom_killed'] ?? false),
+            'http_status' => $httpStatus,
         ];
+    }
+
+    /**
+     * The application's own answer on its assigned port.
+     *
+     * Null means nothing answered, which is deliberately not a failure: a
+     * worker container with no web server has always passed this check, and
+     * newly failing those would break stacks that work. Only an application
+     * that answers, and answers with a server error, is treated as broken.
+     */
+    private function probeApplicationHttp(SSHService $ssh, ContainerDeployment $deployment): ?string
+    {
+        $port = (int) $deployment->assigned_port;
+        if ($port <= 0) {
+            return null;
+        }
+
+        try {
+            $code = trim($ssh->exec(
+                'curl -s -o /dev/null -w '.escapeshellarg('%{http_code}')
+                .' --connect-timeout 2 --max-time 5 '
+                .escapeshellarg('http://127.0.0.1:'.$port.'/').' 2>/dev/null || true',
+                15,
+            ));
+        } catch (\Throwable) {
+            return null;
+        }
+
+        // curl reports 000 when it never got a response at all.
+        return preg_match('/^[1-5][0-9][0-9]$/', $code) === 1 ? $code : null;
+    }
+
+    private function isServerError(string $status): bool
+    {
+        return ! in_array($status, ContainerDeploymentService::READY_HTTP_STATUSES, true)
+            && str_starts_with($status, '5');
     }
 
     /**
@@ -248,7 +317,7 @@ class ContainerApplicationReadinessService
     /**
      * Turn a failed wait into the most specific exception the evidence allows.
      *
-     * @param  array{ready: bool, reason: string, attempt: int, restart_count: int, state: string, exit_code: int|null, oom_killed: bool}  $outcome
+     * @param  array{ready: bool, reason: string, attempt: int, restart_count: int, state: string, exit_code: int|null, oom_killed: bool, http_status: string|null}  $outcome
      */
     private function explain(
         SSHService $ssh,
@@ -307,10 +376,14 @@ class ContainerApplicationReadinessService
             );
         }
 
-        $prefix = $outcome['reason'] === 'crash_loop'
-            ? 'The application started and exited '.$outcome['restart_count'].' time(s) while the platform watched, '
-                .'so it is not staying up. '
-            : 'The application did not come up within '.$elapsed.' seconds (last state: '.$outcome['state'].'). ';
+        $prefix = match ($outcome['reason']) {
+            'crash_loop' => 'The application started and exited '.$outcome['restart_count'].' time(s) while the '
+                .'platform watched, so it is not staying up. ',
+            'http_error' => 'The application container is up, but every request to it answered HTTP '
+                .($outcome['http_status'] ?? '5xx').'. ',
+            default => 'The application did not come up within '.$elapsed.' seconds (last state: '
+                .$outcome['state'].'). ',
+        };
 
         return $this->fail(
             $service,
@@ -324,7 +397,7 @@ class ContainerApplicationReadinessService
     }
 
     /**
-     * @param  array{ready: bool, reason: string, attempt: int, restart_count: int, state: string, exit_code: int|null, oom_killed: bool}  $outcome
+     * @param  array{ready: bool, reason: string, attempt: int, restart_count: int, state: string, exit_code: int|null, oom_killed: bool, http_status: string|null}  $outcome
      * @param  list<string>  $missingVariables
      */
     private function fail(

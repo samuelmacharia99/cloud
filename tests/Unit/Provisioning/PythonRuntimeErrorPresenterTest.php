@@ -358,4 +358,68 @@ class PythonRuntimeErrorPresenterTest extends TestCase
         $this->assertNotNull($result);
         $this->assertStringNotContainsString('asynchronous database connection', $result['message']);
     }
+
+    #[Test]
+    public function it_reads_an_unmigrated_database_out_of_the_application_s_own_shorthand(): void
+    {
+        // Service 457 logged exactly this and nothing else. The container was
+        // up and stable, so no crash reader ever looked at it, and no rule here
+        // would have matched if one had.
+        $result = $this->presenter->present(<<<'LOG'
+        INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+        Reconciliation loop iteration failed (ProgrammingError)
+        Reconciliation loop iteration failed (ProgrammingError)
+        LOG);
+
+        $this->assertNotNull($result);
+        $this->assertStringContainsString('does not have the schema its code expects', $result['message']);
+        $this->assertStringContainsString('Migrations have not run', $result['message']);
+    }
+
+    #[Test]
+    public function it_names_the_table_when_the_log_gives_one(): void
+    {
+        $result = $this->presenter->present(
+            'sqlalchemy.exc.ProgrammingError: (psycopg.errors.UndefinedTable) relation "audit_events" does not exist'
+        );
+
+        $this->assertNotNull($result);
+        $this->assertStringContainsString('the table "audit_events" does not exist', $result['message']);
+    }
+
+    #[Test]
+    public function it_reads_the_mysql_spelling_of_the_same_fault(): void
+    {
+        $result = $this->presenter->present(
+            'django.db.utils.ProgrammingError: (1146, "Table \'appdb.auth_user\' doesn\'t exist")'
+        );
+
+        $this->assertNotNull($result);
+        $this->assertStringContainsString('auth_user', $result['message']);
+    }
+
+    #[Test]
+    public function a_missing_schema_is_never_reported_as_a_missing_setting(): void
+    {
+        // DATABASE_URL is the platform's to write and the credentials are
+        // right. Reporting this as configuration parks the site on a notice
+        // listing a row the customer cannot edit.
+        $result = $this->presenter->present(
+            'sqlalchemy.exc.ProgrammingError: relation "users" does not exist'
+        );
+
+        $this->assertNotNull($result);
+        $this->assertSame([], $result['missing_variables']);
+        $this->assertSame([], $result['unparsable_variables']);
+    }
+
+    #[Test]
+    public function a_healthy_startup_log_still_gets_no_diagnosis(): void
+    {
+        $this->assertNull($this->presenter->present(<<<'LOG'
+        INFO:     Started server process [1]
+        INFO:     Application startup complete.
+        INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+        LOG));
+    }
 }

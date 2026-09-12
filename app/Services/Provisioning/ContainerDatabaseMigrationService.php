@@ -7,6 +7,7 @@ use App\Models\ContainerDeploymentEvent;
 use App\Models\Service;
 use App\Services\SSH\SSHService;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Read a project's own migration command out of the repository, and run it.
@@ -74,55 +75,32 @@ class ContainerDatabaseMigrationService
         ContainerDeployment $deployment,
         SSHService $ssh,
         ContainerMigrationPlan $plan,
+        bool $operationAlreadyLocked = false,
     ): array {
         $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
         $commands = app(ContainerStackCommandService::class);
 
         // A deploy rewrites the same files and can restart the stack underneath
-        // a running migration, so the two take the same lock.
-        $lock = Cache::lock(
-            app(ContainerNodeBuildService::class)->lockName($service),
-            self::TIMEOUT_SECONDS + 60,
-        );
-        $lock->block(10);
+        // a running migration, so the two take the same lock. A pull runs this
+        // as one of its own steps and already holds that lock, and blocking on
+        // a lock this call's own caller owns waits out the timeout and fails a
+        // migration that nothing was competing for. So the caller says so.
+        $lock = $operationAlreadyLocked
+            ? null
+            : Cache::lock(
+                app(ContainerNodeBuildService::class)->lockName($service),
+                self::TIMEOUT_SECONDS + 60,
+            );
+        $lock?->block(10);
 
         $before = $this->countTables($service, $deployment, $ssh);
 
         $composeService = $commands->resolveAppComposeService($deployment);
 
         try {
-            // Prefer the container that is already up: it is the environment the
-            // application itself runs in, and it spares the stack a second copy
-            // of the app plus Compose's start-up narration. A stopped stack is
-            // exactly the case a missing schema causes, so `run --rm` remains
-            // the fallback — it starts the database sidecar on its own.
-            // The live container, not the row. A crash-looping container is
-            // recorded as running, because Docker reports it running for the
-            // second between restarts, and `docker compose exec` into one
-            // refuses with "is restarting, wait until the container is
-            // running". Migrations are exactly what somebody reaches for when
-            // their application will not boot, so the one state where they were
-            // refused was the state that needed them.
-            $output = $this->appContainerAcceptsExec($ssh, $deployment)
-                ? $commands->execInContainer(
-                    $ssh,
-                    $containerPath,
-                    $composeService,
-                    $this->commandWithEnvironment($plan),
-                    $plan->workDir,
-                    self::TIMEOUT_SECONDS,
-                )
-                : $commands->runOneOffInContainer(
-                    $ssh,
-                    $containerPath,
-                    $composeService,
-                    $plan->command,
-                    $plan->workDir,
-                    self::TIMEOUT_SECONDS,
-                    $plan->environment,
-                );
+            $output = $this->executeWithRetry($service, $deployment, $ssh, $plan, $containerPath, $composeService);
         } finally {
-            $lock->release();
+            $lock?->release();
         }
 
         $after = $this->countTables($service, $deployment, $ssh);
@@ -134,6 +112,104 @@ class ContainerDatabaseMigrationService
             'tables_before' => $before,
             'tables_after' => $after,
         ];
+    }
+
+    /**
+     * A first deploy races its own database sidecar: the application container
+     * is up seconds before Postgres finishes initialising, and a migration that
+     * arrives in that window fails on a refused connection rather than on
+     * anything wrong with the migration.
+     *
+     * Only connection-shaped failures are retried. Bad SQL fails once, because
+     * running it five more times tells nobody anything and costs five minutes
+     * of a customer's deploy.
+     */
+    private function executeWithRetry(
+        Service $service,
+        ContainerDeployment $deployment,
+        SSHService $ssh,
+        ContainerMigrationPlan $plan,
+        string $containerPath,
+        string $composeService,
+    ): string {
+        $attempts = max(1, (int) config('containers.redeploy.migrate_max_attempts', 6));
+        $delay = max(1, (int) config('containers.redeploy.migrate_retry_delay_seconds', 10));
+
+        for ($attempt = 1; ; $attempt++) {
+            try {
+                return $this->execute($ssh, $deployment, $plan, $containerPath, $composeService);
+            } catch (\Throwable $e) {
+                if ($attempt >= $attempts || ! $this->databaseIsNotReadyYet($e->getMessage())) {
+                    throw $e;
+                }
+
+                Log::info('Migration retried while the database finished starting', [
+                    'service_id' => $service->id,
+                    'deployment_id' => $deployment->id,
+                    'tool' => $plan->tool,
+                    'attempt' => $attempt,
+                    'attempts' => $attempts,
+                ]);
+
+                sleep($delay);
+            }
+        }
+    }
+
+    private function execute(
+        SSHService $ssh,
+        ContainerDeployment $deployment,
+        ContainerMigrationPlan $plan,
+        string $containerPath,
+        string $composeService,
+    ): string {
+        $commands = app(ContainerStackCommandService::class);
+
+        // Prefer the container that is already up: it is the environment the
+        // application itself runs in, and it spares the stack a second copy
+        // of the app plus Compose's start-up narration. A stopped stack is
+        // exactly the case a missing schema causes, so `run --rm` remains
+        // the fallback — it starts the database sidecar on its own.
+        // The live container, not the row. A crash-looping container is
+        // recorded as running, because Docker reports it running for the
+        // second between restarts, and `docker compose exec` into one
+        // refuses with "is restarting, wait until the container is
+        // running". Migrations are exactly what somebody reaches for when
+        // their application will not boot, so the one state where they were
+        // refused was the state that needed them.
+        return $this->appContainerAcceptsExec($ssh, $deployment)
+            ? $commands->execInContainer(
+                $ssh,
+                $containerPath,
+                $composeService,
+                $this->commandWithEnvironment($plan),
+                $plan->workDir,
+                self::TIMEOUT_SECONDS,
+            )
+            : $commands->runOneOffInContainer(
+                $ssh,
+                $containerPath,
+                $composeService,
+                $plan->command,
+                $plan->workDir,
+                self::TIMEOUT_SECONDS,
+                $plan->environment,
+            );
+    }
+
+    /**
+     * A database that has not finished starting, as opposed to a migration that
+     * is wrong. Every phrase here is one a client library emits before it has
+     * spoken to the server at all.
+     */
+    private function databaseIsNotReadyYet(string $message): bool
+    {
+        return preg_match(
+            '/could not connect|connection refused|could not translate host name'
+            .'|is starting up|OperationalError|Name or service not known|Temporary failure in name resolution'
+            .'|server closed the connection unexpectedly|Can\'t connect to (MySQL|MariaDB)|\\[2002\\]/i',
+            $message
+        ) === 1;
     }
 
     /**

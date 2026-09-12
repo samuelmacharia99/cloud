@@ -61,12 +61,25 @@ class ContainerStackCommandService
      * service in the stack, which buries the traceback of the one that crashed.
      * Diagnostics must never fail the caller, so an unreachable container is an
      * empty string rather than an exception.
+     *
+     * `$since` narrows the read to a recent window, in Docker's own notation
+     * ("120s", "10m"). A container that is still up has a log holding errors it
+     * handled and moved past, and diagnosing a live fault from those is how a
+     * stale traceback becomes today's diagnosis.
      */
-    public function containerLogs(SSHService $ssh, string $containerName, int $lines = 80): string
-    {
+    public function containerLogs(
+        SSHService $ssh,
+        string $containerName,
+        int $lines = 80,
+        ?string $since = null,
+    ): string {
+        $window = ($since !== null && preg_match('/^[0-9]+[smh]$/', $since) === 1)
+            ? '--since '.$since.' '
+            : '';
+
         try {
             return trim($ssh->exec(
-                'docker logs --tail '.max(1, $lines).' '.escapeshellarg($containerName).' 2>&1',
+                'docker logs '.$window.'--tail '.max(1, $lines).' '.escapeshellarg($containerName).' 2>&1',
                 20,
             ));
         } catch (\Throwable) {
