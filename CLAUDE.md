@@ -196,6 +196,12 @@ Supporting subsystems in `app/Services/Provisioning` (86 classes):
 scoped by tenant. `ResolveResellerTenant`, `ResellerScopeService` and the `reseller.*` middleware
 exist for this; use them rather than ad-hoc `where` clauses.
 
+**The platform never messages past a reseller.** A reseller's customers are contacted and supported
+by the reseller. `ResellerBoundaryService` refuses platform email and SMS aimed at them (admins may
+still impersonate any user); `ResellerPortalAccessService` keeps a white-label host to its own tenant at login,
+verification, reset and registration. Any new admin action that reaches a customer, or any new
+place that issues a session, goes through one of those two.
+
 **Blade components.** `<x-status-badge :status="..." type="payment" />`,
 `<x-currency-formatter :amount="..." currency="KES" />`, `<x-data-table>`, `<x-modal>`.
 

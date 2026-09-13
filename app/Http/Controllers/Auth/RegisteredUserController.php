@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Services\EmailVerificationService;
 use App\Services\RegistrationContextService;
 use App\Services\RegistrationGuardService;
+use App\Services\ResellerPortalAccessService;
 use App\Services\SecurityService;
 use App\Services\Telegram\TelegramMonitorBridge;
 use App\Services\UserCurrencyService;
@@ -55,7 +56,7 @@ class RegisteredUserController extends Controller
         }
 
         $validated = $request->validated();
-        $resellerId = session('registration_reseller_id');
+        $resellerId = app(ResellerPortalAccessService::class)->registrationResellerId();
         $displayName = $guard->buildDisplayName(
             $validated['first_name'],
             $validated['last_name'] ?? null,

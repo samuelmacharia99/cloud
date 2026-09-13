@@ -126,14 +126,16 @@ class CustomerController extends Controller
             abort(404);
         }
 
-        $customer->load(
+        // Tickets a reseller handles for this customer stay with the reseller,
+        // the same rule the tickets module applies through TicketPolicy.
+        $customer->load([
             'reseller:id,name,email',
             'services.product',
             'invoices',
             'payments',
-            'tickets',
-            'domains'
-        );
+            'tickets' => fn ($query) => $query->visibleToAdmin(),
+            'domains',
+        ]);
 
         $products = Product::with('directAdminPackage.node')
             ->where('is_active', true)

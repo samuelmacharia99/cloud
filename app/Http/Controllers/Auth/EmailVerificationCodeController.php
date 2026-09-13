@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\EmailVerificationCode;
 use App\Models\User;
 use App\Services\EmailVerificationService;
+use App\Services\ResellerPortalAccessService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\RateLimiter;
@@ -82,6 +83,15 @@ class EmailVerificationCodeController extends Controller
         ]);
         $verificationCode->delete();
         $this->clearAttempts('verify', $email, $request->ip());
+
+        // The account is verified either way; only the session is host-bound.
+        $portal = app(ResellerPortalAccessService::class);
+        if (! $portal->accountMayUseHost($user)) {
+            $portal->recordRefusal($user, 'email_verification');
+
+            return redirect()->route('login')
+                ->with('status', 'Email verified. '.$portal->refusalMessage());
+        }
 
         // Log the user in
         Auth::login($user);

@@ -4,6 +4,7 @@ namespace App\Http\Requests\Auth;
 
 use App\Models\User;
 use App\Services\EmailVerificationService;
+use App\Services\ResellerPortalAccessService;
 use Illuminate\Auth\Events\Lockout;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
@@ -54,6 +55,16 @@ class LoginRequest extends FormRequest
         }
 
         $user = Auth::user();
+
+        $portal = app(ResellerPortalAccessService::class);
+        if (! $portal->accountMayUseHost($user)) {
+            Auth::logout();
+            $portal->recordRefusal($user, 'login');
+
+            throw ValidationException::withMessages([
+                'email' => $portal->refusalMessage(),
+            ]);
+        }
 
         if (! $user->hasVerifiedEmail()) {
             Auth::logout();

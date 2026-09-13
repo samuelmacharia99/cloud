@@ -3,10 +3,12 @@
 namespace Tests\Feature\Admin;
 
 use App\Enums\NotificationEvent;
+use App\Enums\TicketHandledBy;
 use App\Mail\GenericNotificationMail;
 use App\Models\Product;
 use App\Models\Service;
 use App\Models\Setting;
+use App\Models\Ticket;
 use App\Models\User;
 use App\Services\EmailDeliveryService;
 use App\Services\NotificationService;
@@ -117,6 +119,46 @@ class AdminResellerBoundaryTest extends TestCase
             ])
             ->assertRedirect()
             ->assertSessionHas('error');
+    }
+
+    #[Test]
+    public function an_admin_impersonates_a_reseller_customer_like_any_other_platform_user(): void
+    {
+        $this->actingAs($this->admin)
+            ->post(route('admin.customers.impersonate', $this->managed))
+            ->assertRedirect(route('dashboard'));
+
+        $this->assertAuthenticatedAs($this->managed);
+        $this->assertSame($this->admin->id, session('impersonating'));
+    }
+
+    #[Test]
+    public function the_admin_customer_page_hides_tickets_the_reseller_handles(): void
+    {
+        Ticket::create([
+            'user_id' => $this->managed->id,
+            'reseller_id' => $this->reseller->id,
+            'title' => 'Reseller-handled title line',
+            'description' => 'Handled by the reseller.',
+            'priority' => 'low',
+            'status' => 'open',
+            'handled_by' => TicketHandledBy::Reseller->value,
+        ]);
+        Ticket::create([
+            'user_id' => $this->managed->id,
+            'reseller_id' => $this->reseller->id,
+            'title' => 'Escalated title line',
+            'description' => 'Escalated to the platform.',
+            'priority' => 'low',
+            'status' => 'open',
+            'handled_by' => TicketHandledBy::Platform->value,
+        ]);
+
+        $this->actingAs($this->admin)
+            ->get(route('admin.customers.show', $this->managed))
+            ->assertOk()
+            ->assertSee('Escalated title line')
+            ->assertDontSee('Reseller-handled title line');
     }
 
     #[Test]
