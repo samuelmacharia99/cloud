@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Enums\InvoiceStatus;
 use App\Enums\NotificationEvent;
 use App\Enums\ServiceStatus;
+use App\Exceptions\ResellerBoundaryException;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Customer\ContainerController as CustomerContainerController;
 use App\Http\Requests\BulkDestroyTerminatedServicesRequest;
@@ -24,6 +25,7 @@ use App\Services\Hosting\ServicePackageUsageService;
 use App\Services\NotificationService;
 use App\Services\Provisioning\DirectAdminService;
 use App\Services\Provisioning\ProvisioningService;
+use App\Services\ResellerBoundaryService;
 use App\Services\ResellerEnforcementService;
 use App\Services\ServiceDeletionService;
 use App\Services\ServiceEnforcementInsightService;
@@ -1035,6 +1037,17 @@ class ServiceController extends Controller
     public function resendCredentials(Service $service)
     {
         $notifications = app(NotificationService::class);
+
+        // A reseller's customer gets credentials from the reseller's portal,
+        // under the reseller's brand. The platform does not write to them.
+        try {
+            $service->loadMissing('user');
+            if ($service->user) {
+                app(ResellerBoundaryService::class)->assertPlatformMayContact($service->user, 'email', 'service credentials');
+            }
+        } catch (ResellerBoundaryException $e) {
+            return back()->with('error', $e->getMessage());
+        }
 
         if ($service->isSharedHosting()) {
             if (! $service->getHostingCredentials()) {

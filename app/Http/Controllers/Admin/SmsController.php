@@ -4,16 +4,17 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\SmsLog;
-use App\Models\User;
+use App\Services\ResellerBoundaryService;
 use App\Services\SmsService;
 use Illuminate\Http\Request;
 
 class SmsController extends Controller
 {
-    public function __construct()
+    public function __construct(private ResellerBoundaryService $boundary)
     {
         $this->middleware(function ($request, $next) {
             $this->authorize('viewAny', SmsLog::class);
+
             return $next($request);
         });
     }
@@ -32,9 +33,10 @@ class SmsController extends Controller
             ->latest('created_at')
             ->paginate(20);
 
-        // Get active customers for recipient select
-        $customers = User::where('is_admin', false)
-            ->where('phone', '!=', null)
+        // Platform customers only. A reseller's customers are messaged by the
+        // reseller, from the reseller's SMS configuration, never from here.
+        $customers = $this->boundary->platformCustomers()
+            ->whereNotNull('phone')
             ->orderBy('name')
             ->get(['id', 'name', 'email', 'phone']);
 
@@ -49,45 +51,51 @@ class SmsController extends Controller
             'message' => 'required|string|max:160',
             'recipient_type' => 'required|in:all,custom',
             'recipients' => 'required_if:recipient_type,custom|array',
+            'recipients.*' => 'integer',
         ]);
 
-        $smsService = new SmsService();
+        $smsService = app(SmsService::class);
 
-        if (!$smsService->isConfigured()) {
+        if (! $smsService->isConfigured()) {
             return back()->with('error', 'SMS service is not configured. Please configure SMS settings first.');
         }
 
         $message = $request->input('message');
-        $recipientType = $request->input('recipient_type');
+        $refused = 0;
 
-        if ($recipientType === 'all') {
-            // Get all active customer phone numbers
-            $recipients = User::where('is_admin', false)
+        if ($request->input('recipient_type') === 'all') {
+            $recipients = $this->boundary->platformCustomers()
                 ->whereNotNull('phone')
                 ->pluck('phone')
-                ->toArray();
+                ->all();
 
             if (empty($recipients)) {
                 return back()->with('error', 'No customers with phone numbers found.');
             }
         } else {
-            // Get selected customer phone numbers
-            $recipients = User::whereIn('id', $request->input('recipients', []))
-                ->whereNotNull('phone')
-                ->pluck('phone')
-                ->toArray();
+            // Ids come from the browser. The boundary is enforced here, not
+            // in the list the page happened to render.
+            $partition = $this->boundary->partitionPlatformRecipients((array) $request->input('recipients', []));
+            $refused = $partition['refused'];
+            $recipients = $partition['allowed']->whereNotNull('phone')->pluck('phone')->all();
 
             if (empty($recipients)) {
-                return back()->with('error', 'Selected customers do not have phone numbers.');
+                return back()->with('error', $refused > 0
+                    ? 'The selected customers belong to resellers and are messaged by their reseller, not from here.'
+                    : 'Selected customers do not have phone numbers.');
             }
         }
 
         $result = $smsService->send($recipients, $message);
 
-        if ($result['success']) {
-            return back()->with('success', $result['message']);
-        } else {
+        if (! $result['success']) {
             return back()->with('error', $result['message']);
         }
+
+        $response = back()->with('success', $result['message']);
+
+        return $refused > 0
+            ? $response->with('warning', "{$refused} selected customer(s) belong to resellers and were not messaged.")
+            : $response;
     }
 }

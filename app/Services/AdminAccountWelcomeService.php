@@ -10,6 +10,7 @@ class AdminAccountWelcomeService
 {
     public function __construct(
         private ResellerMailService $mail,
+        private ResellerBoundaryService $boundary,
     ) {}
 
     public function isConfigured(): bool
@@ -21,6 +22,12 @@ class AdminAccountWelcomeService
     {
         if (! in_array($accountType, ['customer', 'reseller'], true)) {
             throw new \InvalidArgumentException('Account type must be customer or reseller.');
+        }
+
+        // This mail carries platform branding and a password. A reseller's
+        // customer must only ever receive that from the reseller.
+        if ($accountType === 'customer') {
+            $this->boundary->assertPlatformMayContact($user, 'email', 'login credentials');
         }
 
         if (! $this->isConfigured()) {

@@ -103,6 +103,19 @@ class EmailDeliveryService
             return false;
         }
 
+        // Platform branding and platform SMTP, to a customer who only ever
+        // hears from their reseller: refused whatever the caller intended.
+        if ($user && $user->reseller_id !== null) {
+            Log::warning('Reseller boundary: platform-branded email refused', [
+                'actor_id' => auth()->id(),
+                'user_id' => $user->id,
+                'reseller_id' => $user->reseller_id,
+                'event' => $event->value,
+            ]);
+
+            return false;
+        }
+
         if ($user && ! $this->preferences->isEmailEnabledForUser($user, $event)) {
             return false;
         }
