@@ -178,6 +178,20 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(20)->by(($request->user()?->id ?? $request->ip()).'|service:'.$serviceId);
         });
 
+        RateLimiter::for('stack-member-actions', function (Request $request) {
+            $service = $request->route('service');
+            $serviceId = is_object($service) ? $service->id : $service;
+
+            return Limit::perMinute(6)->by(($request->user()?->id ?? $request->ip()).'|member:'.$serviceId);
+        });
+
+        RateLimiter::for('stack-member-refresh', function (Request $request) {
+            $project = $request->route('project');
+            $projectId = is_object($project) ? $project->id : $project;
+
+            return Limit::perMinute(4)->by(($request->user()?->id ?? $request->ip()).'|project-refresh:'.$projectId);
+        });
+
         RateLimiter::for('container-doctor-treat', function (Request $request) {
             $service = $request->route('service');
             $serviceId = is_object($service) ? $service->id : $service;

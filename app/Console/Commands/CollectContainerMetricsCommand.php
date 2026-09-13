@@ -9,6 +9,7 @@ use App\Models\Node;
 use App\Services\Provisioning\ContainerDeploymentService;
 use App\Services\Provisioning\ContainerRuntimeInspector;
 use App\Services\Provisioning\DockerStatsParser;
+use App\Services\Provisioning\StackMemberStateService;
 use App\Services\SSH\SSHService;
 use Closure;
 use Illuminate\Support\Collection;
@@ -25,6 +26,7 @@ class CollectContainerMetricsCommand extends BaseCronCommand
     public function __construct(
         private ContainerRuntimeInspector $runtimeInspector,
         private ?Closure $sshFactory = null,
+        private ?StackMemberStateService $memberStates = null,
     ) {
         parent::__construct();
     }
@@ -65,6 +67,7 @@ class CollectContainerMetricsCommand extends BaseCronCommand
             $ssh = null;
             try {
                 $ssh = $this->sshForNode($node);
+                $this->refreshMemberStates($ssh, $node, $nodeDeployments);
                 $result = $this->collectNodeMetrics($ssh, $nodeDeployments, $startedAt, $runtimeBudget);
                 $collected += $result['collected'];
                 $downtimeSamples += $result['downtime'];
@@ -478,6 +481,27 @@ class CollectContainerMetricsCommand extends BaseCronCommand
      *
      * @param  array<string, mixed>  $context
      */
+    /**
+     * One docker ps per node records every stack member's state (app,
+     * database, frontend...) for the project page. Best effort: a failure
+     * here must not cost the metrics sample.
+     *
+     * @param  Collection<int, ContainerDeployment>  $nodeDeployments
+     */
+    private function refreshMemberStates(SSHService $ssh, Node $node, Collection $nodeDeployments): void
+    {
+        try {
+            ($this->memberStates ?? app(StackMemberStateService::class))->refreshNode($ssh, $nodeDeployments);
+        } catch (\Throwable $e) {
+            $this->writeRateLimitedWarning(
+                'container-metrics-member-states:'.$node->id,
+                now()->addMinutes(30),
+                'Stack member state probe failed',
+                ['node_id' => $node->id, 'error' => $e->getMessage()]
+            );
+        }
+    }
+
     private function writeRateLimitedWarning(
         string $cacheKey,
         \DateTimeInterface $expiresAt,

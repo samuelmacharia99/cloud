@@ -95,6 +95,21 @@ return [
     | <registry>/<image>:<ref>. Same registry and build path as the runtimes.
     |
     */
+    /*
+    |--------------------------------------------------------------------------
+    | Per-container state snapshots
+    |--------------------------------------------------------------------------
+    |
+    | The metrics tick records every stack member's docker state. Past
+    | stale_after_minutes the project page greys the state out and says how
+    | old it is; past unknown_after_minutes it stops claiming a state at all.
+    |
+    */
+    'member_states' => [
+        'stale_after_minutes' => (int) env('CONTAINER_MEMBER_STATE_STALE_MINUTES', 15),
+        'unknown_after_minutes' => (int) env('CONTAINER_MEMBER_STATE_UNKNOWN_MINUTES', 60),
+    ],
+
     'app_images' => [
         'ospos' => [
             'image' => 'ospos',

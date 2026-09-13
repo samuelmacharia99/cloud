@@ -136,6 +136,19 @@
             @if($isProject)
                 <span class="status-pill bg-ink-100/90 dark:bg-white/10 text-ink-600 dark:text-ink-200">Owner</span>
                 <span class="status-pill bg-ink-100/90 dark:bg-white/10 text-ink-600 dark:text-ink-200">{{ $resourceCount }} {{ Str::plural('Resource', $resourceCount) }}</span>
+                @php $stackSummary = $group['stack_summary'] ?? null; @endphp
+                @if($stackSummary && $stackSummary['members'] > 0)
+                    <span class="status-pill bg-ink-100/90 dark:bg-white/10 text-ink-600 dark:text-ink-200" title="{{ $stackSummary['checked_at'] ? 'checked '.$stackSummary['checked_at']->diffForHumans() : 'not checked yet' }}">
+                        @if($stackSummary['not_running'] > 0)
+                            <span class="status-pill-dot bg-red-500" title="{{ $stackSummary['not_running'] }} not running"></span>
+                        @elseif($stackSummary['state'] === 'running')
+                            <span class="status-pill-dot bg-emerald-500"></span>
+                        @else
+                            <span class="status-pill-dot border border-slate-400 bg-transparent" title="state unknown"></span>
+                        @endif
+                        {{ $stackSummary['members'] }} {{ Str::plural('container', $stackSummary['members']) }}
+                    </span>
+                @endif
             @else
                 <span class="status-pill bg-ink-100/90 dark:bg-white/10 text-ink-600 dark:text-ink-200">Ungrouped</span>
             @endif

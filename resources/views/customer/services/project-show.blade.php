@@ -114,27 +114,41 @@
     </div>
 
     <div>
-        <div class="mb-4 flex items-center justify-between gap-3">
-            <h2 class="font-display text-lg font-bold text-ink-950 dark:text-white">Services</h2>
+        <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+                <h2 class="font-display text-lg font-bold text-ink-950 dark:text-white">Services</h2>
+                @if(collect($folders)->contains(fn ($folder) => $folder->isDeployed()))
+                    <span class="text-xs text-ink-500 dark:text-ink-400 {{ $foldersStale ? 'text-amber-600 dark:text-amber-400' : '' }}">
+                        {{ $foldersCheckedAt ? 'checked '.$foldersCheckedAt->diffForHumans() : 'not checked yet' }}
+                    </span>
+                    <form method="POST" action="{{ route('customer.projects.stacks.refresh', $project) }}">
+                        @csrf
+                        <button type="submit" class="text-xs font-semibold text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300">Refresh</button>
+                    </form>
+                @endif
+            </div>
             <a href="{{ route('customer.projects.deploy', $project) }}" class="text-sm font-semibold text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300">
                 {{ $primaryActionLabel }} →
             </a>
         </div>
 
         @if($services->isNotEmpty())
-            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                @foreach ($services as $service)
-                    @include('customer.services.partials.service-card', [
-                        'service' => $service,
-                        'allProjects' => $projects,
-                        'nestedContainers' => (
-                            $primaryContainer
-                            && $service->id === $primaryContainer->id
-                            && count($containers) >= 2
-                        ) ? $containers : [],
-                    ])
+            <div class="space-y-4">
+                @foreach ($folders as $folder)
+                    @include('customer.services.partials.stack-folder', ['folder' => $folder, 'project' => $project, 'allProjects' => $projects])
                 @endforeach
             </div>
+            @if($otherServices->isNotEmpty())
+                <div class="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                    @foreach ($otherServices as $service)
+                        @include('customer.services.partials.service-card', [
+                            'service' => $service,
+                            'allProjects' => $projects,
+                            'nestedContainers' => [],
+                        ])
+                    @endforeach
+                </div>
+            @endif
         @else
             <div class="ui-card rounded-xl border border-dashed border-ink-300/80 dark:border-ink-700/70 px-6 py-10 text-center">
                 <p class="text-sm font-medium text-ink-700 dark:text-ink-200">No services here yet</p>

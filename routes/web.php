@@ -39,6 +39,7 @@ use App\Http\Controllers\ContainerGitDeployWebhookController;
 use App\Http\Controllers\CurrencyPreferenceController;
 use App\Http\Controllers\Customer\CheckoutController;
 use App\Http\Controllers\Customer\ContainerFileController;
+use App\Http\Controllers\Customer\ContainerStackMemberController;
 use App\Http\Controllers\Customer\ContainerTerminalController;
 use App\Http\Controllers\Customer\CustomerNotificationController;
 use App\Http\Controllers\Customer\DnsController;
@@ -381,6 +382,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::resource('admin/container-templates', ContainerTemplateController::class)->names('admin.container-templates');
         Route::resource('admin/database-templates', DatabaseTemplateController::class)->except(['show'])->names('admin.database-templates');
         Route::post('admin/services/{service}/container/restart', [ContainerController::class, 'restart'])->name('admin.services.container.restart');
+        Route::post('admin/services/{service}/container/members/{member}/restart', [ContainerStackMemberController::class, 'restart'])->where('member', '[A-Za-z0-9_.-]+')->middleware('throttle:stack-member-actions')->name('admin.services.container.members.restart');
         Route::post('admin/services/{service}/container/page-cache', [App\Http\Controllers\Customer\ContainerController::class, 'toggleWordPressPageCache'])->name('admin.services.container.page-cache');
         Route::post('admin/services/{service}/container/suspend', [ContainerController::class, 'suspend'])->name('admin.services.container.suspend');
         Route::post('admin/services/{service}/container/stop', [ContainerController::class, 'stop'])->name('admin.services.container.stop');
@@ -689,6 +691,9 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('/my/projects/{project}/deploy', [App\Http\Controllers\Customer\ServiceController::class, 'deploy'])
             ->middleware('throttle:20,10')
             ->name('customer.projects.deploy.store');
+        Route::post('/my/projects/{project}/stacks/refresh', [ContainerStackMemberController::class, 'refreshProject'])
+            ->middleware('throttle:stack-member-refresh')
+            ->name('customer.projects.stacks.refresh');
         Route::get('/my/services/{service}/deploying', [App\Http\Controllers\Customer\ServiceController::class, 'deploying'])
             ->name('customer.services.deploying');
         Route::get('/my/services/{service}/deploying/status', [App\Http\Controllers\Customer\ServiceController::class, 'deployingStatus'])
@@ -845,6 +850,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('my/services/{service}/container', [App\Http\Controllers\Customer\ContainerController::class, 'show'])->name('customer.services.container.show');
         Route::delete('my/services/{service}/container', [App\Http\Controllers\Customer\ContainerController::class, 'destroy'])->name('customer.services.container.destroy');
         Route::post('my/services/{service}/container/restart', [App\Http\Controllers\Customer\ContainerController::class, 'restart'])->name('customer.services.container.restart');
+        Route::post('my/services/{service}/container/members/{member}/restart', [ContainerStackMemberController::class, 'restart'])->where('member', '[A-Za-z0-9_.-]+')->middleware('throttle:stack-member-actions')->name('customer.services.container.members.restart');
         Route::post('my/services/{service}/container/page-cache', [App\Http\Controllers\Customer\ContainerController::class, 'toggleWordPressPageCache'])->middleware('throttle:10,1')->name('customer.services.container.page-cache');
         Route::post('my/services/{service}/container/redeploy', [App\Http\Controllers\Customer\ContainerController::class, 'redeploy'])->middleware('throttle:10,10')->name('customer.services.container.redeploy');
         Route::post('my/services/{service}/container/initialize-laravel', [App\Http\Controllers\Customer\ContainerController::class, 'initializeLaravel'])->middleware('throttle:laravel-container-actions')->name('customer.services.container.initialize-laravel');

@@ -50,6 +50,9 @@ use App\Services\Provisioning\ContainerStagingService;
 use App\Services\Provisioning\ContainerTemplateEnvironmentService;
 use App\Services\Provisioning\LaravelAppInitializationService;
 use App\Services\Provisioning\NginxProxyService;
+use App\Services\Provisioning\StackMemberResolver;
+use App\Services\Provisioning\StackMemberState;
+use App\Services\Provisioning\StackMemberStateService;
 use App\Services\SSH\SSHService;
 use App\Services\TechStackRoutingService;
 use App\Support\ContainerConsoleTabs;
@@ -280,6 +283,7 @@ class ContainerController extends Controller
 
             $containerService = new ContainerDeploymentService;
             $containerService->restart($service);
+            $this->refreshMemberStatesQuietly($service);
 
             return back()->with('success', 'Container restarted successfully');
         } catch (\Exception $e) {
@@ -313,6 +317,7 @@ class ContainerController extends Controller
 
             $containerService = new ContainerDeploymentService;
             $containerService->suspend($service);
+            $this->refreshMemberStatesQuietly($service);
 
             return back()->with('success', 'Container stopped successfully');
         } catch (\Exception $e) {
@@ -346,12 +351,26 @@ class ContainerController extends Controller
 
             $containerService = new ContainerDeploymentService;
             $containerService->unsuspend($service);
+            $this->refreshMemberStatesQuietly($service);
 
             return back()->with('success', 'Container started successfully');
         } catch (\Exception $e) {
             \Log::error("Failed to start container for service {$service->id}: ".$e->getMessage());
 
             return back()->withErrors(['error' => 'Failed to start container. Please try again or contact support.']);
+        }
+    }
+
+    /**
+     * The project page reads container states from the cached snapshot; a
+     * stack action should be reflected there before the next metrics tick.
+     */
+    private function refreshMemberStatesQuietly(Service $service): void
+    {
+        try {
+            app(StackMemberStateService::class)->refreshForService($service->fresh());
+        } catch (\Throwable $e) {
+            \Log::warning("Member state refresh after stack action failed for service {$service->id}: ".$e->getMessage());
         }
     }
 
@@ -1799,6 +1818,7 @@ class ContainerController extends Controller
 
     private function buildDatabaseContext(Service $service, $deployment): array
     {
+        $member = $this->databaseMemberContext($service, $deployment);
         $fallback = [
             'available' => false,
             'type' => null,
@@ -1807,7 +1827,7 @@ class ContainerController extends Controller
             'database' => null,
             'username' => null,
             'password_masked' => null,
-        ];
+        ] + $member;
 
         if (! $deployment || ! $deployment->env_values || ! is_array($deployment->env_values)) {
             return $fallback;
@@ -1836,7 +1856,7 @@ class ContainerController extends Controller
             $env['DB_PORT'] ?? '3306'
         );
 
-        return match ($type) {
+        return $member + match ($type) {
             'mysql', 'mariadb' => [
                 'available' => true,
                 'type' => $type,
@@ -1879,6 +1899,37 @@ class ContainerController extends Controller
             ],
             default => $fallback,
         };
+    }
+
+    /**
+     * The database container as a stack member: its compose key (for the
+     * per-container Restart) and its last observed state, from the cached
+     * snapshot, never an SSH call on page render.
+     *
+     * @return array{member_compose_key: ?string, member_container_name: ?string, member_state: ?StackMemberState}
+     */
+    private function databaseMemberContext(Service $service, $deployment): array
+    {
+        $empty = ['member_compose_key' => null, 'member_container_name' => null, 'member_state' => null];
+        if (! $deployment) {
+            return $empty;
+        }
+
+        try {
+            $member = app(StackMemberResolver::class)->databaseMember($service);
+            if (! $member || $member->synthesized) {
+                return $empty;
+            }
+            $member = app(StackMemberStateService::class)->overlay($deployment, [$member])[0];
+        } catch (\Throwable) {
+            return $empty;
+        }
+
+        return [
+            'member_compose_key' => $member->composeKey,
+            'member_container_name' => $member->containerName,
+            'member_state' => $member->state,
+        ];
     }
 
     /**

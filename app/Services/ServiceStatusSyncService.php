@@ -3,9 +3,14 @@
 namespace App\Services;
 
 use App\Enums\ServiceStatus;
+use App\Enums\StackMemberKind;
+use App\Models\ContainerDeployment;
 use App\Models\Service;
 use App\Services\Provisioning\ContainerDeploymentService;
 use App\Services\Provisioning\DirectAdminService;
+use App\Services\Provisioning\StackMember;
+use App\Services\Provisioning\StackMemberResolver;
+use App\Services\Provisioning\StackMemberStateService;
 use App\Support\ServiceLiveStatusResult;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -149,6 +154,34 @@ class ServiceStatusSyncService
         );
     }
 
+    /**
+     * Database members the last snapshot saw not running. Read from the
+     * snapshot only; this probe already made its one SSH call.
+     *
+     * @return list<string>
+     */
+    private function degradedMembers(Service $service, ContainerDeployment $deployment): array
+    {
+        try {
+            $states = app(StackMemberStateService::class);
+            if ($states->isStale($deployment)) {
+                return [];
+            }
+
+            $members = $states->overlay($deployment, app(StackMemberResolver::class)->membersForService($service));
+        } catch (\Throwable) {
+            return [];
+        }
+
+        return collect($members)
+            ->filter(fn (StackMember $member) => $member->kind === StackMemberKind::Database
+                && $member->state->isKnown()
+                && ! $member->state->isRunning())
+            ->map(fn (StackMember $member) => $member->containerName)
+            ->values()
+            ->all();
+    }
+
     private function probeContainer(Service $service): ServiceLiveStatusResult
     {
         $deployment = $service->containerDeployment;
@@ -215,11 +248,17 @@ class ServiceStatusSyncService
         $this->updateDeploymentFromDocker($deployment, $docker);
 
         if (($docker['running'] ?? false) === true) {
+            // A stopped database does not make the service suspended (the
+            // app container is up), but the operator must see it.
+            $degraded = $this->degradedMembers($service, $deployment);
+
             return new ServiceLiveStatusResult(
                 status: 'active',
-                label: 'Container running',
+                label: $degraded === []
+                    ? 'Container running'
+                    : 'Container running; database container stopped',
                 source: 'container',
-                detail: $docker,
+                detail: $degraded === [] ? $docker : $docker + ['degraded_members' => $degraded],
             );
         }
 

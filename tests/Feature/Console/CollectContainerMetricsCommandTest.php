@@ -11,6 +11,7 @@ use App\Models\Node;
 use App\Models\Product;
 use App\Models\Service;
 use App\Services\Provisioning\ContainerRuntimeInspector;
+use App\Services\Provisioning\StackMemberStateService;
 use App\Services\SSH\SSHService;
 use Illuminate\Console\OutputStyle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -275,5 +276,60 @@ class CollectContainerMetricsCommandTest extends TestCase
             'container_name' => 'user-'.$service->user_id.'-service-'.$service->id.'-nodejs',
             'status' => 'running',
         ])->fresh(['node', 'service.product.containerTemplate']);
+    }
+
+    public function test_tick_refreshes_member_state_snapshots_once_per_node(): void
+    {
+        Cache::flush();
+        $node = Node::factory()->containerHost()->create();
+        $first = $this->deployment($node);
+        $second = $this->deployment($node);
+
+        $inspector = Mockery::mock(ContainerRuntimeInspector::class);
+        $inspector->shouldReceive('inspect')->andReturn(['missing' => false, 'running' => true, 'state' => 'running', 'oom_killed' => false, 'exit_code' => 0, 'restarting' => false, 'restart_count' => 0]);
+        $inspector->shouldReceive('syncDeploymentStatus');
+
+        $ssh = Mockery::mock(SSHService::class);
+        $ssh->shouldReceive('exec')->andReturn('');
+        $ssh->shouldReceive('disconnect');
+
+        $states = Mockery::mock(StackMemberStateService::class);
+        $states->shouldReceive('refreshNode')
+            ->once()
+            ->withArgs(fn (SSHService $s, $deployments) => $deployments->pluck('id')->sort()->values()->all() === collect([$first->id, $second->id])->sort()->values()->all())
+            ->andReturn([]);
+
+        $command = new CollectContainerMetricsCommand($inspector, fn (Node $resolved) => $ssh, $states);
+        $command->setLaravel($this->app);
+        $command->setOutput(new OutputStyle(new ArrayInput([]), new BufferedOutput));
+
+        $this->assertSame(0, $command->handle());
+    }
+
+    public function test_member_state_probe_failure_does_not_fail_the_run(): void
+    {
+        Cache::flush();
+        $node = Node::factory()->containerHost()->create();
+        $deployment = $this->deployment($node);
+
+        $inspector = Mockery::mock(ContainerRuntimeInspector::class);
+        $inspector->shouldReceive('inspect')->andReturn(['missing' => false, 'running' => true, 'state' => 'running', 'oom_killed' => false, 'exit_code' => 0, 'restarting' => false, 'restart_count' => 0]);
+        $inspector->shouldReceive('syncDeploymentStatus');
+
+        $ssh = Mockery::mock(SSHService::class);
+        $ssh->shouldReceive('exec')->andReturn('');
+        $ssh->shouldReceive('disconnect');
+
+        $states = Mockery::mock(StackMemberStateService::class);
+        $states->shouldReceive('refreshNode')->once()->andThrow(new \RuntimeException('docker ps exploded'));
+
+        $command = new CollectContainerMetricsCommand($inspector, fn (Node $resolved) => $ssh, $states);
+        $command->setLaravel($this->app);
+        $output = new BufferedOutput;
+        $command->setOutput(new OutputStyle(new ArrayInput([]), $output));
+
+        $this->assertSame(0, $command->handle());
+        $this->assertStringContainsString('Collected metrics for', $output->fetch());
+        $this->assertDatabaseHas('container_deployments', ['id' => $deployment->id, 'status' => 'running']);
     }
 }

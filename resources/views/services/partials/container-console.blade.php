@@ -513,6 +513,24 @@
                                     <p class="text-slate-600 dark:text-slate-400">Database console is disabled by administrator.</p>
                                 </div>
                             @elseif(!empty($databaseContext['available']))
+                                @if(!empty($databaseContext['member_state']))
+                                    <div class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 px-4 py-3">
+                                        <div class="flex flex-wrap items-center gap-2">
+                                            <span class="text-sm font-medium text-slate-900 dark:text-white">Database container</span>
+                                            <x-container-state-pill :state="$databaseContext['member_state']" compact />
+                                            @if($databaseContext['member_state']->checkedAt)
+                                                <span class="text-xs text-slate-500 dark:text-slate-400">checked {{ $databaseContext['member_state']->checkedAt->diffForHumans() }}</span>
+                                            @endif
+                                            <span class="font-mono text-xs text-slate-500 dark:text-slate-400">{{ $databaseContext['member_container_name'] }}</span>
+                                        </div>
+                                        @if(!empty($databaseContext['member_compose_key']))
+                                            <form method="POST" action="{{ container_route('members.restart', $service, $databaseContext['member_compose_key']) }}" data-confirm="Restart the database container? The app will lose its database connection for a few seconds.">
+                                                @csrf
+                                                <button type="submit" class="px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-500 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-slate-600 transition">Restart database</button>
+                                            </form>
+                                        @endif
+                                    </div>
+                                @endif
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4" x-data="{ showDbPassword: false }">
                                     <div class="bg-slate-50 dark:bg-slate-700 p-4 rounded-lg border border-slate-200 dark:border-slate-600">
                                         <p class="text-xs uppercase text-slate-500 dark:text-slate-400 mb-1">Type</p>

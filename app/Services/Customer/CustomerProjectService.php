@@ -144,6 +144,7 @@ class CustomerProjectService
                 'project' => $project,
                 'services' => $members->values(),
                 'containers' => $containers,
+                'stack_summary' => $this->folders()->summaryFor($members),
             ];
             $seenProjectIds[$project->id] = true;
 
@@ -163,6 +164,7 @@ class CustomerProjectService
                     'project' => $project,
                     'services' => collect(),
                     'containers' => [],
+                    'stack_summary' => $this->folders()->summaryFor(collect()),
                 ];
             }
 
@@ -181,10 +183,16 @@ class CustomerProjectService
                 'type' => 'service',
                 'services' => $ungrouped,
                 'containers' => [],
+                'stack_summary' => $this->folders()->summaryFor($ungrouped),
             ];
         }
 
         return $groups;
+    }
+
+    private function folders(): StackFolderBuilder
+    {
+        return app(StackFolderBuilder::class);
     }
 
     public function syncRelated(Service $anchor): void
@@ -325,14 +333,19 @@ class CustomerProjectService
             ->latest()
             ->get();
 
-        $primaryContainer = $services->first(fn (Service $s) => $s->isContainerHosting());
+        // Every container-hosting service belongs to exactly one stack folder;
+        // anything else (email, domains-as-services) stays a plain card.
+        $folders = $this->folders()->foldersFor($services);
+        $checkedAt = collect($folders)->map(fn (StackFolder $folder) => $folder->checkedAt)->filter()->min();
 
         return [
             'project' => $project,
             'services' => $services,
             'projects' => $user->customerProjects()->orderBy('name')->get(),
-            'containers' => $this->containerLabelsForMembers($services),
-            'primaryContainer' => $primaryContainer,
+            'folders' => $folders,
+            'otherServices' => $services->reject(fn (Service $s) => $s->isContainerHosting())->values(),
+            'foldersCheckedAt' => $checkedAt,
+            'foldersStale' => collect($folders)->contains(fn (StackFolder $folder) => $folder->stale),
             'planUsage' => $project->planUsageSummary(),
             'consumption' => app(ProjectConsumptionService::class)->forDisplay($project),
         ];
@@ -415,34 +428,11 @@ class CustomerProjectService
     }
 
     /**
-     * @param  Collection<int, Service>  $members
-     * @return list<string>
-     */
-    public function containerLabelsForMembers(Collection $members): array
-    {
-        $primary = $members->first(fn (Service $s) => $s->isContainerHosting()) ?? $members->first();
-        $containers = $this->composeContainerLabels($primary);
-
-        $roleLabels = $members
-            ->map(function (Service $service) {
-                $meta = is_array($service->service_meta) ? $service->service_meta : [];
-
-                return $meta['project_role_label'] ?? null;
-            })
-            ->filter()
-            ->unique()
-            ->values()
-            ->all();
-
-        if ($roleLabels !== []) {
-            return $roleLabels;
-        }
-
-        return $containers;
-    }
-
-    /**
      * Human-readable compose / intended roles (Backend, Frontend, …).
+     *
+     * This is the grouping heuristic behind clusterNeedsProject() and the
+     * index card. The project page itself renders StackMember labels from
+     * StackFolderBuilder, which classify the same compose keys.
      *
      * @return list<string>
      */

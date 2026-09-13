@@ -3,10 +3,14 @@
 namespace App\Console\Commands;
 
 use App\Enums\ServiceStatus;
+use App\Enums\StackMemberKind;
 use App\Models\ContainerDeployment;
 use App\Services\NotificationService;
 use App\Services\Provisioning\ContainerDeploymentService;
 use App\Services\Provisioning\ContainerRuntimeInspector;
+use App\Services\Provisioning\StackMember;
+use App\Services\Provisioning\StackMemberResolver;
+use App\Services\Provisioning\StackMemberStateService;
 use App\Services\SSH\SSHService;
 use Illuminate\Support\Str;
 
@@ -20,6 +24,8 @@ class AutoRestartContainersCommand extends BaseCronCommand
 
     public function __construct(
         private ContainerRuntimeInspector $runtimeInspector,
+        private ?StackMemberResolver $members = null,
+        private ?StackMemberStateService $memberStates = null,
     ) {
         parent::__construct();
     }
@@ -103,6 +109,7 @@ class AutoRestartContainersCommand extends BaseCronCommand
                             'restart_attempts' => 0,
                             'last_restart_at' => now(),
                         ]);
+                        $this->refreshMemberStates($ssh, $deployment);
 
                         $this->line("  <fg=green>✓ Restarted</> deployment {$deployment->id}");
                         $restarted++;
@@ -162,37 +169,59 @@ class AutoRestartContainersCommand extends BaseCronCommand
     }
 
     /**
-     * WordPress (and similar) stacks keep MySQL in a sibling container.
-     * After host reboot the app may come up while MySQL stays stopped — treat that as down.
+     * Every database the stack runs (WordPress's mysql, the injected db, a
+     * template's bundled one). After a host reboot the app may come up while
+     * the database stays stopped; that is a down stack. Decided from a live
+     * inspect, never from the cached snapshot.
      */
     private function embeddedDatabaseSidecarNeedsStart(SSHService $ssh, ContainerDeployment $deployment): bool
     {
-        $compose = (string) ($deployment->docker_compose_content ?? '');
-        if ($compose === '') {
-            return false;
+        foreach ($this->databaseMembers($deployment) as $member) {
+            $inspect = $this->runtimeInspector->inspect($ssh, $member->containerName);
+            if (($inspect['running'] ?? false) !== true) {
+                return true;
+            }
         }
 
-        $mysqlContainer = $deployment->container_name.'-mysql';
-        $definesMysql = str_contains($compose, $mysqlContainer)
-            || preg_match('/^\s*mysql:\s*$/m', $compose) === 1;
+        return false;
+    }
 
-        if (! $definesMysql) {
-            return false;
+    /**
+     * @return list<StackMember>
+     */
+    private function databaseMembers(ContainerDeployment $deployment): array
+    {
+        $deployment->loadMissing('service');
+        if (! $deployment->service || trim((string) ($deployment->docker_compose_content ?? '')) === '') {
+            return [];
         }
 
-        $inspect = $this->runtimeInspector->inspect($ssh, $mysqlContainer);
-
-        return ($inspect['running'] ?? false) !== true;
+        return array_values(array_filter(
+            $this->members()->membersForService($deployment->service),
+            fn (StackMember $member) => $member->kind === StackMemberKind::Database && ! $member->synthesized
+        ));
     }
 
     private function restartWaitSeconds(ContainerDeployment $deployment): int
     {
-        $compose = (string) ($deployment->docker_compose_content ?? '');
-        if (str_contains($compose, 'mysql:') || str_contains($compose, '-mysql')) {
-            return 90;
-        }
+        return $this->databaseMembers($deployment) !== [] ? 90 : 30;
+    }
 
-        return 30;
+    private function refreshMemberStates(SSHService $ssh, ContainerDeployment $deployment): void
+    {
+        try {
+            ($this->memberStates ?? app(StackMemberStateService::class))->refresh($deployment, $ssh);
+        } catch (\Throwable $e) {
+            \Log::warning('Member state refresh after auto-restart failed', [
+                'deployment_id' => $deployment->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function members(): StackMemberResolver
+    {
+        return $this->members ??= app(StackMemberResolver::class);
     }
 
     private function captureRestartDiagnostics(SSHService $ssh, ContainerDeployment $deployment): string
