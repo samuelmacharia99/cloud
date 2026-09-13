@@ -13,6 +13,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 class ApplicationScheduleTest extends TestCase
@@ -35,6 +36,24 @@ class ApplicationScheduleTest extends TestCase
         app(ApplicationSchedule::class)->configure($schedule);
 
         $this->assertCount(0, $schedule->events());
+    }
+
+    public function test_schedule_builds_before_the_settings_table_exists(): void
+    {
+        Config::set('scheduler.enabled', true);
+        Config::set('app.timezone', 'Africa/Nairobi');
+        Cache::flush();
+        // A database that has not been migrated yet: `php artisan migrate`
+        // and `package:discover` both build the schedule on boot.
+        Schema::drop('cron_jobs');
+        Schema::drop('settings');
+
+        $schedule = app(Schedule::class);
+        app(ApplicationSchedule::class)->configure($schedule);
+
+        $event = collect($schedule->events())->first();
+        $this->assertNotNull($event, 'The heartbeat is still registered without a settings table.');
+        $this->assertSame('Africa/Nairobi', $event->timezone);
     }
 
     public function test_local_environment_skips_heavy_jobs(): void

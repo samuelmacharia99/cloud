@@ -53,9 +53,19 @@ jobs:
           command_timeout: 45m
           script: |
             set -e
-            cd /var/www/talksasa-cloud
-            chmod +x scripts/deploy-production.sh
-            APP_PATH=/var/www/talksasa-cloud bash scripts/deploy-production.sh
+            APP_PATH=/var/www/talksasa-cloud
+            REPO="${APP_PATH}.deploy/repo"
+            # Production runs the release layout (see docs/DEPLOYMENT.md). The
+            # deploy scripts are taken from the commit being deployed, never
+            # from the live release, so a fix to the deploy itself takes
+            # effect on the deploy that ships it.
+            if [ ! -L "$APP_PATH" ] || [ ! -d "$REPO/.git" ]; then
+              echo "$APP_PATH is not on the release layout. Run once on the server: bash $APP_PATH/deploy.sh --bootstrap"
+              exit 1
+            fi
+            git -C "$REPO" fetch --quiet --prune origin
+            git -C "$REPO" show origin/main:scripts/deploy-production.sh > /tmp/talksasa-deploy-production.sh
+            APP_PATH="$APP_PATH" GIT_BRANCH=main HEALTH_URL=http://127.0.0.1:8000/up bash /tmp/talksasa-deploy-production.sh
 
       - name: Verify deployment
         uses: appleboy/ssh-action@v1.2.2

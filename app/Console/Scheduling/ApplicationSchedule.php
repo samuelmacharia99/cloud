@@ -19,9 +19,33 @@ class ApplicationSchedule
             return;
         }
 
-        $schedule->timezone(Setting::getValue('cron_timezone', 'UTC'));
+        $schedule->timezone($this->configuredTimezone());
         $this->registerDatabaseJobs($schedule);
         $this->registerHeartbeat($schedule);
+    }
+
+    /**
+     * The schedule is built on every console boot, including `migrate` on an
+     * empty database and `package:discover` during a release build, so the
+     * timezone lookup must never require the settings table to exist.
+     */
+    private function configuredTimezone(): string
+    {
+        $fallback = (string) config('app.timezone', 'UTC');
+
+        try {
+            if (! Schema::hasTable('settings')) {
+                return $fallback;
+            }
+
+            $timezone = trim((string) Setting::getValue('cron_timezone', $fallback));
+        } catch (\Throwable $e) {
+            Log::debug('Cron timezone not loaded: '.$e->getMessage());
+
+            return $fallback;
+        }
+
+        return $timezone !== '' ? $timezone : $fallback;
     }
 
     private function touchHeartbeat(): void
