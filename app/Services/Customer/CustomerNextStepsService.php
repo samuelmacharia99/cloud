@@ -111,7 +111,7 @@ class CustomerNextStepsService
                 'body' => 'Deploy an app or order Email Hosting to begin.',
                 'url' => $user->reseller_id
                     ? route('customer.catalog.index')
-                    : route('customer.select-techstack'),
+                    : route('customer.deploy-service'),
                 'tone' => 'info',
             ];
         }
