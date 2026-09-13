@@ -13,12 +13,11 @@ use Illuminate\Support\Collection;
  * Groups a project's container services into stack folders.
  *
  * A folder is a billing anchor plus the role services that were split off
- * it (backend_service_id / frontend_service_id / sibling_service_id, and
- * same-project services sharing its project_recipe without being anchors:
- * the same rule as CustomerProjectService::siblingRoleServices). Staging,
- * production and bundled-email links are deliberately not folder links:
- * those are separate stacks with their own compose files. A standalone
- * service is a folder of one.
+ * it and linked to it (backend_service_id / frontend_service_id /
+ * sibling_service_id, in either direction). Staging, production and
+ * bundled-email links are deliberately not folder links, and neither is a
+ * shared project_recipe: those are separate stacks with their own compose
+ * files. A standalone service is a folder of one.
  */
 final class StackFolderBuilder
 {
@@ -192,22 +191,10 @@ final class StackFolderBuilder
             }
         }
 
-        // Same recipe, same project, not an anchor: the siblingRoleServices rule.
-        $recipe = $meta['project_recipe'] ?? null;
-        if (! empty($meta['project_billing_anchor']) && $recipe) {
-            foreach ($pool as $other) {
-                $otherMeta = is_array($other->service_meta) ? $other->service_meta : [];
-                if ((int) $other->id !== (int) $service->id
-                    && (int) $other->project_id === (int) $service->project_id
-                    && (int) $other->product_id === (int) $service->product_id
-                    && ($otherMeta['project_recipe'] ?? null) === $recipe
-                    && empty($otherMeta['project_billing_anchor'])
-                    && empty($otherMeta['included_on_project_plan'])) {
-                    $ids[] = (int) $other->id;
-                }
-            }
-        }
-
+        // Deliberately no "same recipe" rule: a DirectAdmin convert with extra
+        // sites shares one recipe across separate stacks, and those must stay
+        // separate folders. Real splits (Laravel + Next, Node API + Web) carry
+        // explicit links both ways.
         return array_values(array_unique($ids));
     }
 

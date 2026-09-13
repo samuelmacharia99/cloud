@@ -4,6 +4,7 @@ namespace Tests\Unit\Provisioning;
 
 use App\Models\ContainerTemplate;
 use App\Models\DaAccountSnapshot;
+use App\Models\DatabaseTemplate;
 use App\Models\Product;
 use App\Models\Service;
 use App\Models\User;
@@ -901,5 +902,28 @@ class DirectAdminToContainerConvertServiceTest extends TestCase
             $convert->exportIncludesDatabaseMessage('static_or_php')
         );
         $this->assertSame('', $convert->exportIncludesDatabaseMessage('unknown'));
+    }
+
+    public function test_preflight_blocks_a_database_convert_without_a_container_mysql_template(): void
+    {
+        DatabaseTemplate::query()->where('hosting_type', 'container')->where('type', 'mysql')->update(['is_active' => false]);
+        $service = app(DirectAdminToContainerConvertService::class);
+
+        $this->assertNull($service->missingMysqlTemplateBlocker('wordpress', ['databases' => [['name' => 'wp']]]), 'WordPress ships its own MySQL');
+        $this->assertNull($service->missingMysqlTemplateBlocker('laravel', ['databases' => []]), 'nothing to import');
+        $this->assertStringContainsString('no active container MySQL database template', (string) $service->missingMysqlTemplateBlocker('laravel', ['databases' => [['name' => 'app']]]));
+
+        DatabaseTemplate::query()->create([
+            'name' => 'MySQL 8',
+            'slug' => 'mysql-container-test',
+            'type' => 'mysql',
+            'docker_image' => 'mysql:8.0',
+            'default_port' => 3306,
+            'hosting_type' => 'container',
+            'is_active' => true,
+            'order' => 1,
+        ]);
+
+        $this->assertNull($service->missingMysqlTemplateBlocker('laravel', ['databases' => [['name' => 'app']]]));
     }
 }

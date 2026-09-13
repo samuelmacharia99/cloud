@@ -5,6 +5,7 @@ namespace App\Services\Provisioning;
 use App\Jobs\ConvertDirectAdminProjectSiteJob;
 use App\Models\ContainerTemplate;
 use App\Models\CustomerProject;
+use App\Models\DatabaseTemplate;
 use App\Models\Node;
 use App\Models\Product;
 use App\Models\Service;
@@ -143,6 +144,10 @@ class DirectAdminToContainerConvertService
         $addonCount = (int) ($inventory['addon_site_count'] ?? 0);
         $databaseWarnings = $this->databaseExportWarnings($stack, $inventory);
 
+        if ($blocker = $this->missingMysqlTemplateBlocker($stack, $inventory)) {
+            $blockers[] = $blocker;
+        }
+
         return [
             'inventory' => $inventory,
             'email' => array_merge($email, [
@@ -163,6 +168,30 @@ class DirectAdminToContainerConvertService
             'da_email_count' => $daEmailCount,
             'database_warnings' => $databaseWarnings,
         ];
+    }
+
+    /**
+     * Laravel, PHP and Node converts import their dump into a platform MySQL
+     * sidecar chosen from the database templates. Without one the export ran,
+     * then failed and rolled back; it is a preflight blocker instead.
+     *
+     * @param  array{databases?: list<array{name: string}>}  $inventory
+     */
+    public function missingMysqlTemplateBlocker(string $stack, array $inventory): ?string
+    {
+        if (! $this->migrator->stackMayExportDatabase($stack) || count($inventory['databases'] ?? []) === 0) {
+            return null;
+        }
+
+        $exists = DatabaseTemplate::query()
+            ->where('is_active', true)
+            ->where('hosting_type', 'container')
+            ->where('type', 'mysql')
+            ->exists();
+
+        return $exists
+            ? null
+            : 'This site has a MySQL database but no active container MySQL database template exists to import it into. Add one under Admin → Database templates before converting.';
     }
 
     /**
