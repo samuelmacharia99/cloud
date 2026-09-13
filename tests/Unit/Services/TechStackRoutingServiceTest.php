@@ -305,22 +305,55 @@ class TechStackRoutingServiceTest extends TestCase
         $this->assertTrue(TechStackRoutingService::isValidStackSelection($odoo, null, null, $postgres));
         $this->assertTrue(TechStackRoutingService::isValidStackSelection($erpnext, null, null, null));
 
-        $ollama = $this->createLanguage('ollama');
-        $this->assertFalse(TechStackRoutingService::skipsStackModal($ollama));
-        $this->assertFalse(TechStackRoutingService::isValidStackSelection($ollama, null, null, null));
-        $this->assertFalse($ollama->isOfferedForNewDeploy());
-        $this->assertTrue(TechStackRoutingService::isValidCombination($ollama, null));
-        $this->assertFalse(TechStackRoutingService::usesSelectedVersionAsImageTag('ollama'));
-        $this->assertSame(['7b', '8b'], TechStackRoutingService::requiredSelectedVersions($ollama));
+        $ospos = $this->createLanguage('ospos');
+        $this->assertFalse(TechStackRoutingService::skipsStackModal($ospos));
+        $this->assertTrue(TechStackRoutingService::isValidStackSelection($ospos, null, null, null));
+        $this->assertTrue(TechStackRoutingService::isValidCombination($ospos, null));
+        $this->assertTrue(TechStackRoutingService::usesSelectedVersionAsImageTag('ospos'));
+        $this->assertSame([], TechStackRoutingService::requiredSelectedVersions($ospos));
+        $osposPayload = TechStackRoutingService::stackOptionsPayload($ospos);
+        $this->assertFalse($osposPayload['database']['show']);
+        $this->assertTrue($osposPayload['version_picker']['show']);
+        $this->assertFalse($osposPayload['version_picker']['required']);
+        $this->assertSame('3.4.1', $osposPayload['version_picker']['value']);
+        $this->assertSame('OSPOS 3.4.1', TechStackRoutingService::versionLabel($ospos, '3.4.1'));
 
-        $payload = TechStackRoutingService::stackOptionsPayload($ollama);
+        // A required, non-image-tag version picker. No catalog stack declares one
+        // today, so the path is pinned through config rather than a seeded slug.
+        config(['stack_builder.stacks.sized-runtime' => [
+            'backend' => 'sized-runtime',
+            'skip_modal' => false,
+            'version_as_image_tag' => false,
+            'version_picker' => [
+                'show' => true,
+                'required' => true,
+                'label' => 'Size',
+                'options' => [
+                    ['value' => 'small', 'label' => 'Small'],
+                    ['value' => 'large', 'label' => 'Large'],
+                ],
+            ],
+            'framework' => ['required' => false, 'show' => false, 'options' => [], 'locked' => 'sized-runtime'],
+            'frontend' => ['required' => false, 'show' => false, 'options' => ['none'], 'locked' => 'none'],
+            'database' => ['required' => false, 'show' => false, 'allow_none' => true, 'types' => []],
+        ]]);
+        $sized = $this->createLanguage('sized-runtime');
+        $this->assertFalse(TechStackRoutingService::skipsStackModal($sized));
+        $this->assertTrue($sized->isOfferedForNewDeploy());
+        $this->assertTrue(TechStackRoutingService::isValidCombination($sized, null));
+        $this->assertFalse(TechStackRoutingService::usesSelectedVersionAsImageTag('sized-runtime'));
+        $this->assertTrue(TechStackRoutingService::usesSelectedVersionAsImageTag('php'));
+        $this->assertSame(['small', 'large'], TechStackRoutingService::requiredSelectedVersions($sized));
+
+        $payload = TechStackRoutingService::stackOptionsPayload($sized);
         $this->assertFalse($payload['skip_modal']);
         $this->assertTrue($payload['version_picker']['show']);
         $this->assertTrue($payload['version_picker']['required']);
-        $this->assertSame('Model size', $payload['version_picker']['label']);
-        $this->assertSame('7b', $payload['version_picker']['value']);
-        $this->assertSame('Mistral 7B', TechStackRoutingService::versionLabel($ollama, '7b'));
-        $this->assertSame('Ministral 8B', TechStackRoutingService::versionLabel($ollama, '8b'));
+        $this->assertSame('Size', $payload['version_picker']['label']);
+        $this->assertSame('small', $payload['version_picker']['value']);
+        $this->assertSame('Small', TechStackRoutingService::versionLabel($sized, 'small'));
+        $this->assertSame('Large', TechStackRoutingService::versionLabel($sized, 'large'));
+        $this->assertSame('x', TechStackRoutingService::versionLabel($sized, 'x'));
     }
 
     public function test_apply_session_selection_copies_stack_builder_roles(): void

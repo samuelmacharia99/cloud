@@ -21,20 +21,17 @@ class CatalogContainerTemplatesTest extends TestCase
             'chatwoot' => 'chatwoot/chatwoot:latest',
             'odoo' => 'odoo:18',
             'erpnext' => 'frappe/erpnext:v15',
-            'ollama' => 'ollama/ollama:latest',
+            'ospos' => 'talksasa/ospos:3.4.1',
         ];
 
         foreach ($expected as $slug => $image) {
             $template = ContainerTemplate::query()->where('slug', $slug)->first();
             $this->assertNotNull($template, $slug.' template missing');
             $this->assertSame($image, $template->docker_image);
-            if ($slug === 'ollama') {
-                $this->assertFalse($template->is_active);
-                $this->assertSame(900, $template->health_check_timeout_seconds);
-            } else {
-                $this->assertTrue($template->is_active);
-            }
+            $this->assertTrue($template->is_active);
         }
+
+        $this->assertNull(ContainerTemplate::query()->where('slug', 'ollama')->first(), 'Ollama left the catalog');
     }
 
     public function test_seeder_definitions_match_official_images(): void
@@ -50,12 +47,12 @@ class CatalogContainerTemplatesTest extends TestCase
         $this->assertSame('odoo:18', $definitions['odoo']['docker_image']);
         $this->assertSame('frappe/erpnext:v15', $definitions['erpnext']['docker_image']);
         $this->assertArrayHasKey('db', $definitions['erpnext']['compose_services']);
-        $this->assertSame('ollama/ollama:latest', $definitions['ollama']['docker_image']);
-        $this->assertSame(11434, $definitions['ollama']['default_port']);
-        $this->assertSame(['7b', '8b'], $definitions['ollama']['versions']);
-        $this->assertFalse($definitions['ollama']['is_active']);
-        $this->assertSame(900, $definitions['ollama']['health_check_timeout_seconds']);
-        $this->assertSame('/root/.ollama', $definitions['ollama']['volume_paths']['ollama_data']);
+        $this->assertArrayNotHasKey('ollama', $definitions);
+        $this->assertSame('talksasa/ospos:3.4.1', $definitions['ospos']['docker_image']);
+        $this->assertSame(['3.4.1', '3.4.0'], $definitions['ospos']['versions']);
+        $this->assertSame(80, $definitions['ospos']['default_port']);
+        $this->assertSame('mariadb:10.11', $definitions['ospos']['compose_services']['db']['image']);
+        $this->assertArrayHasKey('ospos', config('containers.app_images'));
     }
 
     public function test_admin_can_list_and_open_catalog_templates(): void
@@ -72,10 +69,10 @@ class CatalogContainerTemplatesTest extends TestCase
             ->assertSee('Chatwoot')
             ->assertSee('Odoo')
             ->assertSee('ERPNext')
-            ->assertSee('Ollama')
+            ->assertSee('Open Source POS')
+            ->assertDontSee('Ollama')
             ->assertSee('#EA4B71', false)
-            ->assertSee('#6644FF', false)
-            ->assertSee('#111111', false);
+            ->assertSee('#6644FF', false);
 
         $this->actingAs($admin)
             ->get(route('admin.container-templates.show', $n8n))

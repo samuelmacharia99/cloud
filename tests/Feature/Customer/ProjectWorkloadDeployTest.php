@@ -30,8 +30,7 @@ class ProjectWorkloadDeployTest extends TestCase
             ->get(route('customer.projects.deploy', $project))
             ->assertOk()
             ->assertSee('Deploy into '.$project->name)
-            ->assertSee('not billed again')
-            ->assertDontSee('Ollama');
+            ->assertSee('not billed again');
 
         $response = $this->actingAs($customer)
             ->post(route('customer.projects.deploy.store', $project), [
@@ -64,16 +63,25 @@ class ProjectWorkloadDeployTest extends TestCase
         $this->assertSame($project->fresh()->billing_service_id, $anchor->id);
     }
 
-    public function test_included_ollama_deploy_is_rejected(): void
+    public function test_included_deploy_of_a_retired_stack_is_rejected(): void
     {
         [$customer, $project] = $this->makeBilledProject();
-        $ollama = ContainerTemplate::query()->where('slug', 'ollama')->firstOrFail();
+        $retired = ContainerTemplate::factory()->create([
+            'slug' => 'retired-runtime',
+            'name' => 'Retired runtime',
+            'is_active' => false,
+            'hosting_type' => 'container',
+        ]);
+
+        $this->actingAs($customer)
+            ->get(route('customer.projects.deploy', $project))
+            ->assertOk()
+            ->assertDontSee('Retired runtime');
 
         $this->actingAs($customer)
             ->from(route('customer.projects.deploy', $project))
             ->post(route('customer.projects.deploy.store', $project), [
-                'language_id' => $ollama->id,
-                'selected_version' => '8b',
+                'language_id' => $retired->id,
             ])
             ->assertSessionHasErrors('language_id');
 

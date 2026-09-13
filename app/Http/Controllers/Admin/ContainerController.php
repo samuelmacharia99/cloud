@@ -8,6 +8,7 @@ use App\Models\ContainerBackup;
 use App\Models\ContainerDomain;
 use App\Models\ContainerMetric;
 use App\Models\Service;
+use App\Services\Provisioning\ContainerAllowedHostnamesSync;
 use App\Services\Provisioning\ContainerBackupService;
 use App\Services\Provisioning\ContainerDeploymentService;
 use App\Services\Provisioning\ContainerDeployOptions;
@@ -274,6 +275,7 @@ class ContainerController extends Controller
                 $dnsWarning = app(ContainerDomainBindingService::class)
                     ->clearApiHostnameMetadata($service, $domainName);
             }
+            app(ContainerAllowedHostnamesSync::class)->syncQuietly($service->fresh(), 'unbind:'.$domainName);
 
             $response = back()->with('success', "Domain {$domainName} unbound successfully");
 

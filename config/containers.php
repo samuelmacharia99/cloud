@@ -56,7 +56,7 @@ return [
     |
     | shared_network_slugs: templates whose app service may also join the
     | shared talksasa-net bridge, for same-node links that resolve another
-    | stack by container name (Hermes to Ollama). Nothing else joins it.
+    | stack by container name (Hermes to a sibling service). Nothing else joins it.
     |
     | cap_overrides: per template slug, ['cap_add' => [...], 'cap_drop' =>
     | [...], 'pids_limit' => int] for an image that genuinely needs more.
@@ -69,7 +69,7 @@ return [
         'no_new_privileges' => (bool) env('CONTAINER_NO_NEW_PRIVILEGES', true),
         'pids_limit' => (int) env('CONTAINER_PIDS_LIMIT', 1024),
         'cap_drop' => ['NET_RAW', 'MKNOD', 'AUDIT_WRITE', 'SYS_CHROOT', 'SETFCAP'],
-        'shared_network_slugs' => ['ollama', 'hermes'],
+        'shared_network_slugs' => ['hermes'],
         'cap_overrides' => [],
     ],
 
@@ -81,6 +81,25 @@ return [
         'php' => [
             'runtime' => 'php',
             'default_tag' => '8.3',
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Application images built on the node
+    |--------------------------------------------------------------------------
+    |
+    | Catalog stacks whose upstream publishes no stable image tag. The node
+    | builds deploy/docker/apps/<slug>/Dockerfile from the release tag the
+    | customer selected (the template's versions list) and tags it
+    | <registry>/<image>:<ref>. Same registry and build path as the runtimes.
+    |
+    */
+    'app_images' => [
+        'ospos' => [
+            'image' => 'ospos',
+            'repository' => 'https://github.com/opensourcepos/opensourcepos.git',
+            'default_ref' => '3.4.1',
         ],
     ],
 

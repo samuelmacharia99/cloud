@@ -125,6 +125,8 @@ class ContainerDomainBindingService
 
         $this->attemptAutoSsl($service, $domain, (string) ($deployment->node?->ip_address ?? ''));
 
+        $this->allowedHostnamesSync()->syncQuietly($service, 'bind:'.$hostname);
+
         return $domain?->fresh();
     }
 
@@ -195,6 +197,8 @@ class ContainerDomainBindingService
                 'ssl_enabled' => (bool) $domain->fresh()->ssl_enabled,
             ]);
 
+            $this->allowedHostnamesSync()->syncQuietly($service, 'bind-api:'.$hostname);
+
             return $domain->fresh();
         } catch (\Throwable $e) {
             if ($nginxBound) {
@@ -248,6 +252,16 @@ class ContainerDomainBindingService
             }
             throw new \RuntimeException('API hostname provisioning failed: '.$e->getMessage(), 0, $e);
         }
+    }
+
+    /**
+     * Resolved lazily: the sync needs the environment service, which reaches
+     * back into deployment and domain services, so a constructor dependency
+     * here would be a container cycle.
+     */
+    private function allowedHostnamesSync(): ContainerAllowedHostnamesSync
+    {
+        return app(ContainerAllowedHostnamesSync::class);
     }
 
     public function clearApiHostnameMetadata(Service $service, string $hostname): ?string

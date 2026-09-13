@@ -18,26 +18,25 @@ class ContainerConsoleTabsTest extends TestCase
     public function optional_sections_sit_next_to_the_tabs_they_belong_with(): void
     {
         $tabs = ContainerConsoleTabs::resolve(
-            supportsOllamaChat: true,
             supportsGitRepository: true,
             supportsPhpExtensions: true,
         );
 
         $this->assertSame(
-            ['chat', 'terminal', 'github'],
-            array_slice($tabs, array_search('chat', $tabs, true), 3),
-            'Chat belongs before the terminal and Git right after it.'
+            ['terminal', 'github'],
+            array_slice($tabs, array_search('terminal', $tabs, true), 2),
+            'Git belongs right after the terminal.'
         );
         $this->assertSame(
             ['php-extensions', 'documentation'],
             array_slice($tabs, -2),
             'PHP extensions belong ahead of the docs tab.'
         );
-        $this->assertSame(count(ContainerConsoleTabs::BASE) + 3, count($tabs));
+        $this->assertSame(count(ContainerConsoleTabs::BASE) + 2, count($tabs));
     }
 
     #[Test]
-    public function git_lands_after_the_terminal_even_without_the_chat_tab(): void
+    public function git_lands_after_the_terminal(): void
     {
         $tabs = ContainerConsoleTabs::resolve(supportsGitRepository: true);
 

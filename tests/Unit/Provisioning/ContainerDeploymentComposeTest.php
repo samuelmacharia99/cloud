@@ -8,6 +8,7 @@ use App\Models\ContainerTemplate;
 use App\Models\Node;
 use App\Models\Product;
 use App\Models\Service;
+use App\Services\Provisioning\ApplicationImageBuilder;
 use App\Services\Provisioning\ApplicationRuntime;
 use App\Services\Provisioning\ContainerAppDirectoryService;
 use App\Services\Provisioning\ContainerDeploymentService;
@@ -750,7 +751,7 @@ class ContainerDeploymentComposeTest extends TestCase
         $this->assertStringContainsString("command:\n      - gateway\n      - run", $hermesYaml);
         $this->assertStringContainsString('hermes_data:/opt/data', $hermesYaml);
         $this->assertStringContainsString("ports:\n      - '127.0.0.1:31010:9119'", $hermesYaml);
-        // Hermes reaches a same-node Ollama by container name, so it also joins the shared bridge.
+        // Hermes links to same-node services by container name, so it also joins the shared bridge.
         $this->assertStringContainsString("name: talksasa-net\n    external: true", $hermesYaml);
 
         $openClawYaml = $method->invoke(
@@ -877,14 +878,17 @@ class ContainerDeploymentComposeTest extends TestCase
     }
 
     #[Test]
-    public function ollama_keeps_official_image_when_model_size_is_selected(): void
+    public function ospos_renders_bundled_mariadb_with_generated_credentials_and_no_injected_sidecar(): void
     {
         $runtimeImages = $this->createMock(RuntimeImageProvisioner::class);
         $runtimeImages->method('usesRuntimeImage')->willReturn(false);
 
         $deployer = new ContainerDeploymentService(
             runtimeImages: $runtimeImages,
-            templateEnvironment: new ContainerTemplateEnvironmentService
+            templateEnvironment: new ContainerTemplateEnvironmentService,
+            appImages: new ApplicationImageBuilder(definitions: [
+                'ospos' => ['image' => 'ospos', 'repository' => 'https://github.com/opensourcepos/opensourcepos.git', 'default_ref' => '3.4.1'],
+            ]),
         );
 
         $method = new ReflectionMethod(ContainerDeploymentService::class, 'renderCompose');
@@ -893,34 +897,60 @@ class ContainerDeploymentComposeTest extends TestCase
         $yaml = $method->invoke(
             $deployer,
             new ContainerTemplate([
-                'slug' => 'ollama',
-                'docker_image' => 'ollama/ollama:latest',
-                'default_port' => 11434,
-                'required_cpu_cores' => 2,
-                'required_ram_mb' => 8192,
-                'versions' => ['7b', '8b'],
-                'volume_paths' => ['ollama_data' => '/root/.ollama'],
+                'slug' => 'ospos',
+                'docker_image' => 'talksasa/ospos:3.4.1',
+                'default_port' => 80,
+                'required_cpu_cores' => 1,
+                'required_ram_mb' => 1024,
+                'versions' => ['3.4.1', '3.4.0'],
+                'volume_paths' => ['ospos_uploads' => '/app/public/uploads'],
+                'compose_services' => [
+                    'db' => [
+                        'image' => 'mariadb:10.11',
+                        'environment' => ['MYSQL_PASSWORD' => 'changeme', 'MYSQL_ROOT_PASSWORD' => 'changeme'],
+                        'volumes' => ['ospos_db:/var/lib/mysql'],
+                    ],
+                ],
             ]),
-            'user-1-service-25-ollama',
-            31025,
-            ['OLLAMA_HOST' => '0.0.0.0:11434', 'OLLAMA_MODEL' => 'ministral-3:8b'],
+            'user-1-service-30-ospos',
+            32030,
+            [
+                'MYSQL_DB_NAME' => 'ospos',
+                'MYSQL_USERNAME' => 'ospos',
+                'MYSQL_PASSWORD' => 'user-secret',
+                'MYSQL_ROOT_PASSWORD' => 'root-secret',
+                'ALLOWED_HOSTNAMES' => 'shop.example.com,localhost,127.0.0.1',
+            ],
             null,
             null,
-            '8b',
+            '3.4.0',
             null,
             null
         );
 
-        $this->assertStringContainsString('ollama/ollama:latest', $yaml);
-        $this->assertStringNotContainsString('ollama/ollama:8b', $yaml);
-        $this->assertStringContainsString('ollama_data:/root/.ollama', $yaml);
-        $this->assertStringContainsString("ports:\n      - '127.0.0.1:31025:11434'", $yaml);
-        $this->assertStringContainsString("name: talksasa-net\n    external: true", $yaml);
-        $this->assertStringContainsString('ministral-3:8b', $yaml);
+        $compose = Yaml::parse($yaml);
+        $app = $compose['services']['user-1-service-30-ospos'];
+        $db = $compose['services']['db'];
+
+        // Built on the node from the selected release, never pulled.
+        $this->assertSame('talksasa/ospos:3.4.0', $app['image']);
+        $this->assertSame('never', $app['pull_policy']);
+        $this->assertSame(['db' => ['condition' => 'service_started']], $app['depends_on']);
+
+        // The bundled MariaDB is reconciled per deployment; no second sidecar is injected.
+        $this->assertSame('user-1-service-30-ospos-db', $db['container_name']);
+        $this->assertSame('user-secret', $db['environment']['MYSQL_PASSWORD']);
+        $this->assertSame('root-secret', $db['environment']['MYSQL_ROOT_PASSWORD']);
+        $this->assertSame('ospos', $db['environment']['MYSQL_DATABASE']);
+        $this->assertArrayHasKey('healthcheck', $db);
+        $this->assertStringNotContainsString('changeme', $yaml);
+        $this->assertArrayNotHasKey('db_data', $compose['volumes'] ?? []);
+        $this->assertArrayHasKey('ospos_db', $compose['volumes']);
+        $this->assertStringContainsString("ports:\n      - '127.0.0.1:32030:80'", $yaml);
     }
 
     #[Test]
-    public function ollama_compose_up_waits_long_enough_for_image_pull(): void
+    public function heavy_catalog_images_get_a_longer_compose_up_budget(): void
     {
         $method = new ReflectionMethod(ContainerDeploymentService::class, 'composeUpTimeoutSeconds');
         $method->setAccessible(true);
@@ -928,7 +958,8 @@ class ContainerDeploymentComposeTest extends TestCase
             templateEnvironment: new ContainerTemplateEnvironmentService
         );
 
-        $this->assertSame(1200, $method->invoke($deployer, (object) ['slug' => 'ollama']));
+        $this->assertSame(600, $method->invoke($deployer, (object) ['slug' => 'erpnext']));
+        $this->assertSame(600, $method->invoke($deployer, (object) ['slug' => 'chatwoot']));
         $this->assertSame(180, $method->invoke($deployer, (object) ['slug' => 'wordpress']));
     }
 

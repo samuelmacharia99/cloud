@@ -30,7 +30,7 @@ class ContainerIsolationPolicy
     /**
      * The one bridge every container host has. Stacks whose template opts in
      * attach their app service to it as a second network so same-node links
-     * (Hermes to Ollama) keep resolving by container name. Nothing else joins.
+     * (Hermes to a sibling service) keep resolving by container name. Nothing else joins.
      */
     public const SHARED_NETWORK_NAME = 'talksasa-net';
 

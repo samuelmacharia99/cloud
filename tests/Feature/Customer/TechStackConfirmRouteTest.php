@@ -135,21 +135,22 @@ class TechStackConfirmRouteTest extends TestCase
             ->assertJsonPath('database.show', false);
     }
 
-    public function test_ollama_stack_options_require_a_model_size(): void
+    public function test_a_stack_with_a_required_version_picker_rejects_a_confirm_without_a_version(): void
     {
         $customer = User::factory()->customer()->create();
-        $language = $this->makeLanguage('ollama');
+        $language = $this->makeLanguage('sized-runtime');
         $this->makeProductForLanguage($language);
+        config(['stack_builder.stacks.sized-runtime' => $this->sizedRuntimeStackDefinition()]);
 
         $this->actingAs($customer)
             ->getJson(route('api.languages.stack-options', $language))
             ->assertOk()
             ->assertJsonPath('skip_modal', false)
-            ->assertJsonPath('backend', 'ollama')
+            ->assertJsonPath('backend', 'sized-runtime')
             ->assertJsonPath('database.show', false)
             ->assertJsonPath('version_picker.show', true)
             ->assertJsonPath('version_picker.required', true)
-            ->assertJsonPath('version_picker.value', '7b');
+            ->assertJsonPath('version_picker.value', 'small');
 
         $this->actingAs($customer)
             ->from(route('customer.select-techstack'))
@@ -162,12 +163,12 @@ class TechStackConfirmRouteTest extends TestCase
         $this->actingAs($customer)
             ->post(route('customer.confirm-techstack.store'), [
                 'language_id' => $language->id,
-                'selected_version' => '8b',
+                'selected_version' => 'large',
                 'deployment_platform' => 'container',
             ])
             ->assertRedirect(route('customer.confirm-techstack'));
 
-        $this->assertSame('8b', session('selected_techstack.selected_version'));
+        $this->assertSame('large', session('selected_techstack.selected_version'));
     }
 
     public function test_nodejs_next_framework_locks_frontend_in_stack_options(): void
@@ -184,6 +185,33 @@ class TechStackConfirmRouteTest extends TestCase
             ->assertJsonPath('version_picker.value', null)
             ->assertJsonFragment(['value' => '24-alpine', 'label' => 'Node 24-alpine'])
             ->assertJsonCount(1, 'frontend.options');
+    }
+
+    /**
+     * A stack whose version picker is a required, non-image-tag option. No
+     * catalog stack declares one today, so the path is pinned through config.
+     *
+     * @return array<string, mixed>
+     */
+    private function sizedRuntimeStackDefinition(): array
+    {
+        return [
+            'backend' => 'sized-runtime',
+            'skip_modal' => false,
+            'version_as_image_tag' => false,
+            'version_picker' => [
+                'show' => true,
+                'required' => true,
+                'label' => 'Size',
+                'options' => [
+                    ['value' => 'small', 'label' => 'Small'],
+                    ['value' => 'large', 'label' => 'Large'],
+                ],
+            ],
+            'framework' => ['required' => false, 'show' => false, 'options' => [], 'locked' => 'sized-runtime'],
+            'frontend' => ['required' => false, 'show' => false, 'options' => ['none'], 'locked' => 'none'],
+            'database' => ['required' => false, 'show' => false, 'allow_none' => true, 'types' => []],
+        ];
     }
 
     private function makeLanguage(string $slug): ContainerTemplate

@@ -8,6 +8,18 @@ use Illuminate\Support\Str;
 
 class ContainerTemplateEnvironmentService
 {
+    private ContainerAllowedHostnamesResolver $hostnames;
+
+    private EmbeddedDatabaseSidecarReconciler $embeddedDatabases;
+
+    public function __construct(
+        ?ContainerAllowedHostnamesResolver $hostnames = null,
+        ?EmbeddedDatabaseSidecarReconciler $embeddedDatabases = null,
+    ) {
+        $this->hostnames = $hostnames ?? new ContainerAllowedHostnamesResolver;
+        $this->embeddedDatabases = $embeddedDatabases ?? new EmbeddedDatabaseSidecarReconciler;
+    }
+
     /**
      * @param  array<string, string>  $env
      * @return array<string, string>
@@ -48,8 +60,8 @@ class ContainerTemplateEnvironmentService
             $env = $this->prepareErpnextEnvironment($env);
         }
 
-        if (($template->slug ?? '') === 'ollama') {
-            $env = $this->prepareOllamaEnvironment($env, $service);
+        if (($template->slug ?? '') === 'ospos') {
+            $env = $this->prepareOsposEnvironment($env, $service);
         }
 
         if (($template->slug ?? '') === 'python') {
@@ -146,6 +158,14 @@ class ContainerTemplateEnvironmentService
      */
     public function mysqlTuningFlags(?int $planMemoryMb = null): array
     {
+        return self::tuningFlagsFor($planMemoryMb);
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function tuningFlagsFor(?int $planMemoryMb = null): array
+    {
         $bufferPoolMb = 256;
         $maxConnections = 50;
 
@@ -175,69 +195,27 @@ class ContainerTemplateEnvironmentService
         $this->syncChatwootSidecars($compose, $template, $envVars);
         $this->syncErpnextSidecars($compose, $template, $envVars);
 
+        if (($template->slug ?? '') === 'ospos' && isset($compose['services']['db'])) {
+            $this->embeddedDatabases->reconcile($compose, 'db', $appServiceName, [
+                'database' => (string) ($envVars['MYSQL_DB_NAME'] ?? 'ospos'),
+                'user' => (string) ($envVars['MYSQL_USERNAME'] ?? 'ospos'),
+                'password' => (string) ($envVars['MYSQL_PASSWORD'] ?? ''),
+                'root_password' => (string) ($envVars['MYSQL_ROOT_PASSWORD'] ?? ''),
+            ], $planMemoryMb, 'Open Source POS deploy');
+
+            return;
+        }
+
         if (($template->slug ?? '') !== 'wordpress' || ! isset($compose['services']['mysql'])) {
             return;
         }
 
-        $rootPassword = trim((string) ($envVars['MYSQL_ROOT_PASSWORD'] ?? ''));
-        $mysqlPassword = trim((string) ($envVars['WORDPRESS_DB_PASSWORD'] ?? $envVars['MYSQL_PASSWORD'] ?? ''));
-
-        // Never invent passwords here — they would not be saved to deployment env_values
-        // and import would use a different secret than the running MySQL container.
-        if ($rootPassword === '' || $mysqlPassword === '') {
-            throw new \RuntimeException(
-                'WordPress deploy is missing MYSQL_ROOT_PASSWORD / WORDPRESS_DB_PASSWORD before composing the mysql sidecar.'
-            );
-        }
-
-        $compose['services']['mysql']['environment'] = [
-            'MYSQL_DATABASE' => $envVars['WORDPRESS_DB_NAME'] ?? 'wordpress',
-            'MYSQL_USER' => $envVars['WORDPRESS_DB_USER'] ?? 'wordpress',
-            'MYSQL_PASSWORD' => $mysqlPassword,
-            'MYSQL_ROOT_PASSWORD' => $rootPassword,
-        ];
-
-        // Avoid colliding container names across customers (template default is static).
-        $compose['services']['mysql']['container_name'] = $appServiceName.'-mysql';
-
-        // Host reboots / docker restarts: always bring the DB back even if it was stopped for maintenance.
-        $compose['services']['mysql']['restart'] = 'always';
-
-        // This is a soft reservation, not a kill threshold. The final compose resource
-        // policy normalizes app + MySQL reservations to the plan's included resources.
-        unset($compose['services']['mysql']['mem_limit'], $compose['services']['mysql']['cpus']);
-        $compose['services']['mysql']['mem_reservation'] = '256M';
-
-        // Sized from the plan, not fixed. A fixed 256M pool meant a customer on
-        // four gigabytes ran the same database as one on one gigabyte.
-        $compose['services']['mysql']['command'] = $this->mysqlTuningFlags($planMemoryMb);
-
-        $compose['services']['mysql']['networks'] = [
-            'default' => [
-                'aliases' => [$appServiceName.'-mysql'],
-            ],
-        ];
-
-        // Use TCP (127.0.0.1), not the unix socket — during InnoDB recovery the sock is often missing
-        // and healthchecks fail with "Can't connect ... mysqld.sock". Long start_period covers reboot recovery.
-        $compose['services']['mysql']['healthcheck'] = [
-            'test' => [
-                'CMD-SHELL',
-                'mysqladmin ping -h 127.0.0.1 -uroot -p"$$MYSQL_ROOT_PASSWORD" --silent',
-            ],
-            'interval' => '10s',
-            'timeout' => '5s',
-            'retries' => 30,
-            'start_period' => '300s',
-        ];
-
-        // Keep the healthcheck for Portainer/ops visibility, but do not block the app
-        // container on service_healthy — InnoDB recovery can take minutes and left sites
-        // on 504 while compose waited. WordPress retries DB connections itself.
-        $compose['services'][$appServiceName]['restart'] = 'always';
-        $compose['services'][$appServiceName]['depends_on'] = [
-            'mysql' => ['condition' => 'service_started'],
-        ];
+        $this->embeddedDatabases->reconcile($compose, 'mysql', $appServiceName, [
+            'database' => (string) ($envVars['WORDPRESS_DB_NAME'] ?? 'wordpress'),
+            'user' => (string) ($envVars['WORDPRESS_DB_USER'] ?? 'wordpress'),
+            'password' => (string) ($envVars['WORDPRESS_DB_PASSWORD'] ?? $envVars['MYSQL_PASSWORD'] ?? ''),
+            'root_password' => (string) ($envVars['MYSQL_ROOT_PASSWORD'] ?? ''),
+        ], $planMemoryMb, 'WordPress deploy');
     }
 
     /**
@@ -636,33 +614,44 @@ class ContainerTemplateEnvironmentService
     }
 
     /**
+     * Open Source POS reads its database and security settings straight from
+     * the process environment. Credentials and the encryption key are generated
+     * once and then kept (filledOr / the empty checks), the Host allow-list is
+     * platform-owned and recomputed every time, and DB_* mirrors exist for the
+     * console's database tab, credential repair and dump import.
+     *
      * @param  array<string, string>  $env
      * @return array<string, string>
      */
-    private function prepareOllamaEnvironment(array $env, Service $service): array
+    private function prepareOsposEnvironment(array $env, Service $service): array
     {
-        $env['OLLAMA_HOST'] = $this->filledOr($env, 'OLLAMA_HOST', '0.0.0.0:11434');
-        $env['OLLAMA_KEEP_ALIVE'] = $this->filledOr($env, 'OLLAMA_KEEP_ALIVE', '24h');
-        $env['OLLAMA_CONTEXT_LENGTH'] = $this->filledOr(
-            $env,
-            'OLLAMA_CONTEXT_LENGTH',
-            (string) ContainerOllamaModelService::AGENT_CONTEXT_LENGTH
-        );
-        $env['OLLAMA_NUM_CTX'] = $this->filledOr(
-            $env,
-            'OLLAMA_NUM_CTX',
-            (string) ContainerOllamaModelService::AGENT_CONTEXT_LENGTH
-        );
+        $env['CI_ENVIRONMENT'] = $this->filledOr($env, 'CI_ENVIRONMENT', 'production');
+        $env['PHP_TIMEZONE'] = $this->filledOr($env, 'PHP_TIMEZONE', 'Africa/Nairobi');
+        $env['FORCE_HTTPS'] = $this->filledOr($env, 'FORCE_HTTPS', 'true');
+        $env['MYSQL_HOST_NAME'] = $this->filledOr($env, 'MYSQL_HOST_NAME', 'db');
+        $env['MYSQL_DB_NAME'] = $this->filledOr($env, 'MYSQL_DB_NAME', 'ospos');
+        $env['MYSQL_USERNAME'] = $this->filledOr($env, 'MYSQL_USERNAME', 'ospos');
 
-        $selectedVersion = is_array($service->service_meta)
-            ? ($service->service_meta['selected_version'] ?? null)
-            : null;
+        if (trim((string) ($env['MYSQL_PASSWORD'] ?? '')) === '') {
+            $env['MYSQL_PASSWORD'] = Str::random(32);
+        }
+        if (trim((string) ($env['MYSQL_ROOT_PASSWORD'] ?? '')) === '') {
+            $env['MYSQL_ROOT_PASSWORD'] = Str::random(32);
+        }
+        // OSPOS does not generate one; without it sessions and stored secrets
+        // would be unreadable after every restart.
+        if (trim((string) ($env['ENCRYPTION_KEY'] ?? '')) === '') {
+            $env['ENCRYPTION_KEY'] = bin2hex(random_bytes(32));
+        }
 
-        $env['OLLAMA_MODEL'] = $this->filledOr(
-            $env,
-            'OLLAMA_MODEL',
-            ContainerOllamaModelService::modelTag(is_string($selectedVersion) ? $selectedVersion : null)
-        );
+        $env['DB_CONNECTION'] = 'mysql';
+        $env['DB_HOST'] = $env['MYSQL_HOST_NAME'];
+        $env['DB_PORT'] = '3306';
+        $env['DB_DATABASE'] = $env['MYSQL_DB_NAME'];
+        $env['DB_USERNAME'] = $env['MYSQL_USERNAME'];
+        $env['DB_PASSWORD'] = $env['MYSQL_PASSWORD'];
+
+        $env[ContainerAllowedHostnamesSync::HOSTNAME_ENV_KEYS['ospos']] = $this->hostnames->commaList($service);
 
         return $env;
     }

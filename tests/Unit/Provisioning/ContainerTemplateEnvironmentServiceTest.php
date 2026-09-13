@@ -2,9 +2,12 @@
 
 namespace Tests\Unit\Provisioning;
 
+use App\Models\ContainerDeployment;
+use App\Models\ContainerDomain;
 use App\Models\ContainerTemplate;
 use App\Models\Service;
 use App\Models\User;
+use App\Services\Provisioning\ContainerAllowedHostnamesResolver;
 use App\Services\Provisioning\ContainerTemplateEnvironmentService;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -217,29 +220,6 @@ class ContainerTemplateEnvironmentServiceTest extends TestCase
     }
 
     #[Test]
-    public function it_maps_ollama_model_size_to_official_library_tags(): void
-    {
-        $service = new ContainerTemplateEnvironmentService;
-
-        $seven = $service->prepare(
-            (object) ['slug' => 'ollama', 'environment_variables' => []],
-            [],
-            $this->makeService(null, ['selected_version' => '7b'])
-        );
-        $this->assertSame('0.0.0.0:11434', $seven['OLLAMA_HOST']);
-        $this->assertSame('mistral:7b', $seven['OLLAMA_MODEL']);
-        $this->assertSame('65536', $seven['OLLAMA_CONTEXT_LENGTH']);
-        $this->assertSame('65536', $seven['OLLAMA_NUM_CTX']);
-
-        $eight = $service->prepare(
-            (object) ['slug' => 'ollama', 'environment_variables' => []],
-            [],
-            $this->makeService(null, ['selected_version' => '8b'])
-        );
-        $this->assertSame('ministral-3:8b', $eight['OLLAMA_MODEL']);
-    }
-
-    #[Test]
     public function it_sets_npm_cache_and_file_cache_defaults_for_laravel(): void
     {
         $service = new ContainerTemplateEnvironmentService;
@@ -254,6 +234,46 @@ class ContainerTemplateEnvironmentServiceTest extends TestCase
         $this->assertSame('/tmp/.npm', $env['NPM_CONFIG_CACHE']);
         $this->assertSame('file', $env['CACHE_STORE']);
         $this->assertSame('file', $env['CACHE_DRIVER']);
+    }
+
+    #[Test]
+    public function it_prepares_ospos_with_generated_secrets_db_mirrors_and_the_host_allow_list(): void
+    {
+        $resolver = new ContainerAllowedHostnamesResolver(fn (ContainerDeployment $d) => $d->container_name.'.apps.example.test');
+        $service = new ContainerTemplateEnvironmentService($resolver);
+        $template = (object) ['slug' => 'ospos', 'environment_variables' => []];
+
+        $deployment = new ContainerDeployment(['container_name' => 'user-1-service-30-ospos']);
+        $deployment->setRelation('domains', collect([new ContainerDomain(['domain' => 'shop.example.com'])]));
+        $subject = $this->makeService();
+        $subject->setRelation('containerDeployment', $deployment);
+
+        $env = $service->prepare($template, [], $subject);
+
+        $this->assertSame('production', $env['CI_ENVIRONMENT']);
+        $this->assertSame('true', $env['FORCE_HTTPS']);
+        $this->assertSame('db', $env['MYSQL_HOST_NAME']);
+        $this->assertSame('ospos', $env['MYSQL_DB_NAME']);
+        $this->assertSame('ospos', $env['MYSQL_USERNAME']);
+        $this->assertSame(32, strlen($env['MYSQL_PASSWORD']));
+        $this->assertSame(32, strlen($env['MYSQL_ROOT_PASSWORD']));
+        $this->assertSame(64, strlen($env['ENCRYPTION_KEY']));
+        $this->assertSame('shop.example.com,user-1-service-30-ospos.apps.example.test,localhost,127.0.0.1', $env['ALLOWED_HOSTNAMES']);
+
+        // The console's database tab and repair tools read DB_*.
+        $this->assertSame('mysql', $env['DB_CONNECTION']);
+        $this->assertSame('db', $env['DB_HOST']);
+        $this->assertSame('3306', $env['DB_PORT']);
+        $this->assertSame($env['MYSQL_DB_NAME'], $env['DB_DATABASE']);
+        $this->assertSame($env['MYSQL_USERNAME'], $env['DB_USERNAME']);
+        $this->assertSame($env['MYSQL_PASSWORD'], $env['DB_PASSWORD']);
+
+        // A redeploy keeps every secret and honours customer overrides.
+        $again = $service->prepare($template, [...$env, 'PHP_TIMEZONE' => 'Europe/Berlin'], $subject);
+        $this->assertSame($env['MYSQL_PASSWORD'], $again['MYSQL_PASSWORD']);
+        $this->assertSame($env['MYSQL_ROOT_PASSWORD'], $again['MYSQL_ROOT_PASSWORD']);
+        $this->assertSame($env['ENCRYPTION_KEY'], $again['ENCRYPTION_KEY']);
+        $this->assertSame('Europe/Berlin', $again['PHP_TIMEZONE']);
     }
 
     private function makeService(?User $user = null, array $meta = []): Service

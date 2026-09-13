@@ -212,25 +212,18 @@ class ContainerTerminalServiceTest extends TestCase
     }
 
     #[Test]
-    public function it_uses_ollama_data_root_for_docker_exec_workdir(): void
+    public function it_uses_the_template_app_root_for_docker_exec_workdir(): void
     {
         $user = User::factory()->customer()->create();
-        $template = ContainerTemplate::query()->where('slug', 'ollama')->first();
-        if ($template === null) {
-            $template = ContainerTemplate::create([
-                'name' => 'Ollama',
-                'slug' => 'ollama',
-                'docker_image' => 'ollama/ollama:latest',
-                'is_active' => true,
-                'volume_paths' => [
-                    'ollama_data' => '/root/.ollama',
-                ],
-            ]);
-        } else {
-            $template->update([
-                'volume_paths' => ['ollama_data' => '/root/.ollama'],
-            ]);
-        }
+        $template = ContainerTemplate::create([
+            'name' => 'Custom runtime',
+            'slug' => 'custom-runtime',
+            'docker_image' => 'example/runtime:latest',
+            'is_active' => true,
+            'volume_paths' => [
+                'app_data' => '/srv/custom',
+            ],
+        ]);
         $product = Product::factory()->containerHosting()->create([
             'container_template_id' => $template->id,
         ]);
@@ -241,7 +234,7 @@ class ContainerTerminalServiceTest extends TestCase
         ]);
         $deployment = ContainerDeployment::create([
             'service_id' => $service->id,
-            'container_name' => 'user-1-service-338-ollama',
+            'container_name' => 'user-1-service-338-custom',
             'status' => 'running',
         ]);
         $session = ContainerTerminalSession::create([
@@ -258,13 +251,13 @@ class ContainerTerminalServiceTest extends TestCase
         ]);
 
         $terminal = new ContainerTerminalService;
-        $this->assertSame('/root/.ollama', $terminal->resolveAppRoot($session));
+        $this->assertSame('/srv/custom', $terminal->resolveAppRoot($session));
 
         $method = new ReflectionMethod(ContainerTerminalService::class, 'buildDockerExecCommand');
         $method->setAccessible(true);
-        $cmd = $method->invoke($terminal, $session, 'ollama list');
+        $cmd = $method->invoke($terminal, $session, 'ls');
 
-        $this->assertStringContainsString("-w '/root/.ollama'", $cmd);
+        $this->assertStringContainsString("-w '/srv/custom'", $cmd);
         $this->assertStringNotContainsString('-w /app ', $cmd);
         $this->assertStringNotContainsString("cd '/app'", $cmd);
     }

@@ -399,14 +399,24 @@ return [
             ],
         ],
 
-        'erpnext' => [
-            'backend' => 'erpnext',
-            'skip_modal' => true,
+        'ospos' => [
+            'backend' => 'ospos',
+            'skip_modal' => false,
+            'version_picker' => [
+                'show' => true,
+                'required' => false,
+                'label' => 'Release',
+                'help' => 'Open Source POS release tag. The image is built on the node from that tag.',
+                'options' => [
+                    ['value' => '3.4.1', 'label' => 'OSPOS 3.4.1', 'description' => 'Current release.'],
+                    ['value' => '3.4.0', 'label' => 'OSPOS 3.4.0', 'description' => 'Previous release.'],
+                ],
+            ],
             'framework' => [
                 'required' => false,
                 'show' => false,
                 'options' => [],
-                'locked' => 'erpnext',
+                'locked' => 'ospos',
             ],
             'frontend' => [
                 'required' => false,
@@ -422,33 +432,14 @@ return [
             ],
         ],
 
-        'ollama' => [
-            'backend' => 'ollama',
-            'skip_modal' => false,
-            'version_as_image_tag' => false,
-            'version_picker' => [
-                'show' => true,
-                'required' => true,
-                'label' => 'Model size',
-                'help' => 'Mistral-family models. 7B fits 8 GB plans. 8B is stronger and needs about 16 GB RAM.',
-                'options' => [
-                    [
-                        'value' => '7b',
-                        'label' => 'Mistral 7B',
-                        'description' => 'Faster replies. Official ollama.com/library/mistral:7b.',
-                    ],
-                    [
-                        'value' => '8b',
-                        'label' => 'Ministral 8B',
-                        'description' => 'Stronger Mistral-family model. Official ollama.com/library/ministral-3:8b.',
-                    ],
-                ],
-            ],
+        'erpnext' => [
+            'backend' => 'erpnext',
+            'skip_modal' => true,
             'framework' => [
                 'required' => false,
                 'show' => false,
                 'options' => [],
-                'locked' => 'ollama',
+                'locked' => 'erpnext',
             ],
             'frontend' => [
                 'required' => false,

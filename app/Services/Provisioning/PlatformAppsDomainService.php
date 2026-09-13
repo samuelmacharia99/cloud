@@ -182,6 +182,10 @@ class PlatformAppsDomainService
                 'node_id' => $node->id,
             ]);
 
+            // Stacks that validate the Host header learn the new name. A no-op
+            // when the deploy already listed it, which is the common case.
+            app(ContainerAllowedHostnamesSync::class)->syncQuietly($service->fresh(), 'platform-hostname');
+
             return $domain->fresh();
         } catch (\Throwable $e) {
             $domain->update([

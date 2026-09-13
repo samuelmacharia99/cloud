@@ -5,8 +5,6 @@ namespace App\Http\Controllers\Customer;
 use App\Exceptions\SSH\SSHCommandException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Customer\BindContainerDomainRequest;
-use App\Http\Requests\Customer\ChatContainerOllamaRequest;
-use App\Http\Requests\Customer\ConnectHermesOllamaRequest;
 use App\Http\Requests\Customer\ImportContainerDatabaseRequest;
 use App\Http\Requests\Customer\PullContainerGitRepositoryRequest;
 use App\Http\Requests\Customer\RedeployContainerStackRequest;
@@ -28,6 +26,7 @@ use App\Models\Setting;
 use App\Services\Customer\CustomerServiceCancellationService;
 use App\Services\Customer\ProjectNodeWebSplitService;
 use App\Services\Dns\DomainCloudflareDnsService;
+use App\Services\Provisioning\ContainerAllowedHostnamesSync;
 use App\Services\Provisioning\ContainerAutoDeployService;
 use App\Services\Provisioning\ContainerBackupService;
 use App\Services\Provisioning\ContainerCommandOutputPresenter;
@@ -42,9 +41,7 @@ use App\Services\Provisioning\ContainerFileService;
 use App\Services\Provisioning\ContainerGitCredentialsService;
 use App\Services\Provisioning\ContainerGitPullErrorPresenter;
 use App\Services\Provisioning\ContainerGitRepositoryService;
-use App\Services\Provisioning\ContainerHermesOllamaLinkService;
 use App\Services\Provisioning\ContainerNodeWorkloadTopologyService;
-use App\Services\Provisioning\ContainerOllamaModelService;
 use App\Services\Provisioning\ContainerPhpExtensionsService;
 use App\Services\Provisioning\ContainerPostgresExtensionService;
 use App\Services\Provisioning\ContainerSqlDumpImportService;
@@ -130,21 +127,8 @@ class ContainerController extends Controller
         $phpExtensionsPanel = $supportsPhpExtensions
             ? app(ContainerPhpExtensionsService::class)->buildPanelState($service, $deployment)
             : null;
-        $ollamaModels = app(ContainerOllamaModelService::class);
-        $supportsOllamaChat = $ollamaModels->supportsTemplate($templateSlug);
-        $ollamaChatPanel = $supportsOllamaChat
-            ? [
-                'container_running' => (bool) $deployment?->isRunning(),
-                'default_model' => $deployment
-                    ? $ollamaModels->defaultModelName($service, $deployment)
-                    : ContainerOllamaModelService::modelTag(null),
-            ]
-            : null;
         $hermesDashboardPanel = app(ContainerTemplateEnvironmentService::class)
             ->hermesDashboardPanel($service, $deployment);
-        $hermesOllamaLinkPanel = $hermesDashboardPanel
-            ? app(ContainerHermesOllamaLinkService::class)->panelState($service, $deployment)
-            : null;
         $gitRepositoryService = app(ContainerGitRepositoryService::class);
         $gitCredentialsService = app(ContainerGitCredentialsService::class);
         $supportsGitRepository = $gitRepositoryService->supportsService($service);
@@ -211,7 +195,7 @@ class ContainerController extends Controller
             'service' => $service,
             'deployment' => $deployment,
             'containerTabs' => $deployment
-                ? ContainerConsoleTabs::resolve($supportsOllamaChat, $supportsGitRepository, $supportsPhpExtensions)
+                ? ContainerConsoleTabs::resolve($supportsGitRepository, $supportsPhpExtensions)
                 : ContainerConsoleTabs::NOT_DEPLOYED,
             'status' => $status,
             'databaseContext' => $databaseContext,
@@ -220,10 +204,7 @@ class ContainerController extends Controller
             'templateSlug' => $templateSlug,
             'supportsPhpExtensions' => $supportsPhpExtensions,
             'phpExtensionsPanel' => $phpExtensionsPanel,
-            'supportsOllamaChat' => $supportsOllamaChat,
-            'ollamaChatPanel' => $ollamaChatPanel,
             'hermesDashboardPanel' => $hermesDashboardPanel,
-            'hermesOllamaLinkPanel' => $hermesOllamaLinkPanel,
             'supportsGitRepository' => $supportsGitRepository,
             'gitRepository' => $gitRepository,
             'containerLimits' => $containerLimits,
@@ -672,165 +653,6 @@ class ContainerController extends Controller
             return $wantsJson
                 ? response()->json(['error' => $message], 500)
                 : back()->withErrors(['error' => $message]);
-        }
-    }
-
-    public function ollamaModels(
-        Service $service,
-        ContainerOllamaModelService $ollamaModels,
-    ): JsonResponse {
-        $this->authorize('manageContainer', $service);
-
-        if (! $ollamaModels->supportsService($service)) {
-            return response()->json(['error' => 'Chat is only available on Ollama services.'], 400);
-        }
-
-        $deployment = $service->containerDeployment;
-        if (! $deployment || ! $deployment->isRunning() || ! $deployment->node) {
-            return response()->json(['error' => 'Start the app before chatting with the model.'], 400);
-        }
-
-        try {
-            $ssh = SSHService::forNode($deployment->node);
-            $models = $ollamaModels->listModels($ssh, $deployment);
-            $default = $ollamaModels->defaultModelName($service, $deployment, $models);
-
-            return response()->json([
-                'models' => $models,
-                'default_model' => $default,
-            ]);
-        } catch (\Throwable $e) {
-            \Log::warning('Failed to list Ollama models', [
-                'service_id' => $service->id,
-                'error' => $e->getMessage(),
-            ]);
-
-            return response()->json([
-                'models' => [],
-                'default_model' => $ollamaModels->defaultModelName($service, $deployment),
-                'warning' => 'Could not list installed models. You can still send a message using the planned model.',
-            ]);
-        }
-    }
-
-    public function ollamaChat(
-        ChatContainerOllamaRequest $request,
-        Service $service,
-        ContainerOllamaModelService $ollamaModels,
-    ): JsonResponse {
-        $this->authorize('manageContainer', $service);
-
-        if (! $ollamaModels->supportsService($service)) {
-            return response()->json(['error' => 'Chat is only available on Ollama services.'], 400);
-        }
-
-        $deployment = $service->containerDeployment;
-        if (! $deployment || ! $deployment->isRunning() || ! $deployment->node) {
-            return response()->json(['error' => 'Start the app before chatting with the model.'], 400);
-        }
-
-        if (! $deployment->node->ssh_username || (! $deployment->node->ssh_password && ! $deployment->node->da_login_key)) {
-            return response()->json(['error' => 'The container host is not properly configured.'], 400);
-        }
-
-        $history = $request->input('history', []);
-        $messages = is_array($history) ? $history : [];
-        $messages[] = [
-            'role' => 'user',
-            'content' => trim((string) $request->input('message')),
-        ];
-
-        $model = trim((string) $request->input('model', ''));
-        if ($model === '') {
-            $model = $ollamaModels->defaultModelName($service, $deployment);
-        }
-
-        set_time_limit(ContainerOllamaModelService::CHAT_TIMEOUT_SECONDS + 30);
-
-        try {
-            $ssh = SSHService::forNode($deployment->node);
-            try {
-                $available = $ollamaModels->listModels($ssh, $deployment);
-                if ($available !== [] && ! in_array($model, $available, true)) {
-                    $model = $ollamaModels->defaultModelName($service, $deployment, $available);
-                }
-            } catch (\Throwable) {
-                // Keep the requested model if listing fails.
-            }
-
-            $reply = $ollamaModels->chat($ssh, $deployment, $model, $messages);
-
-            \Log::info('Ollama chat completed', [
-                'service_id' => $service->id,
-                'model' => $reply['model'],
-            ]);
-
-            return response()->json([
-                'model' => $reply['model'],
-                'message' => [
-                    'role' => 'assistant',
-                    'content' => $reply['content'],
-                ],
-            ]);
-        } catch (\InvalidArgumentException $e) {
-            return response()->json(['error' => $e->getMessage()], 422);
-        } catch (\RuntimeException $e) {
-            \Log::warning('Ollama chat failed', [
-                'service_id' => $service->id,
-                'error' => $e->getMessage(),
-            ]);
-
-            return response()->json(['error' => 'Ollama chat failed. Please try again or contact support.'], 502);
-        } catch (\Throwable $e) {
-            \Log::error("Ollama chat failed for service {$service->id}: ".$e->getMessage());
-
-            return response()->json(['error' => 'Could not reach Ollama. Confirm the app is running and try again.'], 500);
-        }
-    }
-
-    public function connectHermesOllama(
-        ConnectHermesOllamaRequest $request,
-        Service $service,
-        ContainerHermesOllamaLinkService $link,
-    ): RedirectResponse {
-        $this->authorize('manageContainer', $service);
-
-        if (! $link->supportsHermes($service)) {
-            return $this->redirectToContainerTab($service, 'overview')
-                ->withErrors(['error' => 'Connect Ollama from a Hermes Agent service.']);
-        }
-
-        $ollama = Service::query()
-            ->with(['product.containerTemplate', 'containerDeployment.node'])
-            ->findOrFail((int) $request->validated('ollama_service_id'));
-
-        abort_if((int) $ollama->user_id !== (int) $service->user_id, 403);
-
-        $model = trim((string) $request->validated('model', ''));
-
-        try {
-            $result = $link->connect($service, $ollama, $model !== '' ? $model : null);
-
-            $redirect = $this->redirectToContainerTab($service, 'overview')
-                ->with('success', $result['message']);
-
-            if (! empty($result['warning'])) {
-                $redirect->withErrors(['error' => $result['warning']]);
-            }
-
-            return $redirect;
-        } catch (\DomainException|\InvalidArgumentException $e) {
-            return $this->redirectToContainerTab($service, 'overview')
-                ->withErrors(['error' => $e->getMessage()]);
-        } catch (\Throwable $e) {
-            \Log::error('Failed to connect Hermes to Ollama', [
-                'service_id' => $service->id,
-                'ollama_service_id' => $ollama->id,
-                'error' => $e->getMessage(),
-            ]);
-
-            return $this->redirectToContainerTab($service, 'overview')
-                ->withErrors(['error' => 'Could not connect Ollama. Please try again or contact support.']);
         }
     }
 
@@ -2595,6 +2417,7 @@ class ContainerController extends Controller
                 $dnsWarning = app(ContainerDomainBindingService::class)
                     ->clearApiHostnameMetadata($service, $domainName);
             }
+            app(ContainerAllowedHostnamesSync::class)->syncQuietly($service->fresh(), 'unbind:'.$domainName);
 
             $response = $this->domainsTabRedirect($service)
                 ->with('success', "Domain {$domainName} removed successfully");

@@ -283,7 +283,6 @@ function containerTabs(initialTab) {
     const allowedTabs = @js($containerTabs ?? (empty($deployment)
         ? \App\Support\ContainerConsoleTabs::NOT_DEPLOYED
         : \App\Support\ContainerConsoleTabs::resolve(
-            ! empty($supportsOllamaChat),
             ! empty($supportsGitRepository),
             ! empty($supportsPhpExtensions),
         )));

@@ -452,8 +452,8 @@ DNSSEC=no
 
 Every stack runs on its own bridge network (`{container}-net`, subnet allocated by the
 platform from `containers.isolation.stack_subnet_base`) with its ports published on
-`127.0.0.1` only. `talksasa-net` is the shared bridge that templates opting in (Ollama,
-Hermes) attach their app container to so same-node links resolve by container name; it is
+`127.0.0.1` only. `talksasa-net` is the shared bridge that templates opting in (Hermes)
+attach their app container to so same-node links resolve by container name; it is
 still created on every host.
 
 ```bash

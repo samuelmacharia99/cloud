@@ -325,11 +325,16 @@ class TechStackRoutingService
     }
 
     /**
-     * Whether selected_version is appended as the Docker image tag (php:8.3, not ollama/ollama:7b).
+     * Whether selected_version is appended as the Docker image tag (php:8.3) or is a
+     * stack-specific option that leaves the image untouched.
      */
     public static function usesSelectedVersionAsImageTag(?string $slug): bool
     {
-        $definition = config('stack_builder.stacks.'.strtolower((string) $slug), []);
+        // Compose rendering also runs under a bare container in unit tests,
+        // where no config repository is bound; the default there is "tag".
+        $definition = app()->bound('config')
+            ? config('stack_builder.stacks.'.strtolower((string) $slug), [])
+            : [];
 
         return (bool) ($definition['version_as_image_tag'] ?? true);
     }

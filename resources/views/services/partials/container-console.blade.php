@@ -2,7 +2,6 @@
             @php
                 // Shared with the Alpine allow-list in container-console-scripts.
                 $containerTabs = $containerTabs ?? \App\Support\ContainerConsoleTabs::resolve(
-                    ! empty($supportsOllamaChat),
                     ! empty($supportsGitRepository),
                     ! empty($supportsPhpExtensions),
                 );
@@ -17,9 +16,6 @@
                             <option value="overview">Overview</option>
                             <option value="environment">Environment</option>
                             <option value="files">Files</option>
-                            @if (!empty($supportsOllamaChat))
-                                <option value="chat">Chat</option>
-                            @endif
                             <option value="terminal">Terminal</option>
                             @if (!empty($supportsGitRepository))
                                 <option value="github">Git</option>
@@ -54,9 +50,6 @@
                             ] as [$tabKey, $tabLabel])
                                 <button type="button" @click="setTab('{{ $tabKey }}')" :class="activeTab === '{{ $tabKey }}' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'border-b-2 border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-3 py-2.5 font-medium transition text-sm whitespace-nowrap" role="tab" :aria-selected="activeTab === '{{ $tabKey }}'">{{ $tabLabel }}</button>
                             @endforeach
-                            @if (!empty($supportsOllamaChat))
-                                <button type="button" @click="setTab('chat')" :class="activeTab === 'chat' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'border-b-2 border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-3 py-2.5 font-medium transition text-sm whitespace-nowrap" role="tab" :aria-selected="activeTab === 'chat'">Chat</button>
-                            @endif
                             <button type="button" @click="setTab('terminal')" :class="activeTab === 'terminal' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'border-b-2 border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-3 py-2.5 font-medium transition text-sm whitespace-nowrap" role="tab" :aria-selected="activeTab === 'terminal'">Terminal</button>
                             @if (!empty($supportsGitRepository))
                                 <button type="button" @click="setTab('github')" :class="activeTab === 'github' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'border-b-2 border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-3 py-2.5 font-medium transition text-sm whitespace-nowrap" role="tab" :aria-selected="activeTab === 'github'">Git</button>
@@ -212,14 +205,6 @@
                         </div>
                     </template>
 
-                    <!-- Chat Tab -->
-                    @if (!empty($supportsOllamaChat))
-                        <template x-if="hasVisited('chat')">
-                            <div x-show="activeTab === 'chat'">
-                                @include('customer.services.partials.ollama-chat')
-                            </div>
-                        </template>
-                    @endif
 
                     <!-- Terminal Tab -->
                     <template x-if="hasVisited('terminal')">

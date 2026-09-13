@@ -32,7 +32,7 @@ final class ContainerIsolationOptions
         public readonly bool $noNewPrivileges = true,
         public readonly int $pidsLimit = 1024,
         public readonly array $capDrop = self::DEFAULT_CAP_DROP,
-        public readonly array $sharedNetworkSlugs = ['ollama', 'hermes'],
+        public readonly array $sharedNetworkSlugs = ['hermes'],
         public readonly array $capOverrides = [],
     ) {
         if (filter_var($this->publishBindAddress, FILTER_VALIDATE_IP) === false) {
@@ -78,7 +78,7 @@ final class ContainerIsolationOptions
             capDrop: array_key_exists('cap_drop', $config) ? $strings($config['cap_drop']) : self::DEFAULT_CAP_DROP,
             sharedNetworkSlugs: array_values(array_map(
                 static fn (mixed $slug): string => strtolower(trim((string) $slug)),
-                is_array($config['shared_network_slugs'] ?? null) ? $config['shared_network_slugs'] : ['ollama', 'hermes'],
+                is_array($config['shared_network_slugs'] ?? null) ? $config['shared_network_slugs'] : ['hermes'],
             )),
             capOverrides: $overrides,
         );

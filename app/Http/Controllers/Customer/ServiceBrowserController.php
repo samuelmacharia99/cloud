@@ -38,7 +38,6 @@ class ServiceBrowserController extends Controller
                 WHEN 'static-site' THEN 4
                 WHEN 'hermes' THEN 5
                 WHEN 'openclaw' THEN 6
-                WHEN 'ollama' THEN 7
                 WHEN 'n8n' THEN 8
                 WHEN 'go' THEN 9
                 WHEN 'directus' THEN 10

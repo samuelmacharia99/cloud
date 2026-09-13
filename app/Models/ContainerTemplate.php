@@ -82,16 +82,18 @@ class ContainerTemplate extends Model
     }
 
     /**
-     * Customer deploy / tech-stack picker. Existing Ollama services keep running.
+     * Stacks the customer deploy / tech-stack picker offers. Kept as its own
+     * scope so a template can be retired from new deploys without being
+     * deactivated for the services already running on it.
      */
     public function scopeOfferedForNewDeploy($query)
     {
-        return $query->active()->where('slug', '!=', 'ollama');
+        return $query->active();
     }
 
     public function isOfferedForNewDeploy(): bool
     {
-        return $this->is_active && $this->slug !== 'ollama';
+        return (bool) $this->is_active;
     }
 
     /**

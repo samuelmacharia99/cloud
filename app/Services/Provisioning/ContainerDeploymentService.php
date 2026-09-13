@@ -13,6 +13,7 @@ use App\Models\Node;
 use App\Models\Service;
 use App\Services\NotificationService;
 use App\Services\SSH\SSHService;
+use App\Services\TechStackRoutingService;
 use App\Services\Terminal\ContainerDockerExecUserResolver;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Cache;
@@ -50,6 +51,8 @@ class ContainerDeploymentService
     public const VITE_ALLOWED_HOSTS_ENV = '__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS';
 
     private RuntimeImageProvisioner $runtimeImages;
+
+    private ApplicationImageBuilder $appImages;
 
     private ContainerAppDirectoryService $appDirectory;
 
@@ -93,8 +96,10 @@ class ContainerDeploymentService
         ?ContainerIsolationPolicy $isolation = null,
         ?ContainerStackNetworkAllocator $stackNetworks = null,
         ?ContainerStackNetworkLocator $networkLocator = null,
+        ?ApplicationImageBuilder $appImages = null,
     ) {
         $this->runtimeImages = $runtimeImages ?? new RuntimeImageProvisioner;
+        $this->appImages = $appImages ?? new ApplicationImageBuilder;
         $this->appDirectory = $appDirectory ?? new ContainerAppDirectoryService;
         $this->templateEnvironment = $templateEnvironment ?? new ContainerTemplateEnvironmentService;
         $this->stackCommands = $stackCommands ?? new ContainerStackCommandService;
@@ -523,6 +528,7 @@ class ContainerDeploymentService
                 if ($this->runtimeImages->usesRuntimeImage($template)) {
                     $this->runtimeImages->ensureImage($ssh, $template, $selectedVersion, $service, $deployment);
                 }
+                $this->appImages->ensureImage($ssh, $template, $selectedVersion, $service, $deployment);
                 if (($nodeTopology['topology'] ?? null) === 'split_web_api') {
                     $this->ensureNodeWebSidecarImages($ssh, (string) ($nodeTopology['frontend_type'] ?? 'nextjs'));
                 }
@@ -765,31 +771,6 @@ class ContainerDeploymentService
                         $containerName,
                         $containerPath
                     );
-                } elseif (($template->slug ?? '') === 'ollama') {
-                    $this->reattachAndBindPrimaryDomains($service, $deployment);
-
-                    try {
-                        $pullResult = app(ContainerOllamaModelService::class)->pullIfNeeded(
-                            $service->fresh(['product.containerTemplate', 'containerDeployment']),
-                            $deployment->fresh(),
-                            $ssh,
-                            $containerPath,
-                            $containerName,
-                        );
-                        $this->recordDeploymentEvent($service, $deployment, 'ollama_model_pulled', [
-                            'skipped' => $pullResult['skipped'],
-                            'model' => $pullResult['model'],
-                            'message' => $pullResult['message'],
-                        ]);
-                    } catch (\Throwable $pullError) {
-                        \Log::warning('Ollama model pull failed', [
-                            'service_id' => $service->id,
-                            'error' => $pullError->getMessage(),
-                        ]);
-                        $this->recordDeploymentEvent($service, $deployment, 'ollama_model_pull_failed', [
-                            'error' => $pullError->getMessage(),
-                        ]);
-                    }
                 } else {
                     // Ensure existing bound domains always follow the latest deployment
                     // row/port after redeploys, otherwise nginx may point to stale ports.
@@ -2513,6 +2494,11 @@ class ContainerDeploymentService
         $imageGatewayCommand = self::imageGatewayCommand($template->slug ?? null);
         if ($imageGatewayCommand !== null) {
             $compose['services'][$containerName]['command'] = $imageGatewayCommand;
+        }
+
+        if ($this->appImages->usesApplicationImage($template)) {
+            // Built on the node from a release tag; there is nothing to pull.
+            $compose['services'][$containerName]['pull_policy'] = 'never';
         }
 
         if ($this->applicationRuntime->supportsTemplate($template->slug ?? null)) {
@@ -6693,7 +6679,6 @@ class ContainerDeploymentService
     private function composeUpTimeoutSeconds($template): int
     {
         return match (strtolower((string) ($template->slug ?? ''))) {
-            'ollama' => 1200,
             'erpnext', 'chatwoot', 'odoo' => 600,
             default => 180,
         };
@@ -6708,6 +6693,10 @@ class ContainerDeploymentService
     {
         if ($this->runtimeImages->usesRuntimeImage($template)) {
             return $this->runtimeImages->resolveImageReference($template, $selectedVersion)['image'];
+        }
+
+        if ($this->appImages->usesApplicationImage($template)) {
+            return $this->appImages->resolveImageReference($template, $selectedVersion)['image'];
         }
 
         $dockerImage = (string) ($template->docker_image ?? '');
@@ -6728,7 +6717,7 @@ class ContainerDeploymentService
 
             if (
                 in_array($selectedVersion, $versions, true)
-                && strtolower((string) ($template->slug ?? '')) !== 'ollama'
+                && TechStackRoutingService::usesSelectedVersionAsImageTag($template->slug ?? null)
             ) {
                 $imageName = explode(':', $dockerImage)[0];
 
@@ -7182,6 +7171,9 @@ class ContainerDeploymentService
 
         if ($usesRuntimeImage) {
             $this->runtimeImages->ensureImage($ssh, $template, $deployment->selected_version, $service, $deployment);
+        }
+        if ($template) {
+            $this->appImages->ensureImage($ssh, $template, $deployment->selected_version, $service, $deployment);
         }
 
         $hasNextSidecars = $this->usesLaravelNextSidecarStack($deployment)
@@ -8023,6 +8015,7 @@ class ContainerDeploymentService
         if ($this->runtimeImages->usesRuntimeImage($template)) {
             $this->runtimeImages->ensureImage($ssh, $template, $deployment->selected_version, $service, $deployment);
         }
+        $this->appImages->ensureImage($ssh, $template, $deployment->selected_version, $service, $deployment);
 
         if (($nodeTopology['topology'] ?? null) === 'split_web_api') {
             $this->composeUp(
@@ -8208,6 +8201,7 @@ class ContainerDeploymentService
             if ($this->runtimeImages->usesRuntimeImage($template)) {
                 $this->runtimeImages->ensureImage($ssh, $template, $deployment->selected_version, $service, $deployment);
             }
+            $this->appImages->ensureImage($ssh, $template, $deployment->selected_version, $service, $deployment);
 
             if ($serveNextFrontend) {
                 $this->ensureNextSidecarImages($ssh);
@@ -8516,6 +8510,7 @@ class ContainerDeploymentService
         if ($this->runtimeImages->usesRuntimeImage($template)) {
             $this->runtimeImages->ensureImage($ssh, $template, $deployment->selected_version, $service, $deployment);
         }
+        $this->appImages->ensureImage($ssh, $template, $deployment->selected_version, $service, $deployment);
 
         $this->composeUp($ssh, $containerPath, $this->runtimeImages->usesRuntimeImage($template));
         $this->waitForContainerRunning($ssh, $deployment->container_name);

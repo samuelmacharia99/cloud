@@ -211,15 +211,15 @@ class ContainerIsolationPolicyTest extends TestCase
             'publish_bind_address' => ' 127.0.0.1 ',
             'pids_limit' => '512',
             'cap_drop' => ['net_raw', '', ' mknod '],
-            'shared_network_slugs' => ['Ollama'],
+            'shared_network_slugs' => ['Hermes'],
             'cap_overrides' => ['Hermes' => ['cap_add' => ['net_admin']], 7 => ['ignored'], 'php' => 'not-an-array'],
         ]);
 
         $this->assertSame('127.0.0.1', $options->publishBindAddress);
         $this->assertSame(512, $options->pidsLimit);
         $this->assertSame(['NET_RAW', 'MKNOD'], $options->capDrop);
-        $this->assertTrue($options->joinsSharedNetwork('ollama'));
-        $this->assertFalse($options->joinsSharedNetwork('hermes'));
+        $this->assertTrue($options->joinsSharedNetwork('hermes'));
+        $this->assertFalse($options->joinsSharedNetwork('openclaw'));
         $this->assertSame(['NET_ADMIN'], $options->forSlug('hermes')['cap_add']);
         $this->assertSame(['cap_add' => [], 'cap_drop' => ['NET_RAW', 'MKNOD'], 'pids_limit' => 512], $options->forSlug(null));
 

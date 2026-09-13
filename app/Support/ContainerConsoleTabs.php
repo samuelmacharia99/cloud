@@ -33,15 +33,10 @@ class ContainerConsoleTabs
      * @return list<string>
      */
     public static function resolve(
-        bool $supportsOllamaChat = false,
         bool $supportsGitRepository = false,
         bool $supportsPhpExtensions = false
     ): array {
         $tabs = self::BASE;
-
-        if ($supportsOllamaChat) {
-            self::insertAt($tabs, 'chat', self::indexOf($tabs, 'terminal'));
-        }
 
         if ($supportsGitRepository) {
             self::insertAt($tabs, 'github', self::indexOf($tabs, 'terminal') + 1);

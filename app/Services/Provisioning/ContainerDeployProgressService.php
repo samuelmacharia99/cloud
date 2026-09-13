@@ -83,13 +83,17 @@ class ContainerDeployProgressService
         $definitions = [
             ['key' => 'deploy_started', 'label' => 'Prepare the application'],
             ['key' => 'node_selected', 'label' => 'Place it on a host'],
-            ['key' => 'compose_up_started', 'label' => 'Pull the image and start the runtime'],
-            ['key' => 'health_check_started', 'label' => 'Wait until the process is healthy'],
         ];
 
-        if ($slug === 'ollama') {
-            $definitions[] = ['key' => 'ollama_model_pulled', 'label' => 'Download the selected model'];
+        // Catalog stacks built on the node (see containers.app_images) get a
+        // build step. When the image already exists no build event is recorded,
+        // so the step also counts as done once compose has started.
+        if (array_key_exists($slug, config('containers.app_images', []))) {
+            $definitions[] = ['key' => ApplicationImageBuilder::EVENT_SUCCEEDED, 'label' => 'Build the application image from its release'];
         }
+
+        $definitions[] = ['key' => 'compose_up_started', 'label' => 'Pull the image and start the runtime'];
+        $definitions[] = ['key' => 'health_check_started', 'label' => 'Wait until the process is healthy'];
 
         $definitions[] = ['key' => 'deploy_succeeded', 'label' => 'Finish and go live'];
 
@@ -97,6 +101,7 @@ class ContainerDeployProgressService
         $out = [];
         foreach ($definitions as $index => $definition) {
             $done = in_array($definition['key'], $seen, true)
+                || ($definition['key'] === ApplicationImageBuilder::EVENT_SUCCEEDED && in_array('compose_up_started', $seen, true))
                 || ($definition['key'] === 'compose_up_started' && in_array('health_check_started', $seen, true))
                 || ($definition['key'] === 'health_check_started' && in_array('health_check_passed', $seen, true))
                 || ($definition['key'] === 'health_check_started' && in_array('deploy_succeeded', $seen, true));
@@ -144,10 +149,10 @@ class ContainerDeployProgressService
                 .(isset($payload['timeout_seconds']) ? ' (up to '.$payload['timeout_seconds'].'s)' : ''),
             'health_check_passed' => 'Runtime is healthy',
             'health_check_timed_out_relaxed' => 'Health check timed out; continuing in relaxed mode',
-            'ollama_model_pulled' => ($payload['skipped'] ?? false)
-                ? (string) ($payload['message'] ?? 'Model pull skipped')
-                : 'Pulled model '.($payload['model'] ?? ''),
-            'ollama_model_pull_failed' => 'Model pull failed: '.($payload['error'] ?? 'unknown error'),
+            ApplicationImageBuilder::EVENT_STARTED => 'Building the application image from release '
+                .(string) ($payload['ref'] ?? '').'. This takes several minutes the first time on a host.',
+            ApplicationImageBuilder::EVENT_SUCCEEDED => 'Application image ready: '.(string) ($payload['image'] ?? ''),
+            ApplicationImageBuilder::EVENT_FAILED => 'Application image build failed: '.($payload['error'] ?? 'unknown error'),
             'deploy_succeeded' => 'Deploy finished',
             'deploy_failed' => 'Deploy failed: '.($payload['error'] ?? $payload['message'] ?? 'unknown error'),
             // Cased rather than left to the default arm below, which would show
@@ -187,17 +192,16 @@ class ContainerDeployProgressService
             return $error ? 'Deploy failed: '.$error : 'Deploy failed. You can retry from this page.';
         }
 
-        $slug = strtolower((string) ($service->effectiveContainerTemplate()?->slug ?? ''));
-        if ($latest?->event === 'compose_up_started' && $slug === 'ollama') {
-            return 'Pulling the Ollama image. This often takes several minutes the first time.';
-        }
-
         if ($latest?->event === 'health_check_started') {
             return 'Waiting for the runtime to come up. This page will not time out.';
         }
 
-        if ($latest?->event === 'ollama_model_pulled' || $latest?->event === 'health_check_passed') {
-            return 'Downloading the selected model. You can leave this page open.';
+        if ($latest?->event === ApplicationImageBuilder::EVENT_STARTED) {
+            return 'Building the application image on the host. This only happens the first time a release is deployed there.';
+        }
+
+        if ($latest?->event === 'health_check_passed') {
+            return 'Runtime is healthy. Binding domains and finishing up.';
         }
 
         return 'Deploy is running. Keep this page open — first-time image pulls are slow.';

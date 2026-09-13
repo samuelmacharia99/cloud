@@ -574,7 +574,7 @@ class ContainerTemplateSeeder extends Seeder
     }
 
     /**
-     * Ready-made and runtime stacks from the public catalog (n8n, Go, Directus, Chatwoot, Odoo, ERPNext, Ollama).
+     * Ready-made and runtime stacks from the public catalog (n8n, Go, Directus, Chatwoot, Odoo, ERPNext, Open Source POS).
      *
      * @return array<string, array<string, mixed>>
      */
@@ -798,28 +798,43 @@ class ContainerTemplateSeeder extends Seeder
                 'is_active' => true,
                 'order' => 17,
             ],
-            'ollama' => [
-                'name' => 'Ollama',
-                'description' => 'Local Ollama runtime (existing services only). Not offered for new deploys — CPU 8B models are too slow for Hermes. Use an LLM API key on Hermes instead.',
+            'ospos' => [
+                'name' => 'Open Source POS',
+                'description' => 'Open Source Point of Sale for retail: inventory, sales, receipts and reports. Ships its own MariaDB. The image is built on the node from the selected release. First login is admin / pointofsale; change it immediately.',
                 'category' => 'web',
-                'docker_image' => 'ollama/ollama:latest',
-                'default_port' => 11434,
-                'required_ram_mb' => 8192,
-                'required_cpu_cores' => 2.0,
-                'required_storage_gb' => 20,
-                'versions' => [
-                    '7b',
-                    '8b',
+                'docker_image' => 'talksasa/ospos:3.4.1',
+                'default_port' => 80,
+                'required_ram_mb' => 1024,
+                'required_cpu_cores' => 1.0,
+                'required_storage_gb' => 5,
+                'versions' => ['3.4.1', '3.4.0'],
+                'environment_variables' => [
+                    self::envVar('PHP_TIMEZONE', 'Timezone', 'Africa/Nairobi'),
+                    self::envVar('FORCE_HTTPS', 'Force HTTPS behind the proxy', 'true'),
+                    self::envVar('ENCRYPTION_KEY', 'Encryption key', '', true, true),
                 ],
-                'environment_variables' => [],
                 'volume_paths' => [
-                    'ollama_data' => '/root/.ollama',
+                    'ospos_uploads' => '/app/public/uploads',
+                    'ospos_logs' => '/app/writable/logs',
+                    'ospos_cache' => '/app/writable/cache',
                 ],
-                'compose_services' => [],
+                'compose_services' => [
+                    'db' => [
+                        'image' => 'mariadb:10.11',
+                        'restart' => 'always',
+                        'environment' => [
+                            'MYSQL_DATABASE' => 'ospos',
+                            'MYSQL_USER' => 'ospos',
+                            'MYSQL_PASSWORD' => 'changeme',
+                            'MYSQL_ROOT_PASSWORD' => 'changeme',
+                        ],
+                        'volumes' => ['ospos_db:/var/lib/mysql'],
+                    ],
+                ],
                 'setup_commands' => [],
-                'strict_health_check' => true,
-                'health_check_timeout_seconds' => 900,
-                'is_active' => false,
+                'strict_health_check' => false,
+                'health_check_timeout_seconds' => 300,
+                'is_active' => true,
                 'order' => 18,
             ],
         ];

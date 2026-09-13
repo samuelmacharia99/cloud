@@ -12,7 +12,7 @@
         <h4 class="text-lg font-semibold text-slate-900 dark:text-white">Connect a language model</h4>
         <ol class="mt-4 space-y-3 text-sm text-slate-700 dark:text-slate-300 list-decimal list-inside">
             <li>Add <code class="font-mono text-xs">OPENAI_API_KEY</code>, <code class="font-mono text-xs">ANTHROPIC_API_KEY</code>, or an OpenRouter key under Environment, then apply. That is the supported way to run Hermes as an agent.</li>
-            <li>Ollama is not offered as a new stack. CPU local models are too slow for Hermes tool use. If this project already has Ollama, you can still connect it from Overview.</li>
+            <li>Hermes runs on a hosted model through that key. Local CPU models are not offered: they are too slow for Hermes tool use.</li>
             <li>If Chat shows <strong>connection interrupted (code 1006)</strong>, restart Hermes so the domain proxy can upgrade WebSockets.</li>
         </ol>
     </div>
@@ -22,7 +22,7 @@
             <h4 class="font-semibold text-slate-900 dark:text-white">LLM keys</h4>
             <ul class="text-sm text-slate-600 dark:text-slate-300 space-y-2">
                 <li>Add <code class="font-mono text-xs">OPENAI_API_KEY</code> / <code class="font-mono text-xs">ANTHROPIC_API_KEY</code> under Environment, then apply.</li>
-                <li>Existing project Ollama can still be connected from Overview (custom endpoint <code class="font-mono text-xs">http://&lt;ollama-container&gt;:11434/v1</code>).</li>
+                <li>Any OpenAI-compatible endpoint works too: set <code class="font-mono text-xs">OPENAI_BASE_URL</code> alongside the key.</li>
             </ul>
         </div>
 

@@ -246,7 +246,7 @@ log_success "System limits and kernel parameters optimized"
 log_info "=== SECTION 6: Networking ==="
 
 # The shared bridge. Stacks run on their own networks; only templates that
-# opt in (Ollama, Hermes) attach their app container here as well.
+# opt in (Hermes) attach their app container here as well.
 docker network create talksasa-net 2>/dev/null || log_warn "Network may already exist"
 
 log_success "Docker network configured"

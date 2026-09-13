@@ -16,7 +16,7 @@ class ProvisionContainerServiceJob implements ShouldQueue
     use InteractsWithQueue, Queueable, SerializesModels;
 
     /**
-     * Image pull + health + Ollama model download can exceed 30 minutes.
+     * Image pull + health for heavy catalog stacks (ERPNext, Chatwoot) can exceed 30 minutes.
      */
     public int $timeout = 3600;
 
