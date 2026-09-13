@@ -284,7 +284,16 @@ class TechStackRoutingService
         $picker = $definition['version_picker'] ?? [];
         $options = [];
 
-        foreach ($picker['options'] ?? [] as $option) {
+        // Stacks whose versions are the template's image tags (WordPress)
+        // list those tags, labelled for humans, instead of a config list.
+        $rawOptions = ($picker['source'] ?? null) === 'template_versions'
+            ? array_map(fn (string $version) => [
+                'value' => $version,
+                'label' => self::describeTemplateVersion((string) $language->slug, $version),
+            ], self::templateVersions($language))
+            : ($picker['options'] ?? []);
+
+        foreach ($rawOptions as $option) {
             if (! is_array($option)) {
                 continue;
             }
@@ -302,6 +311,10 @@ class TechStackRoutingService
         }
 
         $show = (bool) ($picker['show'] ?? false) && $options !== [];
+        $values = array_column($options, 'value');
+        $default = isset($picker['default']) && in_array((string) $picker['default'], $values, true)
+            ? (string) $picker['default']
+            : ($options[0]['value'] ?? null);
 
         return [
             'show' => $show,
@@ -309,8 +322,45 @@ class TechStackRoutingService
             'label' => (string) ($picker['label'] ?? 'Version'),
             'help' => isset($picker['help']) ? (string) $picker['help'] : null,
             'options' => $options,
-            'value' => $options[0]['value'] ?? null,
+            'value' => $default,
         ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function templateVersions(ContainerTemplate $language): array
+    {
+        $versions = is_array($language->versions)
+            ? $language->versions
+            : (json_decode((string) $language->versions, true) ?: []);
+
+        return array_values(array_filter(array_map('strval', $versions), fn (string $v) => trim($v) !== ''));
+    }
+
+    /**
+     * "6.6-php8.3-apache" reads as "WordPress 6.6 · PHP 8.3"; "latest" says what it tracks.
+     */
+    public static function describeTemplateVersion(string $slug, string $version): string
+    {
+        $slug = strtolower($slug);
+        if ($version === 'latest') {
+            return $slug === 'wordpress' ? 'Latest WordPress (current PHP)' : 'Latest';
+        }
+
+        if (preg_match('/^(\d+(?:\.\d+)*)-php(\d+\.\d+)/', $version, $m) === 1) {
+            return ($slug === 'wordpress' ? 'WordPress ' : 'v').$m[1].' · PHP '.$m[2];
+        }
+
+        return $version;
+    }
+
+    /**
+     * Slugs whose version picker selects a PHP runtime, for the console tab.
+     */
+    public static function hasVersionPicker(ContainerTemplate $language): bool
+    {
+        return self::versionPickerPayload($language)['show'];
     }
 
     public static function versionLabel(ContainerTemplate $language, string $version): string
@@ -695,6 +745,17 @@ class TechStackRoutingService
                 $serviceMeta['selected_version'] = $selectedVersion;
                 $serviceMeta['node_version_source'] = 'manual';
                 unset($serviceMeta['node_detected_engine'], $serviceMeta['node_detected_at']);
+            }
+        } elseif ($versionSubmitted && self::hasVersionPicker($language)) {
+            // PHP runtimes and image-tag stacks: an empty choice returns to the
+            // stack's default version on the next deploy.
+            if ($selectedVersion === null || $selectedVersion === '') {
+                unset($serviceMeta['selected_version']);
+            } else {
+                if (! in_array($selectedVersion, self::allowedSelectedVersions($language), true)) {
+                    throw new \InvalidArgumentException('The selected version is not supported for this stack.');
+                }
+                $serviceMeta['selected_version'] = $selectedVersion;
             }
         }
 

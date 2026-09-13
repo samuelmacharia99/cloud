@@ -41,6 +41,14 @@ return [
 
         'wordpress' => [
             'backend' => 'wordpress',
+            'version_picker' => [
+                'show' => true,
+                'required' => false,
+                'label' => 'WordPress and PHP version',
+                'help' => 'Official WordPress images bundle a PHP version. Latest tracks the current release.',
+                'source' => 'template_versions',
+                'default' => 'latest',
+            ],
             'framework' => [
                 'required' => false,
                 'show' => false,
@@ -63,6 +71,19 @@ return [
 
         'php' => [
             'backend' => 'php',
+            'version_picker' => [
+                'show' => true,
+                'required' => false,
+                'label' => 'PHP version',
+                'help' => 'The runtime image is built for this PHP version. Change it later from the PHP version tab in the console.',
+                'default' => '8.3',
+                'options' => [
+                    ['value' => '8.4', 'label' => 'PHP 8.4', 'description' => 'Newest release.'],
+                    ['value' => '8.3', 'label' => 'PHP 8.3', 'description' => 'Recommended for current Laravel and most apps.'],
+                    ['value' => '8.2', 'label' => 'PHP 8.2', 'description' => 'For apps not yet on 8.3.'],
+                    ['value' => '8.1', 'label' => 'PHP 8.1', 'description' => 'Older Laravel 9 / 10 apps and legacy code.'],
+                ],
+            ],
             'framework' => [
                 'required' => false,
                 'show' => false,
@@ -85,6 +106,19 @@ return [
 
         'laravel' => [
             'backend' => 'laravel',
+            'version_picker' => [
+                'show' => true,
+                'required' => false,
+                'label' => 'PHP version',
+                'help' => 'The runtime image is built for this PHP version. Change it later from the PHP version tab in the console.',
+                'default' => '8.3',
+                'options' => [
+                    ['value' => '8.4', 'label' => 'PHP 8.4', 'description' => 'Newest release.'],
+                    ['value' => '8.3', 'label' => 'PHP 8.3', 'description' => 'Recommended for current Laravel and most apps.'],
+                    ['value' => '8.2', 'label' => 'PHP 8.2', 'description' => 'For apps not yet on 8.3.'],
+                    ['value' => '8.1', 'label' => 'PHP 8.1', 'description' => 'Older Laravel 9 / 10 apps and legacy code.'],
+                ],
+            ],
             'framework' => [
                 'required' => false,
                 'show' => false,

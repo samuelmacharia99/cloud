@@ -4,6 +4,7 @@
                 $containerTabs = $containerTabs ?? \App\Support\ContainerConsoleTabs::resolve(
                     ! empty($supportsGitRepository),
                     ! empty($supportsPhpExtensions),
+                    ! empty($supportsPhpVersion),
                 );
                 $initialTab = \App\Support\ContainerConsoleTabs::initial($containerTabs, request('tab'));
             @endphp
@@ -19,6 +20,9 @@
                             <option value="terminal">Terminal</option>
                             @if (!empty($supportsGitRepository))
                                 <option value="github">Git</option>
+                            @endif
+                            @if (!empty($supportsPhpVersion))
+                                <option value="php-version">PHP Version</option>
                             @endif
                             @if (!empty($supportsPhpExtensions))
                                 <option value="php-extensions">PHP Extensions</option>
@@ -53,6 +57,9 @@
                             <button type="button" @click="setTab('terminal')" :class="activeTab === 'terminal' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'border-b-2 border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-3 py-2.5 font-medium transition text-sm whitespace-nowrap" role="tab" :aria-selected="activeTab === 'terminal'">Terminal</button>
                             @if (!empty($supportsGitRepository))
                                 <button type="button" @click="setTab('github')" :class="activeTab === 'github' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'border-b-2 border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-3 py-2.5 font-medium transition text-sm whitespace-nowrap" role="tab" :aria-selected="activeTab === 'github'">Git</button>
+                            @endif
+                            @if (!empty($supportsPhpVersion))
+                                <button type="button" @click="setTab('php-version')" :class="activeTab === 'php-version' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'border-b-2 border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-3 py-2.5 font-medium transition text-sm whitespace-nowrap" role="tab" :aria-selected="activeTab === 'php-version'">PHP Version</button>
                             @endif
                             @if (!empty($supportsPhpExtensions))
                                 <button type="button" @click="setTab('php-extensions')" :class="activeTab === 'php-extensions' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'border-b-2 border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-3 py-2.5 font-medium transition text-sm whitespace-nowrap" role="tab" :aria-selected="activeTab === 'php-extensions'">PHP Extensions</button>
@@ -860,6 +867,13 @@
                     </template>
 
                     <!-- PHP Extensions Tab -->
+                    @if (!empty($supportsPhpVersion))
+                        <template x-if="hasVisited('php-version')">
+                            <div x-show="activeTab === 'php-version'">
+                                @include('customer.services.partials.php-version')
+                            </div>
+                        </template>
+                    @endif
                     @if (!empty($supportsPhpExtensions))
                         <template x-if="hasVisited('php-extensions')">
                             <div x-show="activeTab === 'php-extensions'">

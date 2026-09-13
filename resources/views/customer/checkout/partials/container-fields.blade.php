@@ -34,7 +34,7 @@
             </label>
             <select name="selected_version[{{ $key }}]" @required($versionPicker['required'] ?? true)
                 class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white">
-                <option value="">{{ ($template->slug ?? '') === 'nodejs' ? 'Auto detect from package.json' : ($versionPicker['show'] ? '— Choose a model size —' : '-- Choose a version --') }}</option>
+                <option value="">{{ ($template->slug ?? '') === 'nodejs' ? 'Auto detect from package.json' : ($versionPicker['show'] && $versionPicker['value'] ? 'Default ('.$versionPicker['value'].')' : '-- Choose a version --') }}</option>
                 @foreach(($versionPicker['show'] ? $versionPicker['options'] : collect($template->versions)->map(fn ($version) => ['value' => $version, 'label' => $version])->all()) as $versionOption)
                     <option value="{{ $versionOption['value'] }}" @selected($selectedVersion === $versionOption['value'])>
                         {{ $versionOption['label'] }}

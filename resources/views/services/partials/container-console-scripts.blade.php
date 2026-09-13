@@ -285,6 +285,7 @@ function containerTabs(initialTab) {
         : \App\Support\ContainerConsoleTabs::resolve(
             ! empty($supportsGitRepository),
             ! empty($supportsPhpExtensions),
+            ! empty($supportsPhpVersion),
         )));
 
     return {

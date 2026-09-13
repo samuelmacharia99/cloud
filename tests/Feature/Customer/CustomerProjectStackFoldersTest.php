@@ -254,7 +254,9 @@ YAML;
     private function deployedStack(): array
     {
         $customer = User::factory()->customer()->create();
-        $node = Node::factory()->containerHost()->create(['ssh_username' => 'root', 'ssh_password' => 'secret']);
+        // No SSH credentials: the console's status probe is skipped instead of
+        // dialling a random factory address.
+        $node = Node::factory()->containerHost()->create(['ssh_username' => null, 'ssh_password' => null]);
         $product = Product::factory()->containerHosting()->create(['name' => 'App Hosting']);
         $project = CustomerProject::factory()->create(['user_id' => $customer->id, 'name' => 'Atlas']);
         $service = Service::factory()->create([

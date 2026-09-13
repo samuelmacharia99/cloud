@@ -34,12 +34,18 @@ class ContainerConsoleTabs
      */
     public static function resolve(
         bool $supportsGitRepository = false,
-        bool $supportsPhpExtensions = false
+        bool $supportsPhpExtensions = false,
+        bool $supportsPhpVersion = false,
     ): array {
         $tabs = self::BASE;
 
         if ($supportsGitRepository) {
             self::insertAt($tabs, 'github', self::indexOf($tabs, 'terminal') + 1);
+        }
+
+        // Version ahead of extensions: pick the runtime, then what it loads.
+        if ($supportsPhpVersion) {
+            self::insertAt($tabs, 'php-version', self::indexOf($tabs, 'documentation'));
         }
 
         if ($supportsPhpExtensions) {

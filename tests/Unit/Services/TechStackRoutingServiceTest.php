@@ -396,4 +396,55 @@ class TechStackRoutingServiceTest extends TestCase
         $this->assertStringNotContainsString('(later)', $summary);
         $this->assertStringContainsString('PostgreSQL', $summary);
     }
+
+    public function test_laravel_and_php_offer_a_php_version_picker_defaulting_to_8_3(): void
+    {
+        foreach (['laravel', 'php'] as $slug) {
+            $language = $this->createLanguage($slug);
+            $picker = TechStackRoutingService::versionPickerPayload($language);
+
+            $this->assertTrue($picker['show'], $slug);
+            $this->assertFalse($picker['required'], $slug);
+            $this->assertSame('PHP version', $picker['label']);
+            $this->assertSame('8.3', $picker['value'], 'default is 8.3, not the first option');
+            $this->assertSame(['8.4', '8.3', '8.2', '8.1'], TechStackRoutingService::allowedSelectedVersions($language));
+            $this->assertSame('PHP 8.1', TechStackRoutingService::versionLabel($language, '8.1'));
+            $this->assertTrue(TechStackRoutingService::usesSelectedVersionAsImageTag($slug));
+            $this->assertTrue(TechStackRoutingService::hasVersionPicker($language));
+        }
+    }
+
+    public function test_wordpress_offers_its_image_tags_as_versions_with_readable_labels(): void
+    {
+        $wordpress = $this->createLanguage('wordpress');
+        $wordpress->forceFill(['versions' => ['latest', '6.6-php8.3-apache', '6.4-php8.1-apache']])->save();
+
+        $picker = TechStackRoutingService::versionPickerPayload($wordpress->fresh());
+
+        $this->assertTrue($picker['show']);
+        $this->assertFalse($picker['required']);
+        $this->assertSame('latest', $picker['value']);
+        $this->assertSame(['latest', '6.6-php8.3-apache', '6.4-php8.1-apache'], array_column($picker['options'], 'value'));
+        $this->assertSame('Latest WordPress (current PHP)', $picker['options'][0]['label']);
+        $this->assertSame('WordPress 6.6 · PHP 8.3', $picker['options'][1]['label']);
+        $this->assertSame('WordPress 6.4 · PHP 8.1', $picker['options'][2]['label']);
+    }
+
+    public function test_redeploy_applies_a_php_version_and_an_empty_choice_returns_to_the_default(): void
+    {
+        $laravel = $this->createLanguage('laravel');
+        $mysql = $this->createDatabase('container');
+
+        $applied = TechStackRoutingService::applyRedeployStackSelection(['selected_version' => '8.3'], $laravel, null, 'none', $mysql, '8.1', true);
+        $this->assertSame('8.1', $applied['meta']['selected_version']);
+
+        $applied = TechStackRoutingService::applyRedeployStackSelection(['selected_version' => '8.1'], $laravel, null, 'none', $mysql, '', true);
+        $this->assertArrayNotHasKey('selected_version', $applied['meta']);
+
+        $untouched = TechStackRoutingService::applyRedeployStackSelection(['selected_version' => '8.1'], $laravel, null, 'none', $mysql, null, false);
+        $this->assertSame('8.1', $untouched['meta']['selected_version'], 'a form without the field leaves the version alone');
+
+        $this->expectException(\InvalidArgumentException::class);
+        TechStackRoutingService::applyRedeployStackSelection([], $laravel, null, 'none', $mysql, '7.4', true);
+    }
 }

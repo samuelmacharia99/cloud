@@ -20,6 +20,7 @@ class ContainerConsoleTabsTest extends TestCase
         $tabs = ContainerConsoleTabs::resolve(
             supportsGitRepository: true,
             supportsPhpExtensions: true,
+            supportsPhpVersion: true,
         );
 
         $this->assertSame(
@@ -28,11 +29,11 @@ class ContainerConsoleTabsTest extends TestCase
             'Git belongs right after the terminal.'
         );
         $this->assertSame(
-            ['php-extensions', 'documentation'],
-            array_slice($tabs, -2),
-            'PHP extensions belong ahead of the docs tab.'
+            ['php-version', 'php-extensions', 'documentation'],
+            array_slice($tabs, -3),
+            'The runtime version comes before its extensions, both ahead of the docs tab.'
         );
-        $this->assertSame(count(ContainerConsoleTabs::BASE) + 2, count($tabs));
+        $this->assertSame(count(ContainerConsoleTabs::BASE) + 3, count($tabs));
     }
 
     #[Test]

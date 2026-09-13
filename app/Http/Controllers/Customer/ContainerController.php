@@ -10,6 +10,7 @@ use App\Http\Requests\Customer\PullContainerGitRepositoryRequest;
 use App\Http\Requests\Customer\RedeployContainerStackRequest;
 use App\Http\Requests\Customer\UpdateContainerGitRepositoryRequest;
 use App\Http\Requests\Customer\UpdateContainerPhpExtensionsRequest;
+use App\Http\Requests\Customer\UpdatePhpVersionRequest;
 use App\Http\Requests\DeleteContainerEnvironmentRequest;
 use App\Http\Requests\UpdateContainerEnvironmentRequest;
 use App\Jobs\InitializeContainerAppJob;
@@ -44,6 +45,7 @@ use App\Services\Provisioning\ContainerGitRepositoryService;
 use App\Services\Provisioning\ContainerNodeWorkloadTopologyService;
 use App\Services\Provisioning\ContainerPhpExtensionsService;
 use App\Services\Provisioning\ContainerPostgresExtensionService;
+use App\Services\Provisioning\ContainerRuntimeVersionService;
 use App\Services\Provisioning\ContainerSqlDumpImportService;
 use App\Services\Provisioning\ContainerSslErrorPresenter;
 use App\Services\Provisioning\ContainerStagingService;
@@ -130,6 +132,9 @@ class ContainerController extends Controller
         $phpExtensionsPanel = $supportsPhpExtensions
             ? app(ContainerPhpExtensionsService::class)->buildPanelState($service, $deployment)
             : null;
+        $runtimeVersions = app(ContainerRuntimeVersionService::class);
+        $supportsPhpVersion = $runtimeVersions->supportsService($service);
+        $phpVersionPanel = $supportsPhpVersion ? $runtimeVersions->panelState($service, $deployment) : null;
         $hermesDashboardPanel = app(ContainerTemplateEnvironmentService::class)
             ->hermesDashboardPanel($service, $deployment);
         $gitRepositoryService = app(ContainerGitRepositoryService::class);
@@ -198,7 +203,7 @@ class ContainerController extends Controller
             'service' => $service,
             'deployment' => $deployment,
             'containerTabs' => $deployment
-                ? ContainerConsoleTabs::resolve($supportsGitRepository, $supportsPhpExtensions)
+                ? ContainerConsoleTabs::resolve($supportsGitRepository, $supportsPhpExtensions, $supportsPhpVersion)
                 : ContainerConsoleTabs::NOT_DEPLOYED,
             'status' => $status,
             'databaseContext' => $databaseContext,
@@ -207,6 +212,8 @@ class ContainerController extends Controller
             'templateSlug' => $templateSlug,
             'supportsPhpExtensions' => $supportsPhpExtensions,
             'phpExtensionsPanel' => $phpExtensionsPanel,
+            'supportsPhpVersion' => $supportsPhpVersion,
+            'phpVersionPanel' => $phpVersionPanel,
             'hermesDashboardPanel' => $hermesDashboardPanel,
             'supportsGitRepository' => $supportsGitRepository,
             'gitRepository' => $gitRepository,
@@ -530,6 +537,31 @@ class ContainerController extends Controller
 
             return back()->withErrors(['error' => 'Failed to redeploy container. Please try again or contact support.']);
         }
+    }
+
+    /**
+     * PHP version tab: record the chosen version and redeploy on it.
+     */
+    public function updatePhpVersion(UpdatePhpVersionRequest $request, Service $service): RedirectResponse
+    {
+        $this->authorize('manageContainer', $service);
+
+        if ($service->product?->type !== 'container_hosting') {
+            return back()->withErrors(['error' => 'Invalid service type']);
+        }
+
+        try {
+            $result = app(ContainerRuntimeVersionService::class)->switch($service, $request->version());
+        } catch (\DomainException $e) {
+            return $this->redirectToContainerTab($service, 'php-version')->withErrors(['error' => $e->getMessage()]);
+        } catch (\Throwable $e) {
+            \Log::error("Failed to switch runtime version for service {$service->id}: ".$e->getMessage());
+
+            return $this->redirectToContainerTab($service, 'php-version')
+                ->withErrors(['error' => 'The version change failed and the previous version was kept. Check the Logs tab or run Diagnose.']);
+        }
+
+        return $this->redirectToContainerTab($service, 'php-version')->with($result['changed'] ? 'success' : 'info', $result['message']);
     }
 
     public function initializeLaravel(Service $service, LaravelAppInitializationService $initializationService): RedirectResponse

@@ -187,6 +187,52 @@ class TechStackConfirmRouteTest extends TestCase
             ->assertJsonCount(1, 'frontend.options');
     }
 
+    public function test_laravel_stack_options_offer_php_versions_and_confirm_keeps_the_choice(): void
+    {
+        $customer = User::factory()->customer()->create();
+        $language = $this->makeLanguage('laravel');
+        $this->makeProductForLanguage($language);
+        $mysql = DatabaseTemplate::query()->firstOrCreate(['slug' => 'mysql-container-test'], [
+            'name' => 'MySQL 8',
+            'type' => 'mysql',
+            'docker_image' => 'mysql:8.0',
+            'default_port' => 3306,
+            'hosting_type' => 'container',
+            'is_active' => true,
+            'order' => 1,
+        ]);
+
+        $this->actingAs($customer)
+            ->getJson(route('api.languages.stack-options', $language))
+            ->assertOk()
+            ->assertJsonPath('version_picker.show', true)
+            ->assertJsonPath('version_picker.required', false)
+            ->assertJsonPath('version_picker.label', 'PHP version')
+            ->assertJsonPath('version_picker.value', '8.3')
+            ->assertJsonPath('version_picker.options.3.value', '8.1');
+
+        $this->actingAs($customer)
+            ->post(route('customer.confirm-techstack.store'), [
+                'language_id' => $language->id,
+                'frontend' => 'none',
+                'database_id' => $mysql->id,
+                'selected_version' => '8.2',
+                'deployment_platform' => 'container',
+            ])
+            ->assertRedirect(route('customer.confirm-techstack'));
+        $this->assertSame('8.2', session('selected_techstack.selected_version'));
+
+        $this->actingAs($customer)
+            ->post(route('customer.confirm-techstack.store'), [
+                'language_id' => $language->id,
+                'frontend' => 'none',
+                'database_id' => $mysql->id,
+                'selected_version' => '7.4',
+                'deployment_platform' => 'container',
+            ])
+            ->assertSessionHasErrors('selected_version');
+    }
+
     /**
      * A stack whose version picker is a required, non-image-tag option. No
      * catalog stack declares one today, so the path is pinned through config.
