@@ -124,6 +124,50 @@ class CustomerProject extends Model
     }
 
     /**
+     * Whether the plan can take one more included service at the default
+     * share. canDeployIncludedWorkload() only asks whether a plan exists;
+     * this asks whether it has room, which is what the deploy page and the
+     * policy gate on. Services already squeezed below the default keep
+     * running; only new ones are refused.
+     */
+    public function hasRoomForIncludedWorkload(): bool
+    {
+        if (! $this->canDeployIncludedWorkload()) {
+            return false;
+        }
+
+        $default = $this->defaultIncludedWorkloadShare();
+        $allocated = $this->allocatedResourceShares();
+
+        return (1.0 - $allocated['cpu']) + 1e-9 >= $default['cpu']
+            && (1.0 - $allocated['memory']) + 1e-9 >= $default['memory'];
+    }
+
+    /**
+     * Customer-facing reason the plan cannot take another service, or null.
+     */
+    public function includedWorkloadRoomReason(): ?string
+    {
+        if (! $this->canDeployIncludedWorkload()) {
+            return 'This project needs an active Application Hosting plan.';
+        }
+        if ($this->hasRoomForIncludedWorkload()) {
+            return null;
+        }
+
+        $default = $this->defaultIncludedWorkloadShare();
+        $allocated = $this->allocatedResourceShares();
+        $pct = fn (float $share) => rtrim(rtrim(number_format(max(0.0, $share) * 100, 1), '0'), '.');
+
+        return sprintf(
+            'This plan is full: %s%% CPU and %s%% RAM remain, and a new service needs %s%% of each. Upgrade the plan or buy a new one.',
+            $pct(1.0 - $allocated['cpu']),
+            $pct(1.0 - $allocated['memory']),
+            $pct($default['cpu'])
+        );
+    }
+
+    /**
      * @return array{cpu: float, memory_mb: int, disk_gb: float}|null
      */
     public function includedPlanLimits(): ?array

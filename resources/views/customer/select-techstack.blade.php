@@ -6,6 +6,8 @@
 @php
     $project = $project ?? null;
     $includedDeploy = $includedDeploy ?? false;
+    $plan = $plan ?? null;
+    $stackChoices = $stackChoices ?? [];
     $stackFormAction = $stackFormAction ?? route('customer.confirm-techstack.store');
     $stackGlow = [
         'nodejs' => '51, 153, 51',
@@ -59,21 +61,27 @@
     <div class="flex items-start justify-between gap-4">
         <div class="min-w-0">
             <p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-ink-500 dark:text-ink-400 mb-2">
-                @if($project)
+                @if($plan)
+                    Plan · {{ $plan['name'] }}
+                @elseif($project)
                     {{ $includedDeploy ? 'Project · Included deploy' : 'Project · Choose a plan' }}
                 @else
                     Deploy · Runtime
                 @endif
             </p>
             <h1 class="font-display text-3xl sm:text-4xl text-ink-950 dark:text-white leading-[1.05]">
-                @if($project)
+                @if($plan)
+                    Choose a stack for {{ $plan['name'] }}
+                @elseif($project)
                     Deploy into {{ $project->name }}
                 @else
                     What are you shipping?
                 @endif
             </h1>
             <p class="text-ink-600 dark:text-ink-400 mt-2 max-w-xl text-[15px] leading-relaxed">
-                @if($includedDeploy && $project)
+                @if($plan)
+                    Stacks this plan cannot run are greyed out with the reason. The plan goes to your cart with the stack you pick; it deploys after checkout.
+                @elseif($includedDeploy && $project)
                     This site uses the existing {{ $project->resolvedBillingService()?->customerPlanName() ?? 'project' }} plan. You are not billed again — usage above the plan is metered on renewal.
                 @elseif($project)
                     Pick a runtime, then choose a plan. Billing starts for this project after checkout.
@@ -83,14 +91,14 @@
             </p>
         </div>
         <a
-            href="{{ $project ? route('customer.projects.show', $project) : route('customer.cart.index') }}"
+            href="{{ $plan ? route('customer.deploy-service') : ($project ? route('customer.projects.show', $project) : route('customer.cart.index')) }}"
             class="shrink-0 inline-flex items-center gap-2 rounded-full border border-ink-200/80 dark:border-ink-700/80 bg-white/70 dark:bg-ink-900/60 backdrop-blur px-3.5 py-2 text-sm font-medium text-ink-700 dark:text-ink-200 hover:border-ink-300 dark:hover:border-ink-600 transition shadow-sm"
         >
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/>
             </svg>
-            {{ $project ? 'Back to project' : 'Cart' }}
-            @if(!$project && $cartCount > 0)
+            {{ $plan ? 'Change plan' : ($project ? 'Back to project' : 'Cart') }}
+            @if(!$project && !$plan && $cartCount > 0)
                 <span class="min-w-[1.25rem] h-5 px-1.5 rounded-full bg-ink-950 dark:bg-brand-400 text-white dark:text-ink-950 text-[11px] font-bold flex items-center justify-center">{{ $cartCount }}</span>
             @endif
         </a>
@@ -119,11 +127,20 @@
                     $slug = strtolower((string) $language->slug);
                     $glow = $stackGlow[$slug] ?? '148, 163, 184';
                     $hint = $stackHint[$slug] ?? 'Application hosting';
+                    $choice = $stackChoices[$language->id] ?? ['eligible' => true, 'reason' => null];
+                    $eligible = (bool) ($choice['eligible'] ?? true);
                 @endphp
                 <button
                     type="button"
-                    @click="selectLanguageAndShowModal({{ $language->id }})"
-                    class="techstack-soft-card group relative aspect-square flex flex-col items-center justify-center gap-2 sm:gap-2.5 p-3 sm:p-3.5 rounded-2xl text-center focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent"
+                    @if($eligible)
+                        @click="selectLanguageAndShowModal({{ $language->id }})"
+                    @else
+                        disabled
+                        aria-disabled="true"
+                        title="{{ $choice['reason'] }}"
+                    @endif
+                    data-stack-eligible="{{ $eligible ? '1' : '0' }}"
+                    class="techstack-soft-card group relative aspect-square flex flex-col items-center justify-center gap-2 sm:gap-2.5 p-3 sm:p-3.5 rounded-2xl text-center focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent {{ $eligible ? '' : 'opacity-45 grayscale cursor-not-allowed' }}"
                     style="--stack-glow: {{ $glow }}; --enter-delay: {{ min($index * 40, 280) }}ms;"
                     :class="selectedLanguage.id === {{ $language->id }} ? 'is-selected' : ''"
                     :aria-pressed="selectedLanguage.id === {{ $language->id }} ? 'true' : 'false'"
@@ -138,6 +155,9 @@
                         <span class="block text-[10px] sm:text-[11px] font-medium tracking-wide text-ink-500/90 dark:text-ink-400 uppercase">
                             {{ $hint }}
                         </span>
+                        @unless($eligible)
+                            <span class="block text-[10px] leading-tight normal-case text-amber-700 dark:text-amber-300" data-stack-reason>{{ $choice['reason'] }}</span>
+                        @endunless
                     </span>
                     <span
                         x-show="selectedLanguage.id === {{ $language->id }}"
@@ -372,7 +392,7 @@
                             :disabled="!canContinue"
                             class="w-full px-6 py-3.5 bg-ink-950 hover:bg-ink-800 dark:bg-brand-400 dark:hover:bg-brand-300 dark:text-ink-950 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-2xl font-semibold shadow-lg shadow-ink-950/15 dark:shadow-brand-400/20 transition"
                         >
-                            {{ $includedDeploy ? 'Deploy service' : 'Continue to packages' }}
+                            {{ $includedDeploy ? 'Deploy service' : ($plan ? 'Add to cart' : 'Continue to packages') }}
                         </button>
                     </form>
                     <button

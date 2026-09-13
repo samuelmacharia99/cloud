@@ -8,13 +8,17 @@ use App\Models\ContainerTemplate;
 use App\Models\CustomerProject;
 use App\Models\DatabaseTemplate;
 use App\Models\Product;
+use App\Services\Checkout\CartLineException;
+use App\Services\Checkout\CartLineFactory;
 use App\Services\Checkout\SharedHostingCheckoutService;
 use App\Services\Customer\CustomerNextStepsService;
+use App\Services\Customer\StackEligibilityService;
 use App\Services\ResellerCustomerCatalogService;
 use App\Services\TechStackRoutingService;
 use App\Services\UserCurrencyService;
 use App\Support\SessionCart;
 use App\Support\SharedHostingSales;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 
@@ -29,26 +33,7 @@ class ServiceBrowserController extends Controller
      */
     public function selectTechstack()
     {
-        $languages = ContainerTemplate::offeredForNewDeploy()
-            ->reorder()
-            ->orderByRaw("CASE slug
-                WHEN 'wordpress' THEN 1
-                WHEN 'nodejs' THEN 2
-                WHEN 'python' THEN 3
-                WHEN 'static-site' THEN 4
-                WHEN 'hermes' THEN 5
-                WHEN 'openclaw' THEN 6
-                WHEN 'n8n' THEN 8
-                WHEN 'go' THEN 9
-                WHEN 'directus' THEN 10
-                WHEN 'chatwoot' THEN 11
-                WHEN 'odoo' THEN 12
-                WHEN 'erpnext' THEN 13
-                ELSE 100
-            END")
-            ->orderBy('order')
-            ->orderBy('name')
-            ->get();
+        $languages = ContainerTemplate::offeredForNewDeploy()->catalogOrder()->get();
         $databases = DatabaseTemplate::active()->get();
         $cartCount = count(SessionCart::portal());
 
@@ -199,6 +184,30 @@ class ServiceBrowserController extends Controller
             return back()->with('error', $message);
         }
 
+        // Plan-first flow: the plan was chosen on the deploy page, so it must
+        // be one of the plans that can run this stack.
+        $plan = session(DeployServiceController::SESSION_PLAN);
+        $chosenPlan = null;
+        if (is_array($plan) && ! empty($plan['product_id'])) {
+            $chosenPlan = $products->first(fn (object $product) => (int) $product->id === (int) $plan['product_id']
+                && (int) ($product->reseller_product_id ?? 0) === (int) ($plan['reseller_product_id'] ?? 0));
+
+            // A pinned plan only lists in its own stack's products, but a
+            // resource shortfall does not filter products; check it here too.
+            $choice = app(StackEligibilityService::class)->forPlan(
+                isset($plan['container_template_id']) ? (int) $plan['container_template_id'] : null,
+                StackEligibilityService::limitsFromResourceLimits(is_array($plan['resource_limits'] ?? null) ? $plan['resource_limits'] : []),
+                collect([$language]),
+            )->first();
+
+            if ($chosenPlan === null || ! $choice?->eligible) {
+                $reason = $choice && ! $choice->eligible ? ' '.$choice->reason : '';
+
+                return redirect()->route('customer.deploy-service.stack')
+                    ->with('error', ($plan['name'] ?? 'That plan').' cannot run '.$language->name.'.'.$reason.' Choose another stack, or go back and pick another plan.');
+            }
+        }
+
         $techstackData = [
             'language_id' => $language->id,
             'language_name' => $language->name,
@@ -220,7 +229,7 @@ class ServiceBrowserController extends Controller
                 : 'auto';
         }
 
-        $projectId = (int) ($validated['project_id'] ?? 0);
+        $projectId = (int) ($validated['project_id'] ?? ($plan['project_id'] ?? 0));
         if ($projectId > 0) {
             $ownedProject = CustomerProject::query()
                 ->where('user_id', $user->id)
@@ -238,7 +247,35 @@ class ServiceBrowserController extends Controller
 
         session(['selected_techstack' => $techstackData]);
 
+        if ($chosenPlan !== null) {
+            return $this->addChosenPlanToCart($user, $plan, $chosenPlan, $language->name);
+        }
+
         return redirect()->route('customer.confirm-techstack');
+    }
+
+    /**
+     * Plan-first flow: the confirm page's plan cards are moot when the plan
+     * is already chosen, so the line goes straight to the cart.
+     *
+     * @param  array<string, mixed>  $plan
+     */
+    private function addChosenPlanToCart($user, array $plan, object $chosenPlan, string $stackName): RedirectResponse
+    {
+        try {
+            $factory = app(CartLineFactory::class);
+            $item = ! empty($chosenPlan->reseller_product_id)
+                ? $factory->forResellerProduct($user, (int) $chosenPlan->reseller_product_id, (string) $plan['billing_cycle'])
+                : $factory->forProduct($user, (int) $chosenPlan->id, (string) $plan['billing_cycle']);
+        } catch (CartLineException $e) {
+            return redirect()->route('customer.deploy-service')->with('error', $e->getMessage());
+        }
+
+        SessionCart::append(SessionCart::portalKey(), $item, SessionCart::newLineKey('c'));
+        session()->forget(DeployServiceController::SESSION_PLAN);
+
+        return redirect()->route('customer.cart.index')
+            ->with('success', ($chosenPlan->name ?? 'Plan').' with '.$stackName.' added to your cart. Check out to deploy.');
     }
 
     /**
@@ -338,15 +375,6 @@ class ServiceBrowserController extends Controller
             $products,
             $database?->id,
         );
-    }
-
-    /**
-     * Redirect to techstack selection - primary deployment flow
-     */
-    public function index(Request $request)
-    {
-        // Always redirect to techstack selection first
-        return redirect()->route('customer.select-techstack');
     }
 
     /**

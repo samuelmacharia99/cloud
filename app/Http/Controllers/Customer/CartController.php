@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\DomainExtension;
 use App\Models\Product;
 use App\Models\ResellerProduct;
+use App\Services\Checkout\CartLineException;
+use App\Services\Checkout\CartLineFactory;
 use App\Services\Checkout\SharedHostingCheckoutService;
 use App\Services\Dns\DomainCloudflareDnsService;
 use App\Services\DomainAvailabilityService;
@@ -176,7 +178,7 @@ class CartController extends Controller
             ->route(
                 app(ResellerCustomerCatalogService::class)->isResellerCustomer(auth()->user())
                     ? 'customer.catalog.index'
-                    : 'customer.select-techstack'
+                    : 'customer.deploy-service'
             )
             ->with('success', 'Choose a hosting plan for '.strtolower($domainItem['domain'].$domainItem['extension']).'. Domain and hosting will be on one invoice.');
     }
@@ -191,83 +193,37 @@ class CartController extends Controller
         $type = $request->get('type'); // 'product' or 'domain'
 
         if ($type === 'product') {
-            if ($catalogService->isResellerCustomer($user)) {
-                $response = [
-                    'success' => false,
-                    'message' => 'Please order hosting through Deploy New Service or the services catalog.',
-                ];
-
-                if ($request->expectsJson()) {
-                    return response()->json($response, 403);
-                }
-
-                return redirect()->route('customer.catalog.index')->with('error', $response['message']);
-            }
-
             $request->validate([
                 'product_id' => 'required|exists:products,id',
                 'billing_cycle' => 'required|in:monthly,quarterly,semi-annual,annual',
             ]);
 
-            $product = Product::findOrFail($request->product_id);
-            if ($product->type === 'shared_hosting') {
-                $message = 'Shared DirectAdmin hosting is no longer available. Please deploy with application hosting.';
-
+            try {
+                $item = app(CartLineFactory::class)->forProduct($user, (int) $request->product_id, (string) $request->billing_cycle);
+            } catch (CartLineException $e) {
                 if ($request->expectsJson()) {
-                    return response()->json(['success' => false, 'message' => $message], 422);
+                    return response()->json(['success' => false, 'message' => $e->getMessage()], $e->status());
                 }
 
-                return back()->with('error', $message);
+                return $e->status() === 403
+                    ? redirect()->route('customer.catalog.index')->with('error', $e->getMessage())
+                    : back()->with('error', $e->getMessage());
             }
-
-            $item = [
-                'type' => 'product',
-                'product_id' => $request->product_id,
-                'billing_cycle' => $request->billing_cycle,
-            ];
         } elseif ($type === 'reseller_product') {
-            if (! $catalogService->isResellerCustomer($user)) {
-                $response = [
-                    'success' => false,
-                    'message' => 'Reseller catalog items are only available to reseller customers.',
-                ];
-
-                if ($request->expectsJson()) {
-                    return response()->json($response, 403);
-                }
-
-                return back()->with('error', $response['message']);
-            }
-
             $request->validate([
                 'reseller_product_id' => 'required|exists:reseller_products,id',
                 'billing_cycle' => 'required|in:monthly,quarterly,semi-annual,annual',
             ]);
 
-            $listing = ResellerProduct::query()
-                ->where('id', $request->reseller_product_id)
-                ->where('reseller_id', $user->reseller_id)
-                ->where('is_active', true)
-                ->first();
-
-            if (! $listing || ! $listing->isOrderable()) {
-                $message = 'This catalog item is not available for ordering.';
-
+            try {
+                $item = app(CartLineFactory::class)->forResellerProduct($user, (int) $request->reseller_product_id, (string) $request->billing_cycle);
+            } catch (CartLineException $e) {
                 if ($request->expectsJson()) {
-                    return response()->json(['success' => false, 'message' => $message], 422);
+                    return response()->json(['success' => false, 'message' => $e->getMessage()], $e->status());
                 }
 
-                return back()->with('error', $message);
+                return back()->with('error', $e->getMessage());
             }
-
-            $provisionProduct = $listing->provisionProduct();
-            $item = [
-                'type' => 'reseller_product',
-                'reseller_product_id' => $listing->id,
-                'product_id' => $provisionProduct?->id,
-                'reseller_id' => $listing->reseller_id,
-                'billing_cycle' => $request->billing_cycle,
-            ];
         } elseif ($type === 'domain') {
             $request->validate([
                 'domain' => 'required|string|regex:/^[a-z0-9-]+$/i',

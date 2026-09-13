@@ -5,7 +5,13 @@
     $billingService = $isProject ? $project->resolvedBillingService() : null;
     $planLimits = $isProject ? $project->includedPlanLimits() : null;
     $canDeployIncluded = $isProject && $project->canDeployIncludedWorkload();
-    $primaryActionLabel = $canDeployIncluded ? 'Deploy new service' : 'Choose a plan';
+    $planHasRoom = $canDeployIncluded && $project->hasRoomForIncludedWorkload();
+    $primaryActionLabel = $canDeployIncluded ? ($planHasRoom ? 'Deploy new service' : 'Plan full · upgrade') : 'Choose a plan';
+    $primaryActionUrl = $isProject
+        ? ($canDeployIncluded && ! $planHasRoom
+            ? route('customer.services.upgrade', $billingService)
+            : route('customer.projects.deploy', $project))
+        : null;
     $nextDue = $billingService?->next_due_date;
     $resourceCount = $isProject ? $project->resourceCount() : $groupServices->count();
     $dropKey = $isProject ? (string) $project->id : 'none';
@@ -196,7 +202,7 @@
                     Open project
                 </a>
                 <a
-                    href="{{ route('customer.projects.deploy', $project) }}"
+                    href="{{ $primaryActionUrl }}"
                     class="btn-primary btn-sm flex-1"
                     @click.stop
                 >

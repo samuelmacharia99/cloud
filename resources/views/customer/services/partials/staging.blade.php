@@ -6,7 +6,7 @@
         <h3 class="text-sm font-semibold text-slate-900 dark:text-white">Staging environment</h3>
         <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">
             Link another app on the same stack as a staging sibling. Deploy a second plan from
-            <a href="{{ route('customer.select-techstack') }}" class="text-blue-600 dark:text-blue-400 hover:underline">Application Hosting</a>
+            <a href="{{ route('customer.deploy-service') }}" class="text-blue-600 dark:text-blue-400 hover:underline">Application Hosting</a>
             if you do not have one yet.
         </p>
     </div>

@@ -97,6 +97,35 @@ class ContainerTemplate extends Model
     }
 
     /**
+     * The order the stack picker shows runtimes in: the ones most customers
+     * come for first, then the catalog, then everything else by its own
+     * order and name. One definition for every picker.
+     */
+    public function scopeCatalogOrder($query)
+    {
+        return $query
+            ->reorder()
+            ->orderByRaw("CASE slug
+                WHEN 'wordpress' THEN 1
+                WHEN 'nodejs' THEN 2
+                WHEN 'python' THEN 3
+                WHEN 'static-site' THEN 4
+                WHEN 'hermes' THEN 5
+                WHEN 'openclaw' THEN 6
+                WHEN 'n8n' THEN 8
+                WHEN 'go' THEN 9
+                WHEN 'directus' THEN 10
+                WHEN 'chatwoot' THEN 11
+                WHEN 'odoo' THEN 12
+                WHEN 'erpnext' THEN 13
+                WHEN 'ospos' THEN 14
+                ELSE 100
+            END")
+            ->orderBy('order')
+            ->orderBy('name');
+    }
+
+    /**
      * Catalog row the PHP runtime image and Doctor “Switch to PHP” treatment need.
      * Production hosts that were seeded before this stack existed have no `php` row.
      *

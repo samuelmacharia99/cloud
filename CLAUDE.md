@@ -192,6 +192,12 @@ Supporting subsystems in `app/Services/Provisioning` (86 classes):
 
 **FormRequests for input.** Controllers receive validated data only.
 
+**Deploy is plan first.** `/deploy-service` (`DeployServiceController`) asks where a service runs
+before what it is: an existing plan with room (`CustomerProject::hasRoomForIncludedWorkload`) deploys
+through `customer.projects.deploy`; a new plan is chosen there, then the stack, then the cart.
+`StackEligibilityService` decides which stacks a plan can run; `ContainerTemplate::scopeCatalogOrder`
+is the one ordering every picker uses. Do not link to `customer.select-techstack` from the UI.
+
 **Reseller scoping is not optional.** Any query reachable by a reseller or their customers must be
 scoped by tenant. `ResolveResellerTenant`, `ResellerScopeService` and the `reseller.*` middleware
 exist for this; use them rather than ad-hoc `where` clauses.

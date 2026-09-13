@@ -6,7 +6,7 @@
 @php
     $deployUrl = auth()->user()->reseller_id
         ? route('customer.catalog.index')
-        : route('customer.select-techstack');
+        : route('customer.deploy-service');
 @endphp
 
 <div

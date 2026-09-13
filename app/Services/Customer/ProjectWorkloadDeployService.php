@@ -74,6 +74,14 @@ class ProjectWorkloadDeployService
             ]);
         }
 
+        // The policy already refused a full plan; this holds when the
+        // service is reached another way.
+        if (! $project->hasRoomForIncludedWorkload()) {
+            throw ValidationException::withMessages([
+                'project' => (string) $project->includedWorkloadRoomReason(),
+            ]);
+        }
+
         if (! $language->isOfferedForNewDeploy()) {
             throw ValidationException::withMessages([
                 'language_id' => 'That runtime is not available for new deploys.',

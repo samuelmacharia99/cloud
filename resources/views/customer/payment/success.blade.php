@@ -45,6 +45,11 @@
 
             <!-- Action Buttons -->
             <div class="space-y-3">
+                @foreach(($deployingServices ?? collect()) as $deployingService)
+                    <a href="{{ route('customer.services.deploying', $deployingService) }}" class="block w-full px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold transition">
+                        Watch {{ $deployingService->customerServiceName() }} deploy
+                    </a>
+                @endforeach
                 <a href="{{ route('dashboard') }}" class="block w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition">
                     Go to Dashboard
                 </a>

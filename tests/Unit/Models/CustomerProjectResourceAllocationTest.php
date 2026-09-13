@@ -160,4 +160,36 @@ class CustomerProjectResourceAllocationTest extends TestCase
         $this->assertSame(0.05, $share['cpu']);
         $this->assertSame(0.05, $share['memory']);
     }
+
+    public function test_has_room_for_included_workload_gates_at_the_default_share(): void
+    {
+        $customer = User::factory()->customer()->create();
+        $product = Product::factory()->containerHosting()->create();
+        $project = CustomerProject::factory()->create(['user_id' => $customer->id]);
+        $anchor = Service::factory()->create([
+            'user_id' => $customer->id,
+            'product_id' => $product->id,
+            'project_id' => $project->id,
+            'status' => 'active',
+            'service_meta' => ['project_billing_anchor' => true, 'resource_share' => ['cpu' => 0.5, 'memory' => 0.5]],
+        ]);
+        $project->update(['billing_service_id' => $anchor->id]);
+
+        $this->assertTrue($project->fresh()->hasRoomForIncludedWorkload(), '50% left, the default 25% fits');
+        $this->assertNull($project->fresh()->includedWorkloadRoomReason());
+
+        Service::factory()->create([
+            'user_id' => $customer->id,
+            'product_id' => $product->id,
+            'project_id' => $project->id,
+            'status' => 'active',
+            'service_meta' => ['project_role' => 'workload', 'resource_share' => ['cpu' => 0.3, 'memory' => 0.3]],
+        ]);
+
+        $this->assertFalse($project->fresh()->hasRoomForIncludedWorkload(), '20% left, below the default 25%');
+        $this->assertStringContainsString('20% CPU and 20% RAM remain', (string) $project->fresh()->includedWorkloadRoomReason());
+
+        $anchor->update(['status' => 'pending']);
+        $this->assertFalse($project->fresh()->hasRoomForIncludedWorkload(), 'an unpaid plan has no room');
+    }
 }

@@ -42,6 +42,7 @@ use App\Http\Controllers\Customer\ContainerFileController;
 use App\Http\Controllers\Customer\ContainerStackMemberController;
 use App\Http\Controllers\Customer\ContainerTerminalController;
 use App\Http\Controllers\Customer\CustomerNotificationController;
+use App\Http\Controllers\Customer\DeployServiceController;
 use App\Http\Controllers\Customer\DnsController;
 use App\Http\Controllers\Customer\DomainSearchController;
 use App\Http\Controllers\Customer\EmailHostingController;
@@ -774,7 +775,9 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('/api/languages/{language}/stack-options', [ServiceBrowserController::class, 'getStackOptions'])->name('api.languages.stack-options');
         Route::get('/api/databases/{database}/languages', [ServiceBrowserController::class, 'getAvailableLanguages'])->name('api.databases.languages');
         Route::get('/api/products', [ServiceBrowserController::class, 'getAvailableProducts'])->name('api.products');
-        Route::get('/deploy-service', [ServiceBrowserController::class, 'index'])->name('customer.deploy-service');
+        Route::get('/deploy-service', [DeployServiceController::class, 'index'])->name('customer.deploy-service');
+        Route::post('/deploy-service/plan', [DeployServiceController::class, 'choosePlan'])->middleware('throttle:30,1')->name('customer.deploy-service.plan');
+        Route::get('/deploy-service/stack', [DeployServiceController::class, 'stack'])->name('customer.deploy-service.stack');
         Route::get('/browse-services', [ServiceBrowserController::class, 'browse'])->name('customer.browse-services');
         Route::get('/email-hosting', [ServiceBrowserController::class, 'emailHosting'])->name('customer.email-hosting');
         Route::get('/email/inboxes', [ServiceBrowserController::class, 'emailInboxes'])->name('customer.email.inboxes');

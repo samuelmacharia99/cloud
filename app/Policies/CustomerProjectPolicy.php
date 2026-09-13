@@ -49,6 +49,10 @@ class CustomerProjectPolicy
             return Response::deny('This project needs an active Application Hosting plan before you can deploy another service.');
         }
 
+        if (! $customerProject->hasRoomForIncludedWorkload()) {
+            return Response::deny((string) $customerProject->includedWorkloadRoomReason());
+        }
+
         return Response::allow();
     }
 }

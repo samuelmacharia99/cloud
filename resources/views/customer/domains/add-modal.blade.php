@@ -21,7 +21,7 @@
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <!-- Register New Domain -->
-                <a href="{{ route('customer.select-techstack') }}" class="cursor-pointer p-6 border-2 border-slate-200 dark:border-slate-700 rounded-xl hover:border-blue-500 dark:hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/20 transition block">
+                <a href="{{ route('customer.deploy-service') }}" class="cursor-pointer p-6 border-2 border-slate-200 dark:border-slate-700 rounded-xl hover:border-blue-500 dark:hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/20 transition block">
                     <div class="flex items-center justify-center w-12 h-12 rounded-lg bg-blue-100 dark:bg-blue-950 mb-4">
                         <svg class="w-6 h-6 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>

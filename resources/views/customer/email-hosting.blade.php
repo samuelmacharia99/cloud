@@ -128,7 +128,7 @@
             <p class="text-sm text-slate-600 dark:text-slate-400 mt-0.5">Deploy your site separately, then keep this email plan in the same cart.</p>
         </div>
         <div class="flex flex-wrap gap-3 shrink-0">
-            <a href="{{ route('customer.select-techstack') }}" class="inline-flex items-center px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition">
+            <a href="{{ route('customer.deploy-service') }}" class="inline-flex items-center px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition">
                 Application Hosting
             </a>
             <a href="{{ route('customer.browse-services', ['type' => 'email_hosting']) }}" class="inline-flex items-center px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800 text-sm font-medium transition">

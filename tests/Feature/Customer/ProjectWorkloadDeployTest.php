@@ -63,6 +63,32 @@ class ProjectWorkloadDeployTest extends TestCase
         $this->assertSame($project->fresh()->billing_service_id, $anchor->id);
     }
 
+    public function test_a_full_plan_refuses_another_included_service(): void
+    {
+        [$customer, $project, $anchor, $language] = $this->makeBilledProject();
+        $anchor->update(['service_meta' => ['project_billing_anchor' => true, 'resource_share' => ['cpu' => 0.55, 'memory' => 0.55]]]);
+        Service::factory()->create([
+            'user_id' => $customer->id,
+            'product_id' => $anchor->product_id,
+            'project_id' => $project->id,
+            'status' => 'active',
+            'service_meta' => ['project_role' => 'workload', 'included_on_project_plan' => true, 'resource_share' => ['cpu' => 0.25, 'memory' => 0.25]],
+        ]);
+
+        $this->assertFalse($project->fresh()->hasRoomForIncludedWorkload());
+
+        $this->actingAs($customer)
+            ->get(route('customer.projects.deploy', $project))
+            ->assertRedirect(route('customer.projects.show', $project))
+            ->assertSessionHas('error', fn (string $e) => str_contains($e, 'This plan is full'));
+
+        $this->actingAs($customer)
+            ->post(route('customer.projects.deploy.store', $project), ['language_id' => $language->id, 'frontend' => 'static'])
+            ->assertForbidden();
+
+        $this->assertSame(2, Service::query()->where('project_id', $project->id)->count());
+    }
+
     public function test_included_deploy_of_a_retired_stack_is_rejected(): void
     {
         [$customer, $project] = $this->makeBilledProject();

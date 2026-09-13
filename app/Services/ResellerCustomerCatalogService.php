@@ -189,6 +189,8 @@ class ResellerCustomerCatalogService
     {
         return in_array($routeName, [
             'customer.deploy-service',
+            'customer.deploy-service.plan',
+            'customer.deploy-service.stack',
             'customer.browse-services',
             'customer.email-hosting',
             'customer.select-techstack',

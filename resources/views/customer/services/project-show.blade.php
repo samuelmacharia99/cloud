@@ -13,7 +13,11 @@
 
             return ! $s->isContainerHosting() && ! in_array($status, ['terminated', 'cancelled'], true);
         });
-    $primaryActionLabel = $canDeployIncluded ? 'Deploy new service' : 'Choose a plan';
+    $planHasRoom = $canDeployIncluded && $project->hasRoomForIncludedWorkload();
+    $primaryActionLabel = $canDeployIncluded ? ($planHasRoom ? 'Deploy new service' : 'Plan full · upgrade') : 'Choose a plan';
+    $primaryActionUrl = $canDeployIncluded && ! $planHasRoom && $billingService
+        ? route('customer.services.upgrade', $billingService)
+        : route('customer.projects.deploy', $project);
     $nextDue = $billingService?->next_due_date;
     $consumption = $consumption ?? null;
     $trim = fn ($value) => rtrim(rtrim(number_format((float) $value, 2), '0'), '.');
@@ -96,7 +100,7 @@
                     Remove project
                 </button>
             @endif
-            <a href="{{ route('customer.projects.deploy', $project) }}" class="btn-primary btn-sm">
+            <a href="{{ $primaryActionUrl }}" class="btn-primary btn-sm">
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v14m-7-7h14"/>
                 </svg>
@@ -127,7 +131,7 @@
                     </form>
                 @endif
             </div>
-            <a href="{{ route('customer.projects.deploy', $project) }}" class="text-sm font-semibold text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300">
+            <a href="{{ $primaryActionUrl }}" class="text-sm font-semibold text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300">
                 {{ $primaryActionLabel }} →
             </a>
         </div>
@@ -155,7 +159,7 @@
                 <p class="mt-1 text-xs text-ink-500 dark:text-ink-400">
                     {{ $canDeployIncluded ? 'Deploy one on this project’s plan, or move an existing service here from My Services.' : 'Choose a plan to deploy your first service.' }}
                 </p>
-                <a href="{{ route('customer.projects.deploy', $project) }}" class="btn-primary btn-sm mt-4 inline-flex">
+                <a href="{{ $primaryActionUrl }}" class="btn-primary btn-sm mt-4 inline-flex">
                     {{ $primaryActionLabel }}
                 </a>
             </div>

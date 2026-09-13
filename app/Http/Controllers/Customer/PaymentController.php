@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Invoice;
 use App\Models\Order;
 use App\Models\Payment;
+use App\Models\Service;
 use App\Models\Setting;
 use App\Services\Billing\InvoiceSettlementService;
 use App\Services\CreditService;
@@ -557,7 +558,16 @@ class PaymentController extends Controller
     {
         abort_if($invoice->user_id !== auth()->id(), 403, 'Unauthorized');
 
-        return view('customer.payment.success', ['invoice' => $invoice]);
+        // Application hosting bought on the deploy page is provisioning by
+        // now; hand the customer the live console instead of the dashboard.
+        $deploying = $invoice->services()
+            ->with('product')
+            ->whereIn('status', ['pending', 'provisioning', 'active'])
+            ->get()
+            ->filter(fn (Service $service) => $service->isContainerHosting())
+            ->values();
+
+        return view('customer.payment.success', ['invoice' => $invoice, 'deployingServices' => $deploying]);
     }
 
     /**

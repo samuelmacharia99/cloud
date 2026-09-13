@@ -23,6 +23,7 @@ use App\Services\Customer\CustomerServiceCancellationService;
 use App\Services\Customer\CustomerServiceRenewalService;
 use App\Services\Customer\ProjectNodeWebSplitService;
 use App\Services\Customer\ProjectWorkloadDeployService;
+use App\Services\Customer\StackEligibilityService;
 use App\Services\Hosting\ServicePackageUsageService;
 use App\Services\Provisioning\ContainerDeployProgressService;
 use App\Services\Provisioning\ContainerNodeWorkloadTopologyService;
@@ -183,28 +184,28 @@ class ServiceController extends Controller
     {
         $this->authorize('update', $project);
 
-        $languages = ContainerTemplate::offeredForNewDeploy()
-            ->reorder()
-            ->orderByRaw("CASE slug
-                WHEN 'wordpress' THEN 1
-                WHEN 'nodejs' THEN 2
-                WHEN 'python' THEN 3
-                WHEN 'static-site' THEN 4
-                WHEN 'hermes' THEN 5
-                WHEN 'openclaw' THEN 6
-                WHEN 'n8n' THEN 8
-                WHEN 'go' THEN 9
-                WHEN 'directus' THEN 10
-                WHEN 'chatwoot' THEN 11
-                WHEN 'odoo' THEN 12
-                WHEN 'erpnext' THEN 13
-                ELSE 100
-            END")
-            ->orderBy('order')
-            ->orderBy('name')
-            ->get();
+        $languages = ContainerTemplate::offeredForNewDeploy()->catalogOrder()->get();
         $databases = DatabaseTemplate::active()->get();
         $includedDeploy = $project->canDeployIncludedWorkload();
+
+        // A project without a plan chooses one on the deploy page; the plan
+        // comes back attached to this project.
+        if (! $includedDeploy) {
+            return redirect()->route('customer.deploy-service', ['project' => $project->id]);
+        }
+
+        if (! $project->hasRoomForIncludedWorkload()) {
+            return redirect()->route('customer.projects.show', $project)
+                ->with('error', $project->includedWorkloadRoomReason());
+        }
+
+        $anchor = $project->resolvedBillingService();
+        $eligibility = app(StackEligibilityService::class);
+        $choices = $eligibility->forPlan(
+            $anchor?->product?->container_template_id ? (int) $anchor->product->container_template_id : null,
+            $project->includedPlanLimits(),
+            $languages,
+        );
 
         return view('customer.select-techstack', [
             'languages' => $languages,
@@ -212,10 +213,9 @@ class ServiceController extends Controller
             'cartCount' => 0,
             'attachDomain' => null,
             'project' => $project,
-            'includedDeploy' => $includedDeploy,
-            'stackFormAction' => $includedDeploy
-                ? route('customer.projects.deploy.store', $project)
-                : route('customer.confirm-techstack.store'),
+            'includedDeploy' => true,
+            'stackChoices' => $eligibility->keyed($choices),
+            'stackFormAction' => route('customer.projects.deploy.store', $project),
         ]);
     }
 
