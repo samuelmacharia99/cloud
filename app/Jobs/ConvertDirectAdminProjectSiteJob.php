@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Concerns\ReleasesOverlapLockOnFatal;
 use App\Models\Service;
 use App\Services\Provisioning\DaConvertProgress;
 use App\Services\Provisioning\DirectAdminToContainerConvertService;
@@ -15,7 +16,7 @@ use Illuminate\Support\Facades\Log;
 
 class ConvertDirectAdminProjectSiteJob implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use Dispatchable, InteractsWithQueue, Queueable, ReleasesOverlapLockOnFatal, SerializesModels;
 
     public int $timeout = 1800;
 
@@ -36,7 +37,7 @@ class ConvertDirectAdminProjectSiteJob implements ShouldQueue
         $nodeId = (int) ($meta['da_legacy']['da_node_id'] ?? 0);
 
         return [
-            (new WithoutOverlapping('da-convert-node-'.$nodeId))
+            (new WithoutOverlapping(ConvertDirectAdminServiceToContainerJob::nodeLockKey($nodeId)))
                 ->releaseAfter(90)
                 ->expireAfter($this->timeout + 300),
         ];
@@ -50,6 +51,9 @@ class ConvertDirectAdminProjectSiteJob implements ShouldQueue
         @ini_set('max_execution_time', '0');
 
         $service = Service::query()->findOrFail($this->serviceId);
+        $this->releaseOverlapLockOnFatal(ConvertDirectAdminServiceToContainerJob::nodeLockKey(
+            (int) ($service->service_meta['da_legacy']['da_node_id'] ?? 0)
+        ));
 
         try {
             $convert->convertProjectSite($service);

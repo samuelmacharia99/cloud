@@ -37,6 +37,7 @@ class DaConvertRetryService
             return ['ok' => false, 'message' => 'This site is still converting. Watch the live terminal.'];
         }
 
+        $released = $this->progress->releaseStaleNodeLock($sibling);
         $this->progress->merge($sibling, [
             'status' => 'queued',
             'mode' => DaConvertProgress::MODE_SITE,
@@ -58,7 +59,7 @@ class DaConvertRetryService
 
         return [
             'ok' => true,
-            'message' => 'Site convert re-queued on the same service. Watch the live terminal.',
+            'message' => 'Site convert re-queued on the same service.'.($released ? ' A stale node lock from a crashed run was cleared.' : '').' Watch the live terminal.',
         ];
     }
 
@@ -85,6 +86,7 @@ class DaConvertRetryService
         }
 
         $this->restoreDirectAdminRow($service);
+        $released = $this->progress->releaseStaleNodeLock($service);
 
         $this->progress->merge($service, [
             'status' => 'queued',
@@ -114,7 +116,8 @@ class DaConvertRetryService
 
         return [
             'ok' => true,
-            'message' => 'Convert re-queued on the same service. Existing project, sibling sites and the Mailcow email service are reused. Watch the live terminal.',
+            'message' => 'Convert re-queued on the same service. Existing project, sibling sites and the Mailcow email service are reused.'
+                .($released ? ' A stale node lock from a crashed run was cleared.' : '').' Watch the live terminal.',
         ];
     }
 

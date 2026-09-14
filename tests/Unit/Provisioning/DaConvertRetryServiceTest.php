@@ -13,6 +13,7 @@ use App\Services\Provisioning\DaConvertRetryService;
 use App\Services\Provisioning\DirectAdminToContainerConvertService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Cache;
 use Tests\TestCase;
 
 class DaConvertRetryServiceTest extends TestCase
@@ -145,6 +146,59 @@ class DaConvertRetryServiceTest extends TestCase
 
         $this->assertFalse($result['ok']);
         Bus::assertNothingDispatched();
+    }
+
+    public function test_primary_retry_clears_a_node_lock_left_by_a_crashed_run(): void
+    {
+        Bus::fake();
+        [$service, , $daNode] = $this->failedPrimary();
+        $key = ConvertDirectAdminServiceToContainerJob::overlapLockKey(ConvertDirectAdminServiceToContainerJob::nodeLockKey($daNode->id));
+        $this->assertTrue(Cache::lock($key, 600)->get(), 'test takes the lock like a crashed job would');
+        $this->assertTrue(app(DaConvertProgress::class)->nodeLockHeld($service));
+
+        $result = app(DaConvertRetryService::class)->retry($service);
+
+        $this->assertTrue($result['ok'], $result['message']);
+        $this->assertStringContainsString('stale node lock from a crashed run was cleared', $result['message']);
+        $this->assertFalse(app(DaConvertProgress::class)->nodeLockHeld($service));
+        Bus::assertDispatched(ConvertDirectAdminServiceToContainerJob::class);
+    }
+
+    public function test_primary_retry_keeps_a_lock_owned_by_a_live_convert_on_the_same_node(): void
+    {
+        Bus::fake();
+        [$service, , $daNode] = $this->failedPrimary();
+        Service::factory()->create([
+            'node_id' => $daNode->id,
+            'status' => 'provisioning',
+            'service_meta' => ['da_convert' => ['status' => 'running', 'heartbeat_at' => now()->toIso8601String()], 'da_legacy' => ['da_node_id' => $daNode->id]],
+        ]);
+        $key = ConvertDirectAdminServiceToContainerJob::overlapLockKey(ConvertDirectAdminServiceToContainerJob::nodeLockKey($daNode->id));
+        $lock = Cache::lock($key, 600);
+        $this->assertTrue($lock->get());
+
+        $result = app(DaConvertRetryService::class)->retry($service);
+
+        $this->assertTrue($result['ok']);
+        $this->assertStringNotContainsString('stale node lock', $result['message']);
+        $this->assertTrue(app(DaConvertProgress::class)->nodeLockHeld($service), 'a live run keeps its lock');
+        $lock->release();
+    }
+
+    public function test_queued_console_label_names_a_held_node_lock(): void
+    {
+        [$service, , $daNode] = $this->failedPrimary();
+        $meta = $service->service_meta;
+        $meta['da_convert']['status'] = 'queued';
+        $service->update(['service_meta' => $meta]);
+
+        $this->assertStringContainsString('Waiting for a worker', app(DaConvertProgress::class)->operatorConvertView($service->fresh())['convert_label']);
+
+        $key = ConvertDirectAdminServiceToContainerJob::overlapLockKey(ConvertDirectAdminServiceToContainerJob::nodeLockKey($daNode->id));
+        $lock = Cache::lock($key, 600);
+        $this->assertTrue($lock->get());
+        $this->assertStringContainsString('still holds the node lock', app(DaConvertProgress::class)->operatorConvertView($service->fresh())['convert_label']);
+        $lock->release();
     }
 
     /**

@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Enums\DaConvertBatchItemStatus;
+use App\Jobs\Concerns\ReleasesOverlapLockOnFatal;
 use App\Models\DaConvertBatchItem;
 use App\Models\Product;
 use App\Models\Service;
@@ -18,9 +19,17 @@ use Illuminate\Support\Facades\Log;
 
 class ConvertDirectAdminServiceToContainerJob implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use Dispatchable, InteractsWithQueue, Queueable, ReleasesOverlapLockOnFatal, SerializesModels;
 
     public int $timeout = 2400;
+
+    /**
+     * One convert at a time per DirectAdmin node; sibling site jobs share it.
+     */
+    public static function nodeLockKey(int $nodeId): string
+    {
+        return 'da-convert-node-'.$nodeId;
+    }
 
     public function __construct(
         public int $serviceId,
@@ -42,7 +51,7 @@ class ConvertDirectAdminServiceToContainerJob implements ShouldQueue
         $nodeId = (int) (Service::query()->whereKey($this->serviceId)->value('node_id') ?? 0);
 
         return [
-            (new WithoutOverlapping('da-convert-node-'.$nodeId))
+            (new WithoutOverlapping(self::nodeLockKey($nodeId)))
                 ->releaseAfter(90)
                 ->expireAfter($this->timeout + 300),
         ];
@@ -61,6 +70,10 @@ class ConvertDirectAdminServiceToContainerJob implements ShouldQueue
                 'status' => DaConvertBatchItemStatus::Converting,
             ]);
         }
+
+        $this->releaseOverlapLockOnFatal(self::nodeLockKey(
+            (int) (Service::query()->whereKey($this->serviceId)->value('node_id') ?? 0)
+        ));
 
         try {
             $service = Service::with('node', 'product')->findOrFail($this->serviceId);

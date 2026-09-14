@@ -2,11 +2,14 @@
 
 namespace App\Services\Provisioning;
 
+use App\Jobs\ConvertDirectAdminProjectSiteJob;
+use App\Jobs\ConvertDirectAdminServiceToContainerJob;
 use App\Models\ContainerDeploymentEvent;
 use App\Models\CustomerProject;
 use App\Models\Service;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 
 /**
  * Live operator view of a DirectAdmin → Application Hosting convert.
@@ -359,6 +362,108 @@ class DaConvertProgress
     }
 
     /**
+     * The DirectAdmin node whose per-node convert lock this service's jobs take.
+     */
+    public function daNodeId(Service $service): int
+    {
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        $fromLegacy = (int) ($meta['da_legacy']['da_node_id'] ?? 0);
+        if ($fromLegacy > 0) {
+            return $fromLegacy;
+        }
+        $convert = $this->convertMeta($service);
+        $fromPrevious = (int) ($convert['previous']['node_id'] ?? 0);
+        if ($fromPrevious > 0) {
+            return $fromPrevious;
+        }
+
+        return (int) ($service->node_id ?? 0);
+    }
+
+    /**
+     * Cache keys of the overlap locks a convert on this service's node can hold.
+     *
+     * @return list<string>
+     */
+    public function nodeLockKeys(Service $service): array
+    {
+        $key = ConvertDirectAdminServiceToContainerJob::nodeLockKey($this->daNodeId($service));
+
+        return [
+            ConvertDirectAdminServiceToContainerJob::overlapLockKey($key),
+            ConvertDirectAdminProjectSiteJob::overlapLockKey($key),
+        ];
+    }
+
+    /**
+     * True when another job currently holds the node's convert lock. Takes and
+     * immediately releases the lock, so it never disturbs a real holder.
+     */
+    public function nodeLockHeld(Service $service): bool
+    {
+        foreach ($this->nodeLockKeys($service) as $key) {
+            try {
+                $lock = Cache::lock($key, 1);
+                if (! $lock->get()) {
+                    return true;
+                }
+                $lock->release();
+            } catch (\Throwable) {
+                return false;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Any convert on the same DirectAdmin node that is running and alive.
+     * Used before force-releasing a lock: a live run must keep it.
+     */
+    public function nodeHasLiveConvert(Service $except): bool
+    {
+        $nodeId = $this->daNodeId($except);
+        if ($nodeId <= 0) {
+            return false;
+        }
+        $candidates = Service::query()
+            ->where('id', '!=', $except->id)
+            ->whereIn('status', ['provisioning', 'pending'])
+            ->get();
+        foreach ($candidates as $candidate) {
+            $convert = $this->convertMeta($candidate);
+            if (! $this->isActive($convert) || $this->looksStuck($convert, $candidate)) {
+                continue;
+            }
+            if ($this->daNodeId($candidate) === $nodeId) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Drop the node's convert locks when no live run owns them. Returns true
+     * when a lock was actually released.
+     */
+    public function releaseStaleNodeLock(Service $service): bool
+    {
+        if (! $this->nodeLockHeld($service) || $this->nodeHasLiveConvert($service)) {
+            return false;
+        }
+        foreach ($this->nodeLockKeys($service) as $key) {
+            try {
+                Cache::lock($key)->forceRelease();
+            } catch (\Throwable) {
+                // Best effort; the lock expires on its own.
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * The project this convert belongs to, whether the row is currently
      * linked to it or was unlinked by a rollback.
      */
@@ -573,7 +678,9 @@ class DaConvertProgress
         if ($status === 'failed') {
             $label = (string) ($convert['error'] ?? $label ?: 'Convert failed');
         } elseif ($status === 'queued') {
-            $label = 'Convert queued. Waiting for a worker…';
+            $label = $this->nodeLockHeld($service)
+                ? 'Queued, but a previous convert run on this DirectAdmin node still holds the node lock, so no worker can start this one. Retry convert clears a stale lock; a lock left by a crashed run expires on its own within 45 minutes.'
+                : 'Convert queued. Waiting for a worker (QUEUE_CONNECTION and the talksasa-queue service must be running)…';
         } elseif ($status === 'completed' && $siblingsActive !== []) {
             $label = sprintf('Primary converted. %d of %d extra site(s) still converting…', count($siblingsActive), count($siblings));
         } elseif ($status === 'completed' && $siblingsFailed !== []) {
