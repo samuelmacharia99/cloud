@@ -393,6 +393,8 @@ function containerDoctor(config = {}) {
     return {
         diagnoseUrl: config.diagnoseUrl,
         treatUrl: config.treatUrl,
+        incidentDownloadUrlTemplate: config.incidentDownloadUrlTemplate || '',
+        canRestoreIncidents: !!config.canRestoreIncidents,
         logLines: config.logLines || 2000,
         diagnosing: false,
         treating: false,
@@ -406,6 +408,18 @@ function containerDoctor(config = {}) {
         error: '',
         treatMessage: '',
         treatOk: false,
+
+        incidentDownloadUrl(id) {
+            return this.incidentDownloadUrlTemplate.replace('__INCIDENT__', encodeURIComponent(id));
+        },
+
+        formatBytes(bytes) {
+            const n = Number(bytes) || 0;
+            if (n < 1024) return n + ' B';
+            if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+            if (n < 1024 * 1024 * 1024) return (n / (1024 * 1024)).toFixed(1) + ' MB';
+            return (n / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+        },
 
         applyDiagnosis(data) {
             this.findings = data.findings || [];

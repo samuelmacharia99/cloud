@@ -52,30 +52,53 @@ class ContainerDoctorWordPressTreatments
     }
 
     /**
+     * wp-cli refuses to deactivate a plugin whose files are gone, so the
+     * option itself is edited and read back.
+     *
      * @return array{success: bool, message: string}
      */
     public function deactivateMissingPlugins(Service $service): array
     {
         return $this->withWpCli($service, function (SSHService $ssh, ContainerDeployment $deployment, string $containerPath) {
-            $script = 'foreach ((array) get_option("active_plugins", []) as $p) { if (! file_exists(WP_PLUGIN_DIR."/".$p)) { echo "MISSING ".$p."\n"; } }';
-            $listed = $this->runWp($ssh, $containerPath, $deployment->container_name, 'wp eval '.escapeshellarg($script).' --path='.self::DOCROOT.' --skip-plugins --skip-themes');
-            $missing = [];
-            foreach (explode("\n", $listed['output']) as $line) {
-                if (str_starts_with(trim($line), 'MISSING ')) {
-                    $missing[] = trim(substr(trim($line), 8));
-                }
+            $result = $this->runWp($ssh, $containerPath, $deployment->container_name, 'wp eval '.escapeshellarg($this->deactivateMissingPluginsScript()).' --path='.self::DOCROOT.' --skip-plugins --skip-themes 2>&1');
+            if (preg_match('/TALKSASA_DEACTIVATED=(\{.*\})/', $result['output'], $m) !== 1 || ! is_array($parsed = json_decode($m[1], true))) {
+                return ['success' => false, 'message' => 'WordPress did not answer: '.mb_substr(trim($result['output']), 0, 200)];
             }
-            if ($missing === []) {
+            $removed = (array) ($parsed['removed'] ?? []);
+            $remaining = (array) ($parsed['still_missing'] ?? []);
+            if ($removed === [] && $remaining === []) {
                 return ['success' => true, 'message' => 'Every active plugin has its files; nothing to deactivate.'];
             }
-            $args = implode(' ', array_map(fn ($p) => escapeshellarg(dirname($p) === '.' ? preg_replace('/\.php$/', '', $p) : dirname($p)), $missing));
-            $result = $this->runWp($ssh, $containerPath, $deployment->container_name, 'wp plugin deactivate '.$args.' --path='.self::DOCROOT.' --skip-plugins --skip-themes 2>&1 || true');
+            if ($remaining !== []) {
+                return ['success' => false, 'message' => 'Could not update the active plugin list; still listed without files: '.implode(', ', $remaining)];
+            }
 
             return [
                 'success' => true,
-                'message' => 'Deactivated '.count($missing).' plugin(s) whose files are missing: '.implode(', ', $missing).'. '.mb_substr(trim($result['output']), 0, 160),
+                'message' => 'Deactivated '.count($removed).' plugin(s) whose files are missing: '.implode(', ', $removed).'. WordPress no longer tries to load them.',
             ];
         });
+    }
+
+    public function deactivateMissingPluginsScript(): string
+    {
+        return <<<'PHP'
+$removed = [];
+foreach (['active_plugins' => false, 'active_sitewide_plugins' => true] as $option => $network) {
+    $current = $network ? (is_multisite() ? (array) get_site_option($option, []) : []) : (array) get_option($option, []);
+    if ($current === []) { continue; }
+    $kept = [];
+    foreach ($current as $key => $value) {
+        $file = $network ? (string) $key : (string) $value;
+        if (file_exists(WP_PLUGIN_DIR.'/'.$file)) { if ($network) { $kept[$key] = $value; } else { $kept[] = $value; } } else { $removed[] = $file; }
+    }
+    if (count($kept) !== count($current)) { $network ? update_site_option($option, $kept) : update_option($option, $kept); }
+}
+wp_cache_delete('active_plugins', 'options'); wp_cache_delete('alloptions', 'options');
+$still = [];
+foreach ((array) get_option('active_plugins', []) as $p) { if (! file_exists(WP_PLUGIN_DIR.'/'.$p)) { $still[] = $p; } }
+echo "TALKSASA_DEACTIVATED=".json_encode(['removed' => array_values(array_unique($removed)), 'still_missing' => $still])."\n";
+PHP;
     }
 
     /**
@@ -201,6 +224,226 @@ class ContainerDoctorWordPressTreatments
                 ? ['success' => true, 'message' => 'Purged cached pages for '.$host.' ('.trim($result['output']).' entries). Visitors get the live response on their next request.']
                 : ['success' => false, 'message' => 'Purge failed: '.($result['output'] ?: 'unknown error')];
         });
+    }
+
+    /**
+     * @return array{success: bool, message: string}
+     */
+    public function rotateSecurityKeys(Service $service): array
+    {
+        return $this->onHost($service, fn (SSHService $ssh, ContainerDeployment $deployment) => app(WordPressSecurityBaseline::class)->rotateSalts($ssh, $deployment));
+    }
+
+    /**
+     * @return array{success: bool, message: string}
+     */
+    public function closeRegistration(Service $service): array
+    {
+        return $this->withWpCli($service, function (SSHService $ssh, ContainerDeployment $deployment, string $containerPath) {
+            $script = 'update_option("default_role", "subscriber"); echo "ROLE=".get_option("default_role")."\n";';
+            $result = $this->runWp($ssh, $containerPath, $deployment->container_name, 'wp eval '.escapeshellarg($script).' --path='.self::DOCROOT.' --skip-plugins --skip-themes 2>&1');
+            if (! str_contains($result['output'], 'ROLE=subscriber')) {
+                return ['success' => false, 'message' => 'The default role did not change: '.mb_substr(trim($result['output']), 0, 200)];
+            }
+
+            return ['success' => true, 'message' => 'New registrations are now Subscribers. Review existing administrators under wp-admin → Users.'];
+        });
+    }
+
+    /**
+     * @return array{success: bool, message: string}
+     */
+    public function hardenRuntime(Service $service): array
+    {
+        return $this->onHost($service, function (SSHService $ssh, ContainerDeployment $deployment) {
+            $baseline = app(WordPressSecurityBaseline::class);
+            $lines = $baseline->apply($ssh, $deployment->container_name);
+            $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+            $state = $baseline->hostState($ssh, $containerPath, $deployment->container_name);
+            $ok = $state['conf_present'] && $state['conf_version_ok'];
+
+            return [
+                'success' => $ok,
+                'message' => ($ok ? 'Runtime hardened. ' : 'Hardening did not fully apply. ').implode(' ', $lines),
+            ];
+        });
+    }
+
+    /**
+     * Update every plugin and theme, then boot WordPress once. A plugin that
+     * now fatals is moved aside and named.
+     *
+     * @return array{success: bool, message: string}
+     */
+    public function updateExtensions(Service $service): array
+    {
+        return $this->withWpCli($service, function (SSHService $ssh, ContainerDeployment $deployment, string $containerPath) {
+            $this->recordVersions($ssh, $deployment, $containerPath, 'extensions');
+            $path = ' --path='.self::DOCROOT;
+            $plugins = $this->runWp($ssh, $containerPath, $deployment->container_name, 'wp plugin update --all --format=summary'.$path.' 2>&1 || true');
+            $themes = $this->runWp($ssh, $containerPath, $deployment->container_name, 'wp theme update --all --format=summary'.$path.' 2>&1 || true');
+            $updated = $this->countUpdated($plugins['output']) + $this->countUpdated($themes['output']);
+            $failed = $this->failedUpdates($plugins['output'].$themes['output']);
+
+            $boot = $this->bootCheck($ssh, $deployment, $containerPath);
+            $message = 'Updated '.$updated.' plugin(s)/theme(s).';
+            if ($failed !== []) {
+                $message .= ' Could not update: '.implode(', ', array_slice($failed, 0, 6)).'.';
+            }
+
+            return $this->finishWithBoot($ssh, $boot, $message, $updated > 0 || $failed === []);
+        });
+    }
+
+    /**
+     * @return array{success: bool, message: string}
+     */
+    public function updateCore(Service $service): array
+    {
+        return $this->withWpCli($service, function (SSHService $ssh, ContainerDeployment $deployment, string $containerPath) {
+            $this->recordVersions($ssh, $deployment, $containerPath, 'core');
+            $path = ' --path='.self::DOCROOT;
+            $before = trim($this->runWp($ssh, $containerPath, $deployment->container_name, 'wp core version'.$path.' 2>/dev/null')['output']);
+            $update = $this->runWp($ssh, $containerPath, $deployment->container_name, 'wp core update'.$path.' 2>&1 && wp core update-db'.$path.' 2>&1');
+            $after = trim($this->runWp($ssh, $containerPath, $deployment->container_name, 'wp core version'.$path.' 2>/dev/null')['output']);
+            if ($update['status'] !== 0 && $after === $before) {
+                return ['success' => false, 'message' => 'Core update did not complete: '.mb_substr(trim($update['output']), 0, 300)];
+            }
+            $boot = $this->bootCheck($ssh, $deployment, $containerPath);
+
+            return $this->finishWithBoot($ssh, $boot, $after === $before ? 'WordPress is already at '.$after.'.' : 'WordPress updated from '.$before.' to '.$after.' and the database schema was upgraded.', true);
+        });
+    }
+
+    /**
+     * Save the original rows into an incident folder, then remove only the
+     * flagged script tags, then probe again.
+     *
+     * @return array{success: bool, message: string}
+     */
+    public function stripScriptInjection(Service $service): array
+    {
+        return $this->onHost($service, function (SSHService $ssh, ContainerDeployment $deployment) use ($service) {
+            $baseline = app(WordPressSecurityBaseline::class);
+            $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+            $hosts = array_values(array_filter(array_map(fn ($d) => (string) $d->domain, $deployment->domains()->get()->all())));
+            $sec = $baseline->parseSecurityProbe((string) $ssh->exec($baseline->securityProbeCommand($containerPath, $deployment->container_name, $hosts), 120, false));
+            $inj = is_array($sec) ? (array) ($sec['injection'] ?? []) : [];
+            $options = array_values(array_filter(array_map(fn ($o) => (string) ($o['name'] ?? ''), (array) ($inj['options'] ?? []))));
+            $posts = array_values(array_filter(array_map(fn ($p) => (int) ($p['id'] ?? 0), (array) ($inj['posts'] ?? []))));
+            if ($options === [] && $posts === []) {
+                return ['success' => true, 'message' => 'No injected scripts are left in the database.'];
+            }
+            $payload = json_encode(['options' => $options, 'posts' => $posts, 'domains' => (array) ($inj['domains'] ?? [])]);
+            $out = (string) $ssh->exec(
+                'cd '.escapeshellarg($containerPath)
+                .' && docker compose exec -u www-data -T '.escapeshellarg($deployment->container_name)
+                .' php -d display_errors=0 -r '.escapeshellarg($baseline->stripInjectionScript()).' '.escapeshellarg((string) $payload).' 2>&1 || true',
+                180,
+                false
+            );
+            $parsed = $baseline->parseStripOutput($out);
+            if ($parsed['cleaned'] === null) {
+                return ['success' => false, 'message' => 'The clean-up did not run: '.mb_substr(trim($out), 0, 200)];
+            }
+            $incidents = app(ContainerIncidentService::class);
+            $incidentId = null;
+            try {
+                $id = $incidents->newIncidentId();
+                $dir = $incidents->incidentsDir($deployment).'/'.$id;
+                $ssh->exec('mkdir -p '.escapeshellarg($dir).' && chmod 700 '.escapeshellarg($dir), 15);
+                $ssh->upload((string) json_encode(['id' => $id, 'kind' => ContainerIncidentService::KIND_INJECTION, 'opened_at' => now()->toIso8601String(), 'rows' => $parsed['backup'], 'cleaned' => $parsed['cleaned']], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), $dir.'/injection-rows.json');
+                $incidentId = $id;
+            } catch (\Throwable $e) {
+                Log::warning('Injection backup not written', ['service_id' => $service->id, 'error' => $e->getMessage()]);
+            }
+            $after = $baseline->parseSecurityProbe((string) $ssh->exec($baseline->securityProbeCommand($containerPath, $deployment->container_name, $hosts), 120, false));
+            $left = is_array($after) ? count((array) ($after['injection']['options'] ?? [])) + count((array) ($after['injection']['posts'] ?? [])) : -1;
+            $c = $parsed['cleaned'];
+
+            return [
+                'success' => $left === 0,
+                'message' => 'Removed '.$c['tags'].' injected script tag(s) from '.$c['posts'].' post(s) and '.$c['options'].' option(s)'
+                    .($incidentId ? '; the original rows are saved under incident '.$incidentId : '')
+                    .($left > 0 ? '. '.$left.' item(s) still match; open them in wp-admin' : '. Purge the page cache so visitors get the clean pages.'),
+            ];
+        });
+    }
+
+    /**
+     * @return array{fatal: ?array{message: string, file: string, line: int}, loaded: bool, disabled: ?string}
+     */
+    private function bootCheck(SSHService $ssh, ContainerDeployment $deployment, string $containerPath): array
+    {
+        $analyzer = app(ContainerDoctorWordPressAnalyzer::class);
+        $runtime = $analyzer->parseRuntimeProbe((string) $ssh->exec($analyzer->runtimeProbeCommand($containerPath, $deployment->container_name), 120, false));
+        $fatal = is_array($runtime['fatal'] ?? null) ? $runtime['fatal'] : null;
+        $disabled = null;
+        if ($fatal !== null) {
+            $owner = $analyzer->ownerOfPath((string) ($fatal['file'] ?? ''));
+            if ($owner && $owner['kind'] === 'plugin' && ContainerDoctorWordPressAnalyzer::isSafeSlug($owner['slug'])) {
+                $hostAppPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name.'/app';
+                $moved = $ssh->execWithStatus($this->disablePluginCommand($hostAppPath, $owner['slug']), 60);
+                if (str_contains($moved['output'], 'moved')) {
+                    $disabled = $owner['slug'];
+                }
+            }
+        }
+
+        return ['fatal' => $fatal, 'loaded' => (bool) ($runtime['loaded'] ?? false), 'disabled' => $disabled];
+    }
+
+    /**
+     * @param  array{fatal: ?array{message: string, file: string, line: int}, loaded: bool, disabled: ?string}  $boot
+     * @return array{success: bool, message: string}
+     */
+    private function finishWithBoot(SSHService $ssh, array $boot, string $message, bool $success): array
+    {
+        if ($boot['fatal'] === null) {
+            return ['success' => $success, 'message' => $message.' WordPress boots cleanly afterwards.'];
+        }
+        $where = basename((string) ($boot['fatal']['file'] ?? ''));
+
+        return [
+            'success' => false,
+            'message' => $message.' After the update WordPress fatals in '.$where.': '.mb_substr((string) $boot['fatal']['message'], 0, 160)
+                .($boot['disabled'] ? '. Doctor moved the '.$boot['disabled'].' plugin to '.ContainerDoctorWordPressAnalyzer::DISABLED_PLUGINS_DIR.'/ so the site renders; update or replace it, then move it back' : ''),
+        ];
+    }
+
+    private function recordVersions(SSHService $ssh, ContainerDeployment $deployment, string $containerPath, string $what): void
+    {
+        try {
+            $path = ' --path='.self::DOCROOT.' --skip-plugins --skip-themes';
+            $out = $this->runWp($ssh, $containerPath, $deployment->container_name,
+                'echo "{\"core\":\"$(wp core version'.$path.' 2>/dev/null)\",\"plugins\":$(wp plugin list --format=json --fields=name,version,status'.$path.' 2>/dev/null || echo []),\"themes\":$(wp theme list --format=json --fields=name,version,status'.$path.' 2>/dev/null || echo [])}"'
+            );
+            $dir = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name.'/updates/'.now()->format('Ymd-His').'-'.$what;
+            $ssh->exec('mkdir -p '.escapeshellarg($dir).' && chmod 700 '.escapeshellarg($dir), 15);
+            $ssh->upload(trim($out['output'])."\n", $dir.'/versions.json');
+        } catch (\Throwable $e) {
+            Log::info('Pre-update version list not recorded', ['container' => $deployment->container_name, 'error' => $e->getMessage()]);
+        }
+    }
+
+    private function countUpdated(string $output): int
+    {
+        if (preg_match('/Success: Updated (\d+) of (\d+)/', $output, $m) === 1) {
+            return (int) $m[1];
+        }
+
+        return preg_match_all('/^\S+\s+\S+\s+\S+\s+Updated\s*$/m', $output);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function failedUpdates(string $output): array
+    {
+        preg_match_all('/^(\S+)\s+\S+\s+\S+\s+Error\s*$/m', $output, $m);
+        preg_match_all('/Warning: (?:The )?[\'"]?([\w.-]+)[\'"]? (?:plugin|theme) (?:could not be updated|update failed)/i', $output, $w);
+
+        return array_values(array_unique(array_merge($m[1], $w[1])));
     }
 
     /*

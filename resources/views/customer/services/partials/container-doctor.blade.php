@@ -4,6 +4,8 @@
     x-data="containerDoctor({
         diagnoseUrl: @js(container_route('doctor.diagnose', $service)),
         treatUrl: @js(container_route('doctor.treat', $service)),
+        incidentDownloadUrlTemplate: @js(container_route('doctor.incidents.download', $service, '__INCIDENT__')),
+        canRestoreIncidents: @js((bool) (auth()->user()?->isAdmin() ?? false)),
         logLines: {{ \App\Services\Provisioning\ContainerDoctorService::LOG_LINES }},
     })"
 >
@@ -68,7 +70,7 @@
             </div>
         </template>
 
-        <template x-if="hasResult && liveChecks && (liveChecks.http_status || liveChecks.db_ok !== null || liveChecks.restarting || liveChecks.container_image || liveChecks.php_production_runtime !== null || liveChecks.publishes_port === false || liveChecks.disk_percent != null || liveChecks.session_driver || liveChecks.http_5xx_count || liveChecks.wordpress_body || liveChecks.integrity_scanned)">
+        <template x-if="hasResult && liveChecks && (liveChecks.http_status || liveChecks.db_ok !== null || liveChecks.restarting || liveChecks.container_image || liveChecks.php_production_runtime !== null || liveChecks.publishes_port === false || liveChecks.disk_percent != null || liveChecks.session_driver || liveChecks.http_5xx_count || liveChecks.wordpress_body || liveChecks.integrity_scanned || liveChecks.security_hardened !== undefined)">
             <div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 px-4 py-3 text-xs text-slate-600 dark:text-slate-300 flex flex-wrap gap-x-4 gap-y-1">
                 <span>Live checks:</span>
                 <span x-show="liveChecks.http_status" x-text="'HTTP ' + liveChecks.http_status"></span>
@@ -96,10 +98,70 @@
                 <span x-show="liveChecks.wordpress_loaded === true && !liveChecks.wordpress_fatal">PHP: WordPress boots</span>
                 <span x-show="liveChecks.integrity_scanned === true"
                       :class="liveChecks.integrity_suspicious ? 'text-red-700 dark:text-red-300 font-semibold' : ''"
-                      x-text="liveChecks.integrity_suspicious ? 'Files: ' + liveChecks.integrity_suspicious + ' suspicious' : 'Files: clean' + (liveChecks.integrity_core_checked ? ' · core verified' : '')"></span>
+                      x-text="liveChecks.integrity_suspicious ? 'Files: ' + liveChecks.integrity_suspicious + ' suspicious' : 'Files: clean' + (liveChecks.integrity_partial ? ' (partial scan)' : '')"></span>
+                <span x-show="liveChecks.integrity_scanned === true && liveChecks.integrity_core_checked"
+                      :class="liveChecks.integrity_core_modified ? 'text-red-700 dark:text-red-300 font-semibold' : ''"
+                      x-text="liveChecks.integrity_core_modified ? 'Core: ' + liveChecks.integrity_core_modified + ' file(s) differ from ' + (liveChecks.integrity_core_version || 'the release') : 'Core: verified ' + (liveChecks.integrity_core_version || '')"></span>
+                <span x-show="liveChecks.integrity_scanned === true && liveChecks.integrity_core_checked === false" class="text-amber-700 dark:text-amber-300"
+                      x-text="'Core: not verified' + (liveChecks.integrity_core_error ? ' (' + liveChecks.integrity_core_error + ')' : '')"></span>
+                <span x-show="liveChecks.integrity_exposed" class="text-amber-700 dark:text-amber-300" x-text="'Exposed files: ' + liveChecks.integrity_exposed"></span>
+                <span x-show="liveChecks.security_hardened !== undefined"
+                      :class="liveChecks.security_hardened ? '' : 'text-amber-700 dark:text-amber-300'"
+                      x-text="liveChecks.security_hardened ? 'Security: hardened' : 'Security: ' + (liveChecks.security_gaps || 0) + ' gap(s)'"></span>
+                <span x-show="liveChecks.wordpress_admins !== null && liveChecks.wordpress_admins !== undefined" x-text="'Admins: ' + liveChecks.wordpress_admins"></span>
+                <span x-show="liveChecks.wordpress_updates" class="text-amber-700 dark:text-amber-300" x-text="'Updates: ' + liveChecks.wordpress_updates"></span>
+                <span x-show="liveChecks.wordpress_injection" class="text-red-700 dark:text-red-300 font-semibold" x-text="'Injected scripts: ' + liveChecks.wordpress_injection"></span>
                 <span x-show="liveChecks.session_driver" x-text="'Session: ' + liveChecks.session_driver"></span>
                 <span x-show="liveChecks.cache_store" x-text="'Cache: ' + liveChecks.cache_store"></span>
                 <span x-show="liveChecks.http_5xx_count" x-text="'Access 5xx: ' + liveChecks.http_5xx_count + ' / 2xx: ' + (liveChecks.http_2xx_count || 0)"></span>
+            </div>
+        </template>
+
+        <template x-if="hasResult && liveChecks && liveChecks.security_incidents && liveChecks.security_incidents.length">
+            <div class="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+                <div class="px-4 py-2 bg-slate-50 dark:bg-slate-900/40 flex items-center justify-between gap-3">
+                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">Security incidents</p>
+                    <p class="text-xs text-slate-500 dark:text-slate-400">Quarantined files stay zipped on the node outside the site; nothing here is reachable over the web.</p>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-xs">
+                        <thead class="text-left text-slate-500 dark:text-slate-400">
+                            <tr>
+                                <th class="px-4 py-2 font-medium">Incident</th>
+                                <th class="px-4 py-2 font-medium">Opened</th>
+                                <th class="px-4 py-2 font-medium">By</th>
+                                <th class="px-4 py-2 font-medium">Files</th>
+                                <th class="px-4 py-2 font-medium">Archive</th>
+                                <th class="px-4 py-2 font-medium"></th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100 dark:divide-slate-700/60">
+                            <template x-for="incident in liveChecks.security_incidents" :key="incident.id">
+                                <tr class="text-slate-700 dark:text-slate-200">
+                                    <td class="px-4 py-2 font-mono">
+                                        <span x-text="incident.id"></span>
+                                        <span class="ml-1 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300" x-text="incident.kind"></span>
+                                        <span x-show="incident.restored_at" class="ml-1 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300">restored</span>
+                                    </td>
+                                    <td class="px-4 py-2 whitespace-nowrap" x-text="incident.opened_at ? new Date(incident.opened_at).toLocaleString() : ''"></td>
+                                    <td class="px-4 py-2" x-text="incident.trigger"></td>
+                                    <td class="px-4 py-2">
+                                        <span x-text="incident.files + (incident.archived_only ? ' (archived, kept in place)' : ' removed')"></span>
+                                        <span class="block text-slate-500 dark:text-slate-400 truncate max-w-xs" x-text="(incident.paths || []).join(', ')"></span>
+                                    </td>
+                                    <td class="px-4 py-2 whitespace-nowrap" x-text="formatBytes(incident.bytes)"></td>
+                                    <td class="px-4 py-2 whitespace-nowrap text-right space-x-2">
+                                        <a :href="incidentDownloadUrl(incident.id)" class="inline-flex items-center px-2.5 py-1 rounded-md bg-slate-700 hover:bg-slate-800 text-white text-xs font-medium">Download zip</a>
+                                        <button type="button" x-show="canRestoreIncidents && !incident.restored_at"
+                                                @click="runTreat({ treat_action: 'restore_incident:' + incident.id })"
+                                                :disabled="diagnosing || treating"
+                                                class="inline-flex items-center px-2.5 py-1 rounded-md border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200 text-xs font-medium disabled:opacity-50">Restore</button>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </template>
 

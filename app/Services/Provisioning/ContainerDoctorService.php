@@ -103,6 +103,7 @@ class ContainerDoctorService
         // Recreate / runtime rebuild / restart can revive a crash-looping stack.
         if (! $deployment->isRunning()
             && ! str_starts_with($action, 'disable_wordpress_plugin:')
+            && ! str_starts_with($action, 'restore_incident:')
             && ! in_array($action, [
                 'recreate_application',
                 'rebuild_frontend_bundle',
@@ -124,6 +125,8 @@ class ContainerDoctorService
                 'quarantine_wordpress_dropins',
                 'fix_wordpress_abspath',
                 'quarantine_suspicious_files',
+                'archive_exposed_files',
+                'restore_wordpress_core',
                 // A container that cannot parse its settings is crash-looping
                 // by definition, so requiring it to be running first would
                 // refuse the one repair that fixes it.
@@ -173,7 +176,14 @@ class ContainerDoctorService
             'enable_wordpress_debug_log' => $this->wordPressTreatments()->enableDebugLog($service),
             'purge_wordpress_page_cache' => $this->wordPressTreatments()->purgePageCache($service),
             'quarantine_suspicious_files' => $this->treatQuarantineSuspiciousFiles($service),
+            'archive_exposed_files' => $this->treatArchiveExposedFiles($service),
             'restore_wordpress_core' => $this->treatRestoreWordPressCore($service),
+            'harden_wordpress_runtime' => $this->wordPressTreatments()->hardenRuntime($service),
+            'rotate_wordpress_security_keys' => $this->wordPressTreatments()->rotateSecurityKeys($service),
+            'close_wordpress_registration' => $this->wordPressTreatments()->closeRegistration($service),
+            'update_wordpress_extensions' => $this->wordPressTreatments()->updateExtensions($service),
+            'update_wordpress_core' => $this->wordPressTreatments()->updateCore($service),
+            'strip_wordpress_script_injection' => $this->wordPressTreatments()->stripScriptInjection($service),
             'fix_laravel_app_url' => $this->treatFixLaravelAppUrl($service),
             'refresh_domain_proxy' => $this->treatRefreshDomainProxy($service),
             'restart_application' => $this->treatRestartApplication($service),
@@ -537,7 +547,8 @@ class ContainerDoctorService
                 $media = $this->probeWordPressMedia($ssh, $deployment);
                 if ($media !== null) {
                     $checks['wordpress_image_editor'] = $media['editor'];
-                    $checks['wordpress_missing_thumbnails'] = $media['missing_sizes'];
+                    $checks['wordpress_missing_thumbnails'] = array_key_exists('rebuildable', $media) ? (int) $media['rebuildable'] : (int) ($media['missing_sizes'] ?? 0);
+                    $checks['wordpress_missing_originals'] = (int) ($media['missing_originals'] ?? 0);
 
                     $liveUrl = app(WordPressAdminLoginService::class)->resolvePublicBaseUrl($service);
                     foreach ($this->wordPressMediaFindings($media, $liveUrl) as $finding) {
@@ -549,6 +560,9 @@ class ContainerDoctorService
                     $findings[] = $finding;
                 }
                 foreach ($this->integrityFindings($ssh, $service, $deployment, $checks) as $finding) {
+                    $findings[] = $finding;
+                }
+                foreach ($this->wordPressSecurityFindings($ssh, $service, $deployment, $checks) as $finding) {
                     $findings[] = $finding;
                 }
             }
@@ -3443,13 +3457,22 @@ $missing = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->posts} p LEFT JOIN
 $file = (string) $wpdb->get_var("SELECT m.meta_value FROM {$wpdb->postmeta} m INNER JOIN {$wpdb->posts} p ON p.ID = m.post_id WHERE m.meta_key = '_wp_attached_file' AND p.post_mime_type LIKE 'image/%' ORDER BY m.post_id DESC LIMIT 1");
 // Attachments without sizes split into two groups: originals still on disk
 // (regenerate rebuilds them) and originals that are gone (nothing can).
-$rebuildable = 0; $gone = 0; $goneExamples = array();
-$rows = $wpdb->get_results("SELECT p.ID, f.meta_value AS file FROM {$wpdb->posts} p LEFT JOIN {$wpdb->postmeta} m ON m.post_id = p.ID AND m.meta_key = '_wp_attachment_metadata' LEFT JOIN {$wpdb->postmeta} f ON f.post_id = p.ID AND f.meta_key = '_wp_attached_file' WHERE p.post_type = 'attachment' AND p.post_mime_type LIKE 'image/%' AND (m.meta_id IS NULL OR m.meta_value = '' OR m.meta_value NOT LIKE '%sizes%') ORDER BY p.ID DESC LIMIT 2000", ARRAY_A);
+$rebuildable = 0; $gone = 0; $goneExamples = array(); $unsupported = 0; $empty = 0; $remaining = array();
+$rows = $wpdb->get_results("SELECT p.ID, p.post_mime_type AS mime, f.meta_value AS file FROM {$wpdb->posts} p LEFT JOIN {$wpdb->postmeta} m ON m.post_id = p.ID AND m.meta_key = '_wp_attachment_metadata' LEFT JOIN {$wpdb->postmeta} f ON f.post_id = p.ID AND f.meta_key = '_wp_attached_file' WHERE p.post_type = 'attachment' AND p.post_mime_type LIKE 'image/%' AND (m.meta_id IS NULL OR m.meta_value = '' OR m.meta_value NOT LIKE '%sizes%') ORDER BY p.ID DESC LIMIT 2000", ARRAY_A);
 foreach ((array) $rows as $row) {
     $rel = (string) ($row['file'] ?? '');
-    if ($rel !== '' && $basedir !== '' && file_exists($basedir.'/'.$rel)) { $rebuildable++; continue; }
-    $gone++;
-    if (count($goneExamples) < 5) { $goneExamples[] = ($rel !== '' ? basename($rel) : 'attachment #'.$row['ID']); }
+    $mime = (string) ($row['mime'] ?? '');
+    $full = ($rel !== '' && $basedir !== '') ? $basedir.'/'.$rel : '';
+    if ($full === '' || ! file_exists($full)) {
+        $gone++;
+        if (count($goneExamples) < 5) { $goneExamples[] = ($rel !== '' ? basename($rel) : 'attachment #'.$row['ID']); }
+        continue;
+    }
+    $why = 'rebuildable';
+    if (@filesize($full) === 0) { $why = 'zero_bytes'; $empty++; }
+    elseif (in_array($mime, array('image/svg+xml', 'image/x-icon', 'image/vnd.microsoft.icon', 'image/bmp'), true) || ! wp_image_editor_supports(array('mime_type' => $mime))) { $why = 'unsupported_mime'; $unsupported++; }
+    else { $rebuildable++; }
+    if (count($remaining) < 8) { $remaining[] = array('id' => (int) $row['ID'], 'file' => basename($rel), 'mime' => $mime, 'why' => $why); }
 }
 echo 'TALKSASA_WPMEDIA='.wp_json_encode([
     'gd' => extension_loaded('gd'),
@@ -3463,8 +3486,11 @@ echo 'TALKSASA_WPMEDIA='.wp_json_encode([
     'images' => $images,
     'missing_sizes' => $missing,
     'rebuildable' => $rebuildable,
+    'unsupported_mime' => $unsupported,
+    'zero_bytes' => $empty,
     'missing_originals' => $gone,
     'missing_original_examples' => $goneExamples,
+    'remaining_examples' => $remaining,
     'latest_file' => $file,
     'latest_file_exists' => ($file !== '' && $basedir !== '') ? file_exists($basedir.'/'.$file) : null,
 ]);
@@ -3541,7 +3567,13 @@ PHP;
                 'summary' => 'These attachments exist but never got their thumbnail set, which is why the Media '
                     .'Library shows a document icon and posts render an empty image. Regenerating rebuilds the '
                     .'sizes from the original files already on disk.',
-                'evidence' => [$missing.' of '.$images.' image attachments are missing sizes'],
+                'evidence' => array_merge(
+                    [$missing.' of '.$images.' image attachments are missing sizes'],
+                    array_map(
+                        fn ($r) => '#'.$r['id'].' '.$r['file'].' ('.$r['mime'].')',
+                        array_values(array_filter((array) ($media['remaining_examples'] ?? []), fn ($r) => ($r['why'] ?? '') === 'rebuildable'))
+                    ),
+                ),
                 'treat_action' => 'regenerate_wordpress_thumbnails',
                 'treat_label' => 'Rebuild thumbnails',
                 'manual_steps' => [
@@ -3569,6 +3601,20 @@ PHP;
                     'Copy the missing files into wp-content/uploads from a backup of the old server, then run Rebuild thumbnails.',
                     'Or delete the affected attachments under Media in wp-admin.',
                 ],
+                'source' => 'live',
+            ];
+        }
+
+        $unsupported = (int) ($media['unsupported_mime'] ?? 0) + (int) ($media['zero_bytes'] ?? 0);
+        if ($unsupported > 0) {
+            $rows = array_values(array_filter((array) ($media['remaining_examples'] ?? []), fn ($r) => in_array($r['why'] ?? '', ['unsupported_mime', 'zero_bytes'], true)));
+            $findings[] = [
+                'id' => 'live_wordpress_media_unrebuildable',
+                'severity' => 'info',
+                'title' => $unsupported.' image'.($unsupported === 1 ? '' : 's').' cannot get thumbnails',
+                'summary' => 'These attachments are SVG, icon or empty files, or a format this PHP build cannot resize, so WordPress shows them as-is or as a document icon. Nothing is broken; re-upload them as JPEG or PNG if you need sized versions.',
+                'evidence' => array_map(fn ($r) => '#'.$r['id'].' '.$r['file'].' ('.$r['mime'].', '.str_replace('_', ' ', $r['why']).')', $rows),
+                'manual_steps' => [],
                 'source' => 'live',
             ];
         }
@@ -8443,34 +8489,102 @@ PHP;
     private function integrityFindings(SSHService $ssh, Service $service, $deployment, array &$checks): array
     {
         $scanner = app(ContainerIntegrityScanner::class);
-        // The checksum pass downloads WordPress.org's manifest and reads every
-        // core file; a clean result from the last twelve hours still stands.
+        // A clean, verified core pass from the last twelve hours still stands;
+        // the file rules always run.
         $last = is_array($service->service_meta['integrity_scan'] ?? null) ? $service->service_meta['integrity_scan'] : [];
         $lastAt = is_string($last['scanned_at'] ?? null) ? Carbon::parse($last['scanned_at']) : null;
         $recentClean = $lastAt !== null
             && $lastAt->greaterThan(now()->subHours(12))
             && ($last['core_checked'] ?? false) === true
-            && ($last['core_modified'] ?? []) === [];
+            && ($last['core_modified'] ?? []) === []
+            && ($last['core_missing'] ?? []) === [];
         try {
             $result = $scanner->scan($ssh, $deployment, true, withChecksums: ! $recentClean);
             if ($recentClean) {
-                $result['core'] = ['modified' => [], 'extra' => [], 'ran' => true];
+                $result['core'] = ['ran' => true, 'version' => $last['core_version'] ?? null, 'modified' => [], 'extra' => [], 'missing' => [], 'error' => null];
             }
         } catch (\Throwable $e) {
             $checks['integrity_scanned'] = false;
+            $checks['integrity_error'] = mb_substr($e->getMessage(), 0, 160);
 
             return [];
         }
 
         $checks['integrity_scanned'] = true;
         $checks['integrity_core_checked'] = (bool) ($result['core']['ran'] ?? false);
-        $checks['integrity_suspicious'] = count(array_filter(
-            $result['hits'],
-            fn ($h) => array_intersect($h['reasons'], ContainerIntegrityScanner::QUARANTINE_REASONS) !== []
-        ));
+        $checks['integrity_core_version'] = $result['core']['version'] ?? null;
+        $checks['integrity_core_error'] = $result['core']['error'] ?? null;
+        $checks['integrity_core_modified'] = count((array) ($result['core']['modified'] ?? [])) + count((array) ($result['core']['missing'] ?? []));
+        $checks['integrity_suspicious'] = count($scanner->suspiciousHits($result['hits']));
+        $checks['integrity_exposed'] = count($scanner->exposedHits($result['hits']));
+        $checks['integrity_partial'] = (bool) ($result['summary']['truncated'] ?? false);
         $scanner->persist($service, $result);
+        $checks['security_incidents'] = $this->incidentRows($service);
 
         return $scanner->findings($result, true);
+    }
+
+    /**
+     * Keys, admins, updates, injected scripts and the Apache baseline.
+     *
+     * @param  array<string, mixed>  $checks
+     * @return list<array<string, mixed>>
+     */
+    private function wordPressSecurityFindings(SSHService $ssh, Service $service, $deployment, array &$checks): array
+    {
+        $baseline = app(WordPressSecurityBaseline::class);
+        $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+
+        $host = ['conf_present' => false, 'conf_version_ok' => false, 'mount_persisted' => false];
+        try {
+            $host = $baseline->hostState($ssh, $containerPath, $deployment->container_name);
+        } catch (\Throwable) {
+            // reported as a gap below
+        }
+
+        $sec = null;
+        try {
+            $hosts = array_values(array_filter(array_map(fn ($d) => (string) $d->domain, $deployment->domains()->get()->all())));
+            $sec = $baseline->parseSecurityProbe((string) $ssh->exec($baseline->securityProbeCommand($containerPath, $deployment->container_name, $hosts), 120, false));
+        } catch (\Throwable) {
+            $sec = null;
+        }
+
+        $updates = null;
+        try {
+            app(WordPressAppInstallationService::class)->ensureWpCli($ssh, $containerPath, $deployment->container_name);
+            $updates = $baseline->parseUpdates((string) $ssh->exec($baseline->updatesCommand($containerPath, $deployment->container_name), 180, false));
+        } catch (\Throwable) {
+            $updates = null;
+        }
+
+        $findings = $baseline->findings($sec, $updates, $host);
+        $gaps = collect($findings)->firstWhere('id', 'wordpress_hardening_gaps');
+        $checks['security_hardened'] = $gaps === null && $host['conf_version_ok'];
+        $checks['security_gaps'] = $gaps !== null ? count((array) ($gaps['evidence'] ?? [])) : 0;
+        $checks['wordpress_admins'] = is_array($sec) ? (int) ($sec['admin_count'] ?? 0) : null;
+        $checks['wordpress_updates'] = is_array($updates) ? count((array) ($updates['plugins'] ?? [])) + count((array) ($updates['themes'] ?? [])) + count((array) ($updates['core'] ?? [])) : null;
+        $checks['wordpress_injection'] = is_array($sec) ? count((array) ($sec['injection']['options'] ?? [])) + count((array) ($sec['injection']['posts'] ?? [])) : null;
+
+        return $findings;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function incidentRows(Service $service): array
+    {
+        return array_map(fn ($row) => [
+            'id' => (string) ($row['id'] ?? ''),
+            'kind' => (string) ($row['kind'] ?? ''),
+            'trigger' => (string) ($row['trigger'] ?? ''),
+            'opened_at' => (string) ($row['opened_at'] ?? ''),
+            'files' => (int) ($row['files'] ?? 0),
+            'bytes' => (int) ($row['bytes'] ?? 0),
+            'restored_at' => $row['restored_at'] ?? null,
+            'archived_only' => (bool) ($row['archived_only'] ?? false),
+            'paths' => array_slice((array) ($row['paths'] ?? []), 0, 5),
+        ], array_slice(app(ContainerIncidentService::class)->incidentsFor($service->fresh()), 0, 10));
     }
 
     /**
@@ -8481,6 +8595,10 @@ PHP;
         $prefix = 'disable_wordpress_plugin:';
         if (str_starts_with($action, $prefix)) {
             return $this->wordPressTreatments()->disablePlugin($service, substr($action, strlen($prefix)));
+        }
+        $prefix = 'restore_incident:';
+        if (str_starts_with($action, $prefix)) {
+            return $this->treatRestoreIncident($service, substr($action, strlen($prefix)));
         }
 
         return ['success' => false, 'message' => 'Unknown treatment action.'];
@@ -8500,19 +8618,38 @@ PHP;
         $scanner = app(ContainerIntegrityScanner::class);
 
         try {
-            // Scan again right now so the move is based on what is on disk, not on a stale finding.
-            $result = $scanner->scan($ssh, $deployment, $this->isWordPressStack($service), withChecksums: false);
-            $moved = $scanner->quarantine($ssh, $deployment, $result['hits']);
+            // Scan again right now so the removal is based on what is on disk, not on a stale finding.
+            $result = $scanner->scan($ssh, $deployment, $this->isWordPressStack($service), withChecksums: true);
+            $moved = $scanner->quarantine($ssh, $service, $deployment, $result['hits']);
             $scanner->persist($service, $result, $moved['moved']);
 
             if ($moved['moved'] === []) {
                 return ['success' => true, 'message' => 'Nothing left to quarantine; the scan found no suspicious files.'];
             }
 
+            $movedHits = array_values(array_filter($result['hits'], fn ($h) => in_array($h['path'], $moved['moved'], true)));
+            $webshell = array_filter($movedHits, fn ($h) => array_intersect($h['reasons'], ContainerIntegrityScanner::WEBSHELL_REASONS) !== []);
+            $extra = [];
+            if ($webshell !== [] && $this->isWordPressStack($service)) {
+                $rotate = app(WordPressSecurityBaseline::class)->rotateSalts($ssh, $deployment);
+                $extra[] = $rotate['success'] ? 'Security keys were rotated, so every session (including yours) is signed out once.' : 'Security keys could not be rotated: '.$rotate['message'];
+            }
+            try {
+                $host = (string) ($deployment->probeHostHeader() ?? '');
+                if ($host !== '') {
+                    $ssh->exec($this->wordPressTreatments()->purgePageCacheCommand($host), 60, false);
+                }
+            } catch (\Throwable) {
+                // cache purge is best-effort
+            }
+            app(ContainerIncidentService::class)->alert($service, $deployment, (string) $moved['incident'], ContainerIncidentService::TRIGGER_DOCTOR, $moved['moved'], implode(' ', $extra));
+
             return [
                 'success' => true,
-                'message' => 'Moved '.count($moved['moved']).' file(s) to '.$moved['quarantine_dir'].' with their paths preserved and a manifest. '
-                    .'Change every WordPress admin password and rotate the database password from the Database tab; a webshell usually means both were read.',
+                'message' => 'Archived '.count($moved['moved']).' file(s) into incident '.$moved['incident'].' ('.DirectAdminMailPullProgress::formatBytes((int) $moved['bytes']).') and removed them from the site. '
+                    .implode(' ', $extra)
+                    .($moved['skipped'] !== [] ? ' Left in place because they are WordPress core files (use Restore WordPress core): '.implode(', ', $moved['skipped']).'.' : '')
+                    .' Download the archive from the Security section below. Change every administrator password next.',
             ];
         } catch (\Throwable $e) {
             return ['success' => false, 'message' => 'Quarantine failed: '.$e->getMessage()];
@@ -8524,6 +8661,49 @@ PHP;
     /**
      * @return array{success: bool, message: string}
      */
+    private function treatArchiveExposedFiles(Service $service): array
+    {
+        $deployment = $service->containerDeployment;
+        if (! $deployment?->node) {
+            return ['success' => false, 'message' => 'Application is not deployed.'];
+        }
+
+        $ssh = SSHService::forNode($deployment->node);
+        $scanner = app(ContainerIntegrityScanner::class);
+
+        try {
+            $result = $scanner->scan($ssh, $deployment, $this->isWordPressStack($service), withChecksums: false);
+            $moved = $scanner->quarantine(
+                $ssh,
+                $service,
+                $deployment,
+                $scanner->exposedHits($result['hits']),
+                [ContainerIntegrityScanner::REASON_EXPOSED],
+                ContainerIncidentService::TRIGGER_DOCTOR,
+                ContainerIncidentService::KIND_EXPOSED,
+            );
+            $scanner->persist($service, $result, $moved['moved']);
+            if ($moved['moved'] === []) {
+                return ['success' => true, 'message' => 'No exposed backups, dumps or logs are left in the web root.'];
+            }
+
+            return [
+                'success' => true,
+                'message' => 'Archived '.count($moved['moved']).' file(s) into incident '.$moved['incident'].' ('.DirectAdminMailPullProgress::formatBytes((int) $moved['bytes']).') and removed them from the web root. Download the archive from the Security section if you still need them.',
+            ];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'message' => 'Archiving failed: '.$e->getMessage()];
+        } finally {
+            $ssh->disconnect();
+        }
+    }
+
+    /**
+     * Restore only the core files that differ from the official release,
+     * after archiving the current copies into an incident.
+     *
+     * @return array{success: bool, message: string}
+     */
     private function treatRestoreWordPressCore(Service $service): array
     {
         $deployment = $service->containerDeployment;
@@ -8532,24 +8712,80 @@ PHP;
         }
 
         $ssh = SSHService::forNode($deployment->node);
-        $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
         $scanner = app(ContainerIntegrityScanner::class);
+        $checksums = app(WordPressCoreChecksumService::class);
+        $hostAppPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name.'/app';
 
         try {
-            app(WordPressAppInstallationService::class)->ensureWpCli($ssh, $containerPath, $deployment->container_name);
-            $result = $ssh->execWithStatus($scanner->restoreCoreCommand($containerPath, $deployment->container_name), 600);
-            if (! str_contains($result['output'], 'Success')) {
-                return ['success' => false, 'message' => 'wp core download did not finish: '.mb_substr(trim($result['output']), 0, 300)];
+            $result = $scanner->scan($ssh, $deployment, true, withChecksums: true);
+            $version = $checksums->cleanVersion((string) ($result['core']['version'] ?? ''));
+            if (! ($result['core']['ran'] ?? false) || $version === null) {
+                return ['success' => false, 'message' => 'The official checksums for this WordPress version could not be fetched'.(($result['core']['error'] ?? null) ? ' ('.$result['core']['error'].')' : '').', so nothing was restored.'];
+            }
+            $paths = array_values(array_unique(array_merge((array) $result['core']['modified'], (array) $result['core']['missing'])));
+            if ($paths === []) {
+                return ['success' => true, 'message' => 'Every core file already matches WordPress '.$version.'.'];
             }
 
-            $verify = $scanner->parseChecksums($ssh->execWithStatus($scanner->checksumCommand($containerPath, $deployment->container_name), 180)['output']);
-            if ($verify['ran'] && $verify['modified'] !== []) {
-                return ['success' => false, 'message' => 'Core was re-downloaded but '.count($verify['modified']).' file(s) still differ: '.implode(', ', array_slice($verify['modified'], 0, 5))];
+            $existing = array_values(array_filter($result['hits'], fn ($h) => in_array($h['path'], (array) $result['core']['modified'], true)));
+            $incidentId = null;
+            if ($existing !== []) {
+                $incident = app(ContainerIncidentService::class)->open($ssh, $service, $deployment, ContainerIncidentService::TRIGGER_DOCTOR, ContainerIncidentService::KIND_CORE, $existing, [], ['note' => 'copies of modified core files before restore'], deleteOriginals: false);
+                $incidentId = $incident['id'];
             }
 
-            return ['success' => true, 'message' => 'WordPress core files were re-downloaded for the installed version. wp-content, uploads and wp-config.php were not touched.'];
+            $release = $ssh->execWithStatus($checksums->ensureReleaseArchiveCommand($version), 400);
+            if (! str_contains($release['output'], 'release ready')) {
+                return ['success' => false, 'message' => 'The official WordPress '.$version.' archive could not be downloaded and verified: '.trim(mb_substr($release['output'], 0, 200))];
+            }
+            $restored = 0;
+            foreach (array_chunk($paths, 200) as $chunk) {
+                $out = $ssh->execWithStatus($checksums->restoreFilesCommand($version, $hostAppPath, $chunk), 300);
+                if (preg_match('/__RESTORED__:(\d+)/', $out['output'], $m) === 1) {
+                    $restored += (int) $m[1];
+                }
+            }
+
+            $verify = $scanner->scan($ssh, $deployment, true, withChecksums: true);
+            $left = count((array) $verify['core']['modified']) + count((array) $verify['core']['missing']);
+            $scanner->persist($service, $verify);
+
+            return [
+                'success' => $left === 0,
+                'message' => 'Restored '.$restored.' of '.count($paths).' core file(s) from the official WordPress '.$version.' release'
+                    .($incidentId ? '; the previous copies are archived under incident '.$incidentId : '')
+                    .($left === 0 ? '. Core now verifies clean.' : '. '.$left.' file(s) still differ; run Doctor again.'),
+            ];
         } catch (\Throwable $e) {
             return ['success' => false, 'message' => 'Restoring core failed: '.$e->getMessage()];
+        } finally {
+            $ssh->disconnect();
+        }
+    }
+
+    /**
+     * Put a quarantined incident back. Admin only: a customer must not be able to
+     * bring malware back with one click.
+     *
+     * @return array{success: bool, message: string}
+     */
+    private function treatRestoreIncident(Service $service, string $incidentId): array
+    {
+        if (! (auth()->user()?->isAdmin() ?? false)) {
+            return ['success' => false, 'message' => 'Only the Talksasa team can restore a quarantined incident. Open a support ticket with the incident id.'];
+        }
+        $deployment = $service->containerDeployment;
+        if (! $deployment?->node) {
+            return ['success' => false, 'message' => 'Application is not deployed.'];
+        }
+
+        $ssh = SSHService::forNode($deployment->node);
+        try {
+            $result = app(ContainerIncidentService::class)->restore($ssh, $service, $deployment, $incidentId);
+
+            return ['success' => true, 'message' => $result['message']];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'message' => 'Restore failed: '.$e->getMessage()];
         } finally {
             $ssh->disconnect();
         }

@@ -2565,6 +2565,7 @@ class ContainerDeploymentService
                 $this->wordpressHardening->uploadsIniVolumeMount($containerName),
                 $this->wordpressHardening->apacheWorkersVolumeMount($containerName),
                 $this->wordpressHardening->toolsVolumeMount(),
+                app(WordPressSecurityBaseline::class)->securityConfVolumeMount($containerName),
             ] as $mount) {
                 if (! in_array($mount, $compose['services'][$containerName]['volumes'], true)) {
                     $compose['services'][$containerName]['volumes'][] = $mount;

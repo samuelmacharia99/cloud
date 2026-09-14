@@ -419,6 +419,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/services/{service}/container/staging', [App\Http\Controllers\Customer\ContainerController::class, 'updateStaging'])->name('admin.services.container.staging.update');
         Route::post('admin/services/{service}/container/doctor/diagnose', [App\Http\Controllers\Customer\ContainerController::class, 'doctorDiagnose'])->name('admin.services.container.doctor.diagnose');
         Route::post('admin/services/{service}/container/doctor/treat', [App\Http\Controllers\Customer\ContainerController::class, 'doctorTreat'])->name('admin.services.container.doctor.treat');
+        Route::get('admin/services/{service}/container/doctor/incidents/{incident}/download', [App\Http\Controllers\Customer\ContainerController::class, 'doctorIncidentDownload'])->name('admin.services.container.doctor.incidents.download');
         Route::get('admin/services/{service}/container/health', [App\Http\Controllers\Customer\ContainerController::class, 'health'])->name('admin.services.container.health');
         Route::get('admin/services/{service}/container/storage-stats', [App\Http\Controllers\Customer\ContainerController::class, 'storageStats'])->name('admin.services.container.storage-stats');
         Route::post('admin/services/{service}/container/database/query', [App\Http\Controllers\Customer\ContainerController::class, 'databaseQuery'])->name('admin.services.container.database.query');
@@ -887,6 +888,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('my/services/{service}/container/logs', [App\Http\Controllers\Customer\ContainerController::class, 'logs'])->name('customer.services.container.logs');
         Route::post('my/services/{service}/container/doctor/diagnose', [App\Http\Controllers\Customer\ContainerController::class, 'doctorDiagnose'])->middleware('throttle:10,1')->name('customer.services.container.doctor.diagnose');
         Route::post('my/services/{service}/container/doctor/treat', [App\Http\Controllers\Customer\ContainerController::class, 'doctorTreat'])->middleware('throttle:container-doctor-treat')->name('customer.services.container.doctor.treat');
+        Route::get('my/services/{service}/container/doctor/incidents/{incident}/download', [App\Http\Controllers\Customer\ContainerController::class, 'doctorIncidentDownload'])->middleware('throttle:10,1')->name('customer.services.container.doctor.incidents.download');
         Route::get('my/services/{service}/container/metrics', [App\Http\Controllers\Customer\ContainerController::class, 'metrics'])->name('customer.services.container.metrics');
         Route::get('my/services/{service}/container/health', [App\Http\Controllers\Customer\ContainerController::class, 'health'])->name('customer.services.container.health');
         Route::get('my/services/{service}/container/storage-stats', [App\Http\Controllers\Customer\ContainerController::class, 'storageStats'])->name('customer.services.container.storage-stats');

@@ -4347,33 +4347,55 @@ PHP;
 
     /**
      * A DirectAdmin docroot comes over with whatever was dropped into it. Files
-     * that cannot be legitimate are moved to quarantine before the site goes
-     * live; anything that merely looks suspicious is listed for the operator.
+     * that cannot be legitimate are archived into an incident and removed
+     * before the site goes live; anything that merely looks suspicious is
+     * listed for the operator. Then the security baseline is applied.
      */
     private function scanImportedWordPressFiles(Service $target, SSHService $ssh, ContainerDeployment $deployment, callable $progress): void
     {
-        $progress('Scanning imported files for webshells and files that do not belong to WordPress');
+        $progress('Scanning imported files for webshells, foreign files and modified core (checked against WordPress.org)');
         $scanner = app(ContainerIntegrityScanner::class);
 
         try {
-            $result = $scanner->scan($ssh, $deployment, true, withChecksums: false);
+            $result = $scanner->scan($ssh, $deployment, true, withChecksums: true);
         } catch (\Throwable $e) {
             $progress('Integrity scan skipped: '.$e->getMessage());
+            $this->applySecurityBaseline($ssh, $deployment, $progress);
 
             return;
         }
 
-        $auto = array_values(array_filter(
-            $result['hits'],
-            fn ($h) => array_intersect($h['reasons'], ContainerIntegrityScanner::AUTO_QUARANTINE_REASONS) !== []
-        ));
-        $moved = ['moved' => [], 'quarantine_dir' => ''];
-        if ($auto !== []) {
-            $moved = $scanner->quarantine($ssh, $deployment, $result['hits'], ContainerIntegrityScanner::AUTO_QUARANTINE_REASONS);
-            $progress('Quarantined '.count($moved['moved']).' file(s) that cannot be legitimate (PHP inside uploads, known webshell names, foreign mu-plugins) to '.$moved['quarantine_dir']);
+        if (($result['core']['ran'] ?? false) === true) {
+            $modified = count((array) $result['core']['modified']) + count((array) $result['core']['missing']);
+            $progress('Core verified against WordPress.org '.$result['core']['version'].': '.($modified === 0 ? 'every core file matches' : $modified.' core file(s) differ; Container Doctor offers Restore WordPress core'));
+        } else {
+            $progress('Core checksums not verified'.(($result['core']['error'] ?? null) ? ' ('.$result['core']['error'].')' : '').'; Doctor retries on its next run');
+        }
+
+        $moved = ['moved' => [], 'incident' => null, 'bytes' => 0, 'skipped' => [], 'quarantine_dir' => ''];
+        try {
+            $moved = $scanner->quarantine(
+                $ssh,
+                $target,
+                $deployment,
+                $result['hits'],
+                ContainerIntegrityScanner::AUTO_QUARANTINE_REASONS,
+                ContainerIncidentService::TRIGGER_CONVERT,
+            );
+        } catch (\Throwable $e) {
+            $progress('Automatic quarantine failed, nothing was removed: '.$e->getMessage());
+        }
+        if ($moved['moved'] !== []) {
+            $progress('Archived '.count($moved['moved']).' file(s) that cannot be legitimate (PHP inside uploads, known webshell names, foreign core or mu-plugin files) into incident '.$moved['incident'].' and removed them');
             foreach (array_slice($moved['moved'], 0, 8) as $path) {
                 $progress('Quarantined: '.$path);
             }
+            $movedHits = array_filter($result['hits'], fn ($h) => in_array($h['path'], $moved['moved'], true));
+            if (array_filter($movedHits, fn ($h) => array_intersect($h['reasons'], ContainerIntegrityScanner::WEBSHELL_REASONS) !== []) !== []) {
+                $rotated = app(WordPressSecurityBaseline::class)->rotateSalts($ssh, $deployment);
+                $progress($rotated['success'] ? 'Rotated the WordPress security keys: stolen session cookies from the old host are void' : 'Security keys not rotated: '.$rotated['message']);
+            }
+            app(ContainerIncidentService::class)->alert($target, $deployment, (string) $moved['incident'], ContainerIncidentService::TRIGGER_CONVERT, $moved['moved']);
         }
 
         try {
@@ -4383,17 +4405,33 @@ PHP;
         }
 
         $remaining = array_values(array_filter(
-            $result['hits'],
+            $scanner->suspiciousHits($result['hits']),
             fn ($h) => ! in_array($h['path'], $moved['moved'], true)
-                && array_intersect($h['reasons'], ContainerIntegrityScanner::QUARANTINE_REASONS) !== []
         ));
         if ($remaining !== []) {
-            $progress(count($remaining).' file(s) need a look before trusting this site (webshell signatures or random names). Container Doctor lists them with a Quarantine button');
+            $progress(count($remaining).' file(s) need a look before trusting this site (webshell signatures, obfuscated code or odd names). Container Doctor lists them with a Quarantine button');
             foreach ($scanner->evidenceRows($remaining, 6) as $row) {
                 $progress('Suspicious: '.$row);
             }
-        } elseif ($auto === []) {
+        } elseif ($moved['moved'] === []) {
             $progress('Integrity scan clean: no foreign or webshell-like files found');
+        }
+        $exposed = $scanner->exposedHits($result['hits']);
+        if ($exposed !== []) {
+            $progress(count($exposed).' backup, dump or log file(s) sit in the web root where anyone can download them; Doctor offers to archive them');
+        }
+
+        $this->applySecurityBaseline($ssh, $deployment, $progress);
+    }
+
+    private function applySecurityBaseline(SSHService $ssh, ContainerDeployment $deployment, callable $progress): void
+    {
+        try {
+            foreach (app(WordPressSecurityBaseline::class)->apply($ssh, $deployment->container_name) as $line) {
+                $progress($line);
+            }
+        } catch (\Throwable $e) {
+            $progress('Security baseline skipped: '.$e->getMessage());
         }
     }
 

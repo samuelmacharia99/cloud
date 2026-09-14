@@ -221,6 +221,28 @@ return [
         'mu_plugin_allowlist' => ['talksasa-admin-sso.php'],
         // Telegram alert when the nightly pass finds files it has not reported before.
         'alert' => (bool) env('CONTAINER_INTEGRITY_ALERT', true),
+        // Wall-clock budget for one scan on the node.
+        'time_budget_seconds' => (int) env('CONTAINER_INTEGRITY_TIME_BUDGET', 240),
+        // Incident folders (zip + manifest) live beside the app mount, never inside it.
+        'incidents_dir' => env('CONTAINER_INCIDENTS_DIR', 'incidents'),
+        'incident_retention_days' => (int) env('CONTAINER_INCIDENT_RETENTION_DAYS', 90),
+        // The nightly pass archives and removes hits that cannot be legitimate on its own.
+        'nightly_auto_quarantine' => (bool) env('CONTAINER_INTEGRITY_NIGHTLY_QUARANTINE', true),
+        // Third-party script hosts a WordPress site may legitimately load from.
+        'script_domain_allowlist' => [
+            'google.com', 'googleapis.com', 'gstatic.com', 'googletagmanager.com', 'google-analytics.com', 'googlesyndication.com',
+            'doubleclick.net', 'cloudflare.com', 'cloudflareinsights.com', 'jquery.com', 'facebook.net', 'facebook.com', 'twitter.com',
+            'x.com', 'youtube.com', 'vimeo.com', 'jsdelivr.net', 'unpkg.com', 'cdnjs.cloudflare.com', 'wp.com', 'wordpress.com',
+            'gravatar.com', 'hcaptcha.com', 'recaptcha.net', 'stripe.com', 'paypal.com', 'paypalobjects.com', 'hotjar.com',
+            'tawk.to', 'crisp.chat', 'intercom.io', 'mailchimp.com', 'list-manage.com', 'elementor.com', 'bootstrapcdn.com',
+            'fontawesome.com', 'typekit.net', 'adobe.com', 'microsoft.com', 'clarity.ms', 'bing.com', 'tiktok.com', 'linkedin.com',
+            'pinterest.com', 'instagram.com', 'whatsapp.com', 'wa.me', 'talksasa.com',
+        ],
+    ],
+
+    'wordpress' => [
+        // xmlrpc.php is denied unless a plugin that needs it (Jetpack) is installed.
+        'block_xmlrpc' => (bool) env('WORDPRESS_BLOCK_XMLRPC', true),
     ],
 
     'file_manager' => [

@@ -12,6 +12,7 @@ enum TelegramMonitorCategory: string
     case Tickets = 'tickets';
     case Resellers = 'resellers';
     case System = 'system';
+    case Security = 'security';
 
     public function settingKey(): string
     {
@@ -29,6 +30,7 @@ enum TelegramMonitorCategory: string
             self::Tickets => 'Support tickets',
             self::Resellers => 'Reseller wallet & enforcement',
             self::System => 'Cron, nodes & containers',
+            self::Security => 'Security incidents & malware',
         };
     }
 
@@ -43,6 +45,7 @@ enum TelegramMonitorCategory: string
             self::Tickets => '🎫',
             self::Resellers => '🏢',
             self::System => '🖥️',
+            self::Security => '🛡️',
         };
     }
 }

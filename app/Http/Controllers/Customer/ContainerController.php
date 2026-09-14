@@ -42,6 +42,7 @@ use App\Services\Provisioning\ContainerFileService;
 use App\Services\Provisioning\ContainerGitCredentialsService;
 use App\Services\Provisioning\ContainerGitPullErrorPresenter;
 use App\Services\Provisioning\ContainerGitRepositoryService;
+use App\Services\Provisioning\ContainerIncidentService;
 use App\Services\Provisioning\ContainerNodeWorkloadTopologyService;
 use App\Services\Provisioning\ContainerPhpExtensionsService;
 use App\Services\Provisioning\ContainerPostgresExtensionService;
@@ -65,6 +66,7 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class ContainerController extends Controller
 {
@@ -1680,6 +1682,45 @@ class ContainerController extends Controller
                 'message' => 'Please try again or contact support.',
             ], 500);
         }
+    }
+
+    /**
+     * Download a security incident's archive (the quarantined files, zipped).
+     */
+    public function doctorIncidentDownload(Service $service, string $incident, ContainerIncidentService $incidents): BinaryFileResponse|JsonResponse
+    {
+        $this->authorize('manageContainer', $service);
+
+        if ($service->product?->type !== 'container_hosting') {
+            return response()->json(['error' => 'Invalid service type'], 400);
+        }
+        $deployment = $service->containerDeployment;
+        if (! $deployment?->node) {
+            return response()->json(['error' => 'Application is not deployed.'], 404);
+        }
+        $known = collect($incidents->incidentsFor($service))->firstWhere('id', $incident);
+        if ($known === null || preg_match('/^\d{8}-\d{6}-[a-z0-9]{6}$/', $incident) !== 1) {
+            return response()->json(['error' => 'Unknown incident.'], 404);
+        }
+
+        $ssh = SSHService::forNode($deployment->node);
+        try {
+            $remote = $incidents->stageForDownload($ssh, $deployment, $incident);
+            $local = storage_path('app/file-manager/'.$deployment->id.'-incident-'.$incident.'.zip');
+            if (! is_dir(dirname($local))) {
+                mkdir(dirname($local), 0755, true);
+            }
+            $ssh->downloadToLocal($remote, $local, null, 900);
+            @$ssh->deleteFile($remote);
+        } catch (\Throwable $e) {
+            \Log::error("Incident download failed for service {$service->id}: ".$e->getMessage());
+
+            return response()->json(['error' => 'The incident archive could not be fetched from the node.'], 500);
+        } finally {
+            $ssh->disconnect();
+        }
+
+        return response()->download($local, 'incident-'.$incident.'.zip')->deleteFileAfterSend(true);
     }
 
     /**

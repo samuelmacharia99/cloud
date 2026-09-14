@@ -191,6 +191,34 @@ class ContainerDoctorWordPressTreatmentsTest extends TestCase
         $this->assertStringContainsString('wp-cli ready', $hardening->ensureWpCliPharCommand());
     }
 
+    #[Test]
+    public function deactivating_missing_plugins_edits_the_option_and_reads_it_back(): void
+    {
+        File::put($this->root.'/wp-content/plugins/akismet/akismet.php', "<?php\n");
+        $stub = <<<'PHP'
+<?php
+define('WP_PLUGIN_DIR', __DIR__.'/wp-content/plugins');
+$GLOBALS['__opts'] = ['active_plugins' => ['akismet/akismet.php', 'wordfence/wordfence.php', 'gone/gone.php']];
+function get_option($n, $d = false) { return $GLOBALS['__opts'][$n] ?? $d; }
+function update_option($n, $v) { $GLOBALS['__opts'][$n] = $v; return true; }
+function get_site_option($n, $d = false) { return $d; }
+function update_site_option($n, $v) { return true; }
+function is_multisite() { return false; }
+function wp_cache_delete($k, $g = '') {}
+PHP;
+        File::put($this->root.'/wp-load.php', $stub);
+        $script = "<?php\nrequire ".var_export($this->root.'/wp-load.php', true).";\n".(new ContainerDoctorWordPressTreatments)->deactivateMissingPluginsScript();
+        File::put($this->root.'/deactivate.php', $script);
+
+        $output = (string) shell_exec(escapeshellcmd(PHP_BINARY).' '.escapeshellarg($this->root.'/deactivate.php').' 2>&1');
+
+        $this->assertMatchesRegularExpression('/TALKSASA_DEACTIVATED=\{.*\}/', $output);
+        preg_match('/TALKSASA_DEACTIVATED=(\{.*\})/', $output, $m);
+        $parsed = json_decode($m[1], true);
+        $this->assertSame(['wordfence/wordfence.php', 'gone/gone.php'], $parsed['removed']);
+        $this->assertSame([], $parsed['still_missing']);
+    }
+
     private function runEdit(string $mode): string
     {
         $script = str_replace(var_export('/var/www/html/wp-config.php', true), var_export($this->root.'/wp-config.php', true), (new ContainerDoctorWordPressTreatments)->wpConfigEditScript($mode));

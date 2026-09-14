@@ -122,6 +122,26 @@ class WordPressContainerHardeningService
         $ssh->exec('mkdir -p '.escapeshellarg($dir), 15);
         $ssh->upload($this->uploadsIniContents(), $hostPath);
         $this->ensureWpCliPharOnNode($ssh);
+        $this->ensureSecurityConfFile($ssh, $containerName);
+    }
+
+    /**
+     * The Apache security conf must exist on the host before compose mounts
+     * it, or Docker creates a directory in its place. Writes the file only;
+     * making it live in a running container is WordPressSecurityBaseline's job.
+     */
+    public function ensureSecurityConfFile(SSHService $ssh, string $containerName): void
+    {
+        try {
+            $baseline = app(WordPressSecurityBaseline::class);
+            $hostPath = $baseline->securityConfHostPath($containerName);
+            $hostAppPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$containerName.'/app';
+            $decision = $baseline->xmlrpcDecision($ssh, $hostAppPath);
+            $ssh->exec('mkdir -p '.escapeshellarg(dirname($hostPath)), 15);
+            $ssh->upload($baseline->securityConfContents($decision['block'], $decision['reason']), $hostPath);
+        } catch (\Throwable $e) {
+            Log::warning('Security conf not written', ['container' => $containerName, 'error' => $e->getMessage()]);
+        }
     }
 
     /**
@@ -282,6 +302,9 @@ if (! defined('DISABLE_WP_CRON')) {
 if (! defined('WP_AUTO_UPDATE_CORE')) {
     define('WP_AUTO_UPDATE_CORE', 'minor');
 }
+if (! defined('DISALLOW_FILE_EDIT')) {
+    define('DISALLOW_FILE_EDIT', true);
+}
 $sessionDir = '/var/www/html/wp-content/uploads/sessions';
 if (is_dir($sessionDir) || @mkdir($sessionDir, 0775, true)) {
     @ini_set('session.save_path', $sessionDir);
@@ -310,6 +333,7 @@ SNIP;
             .'   $constants = ['
             .'     "DISABLE_WP_CRON" => "if (! defined(\'DISABLE_WP_CRON\')) {\\n    define(\'DISABLE_WP_CRON\', true);\\n}\\n",'
             .'     "WP_AUTO_UPDATE_CORE" => "if (! defined(\'WP_AUTO_UPDATE_CORE\')) {\\n    define(\'WP_AUTO_UPDATE_CORE\', \'minor\');\\n}\\n",'
+            .'     "DISALLOW_FILE_EDIT" => "if (! defined(\'DISALLOW_FILE_EDIT\')) {\\n    define(\'DISALLOW_FILE_EDIT\', true);\\n}\\n",'
             .'   ];'
             .'   foreach ($constants as $name => $insert) {'
             .'     if (str_contains($text, $name)) { continue; }'
@@ -435,6 +459,11 @@ SNIP;
         $this->ensureWritableFilesystem($ssh, $hostAppPath, $containerPath, $containerName);
         $this->ensureSystemCronJob($service);
         $this->ensureNginxUploadLimits($service);
+        try {
+            app(WordPressSecurityBaseline::class)->ensureSecurityConf($ssh, $containerName);
+        } catch (\Throwable $e) {
+            Log::warning('WordPress security baseline skipped', ['container' => $containerName, 'error' => $e->getMessage()]);
+        }
     }
 
     /**
