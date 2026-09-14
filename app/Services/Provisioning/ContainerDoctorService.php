@@ -104,6 +104,7 @@ class ContainerDoctorService
         if (! $deployment->isRunning()
             && ! str_starts_with($action, 'disable_wordpress_plugin:')
             && ! str_starts_with($action, 'restore_incident:')
+            && ! str_starts_with($action, 'delete_incident:')
             && ! in_array($action, [
                 'recreate_application',
                 'rebuild_frontend_bundle',
@@ -1595,6 +1596,11 @@ class ContainerDoctorService
 
             // Live Blade compile succeeded — leftover "valid cache path" lines are historical.
             if ($httpOk && ($f['id'] ?? '') === 'storage_permission_denied') {
+                return false;
+            }
+
+            // The live write probe just wrote under wp-content; old "Permission denied" lines are history.
+            if (($checks['wordpress_writable'] ?? null) === true && ($f['id'] ?? '') === 'wordpress_upload_permission_denied') {
                 return false;
             }
 
@@ -8509,20 +8515,10 @@ PHP;
     private function integrityFindings(SSHService $ssh, Service $service, $deployment, array &$checks): array
     {
         $scanner = app(ContainerIntegrityScanner::class);
-        // A clean, verified core pass from the last twelve hours still stands;
-        // the file rules always run.
-        $last = is_array($service->service_meta['integrity_scan'] ?? null) ? $service->service_meta['integrity_scan'] : [];
-        $lastAt = is_string($last['scanned_at'] ?? null) ? Carbon::parse($last['scanned_at']) : null;
-        $recentClean = $lastAt !== null
-            && $lastAt->greaterThan(now()->subHours(12))
-            && ($last['core_checked'] ?? false) === true
-            && ($last['core_modified'] ?? []) === []
-            && ($last['core_missing'] ?? []) === [];
+        // Core is always checked against the manifest (cached on the node); without
+        // it the scanner falls back to modification-time guesses about core files.
         try {
-            $result = $scanner->scan($ssh, $deployment, true, withChecksums: ! $recentClean);
-            if ($recentClean) {
-                $result['core'] = ['ran' => true, 'version' => $last['core_version'] ?? null, 'modified' => [], 'extra' => [], 'missing' => [], 'error' => null];
-            }
+            $result = $scanner->scan($ssh, $deployment, true, withChecksums: true);
         } catch (\Throwable $e) {
             $checks['integrity_scanned'] = false;
             $checks['integrity_error'] = mb_substr($e->getMessage(), 0, 160);
@@ -8606,6 +8602,7 @@ PHP;
             'files' => (int) ($row['files'] ?? 0),
             'bytes' => (int) ($row['bytes'] ?? 0),
             'restored_at' => $row['restored_at'] ?? null,
+            'purged_at' => $row['purged_at'] ?? null,
             'archived_only' => (bool) ($row['archived_only'] ?? false),
             'paths' => array_slice((array) ($row['paths'] ?? []), 0, 5),
         ], array_slice($incidents->incidentsFor($service->fresh()), 0, 10));
@@ -8623,6 +8620,10 @@ PHP;
         $prefix = 'restore_incident:';
         if (str_starts_with($action, $prefix)) {
             return $this->treatRestoreIncident($service, substr($action, strlen($prefix)));
+        }
+        $prefix = 'delete_incident:';
+        if (str_starts_with($action, $prefix)) {
+            return $this->treatDeleteIncident($service, substr($action, strlen($prefix)));
         }
 
         return ['success' => false, 'message' => 'Unknown treatment action.'];
@@ -8782,6 +8783,33 @@ PHP;
             ];
         } catch (\Throwable $e) {
             return ['success' => false, 'message' => 'Restoring core failed: '.$e->getMessage()];
+        } finally {
+            $ssh->disconnect();
+        }
+    }
+
+    /**
+     * Delete an incident's archive for good. Admin only.
+     *
+     * @return array{success: bool, message: string}
+     */
+    private function treatDeleteIncident(Service $service, string $incidentId): array
+    {
+        if (! (auth()->user()?->isAdmin() ?? false)) {
+            return ['success' => false, 'message' => 'Only the Talksasa team can delete a quarantine archive.'];
+        }
+        $deployment = $service->containerDeployment;
+        if (! $deployment?->node) {
+            return ['success' => false, 'message' => 'Application is not deployed.'];
+        }
+
+        $ssh = SSHService::forNode($deployment->node);
+        try {
+            app(ContainerIncidentService::class)->purge($ssh, $service, $deployment, $incidentId);
+
+            return ['success' => true, 'message' => 'Incident '.$incidentId.' and its archive were deleted from the node.'];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'message' => 'Delete failed: '.$e->getMessage()];
         } finally {
             $ssh->disconnect();
         }

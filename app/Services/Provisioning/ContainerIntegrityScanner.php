@@ -462,9 +462,18 @@ class ContainerIntegrityScanner
         $onlyReasons ??= self::QUARANTINE_REASONS;
         $selected = array_values(array_filter($hits, fn ($h) => array_intersect($h['reasons'], $onlyReasons) !== []));
         $protected = array_values(array_map(fn ($h) => $h['path'], array_filter($hits, fn ($h) => in_array(self::REASON_CORE_CHECKSUM, $h['reasons'], true))));
-        // Root core files are always protected, whatever the scan said about them.
+        // Root core files are always protected, whatever the scan said about them,
+        // and so is everything under wp-admin and wp-includes unless the official
+        // manifest says the file is not WordPress's.
         foreach (self::CORE_ROOT_FILES as $file) {
             $protected[] = $file;
+        }
+        foreach ($selected as $hit) {
+            $path = (string) $hit['path'];
+            if ((str_starts_with($path, 'wp-admin/') || str_starts_with($path, 'wp-includes/'))
+                && ! in_array(self::REASON_CORE_EXTRA, $hit['reasons'], true)) {
+                $protected[] = $path;
+            }
         }
 
         if ($selected === []) {

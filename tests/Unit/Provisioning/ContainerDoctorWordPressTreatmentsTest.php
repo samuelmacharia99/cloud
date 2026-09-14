@@ -96,6 +96,18 @@ class ContainerDoctorWordPressTreatmentsTest extends TestCase
     }
 
     #[Test]
+    public function the_plugin_that_wrote_a_drop_in_is_recognised_from_its_header(): void
+    {
+        $treatments = new ContainerDoctorWordPressTreatments;
+        $this->assertSame('litespeed-cache', $treatments->dropinOwner("<?php\n/**\n * LiteSpeed Cache advanced cache\n */")['slug']);
+        $this->assertSame('w3-total-cache', $treatments->dropinOwner('<?php // W3TC advanced cache')['slug']);
+        $this->assertSame('redis-cache', $treatments->dropinOwner('<?php /* Plugin Name: Redis Object Cache Drop-In */')['slug']);
+        $this->assertSame('wp-optimize', $treatments->dropinOwner("<?php if (!defined('WPO_CACHE_DIR')) {}")['slug']);
+        $this->assertNull($treatments->dropinOwner('<?php // hand-written'));
+        $this->assertNull($treatments->dropinOwner(''));
+    }
+
+    #[Test]
     public function wp_config_edits_cover_every_mode_and_keep_the_file_valid_php(): void
     {
         $cfg = $this->root.'/wp-config.php';

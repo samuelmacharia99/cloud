@@ -169,6 +169,25 @@ class ContainerIncidentServiceTest extends TestCase
     }
 
     #[Test]
+    public function purge_removes_the_folder_and_marks_the_record(): void
+    {
+        $service = Service::factory()->create();
+        $deployment = new ContainerDeployment(['container_name' => 'site-wordpress', 'service_id' => $service->id]);
+        $incidents = $this->localIncidents();
+        $ssh = $this->localSsh();
+        $opened = $incidents->open($ssh, $service, $deployment, 'doctor', 'malware', [
+            ['path' => 'wp-content/uploads/2024/shell.php', 'reasons' => ['php_in_uploads'], 'size' => 27, 'mtime' => 1],
+        ]);
+
+        $incidents->purge($ssh, $service, $deployment, $opened['id']);
+
+        $this->assertDirectoryDoesNotExist($this->base.'/incidents/'.$opened['id']);
+        $row = $service->fresh()->service_meta['security_incidents'][0];
+        $this->assertNotNull($row['purged_at']);
+        $this->assertFalse($incidents->downloadable($row));
+    }
+
+    #[Test]
     public function a_failed_archive_deletes_nothing(): void
     {
         $service = Service::factory()->create();

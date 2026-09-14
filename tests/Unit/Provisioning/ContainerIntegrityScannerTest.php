@@ -139,6 +139,29 @@ class ContainerIntegrityScannerTest extends TestCase
     }
 
     #[Test]
+    public function nothing_under_wp_admin_or_wp_includes_is_deleted_unless_the_manifest_disowns_it(): void
+    {
+        $incidents = Mockery::mock(ContainerIncidentService::class);
+        $incidents->shouldReceive('open')->once()
+            ->withArgs(function ($ssh, $service, $deployment, $trigger, $kind, $files, $protected) {
+                return in_array('wp-includes/Requests/src/Exception/Http/Status304.php', $protected, true)
+                    && in_array('wp-admin/includes/odd7x.php', $protected, true)
+                    && ! in_array('wp-includes/utf8.php', $protected, true);
+            })
+            ->andReturn(['id' => '20260914-120000-abc123', 'dir' => '/opt/x', 'archive' => 'q.zip', 'removed' => ['wp-includes/utf8.php'], 'skipped' => ['wp-includes/Requests/src/Exception/Http/Status304.php', 'wp-admin/includes/odd7x.php'], 'bytes' => 1]);
+        $scanner = new ContainerIntegrityScanner(app(WordPressCoreChecksumService::class), $incidents);
+
+        $result = $scanner->quarantine(Mockery::mock(SSHService::class), new Service, new ContainerDeployment(['container_name' => 'x']), [
+            ['path' => 'wp-includes/Requests/src/Exception/Http/Status304.php', 'reasons' => ['core_modified_after_install', 'random_name'], 'size' => 1, 'mtime' => 1],
+            ['path' => 'wp-admin/includes/odd7x.php', 'reasons' => ['signature'], 'size' => 1, 'mtime' => 1],
+            ['path' => 'wp-includes/utf8.php', 'reasons' => ['core_unexpected_file'], 'size' => 1, 'mtime' => 1],
+        ]);
+
+        $this->assertSame(['wp-includes/utf8.php'], $result['moved']);
+        $this->assertCount(2, $result['skipped']);
+    }
+
+    #[Test]
     public function persist_records_the_scan_and_reports_paths_not_seen_before(): void
     {
         $service = Service::factory()->create(['service_meta' => ['integrity_scan' => ['hits' => [['path' => 'old.php', 'reasons' => ['signature']]]]]]);

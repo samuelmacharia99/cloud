@@ -159,6 +159,24 @@ PHP;
     public function quarantineDropins(Service $service): array
     {
         return $this->onHost($service, function (SSHService $ssh, ContainerDeployment $deployment, string $hostAppPath) {
+            // The plugin that wrote the drop-in writes it again on the next request
+            // while it is active, so it is disabled first.
+            $owners = [];
+            foreach (['wp-content/advanced-cache.php', 'wp-content/object-cache.php'] as $dropin) {
+                $head = (string) $ssh->exec('head -c 8192 '.escapeshellarg(rtrim($hostAppPath, '/').'/'.$dropin).' 2>/dev/null; true', 15);
+                $owner = $this->dropinOwner($head);
+                if ($owner !== null && ! isset($owners[$owner['slug']])) {
+                    $owners[$owner['slug']] = $owner;
+                }
+            }
+            $disabled = [];
+            foreach ($owners as $owner) {
+                $moved = $ssh->execWithStatus($this->disablePluginCommand($hostAppPath, $owner['slug']), 60);
+                if (str_contains($moved['output'], 'moved')) {
+                    $disabled[] = $owner['name'];
+                }
+            }
+
             $stamp = now()->format('Ymd-His');
             $result = $ssh->execWithStatus($this->quarantineDropinsCommand($hostAppPath, $stamp), 60);
             if ($result['status'] !== 0) {
@@ -167,11 +185,15 @@ PHP;
             $moved = array_values(array_filter(array_map('trim', explode("\n", $result['output']))));
             $this->editWpConfig($ssh, $deployment, 'unset_wp_cache');
 
+            $left = trim((string) $ssh->exec('cd '.escapeshellarg($hostAppPath).' && ls wp-content/advanced-cache.php wp-content/object-cache.php .maintenance 2>/dev/null; true', 15));
+            if ($left !== '') {
+                return ['success' => false, 'message' => 'Still present after the move: '.str_replace("\n", ', ', $left).'. A plugin keeps writing it; disable the caching plugin from wp-admin and run Doctor again.'];
+            }
+
             return [
                 'success' => true,
-                'message' => $moved === []
-                    ? 'No cache drop-ins or maintenance lock were present.'
-                    : 'Moved '.implode(', ', $moved).' to '.ContainerDoctorWordPressAnalyzer::DISABLED_DROPINS_DIR.'/'.$stamp.'/ and set WP_CACHE to false. Deactivate the old caching plugin or reconfigure it for this host.',
+                'message' => ($moved === [] ? 'No cache drop-ins or maintenance lock were present.' : 'Moved '.implode(', ', $moved).' to '.ContainerDoctorWordPressAnalyzer::DISABLED_DROPINS_DIR.'/'.$stamp.'/ and set WP_CACHE to false.')
+                    .($disabled !== [] ? ' Disabled '.implode(' and ', $disabled).', which kept writing the drop-in; this container runs Apache with the platform page cache in front, so that plugin has nothing to accelerate here. Its folder is under '.ContainerDoctorWordPressAnalyzer::DISABLED_PLUGINS_DIR.'/.' : ''),
             ];
         });
     }
@@ -454,6 +476,43 @@ PHP;
         preg_match_all('/Warning: (?:The )?[\'"]?([\w.-]+)[\'"]? (?:plugin|theme) (?:could not be updated|update failed)/i', $output, $w);
 
         return array_values(array_unique(array_merge($m[1], $w[1])));
+    }
+
+    /**
+     * Which caching plugin wrote a drop-in, from its header.
+     *
+     * @return array{slug: string, name: string}|null
+     */
+    public function dropinOwner(string $contents): ?array
+    {
+        $owners = [
+            'litespeed-cache' => ['LiteSpeed', 'LSCWP'],
+            'w3-total-cache' => ['W3 Total Cache', 'W3TC'],
+            'wp-rocket' => ['WP Rocket', 'WP_ROCKET'],
+            'wp-optimize' => ['WP-Optimize', 'WPO_CACHE', 'wpo-cache'],
+            'wp-super-cache' => ['WP Super Cache', 'WPCACHEHOME', 'wp-cache-phase'],
+            'hummingbird-performance' => ['Hummingbird'],
+            'cache-enabler' => ['Cache Enabler'],
+            'breeze' => ['Breeze'],
+            'swift-performance' => ['Swift Performance'],
+            'comet-cache' => ['Comet Cache'],
+            'wp-fastest-cache' => ['WP Fastest Cache', 'WpFastestCache'],
+            'sg-cachepress' => ['SiteGround', 'SG Optimizer'],
+            'nitropack' => ['NitroPack'],
+            'redis-cache' => ['Redis Object Cache', 'redis-cache'],
+            'object-cache-pro' => ['Object Cache Pro'],
+            'memcached' => ['Memcached Object Cache'],
+            'docket-cache' => ['Docket Cache'],
+        ];
+        foreach ($owners as $slug => $needles) {
+            foreach ($needles as $needle) {
+                if (stripos($contents, $needle) !== false) {
+                    return ['slug' => $slug, 'name' => $needles[0]];
+                }
+            }
+        }
+
+        return null;
     }
 
     /*

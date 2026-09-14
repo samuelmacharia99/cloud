@@ -137,10 +137,13 @@ class IntegrityScanScriptTest extends TestCase
         touch($tree.'/wp-includes/version.php', time() - 3 * 86400);
         touch($tree.'/wp-includes/functions.php', time() - 3 * 86400);
         touch($tree.'/wp-admin/admin.php', time() - 3600);
+        File::ensureDirectoryExists($tree.'/wp-includes/Requests/src/Exception/Http');
+        File::put($tree.'/wp-includes/Requests/src/Exception/Http/Status304.php', "<?php // core\n");
 
         [$hits, $summary] = $this->scan($tree, null);
 
         $this->assertContains('core_modified_after_install', $hits['wp-admin/admin.php']['reasons']);
+        $this->assertNotContains('random_name', $hits['wp-includes/Requests/src/Exception/Http/Status304.php']['reasons'] ?? [], 'core file names are never judged by their spelling');
         $this->assertArrayNotHasKey('wp-includes/functions.php', $hits);
         $this->assertFalse($summary['core']['verified']);
     }

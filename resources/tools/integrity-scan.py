@@ -5,7 +5,7 @@ Runs on the container host over the bind mount, read-only. Prints one line per
 hit as  reason<TAB>size<TAB>mtime<TAB>path  and a final  __SUMMARY__<TAB>{json}
 line. Contents of files are never printed.
 
-TALKSASA_SCAN_VERSION=4
+TALKSASA_SCAN_VERSION=5
 """
 import argparse
 import hashlib
@@ -17,7 +17,7 @@ import stat
 import sys
 import time
 
-SCAN_VERSION = 4
+SCAN_VERSION = 5
 
 CORE_ROOT_FILES = {
     'index.php', 'wp-activate.php', 'wp-blog-header.php', 'wp-comments-post.php', 'wp-config.php',
@@ -333,8 +333,6 @@ class Scanner:
                                 self.emit('core_modified_after_install', full)
                         except OSError:
                             pass
-                    if f.lower().endswith(PHP_EXT) and looks_random(f):
-                        self.emit('random_name', full)
 
     def verify_core_against_manifest(self):
         on_disk = set()

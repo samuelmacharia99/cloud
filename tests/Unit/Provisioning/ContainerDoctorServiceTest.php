@@ -2368,6 +2368,16 @@ LOG;
     }
 
     #[Test]
+    public function old_permission_denied_lines_are_dropped_once_the_live_write_probe_passes(): void
+    {
+        $doctor = app(ContainerDoctorService::class);
+        $log = [['id' => 'wordpress_upload_permission_denied', 'severity' => 'warning', 'title' => 'WordPress cannot write media or plugins', 'source' => 'log']];
+
+        $this->assertSame([], $doctor->mergeLogAndLiveFindings($log, ['findings' => [], 'checks' => ['wordpress_writable' => true, 'db_ok' => true, 'http_status' => 200]]));
+        $this->assertCount(1, $doctor->mergeLogAndLiveFindings($log, ['findings' => [], 'checks' => ['wordpress_writable' => false, 'db_ok' => true, 'http_status' => 200]]));
+    }
+
+    #[Test]
     public function a_treatment_is_only_called_resolved_when_its_finding_is_gone(): void
     {
         $doctor = app(ContainerDoctorService::class);

@@ -260,6 +260,19 @@ class ContainerIncidentService
     }
 
     /**
+     * Delete an incident folder for good and mark the record.
+     */
+    public function purge(SSHService $ssh, Service $service, ContainerDeployment $deployment, string $incidentId): void
+    {
+        if (preg_match('/^\d{8}-\d{6}-[a-z0-9]{6}$/', $incidentId) !== 1) {
+            throw new \InvalidArgumentException('That incident id is not valid.');
+        }
+        $dir = $this->incidentsDir($deployment).'/'.$incidentId;
+        $ssh->exec('rm -rf '.escapeshellarg($dir), 120);
+        $this->updateRecord($service, $incidentId, ['purged_at' => now()->toIso8601String()]);
+    }
+
+    /**
      * The file-manager scratch directory the download route is allowed to read from.
      */
     public function scratchDir(ContainerDeployment $deployment): string
@@ -402,6 +415,9 @@ class ContainerIncidentService
      */
     public function downloadable(array $row): bool
     {
+        if (! empty($row['purged_at'])) {
+            return false;
+        }
         if (($row['storage'] ?? self::STORAGE_ZIP) === self::STORAGE_ZIP) {
             return true;
         }

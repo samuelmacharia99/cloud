@@ -144,6 +144,7 @@
                                         <span x-text="incident.id"></span>
                                         <span class="ml-1 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300" x-text="incident.kind"></span>
                                         <span x-show="incident.restored_at" class="ml-1 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300">restored</span>
+                                        <span x-show="incident.purged_at" class="ml-1 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300">deleted</span>
                                     </td>
                                     <td class="px-4 py-2 whitespace-nowrap" x-text="incident.opened_at ? new Date(incident.opened_at).toLocaleString() : ''"></td>
                                     <td class="px-4 py-2" x-text="incident.trigger"></td>
@@ -154,11 +155,15 @@
                                     <td class="px-4 py-2 whitespace-nowrap" x-text="formatBytes(incident.bytes)"></td>
                                     <td class="px-4 py-2 whitespace-nowrap text-right space-x-2">
                                         <a x-show="incident.downloadable" :href="incidentDownloadUrl(incident.id)" class="inline-flex items-center px-2.5 py-1 rounded-md bg-slate-700 hover:bg-slate-800 text-white text-xs font-medium">Download zip</a>
-                                        <span x-show="!incident.downloadable && !incident.restored_at" class="text-slate-500 dark:text-slate-400">kept on the node (too large to download)</span>
+                                        <span x-show="!incident.downloadable && !incident.restored_at && !incident.purged_at" class="text-slate-500 dark:text-slate-400">kept on the node (too large to download)</span>
                                         <button type="button" x-show="canRestoreIncidents && !incident.restored_at"
                                                 @click="runTreat({ treat_action: 'restore_incident:' + incident.id })"
                                                 :disabled="diagnosing || treating"
                                                 class="inline-flex items-center px-2.5 py-1 rounded-md border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200 text-xs font-medium disabled:opacity-50">Restore</button>
+                                        <button type="button" x-show="canRestoreIncidents && !incident.purged_at"
+                                                @click="if (confirm('Delete the archive for incident ' + incident.id + ' from the node? This cannot be undone.')) runTreat({ treat_action: 'delete_incident:' + incident.id })"
+                                                :disabled="diagnosing || treating"
+                                                class="inline-flex items-center px-2.5 py-1 rounded-md border border-red-300 dark:border-red-700 text-red-700 dark:text-red-300 text-xs font-medium disabled:opacity-50">Delete</button>
                                     </td>
                                 </tr>
                             </template>
