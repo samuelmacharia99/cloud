@@ -7,8 +7,12 @@ use App\Http\Requests\ConvertDirectAdminServiceToContainerRequest;
 use App\Jobs\ConvertDirectAdminServiceToContainerJob;
 use App\Models\Service;
 use App\Services\Billing\ServiceRenewalPricingService;
+use App\Services\Provisioning\DaConvertRetryService;
+use App\Services\Provisioning\DirectAdminMailPullProgress;
 use App\Services\Provisioning\DirectAdminToContainerConvertService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 class DirectAdminContainerMigrationController extends Controller
@@ -103,20 +107,6 @@ class DirectAdminContainerMigrationController extends Controller
             return back()->withErrors(['error' => $e->getMessage()])->withInput();
         }
 
-        $meta = is_array($service->service_meta) ? $service->service_meta : [];
-        $meta['da_convert'] = [
-            'status' => 'queued',
-            'mode' => 'convert_in_place',
-            'queued_at' => now()->toIso8601String(),
-            'target_product_id' => $product->id,
-            'target_product_name' => $product->name,
-            'renewal_due_date' => optional($service->next_due_date)->toDateString(),
-            'stack' => $preflight['detected_stack'] ?? null,
-            'quiet' => true,
-            'no_invoice' => true,
-        ];
-        $service->update(['service_meta' => $meta]);
-
         $emailProductId = $request->emailHostingProduct()?->id;
         if (! $emailProductId && ($preflight['must_pull_mail'] ?? false)) {
             $resolvedEmail = $convert->resolveEmailProductForConvert($product, null);
@@ -127,6 +117,32 @@ class DirectAdminContainerMigrationController extends Controller
             }
             $emailProductId = $resolvedEmail->id;
         }
+
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        $existing = is_array($meta['da_convert'] ?? null) ? $meta['da_convert'] : [];
+        $meta['da_convert'] = [
+            // Keep the DirectAdmin snapshot from an earlier attempt so a retry can restore it.
+            'previous' => $existing['previous'] ?? null,
+            'attempt' => (int) ($existing['attempt'] ?? 0),
+            'status' => 'queued',
+            'mode' => 'convert_in_place',
+            'queued_at' => now()->toIso8601String(),
+            'target_product_id' => $product->id,
+            'target_product_name' => $product->name,
+            'renewal_due_date' => optional($service->next_due_date)->toDateString(),
+            'stack' => $preflight['detected_stack'] ?? null,
+            'quiet' => true,
+            'no_invoice' => true,
+            // Everything a retry needs to re-dispatch the same convert.
+            'options' => [
+                'product_id' => $product->id,
+                'email_product_id' => $emailProductId,
+                'database_name' => $validated['database_name'] ?? null,
+                'acknowledge_mail_pull' => $request->acknowledgedMailPull(),
+                'acknowledge_addon_sites' => $request->boolean('acknowledge_addon_sites'),
+            ],
+        ];
+        $service->update(['service_meta' => $meta]);
 
         ConvertDirectAdminServiceToContainerJob::dispatch(
             $service->id,
@@ -140,6 +156,39 @@ class DirectAdminContainerMigrationController extends Controller
         return redirect()
             ->route('admin.services.show', $service)
             ->with('success', 'Silent convert queued. Watch the live terminal on this page for percent and copy progress. Prefer QUEUE_CONNECTION=database with php artisan queue:work --timeout=2400.');
+    }
+
+    /**
+     * Re-run the convert on the same service (primary) or the same sibling
+     * site service. Never creates a service; see DaConvertRetryService.
+     */
+    public function retry(
+        Request $request,
+        Service $service,
+        DaConvertRetryService $retry,
+        DirectAdminMailPullProgress $progress,
+    ): JsonResponse|RedirectResponse {
+        try {
+            $result = $retry->retry($service);
+        } catch (\Throwable $e) {
+            $result = ['ok' => false, 'message' => $e->getMessage()];
+        }
+
+        if ($request->wantsJson() || $request->ajax()) {
+            $payload = $progress->operatorView($service->fresh());
+            $payload['success'] = $result['ok'];
+            $payload['message'] = $result['message'];
+
+            return response()->json($payload, $result['ok'] ? 200 : 422);
+        }
+
+        if (! $result['ok']) {
+            return redirect()->route('admin.services.show', $service)
+                ->withErrors(['error' => $result['message']]);
+        }
+
+        return redirect()->route('admin.services.show', $service)
+            ->with('success', $result['message']);
     }
 
     public function revert(

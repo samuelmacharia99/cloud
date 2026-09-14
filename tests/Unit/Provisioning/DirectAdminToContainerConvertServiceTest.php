@@ -3,6 +3,7 @@
 namespace Tests\Unit\Provisioning;
 
 use App\Models\ContainerTemplate;
+use App\Models\CustomerProject;
 use App\Models\DaAccountSnapshot;
 use App\Models\DatabaseTemplate;
 use App\Models\Product;
@@ -632,6 +633,71 @@ class DirectAdminToContainerConvertServiceTest extends TestCase
         $this->assertCount(1, $withoutFlag);
         $this->assertSame('theharbor.co.ke', $withoutFlag[0]['domain']);
         $this->assertSame('nodejs', $convert->templateSlugForDetectedStack('nodejs', $product));
+    }
+
+    public function test_attaching_the_project_twice_reuses_the_project_and_sibling_rows(): void
+    {
+        $template = ContainerTemplate::query()->create([
+            'name' => 'Node.js',
+            'slug' => 'nodejs',
+            'docker_image' => 'node:20-bookworm',
+            'is_active' => true,
+        ]);
+        $product = Product::query()->create([
+            'name' => 'App Hosting Silver',
+            'slug' => 'app-hosting-silver-'.uniqid(),
+            'type' => 'container_hosting',
+            'monthly_price' => 2500,
+            'is_active' => true,
+            'container_template_id' => $template->id,
+            'provisioning_driver_key' => 'container',
+        ]);
+        $user = User::factory()->create();
+        $anchor = Service::query()->create([
+            'user_id' => $user->id,
+            'product_id' => $product->id,
+            'name' => 'blinksofttech.com',
+            'status' => 'provisioning',
+            'billing_cycle' => 'annual',
+            'next_due_date' => now()->addYear(),
+            'provisioning_driver_key' => 'container',
+            'service_meta' => ['domain' => 'blinksofttech.com', 'da_legacy' => ['stack' => 'nodejs']],
+        ]);
+        $sites = [
+            ['domain' => 'shop.blinksofttech.com', 'stack' => 'nodejs', 'docroot' => '/home/blinksof/domains/shop.blinksofttech.com/public_html', 'is_primary' => false],
+            ['domain' => 'blog.blinksofttech.com', 'stack' => 'php', 'docroot' => '/home/blinksof/domains/blog.blinksofttech.com/public_html', 'is_primary' => false],
+        ];
+
+        $convert = app(DirectAdminToContainerConvertService::class);
+        $first = $convert->attachConvertProject($anchor, $product, $sites, 7, 'blinksof', 0.3333);
+        $this->assertCount(2, $first['sibling_ids']);
+        $rowsAfterFirst = Service::query()->count();
+
+        // A previous attempt ran: the first sibling failed with a deployment-owned key in meta.
+        $shop = Service::query()->findOrFail($first['sibling_ids'][0]);
+        $meta = $shop->service_meta;
+        $meta['database_id'] = 42;
+        $meta['da_convert'] = ['status' => 'failed', 'error' => 'tar exploded', 'attempt' => 1];
+        $shop->update(['status' => 'failed', 'service_meta' => $meta]);
+        // …and a rollback unlinked the primary from the project.
+        $anchor->update(['project_id' => null]);
+
+        $second = $convert->attachConvertProject($anchor->fresh(), $product, $sites, 7, 'blinksof', 0.3333);
+
+        $this->assertSame($first['project']->id, $second['project']->id);
+        $this->assertSame($first['sibling_ids'], $second['sibling_ids']);
+        $this->assertSame($rowsAfterFirst, Service::query()->count(), 'retry must not create services');
+        $this->assertSame($second['project']->id, $anchor->fresh()->project_id);
+        $this->assertSame(1, CustomerProject::query()->where('billing_service_id', $anchor->id)->count());
+
+        $shop->refresh();
+        $this->assertSame('pending', $shop->status->value);
+        $this->assertSame(42, $shop->service_meta['database_id'], 'deployment-owned meta survives the reset');
+        $this->assertSame('queued', $shop->service_meta['da_convert']['status']);
+        $this->assertSame(2, $shop->service_meta['da_convert']['attempt']);
+        $this->assertSame('tar exploded', $shop->service_meta['da_convert']['last_error']);
+        $this->assertSame('site', $shop->service_meta['project_role']);
+        $this->assertSame(7, $shop->service_meta['da_legacy']['da_node_id']);
     }
 
     public function test_database_export_warnings_surface_nodejs_and_missing_api_inventory(): void

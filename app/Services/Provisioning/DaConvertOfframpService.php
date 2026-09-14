@@ -644,28 +644,16 @@ class DaConvertOfframpService
 
         $meta = is_array($service->service_meta) ? $service->service_meta : [];
         $convert = is_array($meta['da_convert'] ?? null) ? $meta['da_convert'] : [];
-        $previous = is_array($convert['previous'] ?? null) ? $convert['previous'] : [];
 
         $convert['retried_at'] = now()->toIso8601String();
         $convert['last_error'] = $convert['error'] ?? null;
         unset($convert['status'], $convert['error']);
         $meta['da_convert'] = $convert;
+        $service->update(['service_meta' => $meta]);
 
-        $updates = ['service_meta' => $meta];
-        if ($service->provisioningDriver() === 'container' || ! $service->isSharedHosting()) {
-            $updates['provisioning_driver_key'] = $previous['provisioning_driver_key'] ?? 'directadmin';
-            if (! empty($previous['product_id'])) {
-                $updates['product_id'] = $previous['product_id'];
-            }
-            if (array_key_exists('node_id', $previous)) {
-                $updates['node_id'] = $previous['node_id'];
-            }
-            if (! empty($previous['status'])) {
-                $updates['status'] = $previous['status'];
-            }
-        }
-
-        $service->update($updates);
+        // Same restore the per-service "Retry convert" uses, so a batch retry
+        // also lands on the rows the first attempt created.
+        app(DaConvertRetryService::class)->restoreDirectAdminRow($service);
     }
 
     private function containerConvertNeedsRetry(Service $service): bool

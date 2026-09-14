@@ -506,13 +506,20 @@ class DirectAdminToMailcowMigrationService
             || (str_contains($message, 'exist') && str_contains($message, 'sync'));
     }
 
-    public function mailPullOperatorMessage(int $created, int $copied, int $syncJobs, int $failed): string
+    public function mailPullOperatorMessage(int $created, int $copied, int $syncJobs, int $failed, ?string $copyBlocker = null): string
     {
         $summary = 'Mail pulled to Mailcow. Created '.$created.' mailbox(es)'
             .($copied > 0 ? ', copied maildir for '.$copied : '')
             .($syncJobs > 0 ? ', IMAP sync on '.$syncJobs : '')
             .($failed > 0 ? ', '.$failed.' need review' : '')
             .'.';
+
+        if ($copyBlocker !== null) {
+            return $summary.' '.$copyBlocker
+                .($syncJobs > 0
+                    ? ' IMAP sync jobs are in place and will carry mail over meanwhile.'
+                    : ' Do not update MX yet.');
+        }
 
         if ($copied === 0 && $syncJobs === 0) {
             return $summary.' Inbox content is still on DirectAdmin. Fix Mailcow node SSH and retry mail pull. Do not update MX yet.';
@@ -652,6 +659,35 @@ class DirectAdminToMailcowMigrationService
             .'docker compose exec -T dovecot-mailcow doveadm force-resync -u '.escapeshellarg($email).' "*" || true; '
             .'docker compose exec -T dovecot-mailcow doveadm quota recalc -u '.escapeshellarg($email).' || true; '
             .'echo copied';
+    }
+
+    /**
+     * Log in to the Mailcow node once. Returns an operator-facing sentence
+     * naming the node and the fix when the login fails, null when it works.
+     */
+    public function mailcowSshProbeError(Node $mailcowNode): ?string
+    {
+        $ssh = null;
+        try {
+            $ssh = SSHService::forNode($mailcowNode);
+            $ssh->exec('true', 15);
+
+            return null;
+        } catch (\Throwable $e) {
+            Log::warning('Mailcow node SSH probe failed before maildir copy', [
+                'node_id' => $mailcowNode->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return sprintf(
+                'Mailcow node "%s" SSH login failed at %s (%s). Fix its SSH user, port or key under Admin → Nodes, then Retry mail pull; maildir copies were skipped.',
+                (string) ($mailcowNode->name ?: $mailcowNode->hostname ?: 'mailcow'),
+                (string) ($mailcowNode->ip_address ?: $mailcowNode->hostname ?: 'unknown host'),
+                trim($e->getMessage()),
+            );
+        } finally {
+            $ssh?->disconnect();
+        }
     }
 
     /**
@@ -939,6 +975,25 @@ class DirectAdminToMailcowMigrationService
             $this->mailPullProgress->phase($daService, $phase, $detail, $done, $total);
         };
 
+        // One SSH login to the Mailcow node before any mailbox is tarred and
+        // downloaded: a bad credential would otherwise cost a full transfer per
+        // mailbox and surface only as "N need review".
+        $copyBlocker = null;
+        if ($pullMail && $daNode && $mailcowNode && $username !== '') {
+            $copyBlocker = $this->mailcowSshProbeError($mailcowNode);
+            if ($copyBlocker !== null) {
+                $this->mailPullProgress->log($daService, 'FAILED: '.$copyBlocker);
+            }
+        }
+
+        $previousMigration = is_array($daService->service_meta['mailcow_migration'] ?? null)
+            ? $daService->service_meta['mailcow_migration']
+            : [];
+        $alreadyCopied = array_map('strtolower', array_filter(
+            is_array($previousMigration['copied_maildirs'] ?? null) ? $previousMigration['copied_maildirs'] : [],
+            'is_string',
+        ));
+
         foreach ($byDomain as $domain => $boxes) {
             foreach ($boxes as $box) {
                 $local = strtolower(trim((string) ($box['account'] ?? '')));
@@ -988,7 +1043,13 @@ class DirectAdminToMailcowMigrationService
                     continue;
                 }
 
-                if ($daNode && $mailcowNode && $username !== '') {
+                if (in_array(strtolower($email), $alreadyCopied, true)) {
+                    $copied[] = $email;
+                    $this->mailPullProgress->log($daService, $email.' maildir already copied on an earlier pull; skipping');
+                } elseif ($copyBlocker !== null) {
+                    $failed[] = $email.' (maildir copy)';
+                    $this->mailPullProgress->log($daService, $email.' maildir copy skipped: Mailcow node SSH login failed');
+                } elseif ($daNode && $mailcowNode && $username !== '') {
                     if ($this->copyDirectAdminMaildirToMailcow(
                         $daNode,
                         $mailcowNode,
@@ -1053,14 +1114,34 @@ class DirectAdminToMailcowMigrationService
                     'skipcrossduplicates' => '0',
                     'active' => '1',
                 ]);
-                if (($sync['success'] ?? false) || $this->mailcowSyncJobAlreadyExists($sync)) {
+                if ($sync['success'] ?? false) {
                     $syncJobs[] = $email;
-                    $this->mailPullProgress->log(
-                        $daService,
-                        ($sync['success'] ?? false)
-                            ? $email.' IMAP sync job created'
-                            : $email.' IMAP sync job already exists'
-                    );
+                    $this->mailPullProgress->log($daService, $email.' IMAP sync job created');
+                } elseif ($this->mailcowSyncJobAlreadyExists($sync)) {
+                    // The DirectAdmin password was just rotated; the existing job
+                    // must learn it or the sync silently stops after this retry.
+                    $existingJob = $client->findSyncJobForMailbox($email);
+                    $edited = $existingJob !== null && isset($existingJob['id'])
+                        ? $client->editSyncJob((int) $existingJob['id'], [
+                            'host1' => $imapHost,
+                            'port1' => '993',
+                            'user1' => $email,
+                            'password1' => $imapPassword,
+                            'enc1' => 'SSL',
+                            'active' => '1',
+                        ])
+                        : ['success' => false, 'message' => 'sync job not found by mailbox'];
+                    if ($edited['success'] ?? false) {
+                        $syncJobs[] = $email;
+                        $this->mailPullProgress->log($daService, $email.' IMAP sync job already exists; updated its DirectAdmin password');
+                    } else {
+                        $failed[] = $email.' (sync)';
+                        $this->mailPullProgress->log($daService, $email.' IMAP sync job exists but could not be updated: '.(string) ($edited['message'] ?? 'unknown error'));
+                        Log::warning('Mailcow sync job password update failed', [
+                            'mailbox' => $email,
+                            'message' => $edited['message'] ?? null,
+                        ]);
+                    }
                 } else {
                     $failed[] = $email.' (sync)';
                     $this->mailPullProgress->log($daService, $email.' IMAP sync job failed');
@@ -1106,6 +1187,7 @@ class DirectAdminToMailcowMigrationService
             count($copied),
             count($syncJobs),
             count($failed),
+            $copyBlocker,
         );
 
         $this->mailPullProgress->complete($daService, $message, [

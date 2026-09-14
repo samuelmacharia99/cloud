@@ -3,11 +3,13 @@
 namespace App\Jobs;
 
 use App\Models\Service;
+use App\Services\Provisioning\DaConvertProgress;
 use App\Services\Provisioning\DirectAdminToContainerConvertService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 
@@ -17,7 +19,28 @@ class ConvertDirectAdminProjectSiteJob implements ShouldQueue
 
     public int $timeout = 1800;
 
+    public int $tries = 1;
+
     public function __construct(public int $serviceId) {}
+
+    /**
+     * One export at a time per DirectAdmin node, shared with the primary
+     * convert job, so four sibling tars never run against Apache together.
+     *
+     * @return list<WithoutOverlapping>
+     */
+    public function middleware(): array
+    {
+        $meta = Service::query()->whereKey($this->serviceId)->value('service_meta');
+        $meta = is_array($meta) ? $meta : (is_string($meta) ? (json_decode($meta, true) ?: []) : []);
+        $nodeId = (int) ($meta['da_legacy']['da_node_id'] ?? 0);
+
+        return [
+            (new WithoutOverlapping('da-convert-node-'.$nodeId))
+                ->releaseAfter(90)
+                ->expireAfter($this->timeout + 300),
+        ];
+    }
 
     public function handle(DirectAdminToContainerConvertService $convert): void
     {
@@ -51,15 +74,7 @@ class ConvertDirectAdminProjectSiteJob implements ShouldQueue
             'error' => $error,
         ]);
 
-        $meta = is_array($service->service_meta) ? $service->service_meta : [];
-        $meta['da_convert'] = array_merge($meta['da_convert'] ?? [], [
-            'status' => 'failed',
-            'error' => $error,
-            'failed_at' => now()->toIso8601String(),
-        ]);
-        $service->update([
-            'service_meta' => $meta,
-            'status' => 'failed',
-        ]);
+        app(DaConvertProgress::class)->fail($service, $error, ['mode' => DaConvertProgress::MODE_SITE]);
+        $service->update(['status' => 'failed']);
     }
 }

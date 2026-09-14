@@ -742,14 +742,57 @@ class DirectAdminToContainerMigrationService
     }
 
     /**
+     * Wrap an optional export progress callback so call sites can report
+     * unconditionally. Signature: callable(string $detail, float $fraction).
+     *
+     * @return callable(string, float): void
+     */
+    private function exportProgressReporter(?callable $onProgress): callable
+    {
+        return static function (string $detail, float $fraction = 0.0) use ($onProgress): void {
+            if ($onProgress) {
+                $onProgress($detail, max(0.0, min(1.0, $fraction)));
+            }
+        };
+    }
+
+    /**
+     * SFTP byte callback that maps download progress onto [$from, $to] of the
+     * export phase and only reports on 10% buckets so meta writes stay cheap.
+     *
+     * @param  callable(string, float): void  $progress
+     * @return callable(int, int): void
+     */
+    private function exportDownloadReporter(callable $progress, string $what, float $from, float $to): callable
+    {
+        $lastBucket = -1;
+
+        return static function (int $done, int $total) use ($progress, $what, $from, $to, &$lastBucket): void {
+            $ratio = $total > 0 ? min(1.0, max(0.0, $done / $total)) : 0.0;
+            $bucket = (int) floor($ratio * 10);
+            if ($bucket === $lastBucket) {
+                return;
+            }
+            $lastBucket = $bucket;
+            $progress(
+                'Downloading '.$what.' '.DirectAdminMailPullProgress::formatBytes($done)
+                    .' / '.DirectAdminMailPullProgress::formatBytes(max($total, $done)),
+                $from + ($to - $from) * $ratio,
+            );
+        };
+    }
+
+    /**
      * Export WordPress files + DB from a DA shared hosting service to local temp files.
      *
      * @param  array{docroot: ?string, databases: list<array{name: string}>, domain: ?string, stack: string, has_wp_config: bool}  $inventory
+     * @param  (callable(string, float): void)|null  $onProgress  detail, fraction of the export phase
      * @return array{local_dump: string, local_tar: string, remote_work: string, db_name: string}
      */
-    public function exportWordPressFromDirectAdmin(Service $source, array $inventory, ?string $databaseName = null): array
+    public function exportWordPressFromDirectAdmin(Service $source, array $inventory, ?string $databaseName = null, ?callable $onProgress = null): array
     {
         $daNode = $this->resolveDirectAdminNode($source, $inventory);
+        $progress = $this->exportProgressReporter($onProgress);
 
         $workId = 'wp-export-'.$source->id.'-'.Str::lower(Str::random(6));
         $remoteWork = self::WORK_BASE.'/'.$workId;
@@ -771,6 +814,7 @@ class DirectAdminToContainerMigrationService
         try {
             $daSsh->exec('mkdir -p '.escapeshellarg($remoteWork));
 
+            $progress('Reading wp-config and MySQL inventory on DirectAdmin', 0.05);
             $daUsername = $this->directAdminUsername($source);
             $wpCreds = $this->parseWpDatabaseCredentials($daSsh, $exportRoot, $daUsername);
             $fromDisk = $this->listDirectAdminUserMysqlDatabaseNames($daSsh, $daUsername);
@@ -815,6 +859,7 @@ class DirectAdminToContainerMigrationService
             $defaultsFile = $remoteWork.'/mysqldump.cnf';
             $this->writeRemoteMysqlDefaultsFile($daSsh, $defaultsFile, $wpCreds);
             try {
+                $progress('Dumping MySQL database '.$dbName, 0.15);
                 $daSsh->exec(
                     $this->buildMysqlDumpCommand($wpCreds, $dbName, $dumpFile, $defaultsFile),
                     600
@@ -823,13 +868,19 @@ class DirectAdminToContainerMigrationService
                 @$daSsh->exec('rm -f '.escapeshellarg($defaultsFile));
             }
 
+            $progress('Archiving WordPress files from '.$exportRoot, 0.3);
             $daSsh->exec(
                 $this->buildWordPressFilesTarCommand($exportRoot, $filesTar),
                 900
             );
 
+            $progress('Downloading database dump', 0.4);
             $daSsh->downloadToLocal($dumpFile, $localDump);
-            $daSsh->downloadToLocal($filesTar, $localTar);
+            $daSsh->downloadToLocal(
+                $filesTar,
+                $localTar,
+                $this->exportDownloadReporter($progress, 'files archive', 0.45, 1.0),
+            );
         } finally {
             $daSsh->disconnect();
         }
@@ -1054,16 +1105,17 @@ class DirectAdminToContainerMigrationService
      * @param  array{docroot: ?string, databases: list<array{name: string}>, domain: ?string, stack: string, has_wp_config: bool}  $inventory
      * @return array{local_dump: ?string, local_tar: string, remote_work: string, db_name: ?string, stack: string}
      */
-    public function exportSiteFromDirectAdmin(Service $source, array $inventory, ?string $databaseName = null): array
+    public function exportSiteFromDirectAdmin(Service $source, array $inventory, ?string $databaseName = null, ?callable $onProgress = null): array
     {
         $stack = (string) ($inventory['stack'] ?? 'unknown');
         if ($stack === 'wordpress' || ($inventory['has_wp_config'] ?? false)) {
-            $export = $this->exportWordPressFromDirectAdmin($source, $inventory, $databaseName);
+            $export = $this->exportWordPressFromDirectAdmin($source, $inventory, $databaseName, $onProgress);
 
             return array_merge($export, ['stack' => 'wordpress']);
         }
 
         $daNode = $this->resolveDirectAdminNode($source, $inventory);
+        $progress = $this->exportProgressReporter($onProgress);
 
         $workId = 'site-export-'.$source->id.'-'.Str::lower(Str::random(6));
         $remoteWork = self::WORK_BASE.'/'.$workId;
@@ -1096,6 +1148,7 @@ class DirectAdminToContainerMigrationService
             )) === 'yes';
 
             if ($needsDatabase) {
+                $progress('Resolving database credentials on DirectAdmin', 0.05);
                 $dbCreds = match ($stack) {
                     'laravel' => $this->parseEnvDatabaseCredentials($daSsh, $docroot),
                     'nodejs' => $this->parseEnvDatabaseCredentials($daSsh, $docroot, true),
@@ -1123,10 +1176,12 @@ class DirectAdminToContainerMigrationService
                     $defaultsFile = $remoteWork.'/mysqldump.cnf';
                     $this->writeRemoteMysqlDefaultsFile($daSsh, $defaultsFile, $dbCreds);
                     try {
+                        $progress('Dumping MySQL database '.$dbName, 0.15);
                         $daSsh->exec(
                             $this->buildMysqlDumpCommand($dbCreds, $dbName, $dumpFile, $defaultsFile),
                             600
                         );
+                        $progress('Downloading database dump', 0.25);
                         $daSsh->downloadToLocal($dumpFile, $localDump);
                         $localDumpPath = $localDump;
                     } finally {
@@ -1143,6 +1198,7 @@ class DirectAdminToContainerMigrationService
                 }
             }
 
+            $progress('Archiving site files from '.$docroot, 0.35);
             $daSsh->exec(
                 $this->buildGenericDocrootTarCommand($docroot, $filesTar, $stack),
                 900
@@ -1156,7 +1212,11 @@ class DirectAdminToContainerMigrationService
                     (string) ($inventory['domain'] ?? ''),
                 );
             }
-            $daSsh->downloadToLocal($filesTar, $localTar);
+            $daSsh->downloadToLocal(
+                $filesTar,
+                $localTar,
+                $this->exportDownloadReporter($progress, 'files archive', 0.45, 1.0),
+            );
         } finally {
             $daSsh->disconnect();
         }

@@ -412,6 +412,53 @@ class MailcowService
     }
 
     /**
+     * Every sync job on this Mailcow, as the API lists them (id, user2 = local mailbox, host1, user1, active…).
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function listSyncJobs(): array
+    {
+        $response = $this->request('GET', '/api/v1/get/syncjobs/all/no_log');
+        $data = $response['data'] ?? null;
+        if (! ($response['success'] ?? false) || ! is_array($data)) {
+            return [];
+        }
+
+        return array_values(array_filter($data, 'is_array'));
+    }
+
+    /**
+     * The sync job that pulls into a local mailbox, if one exists.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function findSyncJobForMailbox(string $email): ?array
+    {
+        $email = strtolower(trim($email));
+        foreach ($this->listSyncJobs() as $job) {
+            if (strtolower(trim((string) ($job['user2'] ?? ''))) === $email) {
+                return $job;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Update an existing sync job (password, host, activity…).
+     *
+     * @param  array<string, mixed>  $attr
+     * @return array{success: bool, message: string, data?: mixed}
+     */
+    public function editSyncJob(int $id, array $attr): array
+    {
+        return $this->request('POST', '/api/v1/edit/syncjob', [
+            'items' => [(string) $id],
+            'attr' => $attr,
+        ]);
+    }
+
+    /**
      * @return array{success: bool, message: string, data?: mixed, password?: string}
      */
     public function addAppPassword(string $mailbox, string $appName, string $password): array

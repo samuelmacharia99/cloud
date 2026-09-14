@@ -1291,11 +1291,13 @@
 <script>
 function mailPullConsole(initial) {
     return {
-        view: initial || { percent: 0, label: 'Idle', log: 'Awaiting mail pull…', is_active: false, status: 'idle', can_retry: false },
+        view: initial || { percent: 0, label: 'Idle', log: 'Awaiting mail pull…', is_active: false, status: 'idle', can_retry: false, can_retry_convert: false, siblings: [], siblings_total: 0 },
         starting: false,
+        actionMessage: '',
         pollTimer: null,
         statusUrl: @json(route('admin.services.mail-pull-status', $service)),
         retryUrl: @json(route('admin.services.retry-mail-pull', $service)),
+        retryConvertUrl: @json(route('admin.services.retry-convert', $service)),
 
         init() {
             this.scrollLog();
@@ -1327,11 +1329,18 @@ function mailPullConsole(initial) {
             return (value >= 10 ? Math.round(value) : value.toFixed(1)) + ' ' + units[i];
         },
 
-        statusBadgeClass() {
-            const s = this.view.status;
+        statusBadgeClass(s) {
+            if (s === undefined) s = this.view.status;
             if (s === 'running' || s === 'pending' || s === 'queued') return 'border-teal-400/40 bg-teal-500/10 text-teal-300';
             if (s === 'completed') return 'border-emerald-400/40 bg-emerald-500/10 text-emerald-300';
             if (s === 'failed') return 'border-red-400/40 bg-red-500/10 text-red-300';
+            return 'border-slate-600 bg-slate-800 text-slate-400';
+        },
+
+        siblingsBadgeClass() {
+            if (this.view.siblings_failed) return 'border-red-400/40 bg-red-500/10 text-red-300';
+            if (this.view.siblings_active) return 'border-teal-400/40 bg-teal-500/10 text-teal-300';
+            if (this.view.siblings_done === this.view.siblings_total) return 'border-emerald-400/40 bg-emerald-500/10 text-emerald-300';
             return 'border-slate-600 bg-slate-800 text-slate-400';
         },
 
@@ -1395,6 +1404,68 @@ function mailPullConsole(initial) {
             } finally {
                 this.starting = false;
             }
+        },
+
+        async postRetry(url, message, title, confirmLabel) {
+            if (this.starting) return;
+            if (window.appConfirm) {
+                const ok = await window.appConfirm(message, title, confirmLabel);
+                if (!ok) return;
+            }
+
+            this.starting = true;
+            this.actionMessage = '';
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content,
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                    body: JSON.stringify({}),
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    this.actionMessage = data.message || 'Failed to queue the retry.';
+                    return;
+                }
+                this.actionMessage = data.message || '';
+                if (url === this.retryConvertUrl && data.status) {
+                    this.view = data;
+                    this.scrollLog();
+                }
+                this.schedulePoll();
+                await this.refresh();
+            } catch (error) {
+                this.actionMessage = 'Failed to queue the retry.';
+            } finally {
+                this.starting = false;
+            }
+        },
+
+        startRetryConvert() {
+            if (!this.view.can_retry_convert) return;
+            const rerun = this.view.status === 'completed' && !this.view.is_site;
+            return this.postRetry(
+                this.retryConvertUrl,
+                rerun
+                    ? 'Re-run the whole convert on this same service? Files and database are re-exported from DirectAdmin and re-imported over the running container. The project, sibling sites and Mailcow email service are reused; nothing new is created.'
+                    : 'Retry the convert on this same service? The DirectAdmin billing row is restored from the first attempt, then the convert runs again reusing the existing project, sibling sites and Mailcow email service.',
+                rerun ? 'Re-run convert' : 'Retry convert',
+                rerun ? 'Re-run' : 'Retry'
+            );
+        },
+
+        retrySite(site) {
+            if (!site || !site.can_retry) return;
+            return this.postRetry(
+                site.retry_url,
+                `Retry converting ${site.domain} on its existing service #${site.service_id}? No new service is created.`,
+                'Retry site',
+                'Retry'
+            );
         },
     };
 }

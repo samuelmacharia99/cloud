@@ -185,65 +185,77 @@ class DirectAdminMailPullProgress
     }
 
     /**
-     * Combined convert + mail-pull payload for the admin mini-terminal.
+     * Combined convert + mail-pull payload for the admin operator console.
      *
-     * @return array{
-     *     percent: int,
-     *     label: string,
-     *     log: string,
-     *     is_active: bool,
-     *     status: string,
-     *     can_retry: bool,
-     *     mail_pull: array<string, mixed>,
-     *     convert: array<string, mixed>|null
-     * }
+     * The convert half (phases, siblings, deploy lines, retry) comes from
+     * DaConvertProgress; this method blends it with the live mail copy.
+     *
+     * @return array<string, mixed>
      */
     public function operatorView(Service $service): array
     {
         $pull = $this->snapshot($service);
-        $convert = is_array($service->service_meta['da_convert'] ?? null)
-            ? $service->service_meta['da_convert']
-            : null;
+        $view = app(DaConvertProgress::class)->operatorConvertView($service, $pull);
+        $convert = $view['convert'];
         $pullActive = in_array($pull['status'] ?? '', self::STATUSES_ACTIVE, true);
-        $convertStatus = (string) ($convert['status'] ?? '');
-        $convertActive = in_array($convertStatus, ['queued', 'running'], true);
+        $convertStatus = (string) $view['convert_status'];
+        $convertActive = (bool) $view['convert_active'];
+        $siblingsActive = (bool) $view['siblings_active'];
         $pullStatus = (string) ($pull['status'] ?? 'idle');
+        $mailPhaseRunning = $convertActive && $view['convert_phase'] === 'mail';
 
-        $convertPercent = $this->convertPercent($convert);
-        if ($pullActive) {
+        // Percent: the convert bar owns the page once a convert exists; the
+        // mail pull's own percent fills the mail phase span inside it.
+        if ($pullActive && ! $mailPhaseRunning) {
+            // Standalone mail-pull retry: the copy owns the bar until it ends.
             $percent = (int) $pull['percent'];
             $status = $pullStatus;
-        } elseif ($convertActive) {
-            $percent = $convertPercent;
+        } elseif ($convert !== null) {
+            $percent = (int) $view['convert_percent'];
             $status = $convertStatus;
-        } elseif ($pullStatus === 'completed' || $convertStatus === 'completed') {
-            $percent = $pullStatus === 'failed' ? (int) $pull['percent'] : 100;
-            $status = $pullStatus !== 'idle' ? $pullStatus : $convertStatus;
-        } elseif ($pullStatus === 'failed' || $convertStatus === 'failed') {
-            $percent = max((int) ($pull['percent'] ?? 0), $convertPercent);
-            $status = $pullStatus === 'failed' ? 'failed' : $convertStatus;
+            if ($convertStatus === 'completed' && $siblingsActive) {
+                $percent = 99;
+                $status = 'running';
+            }
+        } elseif ($pullStatus === 'completed') {
+            $percent = 100;
+            $status = $pullStatus;
+        } elseif ($pullStatus === 'failed') {
+            $percent = (int) ($pull['percent'] ?? 0);
+            $status = 'failed';
         } else {
             $percent = (int) ($pull['percent'] ?? 0);
-            $status = $pullStatus !== 'idle' ? $pullStatus : ($convertStatus !== '' ? $convertStatus : 'idle');
+            $status = $pullStatus !== 'idle' ? $pullStatus : 'idle';
         }
 
-        $label = (string) ($pull['label'] ?? '');
-        if ($label === '' && $convertActive) {
-            $steps = is_array($convert['steps'] ?? null) ? $convert['steps'] : [];
-            $label = $steps !== [] ? (string) end($steps) : 'Convert queued…';
+        $label = '';
+        if ($mailPhaseRunning || ($convert === null && $pullStatus !== 'idle') || ($pullActive && ! $mailPhaseRunning)) {
+            $label = (string) ($pull['label'] ?? '');
         }
-        if ($label === '' && $convertStatus === 'completed') {
-            $label = 'Convert completed';
+        if ($label === '') {
+            $label = (string) $view['convert_label'];
+        }
+        if ($label === '' && $pullStatus === 'failed') {
+            $label = (string) ($pull['label'] ?? '');
         }
 
-        $log = (string) ($pull['log'] ?? '');
-        if ($convert && is_array($convert['steps'] ?? null) && $convert['steps'] !== []) {
-            $convertLog = implode("\n", array_map(
+        $sections = [];
+        $steps = $view['convert_steps'];
+        if ($steps !== []) {
+            $sections[] = implode("\n", array_map(
                 fn ($step) => '['.($convertStatus ?: 'convert').'] '.$step,
-                $convert['steps']
+                $steps
             ));
-            $log = $log === '' ? $convertLog : $convertLog."\n".$log;
         }
+        $deployLines = $view['deploy_lines'];
+        if ($deployLines !== []) {
+            $sections[] = "── container deploy ──\n".implode("\n", $deployLines);
+        }
+        $pullLog = (string) ($pull['log'] ?? '');
+        if ($pullLog !== '') {
+            $sections[] = ($steps !== [] ? "── mail pull ──\n" : '').$pullLog;
+        }
+        $log = implode("\n", $sections);
 
         $legacy = is_array($service->service_meta['da_legacy'] ?? null) ? $service->service_meta['da_legacy'] : [];
         $migration = is_array($service->service_meta['mailcow_migration'] ?? null) ? $service->service_meta['mailcow_migration'] : [];
@@ -254,22 +266,26 @@ class DirectAdminMailPullProgress
                 || (int) ($migration['email_service_id'] ?? 0) > 0
             );
 
-        return [
-            'percent' => $percent,
+        $isActive = $pullActive || $convertActive || $siblingsActive;
+
+        return array_merge($view, [
+            'percent' => max(0, min(100, $percent)),
             'label' => $label !== '' ? $label : 'Idle',
             'log' => $log !== '' ? $log : 'Awaiting mail pull…',
-            'is_active' => $pullActive || $convertActive,
+            'is_active' => $isActive,
             'status' => $status,
-            'can_retry' => $canRetry && ! $convertActive,
+            'can_retry' => $canRetry,
+            'can_retry_convert' => $view['can_retry_convert'] && ! $pullActive,
             'mail_pull' => $pull,
-            'convert' => $convert,
             'current_email' => $pull['current_email'] ?? null,
             'mailbox_index' => (int) ($pull['mailbox_index'] ?? 0),
             'mailbox_total' => (int) ($pull['mailbox_total'] ?? 0),
             'bytes_done' => (int) ($pull['bytes_done'] ?? 0),
             'bytes_total' => (int) ($pull['bytes_total'] ?? 0),
-            'phase' => $pull['phase'] ?? ($convertActive ? 'convert' : 'idle'),
-        ];
+            'phase' => $mailPhaseRunning || ($convert === null && $pullStatus !== 'idle') || ($pullActive && ! $mailPhaseRunning)
+                ? ($pull['phase'] ?? 'idle')
+                : ($convertActive ? (string) $view['convert_phase'] : ($siblingsActive ? 'siblings' : 'idle')),
+        ]);
     }
 
     /**
@@ -430,24 +446,6 @@ class DirectAdminMailPullProgress
     private function line(string $message): string
     {
         return '['.now()->format('H:i:s').'] '.$message;
-    }
-
-    /**
-     * @param  array<string, mixed>|null  $convert
-     */
-    private function convertPercent(?array $convert): int
-    {
-        if ($convert === null) {
-            return 0;
-        }
-
-        return match ($convert['status'] ?? '') {
-            'completed' => 100,
-            'failed', 'reverted' => max(8, min(90, 10 + count($convert['steps'] ?? []) * 6)),
-            'queued' => 4,
-            'running' => min(92, 10 + count($convert['steps'] ?? []) * 7),
-            default => 0,
-        };
     }
 
     /**

@@ -11,7 +11,6 @@ use App\Models\Product;
 use App\Models\Service;
 use App\Services\Billing\ServiceRenewalPricingService;
 use App\Services\Hosting\DirectAdminCustomerPanelApi;
-use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -31,6 +30,7 @@ class DirectAdminToContainerConvertService
         private ServiceRenewalPricingService $renewalPricing,
         private DirectAdminToMailcowMigrationService $mailMigrator,
         private DaAccountSnapshotService $snapshots,
+        private DaConvertProgress $progress,
     ) {}
 
     /**
@@ -590,26 +590,44 @@ class DirectAdminToContainerConvertService
             throw new \InvalidArgumentException('DirectAdmin node is missing.');
         }
 
-        $previous = [
-            'product_id' => $service->product_id,
-            'node_id' => $service->node_id,
-            'provisioning_driver_key' => $service->provisioning_driver_key,
-            'custom_price' => $service->custom_price,
-            'status' => $service->status?->value ?? (string) $service->status,
-        ];
+        // A retry arrives with the DirectAdmin row already restored from the
+        // first attempt's snapshot; keep that snapshot rather than capturing
+        // the (identical) restored state again.
+        $existingConvert = $this->progress->convertMeta($service);
+        $previous = is_array($existingConvert['previous'] ?? null) && ! empty($existingConvert['previous']['product_id'])
+            ? $existingConvert['previous']
+            : [
+                'product_id' => $service->product_id,
+                'node_id' => $service->node_id,
+                'provisioning_driver_key' => $service->provisioning_driver_key,
+                'custom_price' => $service->custom_price,
+                'status' => $service->status?->value ?? (string) $service->status,
+            ];
+        $attempt = (int) ($existingConvert['attempt'] ?? 0) + 1;
 
-        $steps = ['Preflight OK · stack '.$stack];
-        $this->writeConvertMeta($service, [
-            'status' => 'running',
-            'mode' => 'convert_in_place',
+        $this->progress->start($service, [
+            'mode' => DaConvertProgress::MODE_PRIMARY,
             'stack' => $stack,
-            'started_at' => now()->toIso8601String(),
             'previous' => $previous,
-            'steps' => $steps,
-            'error' => null,
+            'attempt' => $attempt,
             'quiet' => true,
             'no_invoice' => true,
+            'target_product_id' => $containerProduct->id,
+            'target_product_name' => $containerProduct->name,
+            'options' => array_merge(is_array($existingConvert['options'] ?? null) ? $existingConvert['options'] : [], [
+                'product_id' => $containerProduct->id,
+                'email_product_id' => $emailProduct?->id,
+                'database_name' => $databaseName,
+                'acknowledge_mail_pull' => $acknowledgeExtraMailboxes,
+                'acknowledge_addon_sites' => $acknowledgeAddonSites,
+            ]),
         ]);
+        $this->progress->step(
+            $service,
+            'Preflight OK · stack '.$stack.($attempt > 1 ? ' · attempt '.$attempt : ''),
+            'preflight',
+            1.0,
+        );
 
         $export = null;
         $extraSites = $this->extraConvertibleSites($inventory);
@@ -618,16 +636,22 @@ class DirectAdminToContainerConvertService
 
         try {
             $this->assertContainerHostCapacity($service, $containerProduct, $stack, $share);
-            $steps[] = 'Container host capacity OK';
-            $this->appendConvertStep($service, $steps);
+            $this->progress->step($service, 'Container host capacity OK', 'capacity', 1.0);
 
-            $steps[] = 'Exporting site files'.$this->exportIncludesDatabaseMessage($stack).' from DirectAdmin';
-            $this->appendConvertStep($service, $steps);
-            $export = $this->migrator->exportSiteFromDirectAdmin($service, $inventory, $databaseName);
+            $this->progress->step(
+                $service,
+                'Exporting site files'.$this->exportIncludesDatabaseMessage($stack).' from DirectAdmin',
+                'export',
+            );
+            $export = $this->migrator->exportSiteFromDirectAdmin(
+                $service,
+                $inventory,
+                $databaseName,
+                $this->exportProgressFor($service),
+            );
 
             if (! empty($export['files_export_empty'])) {
-                $steps[] = 'Primary docroot missing on DirectAdmin — exported an empty site archive (addon containers carry live files)';
-                $this->appendConvertStep($service, $steps);
+                $this->progress->step($service, 'Primary docroot missing on DirectAdmin — exported an empty site archive (addon containers carry live files)');
             }
 
             if (! empty($export['local_dump'])) {
@@ -636,9 +660,9 @@ class DirectAdminToContainerConvertService
             }
 
             $emailServiceId = null;
+            $mailResult = null;
             if ($mustPullMail && $emailProduct) {
-                $steps[] = 'Pulling mailboxes to Mailcow (live copy progress on this page)';
-                $this->appendConvertStep($service, $steps);
+                $this->progress->step($service, 'Pulling mailboxes to Mailcow (live copy progress on this page)', 'mail');
                 $byDomain = $preflight['email']['by_domain'] ?? [];
                 if ($byDomain === [] && ($preflight['email']['all'] ?? []) !== []) {
                     foreach ($preflight['email']['all'] as $box) {
@@ -668,8 +692,7 @@ class DirectAdminToContainerConvertService
                     throw new \RuntimeException((string) ($mailResult['message'] ?? 'Mail pull to Mailcow failed.'));
                 }
                 $emailServiceId = isset($mailResult['email_service']) ? (int) $mailResult['email_service']->id : null;
-                $steps[] = (string) ($mailResult['message'] ?? 'Mail pull queued.');
-                $this->appendConvertStep($service, $steps);
+                $this->progress->step($service, (string) ($mailResult['message'] ?? 'Mail pull queued.'), 'mail', 1.0);
             }
 
             $primaryDomain = strtolower(trim((string) ($inventory['domain'] ?? $service->attachedDomainName() ?? '')));
@@ -681,19 +704,26 @@ class DirectAdminToContainerConvertService
                         : null,
                 );
                 if ($inbox['success'] ?? false) {
-                    $steps[] = ($inbox['created'] ?? false)
+                    $this->progress->step($service, ($inbox['created'] ?? false)
                         ? 'Created operator inbox '.$inbox['email']
-                        : 'Operator inbox ready '.$inbox['email'];
-                    $this->appendConvertStep($service, $steps);
+                        : 'Operator inbox ready '.$inbox['email']);
                 }
             }
 
             $creds = $service->getHostingCredentials() ?? [];
             $meta = is_array($service->service_meta) ? $service->service_meta : [];
             $templateSlug = $this->templateSlugForDetectedStack($stack, $containerProduct);
-            $daUsername = (string) ($creds['username'] ?? $meta['username'] ?? $service->external_reference ?? '');
+            $daUsername = (string) ($creds['username']
+                ?? $meta['username']
+                ?? $meta['da_legacy']['username']
+                ?? $service->external_reference
+                ?? '');
 
-            $meta['da_legacy'] = [
+            // Only the keys this convert owns; everything else in service_meta
+            // (mail_pull, mailcow_migration, da_convert steps written meanwhile)
+            // is merged fresh inside the transaction.
+            $metaChanges = [];
+            $metaChanges['da_legacy'] = [
                 'username' => $daUsername,
                 'domain' => $inventory['domain'],
                 'da_node_id' => $daNode->id,
@@ -710,41 +740,44 @@ class DirectAdminToContainerConvertService
             ];
             // Preserve panel password in meta if present (deploy overwrites credentials JSON)
             if (! empty($creds['password'])) {
-                $meta['da_legacy']['password'] = $creds['password'];
+                $metaChanges['da_legacy']['password'] = $creds['password'];
             } elseif (! empty($meta['password'])) {
-                $meta['da_legacy']['password'] = $meta['password'];
+                $metaChanges['da_legacy']['password'] = $meta['password'];
+            } elseif (! empty($meta['da_legacy']['password'])) {
+                $metaChanges['da_legacy']['password'] = $meta['da_legacy']['password'];
             }
 
+            $metaChanges['provision_template_slug'] = $templateSlug;
+            $metaChanges['language_slug'] = $templateSlug;
             if ($extraSites !== []) {
-                $meta['project_recipe'] = self::PROJECT_RECIPE_KEY;
-                $meta['project_role'] = 'primary';
-                $meta['project_role_label'] = (string) ($inventory['domain'] ?? $service->name);
-                $meta['project_billing_anchor'] = true;
-                $meta['provision_template_slug'] = $templateSlug;
-                $meta['language_slug'] = $templateSlug;
-                $meta['domain'] = $meta['domain'] ?? $inventory['domain'];
-                $meta['resource_share'] = [
+                $metaChanges['project_recipe'] = self::PROJECT_RECIPE_KEY;
+                $metaChanges['project_role'] = 'primary';
+                $metaChanges['project_role_label'] = (string) ($inventory['domain'] ?? $service->name);
+                $metaChanges['project_billing_anchor'] = true;
+                $metaChanges['domain'] = $meta['domain'] ?? $inventory['domain'];
+                $metaChanges['resource_share'] = [
                     'cpu' => $share,
                     'memory' => $share,
                 ];
-            } else {
-                $meta['provision_template_slug'] = $templateSlug;
-                $meta['language_slug'] = $templateSlug;
             }
             if ($emailServiceId) {
-                $meta['bundled_email_service_id'] = $emailServiceId;
+                $metaChanges['bundled_email_service_id'] = $emailServiceId;
             }
 
-            $steps[] = 'Switching service product to Application Hosting (keeping due date and reseller price)';
-            $this->appendConvertStep($service, $steps);
+            $this->progress->step($service, 'Switching service product to Application Hosting (keeping due date and reseller price)', 'switch');
 
             $siblingIds = [];
             $primaryHostname = strtolower(trim((string) ($inventory['domain'] ?? $meta['domain'] ?? '')));
             if ($primaryHostname !== '') {
-                $meta['domain'] = $primaryHostname;
-                $meta['project_role_label'] = $meta['project_role_label'] ?? $primaryHostname;
+                $metaChanges['domain'] = $primaryHostname;
+                $metaChanges['project_role_label'] = $metaChanges['project_role_label'] ?? $primaryHostname;
             }
-            DB::transaction(function () use ($service, $containerProduct, $meta, $extraSites, $daNode, $daUsername, $share, $primaryHostname, $inventory, &$siblingIds) {
+            DB::transaction(function () use ($service, $containerProduct, $metaChanges, $extraSites, $daNode, $daUsername, $share, $primaryHostname, $inventory, &$siblingIds) {
+                $fresh = $service->fresh();
+                $meta = array_merge(
+                    is_array($fresh?->service_meta) ? $fresh->service_meta : [],
+                    $metaChanges,
+                );
                 $service->update([
                     'product_id' => $containerProduct->id,
                     'provisioning_driver_key' => 'container',
@@ -773,7 +806,7 @@ class DirectAdminToContainerConvertService
             });
 
             if ($siblingIds !== []) {
-                $this->writeConvertMeta($service, [
+                $this->progress->merge($service, [
                     'sibling_service_ids' => $siblingIds,
                     'project_id' => $service->fresh()->project_id,
                 ]);
@@ -781,14 +814,12 @@ class DirectAdminToContainerConvertService
 
             $service->refresh()->load('product.containerTemplate', 'user');
 
-            $steps[] = 'Provisioning '.$stack.' container (silent — no customer notification)';
-            $this->appendConvertStep($service, $steps);
+            $this->progress->step($service, 'Provisioning '.$stack.' container (silent — no customer notification)', 'deploy');
             $this->deployments->deploy($service, ContainerDeployOptions::quietConvert());
 
             $service->refresh()->load('containerDeployment.node', 'product.containerTemplate');
 
-            $steps[] = 'Importing site into container';
-            $this->appendConvertStep($service, $steps);
+            $this->progress->step($service, 'Importing site into container', 'import');
             $this->migrator->importSiteIntoContainer(
                 $service,
                 $export['local_dump'] ?? null,
@@ -796,28 +827,21 @@ class DirectAdminToContainerConvertService
                 $export['remote_work'],
                 (string) ($export['stack'] ?? $stack),
                 $daNode,
-                function (string $detail) use ($service, &$steps): void {
-                    $steps[] = 'Import: '.$detail;
-                    $this->appendConvertStep($service, $steps);
-                },
+                $this->importProgressFor($service),
             );
 
             if ($primaryHostname !== '') {
+                $this->progress->step($service, 'Binding '.$primaryHostname.' to the Application Hosting container', 'bind');
                 $this->attachConvertedHostname($service->fresh(), $primaryHostname);
-                $steps[] = 'Bound '.$primaryHostname.' to the Application Hosting container';
-                $this->appendConvertStep($service, $steps);
+                $this->progress->step($service, 'Bound '.$primaryHostname.' to the Application Hosting container', 'bind', 1.0);
             }
 
             $renewalPreview = $this->renewalPricing->unitPrice($service->fresh());
             if ($siblingIds !== []) {
-                $steps[] = sprintf(
+                $this->progress->step($service, sprintf(
                     'Queuing %d extra live site(s) as sibling containers on this same package (not separately billed)',
                     count($siblingIds)
-                );
-                $this->appendConvertStep($service, $steps);
-                foreach ($siblingIds as $siblingId) {
-                    ConvertDirectAdminProjectSiteJob::dispatch((int) $siblingId);
-                }
+                ), 'siblings');
             }
             $projectId = (int) ($service->fresh()->project_id ?? 0);
             if ($emailServiceId && $projectId > 0) {
@@ -829,24 +853,25 @@ class DirectAdminToContainerConvertService
             $mailNote = $emailServiceId
                 ? ' '.trim((string) ($mailResult['message'] ?? 'Mail pulled to Mailcow.'))
                 : '';
-            $steps[] = sprintf(
+            $this->progress->step($service, sprintf(
                 'Convert complete. Next due %s · renewal will bill Application Hosting (~%s).%s%s',
                 optional($service->next_due_date)->toDateString() ?? 'n/a',
                 number_format($renewalPreview, 2),
                 $addonNote,
                 $mailNote
-            );
+            ));
 
-            $this->writeConvertMeta($service, [
-                'status' => 'completed',
-                'completed_at' => now()->toIso8601String(),
-                'steps' => $steps,
+            // The primary's own work is done. Mark it so before the sibling jobs
+            // run (inline on a sync queue) so the heartbeat never looks frozen
+            // and force-revert is not offered while siblings are converting.
+            $this->progress->complete($service, [
                 'target_product_id' => $containerProduct->id,
                 'target_product_name' => $containerProduct->name,
                 'renewal_unit_price' => $renewalPreview,
                 'renewal_due_date' => optional($service->next_due_date)->toDateString(),
                 'stack' => $stack,
             ]);
+            $steps = $this->progress->convertMeta($service)['steps'] ?? [];
 
             // Mirror into da_migration for any existing overview banners
             $this->migrator->recordExternalProgress($service, [
@@ -855,6 +880,10 @@ class DirectAdminToContainerConvertService
                 'steps' => $steps,
                 'completed_at' => now()->toIso8601String(),
             ]);
+
+            foreach ($siblingIds as $siblingId) {
+                ConvertDirectAdminProjectSiteJob::dispatch((int) $siblingId);
+            }
 
             return [
                 'ok' => true,
@@ -868,12 +897,7 @@ class DirectAdminToContainerConvertService
             ]);
 
             $this->attemptRollback($service, $previous, $e->getMessage());
-            $this->writeConvertMeta($service->fresh(), [
-                'status' => 'failed',
-                'error' => $e->getMessage(),
-                'failed_at' => now()->toIso8601String(),
-                'steps' => $steps,
-            ]);
+            $this->progress->fail($service->fresh(), $e->getMessage());
 
             throw $e;
         } finally {
@@ -889,6 +913,37 @@ class DirectAdminToContainerConvertService
     }
 
     /**
+     * Export progress lands on the convert's export phase without adding a step per byte bucket.
+     *
+     * @return callable(string, float): void
+     */
+    private function exportProgressFor(Service $service): callable
+    {
+        return function (string $detail, float $fraction) use ($service): void {
+            $this->progress->phase($service, 'export', $detail, $fraction, force: $fraction < 0.45);
+        };
+    }
+
+    /**
+     * Each import step is logged; the fraction climbs with each one.
+     *
+     * @return callable(string): void
+     */
+    private function importProgressFor(Service $service): callable
+    {
+        $seen = 0;
+
+        return function (string $detail) use ($service, &$seen): void {
+            $seen++;
+            $this->progress->step($service, 'Import: '.$detail, 'import', min(0.9, $seen * 0.12));
+        };
+    }
+
+    /**
+     * Put the billing row back on DirectAdmin so the convert can be retried.
+     * Siblings and the project are kept (a retry reuses them); siblings that
+     * never started are marked failed so the operator can see them.
+     *
      * @param  array{product_id: int, node_id: ?int, provisioning_driver_key: ?string, custom_price: mixed, status: string}  $previous
      */
     private function attemptRollback(Service $service, array $previous, string $error): void
@@ -897,15 +952,22 @@ class DirectAdminToContainerConvertService
             $service->refresh();
             $siblingIds = $service->service_meta['da_convert']['sibling_service_ids'] ?? [];
             if (is_array($siblingIds) && $siblingIds !== []) {
-                Service::query()
+                $stranded = Service::query()
                     ->whereIn('id', $siblingIds)
                     ->whereIn('status', ['pending', 'provisioning'])
                     ->whereDoesntHave('containerDeployment')
-                    ->delete();
+                    ->get();
+                foreach ($stranded as $sibling) {
+                    $this->progress->fail($sibling, 'Primary convert failed before this site started: '.$error);
+                    $sibling->update(['status' => 'failed']);
+                }
             }
 
             // Always restore the DA product so convert can be retried. A running
             // container from a failed import is cleaned up on the next deploy.
+            // project_id is cleared so the customer UI does not group a
+            // DirectAdmin row under a container project; the project row stays
+            // and is re-linked by the next attempt.
             $service->update([
                 'product_id' => $previous['product_id'],
                 'node_id' => $previous['node_id'],
@@ -921,26 +983,6 @@ class DirectAdminToContainerConvertService
                 'rollback_error' => $rollbackError->getMessage(),
             ]);
         }
-    }
-
-    private function writeConvertMeta(Service $service, array $data): void
-    {
-        $meta = is_array($service->service_meta) ? $service->service_meta : [];
-        $meta['da_convert'] = array_merge($meta['da_convert'] ?? [], $data);
-        $service->update(['service_meta' => $meta]);
-        $service->refresh();
-    }
-
-    /**
-     * @param  list<string>  $steps
-     */
-    private function appendConvertStep(Service $service, array $steps): void
-    {
-        $this->writeConvertMeta($service, [
-            'steps' => $steps,
-            'status' => 'running',
-            'heartbeat_at' => now()->toIso8601String(),
-        ]);
     }
 
     public function canRevertToDirectAdmin(Service $service): bool
@@ -972,20 +1014,7 @@ class DirectAdminToContainerConvertService
      */
     public function convertLooksStuck(array $convert): bool
     {
-        $marker = $convert['heartbeat_at']
-            ?? $convert['started_at']
-            ?? $convert['queued_at']
-            ?? null;
-
-        if (! is_string($marker) || $marker === '') {
-            return true;
-        }
-
-        try {
-            return Carbon::parse($marker)->lt(now()->subMinutes(15));
-        } catch (\Throwable) {
-            return true;
-        }
+        return $this->progress->looksStuck($convert);
     }
 
     /**
@@ -1180,6 +1209,8 @@ class DirectAdminToContainerConvertService
 
     /**
      * Group the converted primary with extra live sites on one billed package.
+     * Idempotent: a retry finds the project and sibling rows the first attempt
+     * made instead of creating a second set.
      *
      * @param  list<array<string, mixed>>  $extraSites
      * @return array{project: CustomerProject, sibling_ids: list<int>}
@@ -1195,19 +1226,30 @@ class DirectAdminToContainerConvertService
     ): array {
         $anchor->loadMissing('user');
         $domain = (string) ($anchor->attachedDomainName() ?? $anchor->name);
-        $project = CustomerProject::create([
-            'user_id' => $anchor->user_id,
-            'name' => mb_substr($domain !== '' ? $domain : 'Project', 0, 100),
-            'recipe_key' => self::PROJECT_RECIPE_KEY,
-            'billing_service_id' => $anchor->id,
-            'resource_pool' => [
-                'product_id' => $product->id,
-                'product_name' => $product->name,
-                'site_count' => 1 + count($extraSites),
-                'cpu_share' => $share,
-                'memory_share' => $share,
-            ],
-        ]);
+        $pool = [
+            'product_id' => $product->id,
+            'product_name' => $product->name,
+            'site_count' => 1 + count($extraSites),
+            'cpu_share' => $share,
+            'memory_share' => $share,
+        ];
+
+        // A retry reuses the project the first attempt created.
+        $project = $this->progress->projectFor($anchor);
+        if ($project) {
+            $project->update([
+                'billing_service_id' => $anchor->id,
+                'resource_pool' => $pool,
+            ]);
+        } else {
+            $project = CustomerProject::create([
+                'user_id' => $anchor->user_id,
+                'name' => mb_substr($domain !== '' ? $domain : 'Project', 0, 100),
+                'recipe_key' => self::PROJECT_RECIPE_KEY,
+                'billing_service_id' => $anchor->id,
+                'resource_pool' => $pool,
+            ]);
+        }
 
         $anchor->update(['project_id' => $project->id]);
 
@@ -1233,6 +1275,11 @@ class DirectAdminToContainerConvertService
     }
 
     /**
+     * Find-or-create the sibling service for one extra DA site. Matching by
+     * domain inside the project keeps retries from producing duplicate rows;
+     * an existing row is reset to pending and its DA facts refreshed while its
+     * deployment-owned meta (database_id, ports) is kept.
+     *
      * @param  array<string, mixed>  $site
      */
     public function createSiblingSiteService(
@@ -1252,6 +1299,69 @@ class DirectAdminToContainerConvertService
         ]);
         $templateSlug = $this->templateSlugForDetectedStack($stack, $product);
 
+        $convertMeta = [
+            'domain' => $domain,
+            'project_recipe' => self::PROJECT_RECIPE_KEY,
+            'project_role' => 'site',
+            'project_role_label' => $domain,
+            'project_billing_anchor' => false,
+            'provision_template_slug' => $templateSlug,
+            'language_slug' => $templateSlug,
+            'resource_share' => [
+                'cpu' => $share,
+                'memory' => $share,
+            ],
+            'source_service_id' => $anchor->id,
+            'da_legacy' => [
+                'username' => $daUsername,
+                'domain' => $domain,
+                'da_node_id' => $daNodeId,
+                'docroot' => $site['docroot'] ?? null,
+                'app_root' => $site['app_root'] ?? ($site['docroot'] ?? null),
+                'stack' => $stack,
+                'has_wp_config' => (bool) ($site['has_wp_config'] ?? false),
+                'databases' => array_values(array_map(
+                    fn ($row) => ['name' => (string) ($row['name'] ?? $row)],
+                    $databases,
+                )),
+                'keep_email_on_da' => false,
+            ],
+        ];
+
+        $existing = $this->findExistingSiblingSite($anchor, $project, $domain);
+        if ($existing) {
+            $meta = is_array($existing->service_meta) ? $existing->service_meta : [];
+            $previousConvert = is_array($meta['da_convert'] ?? null) ? $meta['da_convert'] : [];
+            $meta = array_merge($meta, $convertMeta);
+            $meta['da_convert'] = [
+                'status' => 'queued',
+                'mode' => DaConvertProgress::MODE_SITE,
+                'queued_at' => now()->toIso8601String(),
+                'attempt' => (int) ($previousConvert['attempt'] ?? 0) + 1,
+                'last_error' => $previousConvert['error'] ?? null,
+            ];
+            $existing->update([
+                'project_id' => $project->id,
+                'product_id' => $product->id,
+                'name' => mb_substr($domain !== '' ? $domain : 'site', 0, 100),
+                'status' => 'pending',
+                'billing_cycle' => $anchor->billing_cycle,
+                'custom_price' => 0,
+                'next_due_date' => $anchor->next_due_date,
+                'provisioning_driver_key' => 'container',
+                'service_meta' => $meta,
+            ]);
+
+            return $existing->fresh();
+        }
+
+        $convertMeta['da_convert'] = [
+            'status' => 'queued',
+            'mode' => DaConvertProgress::MODE_SITE,
+            'queued_at' => now()->toIso8601String(),
+            'attempt' => 1,
+        ];
+
         return Service::query()->create([
             'user_id' => $anchor->user_id,
             'project_id' => $project->id,
@@ -1264,39 +1374,39 @@ class DirectAdminToContainerConvertService
             'next_due_date' => $anchor->next_due_date,
             'provisioning_driver_key' => 'container',
             'node_id' => null,
-            'service_meta' => [
-                'domain' => $domain,
-                'project_recipe' => self::PROJECT_RECIPE_KEY,
-                'project_role' => 'site',
-                'project_role_label' => $domain,
-                'project_billing_anchor' => false,
-                'provision_template_slug' => $templateSlug,
-                'language_slug' => $templateSlug,
-                'resource_share' => [
-                    'cpu' => $share,
-                    'memory' => $share,
-                ],
-                'source_service_id' => $anchor->id,
-                'da_legacy' => [
-                    'username' => $daUsername,
-                    'domain' => $domain,
-                    'da_node_id' => $daNodeId,
-                    'docroot' => $site['docroot'] ?? null,
-                    'app_root' => $site['app_root'] ?? ($site['docroot'] ?? null),
-                    'stack' => $stack,
-                    'has_wp_config' => (bool) ($site['has_wp_config'] ?? false),
-                    'databases' => array_values(array_map(
-                        fn ($row) => ['name' => (string) ($row['name'] ?? $row)],
-                        $databases,
-                    )),
-                    'keep_email_on_da' => false,
-                ],
-            ],
+            'service_meta' => $convertMeta,
         ]);
     }
 
     /**
+     * The live sibling row for a domain on this project, if a previous attempt made one.
+     */
+    public function findExistingSiblingSite(Service $anchor, CustomerProject $project, string $domain): ?Service
+    {
+        if ($domain === '') {
+            return null;
+        }
+
+        return Service::query()
+            ->where('project_id', $project->id)
+            ->where('id', '!=', $anchor->id)
+            ->whereNotIn('status', ['terminated', 'cancelled'])
+            ->orderBy('id')
+            ->get()
+            ->first(function (Service $candidate) use ($domain): bool {
+                if (! $this->progress->isSiblingSite($candidate)) {
+                    return false;
+                }
+                $meta = is_array($candidate->service_meta) ? $candidate->service_meta : [];
+                $candidateDomain = (string) ($meta['domain'] ?? $meta['da_legacy']['domain'] ?? '');
+
+                return strcasecmp($candidateDomain, $domain) === 0;
+            });
+    }
+
+    /**
      * Export one extra DA site into its already-created sibling Application Hosting service.
+     * Progress is recorded on the sibling's own da_convert so the primary's console can show it.
      */
     public function convertProjectSite(Service $sibling): void
     {
@@ -1312,6 +1422,14 @@ class DirectAdminToContainerConvertService
             'stack' => (string) ($legacy['stack'] ?? 'unknown'),
             'has_wp_config' => (bool) ($legacy['has_wp_config'] ?? false),
         ]);
+        $existingConvert = $this->progress->convertMeta($sibling);
+
+        $this->progress->start($sibling, [
+            'mode' => DaConvertProgress::MODE_SITE,
+            'stack' => $stack,
+            'attempt' => max(1, (int) ($existingConvert['attempt'] ?? 1)),
+        ]);
+        $this->progress->step($sibling, 'Preflight OK · stack '.$stack, 'preflight', 1.0);
 
         $inventory = [
             'domain' => $legacy['domain'] ?? $meta['domain'] ?? $sibling->name,
@@ -1323,20 +1441,35 @@ class DirectAdminToContainerConvertService
             'da_node_id' => $legacy['da_node_id'] ?? null,
         ];
 
-        $daNode = $this->migrator->resolveDirectAdminNode($sibling, $inventory);
-
-        $this->deployments->assertHostHasCapacity($sibling);
-
-        $export = $this->migrator->exportSiteFromDirectAdmin($sibling, $inventory);
-
-        if (! empty($export['local_dump'])) {
-            $this->migrator->ensureMysqlSidecarForImport($sibling->fresh());
-            $sibling->refresh();
-        }
-
+        $export = null;
         try {
+            $daNode = $this->migrator->resolveDirectAdminNode($sibling, $inventory);
+
+            $this->deployments->assertHostHasCapacity($sibling);
+            $this->progress->step($sibling, 'Container host capacity OK', 'capacity', 1.0);
+
+            $this->progress->step(
+                $sibling,
+                'Exporting site files'.$this->exportIncludesDatabaseMessage($stack).' from DirectAdmin',
+                'export',
+            );
+            $export = $this->migrator->exportSiteFromDirectAdmin(
+                $sibling,
+                $inventory,
+                null,
+                $this->exportProgressFor($sibling),
+            );
+
+            if (! empty($export['local_dump'])) {
+                $this->migrator->ensureMysqlSidecarForImport($sibling->fresh());
+                $sibling->refresh();
+            }
+
+            $this->progress->step($sibling, 'Provisioning '.$stack.' container (silent — no customer notification)', 'deploy');
             $this->deployments->deploy($sibling, ContainerDeployOptions::quietConvert());
             $sibling->refresh()->load('containerDeployment.node', 'product.containerTemplate');
+
+            $this->progress->step($sibling, 'Importing site into container', 'import');
             $this->migrator->importSiteIntoContainer(
                 $sibling,
                 $export['local_dump'] ?? null,
@@ -1344,13 +1477,29 @@ class DirectAdminToContainerConvertService
                 $export['remote_work'],
                 (string) ($export['stack'] ?? $stack),
                 $daNode,
+                $this->importProgressFor($sibling),
             );
-            $this->attachConvertedHostname($sibling->fresh(), (string) ($inventory['domain'] ?? ''));
+
+            $hostname = (string) ($inventory['domain'] ?? '');
+            if ($hostname !== '') {
+                $this->progress->step($sibling, 'Binding '.$hostname.' to the container', 'bind');
+                $this->attachConvertedHostname($sibling->fresh(), $hostname);
+                $this->progress->step($sibling, 'Bound '.$hostname.' to the container', 'bind', 1.0);
+            }
+
+            $this->progress->step($sibling, 'Site converted.');
+            $this->progress->complete($sibling);
+        } catch (\Throwable $e) {
+            $this->progress->fail($sibling->fresh(), $e->getMessage());
+
+            throw $e;
         } finally {
-            foreach (['local_dump', 'local_tar'] as $key) {
-                $path = $export[$key] ?? null;
-                if (is_string($path) && is_file($path)) {
-                    @unlink($path);
+            if (is_array($export)) {
+                foreach (['local_dump', 'local_tar'] as $key) {
+                    $path = $export[$key] ?? null;
+                    if (is_string($path) && is_file($path)) {
+                        @unlink($path);
+                    }
                 }
             }
         }

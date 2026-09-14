@@ -5,6 +5,7 @@ namespace App\Services\Provisioning;
 use App\Enums\ServiceStatus;
 use App\Models\ContainerDeploymentEvent;
 use App\Models\Service;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
 
 class ContainerDeployProgressService
@@ -129,6 +130,24 @@ class ContainerDeployProgressService
         }
 
         return $out;
+    }
+
+    /**
+     * Human deploy log lines recorded at or after a moment, for embedding the
+     * container deploy inside another operation's terminal (DA convert).
+     *
+     * @return list<string>
+     */
+    public function linesSince(Service $service, CarbonInterface $since): array
+    {
+        return ContainerDeploymentEvent::query()
+            ->where('service_id', $service->id)
+            ->where('recorded_at', '>=', $since)
+            ->orderBy('id')
+            ->get()
+            ->map(fn (ContainerDeploymentEvent $event) => $this->formatLine($event))
+            ->values()
+            ->all();
     }
 
     private function formatLine(ContainerDeploymentEvent $event): string
