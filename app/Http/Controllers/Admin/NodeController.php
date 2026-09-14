@@ -18,9 +18,11 @@ use App\Services\Provisioning\NodeHardwareProbeService;
 use App\Services\Provisioning\NodeIncidentRecorder;
 use App\Services\Provisioning\NodeServiceRelocationService;
 use App\Services\ResellerDirectAdminService;
+use App\Services\SSH\NodeSshCredentials;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class NodeController extends Controller
@@ -121,6 +123,12 @@ class NodeController extends Controller
                 'type' => 'required|in:mailcow',
                 'api_url' => 'nullable|url',
                 'api_token' => 'required|string',
+                'ssh_port' => 'nullable|string|max:10',
+                'ssh_username' => 'nullable|string|max:100',
+                'ssh_auth_method' => 'nullable|in:password,key',
+                'ssh_password' => 'nullable|string',
+                'ssh_private_key' => 'nullable|string',
+                'ssh_key_passphrase' => 'nullable|string',
                 'verify_ssl' => 'nullable|boolean',
                 'region' => 'nullable|string|max:50',
                 'datacenter' => 'nullable|string|max:255',
@@ -131,7 +139,8 @@ class NodeController extends Controller
             $validated['cpu_cores'] = 0;
             $validated['ram_gb'] = 0;
             $validated['storage_gb'] = 0;
-            $validated['ssh_port'] = '22';
+            $validated['ssh_port'] = filled($validated['ssh_port'] ?? null) ? (string) $validated['ssh_port'] : '22';
+            $this->applySshAuthFields($request, $validated);
             $validated['verify_ssl'] = $request->boolean('verify_ssl', true);
             $validated['api_url'] = $validated['api_url']
                 ?: ('https://'.rtrim((string) $validated['hostname'], '/'));
@@ -152,7 +161,10 @@ class NodeController extends Controller
                 'da_port' => 'required|string|max:10',
                 'ssh_port' => 'nullable|string|max:10',
                 'ssh_username' => 'nullable|string|max:100',
+                'ssh_auth_method' => 'nullable|in:password,key',
                 'ssh_password' => 'nullable|string',
+                'ssh_private_key' => 'nullable|string',
+                'ssh_key_passphrase' => 'nullable|string',
                 'da_admin_username' => 'required|string|max:255',
                 'da_login_key' => 'required|string',
                 'nameserver_1' => 'required|string|max:255',
@@ -171,6 +183,7 @@ class NodeController extends Controller
             $validated['ssh_port'] = filled($validated['ssh_port'] ?? null) ? (string) $validated['ssh_port'] : '22';
             $validated['api_url'] = $this->directAdminApiUrl($validated['hostname'], $validated['da_port']);
             $this->normalizeNameserverFields($validated);
+            $this->applySshAuthFields($request, $validated);
         } elseif ($type === 'container_host') {
             $validated = $request->validate([
                 'name' => 'required|string|max:255',
@@ -179,7 +192,10 @@ class NodeController extends Controller
                 'type' => 'required|in:container_host',
                 'ssh_port' => 'required|string|max:10',
                 'ssh_username' => 'required|string|max:100',
-                'ssh_password' => 'required|string',
+                'ssh_auth_method' => 'nullable|in:password,key',
+                'ssh_password' => 'nullable|string',
+                'ssh_private_key' => 'nullable|string',
+                'ssh_key_passphrase' => 'nullable|string',
                 'cpu_cores' => 'nullable|integer|min:1',
                 'ram_gb' => 'nullable|integer|min:1',
                 'storage_gb' => 'nullable|integer|min:1',
@@ -199,6 +215,7 @@ class NodeController extends Controller
             foreach (['nameserver_1', 'nameserver_2', 'nameserver_3', 'nameserver_4'] as $field) {
                 $validated[$field] = ! empty($validated[$field]) ? trim((string) $validated[$field]) : null;
             }
+            $this->applySshAuthFields($request, $validated, null, requireSecret: true);
         } else {
             // Fallback: generic node type (existing behavior)
             $validated = $request->validate([
@@ -483,7 +500,10 @@ class NodeController extends Controller
             'ssh_port' => 'required|string|max:10',
             'da_port' => $nodeType === 'directadmin' ? 'required|string|max:10' : 'nullable|string|max:10',
             'ssh_username' => 'nullable|string|max:100',
+            'ssh_auth_method' => 'nullable|in:password,key',
             'ssh_password' => 'nullable|string',
+            'ssh_private_key' => 'nullable|string',
+            'ssh_key_passphrase' => 'nullable|string',
             'api_url' => 'nullable|url',
             'api_token' => 'nullable|string',
             'da_admin_username' => 'nullable|string|max:255',
@@ -502,6 +522,7 @@ class NodeController extends Controller
         $validated['is_active'] = $request->has('is_active');
         $this->applyMonthlyCostUsd($request, $validated);
         $this->stripBlankCredentialFields($validated);
+        $this->applySshAuthFields($request, $validated, $node, requireSecret: $nodeType === 'container_host');
 
         if ($nodeType === 'directadmin') {
             $request->validate([
@@ -1169,10 +1190,63 @@ class NodeController extends Controller
 
     private function stripBlankCredentialFields(array &$validated): void
     {
-        foreach (['ssh_password', 'da_login_key', 'api_token'] as $field) {
+        foreach (['ssh_password', 'ssh_private_key', 'ssh_key_passphrase', 'da_login_key', 'api_token'] as $field) {
             if (array_key_exists($field, $validated) && blank($validated[$field])) {
                 unset($validated[$field]);
             }
+        }
+    }
+
+    /**
+     * SSH logs in with a password or a private key. Blank secrets keep what is
+     * stored, a pasted key must parse (with its passphrase), and the chosen
+     * method must have a secret behind it when SSH is mandatory for the type.
+     */
+    private function applySshAuthFields(Request $request, array &$validated, ?Node $node = null, bool $requireSecret = false): void
+    {
+        $method = (string) $request->input('ssh_auth_method', $node?->sshAuthMethod() ?? NodeSshCredentials::METHOD_PASSWORD);
+        $method = $method === NodeSshCredentials::METHOD_KEY ? NodeSshCredentials::METHOD_KEY : NodeSshCredentials::METHOD_PASSWORD;
+        $validated['ssh_auth_method'] = $method;
+
+        $key = trim((string) $request->input('ssh_private_key', ''));
+        $passphrase = (string) $request->input('ssh_key_passphrase', '');
+
+        if ($key !== '') {
+            try {
+                NodeSshCredentials::loadPrivateKey($key, $passphrase);
+            } catch (\InvalidArgumentException $e) {
+                throw ValidationException::withMessages(['ssh_private_key' => $e->getMessage()]);
+            }
+            $validated['ssh_private_key'] = $key;
+            $validated['ssh_key_passphrase'] = $passphrase !== '' ? $passphrase : null;
+        } else {
+            unset($validated['ssh_private_key']);
+            if ($passphrase !== '' && $node?->hasSshPrivateKey()) {
+                $validated['ssh_key_passphrase'] = $passphrase;
+            } else {
+                unset($validated['ssh_key_passphrase']);
+            }
+        }
+
+        if (blank($request->input('ssh_password'))) {
+            unset($validated['ssh_password']);
+        }
+
+        if (! $requireSecret) {
+            return;
+        }
+
+        $hasPassword = $request->filled('ssh_password') || filled($node?->ssh_password);
+        $hasKey = $key !== '' || (bool) $node?->hasSshPrivateKey();
+        if ($method === NodeSshCredentials::METHOD_KEY && ! $hasKey) {
+            throw ValidationException::withMessages([
+                'ssh_private_key' => 'Paste the private key for SSH key authentication, or switch to password.',
+            ]);
+        }
+        if ($method === NodeSshCredentials::METHOD_PASSWORD && ! $hasPassword) {
+            throw ValidationException::withMessages([
+                'ssh_password' => 'Enter the SSH password, or switch to SSH key authentication.',
+            ]);
         }
     }
 

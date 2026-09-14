@@ -3,6 +3,8 @@
 namespace App\Console\Commands;
 
 use App\Models\Node;
+use App\Services\SSH\NodeSshCredentials;
+use App\Services\SSH\SSHService;
 use Illuminate\Console\Command;
 
 class ConfigureNodeSSH extends Command
@@ -38,12 +40,13 @@ class ConfigureNodeSSH extends Command
 
         if ($nodes->isEmpty()) {
             $this->error('No container host nodes found');
+
             return 1;
         }
 
         $this->info('Container Host Nodes:');
         foreach ($nodes as $node) {
-            $status = ($node->ssh_username && ($node->ssh_password || $node->da_login_key)) ? '✓' : '✗';
+            $status = $node->hasSshCredentials() ? '✓' : '✗';
             $this->line("  [{$status}] ID {$node->id}: {$node->hostname} ({$node->ip_address})");
         }
 
@@ -61,12 +64,13 @@ class ConfigureNodeSSH extends Command
         $nodes = Node::where('type', 'container_host')
             ->where(function ($q) {
                 $q->whereNull('ssh_username')
-                  ->orWhereNull('ssh_password');
+                    ->orWhere(fn ($secrets) => $secrets->whereNull('ssh_password')->whereNull('ssh_private_key'));
             })
             ->get();
 
         if ($nodes->isEmpty()) {
             $this->info('All container nodes already have SSH credentials configured');
+
             return 0;
         }
 
@@ -78,6 +82,7 @@ class ConfigureNodeSSH extends Command
         }
 
         $this->info('✓ SSH credentials configured for all nodes');
+
         return 0;
     }
 
@@ -85,17 +90,20 @@ class ConfigureNodeSSH extends Command
     {
         $node = Node::find($nodeId);
 
-        if (!$node) {
+        if (! $node) {
             $this->error("Node with ID {$nodeId} not found");
+
             return 1;
         }
 
         if ($node->type !== 'container_host') {
             $this->error("Node {$node->hostname} is not a container host (type: {$node->type})");
+
             return 1;
         }
 
         $this->configureNode($node);
+
         return 0;
     }
 
@@ -103,17 +111,20 @@ class ConfigureNodeSSH extends Command
     {
         $node = Node::where('hostname', $hostname)->first();
 
-        if (!$node) {
+        if (! $node) {
             $this->error("Node {$hostname} not found");
+
             return 1;
         }
 
         if ($node->type !== 'container_host') {
             $this->error("Node {$node->hostname} is not a container host (type: {$node->type})");
+
             return 1;
         }
 
         $this->configureNode($node);
+
         return 0;
     }
 
@@ -127,8 +138,8 @@ class ConfigureNodeSSH extends Command
         $node->ssh_username = $username;
 
         $this->line("\nSSH Authentication Method:");
-        $this->line("  1. Password");
-        $this->line("  2. Private Key");
+        $this->line('  1. Password');
+        $this->line('  2. Private Key');
 
         $method = $this->choice('Choose authentication method', ['Password', 'Private Key'], 0);
 
@@ -136,20 +147,23 @@ class ConfigureNodeSSH extends Command
             $password = $this->secret('SSH Password (will be encrypted)');
             if ($password) {
                 $node->ssh_password = $password;
-                $node->da_login_key = null; // Clear key if switching to password
+                $node->ssh_auth_method = NodeSshCredentials::METHOD_PASSWORD;
             }
         } else {
             $this->line("\nPaste your SSH private key (end with a blank line):");
             $keyLines = [];
             while (true) {
                 $line = $this->line('');
-                if ($line === '') break;
+                if ($line === '') {
+                    break;
+                }
                 $keyLines[] = $line;
             }
             $key = implode("\n", $keyLines);
             if ($key) {
-                $node->da_login_key = $key;
-                $node->ssh_password = null; // Clear password if switching to key
+                NodeSshCredentials::loadPrivateKey($key);
+                $node->ssh_private_key = $key;
+                $node->ssh_auth_method = NodeSshCredentials::METHOD_KEY;
             }
         }
 
@@ -168,17 +182,18 @@ class ConfigureNodeSSH extends Command
     private function testConnection(Node $node): int
     {
         try {
-            $this->info("Testing SSH connection...");
+            $this->info('Testing SSH connection...');
 
-            $ssh = \App\Services\SSH\SSHService::forNode($node);
+            $ssh = SSHService::forNode($node);
             $output = $ssh->exec("echo 'SSH connection successful'; uname -a", 10);
 
-            $this->info("✓ SSH connection successful");
-            $this->line("Output: " . trim($output));
+            $this->info('✓ SSH connection successful');
+            $this->line('Output: '.trim($output));
 
             return 0;
         } catch (\Exception $e) {
-            $this->error("✗ SSH connection failed: " . $e->getMessage());
+            $this->error('✗ SSH connection failed: '.$e->getMessage());
+
             return 1;
         }
     }

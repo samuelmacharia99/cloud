@@ -35,6 +35,7 @@ class MigrateContainerServiceRequest extends FormRequest
                         ->whereNotNull('ssh_username')
                         ->where(fn ($credentials) => $credentials
                             ->whereNotNull('ssh_password')
+                            ->orWhereNotNull('ssh_private_key')
                             ->orWhereNotNull('da_login_key'))
                         ->when($currentNodeId, fn ($q) => $q->where('id', '!=', $currentNodeId))
                 ),

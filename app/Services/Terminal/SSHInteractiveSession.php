@@ -4,7 +4,7 @@ namespace App\Services\Terminal;
 
 use App\Exceptions\SSH\SSHConnectionException;
 use App\Models\Node;
-use phpseclib3\Crypt\PublicKeyLoader;
+use App\Services\SSH\NodeSshCredentials;
 use phpseclib3\Net\SSH2;
 
 class SSHInteractiveSession
@@ -108,16 +108,11 @@ class SSHInteractiveSession
     {
         $authenticated = false;
 
-        if ($this->node->ssh_password) {
-            $authenticated = @$this->ssh->login(
-                $this->node->ssh_username,
-                $this->node->ssh_password
-            );
-        }
-
-        if (! $authenticated && $this->node->da_login_key) {
-            $key = PublicKeyLoader::load($this->node->da_login_key);
-            $authenticated = @$this->ssh->login($this->node->ssh_username, $key);
+        foreach (NodeSshCredentials::loginCandidates($this->node) as $secret) {
+            if (@$this->ssh->login($this->node->ssh_username, $secret)) {
+                $authenticated = true;
+                break;
+            }
         }
 
         if (! $authenticated) {

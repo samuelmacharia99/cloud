@@ -284,7 +284,7 @@ class ContainerController extends Controller
             }
 
             // Pre-flight check: validate node has SSH credentials
-            if (! $deployment->node->ssh_username || (! $deployment->node->ssh_password && ! $deployment->node->da_login_key)) {
+            if (! $deployment->node->hasSshCredentials()) {
                 return back()->withErrors(['error' => 'Container host is not properly configured (missing SSH credentials). Please contact support.']);
             }
 
@@ -318,7 +318,7 @@ class ContainerController extends Controller
             }
 
             // Pre-flight check: validate node has SSH credentials
-            if (! $deployment->node->ssh_username || (! $deployment->node->ssh_password && ! $deployment->node->da_login_key)) {
+            if (! $deployment->node->hasSshCredentials()) {
                 return back()->withErrors(['error' => 'Container host is not properly configured (missing SSH credentials). Please contact support.']);
             }
 
@@ -352,7 +352,7 @@ class ContainerController extends Controller
             }
 
             // Pre-flight check: validate node has SSH credentials
-            if (! $deployment->node->ssh_username || (! $deployment->node->ssh_password && ! $deployment->node->da_login_key)) {
+            if (! $deployment->node->hasSshCredentials()) {
                 return back()->withErrors(['error' => 'Container host is not properly configured (missing SSH credentials). Please contact support.']);
             }
 
@@ -417,7 +417,7 @@ class ContainerController extends Controller
                 }
             }
 
-            if (! $deployment->node || ! $deployment->node->ssh_username || (! $deployment->node->ssh_password && ! $deployment->node->da_login_key)) {
+            if (! $deployment->node || ! $deployment->node->hasSshCredentials()) {
                 return back()->withErrors(['error' => 'Container host is not properly configured (missing SSH credentials). Please contact support.']);
             }
 
@@ -1062,7 +1062,7 @@ class ContainerController extends Controller
             return response()->json(['error' => 'Container must be running to query database'], 400);
         }
 
-        if (! $deployment->node || ! $deployment->node->ssh_username || (! $deployment->node->ssh_password && ! $deployment->node->da_login_key)) {
+        if (! $deployment->node || ! $deployment->node->hasSshCredentials()) {
             return response()->json(['error' => 'Container host is not properly configured'], 400);
         }
 
@@ -1287,7 +1287,7 @@ class ContainerController extends Controller
             return response()->json(['error' => 'Application is not deployed.'], 400);
         }
 
-        if (! $deployment->node || ! $deployment->node->ssh_username || (! $deployment->node->ssh_password && ! $deployment->node->da_login_key)) {
+        if (! $deployment->node || ! $deployment->node->hasSshCredentials()) {
             return response()->json(['error' => 'Container host is not properly configured'], 400);
         }
 
@@ -1336,7 +1336,7 @@ class ContainerController extends Controller
             return response()->json(['error' => 'Container must be running to import a database'], 400);
         }
 
-        if (! $deployment->node || ! $deployment->node->ssh_username || (! $deployment->node->ssh_password && ! $deployment->node->da_login_key)) {
+        if (! $deployment->node || ! $deployment->node->hasSshCredentials()) {
             return response()->json(['error' => 'Container host is not properly configured'], 400);
         }
 
@@ -1463,7 +1463,7 @@ class ContainerController extends Controller
             return response()->json(['success' => false, 'message' => 'Container is not running. Start it first.'], 400);
         }
 
-        if (! $deployment->node || ! $deployment->node->ssh_username || (! $deployment->node->ssh_password && ! $deployment->node->da_login_key)) {
+        if (! $deployment->node || ! $deployment->node->hasSshCredentials()) {
             return response()->json(['success' => false, 'message' => 'Container host is not properly configured.'], 400);
         }
 
@@ -1526,7 +1526,7 @@ class ContainerController extends Controller
             return response()->json(['success' => false, 'message' => 'Container is not running. Start it first.'], 400);
         }
 
-        if (! $deployment->node || ! $deployment->node->ssh_username || (! $deployment->node->ssh_password && ! $deployment->node->da_login_key)) {
+        if (! $deployment->node || ! $deployment->node->hasSshCredentials()) {
             return response()->json(['success' => false, 'message' => 'Container host is not properly configured.'], 400);
         }
 

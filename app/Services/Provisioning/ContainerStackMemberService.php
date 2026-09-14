@@ -84,7 +84,7 @@ class ContainerStackMemberService
         $deployment = $service->containerDeployment;
         $node = $deployment->node;
 
-        if (! $node->ssh_username || (! $node->ssh_password && ! $node->da_login_key)) {
+        if (! $node->hasSshCredentials()) {
             throw StackMemberActionException::nodeNotConfigured();
         }
 

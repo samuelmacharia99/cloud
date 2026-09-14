@@ -128,14 +128,7 @@
                             @enderror
                         </div>
 
-                        <!-- SSH Password -->
-                        <div>
-                            <label for="ssh_password" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">SSH Password</label>
-                            <input type="password" id="ssh_password" name="ssh_password" placeholder="SSH password for root user" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('ssh_password') border-red-500 @enderror">
-                            @error('ssh_password')
-                                <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
-                            @enderror
-                        </div>
+                        @include('admin.nodes.partials.ssh-auth-fields', ['node' => null, 'required' => false])
                     </div>
                 </div>
 
@@ -282,15 +275,10 @@
                             @enderror
                         </div>
 
-                        <!-- SSH Password -->
-                        <div>
-                            <label for="ssh_password" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">SSH Password</label>
-                            <input type="password" id="ssh_password" name="ssh_password" placeholder="Your root password" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('ssh_password') border-red-500 @enderror" required>
-                            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Used to detect CPU, RAM, and disk when you create the node.</p>
-                            @error('ssh_password')
-                                <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
-                            @enderror
+                        <div class="lg:col-span-2">
+                            <p class="text-xs text-slate-500 dark:text-slate-400 -mt-4 mb-2">A password or a private key for this user is used to detect CPU, RAM and disk when you create the node, and for every deploy afterwards.</p>
                         </div>
+                        @include('admin.nodes.partials.ssh-auth-fields', ['node' => null, 'required' => true])
                     </div>
                 </div>
 
@@ -392,6 +380,29 @@
                                 <span class="text-sm text-slate-700 dark:text-slate-300">Verify SSL</span>
                             </label>
                         </div>
+                    </div>
+                </div>
+
+                <!-- SSH login for maildir copies -->
+                <div>
+                    <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-2">SSH Login <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></h2>
+                    <p class="text-sm text-slate-600 dark:text-slate-400 mb-6">Needed to copy DirectAdmin maildirs into dovecot during a mail pull. The API token above is enough for mailbox management.</p>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        <div>
+                            <label for="ssh_port" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">SSH Port</label>
+                            <input type="text" id="ssh_port" name="ssh_port" value="{{ old('ssh_port', '22') }}" placeholder="22" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('ssh_port') border-red-500 @enderror">
+                            @error('ssh_port')
+                                <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                            @enderror
+                        </div>
+                        <div>
+                            <label for="ssh_username" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">SSH Username</label>
+                            <input type="text" id="ssh_username" name="ssh_username" value="{{ old('ssh_username') }}" placeholder="root" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('ssh_username') border-red-500 @enderror">
+                            @error('ssh_username')
+                                <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                            @enderror
+                        </div>
+                        @include('admin.nodes.partials.ssh-auth-fields', ['node' => null, 'required' => false])
                     </div>
                 </div>
 

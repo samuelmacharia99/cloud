@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Services\NodeNameserverService;
+use App\Services\SSH\NodeSshCredentials;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -13,6 +14,8 @@ class Node extends Model
 
     protected $hidden = [
         'ssh_password',
+        'ssh_private_key',
+        'ssh_key_passphrase',
         'da_login_key',
         'api_token',
     ];
@@ -31,7 +34,10 @@ class Node extends Model
         'storage_used_gb',
         'ssh_port',
         'ssh_username',
+        'ssh_auth_method',
         'ssh_password',
+        'ssh_private_key',
+        'ssh_key_passphrase',
         'da_admin_username',
         'da_login_key',
         'da_port',
@@ -64,6 +70,8 @@ class Node extends Model
         'verify_ssl' => 'boolean',
         'is_active' => 'boolean',
         'ssh_password' => 'encrypted',
+        'ssh_private_key' => 'encrypted',
+        'ssh_key_passphrase' => 'encrypted',
         'da_login_key' => 'encrypted',
         'api_token' => 'encrypted',
         'last_heartbeat_at' => 'datetime',
@@ -71,6 +79,36 @@ class Node extends Model
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
+
+    /**
+     * How SSH logs in: the stored method, or inferred from which secrets exist
+     * for rows written before the method column.
+     */
+    public function sshAuthMethod(): string
+    {
+        $method = (string) ($this->ssh_auth_method ?? '');
+        if (in_array($method, [NodeSshCredentials::METHOD_PASSWORD, NodeSshCredentials::METHOD_KEY], true)) {
+            return $method;
+        }
+
+        return blank($this->ssh_password) && NodeSshCredentials::storedPrivateKey($this) !== null
+            ? NodeSshCredentials::METHOD_KEY
+            : NodeSshCredentials::METHOD_PASSWORD;
+    }
+
+    public function hasSshPrivateKey(): bool
+    {
+        return NodeSshCredentials::storedPrivateKey($this) !== null;
+    }
+
+    /**
+     * A username plus at least one secret (password or private key).
+     */
+    public function hasSshCredentials(): bool
+    {
+        return filled($this->ssh_username)
+            && (filled($this->ssh_password) || $this->hasSshPrivateKey());
+    }
 
     // Relationships
     public function services()

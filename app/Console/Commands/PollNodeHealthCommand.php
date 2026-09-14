@@ -5,12 +5,12 @@ namespace App\Console\Commands;
 use App\Models\Node;
 use App\Models\NodeMonitoring;
 use App\Services\SSH\SSHService;
-use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
 class PollNodeHealthCommand extends BaseCronCommand
 {
     protected $signature = 'cron:poll-node-health';
+
     protected $description = 'Actively poll node health via SSH (alternative to heartbeats)';
 
     protected function handleCron(): string
@@ -27,8 +27,9 @@ class PollNodeHealthCommand extends BaseCronCommand
         foreach ($nodes as $node) {
             try {
                 // Skip if SSH credentials not configured (SSH password or key required)
-                if (!$node->ssh_username || !$node->ssh_password) {
+                if (! $node->hasSshCredentials()) {
                     Log::warning("NODE POLL SKIPPED: {$node->name} - SSH credentials not configured");
+
                     continue;
                 }
 

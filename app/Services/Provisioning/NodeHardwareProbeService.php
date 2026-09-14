@@ -37,10 +37,10 @@ class NodeHardwareProbeService
             );
         }
 
-        if (! filled($node->ssh_password)) {
+        if (! filled($node->ssh_password) && ! $node->hasSshPrivateKey()) {
             return $this->failure(
                 'credentials',
-                'SSH password is not configured. Please edit the node and set the SSH password (root login on port '.$node->ssh_port.').',
+                'No SSH password or private key is configured. Please edit the node and set one (root login on port '.$node->ssh_port.').',
             );
         }
 

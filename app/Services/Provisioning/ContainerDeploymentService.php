@@ -8867,7 +8867,7 @@ class ContainerDeploymentService
             );
         }
 
-        if (! $node->ssh_password && ! $node->da_login_key) {
+        if (! $node->hasSshCredentials()) {
             throw new \DomainException(
                 "Container host '{$node->hostname}' is not configured: missing SSH authentication (no password or key). ".
                 'An administrator needs to configure SSH credentials for this node.'

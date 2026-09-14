@@ -5,7 +5,6 @@ namespace App\Services\SSH;
 use App\Exceptions\SSH\SSHCommandException;
 use App\Exceptions\SSH\SSHConnectionException;
 use App\Models\Node;
-use phpseclib3\Crypt\PublicKeyLoader;
 use phpseclib3\Net\SFTP;
 use phpseclib3\Net\SSH2;
 
@@ -150,28 +149,21 @@ class SSHService
 
     private function authenticateSession(SSH2 $session): bool
     {
-        $authenticated = false;
-
-        // NOTE: ssh_password / da_login_key are already decrypted by the encrypted cast.
-        if ($this->node->ssh_password) {
-            $authenticated = @$session->login(
-                $this->node->ssh_username,
-                $this->node->ssh_password
-            );
+        // Password or private key, in the node's chosen order; secrets are
+        // already decrypted by the encrypted casts.
+        try {
+            $candidates = NodeSshCredentials::loginCandidates($this->node);
+        } catch (\InvalidArgumentException $e) {
+            throw new \Exception($e->getMessage(), 0, $e);
         }
 
-        if (! $authenticated && $this->node->da_login_key) {
-            try {
-                $key = PublicKeyLoader::load($this->node->da_login_key);
-                $authenticated = @$session->login($this->node->ssh_username, $key);
-            } catch (\Exception $e) {
-                throw new \Exception(
-                    'SSH key format invalid: '.$e->getMessage()
-                );
+        foreach ($candidates as $secret) {
+            if (@$session->login($this->node->ssh_username, $secret)) {
+                return true;
             }
         }
 
-        return (bool) $authenticated;
+        return false;
     }
 
     /**

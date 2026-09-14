@@ -75,7 +75,7 @@ class ContainerMigrationService
         if (! $sourceNode) {
             throw new Exception('Source node is missing');
         }
-        if (! $sourceNode->ssh_username || (! $sourceNode->ssh_password && ! $sourceNode->da_login_key)) {
+        if (! $sourceNode->hasSshCredentials()) {
             throw new Exception('Source node does not have working SSH credentials configured.');
         }
         if ($oldDeployment->node_id === $targetNode->id) {
@@ -432,7 +432,7 @@ class ContainerMigrationService
             ->where('id', '!=', $currentNode->id)
             ->whereNotNull('ssh_username')
             ->where(function ($query) {
-                $query->whereNotNull('ssh_password')->orWhereNotNull('da_login_key');
+                $query->whereNotNull('ssh_password')->orWhereNotNull('ssh_private_key')->orWhereNotNull('da_login_key');
             })
             ->orderBy('status', 'asc')
             ->orderByRaw('(SELECT COUNT(*) FROM container_deployments WHERE node_id = nodes.id AND status IN ("running", "stopped")) ASC')
@@ -447,7 +447,7 @@ class ContainerMigrationService
         if (! $targetNode->is_active) {
             throw new Exception('Target node is not active.');
         }
-        if (! $targetNode->ssh_username || (! $targetNode->ssh_password && ! $targetNode->da_login_key)) {
+        if (! $targetNode->hasSshCredentials()) {
             throw new Exception('Target node does not have working SSH credentials configured.');
         }
     }
