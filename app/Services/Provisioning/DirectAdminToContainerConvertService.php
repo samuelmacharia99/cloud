@@ -606,6 +606,7 @@ class DirectAdminToContainerConvertService
             ];
         $attempt = (int) ($existingConvert['attempt'] ?? 0) + 1;
 
+        $this->progress->failOnFatalShutdown($service);
         $this->progress->start($service, [
             'mode' => DaConvertProgress::MODE_PRIMARY,
             'stack' => $stack,
@@ -1464,6 +1465,7 @@ class DirectAdminToContainerConvertService
         ]);
         $existingConvert = $this->progress->convertMeta($sibling);
 
+        $this->progress->failOnFatalShutdown($sibling);
         $this->progress->start($sibling, [
             'mode' => DaConvertProgress::MODE_SITE,
             'stack' => $stack,

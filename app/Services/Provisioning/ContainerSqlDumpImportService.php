@@ -413,15 +413,27 @@ class ContainerSqlDumpImportService
         return implode(";\n", $lines).";\n";
     }
 
+    /**
+     * Rewrite a dump file in place, streaming statement by statement so the
+     * file size never dictates PHP memory. Same output as mysqlClientDump().
+     */
     public function rewriteLocalDumpForMysqlClient(string $path): void
     {
-        $sql = file_get_contents($path);
-        if ($sql === false || trim($sql) === '') {
+        if (! is_file($path) || (int) (@filesize($path) ?: 0) === 0) {
             throw new \RuntimeException('SQL dump file is missing or empty.');
         }
 
-        if (file_put_contents($path, $this->mysqlClientDump($sql)) === false) {
-            throw new \RuntimeException('Could not rewrite the SQL dump for the MySQL client.');
+        $temp = $path.'.client.tmp';
+        try {
+            (new StreamingMysqlDumpRewriter(fn (string $statement): string => $this->flattenSqlStatementForMysqlClient($statement)))
+                ->rewrite($path, $temp);
+            if (! @rename($temp, $path)) {
+                throw new \RuntimeException('Could not rewrite the SQL dump for the MySQL client.');
+            }
+        } finally {
+            if (is_file($temp)) {
+                @unlink($temp);
+            }
         }
     }
 

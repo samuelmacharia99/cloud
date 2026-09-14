@@ -144,6 +144,52 @@ class DaConvertProgress
         $this->merge($service, $data);
     }
 
+    /**
+     * A fatal error (memory limit, timeout) kills the process before any
+     * catch block runs, leaving the convert "running" forever. Register once
+     * per process so the row is marked failed with the real reason instead.
+     */
+    public function failOnFatalShutdown(Service $service): void
+    {
+        $serviceId = (int) $service->id;
+        // Memory the handler can free before it writes: a memory-limit fatal
+        // leaves nothing to allocate otherwise.
+        $reserve = str_repeat(' ', 256 * 1024);
+        register_shutdown_function(function () use ($serviceId, &$reserve): void {
+            $reserve = null;
+            $error = error_get_last();
+            if (! is_array($error)) {
+                return;
+            }
+            $this->recordFatal($serviceId, $error);
+        });
+    }
+
+    /**
+     * @param  array{type: int, message: string, file?: string, line?: int}  $error
+     */
+    public function recordFatal(int $serviceId, array $error): bool
+    {
+        if (! in_array((int) ($error['type'] ?? 0), [E_ERROR, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR, E_RECOVERABLE_ERROR], true)) {
+            return false;
+        }
+
+        try {
+            @ini_set('memory_limit', '-1');
+            $service = Service::query()->find($serviceId);
+            if (! $service || ! $this->isActive($this->convertMeta($service))) {
+                return false;
+            }
+            $where = isset($error['file']) ? ' ('.basename((string) $error['file']).':'.(int) ($error['line'] ?? 0).')' : '';
+            $this->fail($service, 'PHP stopped: '.trim((string) ($error['message'] ?? 'fatal error')).$where
+                .'. Retry convert re-runs from the start; if this is a memory limit, raise it for the queue worker.');
+
+            return true;
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
     public function heartbeat(Service $service): void
     {
         $this->merge($service, ['heartbeat_at' => now()->toIso8601String()]);
