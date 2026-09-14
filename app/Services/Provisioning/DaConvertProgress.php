@@ -555,7 +555,7 @@ class DaConvertProgress
             };
         }
 
-        $stuck = $active && $this->looksStuck($convert, $sibling);
+        $stuck = $active && ($this->looksStuck($convert, $sibling) || $this->queuedButNotStarting($convert, $sibling));
 
         return [
             'service_id' => (int) $sibling->id,
@@ -645,11 +645,40 @@ class DaConvertProgress
             return false;
         }
         $status = (string) ($convert['status'] ?? '');
+        if ($status === 'queued' && $this->queuedButNotStarting($convert, $service)) {
+            return true;
+        }
         if (in_array($status, self::STATUSES_ACTIVE, true)) {
             return $this->looksStuck($convert, $service);
         }
 
         return in_array($status, ['failed', 'reverted', 'completed'], true);
+    }
+
+    /**
+     * A queued convert that no worker will ever start: the node lock is held
+     * by a dead run (a sync-queue job that cannot take it is dropped without
+     * a trace), or it has waited longer than any healthy queue takes.
+     *
+     * @param  array<string, mixed>  $convert
+     */
+    public function queuedButNotStarting(array $convert, Service $service): bool
+    {
+        if ((string) ($convert['status'] ?? '') !== 'queued') {
+            return false;
+        }
+        if ($this->nodeLockHeld($service)) {
+            return true;
+        }
+        $queuedAt = $convert['queued_at'] ?? null;
+        if (! is_string($queuedAt) || $queuedAt === '') {
+            return true;
+        }
+        try {
+            return Carbon::parse($queuedAt)->lt(now()->subMinutes(10));
+        } catch (\Throwable) {
+            return true;
+        }
     }
 
     /**
@@ -663,7 +692,7 @@ class DaConvertProgress
         $convert = $this->convertMeta($service);
         $status = (string) ($convert['status'] ?? '');
         $active = $this->isActive($convert);
-        $stuck = $active && $this->looksStuck($convert, $service);
+        $stuck = $active && ($this->looksStuck($convert, $service) || $this->queuedButNotStarting($convert, $service));
         $isSite = $this->isSiblingSite($service);
         $siblings = $isSite ? [] : $this->siblingsFor($service);
         $siblingsActive = array_values(array_filter($siblings, fn ($row) => $row['is_active']));

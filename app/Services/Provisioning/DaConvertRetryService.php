@@ -33,7 +33,9 @@ class DaConvertRetryService
     public function retrySite(Service $sibling): array
     {
         $convert = $this->progress->convertMeta($sibling);
-        if ($this->progress->isActive($convert) && ! $this->progress->looksStuck($convert)) {
+        if ($this->progress->isActive($convert)
+            && ! $this->progress->looksStuck($convert, $sibling)
+            && ! $this->progress->queuedButNotStarting($convert, $sibling)) {
             return ['ok' => false, 'message' => 'This site is still converting. Watch the live terminal.'];
         }
 

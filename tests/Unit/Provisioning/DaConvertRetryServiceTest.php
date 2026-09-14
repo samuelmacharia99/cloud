@@ -190,15 +190,24 @@ class DaConvertRetryServiceTest extends TestCase
         [$service, , $daNode] = $this->failedPrimary();
         $meta = $service->service_meta;
         $meta['da_convert']['status'] = 'queued';
+        $meta['da_convert']['queued_at'] = now()->toIso8601String();
         $service->update(['service_meta' => $meta]);
 
-        $this->assertStringContainsString('Waiting for a worker', app(DaConvertProgress::class)->operatorConvertView($service->fresh())['convert_label']);
+        $view = app(DaConvertProgress::class)->operatorConvertView($service->fresh());
+        $this->assertStringContainsString('Waiting for a worker', $view['convert_label']);
+        $this->assertFalse($view['can_retry_convert'], 'a freshly queued convert with a free lock is left to the worker');
 
         $key = ConvertDirectAdminServiceToContainerJob::overlapLockKey(ConvertDirectAdminServiceToContainerJob::nodeLockKey($daNode->id));
         $lock = Cache::lock($key, 600);
         $this->assertTrue($lock->get());
-        $this->assertStringContainsString('still holds the node lock', app(DaConvertProgress::class)->operatorConvertView($service->fresh())['convert_label']);
+        $view = app(DaConvertProgress::class)->operatorConvertView($service->fresh());
+        $this->assertStringContainsString('still holds the node lock', $view['convert_label']);
+        $this->assertTrue($view['can_retry_convert'], 'a queued convert blocked by the lock can be retried at once');
         $lock->release();
+
+        $meta['da_convert']['queued_at'] = now()->subMinutes(11)->toIso8601String();
+        $service->update(['service_meta' => $meta]);
+        $this->assertTrue(app(DaConvertProgress::class)->operatorConvertView($service->fresh())['can_retry_convert'], 'a convert queued for over ten minutes can be retried');
     }
 
     /**
