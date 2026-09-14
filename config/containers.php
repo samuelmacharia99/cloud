@@ -195,6 +195,16 @@ return [
     | Container file editor (Files tab)
     |--------------------------------------------------------------------------
     */
+    'go_live' => [
+        // After a convert binds a platform-managed hostname, how long to wait for
+        // the new A record to resolve before issuing the first certificate inline.
+        'dns_wait_seconds' => (int) env('CONTAINER_GO_LIVE_DNS_WAIT_SECONDS', 180),
+        'sibling_dns_wait_seconds' => (int) env('CONTAINER_GO_LIVE_SIBLING_DNS_WAIT_SECONDS', 60),
+        // The scheduler retries first certificates for bound hostnames this recent.
+        'pending_ssl_max_age_days' => (int) env('CONTAINER_PENDING_SSL_MAX_AGE_DAYS', 14),
+        'pending_ssl_retry_minutes' => (int) env('CONTAINER_PENDING_SSL_RETRY_MINUTES', 60),
+    ],
+
     'file_manager' => [
         // Largest declared uncompressed size an archive may extract to.
         'max_extract_mb' => (int) env('CONTAINER_FILE_MAX_EXTRACT_MB', 2048),

@@ -20,11 +20,14 @@ class DaConvertProgressTest extends TestCase
     {
         $progress = app(DaConvertProgress::class);
 
-        $this->assertSame(15, $progress->percentFor([
+        $this->assertSame(14, $progress->percentFor([
             'status' => 'running', 'mode' => DaConvertProgress::MODE_PRIMARY, 'phase' => 'export', 'phase_fraction' => 0.5,
         ]));
-        $this->assertSame(44, $progress->percentFor([
+        $this->assertSame(24, $progress->percentFor([
             'status' => 'running', 'mode' => DaConvertProgress::MODE_PRIMARY, 'phase' => 'deploy', 'phase_fraction' => 0.0,
+        ]));
+        $this->assertSame(74, $progress->percentFor([
+            'status' => 'running', 'mode' => DaConvertProgress::MODE_PRIMARY, 'phase' => 'bind', 'phase_fraction' => 0.5,
         ]));
         $this->assertSame(24, $progress->percentFor([
             'status' => 'running', 'mode' => DaConvertProgress::MODE_SITE, 'phase' => 'export', 'phase_fraction' => 0.5,
@@ -39,9 +42,9 @@ class DaConvertProgressTest extends TestCase
         $progress = app(DaConvertProgress::class);
         $convert = ['status' => 'running', 'mode' => DaConvertProgress::MODE_PRIMARY, 'phase' => 'mail', 'phase_fraction' => 0.0];
 
-        $this->assertSame(24, $progress->percentFor($convert, ['percent' => 0]));
-        $this->assertSame(33, $progress->percentFor($convert, ['percent' => 50]));
-        $this->assertSame(42, $progress->percentFor($convert, ['percent' => 100]));
+        $this->assertSame(78, $progress->percentFor($convert, ['percent' => 0]));
+        $this->assertSame(85, $progress->percentFor($convert, ['percent' => 50]));
+        $this->assertSame(92, $progress->percentFor($convert, ['percent' => 100]));
     }
 
     public function test_legacy_meta_without_phases_keeps_the_old_step_heuristic(): void
@@ -67,7 +70,7 @@ class DaConvertProgressTest extends TestCase
         $this->assertSame('running', $meta['status']);
         $this->assertSame(['Preflight OK', 'Exporting'], $meta['steps']);
         $this->assertSame('export', $meta['phase']);
-        $this->assertSame(15, $meta['percent']);
+        $this->assertSame(14, $meta['percent']);
         $this->assertSame(['product_id' => 5], $meta['previous']);
         $this->assertNotEmpty($meta['heartbeat_at']);
         $this->assertSame('Downloading files archive 1.0 MB / 2.0 MB', $meta['phase_detail']);
@@ -196,6 +199,28 @@ class DaConvertProgressTest extends TestCase
 
         $this->assertCount(1, $lines);
         $this->assertStringContainsString('Host selected: c1.example.net', $lines[0]);
+    }
+
+    public function test_mail_pull_writes_and_deploy_events_count_as_convert_activity(): void
+    {
+        $progress = app(DaConvertProgress::class);
+        $stale = now()->subHour()->toIso8601String();
+        $convert = ['status' => 'running', 'started_at' => $stale, 'heartbeat_at' => $stale];
+
+        $quiet = Service::factory()->create();
+        $this->assertTrue($progress->looksStuck($convert, $quiet));
+
+        $mailing = Service::factory()->create(['service_meta' => ['mail_pull' => ['status' => 'running', 'updated_at' => now()->subMinute()->toIso8601String()]]]);
+        $this->assertFalse($progress->looksStuck($convert, $mailing));
+
+        $deploying = Service::factory()->create();
+        ContainerDeploymentEvent::create(['service_id' => $deploying->id, 'event' => 'compose_up_started', 'payload' => [], 'recorded_at' => now()->subMinutes(2)]);
+        $this->assertFalse($progress->looksStuck($convert, $deploying));
+
+        // An event from before this convert started is not activity.
+        $old = Service::factory()->create();
+        ContainerDeploymentEvent::create(['service_id' => $old->id, 'event' => 'deploy_succeeded', 'payload' => [], 'recorded_at' => now()->subHours(2)]);
+        $this->assertTrue($progress->looksStuck($convert, $old));
     }
 
     public function test_primary_retry_is_offered_from_terminal_states_and_stuck_runs_only(): void

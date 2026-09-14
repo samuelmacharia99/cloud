@@ -6,7 +6,7 @@
         || ! empty($service->service_meta['da_legacy']['email_service_id'])
         || ! empty($mailPullView['is_site']);
     $convertLooksStuck = in_array($daConvert['status'] ?? '', ['queued', 'running'], true)
-        && app(\App\Services\Provisioning\DaConvertProgress::class)->looksStuck($daConvert);
+        && app(\App\Services\Provisioning\DaConvertProgress::class)->looksStuck($daConvert, $service);
 @endphp
 @if ($showOperatorConsole)
 <style>
@@ -170,7 +170,9 @@
             @if (in_array($daConvert['status'] ?? '', ['queued', 'running'], true))
                 Prefer <code class="font-mono">QUEUE_CONNECTION=database</code> with
                 <code class="font-mono">php artisan queue:work --timeout=2400</code>.
-                @if (!empty($daConvert['heartbeat_at']))
+                @if (!empty($mailPullView['convert_last_activity_at']))
+                    Last activity: {{ $mailPullView['convert_last_activity_at'] }}
+                @elseif (!empty($daConvert['heartbeat_at']))
                     Heartbeat: {{ $daConvert['heartbeat_at'] }}
                 @endif
             @endif

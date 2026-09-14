@@ -932,8 +932,9 @@ class DirectAdminToContainerMigrationService
         try {
             $progress('Uploading export archives to container node');
             $targetSsh->exec('mkdir -p '.escapeshellarg($remoteWork));
-            $this->uploadPreparedMysqlDump($targetSsh, $localDump, $dumpFile);
-            $targetSsh->uploadFromLocal($localTar, $filesTar);
+            $this->uploadPreparedMysqlDump($targetSsh, $localDump, $dumpFile, $progress);
+            $targetSsh->uploadFromLocal($localTar, $filesTar, $this->uploadProgressReporter($progress, 'files archive'), 1800);
+            $progress('Archives on the node · next: MySQL sidecar, file extraction, database import');
 
             $db = $this->resolveWordpressImportCredentials($target, $targetSsh, $containerPath);
             $dbService = $db['service'];
@@ -1288,10 +1289,11 @@ class DirectAdminToContainerMigrationService
         try {
             $progress('Uploading export archives to container node');
             $targetSsh->exec('mkdir -p '.escapeshellarg($remoteWork));
-            $targetSsh->uploadFromLocal($localTar, $filesTar);
+            $targetSsh->uploadFromLocal($localTar, $filesTar, $this->uploadProgressReporter($progress, 'files archive'), 1800);
             if (is_string($localDump) && is_file($localDump)) {
-                $this->uploadPreparedMysqlDump($targetSsh, $localDump, $dumpFile);
+                $this->uploadPreparedMysqlDump($targetSsh, $localDump, $dumpFile, $progress);
             }
+            $progress('Archives on the node · next: file extraction'.(is_string($localDump) && is_file($localDump) ? ', then database import' : ''));
 
             $progress('Extracting site files onto host bind mount');
             $targetSsh->exec('mkdir -p '.escapeshellarg($hostAppPath));
@@ -3403,10 +3405,40 @@ class DirectAdminToContainerMigrationService
      * Flatten DirectAdmin dumps locally so mysql inside the db container never
      * sees a line starting with `\`, then upload to the container host.
      */
-    private function uploadPreparedMysqlDump(SSHService $ssh, string $localDump, string $remoteDump): void
+    private function uploadPreparedMysqlDump(SSHService $ssh, string $localDump, string $remoteDump, ?callable $progress = null): void
     {
+        $report = static function (string $detail) use ($progress): void {
+            if ($progress) {
+                $progress($detail);
+            }
+        };
+        $size = (int) (@filesize($localDump) ?: 0);
+        $report('Preparing database dump for import ('.DirectAdminMailPullProgress::formatBytes($size).')');
         app(ContainerSqlDumpImportService::class)->rewriteLocalDumpForMysqlClient($localDump);
-        $ssh->uploadFromLocal($localDump, $remoteDump);
+        $ssh->uploadFromLocal($localDump, $remoteDump, $progress ? $this->uploadProgressReporter($progress, 'database dump') : null, 1800);
+    }
+
+    /**
+     * SFTP byte callback that reports an upload on 10% buckets through the
+     * step-level progress closure, so long uploads keep the heartbeat moving.
+     *
+     * @param  callable(string): void  $progress
+     * @return callable(int, int): void
+     */
+    private function uploadProgressReporter(callable $progress, string $what): callable
+    {
+        $lastBucket = -1;
+
+        return static function (int $done, int $total) use ($progress, $what, &$lastBucket): void {
+            $ratio = $total > 0 ? min(1.0, max(0.0, $done / $total)) : 0.0;
+            $bucket = (int) floor($ratio * 10);
+            if ($bucket === $lastBucket) {
+                return;
+            }
+            $lastBucket = $bucket;
+            $progress('Uploading '.$what.' '.DirectAdminMailPullProgress::formatBytes($done)
+                .' / '.DirectAdminMailPullProgress::formatBytes(max($total, $done)));
+        };
     }
 
     /**

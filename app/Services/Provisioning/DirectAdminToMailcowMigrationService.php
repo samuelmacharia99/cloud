@@ -439,14 +439,31 @@ class DirectAdminToMailcowMigrationService
             return ['success' => false, 'message' => $message];
         }
 
-        $byDomain = $this->mailboxMapFromEmails($migration['mailboxes_created'] ?? []);
-
+        // The live DirectAdmin listing is the truth; what earlier runs saw or
+        // created is merged in so a retry never covers fewer mailboxes than before.
         $daNode = Node::query()->find((int) ($legacy['da_node_id'] ?? 0));
         $username = (string) ($legacy['username'] ?? '');
         $domain = strtolower(trim((string) ($legacy['domain'] ?? $meta['domain'] ?? '')));
-        if ($byDomain === [] && $daNode && $username !== '') {
-            $listed = $this->listMailboxesViaSsh($daNode, $username, $domain !== '' ? [$domain] : []);
-            $byDomain = $listed['by_domain'];
+        $byDomain = [];
+        if ($daNode && $username !== '') {
+            try {
+                $listed = $this->listMailboxesViaSsh($daNode, $username, $domain !== '' ? [$domain] : []);
+                $byDomain = $listed['by_domain'];
+            } catch (\Throwable $e) {
+                $this->mailPullProgress->log($service, 'Live mailbox listing failed ('.$e->getMessage().'); using the mailboxes seen on earlier pulls');
+            }
+        }
+        $remembered = $this->mailboxMapFromEmails(array_values(array_unique(array_merge(
+            is_array($migration['mailboxes_seen'] ?? null) ? $migration['mailboxes_seen'] : [],
+            is_array($migration['mailboxes_created'] ?? null) ? $migration['mailboxes_created'] : [],
+        ))));
+        foreach ($remembered as $rememberedDomain => $boxes) {
+            $known = array_map(fn ($box) => strtolower((string) ($box['email'] ?? '')), $byDomain[$rememberedDomain] ?? []);
+            foreach ($boxes as $box) {
+                if (! in_array(strtolower((string) ($box['email'] ?? '')), $known, true)) {
+                    $byDomain[$rememberedDomain][] = $box;
+                }
+            }
         }
 
         if ($byDomain === []) {
@@ -506,13 +523,14 @@ class DirectAdminToMailcowMigrationService
             || (str_contains($message, 'exist') && str_contains($message, 'sync'));
     }
 
-    public function mailPullOperatorMessage(int $created, int $copied, int $syncJobs, int $failed, ?string $copyBlocker = null): string
+    public function mailPullOperatorMessage(int $created, int $copied, int $syncJobs, int $failed, ?string $copyBlocker = null, ?string $createReason = null): string
     {
         $summary = 'Mail pulled to Mailcow. Created '.$created.' mailbox(es)'
             .($copied > 0 ? ', copied maildir for '.$copied : '')
             .($syncJobs > 0 ? ', IMAP sync on '.$syncJobs : '')
             .($failed > 0 ? ', '.$failed.' need review' : '')
-            .'.';
+            .'.'
+            .($createReason !== null ? ' '.$createReason : '');
 
         if ($copyBlocker !== null) {
             return $summary.' '.$copyBlocker
@@ -957,16 +975,16 @@ class DirectAdminToMailcowMigrationService
             $this->ensureMailcowDomain($client, $extraDomain, $emailService, $limits, $domainMailboxCap);
         }
 
-        if ($extraDomains !== []) {
-            $client->editDomain($primaryDomain, [
-                'mailboxes' => $domainMailboxCap,
-            ]);
-        }
+        // provision() just clamped the domain back to the product's mailbox
+        // limit; every pull has to fit the whole DirectAdmin account.
+        $this->ensureDomainCapacity($client, $primaryDomain, $daService, (int) $domainMailboxCap, $limits, $mailboxCount);
 
         $created = [];
+        $seen = [];
         $syncJobs = [];
         $copied = [];
         $failed = [];
+        $createFailures = [];
         $legacy = is_array($daService->service_meta['da_legacy'] ?? null) ? $daService->service_meta['da_legacy'] : [];
         $username = (string) ($legacy['username']
             ?? ($daService->getHostingCredentials()['username'] ?? null)
@@ -1003,14 +1021,6 @@ class DirectAdminToMailcowMigrationService
             }
         }
 
-        $previousMigration = is_array($daService->service_meta['mailcow_migration'] ?? null)
-            ? $daService->service_meta['mailcow_migration']
-            : [];
-        $alreadyCopied = array_map('strtolower', array_filter(
-            is_array($previousMigration['copied_maildirs'] ?? null) ? $previousMigration['copied_maildirs'] : [],
-            'is_string',
-        ));
-
         foreach ($byDomain as $domain => $boxes) {
             foreach ($boxes as $box) {
                 $local = strtolower(trim((string) ($box['account'] ?? '')));
@@ -1022,6 +1032,7 @@ class DirectAdminToMailcowMigrationService
                 }
 
                 $email = $local.'@'.$domain;
+                $seen[] = $email;
                 $mailboxIndex++;
                 $this->mailPullProgress->mailbox($daService, $mailboxIndex, $mailboxCount, $email);
                 $mailcowPassword = $this->mailcowProvisioning->generateMailboxPassword();
@@ -1041,11 +1052,13 @@ class DirectAdminToMailcowMigrationService
                     || $this->mailcowMailboxExists($client, $domain, $email);
 
                 if (! $mailboxReady) {
-                    $failed[] = $email;
-                    $this->mailPullProgress->log($daService, $email.' Mailcow create failed');
-                    Log::info('Mailcow mailbox create skipped/failed during migrate', [
+                    $reason = trim((string) ($add['message'] ?? '')) ?: 'Mailcow gave no reason';
+                    $failed[] = $email.' (create: '.$reason.')';
+                    $createFailures[$reason] = ($createFailures[$reason] ?? 0) + 1;
+                    $this->mailPullProgress->log($daService, $email.' Mailcow create failed: '.$reason);
+                    Log::warning('Mailcow mailbox create failed during migrate', [
                         'mailbox' => $email,
-                        'message' => $add['message'] ?? null,
+                        'message' => $reason,
                     ]);
 
                     continue;
@@ -1060,10 +1073,7 @@ class DirectAdminToMailcowMigrationService
                     continue;
                 }
 
-                if (in_array(strtolower($email), $alreadyCopied, true)) {
-                    $copied[] = $email;
-                    $this->mailPullProgress->log($daService, $email.' maildir already copied on an earlier pull; skipping');
-                } elseif ($copyBlocker !== null) {
+                if ($copyBlocker !== null) {
                     $failed[] = $email.' (maildir copy)';
                     $this->mailPullProgress->log($daService, $email.' maildir copy skipped: Mailcow node SSH login failed');
                 } elseif ($daNode && $mailcowNode && $username !== '') {
@@ -1152,7 +1162,7 @@ class DirectAdminToMailcowMigrationService
                         $syncJobs[] = $email;
                         $this->mailPullProgress->log($daService, $email.' IMAP sync job already exists; updated its DirectAdmin password');
                     } else {
-                        $failed[] = $email.' (sync)';
+                        $failed[] = $email.' (sync: exists but could not be updated: '.(string) ($edited['message'] ?? 'unknown error').')';
                         $this->mailPullProgress->log($daService, $email.' IMAP sync job exists but could not be updated: '.(string) ($edited['message'] ?? 'unknown error'));
                         Log::warning('Mailcow sync job password update failed', [
                             'mailbox' => $email,
@@ -1160,8 +1170,8 @@ class DirectAdminToMailcowMigrationService
                         ]);
                     }
                 } else {
-                    $failed[] = $email.' (sync)';
-                    $this->mailPullProgress->log($daService, $email.' IMAP sync job failed');
+                    $failed[] = $email.' (sync: '.(trim((string) ($sync['message'] ?? '')) ?: 'no reason').')';
+                    $this->mailPullProgress->log($daService, $email.' IMAP sync job failed: '.(trim((string) ($sync['message'] ?? '')) ?: 'no reason'));
                     Log::warning('Mailcow sync job failed', [
                         'mailbox' => $email,
                         'message' => $sync['message'] ?? null,
@@ -1177,6 +1187,12 @@ class DirectAdminToMailcowMigrationService
             'email_service_id' => $emailService->id,
             'migrated_at' => now()->toIso8601String(),
             'mailboxes_created' => $created,
+            'mailboxes_seen' => array_values(array_unique(array_merge(
+                is_array($daService->service_meta['mailcow_migration']['mailboxes_seen'] ?? null)
+                    ? $daService->service_meta['mailcow_migration']['mailboxes_seen']
+                    : [],
+                $seen,
+            ))),
             'sync_jobs' => $syncJobs,
             'copied_maildirs' => $copied,
             'failed_mailboxes' => $failed,
@@ -1199,12 +1215,18 @@ class DirectAdminToMailcowMigrationService
             }
         }
 
+        $createReason = null;
+        if ($createFailures !== []) {
+            arsort($createFailures);
+            $createReason = sprintf('%d mailbox(es) refused by Mailcow: %s.', array_sum($createFailures), (string) array_key_first($createFailures));
+        }
         $message = $this->mailPullOperatorMessage(
             count($created),
             count($copied),
             count($syncJobs),
             count($failed),
             $copyBlocker,
+            $createReason,
         );
 
         $this->mailPullProgress->complete($daService, $message, [
@@ -1237,14 +1259,49 @@ class DirectAdminToMailcowMigrationService
     /**
      * @param  array{mailboxes: int, aliases: int, quota_mb: int, mailbox_quota_mb: int, msgs_per_day: int}  $limits
      */
+    /**
+     * Raise a Mailcow domain's mailbox count and total quota so every mailbox
+     * on the DirectAdmin account fits. Failure is logged to the console so the
+     * operator sees why creates would be refused.
+     *
+     * @param  array{mailboxes: int, aliases: int, quota_mb: int, mailbox_quota_mb: int, msgs_per_day: int}  $limits
+     */
+    private function ensureDomainCapacity(MailcowService $client, string $domain, Service $daService, int $mailboxCap, array $limits, int $mailboxCount): void
+    {
+        $quota = (string) max((int) $limits['quota_mb'], $mailboxCap * (int) $limits['mailbox_quota_mb']);
+        $edited = $client->editDomain($domain, [
+            'active' => '1',
+            'mailboxes' => (string) $mailboxCap,
+            'quota' => $quota,
+            'maxquota' => (string) $limits['mailbox_quota_mb'],
+            'defquota' => (string) $limits['mailbox_quota_mb'],
+        ]);
+
+        if ($edited['success'] ?? false) {
+            $this->mailPullProgress->log($daService, sprintf('Mailcow domain %s allows %d mailbox(es), %s MB total (%d to pull)', $domain, $mailboxCap, $quota, $mailboxCount));
+
+            return;
+        }
+
+        $this->mailPullProgress->log($daService, sprintf('Could not raise the Mailcow mailbox limit on %s: %s. Creates beyond the plan limit will be refused.', $domain, (string) ($edited['message'] ?? 'unknown error')));
+        Log::warning('Mailcow domain capacity update failed during DA mail pull', [
+            'domain' => $domain,
+            'message' => $edited['message'] ?? null,
+        ]);
+    }
+
     private function ensureMailcowDomain(MailcowService $client, string $domain, Service $emailService, array $limits, string $mailboxCap): void
     {
         $existing = $client->getDomain($domain);
         $exists = ($existing['success'] ?? false) && ! empty($existing['data']);
         if ($exists) {
+            $quota = (string) max((int) $limits['quota_mb'], (int) $mailboxCap * (int) $limits['mailbox_quota_mb']);
             $client->editDomain($domain, [
                 'active' => '1',
                 'mailboxes' => $mailboxCap,
+                'quota' => $quota,
+                'maxquota' => (string) $limits['mailbox_quota_mb'],
+                'defquota' => (string) $limits['mailbox_quota_mb'],
             ]);
 
             return;

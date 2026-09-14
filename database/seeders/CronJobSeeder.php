@@ -270,6 +270,13 @@ class CronJobSeeder extends Seeder
                 'enabled' => true,
             ],
             [
+                'name' => 'Issue Pending SSL Certificates',
+                'description' => 'Issues the first certificate for bound container hostnames whose DNS now points at their node.',
+                'command' => 'cron:issue-pending-ssl',
+                'schedule' => '*/10 * * * *',
+                'enabled' => true,
+            ],
+            [
                 'name' => 'Update Exchange Rates',
                 'description' => 'Fetches latest currency exchange rates from global API and updates database.',
                 'command' => 'cron:update-exchange-rates',

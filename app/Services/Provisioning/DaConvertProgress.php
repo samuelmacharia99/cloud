@@ -2,6 +2,7 @@
 
 namespace App\Services\Provisioning;
 
+use App\Models\ContainerDeploymentEvent;
 use App\Models\CustomerProject;
 use App\Models\Service;
 use Carbon\Carbon;
@@ -29,12 +30,12 @@ class DaConvertProgress
         'queued' => [0, 1],
         'preflight' => [1, 4],
         'capacity' => [4, 6],
-        'export' => [6, 24],
-        'mail' => [24, 42],
-        'switch' => [42, 44],
-        'deploy' => [44, 66],
-        'import' => [66, 88],
-        'bind' => [88, 92],
+        'export' => [6, 22],
+        'switch' => [22, 24],
+        'deploy' => [24, 46],
+        'import' => [46, 70],
+        'bind' => [70, 78],
+        'mail' => [78, 92],
         'siblings' => [92, 98],
         'complete' => [100, 100],
     ];
@@ -207,24 +208,66 @@ class DaConvertProgress
     }
 
     /**
+     * A convert is stuck when nothing has moved for 15 minutes: not its own
+     * heartbeat, not the mail pull it drives, not the container deploy it
+     * started. Any of the three counts as life.
+     *
      * @param  array<string, mixed>  $convert
      */
-    public function looksStuck(array $convert): bool
+    public function looksStuck(array $convert, ?Service $service = null): bool
     {
-        $marker = $convert['heartbeat_at']
-            ?? $convert['started_at']
-            ?? $convert['queued_at']
-            ?? null;
-
-        if (! is_string($marker) || $marker === '') {
+        $newest = $this->newestActivity($convert, $service);
+        if ($newest === null) {
             return true;
         }
 
-        try {
-            return Carbon::parse($marker)->lt(now()->subMinutes(15));
-        } catch (\Throwable) {
-            return true;
+        return $newest->lt(now()->subMinutes(15));
+    }
+
+    /**
+     * The most recent sign of life for a convert, across its heartbeat, the
+     * mail pull's last write and the newest deploy event since it started.
+     *
+     * @param  array<string, mixed>  $convert
+     */
+    public function newestActivity(array $convert, ?Service $service = null): ?Carbon
+    {
+        $candidates = [];
+        foreach (['heartbeat_at', 'started_at', 'queued_at'] as $key) {
+            $candidates[] = $convert[$key] ?? null;
         }
+        if ($service) {
+            $candidates[] = $service->service_meta['mail_pull']['updated_at'] ?? null;
+            $startedAt = $convert['started_at'] ?? null;
+            if (is_string($startedAt) && $startedAt !== '') {
+                try {
+                    $latestEvent = ContainerDeploymentEvent::query()
+                        ->where('service_id', $service->id)
+                        ->where('recorded_at', '>=', Carbon::parse($startedAt))
+                        ->max('recorded_at');
+                    $candidates[] = $latestEvent;
+                } catch (\Throwable) {
+                    // A bad timestamp or a missing table never makes a convert look alive.
+                }
+            }
+        }
+
+        $newest = null;
+        foreach ($candidates as $candidate) {
+            if (! is_string($candidate) || $candidate === '') {
+                continue;
+            }
+            try {
+                $parsed = Carbon::parse($candidate);
+            } catch (\Throwable) {
+                continue;
+            }
+            if ($newest === null || $parsed->gt($newest)) {
+                $newest = $parsed;
+            }
+        }
+
+        return $newest;
     }
 
     /**
@@ -361,7 +404,7 @@ class DaConvertProgress
             };
         }
 
-        $stuck = $active && $this->looksStuck($convert);
+        $stuck = $active && $this->looksStuck($convert, $sibling);
 
         return [
             'service_id' => (int) $sibling->id,
@@ -452,7 +495,7 @@ class DaConvertProgress
         }
         $status = (string) ($convert['status'] ?? '');
         if (in_array($status, self::STATUSES_ACTIVE, true)) {
-            return $this->looksStuck($convert);
+            return $this->looksStuck($convert, $service);
         }
 
         return in_array($status, ['failed', 'reverted', 'completed'], true);
@@ -469,7 +512,7 @@ class DaConvertProgress
         $convert = $this->convertMeta($service);
         $status = (string) ($convert['status'] ?? '');
         $active = $this->isActive($convert);
-        $stuck = $active && $this->looksStuck($convert);
+        $stuck = $active && $this->looksStuck($convert, $service);
         $isSite = $this->isSiblingSite($service);
         $siblings = $isSite ? [] : $this->siblingsFor($service);
         $siblingsActive = array_values(array_filter($siblings, fn ($row) => $row['is_active']));
@@ -502,6 +545,7 @@ class DaConvertProgress
             'convert_status' => $status,
             'convert_active' => $active && ! $stuck,
             'convert_stuck' => $stuck,
+            'convert_last_activity_at' => $this->newestActivity($convert, $service)?->toIso8601String(),
             'convert_percent' => $this->percentFor($convert, $mailPull),
             'convert_label' => $label,
             'convert_phase' => (string) ($convert['phase'] ?? ''),

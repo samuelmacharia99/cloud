@@ -31,6 +31,7 @@ class DirectAdminToContainerConvertService
         private DirectAdminToMailcowMigrationService $mailMigrator,
         private DaAccountSnapshotService $snapshots,
         private DaConvertProgress $progress,
+        private ContainerGoLiveService $goLive,
     ) {}
 
     /**
@@ -622,9 +623,14 @@ class DirectAdminToContainerConvertService
                 'acknowledge_addon_sites' => $acknowledgeAddonSites,
             ]),
         ]);
+        $lastError = trim((string) ($existingConvert['last_error'] ?? $existingConvert['error'] ?? ''));
+        if ($attempt > 1 && $lastError !== '') {
+            $this->progress->step($service, 'Previous attempt failed: '.$lastError);
+        }
         $this->progress->step(
             $service,
-            'Preflight OK · stack '.$stack.($attempt > 1 ? ' · attempt '.$attempt : ''),
+            'Preflight OK · stack '.$stack.($attempt > 1 ? ' · attempt '.$attempt : '')
+                .' · order: export, deploy, import, go live, then mail',
             'preflight',
             1.0,
         );
@@ -661,54 +667,7 @@ class DirectAdminToContainerConvertService
 
             $emailServiceId = null;
             $mailResult = null;
-            if ($mustPullMail && $emailProduct) {
-                $this->progress->step($service, 'Pulling mailboxes to Mailcow (live copy progress on this page)', 'mail');
-                $byDomain = $preflight['email']['by_domain'] ?? [];
-                if ($byDomain === [] && ($preflight['email']['all'] ?? []) !== []) {
-                    foreach ($preflight['email']['all'] as $box) {
-                        $domain = strtolower((string) ($box['domain'] ?? ''));
-                        if ($domain === '' && str_contains((string) ($box['email'] ?? ''), '@')) {
-                            $domain = explode('@', (string) $box['email'], 2)[1] ?? '';
-                        }
-                        if ($domain === '') {
-                            continue;
-                        }
-                        $byDomain[$domain][] = $box;
-                    }
-                }
-                $mailResult = $this->mailMigrator->pullFromDirectAdminUser(
-                    $service,
-                    $emailProduct,
-                    $byDomain,
-                    [
-                        'pull_mail' => true,
-                        'da_imap_host' => (string) ($daNode->hostname ?? ''),
-                        'bundled' => $containerProduct->hasEmailBundle()
-                            && (int) $containerProduct->bundled_email_product_id === (int) $emailProduct->id,
-                        'project_id' => $service->project_id,
-                    ],
-                );
-                if (! ($mailResult['success'] ?? false)) {
-                    throw new \RuntimeException((string) ($mailResult['message'] ?? 'Mail pull to Mailcow failed.'));
-                }
-                $emailServiceId = isset($mailResult['email_service']) ? (int) $mailResult['email_service']->id : null;
-                $this->progress->step($service, (string) ($mailResult['message'] ?? 'Mail pull queued.'), 'mail', 1.0);
-            }
-
-            $primaryDomain = strtolower(trim((string) ($inventory['domain'] ?? $service->attachedDomainName() ?? '')));
-            if ($primaryDomain !== '' && ($service->user?->settings['da_offramp_created'] ?? false)) {
-                $inbox = app(MailcowProvisioningService::class)->ensureInfoMailbox(
-                    $primaryDomain,
-                    isset($emailServiceId) && $emailServiceId
-                        ? Service::query()->find($emailServiceId)
-                        : null,
-                );
-                if ($inbox['success'] ?? false) {
-                    $this->progress->step($service, ($inbox['created'] ?? false)
-                        ? 'Created operator inbox '.$inbox['email']
-                        : 'Operator inbox ready '.$inbox['email']);
-                }
-            }
+            $mailStatus = 'none';
 
             $creds = $service->getHostingCredentials() ?? [];
             $meta = is_array($service->service_meta) ? $service->service_meta : [];
@@ -833,7 +792,82 @@ class DirectAdminToContainerConvertService
             if ($primaryHostname !== '') {
                 $this->progress->step($service, 'Binding '.$primaryHostname.' to the Application Hosting container', 'bind');
                 $this->attachConvertedHostname($service->fresh(), $primaryHostname);
-                $this->progress->step($service, 'Bound '.$primaryHostname.' to the Application Hosting container', 'bind', 1.0);
+                $this->progress->step($service, 'Bound '.$primaryHostname.' to the Application Hosting container', 'bind', 0.4);
+                $this->goLiveQuietly($service->fresh(), $primaryHostname, null);
+                $this->progress->step($service, 'Go-live check finished for '.$primaryHostname, 'bind', 1.0);
+            }
+
+            // Mail comes last and never undoes the site: a Mailcow problem is
+            // recorded and left for "Retry mail pull".
+            if ($mustPullMail && $emailProduct) {
+                $this->progress->step($service, 'Site is up. Pulling mailboxes to Mailcow (live copy progress on this page)', 'mail');
+                $byDomain = $preflight['email']['by_domain'] ?? [];
+                if ($byDomain === [] && ($preflight['email']['all'] ?? []) !== []) {
+                    foreach ($preflight['email']['all'] as $box) {
+                        $domain = strtolower((string) ($box['domain'] ?? ''));
+                        if ($domain === '' && str_contains((string) ($box['email'] ?? ''), '@')) {
+                            $domain = explode('@', (string) $box['email'], 2)[1] ?? '';
+                        }
+                        if ($domain === '') {
+                            continue;
+                        }
+                        $byDomain[$domain][] = $box;
+                    }
+                }
+                try {
+                    $mailResult = $this->mailMigrator->pullFromDirectAdminUser(
+                        $service,
+                        $emailProduct,
+                        $byDomain,
+                        [
+                            'pull_mail' => true,
+                            'da_imap_host' => (string) ($daNode->hostname ?? ''),
+                            'bundled' => $containerProduct->hasEmailBundle()
+                                && (int) $containerProduct->bundled_email_product_id === (int) $emailProduct->id,
+                            'project_id' => $service->fresh()->project_id,
+                        ],
+                    );
+                } catch (\Throwable $mailError) {
+                    Log::warning('DA convert: mail pull threw; site stays converted', [
+                        'service_id' => $service->id,
+                        'error' => $mailError->getMessage(),
+                    ]);
+                    $mailResult = ['success' => false, 'message' => $mailError->getMessage()];
+                }
+
+                $emailServiceId = isset($mailResult['email_service']) ? (int) $mailResult['email_service']->id : null;
+                if ($emailServiceId) {
+                    $this->linkEmailService($service, $emailServiceId);
+                }
+
+                if (! ($mailResult['success'] ?? false)) {
+                    $mailStatus = 'failed';
+                    $this->progress->merge($service, [
+                        'mail_status' => 'failed',
+                        'mail_error' => (string) ($mailResult['message'] ?? 'Mail pull to Mailcow failed.'),
+                    ]);
+                    $this->progress->step($service, 'Mail pull failed: '.((string) ($mailResult['message'] ?? 'Mail pull to Mailcow failed.'))
+                        .' The site is live; fix the cause and use Retry mail pull. DirectAdmin mail is untouched.', 'mail', 1.0);
+                } else {
+                    $mailStatus = ($mailResult['failed_mailboxes'] ?? []) === [] ? 'completed' : 'partial';
+                    $this->progress->merge($service, ['mail_status' => $mailStatus, 'mail_error' => null]);
+                    $this->progress->step($service, (string) ($mailResult['message'] ?? 'Mail pull queued.'), 'mail', 1.0);
+                }
+            }
+
+            $primaryDomain = strtolower(trim((string) ($inventory['domain'] ?? $service->attachedDomainName() ?? '')));
+            if ($primaryDomain !== '' && ($service->user?->settings['da_offramp_created'] ?? false)) {
+                $inbox = app(MailcowProvisioningService::class)->ensureInfoMailbox(
+                    $primaryDomain,
+                    isset($emailServiceId) && $emailServiceId
+                        ? Service::query()->find($emailServiceId)
+                        : null,
+                );
+                if ($inbox['success'] ?? false) {
+                    $this->progress->step($service, ($inbox['created'] ?? false)
+                        ? 'Created operator inbox '.$inbox['email']
+                        : 'Operator inbox ready '.$inbox['email']);
+                }
             }
 
             $renewalPreview = $this->renewalPricing->unitPrice($service->fresh());
@@ -850,9 +884,12 @@ class DirectAdminToContainerConvertService
             $addonNote = $siblingIds !== []
                 ? sprintf(' %d extra site(s) queued as sibling containers on this package. Combined usage above package specs bills as overage.', count($siblingIds))
                 : '';
-            $mailNote = $emailServiceId
-                ? ' '.trim((string) ($mailResult['message'] ?? 'Mail pulled to Mailcow.'))
-                : '';
+            $mailNote = match ($mailStatus) {
+                'failed' => ' Mail pull FAILED ('.trim((string) ($mailResult['message'] ?? 'unknown')).'); use Retry mail pull.',
+                'partial' => ' Mail partly pulled: '.trim((string) ($mailResult['message'] ?? '')),
+                'completed' => ' '.trim((string) ($mailResult['message'] ?? 'Mail pulled to Mailcow.')),
+                default => '',
+            };
             $this->progress->step($service, sprintf(
                 'Convert complete. Next due %s · renewal will bill Application Hosting (~%s).%s%s',
                 optional($service->next_due_date)->toDateString() ?? 'n/a',
@@ -870,6 +907,7 @@ class DirectAdminToContainerConvertService
                 'renewal_unit_price' => $renewalPreview,
                 'renewal_due_date' => optional($service->next_due_date)->toDateString(),
                 'stack' => $stack,
+                'mail_status' => $mailStatus,
             ]);
             $steps = $this->progress->convertMeta($service)['steps'] ?? [];
 
@@ -887,7 +925,9 @@ class DirectAdminToContainerConvertService
 
             return [
                 'ok' => true,
-                'message' => 'Service converted to Application Hosting. Billing date unchanged. Mail is pulling into Mailcow — update MX when sync has caught up, then DirectAdmin can be decommissioned.',
+                'message' => $mailStatus === 'failed'
+                    ? 'Service converted to Application Hosting and the site is live. Mail pull failed; fix the cause and use Retry mail pull. DirectAdmin is untouched.'
+                    : 'Service converted to Application Hosting. Billing date unchanged. Mail is pulling into Mailcow — update MX when sync has caught up, then DirectAdmin can be decommissioned.',
                 'steps' => $steps,
             ];
         } catch (\Throwable $e) {
@@ -998,7 +1038,7 @@ class DirectAdminToContainerConvertService
 
         if (in_array($convert['status'] ?? '', ['queued', 'running'], true)) {
             // Allow force-revert when the job died mid-flight (e.g. PHP 30s timeout).
-            return $this->convertLooksStuck($convert);
+            return $this->convertLooksStuck($convert, $service);
         }
 
         $alreadyOnPrevious = (int) $service->product_id === (int) $previous['product_id']
@@ -1012,9 +1052,9 @@ class DirectAdminToContainerConvertService
     /**
      * @param  array<string, mixed>  $convert
      */
-    public function convertLooksStuck(array $convert): bool
+    public function convertLooksStuck(array $convert, ?Service $service = null): bool
     {
-        return $this->progress->looksStuck($convert);
+        return $this->progress->looksStuck($convert, $service);
     }
 
     /**
@@ -1484,7 +1524,9 @@ class DirectAdminToContainerConvertService
             if ($hostname !== '') {
                 $this->progress->step($sibling, 'Binding '.$hostname.' to the container', 'bind');
                 $this->attachConvertedHostname($sibling->fresh(), $hostname);
-                $this->progress->step($sibling, 'Bound '.$hostname.' to the container', 'bind', 1.0);
+                $this->progress->step($sibling, 'Bound '.$hostname.' to the container', 'bind', 0.4);
+                $this->goLiveQuietly($sibling->fresh(), $hostname, (int) config('containers.go_live.sibling_dns_wait_seconds', 60));
+                $this->progress->step($sibling, 'Go-live check finished for '.$hostname, 'bind', 1.0);
             }
 
             $this->progress->step($sibling, 'Site converted.');
@@ -1502,6 +1544,49 @@ class DirectAdminToContainerConvertService
                     }
                 }
             }
+        }
+    }
+
+    /**
+     * DNS explanation, bounded propagation wait and first certificate. Never
+     * fails the convert: the scheduler finishes SSL for anything still pending.
+     */
+    private function goLiveQuietly(Service $service, string $hostname, ?int $waitSeconds): void
+    {
+        try {
+            $this->goLive->goLive(
+                $service,
+                $hostname,
+                fn (string $line) => $this->progress->step($service, $line, 'bind', 0.7),
+                $waitSeconds,
+            );
+        } catch (\Throwable $e) {
+            Log::warning('DA convert: go-live step failed', [
+                'service_id' => $service->id,
+                'hostname' => $hostname,
+                'error' => $e->getMessage(),
+            ]);
+            $this->progress->step($service, 'Go-live check failed: '.$e->getMessage().' DNS and SSL can be finished from the domains tab.');
+        }
+    }
+
+    /**
+     * Record the Mailcow email service on the converted row once mail has run.
+     */
+    private function linkEmailService(Service $service, int $emailServiceId): void
+    {
+        $service->refresh();
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        $legacy = is_array($meta['da_legacy'] ?? null) ? $meta['da_legacy'] : [];
+        $legacy['email_service_id'] = $emailServiceId;
+        $meta['da_legacy'] = $legacy;
+        $meta['bundled_email_service_id'] = $emailServiceId;
+        $service->update(['service_meta' => $meta]);
+        $service->refresh();
+
+        $projectId = (int) ($service->project_id ?? 0);
+        if ($projectId > 0) {
+            Service::query()->whereKey($emailServiceId)->update(['project_id' => $projectId]);
         }
     }
 

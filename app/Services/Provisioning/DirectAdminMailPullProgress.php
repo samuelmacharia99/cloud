@@ -41,7 +41,9 @@ class DirectAdminMailPullProgress
      */
     public function queue(Service $service): array
     {
+        $previous = $this->snapshot($service);
         $state = $this->blank($service);
+        $state['run'] = (int) ($previous['run'] ?? 0);
         $state['status'] = 'pending';
         $state['percent'] = 1;
         $state['label'] = 'Queued mail pull…';
@@ -53,9 +55,15 @@ class DirectAdminMailPullProgress
         return $state;
     }
 
+    /**
+     * Start a run. The log is reset so the terminal shows this run only; the
+     * previous run's outcome survives as the first line for context.
+     */
     public function begin(Service $service, int $mailboxTotal): array
     {
-        $state = $this->snapshot($service);
+        $previous = $this->snapshot($service);
+        $state = $this->blank($service);
+        $state['run'] = (int) ($previous['run'] ?? 0) + 1;
         $state['status'] = 'running';
         $state['mailbox_total'] = max(0, $mailboxTotal);
         $state['mailbox_index'] = 0;
@@ -63,9 +71,21 @@ class DirectAdminMailPullProgress
         $state['label'] = $mailboxTotal > 0
             ? 'Preparing '.$mailboxTotal.' mailbox(es)…'
             : 'No mailboxes to copy';
-        $state['percent'] = max(2, (int) ($state['percent'] ?? 0));
-        $state['started_at'] = $state['started_at'] ?? now()->toIso8601String();
+        $state['percent'] = 2;
+        $state['started_at'] = now()->toIso8601String();
         $state['error'] = null;
+        $state['copied'] = [];
+        $state['sync_jobs'] = [];
+        $state['failed'] = [];
+        if ($state['run'] > 1) {
+            $previousOutcome = trim((string) ($previous['label'] ?? ''));
+            $this->appendLog($state, sprintf(
+                '── mail pull run %d ── previous run %s%s',
+                $state['run'],
+                (string) ($previous['status'] ?? 'unknown'),
+                $previousOutcome !== '' ? ': '.$previousOutcome : '',
+            ));
+        }
         $this->appendLog($state, 'Pulling '.$mailboxTotal.' mailbox(es) from DirectAdmin to Mailcow');
         $state['percent'] = $this->computePercent($state);
         $this->persist($service, $state, true);
@@ -372,6 +392,7 @@ class DirectAdminMailPullProgress
             'sync_jobs' => is_array($state['sync_jobs'] ?? null) ? $state['sync_jobs'] : [],
             'failed' => is_array($state['failed'] ?? null) ? $state['failed'] : [],
             'log' => (string) ($state['log'] ?? ''),
+            'run' => (int) ($state['run'] ?? 0),
             'error' => $state['error'] ?? null,
             'started_at' => $state['started_at'] ?? null,
             'completed_at' => $state['completed_at'] ?? null,
