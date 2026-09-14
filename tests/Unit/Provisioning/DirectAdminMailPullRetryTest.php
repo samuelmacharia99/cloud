@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\Provisioning;
 
+use App\Exceptions\SSH\SSHCommandException;
 use App\Models\Node;
 use App\Models\Product;
 use App\Models\Service;
@@ -10,6 +11,7 @@ use App\Services\Provisioning\DirectAdminMailPullProgress;
 use App\Services\Provisioning\DirectAdminToMailcowMigrationService;
 use App\Services\Provisioning\MailcowProvisioningService;
 use App\Services\Provisioning\MailcowService;
+use App\Services\SSH\SSHService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Mockery;
@@ -151,5 +153,27 @@ class DirectAdminMailPullRetryTest extends TestCase
         $log = app(DirectAdminMailPullProgress::class)->snapshot($daService->fresh())['log'];
         $this->assertStringContainsString('FAILED: Mailcow node "mail-1" SSH login failed', $log);
         $this->assertStringContainsString('info@example.com maildir copy skipped: Mailcow node SSH login failed', $log);
+    }
+
+    public function test_probe_names_a_missing_ssh_username_before_connecting(): void
+    {
+        $node = Node::factory()->mailcow()->create(['name' => 'mail-1', 'ip_address' => '203.0.113.9', 'ssh_username' => null, 'ssh_password' => 'secret']);
+
+        $message = app(DirectAdminToMailcowMigrationService::class)->mailcowSshProbeError($node);
+
+        $this->assertStringContainsString('Mailcow node "mail-1" (203.0.113.9) has no SSH username', $message);
+
+        $node->update(['ssh_username' => 'root', 'ssh_password' => null, 'ssh_private_key' => null]);
+        $this->assertStringContainsString('has no SSH password or private key', app(DirectAdminToMailcowMigrationService::class)->mailcowSshProbeError($node->fresh()));
+    }
+
+    public function test_ssh_service_refuses_a_node_without_a_username_before_opening_a_socket(): void
+    {
+        $node = Node::factory()->mailcow()->create(['ssh_username' => '', 'ssh_password' => 'secret']);
+
+        $this->expectException(SSHCommandException::class);
+        $this->expectExceptionMessage('SSH username is not set on this node');
+
+        SSHService::forNode($node)->exec('true', 5, retry: false);
     }
 }

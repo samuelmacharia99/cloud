@@ -667,6 +667,23 @@ class DirectAdminToMailcowMigrationService
      */
     public function mailcowSshProbeError(Node $mailcowNode): ?string
     {
+        $host = (string) ($mailcowNode->ip_address ?: $mailcowNode->hostname ?: 'unknown host');
+        $name = (string) ($mailcowNode->name ?: $mailcowNode->hostname ?: 'mailcow');
+        if (blank($mailcowNode->ssh_username)) {
+            return sprintf(
+                'Mailcow node "%s" (%s) has no SSH username. Edit it under Admin → Nodes, set the SSH user (usually root) with a password or key, then Retry mail pull; maildir copies were skipped.',
+                $name,
+                $host,
+            );
+        }
+        if (! $mailcowNode->hasSshCredentials()) {
+            return sprintf(
+                'Mailcow node "%s" (%s) has no SSH password or private key. Edit it under Admin → Nodes and add one, then Retry mail pull; maildir copies were skipped.',
+                $name,
+                $host,
+            );
+        }
+
         $ssh = null;
         try {
             $ssh = SSHService::forNode($mailcowNode);

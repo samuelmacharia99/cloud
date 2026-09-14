@@ -52,6 +52,21 @@ class SSHService
      */
     private function connect(): void
     {
+        // Say what is missing before any packet goes out; phpseclib would
+        // otherwise report a null username as "A string was expected".
+        if (blank($this->node->ssh_username)) {
+            throw new SSHConnectionException(
+                $this->sshTargetForErrors(),
+                'SSH username is not set on this node. Edit the node and set the SSH user.'
+            );
+        }
+        if (! $this->node->hasSshCredentials()) {
+            throw new SSHConnectionException(
+                $this->sshTargetForErrors(),
+                'No SSH password or private key is stored on this node. Edit the node and add one.'
+            );
+        }
+
         $attempts = 3;
         $lastError = null;
 
