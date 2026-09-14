@@ -37,6 +37,9 @@ class WordPressContainerHardeningService
             'max_execution_time = 300',
             'max_input_time = 300',
             'max_file_uploads = 50',
+            '; Fatals go to the container log (docker logs), never to visitors.',
+            'log_errors = On',
+            'display_errors = Off',
             '',
         ]);
     }
@@ -109,7 +112,8 @@ class WordPressContainerHardeningService
     }
 
     /**
-     * Write uploads.ini on the container host so compose can bind-mount it.
+     * Write uploads.ini on the container host so compose can bind-mount it,
+     * and make sure the node's shared wp-cli phar is there for the tools mount.
      */
     public function ensureUploadsIniFile(SSHService $ssh, string $containerName): void
     {
@@ -117,6 +121,146 @@ class WordPressContainerHardeningService
         $dir = dirname($hostPath);
         $ssh->exec('mkdir -p '.escapeshellarg($dir), 15);
         $ssh->upload($this->uploadsIniContents(), $hostPath);
+        $this->ensureWpCliPharOnNode($ssh);
+    }
+
+    /**
+     * Directory on the node that holds tools shared by every WordPress stack.
+     */
+    public function toolsHostPath(): string
+    {
+        // Compose rendering runs in unit tests without a bound config repository.
+        $configured = app()->bound('config') ? config('containers.wp_cli.tools_path') : null;
+
+        return rtrim((string) ($configured ?: self::TOOLS_CONTAINER_PATH), '/');
+    }
+
+    public function wpCliPharHostPath(): string
+    {
+        return $this->toolsHostPath().'/wp-cli.phar';
+    }
+
+    /**
+     * The tools directory is mounted, not the phar itself: a bind mount of a
+     * missing file would make Docker create a directory in its place and break
+     * every later download, while a missing directory is simply created empty.
+     */
+    public function toolsVolumeMount(): string
+    {
+        return $this->toolsHostPath().':'.self::TOOLS_CONTAINER_PATH.':ro';
+    }
+
+    public const TOOLS_CONTAINER_PATH = '/opt/talksasa/tools';
+
+    /**
+     * Download wp-cli once per node. Returns true when a usable phar is in place.
+     */
+    public function ensureWpCliPharOnNode(SSHService $ssh): bool
+    {
+        try {
+            $result = $ssh->execWithStatus($this->ensureWpCliPharCommand(), 120);
+
+            return str_contains($result['output'], 'wp-cli ready');
+        } catch (\Throwable $e) {
+            Log::warning('wp-cli phar download on node skipped', ['error' => $e->getMessage()]);
+
+            return false;
+        }
+    }
+
+    public function ensureWpCliPharCommand(): string
+    {
+        $dir = escapeshellarg($this->toolsHostPath());
+        $phar = escapeshellarg($this->wpCliPharHostPath());
+        $url = escapeshellarg((string) config('containers.wp_cli.phar_url', 'https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar'));
+
+        return 'dir='.$dir.'; phar='.$phar.'; url='.$url.'; mkdir -p "$dir" && chmod 755 "$dir"; '
+            .'if [ -s "$phar" ] && [ "$(stat -c %s "$phar")" -gt 1000000 ] && head -c 64 "$phar" | grep -q "php"; then echo "wp-cli ready"; exit 0; fi; '
+            .'tmp="$phar.tmp.$$"; '
+            .'if command -v curl >/dev/null 2>&1; then curl -fsSL --max-time 90 -o "$tmp" "$url"; '
+            .'elif command -v wget >/dev/null 2>&1; then wget -q -T 90 -O "$tmp" "$url"; '
+            .'else echo "curl/wget missing"; exit 1; fi; '
+            .'if [ -s "$tmp" ] && [ "$(stat -c %s "$tmp")" -gt 1000000 ] && head -c 64 "$tmp" | grep -q "php"; then chmod 755 "$tmp" && mv -f "$tmp" "$phar" && echo "wp-cli ready"; else rm -f "$tmp"; echo "download failed"; exit 1; fi';
+    }
+
+    /**
+     * A converted site drags its old host's PHP overrides and cache drop-ins
+     * with it. Each of these is a white screen inside the container:
+     * auto_prepend_file pointing at /home/<user>/wordfence-waf.php, an
+     * advanced-cache.php whose LiteSpeed or Redis backend is not here, a
+     * .maintenance lock left from an interrupted update. Move them aside on
+     * the host bind mount and record what was moved.
+     */
+    public function buildMigratedRuntimeCleanupCommand(string $hostAppPath): string
+    {
+        $root = escapeshellarg(rtrim($hostAppPath, '/'));
+        $disabled = escapeshellarg(ContainerDoctorWordPressAnalyzer::DISABLED_DROPINS_DIR);
+
+        return 'root='.$root.'; if [ ! -d "$root" ]; then exit 0; fi; '
+            .'for f in "$root/.user.ini" "$root/php.ini" "$root/wp-content/.user.ini"; do '
+            .'  if [ -f "$f" ] && grep -qiE "auto_prepend_file|wordfence-waf" "$f"; then sed -i -e "/auto_prepend_file/Id" -e "/wordfence-waf\\.php/Id" "$f" && echo "prepend:$(basename "$f")"; fi; '
+            .'done; '
+            .'if [ -f "$root/.htaccess" ] && grep -qiE "auto_prepend_file|wordfence-waf" "$root/.htaccess"; then '
+            .'  sed -i -e "/php_value[[:space:]]\\+auto_prepend_file/Id" -e "/php_admin_value[[:space:]]\\+auto_prepend_file/Id" -e "/wordfence-waf\\.php/Id" "$root/.htaccess" && echo "prepend:.htaccess"; '
+            .'fi; '
+            .'stamp=$(date +%Y%m%d-%H%M%S); target="$root"/'.$disabled.'/convert-"$stamp"; '
+            .'for f in wp-content/advanced-cache.php wp-content/object-cache.php .maintenance; do '
+            .'  if [ -e "$root/$f" ]; then mkdir -p "$target/$(dirname "$f")" && mv "$root/$f" "$target/$f" && echo "dropin:$f"; fi; '
+            .'done; '
+            .'if [ -d "$target" ]; then chown -R 33:33 "$root"/'.$disabled.' 2>/dev/null || true; fi; '
+            .'true';
+    }
+
+    /**
+     * PHP, run inside the container, that removes the constants a DirectAdmin
+     * wp-config.php carries which do not apply here: an ABSPATH pointing at
+     * /home/<user>, WP_HOME / WP_SITEURL naming the old host (they override the
+     * options the convert rewrites), WP_CACHE=true for a drop-in that is gone,
+     * and WP_DEBUG_DISPLAY=true. Prints one line per change.
+     */
+    public function migratedWpConfigNormalizeScript(): string
+    {
+        return <<<'PHP'
+$cfg = '/var/www/html/wp-config.php';
+if (! is_file($cfg)) { echo "MISSING\n"; exit(0); }
+$text = file_get_contents($cfg); $orig = $text;
+if (preg_match('/define\s*\(\s*[\'"]ABSPATH[\'"]\s*,\s*([^)]*)\)\s*;/', $text, $m) === 1 && ! str_contains($m[1], '__DIR__') && ! str_contains($m[1], '__FILE__') && ! str_contains($m[1], '/var/www/html')) {
+    $text = str_replace($m[0], "define('ABSPATH', __DIR__ . '/');", $text);
+    echo 'abspath:'.trim($m[1], " '\"")."\n";
+}
+foreach (['WP_HOME', 'WP_SITEURL'] as $name) {
+    if (preg_match('/^[ \t]*define\s*\(\s*[\'"]'.$name.'[\'"]\s*,\s*([^)]*)\)\s*;[ \t]*\r?\n?/m', $text, $m) === 1) {
+        $text = str_replace($m[0], '', $text);
+        echo strtolower($name).':'.trim($m[1], " '\"")."\n";
+    }
+}
+$count = 0;
+$text = preg_replace('/define\s*\(\s*[\'"]WP_CACHE[\'"]\s*,\s*true\s*\)/i', "define('WP_CACHE', false)", $text, 1, $count);
+if ($count > 0) { echo "wp_cache:off\n"; }
+$count = 0;
+$text = preg_replace('/define\s*\(\s*[\'"]WP_DEBUG_DISPLAY[\'"]\s*,\s*true\s*\)/i', "define('WP_DEBUG_DISPLAY', false)", $text, 1, $count);
+if ($count > 0) { echo "debug_display:off\n"; }
+if ($text !== $orig) { file_put_contents($cfg, $text); }
+echo "DONE\n";
+PHP;
+    }
+
+    /**
+     * @return list<string> the changes made, e.g. "abspath:/home/user/public_html/"
+     */
+    public function normalizeMigratedWpConfig(SSHService $ssh, string $containerPath, string $appService): array
+    {
+        $output = (string) $ssh->exec(
+            'cd '.escapeshellarg($containerPath)
+            .' && docker compose exec -T '.escapeshellarg($appService)
+            .' php -r '.escapeshellarg($this->migratedWpConfigNormalizeScript()).' 2>&1 || true',
+            60
+        );
+
+        return array_values(array_filter(
+            array_map('trim', explode("\n", $output)),
+            fn ($line) => $line !== '' && $line !== 'DONE' && $line !== 'MISSING' && str_contains($line, ':')
+        ));
     }
 
     /**

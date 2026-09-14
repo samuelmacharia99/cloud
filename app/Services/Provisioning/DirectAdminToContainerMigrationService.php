@@ -1082,6 +1082,9 @@ class DirectAdminToContainerMigrationService
                 'containerDeployment',
             ]));
             $this->sanitizeWordPressHostRuntimeConfig($targetSsh, $hostAppPath);
+            foreach ($this->cleanMigratedWordPressRuntime($targetSsh, $hostAppPath, $containerPath, $appService) as $line) {
+                $progress($line);
+            }
             $this->normalizeWordPressAppPermissions($targetSsh, $hostAppPath, $containerPath, $appService);
 
             $progress('Restarting WordPress container');
@@ -1091,6 +1094,9 @@ class DirectAdminToContainerMigrationService
             );
             $this->deployments->waitForContainerRunning($targetSsh, $deployment->container_name, 120);
             $targetSsh->exec('rm -rf '.escapeshellarg($remoteWork));
+
+            $this->scanImportedWordPressFiles($target, $targetSsh, $deployment, $progress);
+            $this->probeImportedWordPressRuntime($targetSsh, $containerPath, $appService, $progress);
         } finally {
             $targetSsh->disconnect();
         }
@@ -4290,6 +4296,144 @@ PHP;
     private function sanitizeWordPressHostRuntimeConfig(SSHService $ssh, string $hostAppPath): void
     {
         $ssh->exec($this->buildWordPressRuntimeSanitizeCommand($hostAppPath), 60);
+    }
+
+    /**
+     * Strip the old host's PHP prepend, cache drop-ins and wp-config constants
+     * that turn into a white screen inside the container. One console line per change.
+     *
+     * @return list<string>
+     */
+    private function cleanMigratedWordPressRuntime(SSHService $ssh, string $hostAppPath, string $containerPath, string $appService): array
+    {
+        $hardening = app(WordPressContainerHardeningService::class);
+        $lines = [];
+
+        try {
+            $output = (string) $ssh->exec($hardening->buildMigratedRuntimeCleanupCommand($hostAppPath), 60);
+        } catch (\Throwable $e) {
+            $output = '';
+            $lines[] = 'Host override cleanup skipped: '.$e->getMessage();
+        }
+        foreach (explode("\n", $output) as $line) {
+            $line = trim($line);
+            if (str_starts_with($line, 'prepend:')) {
+                $lines[] = 'Removed auto_prepend_file (the old host\'s Wordfence WAF path) from '.substr($line, 8);
+            } elseif (str_starts_with($line, 'dropin:')) {
+                $lines[] = 'Moved '.substr($line, 7).' aside: its cache backend is not in this container. It is under wp-content/'.basename(ContainerDoctorWordPressAnalyzer::DISABLED_DROPINS_DIR).'/';
+            }
+        }
+
+        try {
+            $changes = $hardening->normalizeMigratedWpConfig($ssh, $containerPath, $appService);
+        } catch (\Throwable $e) {
+            $changes = [];
+            $lines[] = 'wp-config normalisation skipped: '.$e->getMessage();
+        }
+        foreach ($changes as $change) {
+            [$key, $value] = array_pad(explode(':', $change, 2), 2, '');
+            $lines[] = match ($key) {
+                'abspath' => 'wp-config ABSPATH pointed at '.$value.'; it now resolves to the WordPress directory in the container',
+                'wp_home' => 'Removed the hard-coded WP_HOME ('.$value.') so the site address follows the bound domain',
+                'wp_siteurl' => 'Removed the hard-coded WP_SITEURL ('.$value.')',
+                'wp_cache' => 'Turned WP_CACHE off because the cache drop-in is gone',
+                'debug_display' => 'Turned WP_DEBUG_DISPLAY off so errors never print to visitors',
+                default => 'wp-config: '.$change,
+            };
+        }
+
+        return $lines === [] ? ['No stale host overrides in wp-config, .user.ini or .htaccess'] : $lines;
+    }
+
+    /**
+     * A DirectAdmin docroot comes over with whatever was dropped into it. Files
+     * that cannot be legitimate are moved to quarantine before the site goes
+     * live; anything that merely looks suspicious is listed for the operator.
+     */
+    private function scanImportedWordPressFiles(Service $target, SSHService $ssh, ContainerDeployment $deployment, callable $progress): void
+    {
+        $progress('Scanning imported files for webshells and files that do not belong to WordPress');
+        $scanner = app(ContainerIntegrityScanner::class);
+
+        try {
+            $result = $scanner->scan($ssh, $deployment, true, withChecksums: false);
+        } catch (\Throwable $e) {
+            $progress('Integrity scan skipped: '.$e->getMessage());
+
+            return;
+        }
+
+        $auto = array_values(array_filter(
+            $result['hits'],
+            fn ($h) => array_intersect($h['reasons'], ContainerIntegrityScanner::AUTO_QUARANTINE_REASONS) !== []
+        ));
+        $moved = ['moved' => [], 'quarantine_dir' => ''];
+        if ($auto !== []) {
+            $moved = $scanner->quarantine($ssh, $deployment, $result['hits'], ContainerIntegrityScanner::AUTO_QUARANTINE_REASONS);
+            $progress('Quarantined '.count($moved['moved']).' file(s) that cannot be legitimate (PHP inside uploads, known webshell names, foreign mu-plugins) to '.$moved['quarantine_dir']);
+            foreach (array_slice($moved['moved'], 0, 8) as $path) {
+                $progress('Quarantined: '.$path);
+            }
+        }
+
+        try {
+            $scanner->persist($target, $result, $moved['moved']);
+        } catch (\Throwable) {
+            // The scan result is advisory; Doctor re-scans on its next run.
+        }
+
+        $remaining = array_values(array_filter(
+            $result['hits'],
+            fn ($h) => ! in_array($h['path'], $moved['moved'], true)
+                && array_intersect($h['reasons'], ContainerIntegrityScanner::QUARANTINE_REASONS) !== []
+        ));
+        if ($remaining !== []) {
+            $progress(count($remaining).' file(s) need a look before trusting this site (webshell signatures or random names). Container Doctor lists them with a Quarantine button');
+            foreach ($scanner->evidenceRows($remaining, 6) as $row) {
+                $progress('Suspicious: '.$row);
+            }
+        } elseif ($auto === []) {
+            $progress('Integrity scan clean: no foreign or webshell-like files found');
+        }
+    }
+
+    /**
+     * Boot WordPress once inside the container so a fatal is reported on the
+     * console before a visitor sees a white page.
+     */
+    private function probeImportedWordPressRuntime(SSHService $ssh, string $containerPath, string $appService, callable $progress): void
+    {
+        $analyzer = app(ContainerDoctorWordPressAnalyzer::class);
+
+        try {
+            $runtime = $analyzer->parseRuntimeProbe((string) $ssh->exec($analyzer->runtimeProbeCommand($containerPath, $appService), 120, false));
+        } catch (\Throwable $e) {
+            $progress('Runtime check skipped: '.$e->getMessage());
+
+            return;
+        }
+        if ($runtime === null) {
+            $progress('Runtime check: WordPress did not answer the probe. Container Doctor reports the cause once the site is bound');
+
+            return;
+        }
+
+        $fatal = is_array($runtime['fatal'] ?? null) ? $runtime['fatal'] : null;
+        if ($fatal !== null) {
+            $owner = $analyzer->ownerOfPath((string) ($fatal['file'] ?? ''));
+            $where = $owner ? $owner['kind'].' '.$owner['slug'] : basename((string) ($fatal['file'] ?? 'unknown file'));
+            $progress('WordPress boots with a PHP fatal in '.$where.': '.mb_substr((string) ($fatal['message'] ?? ''), 0, 160).'. Container Doctor can disable it with one click');
+        } else {
+            $progress('Runtime check: WordPress boots cleanly (theme '.((string) ($runtime['active_theme'] ?? '') ?: 'unknown').', '.count((array) ($runtime['active_plugins'] ?? [])).' active plugins)');
+        }
+
+        $missing = (array) ($runtime['missing_plugins'] ?? []);
+        if ($missing !== []) {
+            $progress(count($missing).' active plugin(s) have no files: '.implode(', ', array_slice($missing, 0, 5)).'. Doctor can deactivate them');
+        }
+        if (($runtime['theme_exists'] ?? true) === false) {
+            $progress('Active theme "'.(string) ($runtime['active_theme'] ?? '').'" has no folder; WordPress falls back to a default theme until it is reinstalled');
+        }
     }
 
     /**

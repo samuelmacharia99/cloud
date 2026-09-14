@@ -102,6 +102,7 @@ class ContainerDoctorService
 
         // Recreate / runtime rebuild / restart can revive a crash-looping stack.
         if (! $deployment->isRunning()
+            && ! str_starts_with($action, 'disable_wordpress_plugin:')
             && ! in_array($action, [
                 'recreate_application',
                 'rebuild_frontend_bundle',
@@ -117,6 +118,12 @@ class ContainerDoctorService
                 'link_codeigniter_system',
                 'heal_codeigniter_runtime',
                 'install_ospos_application',
+                // These edit files on the host bind mount, so a container that
+                // dies on boot because of them can still be repaired.
+                'strip_wordpress_php_prepend',
+                'quarantine_wordpress_dropins',
+                'fix_wordpress_abspath',
+                'quarantine_suspicious_files',
                 // A container that cannot parse its settings is crash-looping
                 // by definition, so requiring it to be running first would
                 // refuse the one repair that fixes it.
@@ -158,6 +165,15 @@ class ContainerDoctorService
             'fix_wordpress_media_processing' => $this->treatFixWordPressMediaProcessing($service),
             'regenerate_wordpress_thumbnails' => $this->treatRegenerateWordPressThumbnails($service),
             'fix_wordpress_site_url' => $this->treatFixWordPressSiteUrl($service),
+            'switch_wordpress_theme_default' => $this->wordPressTreatments()->switchThemeDefault($service),
+            'deactivate_missing_wordpress_plugins' => $this->wordPressTreatments()->deactivateMissingPlugins($service),
+            'strip_wordpress_php_prepend' => $this->wordPressTreatments()->stripPhpPrepend($service),
+            'quarantine_wordpress_dropins' => $this->wordPressTreatments()->quarantineDropins($service),
+            'fix_wordpress_abspath' => $this->wordPressTreatments()->fixAbspath($service),
+            'enable_wordpress_debug_log' => $this->wordPressTreatments()->enableDebugLog($service),
+            'purge_wordpress_page_cache' => $this->wordPressTreatments()->purgePageCache($service),
+            'quarantine_suspicious_files' => $this->treatQuarantineSuspiciousFiles($service),
+            'restore_wordpress_core' => $this->treatRestoreWordPressCore($service),
             'fix_laravel_app_url' => $this->treatFixLaravelAppUrl($service),
             'refresh_domain_proxy' => $this->treatRefreshDomainProxy($service),
             'restart_application' => $this->treatRestartApplication($service),
@@ -180,7 +196,7 @@ class ContainerDoctorService
             'rebuild_frontend_bundle' => $this->treatRebuildFrontendBundle($service),
             'move_public_env_to_web' => $this->treatMovePublicEnvToWeb($service),
             'point_public_env_at_api' => $this->treatPointPublicEnvAtApi($service),
-            default => ['success' => false, 'message' => 'Unknown treatment action.'],
+            default => $this->treatPrefixedAction($service, $action),
         };
 
         if ($result['success'] || in_array($action, ['restart_application', 'link_codeigniter_system', 'heal_codeigniter_runtime', 'install_ospos_application'], true)) {
@@ -527,6 +543,13 @@ class ContainerDoctorService
                     foreach ($this->wordPressMediaFindings($media, $liveUrl) as $finding) {
                         $findings[] = $finding;
                     }
+                }
+
+                foreach ($this->wordPressRuntimeFindings($ssh, $service, $deployment, $checks) as $finding) {
+                    $findings[] = $finding;
+                }
+                foreach ($this->integrityFindings($ssh, $service, $deployment, $checks) as $finding) {
+                    $findings[] = $finding;
                 }
             }
 
@@ -3418,6 +3441,16 @@ $basedir = rtrim((string) ($upload['basedir'] ?? ''), '/');
 $images = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'attachment' AND post_mime_type LIKE 'image/%'");
 $missing = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->posts} p LEFT JOIN {$wpdb->postmeta} m ON m.post_id = p.ID AND m.meta_key = '_wp_attachment_metadata' WHERE p.post_type = 'attachment' AND p.post_mime_type LIKE 'image/%' AND (m.meta_id IS NULL OR m.meta_value = '' OR m.meta_value NOT LIKE '%sizes%')");
 $file = (string) $wpdb->get_var("SELECT m.meta_value FROM {$wpdb->postmeta} m INNER JOIN {$wpdb->posts} p ON p.ID = m.post_id WHERE m.meta_key = '_wp_attached_file' AND p.post_mime_type LIKE 'image/%' ORDER BY m.post_id DESC LIMIT 1");
+// Attachments without sizes split into two groups: originals still on disk
+// (regenerate rebuilds them) and originals that are gone (nothing can).
+$rebuildable = 0; $gone = 0; $goneExamples = array();
+$rows = $wpdb->get_results("SELECT p.ID, f.meta_value AS file FROM {$wpdb->posts} p LEFT JOIN {$wpdb->postmeta} m ON m.post_id = p.ID AND m.meta_key = '_wp_attachment_metadata' LEFT JOIN {$wpdb->postmeta} f ON f.post_id = p.ID AND f.meta_key = '_wp_attached_file' WHERE p.post_type = 'attachment' AND p.post_mime_type LIKE 'image/%' AND (m.meta_id IS NULL OR m.meta_value = '' OR m.meta_value NOT LIKE '%sizes%') ORDER BY p.ID DESC LIMIT 2000", ARRAY_A);
+foreach ((array) $rows as $row) {
+    $rel = (string) ($row['file'] ?? '');
+    if ($rel !== '' && $basedir !== '' && file_exists($basedir.'/'.$rel)) { $rebuildable++; continue; }
+    $gone++;
+    if (count($goneExamples) < 5) { $goneExamples[] = ($rel !== '' ? basename($rel) : 'attachment #'.$row['ID']); }
+}
 echo 'TALKSASA_WPMEDIA='.wp_json_encode([
     'gd' => extension_loaded('gd'),
     'imagick' => extension_loaded('imagick'),
@@ -3429,6 +3462,9 @@ echo 'TALKSASA_WPMEDIA='.wp_json_encode([
     'uploads_error' => (string) ($upload['error'] ?: ''),
     'images' => $images,
     'missing_sizes' => $missing,
+    'rebuildable' => $rebuildable,
+    'missing_originals' => $gone,
+    'missing_original_examples' => $goneExamples,
     'latest_file' => $file,
     'latest_file_exists' => ($file !== '' && $basedir !== '') ? file_exists($basedir.'/'.$file) : null,
 ]);
@@ -3469,8 +3505,12 @@ PHP;
     private function wordPressMediaFindings(array $media, ?string $liveUrl): array
     {
         $findings = [];
-        $missing = (int) ($media['missing_sizes'] ?? 0);
         $images = (int) ($media['images'] ?? 0);
+        $gone = (int) ($media['missing_originals'] ?? 0);
+        // Older probes only report missing_sizes; treat every one as rebuildable then.
+        $missing = array_key_exists('rebuildable', $media)
+            ? (int) $media['rebuildable']
+            : (int) ($media['missing_sizes'] ?? 0);
 
         if (($media['editor'] ?? true) === false) {
             $findings[] = [
@@ -3507,6 +3547,27 @@ PHP;
                 'manual_steps' => [
                     'Click Rebuild thumbnails, then reload the Media Library.',
                     'In Terminal the same fix is: wp media regenerate --yes --only-missing',
+                ],
+                'source' => 'live',
+            ];
+        }
+
+        if ($gone > 0 && ($media['latest_file_exists'] ?? null) !== false) {
+            $examples = array_values(array_filter((array) ($media['missing_original_examples'] ?? [])));
+            $findings[] = [
+                'id' => 'live_wordpress_media_originals_missing',
+                'severity' => 'warning',
+                'title' => $gone.' image'.($gone === 1 ? ' has' : 's have').' no original file on disk',
+                'summary' => 'The Media Library lists these attachments but their uploaded file is not in wp-content/uploads, '
+                    .'so thumbnails cannot be rebuilt for them. Either restore the files from the old host or delete the '
+                    .'attachments from the Media Library so the document icon goes away.',
+                'evidence' => array_values(array_filter([
+                    $gone.' of '.$images.' image attachments have no original file',
+                    $examples !== [] ? 'for example: '.implode(', ', $examples) : null,
+                ])),
+                'manual_steps' => [
+                    'Copy the missing files into wp-content/uploads from a backup of the old server, then run Rebuild thumbnails.',
+                    'Or delete the affected attachments under Media in wp-admin.',
                 ],
                 'source' => 'live',
             ];
@@ -7541,7 +7602,7 @@ PHP;
 
             return [
                 'success' => true,
-                'message' => 'Image processing repaired. '.$rebuilt,
+                'message' => 'Image processing repaired. '.$rebuilt['message'],
             ];
         } catch (\Throwable $e) {
             return ['success' => false, 'message' => 'Failed to repair image processing: '.$e->getMessage()];
@@ -7563,7 +7624,9 @@ PHP;
         $ssh = SSHService::forNode($deployment->node);
 
         try {
-            return ['success' => true, 'message' => $this->regenerateWordPressThumbnails($ssh, $deployment)];
+            $rebuilt = $this->regenerateWordPressThumbnails($ssh, $deployment);
+
+            return ['success' => $rebuilt['success'], 'message' => $rebuilt['message']];
         } catch (\Throwable $e) {
             return ['success' => false, 'message' => 'Failed to rebuild thumbnails: '.$e->getMessage()];
         } finally {
@@ -7571,7 +7634,13 @@ PHP;
         }
     }
 
-    private function regenerateWordPressThumbnails(SSHService $ssh, $deployment): string
+    /**
+     * Run wp-cli's regenerate, read what it reports, then re-probe so the
+     * answer reflects the Media Library rather than the command's exit code.
+     *
+     * @return array{success: bool, message: string, regenerated: int, skipped: int, remaining: int, missing_originals: int}
+     */
+    private function regenerateWordPressThumbnails(SSHService $ssh, $deployment): array
     {
         $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
         app(WordPressAppInstallationService::class)->ensureWpCli($ssh, $containerPath, $deployment->container_name);
@@ -7580,17 +7649,92 @@ PHP;
             'cd '.escapeshellarg($containerPath)
             .' && docker compose exec -u www-data -T '.escapeshellarg($deployment->container_name)
             .' sh -lc '.escapeshellarg(
-                'wp media regenerate --yes --only-missing --skip-delete --path=/var/www/html 2>&1 | tail -n 3'
+                'wp media regenerate --yes --only-missing --skip-delete --path=/var/www/html 2>&1 | tail -n 40'
             ),
             600,
             false
         );
 
-        $summary = trim((string) preg_replace('/\s+/', ' ', $output));
+        $parsed = $this->parseThumbnailRegenerateOutput((string) $output);
+        $after = $this->probeWordPressMedia($ssh, $deployment);
+        $remaining = $after !== null
+            ? (int) ($after['rebuildable'] ?? $after['missing_sizes'] ?? 0)
+            : -1;
+        $gone = (int) ($after['missing_originals'] ?? 0);
+        $examples = array_values(array_filter((array) ($after['missing_original_examples'] ?? [])));
 
-        return $summary !== ''
-            ? 'Thumbnails rebuilt: '.mb_substr($summary, 0, 200)
-            : 'Thumbnails rebuilt for images that were missing sizes.';
+        return $this->describeThumbnailRegenerate($parsed, $remaining, $gone, $examples);
+    }
+
+    /**
+     * @return array{regenerated: int, total: int, skipped: int, errors: list<string>, warnings: int}
+     */
+    private function parseThumbnailRegenerateOutput(string $output): array
+    {
+        $regenerated = 0;
+        $total = 0;
+        $skipped = 0;
+        $errors = [];
+        $warnings = 0;
+        foreach (explode("\n", $output) as $line) {
+            $line = trim($line);
+            if (preg_match('/Regenerated (\d+) of (\d+) images?(?: \((\d+) skipped\))?/', $line, $m) === 1) {
+                $regenerated = (int) $m[1];
+                $total = (int) $m[2];
+                $skipped = (int) ($m[3] ?? 0);
+            } elseif (preg_match('/(?:^|\s)Error: /', $line) === 1) {
+                $errors[] = mb_substr(trim((string) preg_replace('/^.*?(Error: )/', '$1', $line)), 0, 200);
+            } elseif (preg_match('/(?:^|\s)Warning: /', $line) === 1) {
+                $warnings++;
+            }
+        }
+
+        return ['regenerated' => $regenerated, 'total' => $total, 'skipped' => $skipped, 'errors' => $errors, 'warnings' => $warnings];
+    }
+
+    /**
+     * @param  array{regenerated: int, total: int, skipped: int, errors: list<string>, warnings: int}  $parsed
+     * @param  list<string>  $examples
+     * @return array{success: bool, message: string, regenerated: int, skipped: int, remaining: int, missing_originals: int}
+     */
+    private function describeThumbnailRegenerate(array $parsed, int $remaining, int $missingOriginals, array $examples): array
+    {
+        $base = ['regenerated' => $parsed['regenerated'], 'skipped' => $parsed['skipped'], 'remaining' => max(0, $remaining), 'missing_originals' => $missingOriginals];
+
+        if ($parsed['errors'] !== [] && $parsed['regenerated'] === 0) {
+            $noImages = (bool) array_filter($parsed['errors'], fn ($e) => str_contains($e, 'No images found'));
+
+            return $base + [
+                'success' => $noImages,
+                'message' => $noImages
+                    ? 'Nothing to rebuild: no image attachment is missing sizes.'
+                    : 'wp-cli could not rebuild thumbnails: '.implode(' ', $parsed['errors']),
+            ];
+        }
+
+        $parts = [];
+        if ($parsed['regenerated'] > 0) {
+            $parts[] = 'Rebuilt thumbnails for '.$parsed['regenerated'].' image'.($parsed['regenerated'] === 1 ? '' : 's').'.';
+        } elseif ($remaining === 0) {
+            $parts[] = 'Every image with an original file on disk already has its sizes.';
+        }
+        if ($missingOriginals > 0) {
+            $parts[] = $missingOriginals.' cannot be rebuilt because the original file is missing from wp-content/uploads'
+                .($examples !== [] ? ': '.implode(', ', $examples) : '')
+                .'. Restore those files from the old server or delete the attachments in the Media Library.';
+        }
+        if ($remaining > 0) {
+            $parts[] = $remaining.' image'.($remaining === 1 ? ' is' : 's are').' still missing sizes; run Rebuild thumbnails again after checking the debug log for the image editor error.';
+        }
+        if ($parts === []) {
+            $parts[] = 'Rebuild finished.';
+        }
+
+        // Success means the library is now in the state the finding asked for:
+        // no rebuildable image is left without sizes.
+        $success = $remaining === 0 || ($remaining < 0 && $parsed['regenerated'] > 0);
+
+        return $base + ['success' => $success, 'message' => implode(' ', $parts)];
     }
 
     /**
@@ -7687,6 +7831,10 @@ PHP;
 
             app(WordPressAppInstallationService::class)->ensureWpCli($ssh, $containerPath, $deployment->container_name);
 
+            // A WP_HOME / WP_SITEURL define overrides the options below, so the
+            // option update would change nothing while the constant stays.
+            $removedConstants = $this->wordPressTreatments()->removeUrlConstants($ssh, $deployment);
+
             $commands = [
                 'wp option update home '.escapeshellarg($target).' --path=/var/www/html',
                 'wp option update siteurl '.escapeshellarg($target).' --path=/var/www/html',
@@ -7710,7 +7858,9 @@ PHP;
 
             return [
                 'success' => true,
-                'message' => 'WordPress now serves URLs from '.$target.'. Reload the site and clear any page cache.',
+                'message' => 'WordPress now serves URLs from '.$target.'.'
+                    .($removedConstants !== [] ? ' Removed the hard-coded '.implode(' and ', $removedConstants).' from wp-config.php.' : '')
+                    .' Reload the site and clear any page cache.',
             ];
         } catch (\Throwable $e) {
             return ['success' => false, 'message' => 'Failed to fix site URLs: '.$e->getMessage()];
@@ -8221,6 +8371,185 @@ PHP;
             ];
         } catch (\Throwable $e) {
             return ['success' => false, 'message' => 'Recreate failed: '.$e->getMessage()];
+        } finally {
+            $ssh->disconnect();
+        }
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | WordPress runtime and file integrity
+    |--------------------------------------------------------------------------
+    */
+
+    private function wordPressTreatments(): ContainerDoctorWordPressTreatments
+    {
+        return app(ContainerDoctorWordPressTreatments::class);
+    }
+
+    /**
+     * Read the homepage body, boot WordPress once inside the container and read
+     * the recent PHP fatals, so a 200 with a white page is named for what it is.
+     *
+     * @param  array<string, mixed>  $checks
+     * @return list<array<string, mixed>>
+     */
+    private function wordPressRuntimeFindings(SSHService $ssh, Service $service, $deployment, array &$checks): array
+    {
+        $analyzer = app(ContainerDoctorWordPressAnalyzer::class);
+        $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+        $host = $deployment->probeHostHeader();
+        $loopback = $deployment->loopbackUrl();
+
+        $body = $analyzer->classifyBody('');
+        if ($loopback !== null) {
+            try {
+                $body = $analyzer->classifyBody((string) $ssh->exec($analyzer->bodyProbeCommand($loopback, $host), 30, false));
+            } catch (\Throwable) {
+                // Unreachable is a class of its own; the analyzer reports it.
+            }
+        }
+
+        $runtime = null;
+        try {
+            $runtime = $analyzer->parseRuntimeProbe((string) $ssh->exec($analyzer->runtimeProbeCommand($containerPath, $deployment->container_name), 120, false));
+        } catch (\Throwable) {
+            $runtime = null;
+        }
+
+        $fatalLines = [];
+        try {
+            $fatalLines = array_values(array_filter(array_map('trim', explode("\n", (string) $ssh->exec($analyzer->fatalLogCommand($deployment->container_name), 30, false)))));
+        } catch (\Throwable) {
+            $fatalLines = [];
+        }
+
+        $pageCacheOn = false;
+        try {
+            $pageCacheOn = app(NginxProxyService::class)->shouldAccelerateWordPress($service);
+        } catch (\Throwable) {
+            $pageCacheOn = false;
+        }
+
+        $checks = array_merge($checks, $analyzer->checks($body, $runtime));
+
+        return $analyzer->findings($body, $runtime, $fatalLines, $host, $pageCacheOn);
+    }
+
+    /**
+     * @param  array<string, mixed>  $checks
+     * @return list<array<string, mixed>>
+     */
+    private function integrityFindings(SSHService $ssh, Service $service, $deployment, array &$checks): array
+    {
+        $scanner = app(ContainerIntegrityScanner::class);
+        // The checksum pass downloads WordPress.org's manifest and reads every
+        // core file; a clean result from the last twelve hours still stands.
+        $last = is_array($service->service_meta['integrity_scan'] ?? null) ? $service->service_meta['integrity_scan'] : [];
+        $lastAt = is_string($last['scanned_at'] ?? null) ? Carbon::parse($last['scanned_at']) : null;
+        $recentClean = $lastAt !== null
+            && $lastAt->greaterThan(now()->subHours(12))
+            && ($last['core_checked'] ?? false) === true
+            && ($last['core_modified'] ?? []) === [];
+        try {
+            $result = $scanner->scan($ssh, $deployment, true, withChecksums: ! $recentClean);
+            if ($recentClean) {
+                $result['core'] = ['modified' => [], 'extra' => [], 'ran' => true];
+            }
+        } catch (\Throwable $e) {
+            $checks['integrity_scanned'] = false;
+
+            return [];
+        }
+
+        $checks['integrity_scanned'] = true;
+        $checks['integrity_core_checked'] = (bool) ($result['core']['ran'] ?? false);
+        $checks['integrity_suspicious'] = count(array_filter(
+            $result['hits'],
+            fn ($h) => array_intersect($h['reasons'], ContainerIntegrityScanner::QUARANTINE_REASONS) !== []
+        ));
+        $scanner->persist($service, $result);
+
+        return $scanner->findings($result, true);
+    }
+
+    /**
+     * @return array{success: bool, message: string}
+     */
+    private function treatPrefixedAction(Service $service, string $action): array
+    {
+        $prefix = 'disable_wordpress_plugin:';
+        if (str_starts_with($action, $prefix)) {
+            return $this->wordPressTreatments()->disablePlugin($service, substr($action, strlen($prefix)));
+        }
+
+        return ['success' => false, 'message' => 'Unknown treatment action.'];
+    }
+
+    /**
+     * @return array{success: bool, message: string}
+     */
+    private function treatQuarantineSuspiciousFiles(Service $service): array
+    {
+        $deployment = $service->containerDeployment;
+        if (! $deployment?->node) {
+            return ['success' => false, 'message' => 'Application is not deployed.'];
+        }
+
+        $ssh = SSHService::forNode($deployment->node);
+        $scanner = app(ContainerIntegrityScanner::class);
+
+        try {
+            // Scan again right now so the move is based on what is on disk, not on a stale finding.
+            $result = $scanner->scan($ssh, $deployment, $this->isWordPressStack($service), withChecksums: false);
+            $moved = $scanner->quarantine($ssh, $deployment, $result['hits']);
+            $scanner->persist($service, $result, $moved['moved']);
+
+            if ($moved['moved'] === []) {
+                return ['success' => true, 'message' => 'Nothing left to quarantine; the scan found no suspicious files.'];
+            }
+
+            return [
+                'success' => true,
+                'message' => 'Moved '.count($moved['moved']).' file(s) to '.$moved['quarantine_dir'].' with their paths preserved and a manifest. '
+                    .'Change every WordPress admin password and rotate the database password from the Database tab; a webshell usually means both were read.',
+            ];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'message' => 'Quarantine failed: '.$e->getMessage()];
+        } finally {
+            $ssh->disconnect();
+        }
+    }
+
+    /**
+     * @return array{success: bool, message: string}
+     */
+    private function treatRestoreWordPressCore(Service $service): array
+    {
+        $deployment = $service->containerDeployment;
+        if (! $deployment?->node) {
+            return ['success' => false, 'message' => 'Application is not deployed.'];
+        }
+
+        $ssh = SSHService::forNode($deployment->node);
+        $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+        $scanner = app(ContainerIntegrityScanner::class);
+
+        try {
+            app(WordPressAppInstallationService::class)->ensureWpCli($ssh, $containerPath, $deployment->container_name);
+            $result = $ssh->execWithStatus($scanner->restoreCoreCommand($containerPath, $deployment->container_name), 600);
+            if (! str_contains($result['output'], 'Success')) {
+                return ['success' => false, 'message' => 'wp core download did not finish: '.mb_substr(trim($result['output']), 0, 300)];
+            }
+
+            $verify = $scanner->parseChecksums($ssh->execWithStatus($scanner->checksumCommand($containerPath, $deployment->container_name), 180)['output']);
+            if ($verify['ran'] && $verify['modified'] !== []) {
+                return ['success' => false, 'message' => 'Core was re-downloaded but '.count($verify['modified']).' file(s) still differ: '.implode(', ', array_slice($verify['modified'], 0, 5))];
+            }
+
+            return ['success' => true, 'message' => 'WordPress core files were re-downloaded for the installed version. wp-content, uploads and wp-config.php were not touched.'];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'message' => 'Restoring core failed: '.$e->getMessage()];
         } finally {
             $ssh->disconnect();
         }

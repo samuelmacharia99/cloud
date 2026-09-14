@@ -1694,7 +1694,7 @@ class ContainerController extends Controller
         }
 
         $validated = $request->validate([
-            'action' => ['required', 'string', 'max:64'],
+            'action' => ['required', 'string', 'max:96', 'regex:/^[a-z0-9_]+(:[A-Za-z0-9._-]+)?$/'],
         ]);
 
         try {

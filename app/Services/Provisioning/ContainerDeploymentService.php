@@ -2564,6 +2564,7 @@ class ContainerDeploymentService
             foreach ([
                 $this->wordpressHardening->uploadsIniVolumeMount($containerName),
                 $this->wordpressHardening->apacheWorkersVolumeMount($containerName),
+                $this->wordpressHardening->toolsVolumeMount(),
             ] as $mount) {
                 if (! in_array($mount, $compose['services'][$containerName]['volumes'], true)) {
                     $compose['services'][$containerName]['volumes'][] = $mount;

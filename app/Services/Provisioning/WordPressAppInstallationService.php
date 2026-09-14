@@ -229,6 +229,20 @@ class WordPressAppInstallationService
             return;
         }
 
+        // The node keeps one phar under the mounted tools directory, so a
+        // recreated container only needs a symlink, not a download.
+        $hardening = app(WordPressContainerHardeningService::class);
+        $hardening->ensureWpCliPharOnNode($ssh);
+        $mountedPhar = WordPressContainerHardeningService::TOOLS_CONTAINER_PATH.'/wp-cli.phar';
+        $link = trim($ssh->exec(
+            "cd {$pathArg} && docker compose exec -u 0 -T {$appArg} sh -lc "
+            .escapeshellarg('if [ -s '.$mountedPhar.' ]; then ln -sf '.$mountedPhar.' /usr/local/bin/wp && wp --allow-root --info >/dev/null 2>&1 && echo linked; fi; true'),
+            45
+        ));
+        if (str_contains($link, 'linked')) {
+            return;
+        }
+
         $install = 'set -e; '
             .'if command -v curl >/dev/null 2>&1; then curl -fsSL -o /usr/local/bin/wp https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar; '
             .'elif command -v wget >/dev/null 2>&1; then wget -qO /usr/local/bin/wp https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar; '

@@ -68,7 +68,7 @@
             </div>
         </template>
 
-        <template x-if="hasResult && liveChecks && (liveChecks.http_status || liveChecks.db_ok !== null || liveChecks.restarting || liveChecks.container_image || liveChecks.php_production_runtime !== null || liveChecks.publishes_port === false || liveChecks.disk_percent != null || liveChecks.session_driver || liveChecks.http_5xx_count)">
+        <template x-if="hasResult && liveChecks && (liveChecks.http_status || liveChecks.db_ok !== null || liveChecks.restarting || liveChecks.container_image || liveChecks.php_production_runtime !== null || liveChecks.publishes_port === false || liveChecks.disk_percent != null || liveChecks.session_driver || liveChecks.http_5xx_count || liveChecks.wordpress_body || liveChecks.integrity_scanned)">
             <div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 px-4 py-3 text-xs text-slate-600 dark:text-slate-300 flex flex-wrap gap-x-4 gap-y-1">
                 <span>Live checks:</span>
                 <span x-show="liveChecks.http_status" x-text="'HTTP ' + liveChecks.http_status"></span>
@@ -89,6 +89,14 @@
                       x-text="liveChecks.wordpress_image_editor ? 'Images: processing ok' : 'Images: no editor'"></span>
                 <span x-show="liveChecks.wordpress_missing_thumbnails"
                       x-text="'Thumbnails missing: ' + liveChecks.wordpress_missing_thumbnails"></span>
+                <span x-show="liveChecks.wordpress_body"
+                      :class="liveChecks.wordpress_body === 'ok' ? '' : 'text-red-700 dark:text-red-300 font-semibold'"
+                      x-text="'Body: ' + ({ok: 'renders', blank: 'blank page', fatal_in_body: 'PHP fatal shown', db_error: 'database error page', install_redirect: 'install screen', maintenance: 'maintenance mode', redirect_loop: 'redirect loop', unreachable: 'unreachable'}[liveChecks.wordpress_body] || liveChecks.wordpress_body) + (liveChecks.wordpress_body_size ? ' · ' + Math.round(liveChecks.wordpress_body_size / 1024) + ' KB' : '')"></span>
+                <span x-show="liveChecks.wordpress_fatal" class="text-red-700 dark:text-red-300 font-semibold" x-text="'PHP: ' + liveChecks.wordpress_fatal"></span>
+                <span x-show="liveChecks.wordpress_loaded === true && !liveChecks.wordpress_fatal">PHP: WordPress boots</span>
+                <span x-show="liveChecks.integrity_scanned === true"
+                      :class="liveChecks.integrity_suspicious ? 'text-red-700 dark:text-red-300 font-semibold' : ''"
+                      x-text="liveChecks.integrity_suspicious ? 'Files: ' + liveChecks.integrity_suspicious + ' suspicious' : 'Files: clean' + (liveChecks.integrity_core_checked ? ' · core verified' : '')"></span>
                 <span x-show="liveChecks.session_driver" x-text="'Session: ' + liveChecks.session_driver"></span>
                 <span x-show="liveChecks.cache_store" x-text="'Cache: ' + liveChecks.cache_store"></span>
                 <span x-show="liveChecks.http_5xx_count" x-text="'Access 5xx: ' + liveChecks.http_5xx_count + ' / 2xx: ' + (liveChecks.http_2xx_count || 0)"></span>

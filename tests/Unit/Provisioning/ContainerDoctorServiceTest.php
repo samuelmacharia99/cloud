@@ -2293,4 +2293,85 @@ LOG;
 
         $this->assertSame('run_migrations', $treat['treat_action']);
     }
+
+    #[Test]
+    public function attachments_whose_original_is_gone_are_not_counted_as_rebuildable(): void
+    {
+        $findings = $this->callPrivate('wordPressMediaFindings', [
+            [
+                'gd' => true,
+                'imagick' => false,
+                'editor' => true,
+                'home' => 'https://shop.example.test',
+                'siteurl' => 'https://shop.example.test',
+                'basedir' => '/var/www/html/wp-content/uploads',
+                'images' => 32,
+                'missing_sizes' => 4,
+                'rebuildable' => 0,
+                'missing_originals' => 4,
+                'missing_original_examples' => ['a.jpg', 'b.png'],
+                'latest_file' => '2026/08/hero.jpg',
+                'latest_file_exists' => true,
+            ],
+            'https://shop.example.test',
+        ]);
+
+        $this->assertNull(collect($findings)->firstWhere('id', 'live_wordpress_missing_thumbnails'), 'nothing can be rebuilt when every original is missing');
+        $gone = collect($findings)->firstWhere('id', 'live_wordpress_media_originals_missing');
+        $this->assertNotNull($gone);
+        $this->assertSame('warning', $gone['severity']);
+        $this->assertStringContainsString('a.jpg, b.png', $gone['evidence'][1]);
+        $this->assertArrayNotHasKey('treat_action', $gone);
+    }
+
+    #[Test]
+    public function thumbnail_rebuild_output_is_parsed_and_the_verdict_comes_from_the_re_probe(): void
+    {
+        $parsed = $this->callPrivate('parseThumbnailRegenerateOutput', [implode("\n", [
+            'Found 4 images to regenerate.',
+            '1/4 Warning: Can\'t find "a.jpg" (ID 12).',
+            '2/4 Regenerated thumbnails for "hero" (ID 40).',
+            'Success: Regenerated 1 of 4 images (3 skipped).',
+        ])]);
+        $this->assertSame(['regenerated' => 1, 'total' => 4, 'skipped' => 3, 'errors' => [], 'warnings' => 1], $parsed);
+
+        $stillBroken = $this->callPrivate('describeThumbnailRegenerate', [$parsed, 0, 3, ['a.jpg', 'b.png', 'c.gif']]);
+        $this->assertTrue($stillBroken['success']);
+        $this->assertStringContainsString('Rebuilt thumbnails for 1 image.', $stillBroken['message']);
+        $this->assertStringContainsString('3 cannot be rebuilt because the original file is missing from wp-content/uploads: a.jpg, b.png, c.gif', $stillBroken['message']);
+
+        $nothingChanged = $this->callPrivate('describeThumbnailRegenerate', [
+            ['regenerated' => 0, 'total' => 4, 'skipped' => 4, 'errors' => [], 'warnings' => 4],
+            4,
+            0,
+            [],
+        ]);
+        $this->assertFalse($nothingChanged['success'], 'a rebuild that left every image without sizes is not a success');
+        $this->assertStringContainsString('4 images are still missing sizes', $nothingChanged['message']);
+
+        $noImages = $this->callPrivate('describeThumbnailRegenerate', [
+            ['regenerated' => 0, 'total' => 0, 'skipped' => 0, 'errors' => ['Error: No images found.'], 'warnings' => 0],
+            0,
+            0,
+            [],
+        ]);
+        $this->assertTrue($noImages['success']);
+
+        $cliBroken = $this->callPrivate('describeThumbnailRegenerate', [
+            ['regenerated' => 0, 'total' => 0, 'skipped' => 0, 'errors' => ['Error: This does not seem to be a WordPress installation.'], 'warnings' => 0],
+            -1,
+            0,
+            [],
+        ]);
+        $this->assertFalse($cliBroken['success']);
+        $this->assertStringContainsString('wp-cli could not rebuild thumbnails', $cliBroken['message']);
+    }
+
+    #[Test]
+    public function unknown_and_prefixed_treatments_resolve_through_the_doctor(): void
+    {
+        $service = new Service;
+        $this->assertSame(['success' => false, 'message' => 'Unknown treatment action.'], $this->callPrivate('treatPrefixedAction', [$service, 'nope']));
+        $this->assertSame(['success' => false, 'message' => 'That plugin name is not valid.'], $this->callPrivate('treatPrefixedAction', [$service, 'disable_wordpress_plugin:../etc']));
+    }
 }

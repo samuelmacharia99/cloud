@@ -270,6 +270,13 @@ class CronJobSeeder extends Seeder
                 'enabled' => true,
             ],
             [
+                'name' => 'Scan Container Integrity',
+                'description' => 'Nightly scan of WordPress and PHP containers for webshells, foreign files and modified core files.',
+                'command' => 'cron:scan-container-integrity',
+                'schedule' => '20 3 * * *',
+                'enabled' => true,
+            ],
+            [
                 'name' => 'Issue Pending SSL Certificates',
                 'description' => 'Issues the first certificate for bound container hostnames whose DNS now points at their node.',
                 'command' => 'cron:issue-pending-ssl',

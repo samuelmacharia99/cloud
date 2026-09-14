@@ -205,6 +205,24 @@ return [
         'pending_ssl_retry_minutes' => (int) env('CONTAINER_PENDING_SSL_RETRY_MINUTES', 60),
     ],
 
+    'wp_cli' => [
+        // One phar per node, bind-mounted read-only into every WordPress stack.
+        'tools_path' => env('CONTAINER_TOOLS_PATH', '/opt/talksasa/tools'),
+        'phar_url' => env('WP_CLI_PHAR_URL', 'https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar'),
+    ],
+
+    'integrity' => [
+        // Files larger than this are not grepped for webshell signatures.
+        'max_file_kb' => (int) env('CONTAINER_INTEGRITY_MAX_FILE_KB', 2048),
+        'max_hits_per_rule' => (int) env('CONTAINER_INTEGRITY_MAX_HITS', 200),
+        // Quarantine lives beside the app mount, never inside it.
+        'quarantine_dir' => env('CONTAINER_INTEGRITY_QUARANTINE_DIR', '.quarantine'),
+        // Must-use plugins the platform itself writes.
+        'mu_plugin_allowlist' => ['talksasa-admin-sso.php'],
+        // Telegram alert when the nightly pass finds files it has not reported before.
+        'alert' => (bool) env('CONTAINER_INTEGRITY_ALERT', true),
+    ],
+
     'file_manager' => [
         // Largest declared uncompressed size an archive may extract to.
         'max_extract_mb' => (int) env('CONTAINER_FILE_MAX_EXTRACT_MB', 2048),
