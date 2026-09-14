@@ -563,11 +563,9 @@ class DirectAdminToContainerMigrationService
         }
 
         // PHP at the docroot: composer or a plain index.php. Nested Node projects are reported, not adopted.
-        if ($at('CMP', $docroot)) {
+        // A site that serves index.php needs a PHP runtime and a MySQL sidecar, never an nginx-only container.
+        if ($at('CMP', $docroot) || $at('PHP', $docroot)) {
             return $result('php', $docroot, false, $nested);
-        }
-        if ($at('PHP', $docroot)) {
-            return $result('static_or_php', $docroot, false, $nested);
         }
 
         // Nothing served at the docroot: an app beside public_html (composer above, Node above) is the site.
@@ -600,7 +598,11 @@ class DirectAdminToContainerMigrationService
             return $result('php', $cmp[0], false, $nested);
         }
 
-        if ($at('IDX', $docroot) || $at('DIR', $docroot)) {
+        // Only HTML at the docroot: a static site. A bare directory keeps the older, ambiguous label.
+        if ($at('IDX', $docroot)) {
+            return $result('static', $docroot, false, $nested);
+        }
+        if ($at('DIR', $docroot)) {
             return $result('static_or_php', $docroot, false, $nested);
         }
 
@@ -649,7 +651,7 @@ class DirectAdminToContainerMigrationService
             return null;
         }
 
-        foreach (['wordpress', 'laravel', 'nodejs', 'php', 'static_or_php'] as $stack) {
+        foreach (['wordpress', 'laravel', 'nodejs', 'php', 'static', 'static_or_php'] as $stack) {
             if (! empty($addonStacks[$stack])) {
                 return [
                     'stack' => $stack,
@@ -1164,6 +1166,7 @@ class DirectAdminToContainerMigrationService
         $needsDatabase = $this->stackMayExportDatabase($stack);
         $dbName = null;
         $localDumpPath = null;
+        $localDumps = [];
         $daUsername = $this->directAdminUsername($source);
         $exportPathExists = true;
 
@@ -1189,8 +1192,20 @@ class DirectAdminToContainerMigrationService
                 };
 
                 $dbName = $databaseName ?: ($dbCreds['DB_NAME'] ?? null);
-                if ($dbName === null && $stack !== 'nodejs') {
-                    $dbName = $inventory['databases'][0]['name'] ?? null;
+                $daDatabaseNames = array_values(array_filter(array_map(fn ($d) => (string) ($d['name'] ?? ''), (array) ($inventory['databases'] ?? []))));
+                if ($dbName === null && $stack !== 'nodejs' && count($daDatabaseNames) === 1) {
+                    $dbName = $daDatabaseNames[0];
+                }
+                if (! empty($dbCreds['source_file']) && $dbName !== null) {
+                    $progress('Database '.$dbName.' named in '.basename((string) $dbCreds['source_file']).(blank($dbCreds['DB_USER'] ?? null) ? ' (user from DirectAdmin)' : ' as user '.$dbCreds['DB_USER']), 0.08);
+                } elseif ($dbName !== null && $databaseName) {
+                    $progress('Database '.$dbName.' chosen on the convert page', 0.08);
+                } elseif ($dbName !== null) {
+                    $progress('No database named in the code; DirectAdmin lists one ('.$dbName.'), using it', 0.08);
+                } elseif ($daDatabaseNames !== [] && in_array($stack, ['php', 'static_or_php'], true)) {
+                    $progress('No database named in the code and DirectAdmin lists '.count($daDatabaseNames).': dumping all of them ('.implode(', ', $daDatabaseNames).')', 0.08);
+                } elseif ($stack !== 'nodejs') {
+                    $progress('No database for this site: the code names none and DirectAdmin lists none', 0.08);
                 }
 
                 if ($dbName !== null && $dbName !== '') {
@@ -1217,8 +1232,47 @@ class DirectAdminToContainerMigrationService
                         $progress('Downloading database dump', 0.25);
                         $daSsh->downloadToLocal($dumpFile, $localDump);
                         $localDumpPath = $localDump;
+                        $localDumps[] = [
+                            'path' => $localDump,
+                            'db_name' => (string) $dbName,
+                            'user' => (string) ($dbCreds['DB_USER'] ?? ''),
+                            'password' => (string) ($dbCreds['DB_PASSWORD'] ?? ''),
+                            'source_file' => $dbCreds['source_file'] ?? null,
+                        ];
                     } finally {
                         @$daSsh->exec('rm -f '.escapeshellarg($defaultsFile));
+                    }
+                } elseif ($shouldDump && $dbName && in_array($stack, ['php', 'static_or_php'], true)) {
+                    $progress('DirectAdmin has no MySQL credentials on file for '.$dbName.'; the database stays on DirectAdmin until they are fixed', 0.15);
+                } elseif ($dbName === null && $daDatabaseNames !== [] && in_array($stack, ['php', 'static_or_php'], true) && ! $databaseName) {
+                    // Several databases and no pointer from the code: take them all, each with its own DirectAdmin credentials.
+                    foreach ($daDatabaseNames as $index => $candidate) {
+                        $candidateCreds = $this->enrichDatabaseCredentialsFromDirectAdmin($daSsh, $daUsername, $candidate, ['DB_NAME' => $candidate, 'DB_USER' => null, 'DB_PASSWORD' => null, 'DB_HOST' => 'localhost']);
+                        if (blank($candidateCreds['DB_USER'] ?? null)) {
+                            $progress('Skipping '.$candidate.': DirectAdmin has no credentials on file for it', 0.15);
+
+                            continue;
+                        }
+                        $candidateRemote = $remoteWork.'/db-'.preg_replace('/[^A-Za-z0-9_]/', '', $candidate).'.sql';
+                        $candidateLocal = storage_path('app/migrations/'.$workId.'-db-'.preg_replace('/[^A-Za-z0-9_]/', '', $candidate).'.sql');
+                        $defaultsFile = $remoteWork.'/mysqldump-'.$index.'.cnf';
+                        $this->writeRemoteMysqlDefaultsFile($daSsh, $defaultsFile, $candidateCreds);
+                        try {
+                            $progress('Dumping MySQL database '.$candidate, 0.15);
+                            $daSsh->exec($this->buildMysqlDumpCommand($candidateCreds, $candidate, $candidateRemote, $defaultsFile), 600);
+                            $daSsh->downloadToLocal($candidateRemote, $candidateLocal);
+                            $localDumps[] = [
+                                'path' => $candidateLocal,
+                                'db_name' => $candidate,
+                                'user' => (string) $candidateCreds['DB_USER'],
+                                'password' => (string) ($candidateCreds['DB_PASSWORD'] ?? ''),
+                                'source_file' => null,
+                            ];
+                            $localDumpPath ??= $candidateLocal;
+                            $dbName ??= $candidate;
+                        } finally {
+                            @$daSsh->exec('rm -f '.escapeshellarg($defaultsFile));
+                        }
                     }
                 } elseif ($stack === 'laravel' && $shouldDump) {
                     throw new \RuntimeException(
@@ -1256,6 +1310,7 @@ class DirectAdminToContainerMigrationService
 
         return [
             'local_dump' => $localDumpPath,
+            'local_dumps' => $localDumps,
             'local_tar' => $localTar,
             'remote_work' => $remoteWork,
             'db_name' => $dbName,
@@ -1277,6 +1332,7 @@ class DirectAdminToContainerMigrationService
         string $stack,
         ?Node $cleanupDaNode = null,
         ?callable $onProgress = null,
+        array $localDumps = [],
     ): void {
         if ($stack === 'wordpress') {
             if (! is_string($localDump) || $localDump === '') {
@@ -1355,7 +1411,8 @@ class DirectAdminToContainerMigrationService
                 }
             }
 
-            if (is_string($localDump) && is_file($localDump) && $this->stackImportsDatabaseDump($stack)) {
+            $importable = array_values(array_filter($localDumps, fn ($d) => is_string($d['path'] ?? null) && is_file($d['path'])));
+            if (($importable !== [] || (is_string($localDump) && is_file($localDump))) && $this->stackImportsDatabaseDump($stack)) {
                 $db = $this->resolveGenericImportCredentials($target, $targetSsh, $containerPath);
                 $dbService = $db['service'];
 
@@ -1402,31 +1459,45 @@ class DirectAdminToContainerMigrationService
                 }
 
                 $safeUser = preg_replace('/[^a-zA-Z0-9_]/', '', $importUser) ?: 'root';
-                $safeDatabase = preg_replace('/[^a-zA-Z0-9_]/', '', $db['database']) ?: 'appdb';
+                $targets = $this->importTargets($localDump, $importable, [
+                    'database' => preg_replace('/[^a-zA-Z0-9_]/', '', $db['database']) ?: 'appdb',
+                    'user' => $db['user'] !== '' ? $db['user'] : 'appuser',
+                    'password' => $db['password'] !== '' ? $db['password'] : $importPass,
+                ]);
 
-                $createDbSql = 'CREATE DATABASE IF NOT EXISTS `'.$safeDatabase.'`;';
-                $this->execMysqlInCompose(
-                    $targetSsh,
-                    $containerPath,
-                    $dbService,
-                    $safeUser,
-                    $importPass,
-                    $createDbSql,
-                    null,
-                    60
-                );
+                $primary = $targets[0];
+                foreach ($targets as $index => $targetDb) {
+                    $safeDatabase = $targetDb['database'];
+                    $remoteDump = $index === 0 ? $dumpFile : rtrim($remoteWork, '/').'/db-'.$index.'.sql';
+                    if ($index > 0) {
+                        $this->uploadPreparedMysqlDump($targetSsh, $targetDb['path'], $remoteDump, $progress);
+                    }
 
-                $progress('Importing MySQL dump');
-                $this->importMysqlDumpViaCompose(
-                    $targetSsh,
-                    $containerPath,
-                    $dbService,
-                    $dumpFile,
-                    $safeUser,
-                    $importPass,
-                    $safeDatabase,
-                );
+                    $this->execMysqlInCompose($targetSsh, $containerPath, $dbService, $safeUser, $importPass, 'CREATE DATABASE IF NOT EXISTS `'.$safeDatabase.'`;', null, 60);
 
+                    $progress('Importing MySQL dump into '.$safeDatabase);
+                    $this->importMysqlDumpViaCompose($targetSsh, $containerPath, $dbService, $remoteDump, $safeUser, $importPass, $safeDatabase);
+
+                    // The DirectAdmin user and password live on in the sidecar, so
+                    // config the rewriter cannot reach still connects after the host change.
+                    if ($safeUser === 'root' && $targetDb['user'] !== '' && strcasecmp($targetDb['user'], 'root') !== 0) {
+                        $this->execMysqlInCompose(
+                            $targetSsh,
+                            $containerPath,
+                            $dbService,
+                            $safeUser,
+                            $importPass,
+                            $this->grantDatabaseUserSql($targetDb['user'], $targetDb['password'], $safeDatabase),
+                            null,
+                            60
+                        );
+                        $progress('Database user '.$targetDb['user'].' recreated in the container with its DirectAdmin password');
+                    }
+                }
+
+                $safeDatabase = $primary['database'];
+                $db['user'] = $primary['user'];
+                $db['password'] = $primary['password'];
                 $progress('Granting the app MySQL user from Docker overlay IPs');
                 $this->grantImportedMysqlUser($targetSsh, $containerPath, $dbService, $db, $safeDatabase, $importPass);
 
@@ -1443,6 +1514,21 @@ class DirectAdminToContainerMigrationService
                         'DB_PASSWORD' => $db['password'] !== '' ? $db['password'] : $importPass,
                     ]
                 );
+                if (in_array($stack, ['php', 'static_or_php'], true)) {
+                    try {
+                        $changed = app(PhpSidecarDatabaseRewriter::class)->applyOnHost($targetSsh, $hostAppPath, [
+                            'host' => $dbService,
+                            'database' => $safeDatabase,
+                            'username' => $db['user'] !== '' ? $db['user'] : 'appuser',
+                            'password' => $db['password'] !== '' ? $db['password'] : $importPass,
+                        ]);
+                        $progress($changed > 0
+                            ? 'Pointed '.$changed.' config file(s) at the MySQL sidecar ('.$dbService.') for database '.$safeDatabase
+                            : 'No config file needed a host change; the DirectAdmin database name and user work as-is on the sidecar');
+                    } catch (\Throwable $e) {
+                        $progress('Config rewrite skipped: '.$e->getMessage());
+                    }
+                }
             } else {
                 $progress('No database dump imported (static/files-only or missing dump)');
             }
@@ -1831,6 +1917,38 @@ class DirectAdminToContainerMigrationService
     public function stackImportsDatabaseDump(string $stack): bool
     {
         return in_array($stack, ['laravel', 'php', 'nodejs', 'static_or_php'], true);
+    }
+
+    /**
+     * One import target per dump: the DirectAdmin database name and user are
+     * recreated in the sidecar so code that was not rewritten keeps working.
+     *
+     * @param  list<array{path: string, db_name: string, user: string, password: string}>  $localDumps
+     * @param  array{database: string, user: string, password: string}  $sidecar
+     * @return list<array{path: string, database: string, user: string, password: string}>
+     */
+    public function importTargets(?string $localDump, array $localDumps, array $sidecar): array
+    {
+        $targets = [];
+        foreach ($localDumps as $dump) {
+            $path = (string) ($dump['path'] ?? '');
+            if ($path === '') {
+                continue;
+            }
+            $database = preg_replace('/[^a-zA-Z0-9_]/', '', (string) ($dump['db_name'] ?? '')) ?: $sidecar['database'];
+            $user = preg_replace('/[^a-zA-Z0-9_.-]/', '', (string) ($dump['user'] ?? '')) ?: $sidecar['user'];
+            $targets[] = [
+                'path' => $path,
+                'database' => $database,
+                'user' => $user,
+                'password' => (string) (($dump['password'] ?? '') !== '' ? $dump['password'] : $sidecar['password']),
+            ];
+        }
+        if ($targets === [] && is_string($localDump) && $localDump !== '') {
+            $targets[] = ['path' => $localDump, 'database' => $sidecar['database'], 'user' => $sidecar['user'], 'password' => $sidecar['password']];
+        }
+
+        return $targets;
     }
 
     /**
@@ -2904,15 +3022,35 @@ class DirectAdminToContainerMigrationService
     {
         $laravelStyle = $this->parseEnvDatabaseCredentials($ssh, $docroot);
         if (! blank($laravelStyle['DB_USER'] ?? null)) {
-            return $laravelStyle;
+            return $laravelStyle + ['source_file' => '.env'];
         }
 
-        // Best-effort: first DA database name only — credentials still required for dump.
+        // Plain PHP: read the config files the code actually connects with.
+        $discovery = app(PhpDatabaseConfigDiscovery::class);
+        $daNames = array_values(array_filter(array_map(fn ($d) => (string) ($d['name'] ?? ''), (array) ($inventory['databases'] ?? []))));
+        try {
+            $found = $discovery->parse((string) $this->execSoft($ssh, $discovery->command($docroot), 60), $docroot);
+        } catch (\Throwable) {
+            $found = [];
+        }
+        $hit = $discovery->choose($found, $daNames);
+        if ($hit !== null && $hit['DB_NAME'] !== null) {
+            return [
+                'DB_NAME' => $hit['DB_NAME'],
+                'DB_USER' => $hit['DB_USER'],
+                'DB_PASSWORD' => $hit['DB_PASSWORD'],
+                'DB_HOST' => $hit['DB_HOST'] ?? 'localhost',
+                'source_file' => $hit['file'],
+            ];
+        }
+
+        // Nothing in the code names a database; the DirectAdmin list decides.
         return [
-            'DB_NAME' => $inventory['databases'][0]['name'] ?? null,
+            'DB_NAME' => count($daNames) === 1 ? $daNames[0] : null,
             'DB_USER' => null,
             'DB_PASSWORD' => null,
             'DB_HOST' => 'localhost',
+            'source_file' => null,
         ];
     }
 
@@ -3032,6 +3170,15 @@ class DirectAdminToContainerMigrationService
             'MYSQL_USER' => $user,
             'MYSQL_PASSWORD' => $password,
         ]);
+    }
+
+    public function grantDatabaseUserSql(string $user, string $password, string $database): string
+    {
+        $u = str_replace(['\\', "'"], ['\\\\', "\\'"], $user);
+        $p = str_replace(['\\', "'"], ['\\\\', "\\'"], $password);
+        $d = preg_replace('/[^a-zA-Z0-9_]/', '', $database) ?: 'appdb';
+
+        return "CREATE USER IF NOT EXISTS '{$u}'@'%' IDENTIFIED BY '{$p}'; ALTER USER '{$u}'@'%' IDENTIFIED BY '{$p}'; GRANT ALL PRIVILEGES ON `{$d}`.* TO '{$u}'@'%'; FLUSH PRIVILEGES;";
     }
 
     /**

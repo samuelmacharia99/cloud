@@ -216,8 +216,11 @@ class DirectAdminToContainerConvertService
             $warnings[] = 'Node.js convert exports MySQL when .env lists DB credentials, you pick a source database below, or DATABASE_URL is set. Without that, only files are migrated.';
         }
 
-        if ($stack === 'static_or_php' && $dbCount > 0) {
-            $warnings[] = 'Static/PHP sites export MySQL only when wp-config, .env, or similar config on the DA host resolves database credentials.';
+        if (in_array($stack, ['php', 'static_or_php'], true) && $dbCount > 0) {
+            $warnings[] = 'PHP sites export the database named in their config files (define DB_*, $dbhost-style variables, mysqli_connect, PDO or CodeIgniter). When the code names none, the single DirectAdmin database is used, or every DirectAdmin database when there are several; the console reports which.';
+        }
+        if ($stack === 'static' && $dbCount > 0) {
+            $warnings[] = 'This docroot serves only HTML, so no database is exported. Pick a source database below if the site is really PHP.';
         }
 
         return $warnings;
@@ -269,6 +272,7 @@ class DirectAdminToContainerConvertService
             'laravel' => 'Laravel',
             'nodejs' => 'Node.js',
             'php' => 'PHP',
+            'static' => 'static HTML',
             'static_or_php' => 'static or PHP',
             default => str_replace('_', ' ', $stack) ?: 'unknown',
         };
@@ -364,6 +368,7 @@ class DirectAdminToContainerConvertService
             'laravel' => ['laravel'],
             'nodejs' => ['nodejs', 'node.js', 'node-js'],
             'php' => ['php'],
+            'static' => ['static-site', 'static'],
             'static_or_php' => ['static-site', 'static', 'php'],
             default => [],
         };
@@ -788,6 +793,7 @@ class DirectAdminToContainerConvertService
                 (string) ($export['stack'] ?? $stack),
                 $daNode,
                 $this->importProgressFor($service),
+                (array) ($export['local_dumps'] ?? []),
             );
 
             if ($primaryHostname !== '') {
@@ -945,6 +951,12 @@ class DirectAdminToContainerConvertService
             if (is_array($export)) {
                 foreach (['local_dump', 'local_tar'] as $key) {
                     $path = $export[$key] ?? null;
+                    if (is_string($path) && is_file($path)) {
+                        @unlink($path);
+                    }
+                }
+                foreach ((array) ($export['local_dumps'] ?? []) as $dump) {
+                    $path = $dump['path'] ?? null;
                     if (is_string($path) && is_file($path)) {
                         @unlink($path);
                     }
@@ -1214,6 +1226,7 @@ class DirectAdminToContainerConvertService
             'laravel' => ['laravel'],
             'nodejs' => ['nodejs'],
             'php' => ['php'],
+            'static' => ['static-site'],
             'static_or_php' => ['static-site', 'php'],
             'unknown' => array_values(array_unique(array_filter([
                 $product->containerTemplate?->slug,
@@ -1520,6 +1533,7 @@ class DirectAdminToContainerConvertService
                 (string) ($export['stack'] ?? $stack),
                 $daNode,
                 $this->importProgressFor($sibling),
+                (array) ($export['local_dumps'] ?? []),
             );
 
             $hostname = (string) ($inventory['domain'] ?? '');
@@ -1541,6 +1555,12 @@ class DirectAdminToContainerConvertService
             if (is_array($export)) {
                 foreach (['local_dump', 'local_tar'] as $key) {
                     $path = $export[$key] ?? null;
+                    if (is_string($path) && is_file($path)) {
+                        @unlink($path);
+                    }
+                }
+                foreach ((array) ($export['local_dumps'] ?? []) as $dump) {
+                    $path = $dump['path'] ?? null;
                     if (is_string($path) && is_file($path)) {
                         @unlink($path);
                     }
@@ -1610,6 +1630,7 @@ class DirectAdminToContainerConvertService
     {
         return match ($stack) {
             'wordpress', 'laravel', 'php', 'nodejs', 'static_or_php' => ' and database (when credentials resolve)',
+            'static' => '',
             default => '',
         };
     }

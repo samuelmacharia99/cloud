@@ -365,9 +365,24 @@ class DirectAdminToContainerConvertServiceTest extends TestCase
             $docroot
         );
 
-        $this->assertSame('static_or_php', $classified['stack']);
+        $this->assertSame('php', $classified['stack']);
         $this->assertSame($docroot, $classified['app_root']);
         $this->assertSame([], $classified['nested_apps']);
+    }
+
+    public function test_an_html_only_docroot_is_static_and_a_php_docroot_is_php(): void
+    {
+        $migrator = app(DirectAdminToContainerMigrationService::class);
+        $docroot = '/home/acme/domains/brochure.example/public_html';
+
+        $static = $migrator->classifyDetectedMarkers(implode("\n", ['DIR:'.$docroot, 'IDX:'.$docroot]), $docroot);
+        $this->assertSame('static', $static['stack']);
+
+        $php = $migrator->classifyDetectedMarkers(implode("\n", ['DIR:'.$docroot, 'IDX:'.$docroot, 'PHP:'.$docroot]), $docroot);
+        $this->assertSame('php', $php['stack'], 'a site that serves index.php needs a PHP runtime, never an nginx-only container');
+
+        $bare = $migrator->classifyDetectedMarkers('DIR:'.$docroot, $docroot);
+        $this->assertSame('static_or_php', $bare['stack']);
     }
 
     public function test_a_node_project_nested_under_a_php_docroot_never_hijacks_the_site(): void
@@ -389,7 +404,7 @@ class DirectAdminToContainerConvertServiceTest extends TestCase
             $docroot
         );
 
-        $this->assertSame('static_or_php', $classified['stack']);
+        $this->assertSame('php', $classified['stack']);
         $this->assertSame($docroot, $classified['app_root']);
         $this->assertSame([$portal], $classified['nested_apps']);
     }
@@ -961,7 +976,7 @@ class DirectAdminToContainerConvertServiceTest extends TestCase
             $docroot
         );
 
-        $this->assertSame('static_or_php', $classified['stack']);
+        $this->assertSame('static', $classified['stack']);
     }
 
     public function test_stack_probe_command_survives_pipefail_and_is_valid_bash(): void
