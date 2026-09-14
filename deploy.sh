@@ -28,7 +28,8 @@
 #   GIT_REMOTE        remote URL for the first clone (default: taken from the existing checkout)
 #   DEPLOY_ROOT       where releases and shared data live (default: <APP_PATH>.deploy)
 #   SERVICE_USER      owner of releases and storage (default: www-data)
-#   HEALTH_URL        URL checked before the switch is kept (default: http://127.0.0.1:8000/up)
+#   HEALTH_URL        URL checked before the switch is kept (default: APP_URL from the live .env + /up)
+#                     Persist overrides in /etc/default/talksasa-deploy (sourced if present).
 #   KEEP_RELEASES     releases to keep on disk (default: 5)
 #   DEPLOY_FORCE=1    allow APP_ENV other than production, or redeploying the live sha
 #   SKIP_ASSETS=1     skip npm ci / npm run build (frontend unchanged)
@@ -40,7 +41,6 @@ APP_PATH="${APP_PATH:-/var/www/talksasa-cloud}"
 GIT_BRANCH="${GIT_BRANCH:-main}"
 DEPLOY_ROOT="${DEPLOY_ROOT:-${APP_PATH}.deploy}"
 SERVICE_USER="${SERVICE_USER:-www-data}"
-HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:8000/up}"
 KEEP_RELEASES="${KEEP_RELEASES:-5}"
 LOG_FILE="${LOG_FILE:-/var/log/talksasa-deploy.log}"
 LOCK_FILE="${LOCK_FILE:-/var/lock/talksasa-deploy.lock}"
@@ -51,6 +51,33 @@ REPO_DIR="${DEPLOY_ROOT}/repo"
 RELEASES_DIR="${DEPLOY_ROOT}/releases"
 SHARED_DIR="${DEPLOY_ROOT}/shared"
 PREVIOUS_FILE="${DEPLOY_ROOT}/previous_release"
+
+# Operator overrides that should survive between runs (HEALTH_URL, KEEP_RELEASES...).
+[[ -f /etc/default/talksasa-deploy ]] && source /etc/default/talksasa-deploy
+
+# The post-switch health check must hit the URL this host actually serves.
+# Unless HEALTH_URL is given, read APP_URL from the live .env; the old
+# 127.0.0.1:8000 default assumed a port this server does not listen on.
+app_url_from_env() {
+    local env_file
+    for env_file in "$SHARED_DIR/.env" "$APP_PATH/.env"; do
+        [[ -f "$env_file" ]] || continue
+        local value
+        value="$(grep -E '^APP_URL=' "$env_file" | tail -n 1 | cut -d= -f2- | tr -d '"'"'"'"' | tr -d '[:space:]')"
+        if [[ -n "$value" ]]; then
+            printf '%s' "${value%/}"
+            return 0
+        fi
+    done
+    return 1
+}
+if [[ -z "${HEALTH_URL:-}" ]]; then
+    if app_url="$(app_url_from_env)"; then
+        HEALTH_URL="${app_url}/up"
+    else
+        HEALTH_URL="http://127.0.0.1/up"
+    fi
+fi
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || LOG_FILE="/tmp/talksasa-deploy.log"
@@ -435,6 +462,7 @@ main() {
         "")
             log "================================"
             log "Talksasa Cloud deploy: origin/$GIT_BRANCH -> $APP_PATH"
+            log "Post-switch health check: $HEALTH_URL"
             log "================================"
             deploy
             ;;

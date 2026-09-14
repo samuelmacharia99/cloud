@@ -51,7 +51,7 @@ What happens, in order:
 5. The release is booted in-process and must answer `/up` with 200 before anything is switched.
 6. Settings are backed up, then pending migrations run. They run while the previous release still serves traffic, so **migrations must be additive**: add columns and tables, backfill, never drop or rename something the previous release still reads in the same deploy. Drop in a later deploy.
 7. The symlink is swapped (one `rename`). PHP-FPM and the web server are reloaded gracefully. `queue:restart` lets workers finish their job, then the systemd worker units, the terminal websocket and the scheduler timer are restarted on the new release.
-8. `HEALTH_URL` (default `http://127.0.0.1:8000/up`) is checked with retries. On failure the previous release is switched back, reloaded, and the deploy exits non-zero with the failed release kept for inspection.
+8. `HEALTH_URL` (default: `APP_URL` from the live `.env` plus `/up`) is checked with retries. On failure the previous release is switched back, reloaded, and the deploy exits non-zero with the failed release kept for inspection.
 9. Allowlisted seeders, `cron:refresh-schedules`, `cron:verify-runtime` and the Mailcow DNS sync run; old releases are pruned to the last `KEEP_RELEASES` (5), never the live or previous one.
 
 ## Rollback and status
@@ -72,7 +72,7 @@ is why they must be additive.
 | `GIT_BRANCH` | `main` | branch to deploy |
 | `DEPLOY_ROOT` | `<APP_PATH>.deploy` | releases and shared data |
 | `SERVICE_USER` | `www-data` | owner of releases and storage |
-| `HEALTH_URL` | `http://127.0.0.1:8000/up` | checked after the switch; production serves on 8000 behind the proxy, set the real port if that changes |
+| `HEALTH_URL` | `<APP_URL>/up` | checked after the switch; derived from the live `.env`. Override per run or persist it in `/etc/default/talksasa-deploy` |
 | `KEEP_RELEASES` | `5` | releases kept on disk |
 | `DEPLOY_FORCE=1` | | deploy on a non-production `APP_ENV`, or rebuild the live commit |
 | `SKIP_ASSETS=1` | | reuse the live release's `public/build` (no npm) |
