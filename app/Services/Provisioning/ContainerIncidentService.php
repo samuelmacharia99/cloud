@@ -34,6 +34,13 @@ class ContainerIncidentService
 
     public const ARCHIVE_NAME = 'quarantine.zip';
 
+    public const STORAGE_ZIP = 'zip';
+
+    /** Files moved into <incident>/files/ with their paths kept; for archives too large to re-zip. */
+    public const STORAGE_FILES = 'files';
+
+    public const FILES_DIR = 'files';
+
     public function incidentsDir(ContainerDeployment $deployment): string
     {
         return ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name.'/'
@@ -68,6 +75,7 @@ class ContainerIncidentService
         array $protectedPaths = [],
         array $extra = [],
         bool $deleteOriginals = true,
+        string $storage = self::STORAGE_ZIP,
     ): array {
         $id = $this->newIncidentId();
         $dir = $this->incidentsDir($deployment).'/'.$id;
@@ -98,17 +106,25 @@ class ContainerIncidentService
         }
 
         $ssh->exec('mkdir -p '.escapeshellarg($dir).' && chmod 700 '.escapeshellarg($this->incidentsDir($deployment)).' '.escapeshellarg($dir), 20);
-
-        $build = $ssh->execWithStatus(ContainerArchiveCommands::buildZip($hostAppPath, $paths, $archive), 900);
-        $expected = $this->countRegularFiles($ssh, $hostAppPath, $paths);
-        if ($build['status'] !== 0 || preg_match('/^OK (\d+)$/m', $build['output'], $m) !== 1 || (int) $m[1] < $expected) {
-            $ssh->exec('rm -rf '.escapeshellarg($dir), 20);
-            throw new \RuntimeException('The incident archive could not be built ('.trim(mb_substr($build['output'], 0, 200)).'); nothing was deleted.');
-        }
-        $bytes = (int) trim((string) $ssh->exec('stat -c %s '.escapeshellarg($archive).' 2>/dev/null || echo 0', 15));
-
         $hashes = $this->hashes($ssh, $hostAppPath, $paths);
-        $removed = $deleteOriginals ? $this->deleteOriginals($ssh, $hostAppPath, $paths) : [];
+
+        if ($storage === self::STORAGE_FILES) {
+            $bytes = (int) trim((string) $ssh->exec('cd '.escapeshellarg($hostAppPath).' && du -cb '.implode(' ', array_map('escapeshellarg', $paths)).' 2>/dev/null | tail -n 1 | cut -f1', 120));
+            $removed = $this->moveOriginals($ssh, $hostAppPath, $dir.'/'.self::FILES_DIR, $paths);
+            if ($removed === [] && $paths !== []) {
+                $ssh->exec('rm -rf '.escapeshellarg($dir), 20);
+                throw new \RuntimeException('None of the files could be moved into the incident folder; nothing was changed.');
+            }
+        } else {
+            $build = $ssh->execWithStatus(ContainerArchiveCommands::buildZip($hostAppPath, $paths, $archive), 900);
+            $expected = $this->countRegularFiles($ssh, $hostAppPath, $paths);
+            if ($build['status'] !== 0 || preg_match('/^OK (\d+)$/m', $build['output'], $m) !== 1 || (int) $m[1] < $expected) {
+                $ssh->exec('rm -rf '.escapeshellarg($dir), 20);
+                throw new \RuntimeException('The incident archive could not be built ('.trim(mb_substr($build['output'], 0, 200)).'); nothing was deleted.');
+            }
+            $bytes = (int) trim((string) $ssh->exec('stat -c %s '.escapeshellarg($archive).' 2>/dev/null || echo 0', 15));
+            $removed = $deleteOriginals ? $this->deleteOriginals($ssh, $hostAppPath, $paths) : [];
+        }
 
         $manifest = [
             'id' => $id,
@@ -120,7 +136,8 @@ class ContainerIncidentService
             'operator_user_id' => auth()->id(),
             'opened_at' => now()->toIso8601String(),
             'app_path' => $hostAppPath,
-            'archive' => self::ARCHIVE_NAME,
+            'storage' => $storage,
+            'archive' => $storage === self::STORAGE_ZIP ? self::ARCHIVE_NAME : self::FILES_DIR.'/',
             'archive_bytes' => $bytes,
             'files' => array_map(fn ($p) => [
                 'path' => $p,
@@ -136,7 +153,7 @@ class ContainerIncidentService
         try {
             $ssh->upload((string) json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), $dir.'/manifest.json');
             $ssh->upload($this->report($manifest), $dir.'/report.txt');
-            $ssh->exec('chmod 600 '.escapeshellarg($dir).'/* 2>/dev/null; true', 15);
+            $ssh->exec('find '.escapeshellarg($dir).' -maxdepth 1 -type f -exec chmod 600 {} + 2>/dev/null; true', 15);
         } catch (\Throwable $e) {
             Log::warning('Incident manifest not written', ['incident' => $id, 'error' => $e->getMessage()]);
         }
@@ -149,6 +166,7 @@ class ContainerIncidentService
             'opened_at' => $manifest['opened_at'],
             'files' => $deleteOriginals ? count($removed) : count($paths),
             'archived_only' => ! $deleteOriginals,
+            'storage' => $storage,
             'bytes' => $bytes,
             'reasons' => $this->reasonSummary(array_map(fn ($p) => $byPath[$p], $paths)),
             'restored_at' => null,
@@ -173,9 +191,19 @@ class ContainerIncidentService
         }
         $dir = $this->incidentsDir($deployment).'/'.$incidentId;
         $archive = $dir.'/'.self::ARCHIVE_NAME;
+        $filesDir = $dir.'/'.self::FILES_DIR;
         $cap = max(1, (int) config('containers.file_manager.max_extract_mb', 2048)) * 1024 * 1024;
 
-        $result = $ssh->execWithStatus(ContainerArchiveCommands::extract($archive, ContainerArchiveCommands::KIND_ZIP, $this->hostAppPath($deployment), $cap), 900);
+        $hasFiles = trim((string) $ssh->exec('[ -d '.escapeshellarg($filesDir).' ] && echo yes || echo no', 15)) === 'yes';
+        if ($hasFiles) {
+            $result = $ssh->execWithStatus(
+                'n=$(find '.escapeshellarg($filesDir).' -type f | wc -l); cp -a '.escapeshellarg($filesDir.'/.').' '.escapeshellarg($this->hostAppPath($deployment).'/')
+                .' && rm -rf '.escapeshellarg($filesDir).' && echo "OK 0 $n"',
+                900
+            );
+        } else {
+            $result = $ssh->execWithStatus(ContainerArchiveCommands::extract($archive, ContainerArchiveCommands::KIND_ZIP, $this->hostAppPath($deployment), $cap), 900);
+        }
         if (preg_match('/^OK (\d+) (\d+)$/m', $result['output'], $m) !== 1) {
             throw new \RuntimeException('Restore failed: '.trim(mb_substr($result['output'], 0, 200)));
         }
@@ -196,10 +224,29 @@ class ContainerIncidentService
         if (preg_match('/^\d{8}-\d{6}-[a-z0-9]{6}$/', $incidentId) !== 1) {
             throw new \InvalidArgumentException('That incident id is not valid.');
         }
-        $archive = $this->incidentsDir($deployment).'/'.$incidentId.'/'.self::ARCHIVE_NAME;
-        $scratchName = trim((string) config('containers.file_manager.temp_dir', '.file-manager-tmp'), '/');
-        $scratch = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name.'/'.$scratchName;
+        $dir = $this->incidentsDir($deployment).'/'.$incidentId;
+        $archive = $dir.'/'.self::ARCHIVE_NAME;
+        $filesDir = $dir.'/'.self::FILES_DIR;
+        $scratch = $this->scratchDir($deployment);
         $target = $scratch.'/incident-'.$incidentId.'.zip';
+
+        $hasFiles = trim((string) $ssh->exec('[ -d '.escapeshellarg($filesDir).' ] && echo yes || echo no', 15)) === 'yes';
+        if ($hasFiles) {
+            $cap = max(1, (int) config('containers.file_manager.max_archive_download_mb', 500)) * 1024 * 1024;
+            $bytes = (int) trim((string) $ssh->exec('du -sb '.escapeshellarg($filesDir).' 2>/dev/null | cut -f1', 120));
+            if ($bytes > $cap) {
+                throw new \InvalidArgumentException('This incident holds '.DirectAdminMailPullProgress::formatBytes($bytes).', more than the download limit; the files are kept on the node under '.$filesDir.'.');
+            }
+            $list = array_values(array_filter(array_map('trim', explode("\n", (string) $ssh->exec('cd '.escapeshellarg($filesDir).' && find . -mindepth 1 -maxdepth 1 -printf "%P\n"', 60)))));
+            $ssh->exec('mkdir -p '.escapeshellarg($scratch).' && chmod 700 '.escapeshellarg($scratch), 15);
+            $built = $ssh->execWithStatus(ContainerArchiveCommands::buildZip($filesDir, $list, $target), 900);
+            if (! str_contains($built['output'], 'OK')) {
+                throw new \RuntimeException('The incident files could not be zipped for download.');
+            }
+
+            return $target;
+        }
+
         $out = $ssh->execWithStatus(
             'mkdir -p '.escapeshellarg($scratch).' && chmod 700 '.escapeshellarg($scratch)
             .' && [ -s '.escapeshellarg($archive).' ] && cp -f '.escapeshellarg($archive).' '.escapeshellarg($target).' && echo staged',
@@ -210,6 +257,16 @@ class ContainerIncidentService
         }
 
         return $target;
+    }
+
+    /**
+     * The file-manager scratch directory the download route is allowed to read from.
+     */
+    public function scratchDir(ContainerDeployment $deployment): string
+    {
+        $scratchName = trim((string) config('containers.file_manager.temp_dir', '.file-manager-tmp'), '/');
+
+        return ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name.'/'.$scratchName;
     }
 
     /**
@@ -314,6 +371,46 @@ class ContainerIncidentService
     }
 
     /**
+     * Move each path into the incident's files/ directory, keeping its relative path.
+     *
+     * @param  list<string>  $paths
+     * @return list<string>
+     */
+    private function moveOriginals(SSHService $ssh, string $hostAppPath, string $filesDir, array $paths): array
+    {
+        $root = escapeshellarg(rtrim($hostAppPath, '/'));
+        $args = implode(' ', array_map('escapeshellarg', $paths));
+        $out = (string) $ssh->exec(
+            'cd '.$root.' && dest='.escapeshellarg($filesDir).'; mkdir -p "$dest" && chmod 700 "$dest"; for p in '.$args.'; do case "$p" in /*|..*|*/..*|*/../*) continue;; esac; '
+            .'if [ -e "$p" ] || [ -L "$p" ]; then mkdir -p "$dest/$(dirname "$p")" && mv "$p" "$dest/$p" && echo "removed $p"; fi; done; true',
+            600
+        );
+        $removed = [];
+        foreach (explode("\n", $out) as $line) {
+            if (str_starts_with($line, 'removed ')) {
+                $removed[] = substr($line, 8);
+            }
+        }
+
+        return $removed;
+    }
+
+    /**
+     * Whether the incident can be handed to the browser as one zip.
+     *
+     * @param  array<string, mixed>  $row
+     */
+    public function downloadable(array $row): bool
+    {
+        if (($row['storage'] ?? self::STORAGE_ZIP) === self::STORAGE_ZIP) {
+            return true;
+        }
+        $cap = max(1, (int) config('containers.file_manager.max_archive_download_mb', 500)) * 1024 * 1024;
+
+        return (int) ($row['bytes'] ?? 0) <= $cap && empty($row['restored_at']);
+    }
+
+    /**
      * @param  array<string, mixed>  $manifest
      */
     private function report(array $manifest): string
@@ -323,8 +420,10 @@ class ContainerIncidentService
             'Service #'.$manifest['service_id'].' · container '.$manifest['container'].' · host '.($manifest['host'] ?: 'n/a'),
             'Opened '.$manifest['opened_at'].' by '.$manifest['trigger'].' ('.$manifest['kind'].')',
             '',
-            'The files below were zipped into '.self::ARCHIVE_NAME.' with their paths preserved, then removed from '.$manifest['app_path'].'.',
-            'To put a file back, extract it from the archive to the same relative path and chown it to www-data (33:33).',
+            ($manifest['storage'] ?? self::STORAGE_ZIP) === self::STORAGE_FILES
+                ? 'The files below were moved into '.self::FILES_DIR.'/ with their paths preserved, out of '.$manifest['app_path'].'.'
+                : 'The files below were zipped into '.self::ARCHIVE_NAME.' with their paths preserved, then removed from '.$manifest['app_path'].'.',
+            'To put a file back, copy it to the same relative path under the application directory and chown it to www-data (33:33).',
             '',
         ];
         foreach ($manifest['files'] as $file) {

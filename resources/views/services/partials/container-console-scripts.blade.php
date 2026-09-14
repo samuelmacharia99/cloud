@@ -408,6 +408,7 @@ function containerDoctor(config = {}) {
         error: '',
         treatMessage: '',
         treatOk: false,
+        treatResolved: null,
 
         incidentDownloadUrl(id) {
             return this.incidentDownloadUrlTemplate.replace('__INCIDENT__', encodeURIComponent(id));
@@ -471,6 +472,7 @@ function containerDoctor(config = {}) {
             this.error = '';
             this.treatMessage = '';
             this.treatOk = false;
+            this.treatResolved = null;
             try {
                 const response = await fetch(this.treatUrl, {
                     method: 'POST',
@@ -480,10 +482,11 @@ function containerDoctor(config = {}) {
                         'X-Requested-With': 'XMLHttpRequest',
                         'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
                     },
-                    body: JSON.stringify({ action: finding.treat_action }),
+                    body: JSON.stringify({ action: finding.treat_action, finding_id: finding.id || null }),
                 });
                 const data = await response.json().catch(() => ({}));
                 this.treatOk = !!data.success;
+                this.treatResolved = data.resolved === undefined ? null : !!data.resolved;
                 this.treatMessage = data.message
                     || (data.success
                         ? 'Treatment completed.'

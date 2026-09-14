@@ -132,6 +132,43 @@ class ContainerIncidentServiceTest extends TestCase
     }
 
     #[Test]
+    public function exposed_backups_are_moved_not_zipped_and_can_be_restored(): void
+    {
+        $service = Service::factory()->create();
+        $deployment = new ContainerDeployment(['container_name' => 'site-wordpress', 'service_id' => $service->id]);
+        File::put($this->base.'/app/ct.zip', str_repeat('x', 4096));
+        $incidents = $this->localIncidents();
+        $ssh = $this->localSsh();
+
+        $result = $incidents->open($ssh, $service, $deployment, 'doctor', 'exposed', [
+            ['path' => 'ct.zip', 'reasons' => ['exposed_backup'], 'size' => 4096, 'mtime' => 1],
+        ], [], [], true, ContainerIncidentService::STORAGE_FILES);
+
+        $this->assertSame(['ct.zip'], $result['removed']);
+        $this->assertSame(4096, $result['bytes']);
+        $this->assertFileDoesNotExist($this->base.'/app/ct.zip');
+        $this->assertFileExists($this->base.'/incidents/'.$result['id'].'/files/ct.zip');
+        $this->assertFileDoesNotExist($this->base.'/incidents/'.$result['id'].'/quarantine.zip');
+        $row = $service->fresh()->service_meta['security_incidents'][0];
+        $this->assertSame('files', $row['storage']);
+        $this->assertTrue($incidents->downloadable($row));
+        config(['containers.file_manager.max_archive_download_mb' => 0]);
+        $this->assertTrue($incidents->downloadable($row), 'a zero cap still allows one megabyte');
+
+        $staged = $incidents->stageForDownload($ssh, $deployment, $result['id']);
+        $this->assertFileExists($staged);
+        $zip = new \ZipArchive;
+        $this->assertTrue($zip->open($staged));
+        $this->assertNotFalse($zip->locateName('ct.zip'));
+        $zip->close();
+
+        $restored = $incidents->restore($ssh, $service, $deployment, $result['id']);
+        $this->assertSame(1, $restored['restored']);
+        $this->assertFileExists($this->base.'/app/ct.zip');
+        $this->assertDirectoryDoesNotExist($this->base.'/incidents/'.$result['id'].'/files');
+    }
+
+    #[Test]
     public function a_failed_archive_deletes_nothing(): void
     {
         $service = Service::factory()->create();
@@ -166,6 +203,7 @@ class ContainerIncidentServiceTest extends TestCase
         $incidents = Mockery::mock(ContainerIncidentService::class)->makePartial();
         $incidents->shouldReceive('incidentsDir')->andReturn($this->base.'/incidents');
         $incidents->shouldReceive('hostAppPath')->andReturn($this->base.'/app');
+        $incidents->shouldReceive('scratchDir')->andReturn($this->base.'/scratch');
 
         return $incidents;
     }

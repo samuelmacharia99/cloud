@@ -51,6 +51,21 @@ class WordPressCoreChecksumServiceTest extends TestCase
     }
 
     #[Test]
+    public function the_version_command_survives_the_shell(): void
+    {
+        File::ensureDirectoryExists($this->root.'/wp-includes');
+        File::put($this->root.'/wp-includes/version.php', "<?php\n\$wp_version = '6.6.2';\n");
+        File::put($this->root.'/wp-config.php', "<?php\ndefine( 'WPLANG', 'sw_KE' );\n");
+        $service = app(WordPressCoreChecksumService::class);
+
+        $output = (string) shell_exec('bash -c '.escapeshellarg($service->installedVersionCommand($this->root)).' 2>&1');
+        $ssh = Mockery::mock(SSHService::class);
+        $ssh->shouldReceive('exec')->once()->andReturn($output);
+
+        $this->assertSame(['version' => '6.6.2', 'locale' => 'sw_KE'], $service->installedVersion($ssh, $this->root));
+    }
+
+    #[Test]
     public function installed_version_and_locale_are_read_from_the_host(): void
     {
         $ssh = Mockery::mock(SSHService::class);

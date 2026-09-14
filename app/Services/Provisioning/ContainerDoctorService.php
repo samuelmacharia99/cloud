@@ -91,7 +91,7 @@ class ContainerDoctorService
     /**
      * @return array{success: bool, message: string, diagnosis?: array<string, mixed>}
      */
-    public function treat(Service $service, string $action): array
+    public function treat(Service $service, string $action, ?string $findingId = null): array
     {
         $service->loadMissing('product.containerTemplate', 'containerDeployment.node');
         $deployment = $service->containerDeployment;
@@ -220,19 +220,39 @@ class ContainerDoctorService
             }
         }
 
-        // "Treatment applied" over a site that is still down reads as a lie.
-        // The action did what it says; it just did not fix anything, and the
-        // customer is owed that sentence rather than a green banner.
-        if (($result['success'] ?? false) === true && isset($result['diagnosis'])) {
-            $remaining = collect($result['diagnosis']['findings'] ?? [])
-                ->filter(fn ($finding) => ($finding['severity'] ?? '') === 'critical')
-                ->count();
+        return $this->describeTreatOutcome($result, $findingId);
+    }
 
-            if ($remaining > 0) {
-                $result['message'] = rtrim((string) $result['message'], ' .').'. '
-                    .'The site still reports '.$remaining.' critical issue'.($remaining === 1 ? '' : 's')
-                    .' below, so this was not the cause.';
-            }
+    /**
+     * "Treatment applied" over a finding that is still there reads as a lie.
+     * When the UI says which finding the button belonged to, the refreshed
+     * diagnosis decides whether it was resolved; the banner follows that.
+     *
+     * @param  array{success: bool, message: string, diagnosis?: array<string, mixed>}  $result
+     * @return array{success: bool, message: string, resolved?: bool, diagnosis?: array<string, mixed>}
+     */
+    public function describeTreatOutcome(array $result, ?string $findingId): array
+    {
+        if (($result['success'] ?? false) !== true || ! isset($result['diagnosis'])) {
+            return $result;
+        }
+        $findings = collect($result['diagnosis']['findings'] ?? []);
+
+        if ($findingId !== null && $findingId !== '') {
+            $still = $findings->first(fn ($f) => ($f['id'] ?? null) === $findingId && ! ($f['stale'] ?? false));
+            $result['resolved'] = $still === null;
+            $result['message'] = rtrim((string) $result['message'], ' .').'. '
+                .($still === null
+                    ? 'The issue it targeted is no longer reported.'
+                    : 'The issue it targeted is still reported below: '.(string) ($still['title'] ?? $findingId).'.');
+
+            return $result;
+        }
+
+        $remaining = $findings->filter(fn ($finding) => ($finding['severity'] ?? '') === 'critical')->count();
+        if ($remaining > 0) {
+            $result['message'] = rtrim((string) $result['message'], ' .').'. '
+                .'The site still reports '.$remaining.' critical issue'.($remaining === 1 ? '' : 's').' below.';
         }
 
         return $result;
@@ -8574,8 +8594,12 @@ PHP;
      */
     private function incidentRows(Service $service): array
     {
+        $incidents = app(ContainerIncidentService::class);
+
         return array_map(fn ($row) => [
             'id' => (string) ($row['id'] ?? ''),
+            'storage' => (string) ($row['storage'] ?? ContainerIncidentService::STORAGE_ZIP),
+            'downloadable' => $incidents->downloadable($row),
             'kind' => (string) ($row['kind'] ?? ''),
             'trigger' => (string) ($row['trigger'] ?? ''),
             'opened_at' => (string) ($row['opened_at'] ?? ''),
@@ -8584,7 +8608,7 @@ PHP;
             'restored_at' => $row['restored_at'] ?? null,
             'archived_only' => (bool) ($row['archived_only'] ?? false),
             'paths' => array_slice((array) ($row['paths'] ?? []), 0, 5),
-        ], array_slice(app(ContainerIncidentService::class)->incidentsFor($service->fresh()), 0, 10));
+        ], array_slice($incidents->incidentsFor($service->fresh()), 0, 10));
     }
 
     /**

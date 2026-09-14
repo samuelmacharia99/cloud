@@ -59,8 +59,18 @@ class ContainerDoctorWordPressTreatments
      */
     public function deactivateMissingPlugins(Service $service): array
     {
-        return $this->withWpCli($service, function (SSHService $ssh, ContainerDeployment $deployment, string $containerPath) {
-            $result = $this->runWp($ssh, $containerPath, $deployment->container_name, 'wp eval '.escapeshellarg($this->deactivateMissingPluginsScript()).' --path='.self::DOCROOT.' --skip-plugins --skip-themes 2>&1');
+        return $this->onHost($service, function (SSHService $ssh, ContainerDeployment $deployment) {
+            $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+            // Plain PHP with wp-load: no wp-cli dependency. Plugins whose files are
+            // missing are skipped by WordPress itself, so loading is safe here.
+            $script = "@ini_set('display_errors', '0'); error_reporting(0); "
+                ."ob_start(); require '".self::DOCROOT."/wp-load.php'; ob_end_clean();\n".$this->deactivateMissingPluginsScript();
+            $result = $ssh->execWithStatus(
+                'cd '.escapeshellarg($containerPath)
+                .' && docker compose exec -u www-data -T '.escapeshellarg($deployment->container_name)
+                .' php -d display_errors=0 -r '.escapeshellarg($script).' 2>&1',
+                120
+            );
             if (preg_match('/TALKSASA_DEACTIVATED=(\{.*\})/', $result['output'], $m) !== 1 || ! is_array($parsed = json_decode($m[1], true))) {
                 return ['success' => false, 'message' => 'WordPress did not answer: '.mb_substr(trim($result['output']), 0, 200)];
             }

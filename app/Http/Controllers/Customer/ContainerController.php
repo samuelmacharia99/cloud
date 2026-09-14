@@ -1736,10 +1736,11 @@ class ContainerController extends Controller
 
         $validated = $request->validate([
             'action' => ['required', 'string', 'max:96', 'regex:/^[a-z0-9_]+(:[A-Za-z0-9._-]+)?$/'],
+            'finding_id' => ['nullable', 'string', 'max:96', 'regex:/^[a-z0-9_:.-]+$/i'],
         ]);
 
         try {
-            $result = $doctor->treat($service, $validated['action']);
+            $result = $doctor->treat($service, $validated['action'], $validated['finding_id'] ?? null);
 
             return response()->json($result, $result['success'] ? 200 : 422);
         } catch (\Throwable $e) {

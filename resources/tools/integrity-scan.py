@@ -5,7 +5,7 @@ Runs on the container host over the bind mount, read-only. Prints one line per
 hit as  reason<TAB>size<TAB>mtime<TAB>path  and a final  __SUMMARY__<TAB>{json}
 line. Contents of files are never printed.
 
-TALKSASA_SCAN_VERSION=3
+TALKSASA_SCAN_VERSION=4
 """
 import argparse
 import hashlib
@@ -17,7 +17,7 @@ import stat
 import sys
 import time
 
-SCAN_VERSION = 3
+SCAN_VERSION = 4
 
 CORE_ROOT_FILES = {
     'index.php', 'wp-activate.php', 'wp-blog-header.php', 'wp-comments-post.php', 'wp-config.php',
@@ -35,7 +35,7 @@ NO_EXEC_DIRS = ('wp-content/uploads', 'wp-content/languages', 'wp-content/upgrad
                 'storage/app/public', 'public/uploads')
 SKIP_CONTENT_DIRS = ('vendor', 'node_modules', 'wp-content/talksasa-disabled', 'wp-content/plugins-disabled', '.git')
 KNOWN_FAMILY_FILES = {'wp-homes.php', 'wp-conf1g.php', 'wp-l0gin.php', 'wp-includes.php', 'wp-admins.php',
-                      'wp-vcd.php', 'wp-tmp.php', 'wp-feml.php', 'class.theme-modules.php', 'radio.php',
+                      'wp-vcd.php', 'wp-tmp.php', 'wp-feml.php', 'class.theme-modules.php',
                       'lock360.php', 'about.php.suspected'}
 KNOWN_FAMILY_DIRS = {'alfacgiapi', 'jancox', 'ALFA_DATA', '.well-known-pki', 'wso', 'c99'}
 EXPOSED_EXACT = {'.env', 'error_log', 'debug.log', 'php_errorlog', 'php_error.log', '.bash_history', '.mysql_history',
@@ -130,7 +130,33 @@ def looks_random(basename):
     return ratio < 0.2 or longest >= 5 or (len(letters) >= 6 and vowels <= 1)
 
 
+DECEPTIVE_RE = re.compile(r'[^\x21-\x7e]')
+
+
+def deceptive_name(name):
+    """Hidden characters in a file name: homoglyphs, spaces, controls."""
+    return DECEPTIVE_RE.search(name) is not None
+
+
+CONFUSABLES = str.maketrans({
+    '\u0430': 'a', '\u0435': 'e', '\u043e': 'o', '\u0440': 'p', '\u0441': 'c', '\u0443': 'y', '\u0445': 'x', '\u0456': 'i',
+    '\u0458': 'j', '\u0455': 's', '\u04bb': 'h', '\u0501': 'd', '\u051b': 'q', '\u051d': 'w', '\u0433': 'r',
+    '\u03b1': 'a', '\u03bf': 'o', '\u03c1': 'p', '\u03b9': 'i', '\u03bd': 'v', '\u03ba': 'k', '\u03c5': 'u', '\u03c4': 't',
+    '\u0410': 'a', '\u0412': 'b', '\u0415': 'e', '\u041a': 'k', '\u041c': 'm', '\u041d': 'h', '\u041e': 'o', '\u0420': 'p',
+    '\u0421': 'c', '\u0422': 't', '\u0425': 'x', '\u0406': 'i', '\u0408': 'j', '\u0405': 's',
+    '\u0131': 'i', '\u0261': 'g', '\u2113': 'l', '\u217c': 'l', '\u2170': 'i', '\u2171': 'ii',
+    '\u00a0': '', '\u200b': '', '\u200c': '', '\u200d': '', '\u2060': '', '\ufeff': '', '\u202e': '', '\u202d': '',
+})
+
+
+def ascii_fold(name):
+    folded = name.translate(CONFUSABLES)
+    return re.sub(r'[^\x21-\x7e]', '', folded).lower()
+
+
 def is_silence_file(path, size):
+    if size == 0:
+        return True
     if size > 128:
         return False
     try:
@@ -268,6 +294,8 @@ class Scanner:
                 self.emit('unexpected_root_php', full)
             if lower.startswith('wp-') and lower.endswith('.php') and lower not in CORE_ROOT_FILES:
                 self.emit('core_lookalike', full)
+            if deceptive_name(name) and ascii_fold(name) in CORE_ROOT_FILES:
+                self.emit('core_lookalike', full)
 
     def scan_wp_content_names(self):
         wc = os.path.join(self.root, 'wp-content')
@@ -390,8 +418,10 @@ class Scanner:
                 rpath = (rdir + '/' + f) if rdir else f
                 if lower in KNOWN_FAMILY_FILES:
                     self.emit('known_webshell_family', full)
+                if deceptive_name(f) and (ascii_fold(f).endswith(PHP_EXT) or ascii_fold(f) in CORE_ROOT_FILES):
+                    self.emit('deceptive_name', full)
                 if in_no_exec:
-                    if lower.endswith(PHP_EXT) and not (lower == 'index.php' and is_silence_file(full, st.st_size)):
+                    if lower.endswith(PHP_EXT) and not (st.st_size == 0 or (lower == 'index.php' and is_silence_file(full, st.st_size))):
                         self.emit('php_in_uploads', full)
                     if lower == '.htaccess' and st.st_size <= 65536:
                         try:
@@ -408,9 +438,9 @@ class Scanner:
                             self.emit('php_in_image', full)
                     except OSError:
                         pass
-                if self.is_exposed(rdir, lower):
+                if self.is_exposed(rdir, lower, st.st_size):
                     self.emit('exposed_backup', full)
-                if skip_content or st.st_size > self.max_bytes:
+                if skip_content or st.st_size == 0 or st.st_size > self.max_bytes:
                     continue
                 if lower.endswith(PHP_EXT) or lower.endswith(('.ico', '.txt')) and st.st_size < 65536:
                     if lower == 'index.php' and is_silence_file(full, st.st_size):
@@ -420,10 +450,13 @@ class Scanner:
             if self.out_of_time():
                 return
 
-    def is_exposed(self, rdir, lower):
+    def is_exposed(self, rdir, lower, size=0):
         if rdir.startswith('wp-content/uploads') or rdir.startswith('wp-content/talksasa-disabled'):
             return False
         if rdir.startswith('vendor') or rdir.startswith('node_modules'):
+            return False
+        # Plugins and themes ship small schema .sql files; only a real dump matters there.
+        if (rdir.startswith('wp-content/plugins/') or rdir.startswith('wp-content/themes/') or rdir.startswith('wp-content/mu-plugins')) and size < 262144:
             return False
         if lower in EXPOSED_EXACT:
             return True

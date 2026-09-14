@@ -96,6 +96,40 @@ class IntegrityScanScriptTest extends TestCase
     }
 
     #[Test]
+    public function hidden_characters_empty_cache_files_and_plugin_schema_files_are_judged_correctly(): void
+    {
+        $tree = $this->root.'/app';
+        File::ensureDirectoryExists($tree.'/wp-content/cache/wpo-cache/x');
+        File::ensureDirectoryExists($tree.'/wp-content/plugins/litespeed-cache/src/data_structure');
+        File::ensureDirectoryExists($tree.'/wp-content/plugins/redux-framework/sample');
+        File::ensureDirectoryExists($tree.'/wp-content/uploads/2024');
+        File::put($tree.'/index.php', "<?php // core\n");
+        File::put($tree."/\u{0456}ndex.php", '<?php eval(base64_decode("x"));');
+        File::put($tree.'/wp-content/uploads/2024/shell.php ', '<?php echo 1;');
+        File::put($tree.'/wp-content/cache/wpo-cache/index.php', '');
+        File::put($tree.'/wp-content/cache/wpo-cache/x/index.php', '');
+        File::put($tree.'/wp-content/uploads/2024/real.php', "<?php // real\n");
+        File::put($tree.'/wp-content/plugins/litespeed-cache/src/data_structure/avatar.sql', 'CREATE TABLE x');
+        File::put($tree.'/wp-content/plugins/litespeed-cache/src/data_structure/dump.sql', str_repeat('INSERT INTO wp_users VALUES (1);', 20000));
+        File::put($tree.'/wp-content/plugins/redux-framework/sample/radio.php', "<?php echo 1;\n");
+
+        [$hits] = $this->scan($tree, null);
+        $reasons = fn (string $path) => $hits[$path]['reasons'] ?? [];
+
+        $this->assertContains('deceptive_name', $reasons("\u{0456}ndex.php"));
+        $this->assertContains('core_lookalike', $reasons("\u{0456}ndex.php"), 'a Cyrillic i folds to index.php');
+        $this->assertContains('unexpected_root_php', $reasons("\u{0456}ndex.php"));
+        $this->assertArrayNotHasKey('index.php', $hits, 'the real index.php is not reported');
+        $this->assertContains('deceptive_name', $reasons('wp-content/uploads/2024/shell.php '));
+        $this->assertArrayNotHasKey('wp-content/cache/wpo-cache/index.php', $hits, 'an empty index.php in a cache folder executes nothing');
+        $this->assertArrayNotHasKey('wp-content/cache/wpo-cache/x/index.php', $hits);
+        $this->assertContains('php_in_uploads', $reasons('wp-content/uploads/2024/real.php'));
+        $this->assertArrayNotHasKey('wp-content/plugins/litespeed-cache/src/data_structure/avatar.sql', $hits, 'a plugin schema file is not an exposed dump');
+        $this->assertContains('exposed_backup', $reasons('wp-content/plugins/litespeed-cache/src/data_structure/dump.sql'), 'a real dump inside a plugin folder still is');
+        $this->assertArrayNotHasKey('wp-content/plugins/redux-framework/sample/radio.php', $hits, 'radio.php is a common legitimate name');
+    }
+
+    #[Test]
     public function without_a_manifest_core_falls_back_to_modification_times(): void
     {
         $tree = $this->root.'/app';

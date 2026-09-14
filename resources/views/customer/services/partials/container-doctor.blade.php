@@ -46,11 +46,13 @@
             x-show="treatMessage"
             x-cloak
             class="text-sm rounded-lg px-3 py-3 border"
-            :class="treatOk
-                ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-900 dark:text-emerald-100 border-emerald-200 dark:border-emerald-800'
-                : 'bg-red-50 dark:bg-red-900/20 text-red-900 dark:text-red-100 border-red-200 dark:border-red-800'"
+            :class="!treatOk
+                ? 'bg-red-50 dark:bg-red-900/20 text-red-900 dark:text-red-100 border-red-200 dark:border-red-800'
+                : (treatResolved === false
+                    ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-900 dark:text-amber-100 border-amber-200 dark:border-amber-800'
+                    : 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-900 dark:text-emerald-100 border-emerald-200 dark:border-emerald-800')"
         >
-            <p class="font-semibold" x-text="treatOk ? 'Treatment applied' : 'Treatment failed'"></p>
+            <p class="font-semibold" x-text="!treatOk ? 'Treatment failed' : (treatResolved === false ? 'Treatment ran, but the issue is still there' : (treatResolved === true ? 'Treatment applied · issue cleared' : 'Treatment applied'))"></p>
             <p class="mt-1" x-text="treatMessage"></p>
         </div>
 
@@ -146,12 +148,13 @@
                                     <td class="px-4 py-2 whitespace-nowrap" x-text="incident.opened_at ? new Date(incident.opened_at).toLocaleString() : ''"></td>
                                     <td class="px-4 py-2" x-text="incident.trigger"></td>
                                     <td class="px-4 py-2">
-                                        <span x-text="incident.files + (incident.archived_only ? ' (archived, kept in place)' : ' removed')"></span>
+                                        <span x-text="incident.files + (incident.archived_only ? ' (archived, kept in place)' : (incident.storage === 'files' ? ' moved out of the site' : ' removed'))"></span>
                                         <span class="block text-slate-500 dark:text-slate-400 truncate max-w-xs" x-text="(incident.paths || []).join(', ')"></span>
                                     </td>
                                     <td class="px-4 py-2 whitespace-nowrap" x-text="formatBytes(incident.bytes)"></td>
                                     <td class="px-4 py-2 whitespace-nowrap text-right space-x-2">
-                                        <a :href="incidentDownloadUrl(incident.id)" class="inline-flex items-center px-2.5 py-1 rounded-md bg-slate-700 hover:bg-slate-800 text-white text-xs font-medium">Download zip</a>
+                                        <a x-show="incident.downloadable" :href="incidentDownloadUrl(incident.id)" class="inline-flex items-center px-2.5 py-1 rounded-md bg-slate-700 hover:bg-slate-800 text-white text-xs font-medium">Download zip</a>
+                                        <span x-show="!incident.downloadable && !incident.restored_at" class="text-slate-500 dark:text-slate-400">kept on the node (too large to download)</span>
                                         <button type="button" x-show="canRestoreIncidents && !incident.restored_at"
                                                 @click="runTreat({ treat_action: 'restore_incident:' + incident.id })"
                                                 :disabled="diagnosing || treating"

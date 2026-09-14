@@ -2368,6 +2368,32 @@ LOG;
     }
 
     #[Test]
+    public function a_treatment_is_only_called_resolved_when_its_finding_is_gone(): void
+    {
+        $doctor = app(ContainerDoctorService::class);
+        $diagnosis = ['findings' => [
+            ['id' => 'integrity_suspicious_files', 'severity' => 'critical', 'title' => '3 file(s) that do not belong'],
+            ['id' => 'wordpress_updates_available', 'severity' => 'warning', 'title' => 'updates', 'stale' => true],
+        ]];
+
+        $cleared = $doctor->describeTreatOutcome(['success' => true, 'message' => 'Updated 5 plugin(s).', 'diagnosis' => $diagnosis], 'wordpress_updates_available');
+        $this->assertTrue($cleared['resolved']);
+        $this->assertStringContainsString('no longer reported', $cleared['message']);
+        $this->assertStringNotContainsString('not the cause', $cleared['message']);
+
+        $still = $doctor->describeTreatOutcome(['success' => true, 'message' => 'Quarantined 0 file(s).', 'diagnosis' => $diagnosis], 'integrity_suspicious_files');
+        $this->assertFalse($still['resolved']);
+        $this->assertStringContainsString('still reported below: 3 file(s) that do not belong', $still['message']);
+
+        $legacy = $doctor->describeTreatOutcome(['success' => true, 'message' => 'Done.', 'diagnosis' => $diagnosis], null);
+        $this->assertArrayNotHasKey('resolved', $legacy);
+        $this->assertStringContainsString('still reports 1 critical issue below', $legacy['message']);
+
+        $failed = $doctor->describeTreatOutcome(['success' => false, 'message' => 'nope'], 'x');
+        $this->assertSame(['success' => false, 'message' => 'nope'], $failed);
+    }
+
+    #[Test]
     public function unknown_and_prefixed_treatments_resolve_through_the_doctor(): void
     {
         $service = new Service;

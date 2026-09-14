@@ -51,6 +51,8 @@ class ContainerIntegrityScanner
 
     public const REASON_CORE_MISSING = 'core_missing_file';
 
+    public const REASON_DECEPTIVE = 'deceptive_name';
+
     /** Reasons confident enough to archive and remove without an operator's click. */
     public const AUTO_QUARANTINE_REASONS = [
         self::REASON_KNOWN_FAMILY,
@@ -59,6 +61,7 @@ class ContainerIntegrityScanner
         self::REASON_PHP_IN_IMAGE,
         self::REASON_MU_PLUGIN,
         self::REASON_CORE_EXTRA,
+        self::REASON_DECEPTIVE,
     ];
 
     /** Reasons the Quarantine button archives and removes. */
@@ -75,11 +78,13 @@ class ContainerIntegrityScanner
         self::REASON_SIGNATURE,
         self::REASON_OBFUSCATED,
         self::REASON_CORE_EXTRA,
+        self::REASON_DECEPTIVE,
     ];
 
     /** Reasons that mean code an attacker planted, which also calls for new security keys. */
     public const WEBSHELL_REASONS = [
         self::REASON_KNOWN_FAMILY,
+        self::REASON_DECEPTIVE,
         self::REASON_SIGNATURE,
         self::REASON_OBFUSCATED,
         self::REASON_PHP_IN_UPLOADS,
@@ -198,7 +203,8 @@ class ContainerIntegrityScanner
                 continue;
             }
             [$reason, $size, $mtime, $path] = $parts;
-            $path = ltrim(trim($path), './');
+            // Only a leading "./" comes off: a trailing space is part of a deceptive file name.
+            $path = (string) preg_replace('#^(\./)+#', '', rtrim($path, "\r\n"));
             if ($path === '' || preg_match('/^[a-z_]+$/', $reason) !== 1) {
                 continue;
             }
@@ -465,7 +471,19 @@ class ContainerIntegrityScanner
             return ['moved' => [], 'quarantine_dir' => '', 'incident' => null, 'bytes' => 0, 'skipped' => []];
         }
 
-        $incident = $this->incidents->open($ssh, $service, $deployment, $trigger, $kind, $selected, array_values(array_unique($protected)));
+        $incident = $this->incidents->open(
+            $ssh,
+            $service,
+            $deployment,
+            $trigger,
+            $kind,
+            $selected,
+            array_values(array_unique($protected)),
+            [],
+            true,
+            // Backups are archives already and can be huge: move them, never re-zip.
+            $kind === ContainerIncidentService::KIND_EXPOSED ? ContainerIncidentService::STORAGE_FILES : ContainerIncidentService::STORAGE_ZIP,
+        );
 
         return [
             'moved' => $incident['removed'],
@@ -528,7 +546,7 @@ class ContainerIntegrityScanner
         foreach (array_slice($hits, 0, $limit) as $hit) {
             $rows[] = sprintf(
                 '%s · %s · %s · %s',
-                $hit['path'],
+                $this->displayPath($hit['path']),
                 implode(', ', array_map([$this, 'reasonLabel'], $hit['reasons'])),
                 DirectAdminMailPullProgress::formatBytes((int) $hit['size']),
                 $hit['mtime'] > 0 ? date('Y-m-d H:i', (int) $hit['mtime']) : 'unknown date',
@@ -539,6 +557,26 @@ class ContainerIntegrityScanner
         }
 
         return $rows;
+    }
+
+    /**
+     * A path with its hidden characters spelled out, so "index.php" written
+     * with a Cyrillic i cannot pass for the real file in the evidence list.
+     */
+    public function displayPath(string $path): string
+    {
+        if (preg_match('/[^\x21-\x7e]/', $path) !== 1) {
+            return $path;
+        }
+        $codes = [];
+        foreach (preg_split('//u', $path, -1, PREG_SPLIT_NO_EMPTY) ?: [] as $char) {
+            if (preg_match('/[^\x21-\x7e]/', $char) === 1) {
+                $codes[] = sprintf('U+%04X', mb_ord($char, 'UTF-8'));
+            }
+        }
+        $visible = preg_replace('/[^\x21-\x7e]/u', '?', $path) ?? $path;
+
+        return $visible.' (hidden characters: '.implode(' ', array_unique($codes)).')';
     }
 
     public function reasonLabel(string $reason): string
@@ -560,6 +598,7 @@ class ContainerIntegrityScanner
             self::REASON_CORE_CHECKSUM => 'differs from the official release',
             self::REASON_CORE_EXTRA => 'not part of WordPress core',
             self::REASON_CORE_MISSING => 'core file missing',
+            self::REASON_DECEPTIVE => 'hidden characters in the file name',
             default => $reason,
         };
     }

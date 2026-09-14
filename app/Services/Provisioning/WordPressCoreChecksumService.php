@@ -89,12 +89,19 @@ class WordPressCoreChecksumService
      *
      * @return array{version: ?string, locale: string}
      */
-    public function installedVersion(SSHService $ssh, string $hostAppPath): array
+    public function installedVersionCommand(string $hostAppPath): string
     {
         $root = escapeshellarg(rtrim($hostAppPath, '/'));
+
+        // Single quotes on the shell side: "$wp_version" would otherwise be expanded to nothing.
+        return 'grep -E \'^\\$wp_version = \' '.$root.'/wp-includes/version.php 2>/dev/null | head -n 1; '
+            .'grep -E \'define\\s*\\(\\s*[\'"\'"\'"]WPLANG[\'"\'"\'"]\' '.$root.'/wp-config.php 2>/dev/null | head -n 1; true';
+    }
+
+    public function installedVersion(SSHService $ssh, string $hostAppPath): array
+    {
         $out = (string) $ssh->exec(
-            'grep -E "^\\\$wp_version = " '.$root.'/wp-includes/version.php 2>/dev/null | head -n 1; '
-            .'grep -E "define\\s*\\(\\s*[\'\\"]WPLANG[\'\\"]" '.$root.'/wp-config.php 2>/dev/null | head -n 1; true',
+            $this->installedVersionCommand($hostAppPath),
             20
         );
         $version = null;
