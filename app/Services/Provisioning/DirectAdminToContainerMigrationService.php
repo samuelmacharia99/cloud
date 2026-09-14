@@ -146,6 +146,7 @@ class DirectAdminToContainerMigrationService
                 'stack' => (string) ($primarySite['stack'] ?? 'unknown'),
                 'has_wp_config' => (bool) ($primarySite['has_wp_config'] ?? false),
                 'app_root' => (string) ($primarySite['app_root'] ?? $primarySite['docroot'] ?? $docroot),
+                'nested_apps' => array_values((array) ($primarySite['nested_apps'] ?? [])),
             ];
             $docroot = (string) ($primarySite['docroot'] ?? $docroot);
             if (($detection['stack'] ?? '') === 'unknown') {
@@ -193,6 +194,9 @@ class DirectAdminToContainerMigrationService
         if ($detection['stack'] === 'wordpress' && ! $detection['has_wp_config']) {
             $warnings[] = 'wp-config.php was not detected at the expected docroot. Migration may fail until the path is confirmed.';
         }
+        foreach ((array) ($detection['nested_apps'] ?? []) as $nestedApp) {
+            $warnings[] = 'A Node.js project sits inside the site at '.$nestedApp.'. It is copied with the site files but not run; launch it as its own container if it must serve traffic.';
+        }
 
         $daAccount = is_array($meta['directadmin_account'] ?? null) ? $meta['directadmin_account'] : [];
         $packageUsage = is_array($meta['package_usage'] ?? null) ? $meta['package_usage'] : [];
@@ -204,6 +208,7 @@ class DirectAdminToContainerMigrationService
             'stack' => $detection['stack'],
             'docroot' => $docroot,
             'app_root' => $detection['app_root'] ?? $docroot,
+            'nested_apps' => array_values((array) ($detection['nested_apps'] ?? [])),
             'has_wp_config' => $detection['has_wp_config'],
             'email_stays_on_da' => false,
             'sites' => $sites,
@@ -355,6 +360,7 @@ class DirectAdminToContainerMigrationService
                 'app_root' => (string) ($detection['app_root'] ?? $docroot),
                 'stack' => (string) ($detection['stack'] ?? 'unknown'),
                 'has_wp_config' => (bool) ($detection['has_wp_config'] ?? false),
+                'nested_apps' => array_values((array) ($detection['nested_apps'] ?? [])),
                 'is_primary' => $isPrimary,
                 'recommended_action' => $isPrimary
                     ? 'Billing-anchor container on the selected Application Hosting package (this service).'
@@ -466,6 +472,8 @@ class DirectAdminToContainerMigrationService
             .'[ -f "$d/artisan" ] && echo "ART:$d"; '
             .'[ -f "$d/composer.json" ] && echo "CMP:$d"; '
             .'[ -f "$d/package.json" ] && echo "PKG:$d"; '
+            .'[ -f "$d/package.json" ] && grep -qE "\"(start|serve)\"[[:space:]]*:" "$d/package.json" 2>/dev/null && echo "PKGSTART:$d"; '
+            .'[ -f "$d/index.php" ] && echo "PHP:$d"; '
             .'[ -f "$d/package-lock.json" ] || [ -f "$d/yarn.lock" ] || [ -f "$d/pnpm-lock.yaml" ] && echo "PKG:$d"; '
             .'{ [ -f "$d/app.js" ] || [ -f "$d/server.js" ] || [ -f "$d/ecosystem.config.js" ] || [ -f "$d/ecosystem.config.cjs" ]; } && echo "NJS:$d"; '
             .'[ -d "$d/node_modules" ] && echo "NMD:$d"; '
@@ -479,27 +487,25 @@ class DirectAdminToContainerMigrationService
             .'find "$DOCROOT" -maxdepth 2 -type f -name wp-config.php 2>/dev/null | head -5 | while read -r f; do echo "WP:$(dirname "$f")"; done; '
             .'find "$PARENT" -maxdepth 2 -type f -name artisan 2>/dev/null | grep -v "/vendor/" | head -5 | while read -r f; do echo "ART:$(dirname "$f")"; done; '
             .'find "$PARENT" -maxdepth 4 -type f \( -name package.json -o -name next.config.js -o -name next.config.mjs -o -name next.config.ts -o -name nuxt.config.js -o -name nuxt.config.ts -o -name app.js -o -name server.js \) ! -path "*/node_modules/*" ! -path "*/.git/*" 2>/dev/null | head -20 | while read -r f; do '
-            .'case "$(basename "$f")" in package.json) echo "PKG:$(dirname "$f")";; app.js|server.js) echo "NJS:$(dirname "$f")";; *) echo "NEXT:$(dirname "$f")";; esac; '
+            .'case "$(basename "$f")" in package.json) echo "PKG:$(dirname "$f")"; grep -qE "\"(start|serve)\"[[:space:]]*:" "$f" 2>/dev/null && echo "PKGSTART:$(dirname "$f")"; [ -f "$(dirname "$f")/index.php" ] && echo "PHP:$(dirname "$f")";; app.js|server.js) echo "NJS:$(dirname "$f")";; *) echo "NEXT:$(dirname "$f")";; esac; '
             .'done'
             .'; } || true';
     }
 
     /**
-     * @return array{stack: string, has_wp_config: bool, app_root: string, docroot: string}
+     * Turn probe markers into a stack and an app root.
+     *
+     * The docroot decides first: what DirectAdmin serves for the domain is the
+     * site. A Node project two folders down is a nested app and is reported as
+     * such, never allowed to hijack a PHP site above it. Node markers beside
+     * public_html (the app that a Passenger or proxy setup serves) still win
+     * when the docroot itself serves nothing.
+     *
+     * @return array{stack: string, has_wp_config: bool, app_root: string, docroot: string, nested_apps: list<string>}
      */
     public function classifyDetectedMarkers(string $output, string $docroot): array
     {
-        $wp = [];
-        $art = [];
-        $cmp = [];
-        $pkg = [];
-        $nmd = [];
-        $njs = [];
-        $next = [];
-        $pass = [];
-        $idx = [];
-        $dirs = [];
-
+        $markers = [];
         foreach (preg_split("/\r\n|\n|\r/", $output) ?: [] as $line) {
             $line = trim($line);
             if ($line === '' || ! str_contains($line, ':')) {
@@ -510,75 +516,95 @@ class DirectAdminToContainerMigrationService
             if ($path === '') {
                 continue;
             }
-            match ($key) {
-                'WP' => $wp[] = $path,
-                'ART' => $art[] = $path,
-                'CMP' => $cmp[] = $path,
-                'PKG' => $pkg[] = $path,
-                'NMD' => $nmd[] = $path,
-                'NJS' => $njs[] = $path,
-                'NEXT' => $next[] = $path,
-                'PASS' => $pass[] = $path,
-                'IDX' => $idx[] = $path,
-                'DIR' => $dirs[] = $path,
-                default => null,
-            };
+            $markers[$key][$path] = true;
         }
+        $at = fn (string $key, string $path): bool => isset($markers[$key][$path]);
+        $paths = fn (string $key): array => array_keys($markers[$key] ?? []);
 
         $docroot = rtrim($docroot, '/');
+        $parent = dirname($docroot);
+        $beside = [$parent, $parent.'/private_html', $docroot.'/core', $parent.'/core', $docroot.'/backend', $parent.'/backend'];
+        $isBeside = fn (string $path): bool => in_array($path, $beside, true);
+        $isNested = fn (string $path): bool => str_starts_with($path, $docroot.'/') && ! $isBeside($path);
+        $servesAtDocroot = $at('PHP', $docroot) || $at('IDX', $docroot) || $at('CMP', $docroot);
 
-        if ($wp !== []) {
-            return [
-                'stack' => 'wordpress',
-                'has_wp_config' => true,
-                'app_root' => $wp[0],
-                'docroot' => $docroot,
-            ];
-        }
-
-        if ($art !== []) {
-            return [
-                'stack' => 'laravel',
-                'has_wp_config' => false,
-                'app_root' => $art[0],
-                'docroot' => $docroot,
-            ];
-        }
-
-        if ($cmp !== []) {
-            return [
-                'stack' => 'php',
-                'has_wp_config' => false,
-                'app_root' => $cmp[0],
-                'docroot' => $docroot,
-            ];
-        }
-
-        $nodeRoots = array_values(array_unique([...$next, ...$pkg, ...$njs, ...$nmd, ...$pass]));
-        if ($nodeRoots !== []) {
-            return [
-                'stack' => 'nodejs',
-                'has_wp_config' => false,
-                'app_root' => $this->pickPreferredAppRoot($next !== [] ? $next : $nodeRoots, $docroot),
-                'docroot' => $docroot,
-            ];
-        }
-
-        if ($idx !== [] || in_array($docroot, $dirs, true)) {
-            return [
-                'stack' => 'static_or_php',
-                'has_wp_config' => false,
-                'app_root' => $docroot,
-                'docroot' => $docroot,
-            ];
-        }
-
-        return [
-            'stack' => 'unknown',
-            'has_wp_config' => false,
-            'app_root' => $docroot,
+        $result = fn (string $stack, string $appRoot, bool $wp = false, array $nested = []) => [
+            'stack' => $stack,
+            'has_wp_config' => $wp,
+            'app_root' => $appRoot,
             'docroot' => $docroot,
+            'nested_apps' => array_values(array_unique($nested)),
         ];
+
+        // Node markers that mean a runnable app rather than asset tooling.
+        $nodeEntry = fn (string $path): bool => $at('NEXT', $path) || $at('NJS', $path) || $at('PASS', $path) || $at('PKGSTART', $path)
+            || ($at('PKG', $path) && ! $at('PHP', $path) && ! $at('IDX', $path));
+        $nodeCandidates = array_values(array_unique([...$paths('NEXT'), ...$paths('NJS'), ...$paths('PASS'), ...$paths('PKGSTART'), ...$paths('PKG'), ...$paths('NMD')]));
+        $nested = array_values(array_filter($nodeCandidates, fn ($p) => $isNested($p) && $nodeEntry($p)));
+
+        // WordPress: at the docroot, beside it, or nested (a WordPress in a subfolder is still the site when nothing else is served).
+        $wp = $paths('WP');
+        if ($wp !== []) {
+            usort($wp, fn ($a, $b) => ($a === $docroot ? 0 : 1) <=> ($b === $docroot ? 0 : 1));
+
+            return $result('wordpress', $wp[0], true, $nested);
+        }
+
+        $art = $paths('ART');
+        if ($art !== []) {
+            usort($art, fn ($a, $b) => ($isBeside($a) || $a === $docroot ? 0 : 1) <=> ($isBeside($b) || $b === $docroot ? 0 : 1));
+
+            return $result('laravel', $art[0], false, $nested);
+        }
+
+        // The docroot serves a Node app itself.
+        if ($nodeEntry($docroot) && ! $at('PHP', $docroot) && ! $at('CMP', $docroot)) {
+            return $result('nodejs', $docroot, false, $nested);
+        }
+
+        // PHP at the docroot: composer or a plain index.php. Nested Node projects are reported, not adopted.
+        if ($at('CMP', $docroot)) {
+            return $result('php', $docroot, false, $nested);
+        }
+        if ($at('PHP', $docroot)) {
+            return $result('static_or_php', $docroot, false, $nested);
+        }
+
+        // Nothing served at the docroot: an app beside public_html (composer above, Node above) is the site.
+        foreach ($beside as $path) {
+            if ($at('CMP', $path)) {
+                return $result('php', $path, false, $nested);
+            }
+        }
+        foreach ($beside as $path) {
+            if ($nodeEntry($path)) {
+                return $result('nodejs', $path, false, $nested);
+            }
+        }
+
+        // A Node app at the docroot that also ships an index.php (asset tooling next to PHP) is PHP; handled above.
+        // A Node app at the docroot with only index.html (a built SPA plus its source) is Node.
+        if ($nodeEntry($docroot)) {
+            return $result('nodejs', $docroot, false, $nested);
+        }
+
+        // The docroot serves nothing of its own and the only app is nested: adopt it, deepest-first is wrong, shallowest wins.
+        if (! $servesAtDocroot && $nested !== []) {
+            usort($nested, fn ($a, $b) => substr_count($a, '/') <=> substr_count($b, '/'));
+
+            return $result('nodejs', $nested[0], false, array_slice($nested, 1));
+        }
+
+        $cmp = $paths('CMP');
+        if ($cmp !== []) {
+            return $result('php', $cmp[0], false, $nested);
+        }
+
+        if ($at('IDX', $docroot) || $at('DIR', $docroot)) {
+            return $result('static_or_php', $docroot, false, $nested);
+        }
+
+        return $result('unknown', $docroot, false, $nested);
     }
 
     /**

@@ -140,6 +140,9 @@
             <div class="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-3">
                 <dt class="text-slate-500 text-xs uppercase tracking-wide">App root (export)</dt>
                 <dd class="font-mono text-xs mt-1 break-all">{{ $inventory['app_root'] ?? $inventory['docroot'] ?? '—' }}</dd>
+                @foreach ((array) ($inventory['nested_apps'] ?? []) as $nestedApp)
+                    <dd class="text-xs mt-1 text-amber-700 dark:text-amber-300">Nested Node.js project inside the site (copied, not run): <span class="font-mono break-all">{{ $nestedApp }}</span></dd>
+                @endforeach
             </div>
         </dl>
 
@@ -165,7 +168,12 @@
                                 <tr>
                                     <td class="py-2 pr-3 font-mono text-xs break-all">{{ $site['domain'] ?? '—' }}</td>
                                     <td class="py-2 pr-3">{{ \App\Services\Provisioning\DirectAdminToContainerConvertService::stackLabel((string) ($site['stack'] ?? 'unknown')) }}</td>
-                                    <td class="py-2 pr-3 font-mono text-xs break-all">{{ $site['app_root'] ?? $site['docroot'] ?? '—' }}</td>
+                                    <td class="py-2 pr-3 font-mono text-xs break-all">
+                                        {{ $site['app_root'] ?? $site['docroot'] ?? '—' }}
+                                        @foreach ((array) ($site['nested_apps'] ?? []) as $nestedApp)
+                                            <span class="block mt-1 text-amber-700 dark:text-amber-300 font-sans">Nested Node.js project (copied, not run): <span class="font-mono">{{ $nestedApp }}</span></span>
+                                        @endforeach
+                                    </td>
                                     <td class="py-2 pr-3">
                                         @if ($site['is_primary'] ?? false)
                                             <span class="text-emerald-700 dark:text-emerald-300 font-medium">Primary (this convert)</span>

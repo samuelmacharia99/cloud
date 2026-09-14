@@ -339,11 +339,13 @@ class DirectAdminToContainerConvertServiceTest extends TestCase
         $migrator = app(DirectAdminToContainerMigrationService::class);
         $docroot = '/home/sigtunaco/domains/sigtuna.org/public_html';
 
+        // A built SPA with its source beside it: index.html plus package.json, no PHP.
         $classified = $migrator->classifyDetectedMarkers(
             implode("\n", [
                 'DIR:'.$docroot,
                 'IDX:'.$docroot,
                 'PKG:'.$docroot,
+                'PKGSTART:'.$docroot,
             ]),
             $docroot
         );
@@ -351,6 +353,60 @@ class DirectAdminToContainerConvertServiceTest extends TestCase
         $this->assertSame('nodejs', $classified['stack']);
         $this->assertSame($docroot, $classified['app_root']);
         $this->assertFalse($classified['has_wp_config']);
+    }
+
+    public function test_package_json_next_to_index_php_is_asset_tooling_for_a_php_site(): void
+    {
+        $migrator = app(DirectAdminToContainerMigrationService::class);
+        $docroot = '/home/acme/domains/shop.example/public_html';
+
+        $classified = $migrator->classifyDetectedMarkers(
+            implode("\n", ['DIR:'.$docroot, 'IDX:'.$docroot, 'PHP:'.$docroot, 'PKG:'.$docroot]),
+            $docroot
+        );
+
+        $this->assertSame('static_or_php', $classified['stack']);
+        $this->assertSame($docroot, $classified['app_root']);
+        $this->assertSame([], $classified['nested_apps']);
+    }
+
+    public function test_a_node_project_nested_under_a_php_docroot_never_hijacks_the_site(): void
+    {
+        $migrator = app(DirectAdminToContainerMigrationService::class);
+        $docroot = '/home/blinksof/domains/blinksofttech.com/public_html';
+        $portal = $docroot.'/classroom_portal';
+
+        $classified = $migrator->classifyDetectedMarkers(
+            implode("\n", [
+                'DIR:/home/blinksof/domains/blinksofttech.com',
+                'DIR:'.$docroot,
+                'IDX:'.$docroot,
+                'PHP:'.$docroot,
+                'PKG:'.$portal,
+                'PKGSTART:'.$portal,
+                'NJS:'.$portal,
+            ]),
+            $docroot
+        );
+
+        $this->assertSame('static_or_php', $classified['stack']);
+        $this->assertSame($docroot, $classified['app_root']);
+        $this->assertSame([$portal], $classified['nested_apps']);
+    }
+
+    public function test_a_nested_node_project_is_adopted_only_when_the_docroot_serves_nothing(): void
+    {
+        $migrator = app(DirectAdminToContainerMigrationService::class);
+        $docroot = '/home/acme/domains/app.example/public_html';
+        $portal = $docroot.'/portal';
+
+        $classified = $migrator->classifyDetectedMarkers(
+            implode("\n", ['DIR:'.$docroot, 'PKG:'.$portal, 'NJS:'.$portal]),
+            $docroot
+        );
+
+        $this->assertSame('nodejs', $classified['stack']);
+        $this->assertSame($portal, $classified['app_root']);
     }
 
     public function test_classifies_nodejs_when_package_json_is_above_public_html(): void
