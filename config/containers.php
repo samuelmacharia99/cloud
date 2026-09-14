@@ -195,6 +195,19 @@ return [
     | Container file editor (Files tab)
     |--------------------------------------------------------------------------
     */
+    'file_manager' => [
+        // Largest declared uncompressed size an archive may extract to.
+        'max_extract_mb' => (int) env('CONTAINER_FILE_MAX_EXTRACT_MB', 2048),
+        // Largest selection that "Download as zip" will pack.
+        'max_archive_download_mb' => (int) env('CONTAINER_FILE_MAX_ARCHIVE_MB', 500),
+        // How long extract / zip-build progress and built archives are kept.
+        'operation_ttl_minutes' => (int) env('CONTAINER_FILE_OPERATION_TTL_MINUTES', 60),
+        // Scratch directory next to the app mount (never inside it).
+        'temp_dir' => env('CONTAINER_FILE_TEMP_DIR', '.file-manager-tmp'),
+        // Most items one batch delete / move / copy / zip may name.
+        'max_batch_items' => (int) env('CONTAINER_FILE_MAX_BATCH_ITEMS', 500),
+    ],
+
     'file_editor' => [
         'max_bytes' => (int) env('CONTAINER_FILE_EDITOR_MAX_BYTES', 524288),
         'view_max_bytes' => (int) env('CONTAINER_FILE_VIEW_MAX_BYTES', 2097152),

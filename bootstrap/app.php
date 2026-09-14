@@ -100,6 +100,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $exceptions->render(function (PostTooLargeException $e, Request $request) {
             if (! $request->is('my/services/*/container/files/upload')
+                && ! $request->is('admin/services/*/container/files/upload')
                 && ! $request->is('my/services/*/container/database/import')) {
                 return null;
             }

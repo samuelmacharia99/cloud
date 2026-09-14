@@ -268,6 +268,31 @@ class SSHService
     }
 
     /**
+     * Run a command and return its output and exit status instead of throwing
+     * on a non-zero exit. The command runs in a subshell so the trailing
+     * status marker is always printed; callers read the tool's own message
+     * from the output when the status is non-zero.
+     *
+     * @return array{output: string, status: int}
+     */
+    public function execWithStatus(string $command, int $timeout = 60): array
+    {
+        $marker = '__TALKSASA_STATUS__:';
+        $wrapped = '( '.$command.' ); printf '.escapeshellarg("\n".$marker.'%d').' "$?"';
+        $raw = $this->exec($wrapped, $timeout, retry: false);
+
+        $position = strrpos($raw, $marker);
+        if ($position === false) {
+            return ['output' => trim($raw), 'status' => 255];
+        }
+
+        $status = (int) trim(substr($raw, $position + strlen($marker)));
+        $output = trim(substr($raw, 0, $position));
+
+        return ['output' => $output, 'status' => $status];
+    }
+
+    /**
      * phpseclib exec() returns stdout only. Next.js and docker put the failure on stderr.
      */
     private function mergeStdErrorIntoOutput(mixed $output): mixed

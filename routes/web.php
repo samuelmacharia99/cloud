@@ -439,6 +439,12 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/services/{service}/container/files/mkdir', [ContainerFileController::class, 'mkdir'])->name('admin.services.container.files.mkdir');
         Route::post('admin/services/{service}/container/files/create', [ContainerFileController::class, 'createFile'])->name('admin.services.container.files.create');
         Route::patch('admin/services/{service}/container/files/rename', [ContainerFileController::class, 'rename'])->name('admin.services.container.files.rename');
+        Route::delete('admin/services/{service}/container/files/batch', [ContainerFileController::class, 'batchDelete'])->name('admin.services.container.files.batch-delete');
+        Route::post('admin/services/{service}/container/files/move', [ContainerFileController::class, 'move'])->name('admin.services.container.files.move');
+        Route::post('admin/services/{service}/container/files/extract', [ContainerFileController::class, 'extract'])->name('admin.services.container.files.extract');
+        Route::post('admin/services/{service}/container/files/archive', [ContainerFileController::class, 'archive'])->name('admin.services.container.files.archive');
+        Route::get('admin/services/{service}/container/files/operations/{token}', [ContainerFileController::class, 'operation'])->where('token', '[0-9a-fA-F-]{36}')->name('admin.services.container.files.operation');
+        Route::get('admin/services/{service}/container/files/archive/{token}/download', [ContainerFileController::class, 'downloadArchive'])->where('token', '[0-9a-fA-F-]{36}')->name('admin.services.container.files.archive-download');
 
         Route::post('admin/services/{service}/terminal', [ContainerTerminalController::class, 'create'])->name('admin.services.container.terminal.create');
         Route::post('admin/services/{service}/terminal/extend', [ContainerTerminalController::class, 'extend'])->name('admin.services.container.terminal.extend');
@@ -899,11 +905,17 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
             Route::get('my/services/{service}/container/files/content', [ContainerFileController::class, 'content'])->name('customer.services.container.files.content');
             Route::put('my/services/{service}/container/files/content', [ContainerFileController::class, 'saveContent'])->middleware('throttle:30,1')->name('customer.services.container.files.save');
             Route::get('my/services/{service}/container/files/download', [ContainerFileController::class, 'download'])->name('customer.services.container.files.download');
-            Route::post('my/services/{service}/container/files/upload', [ContainerFileController::class, 'upload'])->middleware('throttle:10,1')->name('customer.services.container.files.upload');
+            Route::post('my/services/{service}/container/files/upload', [ContainerFileController::class, 'upload'])->name('customer.services.container.files.upload');
             Route::delete('my/services/{service}/container/files', [ContainerFileController::class, 'delete'])->name('customer.services.container.files.delete');
             Route::post('my/services/{service}/container/files/mkdir', [ContainerFileController::class, 'mkdir'])->name('customer.services.container.files.mkdir');
             Route::post('my/services/{service}/container/files/create', [ContainerFileController::class, 'createFile'])->name('customer.services.container.files.create');
             Route::patch('my/services/{service}/container/files/rename', [ContainerFileController::class, 'rename'])->name('customer.services.container.files.rename');
+            Route::delete('my/services/{service}/container/files/batch', [ContainerFileController::class, 'batchDelete'])->name('customer.services.container.files.batch-delete');
+            Route::post('my/services/{service}/container/files/move', [ContainerFileController::class, 'move'])->name('customer.services.container.files.move');
+            Route::post('my/services/{service}/container/files/extract', [ContainerFileController::class, 'extract'])->name('customer.services.container.files.extract');
+            Route::post('my/services/{service}/container/files/archive', [ContainerFileController::class, 'archive'])->name('customer.services.container.files.archive');
+            Route::get('my/services/{service}/container/files/operations/{token}', [ContainerFileController::class, 'operation'])->where('token', '[0-9a-fA-F-]{36}')->name('customer.services.container.files.operation');
+            Route::get('my/services/{service}/container/files/archive/{token}/download', [ContainerFileController::class, 'downloadArchive'])->where('token', '[0-9a-fA-F-]{36}')->name('customer.services.container.files.archive-download');
         });
 
         // Container terminal (throttled separately)
