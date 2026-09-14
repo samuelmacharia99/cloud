@@ -36,6 +36,20 @@ class ContainerStackNetworkAllocatorTest extends TestCase
     }
 
     #[Test]
+    public function blocks_the_node_reports_live_are_skipped_even_when_no_row_records_them(): void
+    {
+        $node = Node::factory()->containerHost()->create();
+        $allocator = new ContainerStackNetworkAllocator('10.210.0.0/16', 24);
+        $this->deployment($node, '10.210.0.0/24');
+
+        $this->assertSame('10.210.3.0/24', $allocator->allocate($node, null, ['10.210.1.0/24', '10.210.2.0/24']));
+
+        $row = $this->deployment($node, '10.210.7.0/24');
+        $this->assertSame('10.210.1.0/24', $allocator->reallocate($row, ['10.210.7.0/24']));
+        $this->assertSame('10.210.1.0/24', $row->fresh()->network_subnet);
+    }
+
+    #[Test]
     public function a_deployment_keeps_its_subnet_and_its_own_row_is_not_a_conflict(): void
     {
         $node = Node::factory()->containerHost()->create();

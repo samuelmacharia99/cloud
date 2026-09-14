@@ -200,6 +200,9 @@ class ContainerDeploymentService
                 ->first();
             $replaceExistingContainers = $existingDeployment !== null
                 && $existingDeployment->status !== 'terminated';
+            // The stack this row ran before; a template change renames the
+            // container and the old stack must go, network included.
+            $previousContainerName = (string) ($existingDeployment?->container_name ?? '');
             if (($template->slug ?? '') === 'nodejs' && $options->isRedeploy && $existingDeployment) {
                 $nodeRedeployRollback = [
                     'compose' => (string) ($existingDeployment->docker_compose_content ?? ''),
@@ -342,6 +345,22 @@ class ContainerDeploymentService
                 // Create container directory
                 $containerPath = self::CONTAINER_BASE_PATH.'/'.$containerName;
                 $ssh->mkdirp($containerPath);
+
+                // Retire a stack this service ran under another name, and make
+                // sure no network on the node still holds this stack's subnet.
+                $reconciled = (new ContainerStackNetworkReconciler($this->stackNetworks))->reconcile(
+                    $ssh,
+                    $deployment,
+                    $containerName,
+                    $previousContainerName,
+                    fn (string $stalePath) => $this->tearDownStack($ssh, $stalePath, removeVolumes: false),
+                );
+                if ($reconciled['actions'] !== []) {
+                    $this->recordDeploymentEvent($service, $deployment, 'stack_network_reconciled', [
+                        'subnet' => $reconciled['subnet'],
+                        'actions' => $reconciled['actions'],
+                    ]);
+                }
 
                 $hasDatabaseSidecar = $databaseTemplate !== null
                     || $this->templateEnvironment->templateDefinesDatabaseSidecar($template);

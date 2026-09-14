@@ -69,20 +69,32 @@ class ContainerStackNetworkAllocator
      * The subnet this deployment renders with. Allocated once per node and
      * kept; a deployment that already has one is never moved.
      */
-    public function ensureFor(ContainerDeployment $deployment): string
+    public function ensureFor(ContainerDeployment $deployment, array $liveUsed = []): string
     {
         $current = trim((string) ($deployment->network_subnet ?? ''));
         if ($current !== '') {
             return $current;
         }
 
+        return $this->reallocate($deployment, $liveUsed);
+    }
+
+    /**
+     * Give the deployment a fresh block, skipping what the database and the
+     * node itself say is taken. Used when a network on the node already holds
+     * the block the row carries (a stale stack, or a network nobody recorded).
+     *
+     * @param  list<string>  $liveUsed  subnets seen on the node right now
+     */
+    public function reallocate(ContainerDeployment $deployment, array $liveUsed = []): string
+    {
         $node = $deployment->node ?? Node::query()->find($deployment->node_id);
         if (! $node) {
             throw new \DomainException("Deployment {$deployment->id} has no container host to allocate a network on.");
         }
 
         for ($attempt = 1; ; $attempt++) {
-            $subnet = $this->allocate($node, $deployment->id);
+            $subnet = $this->allocate($node, $deployment->id, $liveUsed);
 
             try {
                 $deployment->forceFill(['network_subnet' => $subnet])->save();
@@ -104,9 +116,9 @@ class ContainerStackNetworkAllocator
      * deploys on a populated node line up rather than both picking the same
      * block.
      */
-    public function allocate(Node $node, ?int $ignoreDeploymentId = null): string
+    public function allocate(Node $node, ?int $ignoreDeploymentId = null, array $liveUsed = []): string
     {
-        return DB::transaction(function () use ($node, $ignoreDeploymentId): string {
+        return DB::transaction(function () use ($node, $ignoreDeploymentId, $liveUsed): string {
             $query = ContainerDeployment::query()
                 ->where('node_id', $node->id)
                 ->whereNotNull('network_subnet')
@@ -119,6 +131,9 @@ class ContainerStackNetworkAllocator
                 ->map(static fn ($subnet): string => trim((string) $subnet))
                 ->flip()
                 ->all();
+            foreach ($liveUsed as $subnet) {
+                $used[trim((string) $subnet)] = true;
+            }
 
             foreach ($this->candidates() as $subnet) {
                 if (! isset($used[$subnet])) {
