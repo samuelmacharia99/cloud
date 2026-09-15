@@ -63,6 +63,7 @@ use App\Http\Controllers\Reseller\CatalogController;
 use App\Http\Controllers\Reseller\CustomerInvoiceController;
 use App\Http\Controllers\Reseller\CustomerOrderController;
 use App\Http\Controllers\Reseller\CustomerPaymentController;
+use App\Http\Controllers\Reseller\DaOfframpController;
 use App\Http\Controllers\Reseller\DashboardActivityController;
 use App\Http\Controllers\Reseller\DashboardDirectAdminController;
 use App\Http\Controllers\Reseller\DeveloperController;
@@ -532,6 +533,12 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('reseller/tickets/{ticket}/attachments/{attachment}', [TicketAttachmentController::class, 'show'])->name('reseller.tickets.attachments.show');
 
         Route::get('reseller/services', [ManagedServiceController::class, 'index'])->name('reseller.services.index');
+        Route::get('reseller/directadmin-offramp', [DaOfframpController::class, 'show'])->name('reseller.directadmin-offramp');
+        Route::get('reseller/directadmin-offramp/progress', [DaOfframpController::class, 'progress'])->middleware('throttle:da-offramp-progress')->name('reseller.directadmin-offramp.progress');
+        Route::post('reseller/directadmin-offramp/import-packages', [DaOfframpController::class, 'importPackages'])->middleware('throttle:da-offramp-mutate')->name('reseller.directadmin-offramp.import-packages');
+        Route::post('reseller/directadmin-offramp', [DaOfframpController::class, 'store'])->middleware('throttle:da-offramp-mutate')->name('reseller.directadmin-offramp.store');
+        Route::post('reseller/directadmin-offramp/retry', [DaOfframpController::class, 'retry'])->middleware('throttle:da-offramp-mutate')->name('reseller.directadmin-offramp.retry');
+        Route::post('reseller/directadmin-offramp/{batch}/cut-dns', [DaOfframpController::class, 'cutDns'])->middleware('throttle:da-offramp-cut-dns')->name('reseller.directadmin-offramp.cut-dns');
         Route::get('reseller/services/{service}', [ManagedServiceController::class, 'show'])->name('reseller.services.show');
         Route::patch('reseller/services/{service}', [ManagedServiceController::class, 'update'])->name('reseller.services.update');
         Route::post('reseller/services/{service}/diagnose', [ManagedServiceController::class, 'diagnose'])->middleware('throttle:10,1')->name('reseller.services.diagnose');

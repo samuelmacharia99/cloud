@@ -14,8 +14,10 @@ use App\Models\Service;
 use App\Models\User;
 use App\Services\AdminActivityService;
 use App\Services\Dns\DomainCloudflareDnsService;
+use App\Services\ResellerComputeUsageService;
 use App\Services\ResellerDirectAdminService;
 use App\Services\ResellerHostedAccountLinkService;
+use App\Services\ResellerProvisionProductResolver;
 use App\Services\ResellerScopeService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -128,23 +130,38 @@ class DaConvertOfframpService
      * @param  list<int>  $serviceIds
      * @param  list<string>  $accountKeys
      */
+    /**
+     * Queue converts for a reseller's DirectAdmin accounts. The actor is the
+     * admin running the platform board or the reseller running their own.
+     * A fallback size is optional when every account maps to a plan; $plans
+     * pins an account key to one of the reseller's own container listings.
+     *
+     * @param  list<int>  $serviceIds
+     * @param  list<string>  $accountKeys
+     * @param  array<string, int>  $plans  account key => reseller_product_id
+     * @param  ResellerProduct|null  $fallbackListing  the reseller plan behind $product, so its specs and price apply
+     */
     public function queueBatch(
         User $reseller,
-        User $admin,
+        User $actor,
         array $serviceIds,
-        Product $product,
+        ?Product $product,
         ?Product $emailProduct,
         bool $acknowledgeMailPull,
         bool $acknowledgeAddonSites,
         array $accountKeys = [],
+        array $plans = [],
+        ?ResellerProduct $fallbackListing = null,
     ): DaConvertBatch {
         if (! $reseller->is_reseller) {
             throw new InvalidArgumentException('Only a reseller book can be converted in batch.');
         }
 
-        if ($product && ($product->type !== 'container_hosting' || ! $product->is_active)) {
+        if ($product && ($product->type !== 'container_hosting' || (! $product->is_active && ! $this->isShellEngine($product)))) {
             throw new InvalidArgumentException('Select an active Application Hosting product as the fallback container size.');
         }
+
+        $chosenListings = $this->resolvePlanChoices($reseller, $plans);
 
         $keys = array_values(array_unique(array_filter(array_map('strval', $accountKeys))));
         if ($keys === []) {
@@ -195,18 +212,28 @@ class DaConvertOfframpService
                 continue;
             }
 
-            $mapped = $this->packages->resolveForService($reseller, $row['service'], $product);
+            $chosen = $chosenListings[$this->accountKeyForService($row['service'])]
+                ?? $chosenListings['service:'.$row['service']->id]
+                ?? null;
+            $mapped = $this->packages->resolveForService($reseller, $row['service'], $product, $chosen);
+            if (! $mapped['listing'] && $fallbackListing) {
+                // Explicit choice, then the DirectAdmin package mapping, then the fallback plan.
+                $mapped = $this->packages->resolveForService($reseller, $row['service'], $product, $fallbackListing);
+            }
             $prepared[$index]['listing'] = $mapped['listing'];
             $prepared[$index]['engine'] = $mapped['engine'];
+            $prepared[$index]['limits'] = $mapped['limits'];
             $prepared[$index]['retail'] = $mapped['retail'];
             $prepared[$index]['da_package'] = $mapped['da_package'];
 
             if (! $mapped['engine']) {
                 $prepared[$index]['status'] = DaConvertBatchItemStatus::Blocked;
-                $prepared[$index]['error'] = 'Import this reseller’s DirectAdmin packages first, or choose a fallback Application Hosting size.';
+                $prepared[$index]['error'] = 'Choose an Application Hosting plan for this account, or import the DirectAdmin packages so each account maps to one.';
                 $prepared[$index]['blockers'][] = $prepared[$index]['error'];
             }
         }
+
+        $prepared = $this->blockWhatThePoolCannotHold($reseller, $prepared);
 
         $toQueue = array_values(array_filter(
             $prepared,
@@ -218,12 +245,12 @@ class DaConvertOfframpService
             $sites = 1 + (int) ($row['addon_site_count'] ?? 0);
             $share = $sites > 1 ? round(1 / $sites, 4) : 1.0;
             $engine = $row['engine'] ?? $product;
-            $this->convert->assertHostCapacityForConvert($row['service'], $engine, $stack, $share);
+            $this->convert->assertHostCapacityForConvert($row['service'], $engine, $stack, $share, $row['limits'] ?? null);
         }
 
         $batch = DB::transaction(function () use (
             $reseller,
-            $admin,
+            $actor,
             $product,
             $emailProduct,
             $acknowledgeMailPull,
@@ -233,11 +260,12 @@ class DaConvertOfframpService
             $hasQueued = collect($prepared)->contains(
                 fn (array $row): bool => $row['status'] === DaConvertBatchItemStatus::Queued
             );
+            $firstEngine = collect($prepared)->first(fn (array $row): bool => ($row['engine'] ?? null) instanceof Product)['engine'] ?? null;
 
             $batch = DaConvertBatch::query()->create([
                 'reseller_user_id' => $reseller->id,
-                'admin_user_id' => $admin->id,
-                'product_id' => $product->id,
+                'admin_user_id' => $actor->id,
+                'product_id' => $product?->id ?? $firstEngine?->id ?? app(ResellerProvisionProductResolver::class)->shellContainerProduct()->id,
                 'email_product_id' => $emailProduct?->id,
                 'acknowledge_mail_pull' => $acknowledgeMailPull,
                 'acknowledge_addon_sites' => $acknowledgeAddonSites,
@@ -264,7 +292,7 @@ class DaConvertOfframpService
                 ]);
 
                 if ($row['status'] === DaConvertBatchItemStatus::Queued && $engine) {
-                    $this->markServiceQueued($service, $engine, $row['detected_stack'], $listing, $row['retail'] ?? null);
+                    $this->markServiceQueued($service, $engine, $row['detected_stack'], $listing, $row['retail'] ?? null, $row['limits'] ?? null);
                 }
             }
 
@@ -278,7 +306,7 @@ class DaConvertOfframpService
 
             ConvertDirectAdminServiceToContainerJob::dispatch(
                 (int) $item->service_id,
-                (int) ($item->product_id ?: $product->id),
+                (int) ($item->product_id ?: $product?->id),
                 $acknowledgeMailPull,
                 null,
                 $acknowledgeAddonSites,
@@ -293,10 +321,13 @@ class DaConvertOfframpService
 
         AdminActivityService::log(
             'reseller.da_offramp_batch',
-            'Queued DirectAdmin off-ramp batch #'.$batch->id.' for reseller '.$reseller->name,
+            'Queued DirectAdmin off-ramp batch #'.$batch->id.' for reseller '.$reseller->name
+                .($actor->id === $reseller->id ? ' (queued by the reseller)' : ''),
             $reseller,
             [
                 'batch_id' => $batch->id,
+                'actor_user_id' => $actor->id,
+                'actor_is_reseller' => $actor->id === $reseller->id,
                 'service_ids' => $batch->items->pluck('service_id')->all(),
                 'queued' => $batch->items->where('status', DaConvertBatchItemStatus::Queued)->count(),
                 'blocked' => $batch->items->where('status', DaConvertBatchItemStatus::Blocked)->count(),
@@ -1086,10 +1117,15 @@ class DaConvertOfframpService
         ?string $stack,
         ?ResellerProduct $listing = null,
         ?float $retail = null,
+        ?array $limits = null,
     ): void {
         $meta = is_array($service->service_meta) ? $service->service_meta : [];
         if ($listing) {
             $meta['reseller_product_id'] = $listing->id;
+        }
+        if (is_array($limits) && $limits !== []) {
+            // The plan's specs size the container; the shell engine has none.
+            $meta['reseller_catalog_limits'] = $limits;
         }
         $meta['da_convert'] = [
             'status' => 'queued',
@@ -1206,7 +1242,136 @@ class DaConvertOfframpService
             'cutover_item_id' => $item?->id,
             'percent' => $board['percent'],
             'convert_status' => $board['label'],
+            'security' => $this->securitySummary($service),
         ]);
+    }
+
+    /**
+     * What the post-import scan found on a converted site, for the board.
+     *
+     * @return array{state: string, label: string, incidents: int, suspicious: int, exposed: int}
+     */
+    public function securitySummary(?Service $service): array
+    {
+        $meta = is_array($service?->service_meta) ? $service->service_meta : [];
+        $scan = is_array($meta['integrity_scan'] ?? null) ? $meta['integrity_scan'] : null;
+        $incidents = count(array_filter((array) ($meta['security_incidents'] ?? []), 'is_array'));
+
+        if ($scan === null) {
+            return ['state' => 'pending', 'label' => $service?->containerDeployment ? 'Not scanned yet' : '', 'incidents' => $incidents, 'suspicious' => 0, 'exposed' => 0];
+        }
+
+        $suspicious = (int) ($scan['suspicious_count'] ?? 0);
+        $exposed = (int) ($scan['exposed_count'] ?? 0);
+        $quarantined = (int) ($scan['quarantined_count'] ?? 0);
+
+        if ($suspicious > 0) {
+            $label = $suspicious.' file'.($suspicious === 1 ? '' : 's').' to review';
+            $state = 'review';
+        } elseif ($quarantined > 0 || $incidents > 0) {
+            $label = ($quarantined > 0 ? $quarantined.' file'.($quarantined === 1 ? '' : 's').' removed to an incident' : $incidents.' incident'.($incidents === 1 ? '' : 's'));
+            $state = 'archived';
+        } else {
+            $label = 'Clean';
+            $state = 'clean';
+        }
+        if ($exposed > 0) {
+            $label .= ' · '.$exposed.' exposed backup'.($exposed === 1 ? '' : 's');
+        }
+        if (! empty($scan['scan_partial'])) {
+            $label .= ' (partial scan)';
+        }
+
+        return ['state' => $state, 'label' => $label, 'incidents' => $incidents, 'suspicious' => $suspicious, 'exposed' => $exposed];
+    }
+
+    /**
+     * The reseller's own listings chosen per account, verified to be theirs.
+     *
+     * @param  array<string, int>  $plans
+     * @return array<string, ResellerProduct>
+     */
+    private function resolvePlanChoices(User $reseller, array $plans): array
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $plans))));
+        if ($ids === []) {
+            return [];
+        }
+        $listings = ResellerProduct::query()
+            ->where('reseller_id', $reseller->id)
+            ->where('type', 'container_hosting')
+            ->whereIn('id', $ids)
+            ->with('adminProduct')
+            ->get()
+            ->keyBy('id');
+
+        $chosen = [];
+        foreach ($plans as $key => $id) {
+            $listing = $listings->get((int) $id);
+            if (! $listing) {
+                throw new InvalidArgumentException('One of the chosen plans is not an Application Hosting plan in your catalogue.');
+            }
+            $chosen[(string) $key] = $listing;
+        }
+
+        return $chosen;
+    }
+
+    private function accountKeyForService(Service $service): string
+    {
+        $username = $this->serviceDaUsername($service);
+
+        return $username !== '' ? 'da:'.$username : 'service:'.$service->id;
+    }
+
+    private function isShellEngine(Product $product): bool
+    {
+        return $product->slug === ResellerProvisionProductResolver::CONTAINER_SHELL_PRODUCT_SLUG;
+    }
+
+    /**
+     * Every queued account reserves its plan's vCPU and RAM from the
+     * reseller's pool. Accounts are taken in order; the first one that no
+     * longer fits, and every one after it, is blocked with the shortfall.
+     *
+     * @param  list<array<string, mixed>>  $prepared
+     * @return list<array<string, mixed>>
+     */
+    private function blockWhatThePoolCannotHold(User $reseller, array $prepared): array
+    {
+        $compute = app(ResellerComputeUsageService::class);
+        if (! $compute->isMetered($reseller)) {
+            return $prepared;
+        }
+
+        $cpu = 0.0;
+        $memory = 0;
+        foreach ($prepared as $index => $row) {
+            if ($row['status'] !== DaConvertBatchItemStatus::Queued) {
+                continue;
+            }
+            $requested = $compute->requestedAllocationForListing($row['listing'] ?? null, $row['engine'] ?? null);
+            $headroom = $compute->checkHeadroom($reseller, $cpu + $requested['cpu_cores'], $memory + $requested['memory_mb']);
+            if ($headroom['allowed']) {
+                $cpu += $requested['cpu_cores'];
+                $memory += $requested['memory_mb'];
+
+                continue;
+            }
+            $short = [];
+            if ($headroom['cpu_over'] > 0) {
+                $short[] = rtrim(rtrim(number_format($headroom['cpu_over'], 2), '0'), '.').' vCPU';
+            }
+            if ($headroom['memory_over'] > 0) {
+                $short[] = number_format($headroom['memory_over'] / 1024, 1).' GB RAM';
+            }
+            $message = 'Your application hosting pool is short by '.implode(' and ', $short).' for this account. Free capacity or upgrade your package, then queue it again.';
+            $prepared[$index]['status'] = DaConvertBatchItemStatus::Blocked;
+            $prepared[$index]['error'] = $message;
+            $prepared[$index]['blockers'][] = $message;
+        }
+
+        return $prepared;
     }
 
     /**
@@ -1431,7 +1596,7 @@ class DaConvertOfframpService
      *     accounts: list<array<string, mixed>>
      * }
      */
-    public function operatorProgress(User $reseller): array
+    public function operatorProgress(User $reseller, bool $forReseller = false): array
     {
         $batches = DaConvertBatch::query()
             ->where('reseller_user_id', $reseller->id)
@@ -1471,8 +1636,8 @@ class DaConvertOfframpService
                     'customer' => $service->user?->name,
                     'item_status' => $item->status?->value,
                     'item_label' => $item->status?->label(),
-                    'service_url' => route('admin.services.show', $service),
-                    'wizard_url' => route('admin.services.migrate-to-container', $service),
+                    'service_url' => $forReseller ? route('reseller.services.show', $service) : route('admin.services.show', $service),
+                    'wizard_url' => $forReseller ? null : route('admin.services.migrate-to-container', $service),
                     ...$view,
                     'is_active' => $itemActive,
                 ];

@@ -8,6 +8,7 @@ use App\Models\Service;
 use App\Models\User;
 use App\Services\AdminActivityService;
 use App\Services\ResellerDirectAdminService;
+use App\Services\ResellerProvisionProductResolver;
 use Illuminate\Support\Collection;
 use InvalidArgumentException;
 
@@ -114,18 +115,13 @@ class DaResellerPackageImportService
     /**
      * @return array{da_package: string, listing: ?ResellerProduct, engine: ?Product, retail: ?float, needs_price: bool}
      */
-    public function resolveForService(User $reseller, Service $service, ?Product $fallbackEngine = null): array
+    public function resolveForService(User $reseller, Service $service, ?Product $fallbackEngine = null, ?ResellerProduct $chosen = null): array
     {
         $daPackage = $this->serviceDaPackageName($service);
-        $listing = $this->findListing($reseller, $daPackage)
+        $listing = $chosen
+            ?? $this->findListing($reseller, $daPackage)
             ?? $this->listingFromService($service, $reseller);
-        $engine = $listing?->adminProduct;
-        if (! $engine || $engine->type !== 'container_hosting') {
-            $engine = $fallbackEngine;
-        }
-        if ($engine && $engine->type !== 'container_hosting') {
-            $engine = null;
-        }
+        $engine = $this->engineForListing($listing, $fallbackEngine);
 
         $retail = $service->custom_price !== null
             ? (float) $service->custom_price
@@ -135,9 +131,48 @@ class DaResellerPackageImportService
             'da_package' => $daPackage,
             'listing' => $listing,
             'engine' => $engine,
+            'limits' => $this->limitsForListing($listing),
             'retail' => $retail,
             'needs_price' => $listing !== null && (float) ($listing->monthly_price ?? 0) <= 0 && (float) ($listing->yearly_price ?? 0) <= 0 && $service->custom_price === null,
         ];
+    }
+
+    /**
+     * The platform product a listing provisions on. A reseller's own
+     * application hosting plan runs on the shell; a mapped listing on its
+     * engine; anything else on the fallback size.
+     */
+    public function engineForListing(?ResellerProduct $listing, ?Product $fallbackEngine): ?Product
+    {
+        $engine = null;
+        if ($listing && $listing->type === 'container_hosting') {
+            $engine = $listing->isResellerContainerPlan()
+                ? app(ResellerProvisionProductResolver::class)->resolve($listing)
+                : $listing->adminProduct;
+        }
+        if (! $engine || $engine->type !== 'container_hosting') {
+            $engine = $fallbackEngine;
+        }
+        if ($engine && $engine->type !== 'container_hosting') {
+            $engine = null;
+        }
+
+        return $engine;
+    }
+
+    /**
+     * Specs the listing promises, written onto the converted service so the
+     * container is sized by the reseller's plan and not by the engine.
+     *
+     * @return array{cpu?: float, memory_mb?: int, disk_gb?: float, bandwidth_gb?: float}|null
+     */
+    public function limitsForListing(?ResellerProduct $listing): ?array
+    {
+        if (! $listing || ! $listing->hasContainerResourceLimits()) {
+            return null;
+        }
+
+        return array_filter($listing->containerResourceLimits(), fn ($v) => $v !== null && (float) $v > 0);
     }
 
     /**
@@ -147,13 +182,7 @@ class DaResellerPackageImportService
     {
         $daPackage = trim($packageName);
         $listing = $this->findListing($reseller, $daPackage);
-        $engine = $listing?->adminProduct;
-        if (! $engine || $engine->type !== 'container_hosting') {
-            $engine = $fallbackEngine;
-        }
-        if ($engine && $engine->type !== 'container_hosting') {
-            $engine = null;
-        }
+        $engine = $this->engineForListing($listing, $fallbackEngine);
 
         $retail = $listing ? $listing->priceForBillingCycle('monthly') : null;
 
@@ -161,6 +190,7 @@ class DaResellerPackageImportService
             'da_package' => $daPackage,
             'listing' => $listing,
             'engine' => $engine,
+            'limits' => $this->limitsForListing($listing),
             'retail' => $retail,
             'needs_price' => $listing !== null && (float) ($listing->monthly_price ?? 0) <= 0 && (float) ($listing->yearly_price ?? 0) <= 0,
         ];

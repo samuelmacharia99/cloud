@@ -49,12 +49,34 @@ class ManagedServiceController extends Controller
         $applicationUsage = app(ResellerManagedServiceUsageService::class)
             ->forServices($applicationServices->getCollection());
 
+        $directAdminToMove = $this->directAdminAccountsToMove(auth()->user());
+
         return view('reseller.services.index', compact(
             'applicationServices',
             'mailServices',
             'otherServices',
             'applicationUsage',
+            'directAdminToMove',
         ));
+    }
+
+    /**
+     * DirectAdmin accounts on the reseller's book that are still to move to
+     * application hosting. Cheap on purpose: it runs on every services page.
+     */
+    private function directAdminAccountsToMove(User $reseller): int
+    {
+        return $this->scope->managedServicesQuery($reseller)
+            ->whereNotIn('status', [ServiceStatus::Terminated->value, ServiceStatus::Cancelled->value])
+            ->where(function ($query) {
+                $query->where('provisioning_driver_key', 'directadmin')
+                    ->orWhere(function ($inner) {
+                        $inner->whereNull('provisioning_driver_key')
+                            ->whereHas('product', fn ($product) => $product->where('provisioning_driver_key', 'directadmin'));
+                    });
+            })
+            ->whereHas('product', fn ($product) => $product->where('type', 'shared_hosting'))
+            ->count();
     }
 
     private function filteredManagedServices(Request $request)

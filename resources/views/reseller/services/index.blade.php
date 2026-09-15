@@ -13,6 +13,22 @@
         <p class="text-slate-600 dark:text-slate-400 mt-1">Application hosting and email are listed separately so you can manage each stack on its own.</p>
     </div>
 
+    @if (($directAdminToMove ?? 0) > 0 || filled(auth()->user()->directadmin_username))
+        <div class="rounded-xl border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-950/30 p-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+                <p class="text-sm font-semibold text-violet-900 dark:text-violet-100">
+                    @if (($directAdminToMove ?? 0) > 0)
+                        {{ $directAdminToMove }} DirectAdmin {{ \Illuminate\Support\Str::plural('account', $directAdminToMove) }} can move to Application Hosting
+                    @else
+                        Move your DirectAdmin accounts to Application Hosting
+                    @endif
+                </p>
+                <p class="text-xs text-violet-800 dark:text-violet-300 mt-1">Each site is exported, deployed on one of your plans, scanned for malware and hardened. Mail is pulled to the mail platform. Customers are not emailed.</p>
+            </div>
+            <a href="{{ route('reseller.directadmin-offramp') }}" class="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-lg text-sm font-medium">Open the move board</a>
+        </div>
+    @endif
+
     <form method="GET" class="ui-card p-4 flex flex-wrap gap-4">
         <input type="text" name="search" value="{{ request('search') }}" placeholder="Search service or customer..." class="flex-1 min-w-[200px] px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800">
         <select name="status" class="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800">

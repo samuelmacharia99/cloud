@@ -1544,12 +1544,82 @@ class DirectAdminToContainerMigrationService
             }
             $this->deployments->waitForContainerRunning($targetSsh, $deployment->container_name, 120);
             $targetSsh->exec('rm -rf '.escapeshellarg($remoteWork));
+
+            $this->scanImportedSiteFiles($target, $targetSsh, $deployment, $progress);
         } finally {
             $targetSsh->disconnect();
         }
 
         if ($cleanupDaNode) {
             @$this->cleanupDaWork($cleanupDaNode, $remoteWork);
+        }
+    }
+
+    /**
+     * The non-WordPress counterpart of the WordPress import scan: webshell
+     * signatures, obfuscated code, deceptive names and exposed dumps or
+     * backups. Certain hits are archived to an incident and removed; the rest
+     * are reported for Container Doctor. Never blocks the import.
+     */
+    public function scanImportedSiteFiles(Service $target, SSHService $ssh, ContainerDeployment $deployment, callable $progress): void
+    {
+        $progress('Scanning imported files for webshells, obfuscated code and exposed backups');
+        $scanner = app(ContainerIntegrityScanner::class);
+
+        try {
+            $result = $scanner->scan($ssh, $deployment, false, withChecksums: false);
+        } catch (\Throwable $e) {
+            $progress('Integrity scan skipped: '.$e->getMessage());
+
+            return;
+        }
+
+        $moved = ['moved' => [], 'incident' => null, 'bytes' => 0, 'skipped' => [], 'quarantine_dir' => ''];
+        try {
+            $moved = $scanner->quarantine(
+                $ssh,
+                $target,
+                $deployment,
+                $result['hits'],
+                ContainerIntegrityScanner::AUTO_QUARANTINE_REASONS,
+                ContainerIncidentService::TRIGGER_CONVERT,
+            );
+        } catch (\Throwable $e) {
+            $progress('Automatic quarantine failed, nothing was removed: '.$e->getMessage());
+        }
+        if ($moved['moved'] !== []) {
+            $progress('Archived '.count($moved['moved']).' file(s) that cannot be legitimate (known webshell names, PHP disguised as media, handler overrides) into incident '.$moved['incident'].' and removed them');
+            foreach (array_slice($moved['moved'], 0, 8) as $path) {
+                $progress('Quarantined: '.$path);
+            }
+            try {
+                app(ContainerIncidentService::class)->alert($target, $deployment, (string) $moved['incident'], ContainerIncidentService::TRIGGER_CONVERT, $moved['moved']);
+            } catch (\Throwable) {
+                // The incident is on disk and in service_meta; the alert is best effort.
+            }
+        }
+
+        try {
+            $scanner->persist($target, $result, $moved['moved']);
+        } catch (\Throwable) {
+            // Advisory; Doctor re-scans on its next run.
+        }
+
+        $remaining = array_values(array_filter(
+            $scanner->suspiciousHits($result['hits']),
+            fn ($h) => ! in_array($h['path'], $moved['moved'], true)
+        ));
+        if ($remaining !== []) {
+            $progress(count($remaining).' file(s) need a look before trusting this site (webshell signatures, obfuscated code or odd names). Container Doctor lists them with a Quarantine button');
+            foreach ($scanner->evidenceRows($remaining, 6) as $row) {
+                $progress('Suspicious: '.$row);
+            }
+        } elseif ($moved['moved'] === []) {
+            $progress('Integrity scan clean: no webshell-like or foreign files found');
+        }
+        $exposed = $scanner->exposedHits($result['hits']);
+        if ($exposed !== []) {
+            $progress(count($exposed).' backup, dump or log file(s) sit in the web root where anyone can download them; Doctor offers to archive them');
         }
     }
 

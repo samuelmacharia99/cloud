@@ -4,7 +4,7 @@
 <style>[x-cloak]{display:none!important}</style>
 <div
     class="fixed z-40 bottom-4 right-4 w-[min(28rem,calc(100vw-1.5rem))]"
-    x-data="daConvertProgressTerminal(@js($convertProgress), @js(route('admin.resellers.directadmin-offramp.progress', $reseller)))"
+    x-data="daConvertProgressTerminal(@js($convertProgress), @js($progressUrl ?? route('admin.resellers.directadmin-offramp.progress', $reseller)))"
 >
     <button
         type="button"

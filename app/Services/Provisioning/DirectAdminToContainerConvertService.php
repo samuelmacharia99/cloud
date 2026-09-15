@@ -11,6 +11,7 @@ use App\Models\Product;
 use App\Models\Service;
 use App\Services\Billing\ServiceRenewalPricingService;
 use App\Services\Hosting\DirectAdminCustomerPanelApi;
+use App\Services\ResellerProvisionProductResolver;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -584,7 +585,7 @@ class DirectAdminToContainerConvertService
             throw new \InvalidArgumentException('Select an Application Hosting product. That plan is billed when the current DirectAdmin term ends.');
         }
 
-        if (! $containerProduct->is_active) {
+        if (! $containerProduct->is_active && $containerProduct->slug !== ResellerProvisionProductResolver::CONTAINER_SHELL_PRODUCT_SLUG) {
             throw new \InvalidArgumentException('The selected Application Hosting product is inactive. Activate it first.');
         }
 
@@ -1151,8 +1152,9 @@ class DirectAdminToContainerConvertService
         Product $product,
         string $stack,
         float $share,
+        ?array $limits = null,
     ): void {
-        $this->assertContainerHostCapacity($service, $product, $stack, $share);
+        $this->assertContainerHostCapacity($service, $product, $stack, $share, $limits);
     }
 
     /**
@@ -1163,6 +1165,7 @@ class DirectAdminToContainerConvertService
         Product $product,
         string $stack,
         float $share,
+        ?array $limits = null,
     ): void {
         $product->loadMissing('containerTemplate');
         $templateSlug = $this->templateSlugForDetectedStack($stack, $product);
@@ -1180,6 +1183,9 @@ class DirectAdminToContainerConvertService
             'cpu' => $share,
             'memory' => $share,
         ];
+        if (is_array($limits) && $limits !== []) {
+            $meta['reseller_catalog_limits'] = $limits;
+        }
         $probe->service_meta = $meta;
 
         if ($probe->effectiveContainerTemplate() === null) {
