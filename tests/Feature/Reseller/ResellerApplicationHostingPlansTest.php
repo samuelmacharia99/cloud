@@ -62,7 +62,10 @@ class ResellerApplicationHostingPlansTest extends TestCase
             ->assertOk()
             ->assertSee('Plan specs')
             ->assertSee('resource_limits[cpu]', false)
-            ->assertSee('resource_limits[bandwidth_gb]', false);
+            ->assertSee('resource_limits[bandwidth_gb]', false)
+            // The stack list rides inside an HTML attribute; raw JSON quotes would cut it short.
+            ->assertSee("templates: JSON.parse(", false)
+            ->assertDontSee('templates: [{"', false);
     }
 
     public function test_a_plan_cannot_promise_more_than_the_package_pool(): void

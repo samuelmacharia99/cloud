@@ -16,8 +16,8 @@
         diskGb: {{ json_encode((float) ($limits['disk_gb'] ?? 10)) }},
         bandwidthGb: {{ json_encode((int) ($limits['bandwidth_gb'] ?? 0)) }},
         templateId: {{ json_encode($selectedTemplateId ? (string) $selectedTemplateId : '') }},
-        templates: @json($stackTemplates ?? []),
-        rates: @json($rateCard),
+        templates: @js($stackTemplates ?? []),
+        rates: @js($rateCard),
      })">
     <div>
         <p class="text-sm font-semibold text-violet-900 dark:text-violet-200">Plan specs</p>
