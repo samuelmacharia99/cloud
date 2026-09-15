@@ -2,6 +2,7 @@
     $computePool = $computePool ?? [];
     $cpu = $computePool['cpu'] ?? ['pool' => 0, 'used' => 0, 'remaining' => 0, 'over' => 0, 'percent' => null];
     $memory = $computePool['memory'] ?? ['pool' => 0, 'used' => 0, 'remaining' => 0, 'over' => 0, 'percent' => null];
+    $bandwidth = $bandwidthPool ?? [];
     $compact = $compact ?? false;
     $barHeight = $compact ? 'h-1.5' : 'h-3';
     $bars = [
@@ -22,9 +23,19 @@
             'remaining' => number_format(((int) $memory['remaining']) / 1024, 1).' GB remaining.',
         ],
     ];
+    if (($bandwidth['pool'] ?? 0) > 0) {
+        $bars[] = [
+            'label' => 'Bandwidth',
+            'used' => number_format((float) ($bandwidth['used'] ?? 0), 1),
+            'pool' => number_format((int) $bandwidth['pool']),
+            'percent' => $bandwidth['percent'] ?? null,
+            'over' => (float) ($bandwidth['over'] ?? 0) > 0 ? number_format((float) $bandwidth['over'], 1).' GB over this month\'s pool.' : null,
+            'remaining' => number_format((float) ($bandwidth['remaining'] ?? 0), 1).' GB left this month.',
+        ];
+    }
 @endphp
 
-@if (($cpu['pool'] ?? 0) > 0 || ($memory['pool'] ?? 0) > 0)
+@if (($cpu['pool'] ?? 0) > 0 || ($memory['pool'] ?? 0) > 0 || ($bandwidth['pool'] ?? 0) > 0)
     <div class="space-y-3">
         @foreach ($bars as $bar)
             @continue($bar['percent'] === null)
@@ -32,7 +43,7 @@
                 <div class="flex justify-between {{ $compact ? 'mb-1 text-xs' : 'items-center mb-2' }}">
                     <span class="{{ $compact ? 'text-slate-500' : 'font-medium text-slate-900 dark:text-white' }}">{{ $bar['label'] }} pool</span>
                     <span class="{{ $compact ? '' : 'text-sm text-slate-600 dark:text-slate-400' }}">
-                        {{ $bar['used'] }} / {{ $bar['pool'] }}{{ $bar['label'] === 'RAM' ? ' GB' : '' }}
+                        {{ $bar['used'] }} / {{ $bar['pool'] }}{{ in_array($bar['label'], ['RAM', 'Bandwidth'], true) ? ' GB' : '' }}
                     </span>
                 </div>
                 <div class="w-full {{ $barHeight }} bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">

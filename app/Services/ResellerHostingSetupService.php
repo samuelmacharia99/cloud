@@ -180,6 +180,7 @@ class ResellerHostingSetupService
                 'cpu' => $limits['cpu'],
                 'memory_mb' => $limits['memory_mb'],
                 'disk_gb' => $limits['disk_gb'],
+                'bandwidth_gb' => $limits['bandwidth_gb'] ?? null,
             ], fn ($value) => $value !== null);
         }
 

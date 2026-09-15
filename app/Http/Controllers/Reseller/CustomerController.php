@@ -4,14 +4,17 @@ namespace App\Http\Controllers\Reseller;
 
 use App\Enums\ServiceStatus;
 use App\Http\Controllers\Controller;
+use App\Models\ContainerTemplate;
 use App\Models\Domain;
 use App\Models\ResellerProduct;
 use App\Models\Service;
 use App\Models\User;
 use App\Rules\ValidCountryCode;
 use App\Services\AdminActivityService;
+use App\Services\Customer\StackEligibilityService;
 use App\Services\Dns\DomainCloudflareDnsService;
 use App\Services\InvoiceGenerationScheduleService;
+use App\Services\ResellerCustomerBillingService;
 use App\Services\ResellerCustomerOrderService;
 use App\Services\ResellerCustomerWelcomeService;
 use App\Services\ResellerHostedAccountDirectoryService;
@@ -140,8 +143,24 @@ class CustomerController extends Controller
                 'direct_admin_package_name' => $listing->direct_admin_package_name,
                 'requires_primary_domain' => app(ResellerHostingSetupService::class)
                     ->requiresPrimaryDomainForCatalog($listing, $adminProduct),
+                'pinned_template_id' => $listing->type === 'container_hosting'
+                    ? ($listing->container_template_id ?? $listing->provisionProduct()?->container_template_id)
+                    : null,
+                'resource_limits' => $listing->type === 'container_hosting'
+                    ? ($listing->hasContainerResourceLimits()
+                        ? $listing->containerResourceLimits()
+                        : ($listing->provisionProduct()?->getIncludedContainerLimits($listing->provisionProduct()?->containerTemplate) ?? []))
+                    : null,
             ];
         })->values()->toArray();
+
+        $stackTemplatesForJs = ContainerTemplate::offeredForNewDeploy()->catalogOrder()->get()
+            ->map(fn (ContainerTemplate $template) => [
+                'id' => $template->id,
+                'name' => $template->name,
+                'required_cpu_cores' => (float) $template->required_cpu_cores,
+                'required_ram_mb' => (int) $template->required_ram_mb,
+            ])->values()->all();
 
         $catalogByProductId = $catalogProducts
             ->filter(fn (ResellerProduct $item) => $item->product_id !== null)
@@ -184,6 +203,7 @@ class CustomerController extends Controller
             'customer' => $customer,
             'enforcementAlerts' => $enforcementAlerts,
             'catalogProductsForJs' => $catalogProductsForJs,
+            'stackTemplatesForJs' => $stackTemplatesForJs,
             'servicesForJs' => $servicesForJs,
             'cloudflareDnsAvailable' => app(DomainCloudflareDnsService::class)->isAvailableForCustomer($customer),
         ]);
@@ -341,6 +361,7 @@ class CustomerController extends Controller
             'notes' => 'nullable|string|max:2000',
             'bill_customer' => 'sometimes|boolean',
             'primary_domain' => 'nullable|string|max:253|regex:/^[a-z0-9.-]+\.[a-z]{2,}$/i',
+            'container_template_id' => 'nullable|integer|exists:container_templates,id',
         ]);
 
         $product = ResellerProduct::query()
@@ -355,6 +376,27 @@ class CustomerController extends Controller
             return back()
                 ->withErrors(['primary_domain' => 'Primary domain is required for this hosting plan.'])
                 ->withInput();
+        }
+
+        // An application hosting plan runs one stack; a plan that is not pinned
+        // to one needs the reseller to choose it here, and it must fit the plan.
+        $stack = null;
+        if ($product->type === 'container_hosting' && $validated['order_type'] === 'provision') {
+            $pinned = $product->container_template_id ?? $product->provisionProduct()?->container_template_id;
+            $stackId = $pinned ? (int) $pinned : (int) ($validated['container_template_id'] ?? 0);
+            if ($stackId <= 0) {
+                return back()->withErrors(['container_template_id' => 'Pick the stack this site runs on.'])->withInput();
+            }
+            $stack = ContainerTemplate::query()->find($stackId);
+            $offerLimits = $product->hasContainerResourceLimits()
+                ? $product->containerResourceLimits()
+                : ($product->provisionProduct()?->getIncludedContainerLimits($product->provisionProduct()?->containerTemplate) ?? []);
+            $choice = $stack
+                ? app(StackEligibilityService::class)->forPlan($pinned ? (int) $pinned : null, $offerLimits, collect([$stack]))->first()
+                : null;
+            if (! $stack || ! $choice || ! $choice->eligible) {
+                return back()->withErrors(['container_template_id' => $choice?->reason ?: 'That stack cannot run on this plan.'])->withInput();
+            }
         }
 
         $billCustomer = $request->boolean('bill_customer', true);
@@ -374,6 +416,7 @@ class CustomerController extends Controller
                     [
                         'notes' => $validated['notes'] ?? null,
                         'primary_domain' => $validated['primary_domain'] ?? null,
+                        'container_template' => $stack,
                     ],
                 );
 
@@ -390,7 +433,7 @@ class CustomerController extends Controller
 
             if ($validated['order_type'] === 'invoice_only') {
                 $unitPrice = $product->priceForBillingCycle($validated['billing_cycle']);
-                $invoice = app(\App\Services\ResellerCustomerBillingService::class)->createCustomerInvoice($reseller, $customer, [
+                $invoice = app(ResellerCustomerBillingService::class)->createCustomerInvoice($reseller, $customer, [
                     'status' => 'unpaid',
                     'due_date' => $validated['due_date'] ?? null,
                     'notes' => $validated['notes'] ?? null,
@@ -416,6 +459,7 @@ class CustomerController extends Controller
                     'due_date' => $validated['due_date'] ?? null,
                     'invoice_notes' => $validated['notes'] ?? null,
                     'primary_domain' => $validated['primary_domain'] ?? null,
+                    'container_template' => $stack,
                 ],
             );
 

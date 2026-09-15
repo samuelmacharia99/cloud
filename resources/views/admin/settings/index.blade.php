@@ -175,6 +175,43 @@
                                 <input type="number" min="1" name="settings[reseller_package_invoice_advance_days]" value="{{ $settings['reseller_package_invoice_advance_days'] ?? '10' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
                                 <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Renewal invoice is generated this many days before package expiry.</p>
                             </div>
+                            <div class="md:col-span-2 rounded-lg border border-slate-200 dark:border-slate-700 p-4">
+                                <p class="text-sm font-semibold text-slate-800 dark:text-slate-200">Application hosting wholesale rate card (KES per month)</p>
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">What a unit of a reseller's own application hosting plan costs you. Used for margin reporting on every container sale a reseller makes, and as the default overage rate when a package sets none.</p>
+                                <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                    <div>
+                                        <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">Per vCPU</label>
+                                        <input type="number" min="0" step="0.01" name="settings[reseller_container_rate_cpu_core]" value="{{ $settings['reseller_container_rate_cpu_core'] ?? '' }}" class="block w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">Per GB RAM</label>
+                                        <input type="number" min="0" step="0.01" name="settings[reseller_container_rate_memory_gb]" value="{{ $settings['reseller_container_rate_memory_gb'] ?? '' }}" class="block w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">Per GB disk</label>
+                                        <input type="number" min="0" step="0.01" name="settings[reseller_container_rate_disk_gb]" value="{{ $settings['reseller_container_rate_disk_gb'] ?? '' }}" class="block w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">Per GB bandwidth</label>
+                                        <input type="number" min="0" step="0.01" name="settings[reseller_container_rate_bandwidth_gb]" value="{{ $settings['reseller_container_rate_bandwidth_gb'] ?? '' }}" class="block w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                    </div>
+                                </div>
+                                <p class="text-sm font-semibold text-slate-800 dark:text-slate-200 mt-4">Default pool overage rates for reseller packages (KES per month)</p>
+                                <div class="grid grid-cols-3 gap-3 mt-2">
+                                    <div>
+                                        <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">Per vCPU over pool</label>
+                                        <input type="number" min="0" step="0.01" name="settings[reseller_cpu_overage_rate]" value="{{ $settings['reseller_cpu_overage_rate'] ?? '' }}" class="block w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">Per GB RAM over pool</label>
+                                        <input type="number" min="0" step="0.01" name="settings[reseller_memory_overage_rate]" value="{{ $settings['reseller_memory_overage_rate'] ?? '' }}" class="block w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">Per GB bandwidth over pool</label>
+                                        <input type="number" min="0" step="0.01" name="settings[reseller_bandwidth_overage_rate]" value="{{ $settings['reseller_bandwidth_overage_rate'] ?? '' }}" class="block w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                    </div>
+                                </div>
+                            </div>
                             <div class="md:col-span-2">
                                 <input type="hidden" name="settings[reseller_auto_pay_subscription_from_wallet]" value="0">
                                 <label class="flex items-center gap-2 cursor-pointer">

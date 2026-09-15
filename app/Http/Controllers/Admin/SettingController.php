@@ -41,6 +41,9 @@ class SettingController extends Controller
             'domain_renewal_advance_days', 'domain_renewal_payment_days', 'domain_renewal_years',
             'reseller_package_invoice_advance_days',
             'reseller_auto_pay_subscription_from_wallet',
+            'reseller_container_rate_cpu_core', 'reseller_container_rate_memory_gb',
+            'reseller_container_rate_disk_gb', 'reseller_container_rate_bandwidth_gb',
+            'reseller_cpu_overage_rate', 'reseller_memory_overage_rate', 'reseller_bandwidth_overage_rate',
         ],
         'tax' => [
             'tax_enabled', 'tax_rate', 'tax_name', 'tax_inclusive', 'tax_number',

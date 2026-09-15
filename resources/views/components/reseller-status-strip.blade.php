@@ -12,6 +12,7 @@
     'customerCount' => 0,
     'maxUsers' => 0,
     'computePool' => null,
+    'bandwidthPool' => null,
     'diskPoolPercent' => null,
     'diskPoolGb' => 0,
     'diskUsedGb' => 0,
@@ -98,7 +99,7 @@
     </a>
 </div>
 
-@php $showComputePool = (($computePool['cpu']['pool'] ?? 0) > 0 || ($computePool['memory']['pool'] ?? 0) > 0); @endphp
+@php $showComputePool = (($computePool['cpu']['pool'] ?? 0) > 0 || ($computePool['memory']['pool'] ?? 0) > 0 || ($bandwidthPool['pool'] ?? 0) > 0); @endphp
 @if ($maxServices > 0 || $maxUsers > 0 || (int) $diskPoolGb > 0 || $showComputePool)
 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-3">
     @if ($maxServices > 0)
@@ -135,7 +136,7 @@
     @endif
     @if ($showComputePool)
         <div class="p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs">
-            @include('reseller.partials.compute-pool-meter', ['compact' => true, 'computePool' => $computePool])
+            @include('reseller.partials.compute-pool-meter', ['compact' => true, 'computePool' => $computePool, 'bandwidthPool' => $bandwidthPool])
         </div>
     @endif
 </div>

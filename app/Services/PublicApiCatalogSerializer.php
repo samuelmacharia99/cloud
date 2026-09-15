@@ -139,10 +139,14 @@ class PublicApiCatalogSerializer
             'disk_overage_rate' => (float) ($package->disk_overage_rate ?? 0),
             'cpu_pool_cores' => (float) ($package->cpu_pool_cores ?? 0),
             'memory_pool_mb' => (int) ($package->memory_pool_mb ?? 0),
+            'bandwidth_pool_gb' => (int) ($package->bandwidth_pool_gb ?? 0),
+            'backups_included' => (bool) ($package->backups_included ?? true),
             'features' => array_values(array_filter([
-                'Up to '.$package->max_users.' customers',
-                'Up to '.$package->max_services.' hosting users',
+                $package->hasUserCap() ? 'Up to '.$package->max_users.' customers' : 'Unlimited customers',
+                $package->hasServiceCap() ? 'Up to '.$package->max_services.' hosting services' : 'Unlimited hosting services',
                 number_format($package->disk_pool_gb).' GB disk pool',
+                (int) $package->bandwidth_pool_gb > 0 ? number_format((int) $package->bandwidth_pool_gb).' GB bandwidth per month' : null,
+                ($package->backups_included ?? true) ? 'Backups included' : null,
                 // Only listed when the plan actually carries one; a package
                 // with no compute pool would otherwise advertise "0 vCPU".
                 (float) $package->cpu_pool_cores > 0

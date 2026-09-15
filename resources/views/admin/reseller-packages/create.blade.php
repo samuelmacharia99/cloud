@@ -56,8 +56,8 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
                 <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Max service slots</label>
-                <input type="number" name="max_services" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" min="1" max="10000" required value="{{ old('max_services', 50) }}">
-                <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">Concurrent hosting services the reseller may run</p>
+                <input type="number" name="max_services" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" min="0" max="10000" value="{{ old('max_services', 0) }}">
+                <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">Optional cap on concurrent hosting services. 0 = unlimited; the resource pools below are what the package sells.</p>
             </div>
             <div>
                 <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Disk pool (GB)</label>
@@ -92,11 +92,42 @@
             </div>
         </div>
 
+        <!-- Bandwidth pool + overage rates -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Bandwidth pool (GB per month)</label>
+                <input type="number" name="bandwidth_pool_gb" step="10" min="0" max="10000000" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" value="{{ old('bandwidth_pool_gb', 0) }}">
+                <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">Transfer across the reseller's application hosting stacks each month. 0 = unmetered.</p>
+            </div>
+            <div class="flex items-end pb-6">
+                <label class="inline-flex items-center gap-2 text-sm text-slate-900 dark:text-white">
+                    <input type="hidden" name="backups_included" value="0">
+                    <input type="checkbox" name="backups_included" value="1" @checked(old('backups_included', true)) class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                    Backups included at no charge
+                </label>
+            </div>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">vCPU overage (KES/vCPU/month)</label>
+                <input type="number" name="cpu_overage_rate" step="0.01" min="0" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" value="{{ old('cpu_overage_rate') }}">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">RAM overage (KES/GB/month)</label>
+                <input type="number" name="memory_overage_rate" step="0.01" min="0" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" value="{{ old('memory_overage_rate') }}">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Bandwidth overage (KES/GB)</label>
+                <input type="number" name="bandwidth_overage_rate" step="0.01" min="0" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" value="{{ old('bandwidth_overage_rate') }}">
+            </div>
+        </div>
+        <p class="text-xs text-slate-600 dark:text-slate-400 -mt-2">Overage above a pool is billed on the package renewal invoice. Leave a rate blank to use the platform default from Settings.</p>
+
         <!-- Max Users -->
         <div>
-            <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Maximum Users</label>
-            <input type="number" name="max_users" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="e.g., 5" min="1" max="1000" required value="{{ old('max_users') }}">
-            <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">Number of user accounts allowed for this package</p>
+            <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Maximum customers</label>
+            <input type="number" name="max_users" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="0 = unlimited" min="0" max="100000" value="{{ old('max_users', 0) }}">
+            <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">Optional cap on customer accounts. 0 = unlimited.</p>
             @error('max_users')
                 <p class="text-red-600 dark:text-red-400 text-xs mt-1">{{ $message }}</p>
             @enderror

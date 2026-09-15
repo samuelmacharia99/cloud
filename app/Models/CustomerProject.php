@@ -178,10 +178,22 @@ class CustomerProject extends Model
             return null;
         }
 
-        return $product->getIncludedContainerLimits(
+        $included = $product->getIncludedContainerLimits(
             $product->containerTemplate,
             $anchor->containerDeployment
         );
+
+        // A reseller's own plan carries its specs on the service; the shell
+        // product behind it knows nothing about them.
+        $meta = is_array($anchor->service_meta) ? $anchor->service_meta : [];
+        $resellerLimits = is_array($meta['reseller_catalog_limits'] ?? null) ? $meta['reseller_catalog_limits'] : [];
+        foreach (['cpu', 'memory_mb', 'disk_gb'] as $key) {
+            if (isset($resellerLimits[$key]) && (float) $resellerLimits[$key] > 0) {
+                $included[$key] = $key === 'memory_mb' ? (int) $resellerLimits[$key] : (float) $resellerLimits[$key];
+            }
+        }
+
+        return $included;
     }
 
     /**

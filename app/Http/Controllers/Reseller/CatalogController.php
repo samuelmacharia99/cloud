@@ -4,10 +4,15 @@ namespace App\Http\Controllers\Reseller;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Reseller\ImportDaPackagesRequest;
+use App\Models\ContainerTemplate;
 use App\Models\Product;
 use App\Models\ResellerProduct;
 use App\Models\Service;
+use App\Models\User;
 use App\Services\Provisioning\DaResellerPackageImportService;
+use App\Services\ResellerBandwidthUsageService;
+use App\Services\ResellerComputeUsageService;
+use App\Services\ResellerContainerRateCard;
 use App\Services\ResellerDirectAdminService;
 use App\Services\ResellerDiskUsageService;
 use Illuminate\Http\RedirectResponse;
@@ -165,17 +170,32 @@ class CatalogController extends Controller
             'percent' => $diskUsage->poolUsagePercent($reseller),
         ];
 
-        // A reseller prices their own book. They can list anything the platform
-        // does not have to build for them: their own DirectAdmin plans, servers
-        // they resell from elsewhere, certificates. Only application hosting is
-        // held back, because a container needs a stack template that lives on an
-        // admin product and cannot be invented here.
+        // A reseller prices their own book: their own DirectAdmin plans, servers
+        // they resell from elsewhere, certificates, and application hosting plans
+        // carved from the CPU, RAM, disk and bandwidth pools on their package.
         $customProductTypes = collect(Product::TYPES)
-            ->except([...self::DISALLOWED_CUSTOM_TYPES, 'container_hosting'])
+            ->except(self::DISALLOWED_CUSTOM_TYPES)
+            ->all();
+
+        $computePool = app(ResellerComputeUsageService::class)->poolPresentation($reseller);
+        $bandwidthPool = app(ResellerBandwidthUsageService::class)->poolPresentation($reseller);
+        $stackTemplates = ContainerTemplate::offeredForNewDeploy()->catalogOrder()->get()
+            ->map(fn (ContainerTemplate $template) => [
+                'id' => $template->id,
+                'name' => $template->name,
+                'required_cpu_cores' => (float) $template->required_cpu_cores,
+                'required_ram_mb' => (int) $template->required_ram_mb,
+                'required_storage_gb' => (int) $template->required_storage_gb,
+            ])
+            ->values()
             ->all();
 
         return [
             'adminProducts' => $adminProducts,
+            'computePool' => $computePool,
+            'bandwidthPool' => $bandwidthPool,
+            'stackTemplates' => $stackTemplates,
+            'rateCard' => app(ResellerContainerRateCard::class)->rates(),
             'productTypes' => collect(Product::TYPES)
                 ->except(self::DISALLOWED_CUSTOM_TYPES)
                 ->all(),
@@ -233,15 +253,21 @@ class CatalogController extends Controller
         }
 
         if (($validated['type'] ?? '') === 'container_hosting') {
-            if ($existing && ! filled($validated['product_id'] ?? null)) {
+            if ($existing && ! filled($validated['product_id'] ?? null) && $existing->product_id && ! $request->has('resource_limits')) {
                 $validated['product_id'] = $existing->product_id;
                 $validated['container_template_id'] = $existing->container_template_id;
             }
 
             if (! filled($validated['product_id'] ?? null)) {
-                throw ValidationException::withMessages([
-                    'product_id' => 'Select a container package from the admin catalog.',
-                ]);
+                // The reseller's own plan: specs come from their pools.
+                $plan = $this->validateResellerContainerPlan($request, $reseller);
+                $validated['product_id'] = null;
+                $validated['resource_limits'] = $plan['resource_limits'];
+                $validated['container_template_id'] = $plan['container_template_id'];
+                $validated['database_template_id'] = null;
+                $validated['direct_admin_package_name'] = null;
+
+                return $this->normalizePricingFields($validated);
             }
         }
 
@@ -311,6 +337,74 @@ class CatalogController extends Controller
         }
 
         return $this->normalizePricingFields($validated);
+    }
+
+    /**
+     * Specs for a plan the reseller authors: each one must fit inside the pool
+     * the package sells them, and a pinned stack must be able to run on it.
+     *
+     * @return array{resource_limits: array<string, float|int>, container_template_id: ?int}
+     */
+    private function validateResellerContainerPlan(Request $request, User $reseller): array
+    {
+        $specs = $request->validate([
+            'resource_limits' => ['required', 'array'],
+            'resource_limits.cpu' => ['required', 'numeric', 'min:0.25', 'max:64'],
+            'resource_limits.memory_mb' => ['required', 'integer', 'min:256', 'max:262144'],
+            'resource_limits.disk_gb' => ['required', 'numeric', 'min:1', 'max:10000'],
+            'resource_limits.bandwidth_gb' => ['nullable', 'integer', 'min:0', 'max:1000000'],
+            'container_template_id' => ['nullable', 'integer', 'exists:container_templates,id'],
+        ], [], [
+            'resource_limits.cpu' => 'vCPU',
+            'resource_limits.memory_mb' => 'RAM',
+            'resource_limits.disk_gb' => 'disk',
+            'resource_limits.bandwidth_gb' => 'bandwidth',
+        ]);
+
+        $cpu = round((float) $specs['resource_limits']['cpu'], 2);
+        $memoryMb = (int) $specs['resource_limits']['memory_mb'];
+        $diskGb = round((float) $specs['resource_limits']['disk_gb'], 2);
+        $bandwidthGb = (int) ($specs['resource_limits']['bandwidth_gb'] ?? 0);
+
+        $compute = app(ResellerComputeUsageService::class);
+        $errors = [];
+        $cpuPool = $compute->cpuPoolCores($reseller);
+        if ($cpuPool > 0 && $cpu > $cpuPool) {
+            $errors['resource_limits.cpu'] = 'Your package pool is '.rtrim(rtrim(number_format($cpuPool, 2), '0'), '.').' vCPU; one plan cannot promise more than that.';
+        }
+        $memoryPool = $compute->memoryPoolMb($reseller);
+        if ($memoryPool > 0 && $memoryMb > $memoryPool) {
+            $errors['resource_limits.memory_mb'] = 'Your package pool is '.number_format($memoryPool / 1024, 1).' GB RAM; one plan cannot promise more than that.';
+        }
+        $diskPool = app(ResellerDiskUsageService::class)->diskPoolGb($reseller);
+        if ($diskPool > 0 && $diskGb > $diskPool) {
+            $errors['resource_limits.disk_gb'] = 'Your package disk pool is '.$diskPool.' GB; one plan cannot promise more than that.';
+        }
+        $bandwidthPool = app(ResellerBandwidthUsageService::class)->bandwidthPoolGb($reseller);
+        if ($bandwidthPool > 0 && $bandwidthGb > $bandwidthPool) {
+            $errors['resource_limits.bandwidth_gb'] = 'Your package bandwidth pool is '.$bandwidthPool.' GB per month; one plan cannot promise more than that.';
+        }
+
+        $templateId = filled($specs['container_template_id'] ?? null) ? (int) $specs['container_template_id'] : null;
+        if ($templateId !== null) {
+            $template = ContainerTemplate::query()->find($templateId);
+            if (! $template) {
+                $errors['container_template_id'] = 'Pick a stack from the list.';
+            } elseif ((float) $template->required_cpu_cores > $cpu || (int) $template->required_ram_mb > $memoryMb) {
+                $errors['container_template_id'] = $template->name.' needs at least '.rtrim(rtrim(number_format((float) $template->required_cpu_cores, 2), '0'), '.').' vCPU and '.(int) $template->required_ram_mb.' MB RAM; raise the plan specs or leave the stack open.';
+            }
+        }
+
+        if ($errors !== []) {
+            throw ValidationException::withMessages($errors);
+        }
+
+        $limits = ['cpu' => $cpu, 'memory_mb' => $memoryMb, 'disk_gb' => $diskGb];
+        if ($bandwidthGb > 0) {
+            $limits['bandwidth_gb'] = $bandwidthGb;
+        }
+
+        return ['resource_limits' => $limits, 'container_template_id' => $templateId];
     }
 
     /**

@@ -22,8 +22,8 @@ use Tests\TestCase;
  * Application hosting plans reserve node CPU and memory that no reseller
  * package counted, so the product line had no ceiling and no visible cost.
  *
- * This round meters and refuses. It deliberately does not bill, and one of the
- * tests below is there to keep it that way.
+ * The pool is metered and enforced here; overage is billed on renewal only
+ * when the package (or the platform default) carries a rate for it.
  */
 class ResellerComputePoolTest extends TestCase
 {
@@ -139,7 +139,7 @@ class ResellerComputePoolTest extends TestCase
         app(ResellerEnforcementService::class)->assertCanProvision($service->fresh());
     }
 
-    public function test_a_renewal_invoice_never_bills_for_compute(): void
+    public function test_a_renewal_invoice_bills_compute_only_above_the_pool_and_only_at_a_rate(): void
     {
         $reseller = $this->reseller([
             'cpu_pool_cores' => 1,
@@ -155,12 +155,8 @@ class ResellerComputePoolTest extends TestCase
 
         $productTypes = Invoice::find($invoice->id)->items->pluck('product_type')->all();
 
-        $this->assertNotContains('reseller_compute_usage', $productTypes);
-        $this->assertNotContains('reseller_compute_overage', $productTypes);
-        $this->assertEmpty(
-            array_filter($productTypes, fn ($type) => str_contains((string) $type, 'compute')),
-            'Metering compute must not start billing for it.'
-        );
+        $this->assertNotContains('reseller_cpu_overage', $productTypes, 'Without a rate the pool is a limit, not a meter.');
+        $this->assertNotContains('reseller_memory_overage', $productTypes);
     }
 
     public function test_a_storefront_order_is_refused_when_the_providers_pool_is_full(): void

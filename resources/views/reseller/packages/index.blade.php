@@ -146,7 +146,7 @@
 
                     @if (($diskPool['pool_gb'] ?? 0) > 0)
                         @include('reseller.partials.disk-pool-meter', ['diskPool' => $diskPool, 'compact' => false])
-                        @include('reseller.partials.compute-pool-meter', ['computePool' => $computePool ?? [], 'compact' => false])
+                        @include('reseller.partials.compute-pool-meter', ['computePool' => $computePool ?? [], 'bandwidthPool' => $bandwidthPool ?? [], 'compact' => false])
                     @endif
                 </div>
 
@@ -242,8 +242,8 @@
                             <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
                         </svg>
                         <div>
-                            <p class="text-sm font-medium text-slate-900 dark:text-white">{{ $package->max_services }} service slots</p>
-                            <p class="text-xs text-slate-600 dark:text-slate-400">Active services you can manage</p>
+                            <p class="text-sm font-medium text-slate-900 dark:text-white">{{ $package->serviceCapLabel() }} services</p>
+                            <p class="text-xs text-slate-600 dark:text-slate-400">{{ $package->hasServiceCap() ? 'Active services you can manage' : 'No cap on services; your resource pools are the limit' }}</p>
                         </div>
                     </div>
                     <div class="flex items-center gap-3">
@@ -251,8 +251,8 @@
                             <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
                         </svg>
                         <div>
-                            <p class="text-sm font-medium text-slate-900 dark:text-white">{{ $package->max_users }} customers</p>
-                            <p class="text-xs text-slate-600 dark:text-slate-400">Maximum customer accounts</p>
+                            <p class="text-sm font-medium text-slate-900 dark:text-white">{{ $package->userCapLabel() }} customers</p>
+                            <p class="text-xs text-slate-600 dark:text-slate-400">{{ $package->hasUserCap() ? 'Maximum customer accounts' : 'Sell to as many customers as your pools allow' }}</p>
                         </div>
                     </div>
                     <div class="flex items-center gap-3">
@@ -264,6 +264,39 @@
                             <p class="text-xs text-slate-600 dark:text-slate-400">Shared across DirectAdmin and containers</p>
                         </div>
                     </div>
+                    @if ((float) $package->cpu_pool_cores > 0 || (int) $package->memory_pool_mb > 0)
+                        <div class="flex items-center gap-3">
+                            <svg class="w-5 h-5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                            </svg>
+                            <div>
+                                <p class="text-sm font-medium text-slate-900 dark:text-white">{{ rtrim(rtrim(number_format((float) $package->cpu_pool_cores, 2), '0'), '.') }} vCPU · {{ number_format(((int) $package->memory_pool_mb) / 1024, 1) }} GB RAM</p>
+                                <p class="text-xs text-slate-600 dark:text-slate-400">Application hosting pool to carve your plans from</p>
+                            </div>
+                        </div>
+                    @endif
+                    @if ((int) $package->bandwidth_pool_gb > 0)
+                        <div class="flex items-center gap-3">
+                            <svg class="w-5 h-5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                            </svg>
+                            <div>
+                                <p class="text-sm font-medium text-slate-900 dark:text-white">{{ number_format((int) $package->bandwidth_pool_gb) }} GB bandwidth / month</p>
+                                <p class="text-xs text-slate-600 dark:text-slate-400">Across all application hosting stacks</p>
+                            </div>
+                        </div>
+                    @endif
+                    @if ($package->backups_included ?? true)
+                        <div class="flex items-center gap-3">
+                            <svg class="w-5 h-5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                            </svg>
+                            <div>
+                                <p class="text-sm font-medium text-slate-900 dark:text-white">Backups included</p>
+                                <p class="text-xs text-slate-600 dark:text-slate-400">Every application hosting site, at no charge</p>
+                            </div>
+                        </div>
+                    @endif
                     @if ($package->description)
                         <p class="text-sm text-slate-600 dark:text-slate-400 pt-2">{{ $package->description }}</p>
                     @endif

@@ -392,6 +392,21 @@
                             <option value="invoice_only">Invoice only (no service yet)</option>
                         </select>
                     </div>
+                    <div x-show="addServiceNeedsStack()" x-cloak>
+                        <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Stack <span class="text-red-500">*</span></label>
+                        <select name="container_template_id" x-model="addServiceStackId"
+                                class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
+                            <option value="">Choose the stack this site runs…</option>
+                            <template x-for="t in stackTemplates" :key="t.id">
+                                <option :value="String(t.id)" :disabled="!stackFitsPlan(t)" x-text="t.name + (stackFitsPlan(t) ? '' : ' — needs ' + t.required_cpu_cores + ' vCPU / ' + t.required_ram_mb + ' MB')"></option>
+                            </template>
+                        </select>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">The customer gets the file manager, database console, backups and Container Doctor for it in their portal.</p>
+                        @error('container_template_id') <p class="text-xs text-red-600 mt-1">{{ $message }}</p> @enderror
+                    </div>
+                    <div x-show="addServicePinnedStack()" x-cloak class="text-xs text-slate-600 dark:text-slate-400">
+                        Stack: <span class="font-medium" x-text="addServicePinnedStack()"></span>
+                    </div>
                     <div x-show="addServiceNeedsDomain()">
                         <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Primary domain <span class="text-red-500">*</span></label>
                         <input type="text" name="primary_domain" value="{{ old('primary_domain') }}" placeholder="example.com"
@@ -542,6 +557,8 @@ function resellerCustomerPage() {
         addDomainModal: @json($errors->has('domain_name') || old('domain_name')),
         addServiceModal: @json($errors->has('reseller_product_id') || $errors->has('primary_domain') || old('reseller_product_id')),
         addServiceProductId: @json(old('reseller_product_id', '')),
+        addServiceStackId: @json(old('container_template_id', '')),
+        stackTemplates: @json($stackTemplatesForJs ?? []),
         addServiceOrderType: @json(old('order_type', 'provision')),
         addServiceBillCustomer: @json(old('bill_customer', true) ? true : false),
         editServiceModal: false,
@@ -563,6 +580,30 @@ function resellerCustomerPage() {
         addServiceNeedsDomain() {
             const product = this.catalogProducts.find(p => String(p.id) === String(this.addServiceProductId));
             return !!product?.requires_primary_domain || !!product?.uses_direct_admin_package;
+        },
+
+        addServiceProduct() {
+            return this.catalogProducts.find(p => String(p.id) === String(this.addServiceProductId));
+        },
+
+        addServiceNeedsStack() {
+            const product = this.addServiceProduct();
+            return !!product && product.type === 'container_hosting' && !product.pinned_template_id && this.addServiceOrderType === 'provision';
+        },
+
+        addServicePinnedStack() {
+            const product = this.addServiceProduct();
+            if (!product || product.type !== 'container_hosting' || !product.pinned_template_id) return '';
+            const t = this.stackTemplates.find(t => String(t.id) === String(product.pinned_template_id));
+            return t ? t.name : '';
+        },
+
+        stackFitsPlan(t) {
+            const limits = this.addServiceProduct()?.resource_limits || {};
+            const cpu = Number(limits.cpu || 0);
+            const mem = Number(limits.memory_mb || 0);
+            if (!cpu && !mem) return true;
+            return (!cpu || Number(t.required_cpu_cores || 0) <= cpu) && (!mem || Number(t.required_ram_mb || 0) <= mem);
         },
 
         openEditService(serviceId) {

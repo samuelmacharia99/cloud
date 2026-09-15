@@ -40,6 +40,7 @@
         :customer-count="$customerCount"
         :max-users="$maxUsers"
         :compute-pool="$computePool ?? null"
+        :bandwidth-pool="$bandwidthPool ?? null"
         :disk-pool-percent="$diskPoolPercent"
         :disk-pool-gb="$diskPoolGb ?? 0"
         :disk-used-gb="$diskUsedGb ?? 0"

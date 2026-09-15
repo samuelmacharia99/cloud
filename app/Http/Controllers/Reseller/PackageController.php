@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Reseller;
 
 use App\Http\Controllers\Controller;
 use App\Models\ResellerPackage;
+use App\Services\ResellerBandwidthUsageService;
 use App\Services\ResellerComputeUsageService;
 use App\Services\ResellerDiskUsageService;
 use App\Services\ResellerPackageSubscriptionService;
@@ -37,6 +38,7 @@ class PackageController extends Controller
         $hostedUserCountSource = $user->getResellerUserCountBreakdown()['source'];
         $diskPool = app(ResellerDiskUsageService::class)->poolPresentation($user);
         $computePool = app(ResellerComputeUsageService::class)->poolPresentation($user);
+        $bandwidthPool = app(ResellerBandwidthUsageService::class)->poolPresentation($user);
         $pendingInvoice = $this->subscriptions->pendingSubscriptionInvoice($user);
         $pendingRenewalInvoice = $user->resellerPackage
             ? $this->subscriptions->pendingRenewalSubscriptionInvoice($user)
@@ -70,6 +72,7 @@ class PackageController extends Controller
             'hostedUserCountSource',
             'diskPool',
             'computePool',
+            'bandwidthPool',
             'pendingInvoice',
             'pendingRenewalInvoice',
             'renewalTotal',

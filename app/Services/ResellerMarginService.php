@@ -10,6 +10,7 @@ use App\Models\Product;
 use App\Models\ResellerDomainOrder;
 use App\Models\ResellerMarginEntry;
 use App\Models\ResellerProduct;
+use App\Models\Service;
 use App\Models\User;
 use App\Services\Billing\InvoiceCurrencyService;
 use Illuminate\Support\Collection;
@@ -235,11 +236,19 @@ class ResellerMarginService
             return 0.0;
         }
 
-        if ($product->type === 'container_hosting') {
-            return 0.0;
-        }
-
         $cycle = $this->inferBillingCycle($item->description);
+
+        if ($product->type === 'container_hosting') {
+            $months = match ($cycle) {
+                'annual' => 12,
+                'semi-annual' => 6,
+                'quarterly' => 3,
+                default => 1,
+            };
+            $monthly = $this->containerMonthlyWholesale($product, $item);
+
+            return $monthly === null ? 0.0 : round($monthly * $months, 2);
+        }
 
         return match ($cycle) {
             'annual' => (float) ($product->wholesale_yearly_price ?? (($product->wholesale_monthly_price ?? 0) * 12)),
@@ -247,6 +256,38 @@ class ResellerMarginService
             'semi-annual' => (float) (($product->wholesale_monthly_price ?? 0) * 6),
             default => (float) ($product->wholesale_monthly_price ?? 0),
         };
+    }
+
+    /**
+     * The listing sold on this line, found through its service, priced by the rate card.
+     */
+    private function containerMonthlyWholesale(Product $product, InvoiceItem $item): ?float
+    {
+        $rateCard = app(ResellerContainerRateCard::class);
+        $listing = null;
+        if ($item->service_id) {
+            $service = Service::query()->find($item->service_id);
+            $meta = is_array($service?->service_meta) ? $service->service_meta : [];
+            $listingId = (int) ($service?->reseller_product_id ?? $meta['reseller_product_id'] ?? 0);
+            if ($listingId > 0) {
+                $listing = ResellerProduct::query()->find($listingId);
+            }
+            if ($listing === null && is_array($meta['reseller_catalog_limits'] ?? null)) {
+                return $rateCard->monthlyWholesaleForLimits($meta['reseller_catalog_limits']);
+            }
+        }
+        if ($listing instanceof ResellerProduct) {
+            return $rateCard->monthlyWholesaleForListing($listing);
+        }
+        $product->loadMissing('containerTemplate');
+        $included = $product->getIncludedContainerLimits($product->containerTemplate);
+
+        return $rateCard->monthlyWholesaleForLimits([
+            'cpu' => $included['cpu'] ?? null,
+            'memory_mb' => $included['memory_mb'] ?? null,
+            'disk_gb' => $included['disk_gb'] ?? null,
+            'bandwidth_gb' => $product->includedBandwidthGb() ?: null,
+        ]);
     }
 
     private function inferBillingCycle(string $description): string

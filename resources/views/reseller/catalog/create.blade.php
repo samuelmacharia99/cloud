@@ -17,7 +17,7 @@
     <!-- Header -->
     <div>
         <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Add to Catalog</h1>
-        <p class="text-slate-600 dark:text-slate-400 mt-1">Resell a platform package, or create your own plan at your own price: your DirectAdmin hosting, servers you supply yourself, certificates. Application hosting is billed against your disk pool.</p>
+        <p class="text-slate-600 dark:text-slate-400 mt-1">Resell a platform package, or create your own plan at your own price: your DirectAdmin hosting, servers you supply yourself, certificates. Application hosting plans are carved from the CPU, RAM, disk and bandwidth pools on your package.</p>
     </div>
 
     <!-- Mode Toggle -->
@@ -262,12 +262,24 @@
                             <p x-show="customType === 'shared_hosting'" x-cloak class="mt-2 text-xs text-slate-500 dark:text-slate-400">
                                 Your plan, your price. Link it to one of your own DirectAdmin packages below and customer accounts are created on your DirectAdmin server automatically.
                             </p>
-                            <p x-show="customType && customType !== 'shared_hosting'" x-cloak class="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                            <p x-show="customType === 'container_hosting'" x-cloak class="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                                Your plan, your price, carved from the CPU, RAM, disk and bandwidth pools on your package. Talksasa deploys and runs the container; backups are included.
+                            </p>
+                            <p x-show="customType && customType !== 'shared_hosting' && customType !== 'container_hosting'" x-cloak class="mt-2 text-xs text-slate-500 dark:text-slate-400">
                                 Sold and invoiced through your portal. Talksasa does not provision this one, so you deliver it yourself and mark the invoice paid as usual.
                             </p>
-                            <p x-show="!customType" x-cloak class="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                                Application hosting is not here: a container needs a stack from the platform catalogue, so add those from <span class="font-medium">Add from Admin Catalog</span>.
-                            </p>
+                        </div>
+
+                        <div x-show="customType === 'container_hosting'" x-cloak>
+                            @include('reseller.catalog.partials.container-plan-fields', [
+                                'computePool' => $computePool,
+                                'bandwidthPool' => $bandwidthPool,
+                                'stackTemplates' => $stackTemplates,
+                                'rateCard' => $rateCard,
+                                'limits' => old('resource_limits', []),
+                                'selectedTemplateId' => old('container_template_id'),
+                                'disabledUnless' => "mode === 'custom'",
+                            ])
                         </div>
 
                         <div x-show="customType === 'shared_hosting'" x-cloak>

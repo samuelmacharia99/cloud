@@ -184,7 +184,7 @@ class ResellerCatalogControllerTest extends TestCase
         $this->assertSame(0.0, (float) $listing->setup_fee);
     }
 
-    public function test_container_listing_requires_admin_package(): void
+    public function test_a_container_listing_without_a_platform_product_needs_its_own_specs(): void
     {
         $reseller = $this->reseller();
 
@@ -195,7 +195,9 @@ class ResellerCatalogControllerTest extends TestCase
                 'monthly_price' => 19.99,
                 'is_active' => true,
             ])
-            ->assertSessionHasErrors('product_id');
+            ->assertSessionHasErrors(['resource_limits.cpu', 'resource_limits.memory_mb', 'resource_limits.disk_gb']);
+
+        $this->assertSame(0, ResellerProduct::where('reseller_id', $reseller->id)->count());
     }
 
     public function test_a_reseller_can_create_their_own_plan_for_anything_the_platform_does_not_build(): void

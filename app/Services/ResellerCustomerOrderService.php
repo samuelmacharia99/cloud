@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Enums\InvoiceStatus;
 use App\Enums\ResellerDomainOrderType;
+use App\Models\ContainerTemplate;
+use App\Models\CustomerProject;
 use App\Models\Domain;
 use App\Models\DomainExtension;
 use App\Models\DomainRenewalOrder;
@@ -241,7 +243,48 @@ class ResellerCustomerOrderService
             }
         }
 
-        return Service::create($attributes);
+        $stack = $options['container_template'] ?? null;
+        if ($stack instanceof ContainerTemplate && ($attributes['provisioning_driver_key'] ?? null) === 'container') {
+            $attributes['service_meta'] = array_merge($attributes['service_meta'] ?? [], [
+                'provision_template_slug' => $stack->slug,
+                'language_slug' => $stack->slug,
+            ]);
+        }
+
+        $service = Service::create($attributes);
+
+        if (($attributes['provisioning_driver_key'] ?? null) === 'container') {
+            $this->attachPlanPool($service, $customer, $catalogProduct, $adminProduct);
+        }
+
+        return $service;
+    }
+
+    /**
+     * Every application hosting plan is a project pool: the first site is the
+     * billing anchor and the customer can add included sites to it later.
+     */
+    private function attachPlanPool(Service $service, User $customer, ResellerProduct $catalogProduct, Product $adminProduct): void
+    {
+        try {
+            $project = CustomerProject::create([
+                'user_id' => $customer->id,
+                'name' => mb_substr($catalogProduct->name, 0, 100),
+                'recipe_key' => CustomerProject::PLAN_POOL_RECIPE,
+                'billing_service_id' => $service->id,
+                'resource_pool' => [
+                    'product_id' => $adminProduct->id,
+                    'product_name' => $catalogProduct->name,
+                    'reseller_product_id' => $catalogProduct->id,
+                ],
+            ]);
+            $meta = is_array($service->service_meta) ? $service->service_meta : [];
+            $meta['project_billing_anchor'] = true;
+            $meta['project_recipe'] = CustomerProject::PLAN_POOL_RECIPE;
+            $service->forceFill(['project_id' => $project->id, 'service_meta' => $meta])->save();
+        } catch (\Throwable $e) {
+            Log::warning('Reseller plan pool not created', ['service_id' => $service->id, 'error' => $e->getMessage()]);
+        }
     }
 
     private function isProvisionableHostingProduct(Product $adminProduct, ResellerProduct $catalogProduct): bool

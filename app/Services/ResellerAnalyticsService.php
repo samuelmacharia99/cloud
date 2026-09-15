@@ -82,6 +82,7 @@ class ResellerAnalyticsService
 
         $hostingHealth = app(ResellerHostingHealthService::class)->snapshot($reseller);
         $computePool = app(ResellerComputeUsageService::class)->poolPresentation($reseller);
+        $bandwidthPool = app(ResellerBandwidthUsageService::class)->poolPresentation($reseller);
 
         $directAdminMonitor = app(ResellerDirectAdminMonitorService::class)->panelShell($reseller);
         $daBinding = app(ResellerDirectAdminService::class);
@@ -117,6 +118,7 @@ class ResellerAnalyticsService
             'actionQueue' => $this->actionQueue($reseller, $customerIds, $unlinkedDaCount, $billingHealth, $diskUsageSnapshot, $diskPoolGb, $hostingHealth, $computePool),
             'hostingHealth' => $hostingHealth,
             'computePool' => $computePool,
+            'bandwidthPool' => $bandwidthPool,
             'activityFeed' => [],
             'activityFeedHasMore' => true,
             'activityFeedNextOffset' => 0,

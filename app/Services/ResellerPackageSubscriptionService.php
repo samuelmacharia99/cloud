@@ -197,6 +197,7 @@ class ResellerPackageSubscriptionService
 
             if ($renewal) {
                 app(ResellerDiskUsageBillingService::class)->addUsageItemsToSubscriptionInvoice($invoice, $user, true);
+                app(ResellerComputeUsageBillingService::class)->addUsageItemsToSubscriptionInvoice($invoice, $user, true);
             }
 
             if (! $renewal) {

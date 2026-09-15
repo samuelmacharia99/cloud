@@ -276,6 +276,10 @@ class User extends Authenticatable implements MustVerifyEmail
             return true;
         }
 
+        if (! $this->resellerPackage->hasUserCap()) {
+            return false;
+        }
+
         $count = $this->getResellerUserCountForLimits();
 
         return $count >= $this->resellerPackage->max_users;
@@ -310,6 +314,10 @@ class User extends Authenticatable implements MustVerifyEmail
     {
         if (! $this->resellerPackage) {
             return true;
+        }
+
+        if (! $this->resellerPackage->hasServiceCap()) {
+            return false;
         }
 
         return $this->getManagedActiveServicesCount() >= $this->resellerPackage->max_services;

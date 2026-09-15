@@ -32,12 +32,17 @@ class ResellerPackageController extends Controller
             'name' => 'required|string|max:255|unique:reseller_packages,name',
             'description' => 'nullable|string|max:1000',
             'billing_cycle' => 'required|in:monthly,annually',
-            'max_services' => 'required|integer|min:1|max:10000',
+            'max_services' => 'nullable|integer|min:0|max:10000',
             'disk_pool_gb' => 'required|integer|min:1|max:100000',
             'disk_overage_rate' => 'nullable|numeric|min:0|max:999999',
             'cpu_pool_cores' => 'nullable|numeric|min:0|max:1024',
             'memory_pool_mb' => 'nullable|integer|min:0|max:4194304',
-            'max_users' => 'required|integer|min:1|max:1000',
+            'bandwidth_pool_gb' => 'nullable|integer|min:0|max:10000000',
+            'cpu_overage_rate' => 'nullable|numeric|min:0|max:999999',
+            'memory_overage_rate' => 'nullable|numeric|min:0|max:999999',
+            'bandwidth_overage_rate' => 'nullable|numeric|min:0|max:999999',
+            'backups_included' => 'nullable|boolean',
+            'max_users' => 'nullable|integer|min:0|max:100000',
             'price' => 'required|numeric|min:0|max:999999.99',
             'active' => 'boolean',
         ]);
@@ -47,6 +52,10 @@ class ResellerPackageController extends Controller
         // silently turn enforcement off in a way that reads like a value.
         $validated['cpu_pool_cores'] = $validated['cpu_pool_cores'] ?? 0;
         $validated['memory_pool_mb'] = $validated['memory_pool_mb'] ?? 0;
+        $validated['bandwidth_pool_gb'] = $validated['bandwidth_pool_gb'] ?? 0;
+        $validated['max_users'] = (int) ($validated['max_users'] ?? 0);
+        $validated['max_services'] = (int) ($validated['max_services'] ?? 0);
+        $validated['backups_included'] = $request->boolean('backups_included', true);
 
         ResellerPackage::create($validated);
 
@@ -65,12 +74,17 @@ class ResellerPackageController extends Controller
             'name' => 'required|string|max:255|unique:reseller_packages,name,'.$reseller_package->id,
             'description' => 'nullable|string|max:1000',
             'billing_cycle' => 'required|in:monthly,annually',
-            'max_services' => 'required|integer|min:1|max:10000',
+            'max_services' => 'nullable|integer|min:0|max:10000',
             'disk_pool_gb' => 'required|integer|min:1|max:100000',
             'disk_overage_rate' => 'nullable|numeric|min:0|max:999999',
             'cpu_pool_cores' => 'nullable|numeric|min:0|max:1024',
             'memory_pool_mb' => 'nullable|integer|min:0|max:4194304',
-            'max_users' => 'required|integer|min:1|max:1000',
+            'bandwidth_pool_gb' => 'nullable|integer|min:0|max:10000000',
+            'cpu_overage_rate' => 'nullable|numeric|min:0|max:999999',
+            'memory_overage_rate' => 'nullable|numeric|min:0|max:999999',
+            'bandwidth_overage_rate' => 'nullable|numeric|min:0|max:999999',
+            'backups_included' => 'nullable|boolean',
+            'max_users' => 'nullable|integer|min:0|max:100000',
             'price' => 'required|numeric|min:0|max:999999.99',
             'active' => 'boolean',
         ]);
@@ -80,6 +94,10 @@ class ResellerPackageController extends Controller
         // silently turn enforcement off in a way that reads like a value.
         $validated['cpu_pool_cores'] = $validated['cpu_pool_cores'] ?? 0;
         $validated['memory_pool_mb'] = $validated['memory_pool_mb'] ?? 0;
+        $validated['bandwidth_pool_gb'] = $validated['bandwidth_pool_gb'] ?? 0;
+        $validated['max_users'] = (int) ($validated['max_users'] ?? 0);
+        $validated['max_services'] = (int) ($validated['max_services'] ?? 0);
+        $validated['backups_included'] = $request->boolean('backups_included', true);
 
         $reseller_package->update($validated);
 

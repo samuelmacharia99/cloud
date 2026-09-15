@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\ResellerContainerRateCard;
 use App\Services\ResellerProvisionProductResolver;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -158,7 +159,17 @@ class ResellerProduct extends Model
             'cpu' => isset($limits['cpu']) ? (float) $limits['cpu'] : null,
             'memory_mb' => isset($limits['memory_mb']) ? (int) $limits['memory_mb'] : null,
             'disk_gb' => isset($limits['disk_gb']) ? (float) $limits['disk_gb'] : null,
+            'bandwidth_gb' => isset($limits['bandwidth_gb']) ? (float) $limits['bandwidth_gb'] : null,
         ];
+    }
+
+    /**
+     * An application hosting plan the reseller authored from their own pool,
+     * rather than a mirror of a platform product.
+     */
+    public function isResellerContainerPlan(): bool
+    {
+        return $this->type === 'container_hosting' && is_null($this->product_id) && $this->hasContainerResourceLimits();
     }
 
     public function hasContainerResourceLimits(): bool
@@ -209,7 +220,10 @@ class ResellerProduct extends Model
 
     public function getWholesaleMonthlyCost(): ?float
     {
-        if ($this->isCustom() || $this->type === 'container_hosting') {
+        if ($this->type === 'container_hosting') {
+            return app(ResellerContainerRateCard::class)->monthlyWholesaleForListing($this);
+        }
+        if ($this->isCustom()) {
             return null;
         }
 
@@ -218,7 +232,12 @@ class ResellerProduct extends Model
 
     public function getWholesaleYearlyCost(): ?float
     {
-        if ($this->isCustom() || $this->type === 'container_hosting') {
+        if ($this->type === 'container_hosting') {
+            $monthly = app(ResellerContainerRateCard::class)->monthlyWholesaleForListing($this);
+
+            return $monthly === null ? null : round($monthly * 12, 2);
+        }
+        if ($this->isCustom()) {
             return null;
         }
 

@@ -310,7 +310,7 @@ class ResellerCustomerCatalogService
 
     private function listingIsActiveForTechstack(ResellerProduct $listing): bool
     {
-        if ($listing->usesDirectAdminPackage()) {
+        if ($listing->usesDirectAdminPackage() || $listing->isResellerContainerPlan()) {
             return true;
         }
 

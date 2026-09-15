@@ -73,6 +73,19 @@
                     </div>
 
                     <div id="directadmin-package-field" class="{{ old('type', $catalogItem->type) === 'shared_hosting' ? '' : 'hidden' }}">
+                        @if ($catalogItem->type === 'container_hosting' && $catalogItem->isCustom())
+                            <div class="mb-6">
+                                @include('reseller.catalog.partials.container-plan-fields', [
+                                    'computePool' => $computePool,
+                                    'bandwidthPool' => $bandwidthPool,
+                                    'stackTemplates' => $stackTemplates,
+                                    'rateCard' => $rateCard,
+                                    'limits' => old('resource_limits', $catalogItem->resource_limits ?? []),
+                                    'selectedTemplateId' => old('container_template_id', $catalogItem->container_template_id),
+                                    'disabledUnless' => null,
+                                ])
+                            </div>
+                        @endif
                         @include('reseller.catalog.partials.directadmin-package-field', [
                             'directAdminBinding' => $directAdminBinding,
                             'directAdminPackages' => $directAdminPackages,
