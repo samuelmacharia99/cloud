@@ -1355,7 +1355,7 @@ class ContainerController extends Controller
         $file = $request->file('file');
         $uploadId = (string) $request->input('upload_id', '');
         $assembledPath = null;
-        $sql = '';
+        $sqlPath = '';
         $originalName = (string) ($request->input('filename') ?: $file->getClientOriginalName());
         $bytes = (int) $file->getSize();
 
@@ -1376,13 +1376,13 @@ class ContainerController extends Controller
                 ]);
             }
             $assembledPath = $stored['path'] ?? null;
-            $sql = is_string($assembledPath) ? (string) file_get_contents($assembledPath) : '';
+            $sqlPath = is_string($assembledPath) ? $assembledPath : '';
             $bytes = is_string($assembledPath) && is_file($assembledPath) ? (int) filesize($assembledPath) : $bytes;
         } else {
-            $sql = (string) file_get_contents($file->getRealPath());
+            $sqlPath = (string) $file->getRealPath();
         }
 
-        if (trim($sql) === '') {
+        if ($sqlPath === '' || ! is_file($sqlPath) || (int) filesize($sqlPath) === 0 || trim((string) file_get_contents($sqlPath, false, null, 0, 4096)) === '') {
             if ($uploadId !== '') {
                 $importer->forgetUpload((int) $service->id, $uploadId);
             }
@@ -1397,7 +1397,7 @@ class ContainerController extends Controller
 
         try {
             $ssh = SSHService::forNode($deployment->node);
-            $output = $importer->importIntoSidecar($ssh, $deployment, $databaseContext, $sql);
+            $output = $importer->importFileIntoSidecar($ssh, $deployment, $databaseContext, $sqlPath);
             $this->logDatabaseImport($service, $originalName, $bytes, true);
 
             return response()->json([

@@ -67,6 +67,62 @@ SQL;
         }
     }
 
+    public function test_phpmyadmin_triggers_and_procedures_are_kept_whole_for_the_client(): void
+    {
+        $dump = <<<'SQL'
+-- phpMyAdmin SQL Dump
+SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
+CREATE TABLE `marks` (`id` int NOT NULL, `total` int DEFAULT 0) ENGINE=InnoDB;
+INSERT INTO `marks` VALUES (1, 0), (2, 5);
+
+--
+-- Triggers `marks`
+--
+DELIMITER $$
+CREATE TRIGGER `after_mark_insert` AFTER INSERT ON `marks` FOR EACH ROW BEGIN
+  UPDATE `totals` SET `count` = `count` + 1 WHERE `id` = 1;
+  INSERT INTO `audit` (`note`) VALUES ('mark; inserted');
+END
+$$
+DELIMITER ;
+
+DELIMITER //
+CREATE DEFINER=`blinksof`@`localhost` PROCEDURE `recalc`(IN sid INT)
+BEGIN
+  UPDATE `marks` SET `total` = `total` + 1 WHERE `id` = sid;
+END//
+DELIMITER ;
+
+INSERT INTO `marks` VALUES (3, 9);
+SQL;
+
+        $importer = app(ContainerSqlDumpImportService::class);
+        $expected = $importer->mysqlClientDump($dump);
+
+        $in = tempnam(sys_get_temp_dir(), 'dump');
+        $out = $in.'.out';
+        file_put_contents($in, $dump);
+        $written = $this->rewriter($importer)->rewrite($in, $out);
+        $actual = (string) file_get_contents($out);
+        @unlink($in);
+        @unlink($out);
+
+        $this->assertSame($expected, $actual, 'the streamed and in-memory rewrites agree');
+        $this->assertSame(6, $written);
+        $this->assertMatchesRegularExpression("/DELIMITER ;;\nCREATE TRIGGER `after_mark_insert` AFTER INSERT ON `marks` FOR EACH ROW BEGIN\\s+UPDATE `totals` SET `count` = `count` \\+ 1 WHERE `id` = 1;\\s+INSERT INTO `audit` \\(`note`\\) VALUES \\('mark; inserted'\\); END;;\nDELIMITER ;\n/", $actual);
+        $this->assertMatchesRegularExpression("/DELIMITER ;;\nCREATE PROCEDURE `recalc`\\(IN sid INT\\) BEGIN\\s+UPDATE `marks` SET `total` = `total` \\+ 1 WHERE `id` = sid; END;;\nDELIMITER ;\n/", $actual);
+        $this->assertStringContainsString("INSERT INTO `marks` VALUES (1, 0), (2, 5);\n", $actual);
+        $this->assertStringContainsString("INSERT INTO `marks` VALUES (3, 9);\n", $actual);
+        $this->assertStringNotContainsString('DELIMITER $$', $actual);
+        $this->assertStringNotContainsString('DEFINER=', $actual);
+
+        // The mysql client sends a compound statement as one unit only between DELIMITER lines;
+        // every other statement still ends with a single semicolon on its own line.
+        $lines = explode("\n", trim($actual));
+        $this->assertSame('SET NAMES utf8mb4;', $lines[0]);
+        $this->assertSame(4, count(array_filter($lines, fn ($l) => str_starts_with($l, 'DELIMITER '))));
+    }
+
     public function test_rewrite_in_place_keeps_memory_flat_on_a_large_dump(): void
     {
         $path = tempnam(sys_get_temp_dir(), 'bigdump');

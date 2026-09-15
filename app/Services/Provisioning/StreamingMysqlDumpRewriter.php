@@ -13,7 +13,11 @@ namespace App\Services\Provisioning;
  * flattened statement as soon as it ends, so memory stays at one statement.
  *
  * Output is identical to ContainerSqlDumpImportService::mysqlClientDump():
- * "SET NAMES utf8mb4" first, one statement per line, ";\n" after each.
+ * "SET NAMES utf8mb4" first, one statement per line, ";\n" after each. A
+ * trigger, procedure, function or event carries semicolons inside its body,
+ * so it is written between DELIMITER ;; and DELIMITER ; the way mysqldump
+ * does; otherwise the mysql client splits it at the first inner semicolon
+ * and MySQL answers "syntax error near ''".
  */
 final class StreamingMysqlDumpRewriter
 {
@@ -30,6 +34,34 @@ final class StreamingMysqlDumpRewriter
     ];
 
     private const DEFINER_PATTERN = '/\sDEFINER=(?:`[^`]+`|\'[^\']+\')@(?:`[^`]+`|\'[^\']+\')/i';
+
+    public const COMPOUND_DELIMITER = ';;';
+
+    /**
+     * A statement whose body holds its own semicolons: the mysql client must
+     * be told a different delimiter before it is sent.
+     */
+    public static function isCompoundStatement(string $flat): bool
+    {
+        if (! str_contains($flat, ';')) {
+            return false;
+        }
+
+        return preg_match('/\bCREATE\b(?:(?!\bTABLE\b|\bINDEX\b|\bVIEW\b|\bDATABASE\b).){0,400}?\b(?:TRIGGER|PROCEDURE|FUNCTION|EVENT)\b/is', $flat) === 1
+            || preg_match('/^(?:\/\*!\d+\s*)?(?:ALTER|CREATE)\b.*\bBEGIN\b.*\bEND\b/is', $flat) === 1;
+    }
+
+    /**
+     * One statement in the form the mysql client needs, terminated.
+     */
+    public static function clientLine(string $flat): string
+    {
+        if (self::isCompoundStatement($flat)) {
+            return 'DELIMITER '.self::COMPOUND_DELIMITER."\n".$flat.self::COMPOUND_DELIMITER."\nDELIMITER ;\n";
+        }
+
+        return $flat.";\n";
+    }
 
     /**
      * @param  callable(string): string  $flatten  puts one statement on one physical line
@@ -58,7 +90,7 @@ final class StreamingMysqlDumpRewriter
         $sawContent = false;
 
         try {
-            fwrite($out, 'SET NAMES utf8mb4');
+            fwrite($out, "SET NAMES utf8mb4;\n");
             while (($line = fgets($in)) !== false) {
                 if (! $sawContent && trim($line) !== '') {
                     $sawContent = true;
@@ -73,7 +105,6 @@ final class StreamingMysqlDumpRewriter
             if ($this->emit($out, $current)) {
                 $written++;
             }
-            fwrite($out, ";\n");
         } finally {
             fclose($in);
             fclose($out);
@@ -111,7 +142,7 @@ final class StreamingMysqlDumpRewriter
             }
         }
 
-        fwrite($out, ";\n".$flat);
+        fwrite($out, self::clientLine($flat));
 
         return true;
     }

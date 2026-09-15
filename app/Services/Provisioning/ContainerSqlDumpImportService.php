@@ -398,26 +398,28 @@ class ContainerSqlDumpImportService
         $this->assertSafeSqlImport($sql);
 
         $statements = $this->splitSqlStatements($sql);
-        $lines = ['SET NAMES utf8mb4'];
+        $out = "SET NAMES utf8mb4;\n";
+        $written = 0;
         foreach ($statements as $statement) {
             $flat = $this->flattenSqlStatementForMysqlClient($statement);
             if ($flat !== '') {
-                $lines[] = $flat;
+                $out .= StreamingMysqlDumpRewriter::clientLine($flat);
+                $written++;
             }
         }
 
-        if (count($lines) < 2) {
+        if ($written === 0) {
             throw new \RuntimeException('SQL dump contained no executable statements after cleanup.');
         }
 
-        return implode(";\n", $lines).";\n";
+        return $out;
     }
 
     /**
      * Rewrite a dump file in place, streaming statement by statement so the
      * file size never dictates PHP memory. Same output as mysqlClientDump().
      */
-    public function rewriteLocalDumpForMysqlClient(string $path): void
+    public function rewriteLocalDumpForMysqlClient(string $path): int
     {
         if (! is_file($path) || (int) (@filesize($path) ?: 0) === 0) {
             throw new \RuntimeException('SQL dump file is missing or empty.');
@@ -425,7 +427,7 @@ class ContainerSqlDumpImportService
 
         $temp = $path.'.client.tmp';
         try {
-            (new StreamingMysqlDumpRewriter(fn (string $statement): string => $this->flattenSqlStatementForMysqlClient($statement)))
+            $written = (new StreamingMysqlDumpRewriter(fn (string $statement): string => $this->flattenSqlStatementForMysqlClient($statement)))
                 ->rewrite($path, $temp);
             if (! @rename($temp, $path)) {
                 throw new \RuntimeException('Could not rewrite the SQL dump for the MySQL client.');
@@ -435,6 +437,33 @@ class ContainerSqlDumpImportService
                 @unlink($temp);
             }
         }
+
+        return $written;
+    }
+
+    /**
+     * Import a dump that is already on disk without reading it into PHP memory.
+     * MySQL dumps stream through the rewriter; PostgreSQL still reads the file.
+     *
+     * @param  array<string, mixed>  $databaseContext
+     */
+    public function importFileIntoSidecar(
+        SSHService $ssh,
+        ContainerDeployment $deployment,
+        array $databaseContext,
+        string $path,
+    ): string {
+        if (! is_file($path) || (int) (@filesize($path) ?: 0) === 0) {
+            throw new \InvalidArgumentException('SQL file is empty or unreadable');
+        }
+        $dbType = (string) ($databaseContext['type'] ?? '');
+        if (in_array($dbType, ['mysql', 'mariadb'], true)) {
+            $containerPath = '/opt/talksasa/containers/'.$deployment->container_name;
+
+            return $this->importMysql($ssh, $deployment, $databaseContext, $containerPath, null, $path);
+        }
+
+        return $this->importIntoSidecar($ssh, $deployment, $databaseContext, (string) file_get_contents($path));
     }
 
     /**
@@ -674,7 +703,8 @@ class ContainerSqlDumpImportService
         ContainerDeployment $deployment,
         array $databaseContext,
         string $containerPath,
-        string $sql,
+        ?string $sql,
+        ?string $sqlPath = null,
     ): string {
         $dbService = (string) ($databaseContext['service'] ?? 'db');
         $database = (string) ($databaseContext['database'] ?? 'appdb');
@@ -711,9 +741,6 @@ class ContainerSqlDumpImportService
             );
         }
 
-        $clientSql = $this->mysqlClientDump($sql);
-        $statementCount = max(0, substr_count($clientSql, ";\n"));
-
         $importDir = $containerPath.'/.db-imports';
         $ssh->mkdirp($importDir);
         $localDump = tempnam(sys_get_temp_dir(), 'ts-sql-import-');
@@ -721,8 +748,21 @@ class ContainerSqlDumpImportService
             throw new \RuntimeException('Could not create a temporary file for the SQL dump.');
         }
         $localDump .= '.sql';
-        if (file_put_contents($localDump, $clientSql) === false) {
+        // Both routes end in the streaming rewrite, so a dump near the upload
+        // limit never has to fit in the PHP process at once.
+        if ($sqlPath !== null) {
+            if (! @copy($sqlPath, $localDump)) {
+                throw new \RuntimeException('Could not stage the SQL dump for import.');
+            }
+        } elseif (file_put_contents($localDump, (string) $sql) === false) {
             throw new \RuntimeException('Could not write the SQL dump to a temporary file.');
+        }
+        try {
+            $statementCount = $this->rewriteLocalDumpForMysqlClient($localDump);
+        } catch (\Throwable $e) {
+            @unlink($localDump);
+
+            throw $e;
         }
 
         $remotePath = $importDir.'/import_'.time().'_'.bin2hex(random_bytes(4)).'.sql';
