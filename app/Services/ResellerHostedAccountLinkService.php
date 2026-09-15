@@ -7,9 +7,11 @@ use App\Models\ResellerProduct;
 use App\Models\Service;
 use App\Models\User;
 use App\Rules\ValidCountryCode;
+use App\Services\Provisioning\DaAccountSnapshotService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -21,6 +23,7 @@ class ResellerHostedAccountLinkService
         private ResellerScopeService $scope,
         private ResellerProvisionProductResolver $productResolver,
         private UserCurrencyService $userCurrency,
+        private DaAccountSnapshotService $snapshots,
     ) {}
 
     /**
@@ -107,6 +110,19 @@ class ResellerHostedAccountLinkService
             }
 
             $service->update($updates);
+
+            $hostname = strtolower(trim((string) ($entry['domain'] ?? '')));
+            if ($hostname !== '' && str_contains($hostname, '.')) {
+                try {
+                    $this->snapshots->ensureDomainRow($service->fresh(['user']) ?? $service, $hostname);
+                } catch (\Throwable $e) {
+                    Log::warning('Linked DirectAdmin account without a domain row', [
+                        'service_id' => $service->id,
+                        'hostname' => $hostname,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
 
             $this->forgetDirectoryCache($reseller);
 

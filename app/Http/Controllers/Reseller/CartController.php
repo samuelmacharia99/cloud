@@ -108,10 +108,15 @@ class CartController extends Controller
             'extension' => 'required|string',
             'years' => 'required|integer|min:1|max:10',
             'price' => 'required|numeric|min:0',
+            'for_own_use' => 'nullable|boolean',
         ]);
 
         if (ResellerCartContext::isCustomerMode()) {
             return $this->addForCustomer($validated);
+        }
+
+        if ($refusal = $this->refuseSilentSelfOrder($request)) {
+            return $refusal;
         }
 
         $extension = DomainExtension::query()
@@ -165,6 +170,24 @@ class CartController extends Controller
             'item_count' => count($cart),
             'message' => 'Domain added to cart',
         ]);
+    }
+
+    /**
+     * A wholesale domain lands on the reseller's own account and never shows
+     * in any customer's portal. That used to happen by default whenever the
+     * cart was left in wholesale mode, so it now takes an explicit say-so.
+     */
+    private function refuseSilentSelfOrder(Request $request): ?JsonResponse
+    {
+        if ($request->boolean('for_own_use')) {
+            return null;
+        }
+
+        return response()->json([
+            'success' => false,
+            'code' => 'confirm_own_use',
+            'message' => 'The cart is in wholesale mode, so this domain would be registered on your own account and would not appear in any customer\'s portal. Pick the customer under "Cart billing mode" to bill them at retail, or confirm the domain is for your own use.',
+        ], 422);
     }
 
     /**
@@ -241,6 +264,7 @@ class CartController extends Controller
             'epp_code' => 'required|string|min:5|max:255',
             'old_registrar' => 'required|string|min:2|max:255',
             'old_registrar_url' => 'nullable|url|max:255',
+            'for_own_use' => 'nullable|boolean',
         ]);
 
         $extension = DomainExtension::query()
@@ -264,6 +288,10 @@ class CartController extends Controller
 
         if (ResellerCartContext::isCustomerMode()) {
             return $this->addTransferForCustomer($validated, $extension, $expectedWholesale);
+        }
+
+        if ($refusal = $this->refuseSilentSelfOrder($request)) {
+            return $refusal;
         }
 
         if (abs((float) $validated['price'] - $expectedWholesale) > 0.02) {

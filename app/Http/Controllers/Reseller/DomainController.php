@@ -17,6 +17,7 @@ use App\Services\DomainRenewalService;
 use App\Services\Registrar\RegistrarFulfillmentService;
 use App\Services\ResellerCustomerCatalogService;
 use App\Services\ResellerCustomerOrderService;
+use App\Services\ResellerDomainAssignmentService;
 use App\Services\ResellerDomainOrderService;
 use App\Services\ResellerDomainTransferService;
 use App\Services\ResellerScopeService;
@@ -97,6 +98,7 @@ class DomainController extends Controller
 
         return view('reseller.domains.index', [
             'domains' => $domains,
+            'unassignedDomains' => app(ResellerDomainAssignmentService::class)->unassigned(auth()->user()),
             'extensions' => $extensions,
             'knownExtensions' => $extensions->pluck('extension')->values(),
             'selectedPeriod' => $selectedPeriod,
@@ -394,6 +396,35 @@ class DomainController extends Controller
             'success',
             $this->registrarFulfillment->concealProviderMessage($result['message'])
         );
+    }
+
+    /**
+     * Hand domains on the reseller's own account to the customers they belong to.
+     */
+    public function assignToCustomers(Request $request)
+    {
+        $validated = $request->validate([
+            'assignments' => ['required', 'array', 'min:1'],
+            'assignments.*' => ['nullable', 'integer'],
+        ], [
+            'assignments.required' => 'Pick a customer for at least one domain.',
+        ]);
+
+        $assignments = array_filter($validated['assignments'], fn ($customerId) => (int) $customerId > 0);
+        if ($assignments === []) {
+            return back()->with('error', 'Pick a customer for at least one domain.');
+        }
+
+        $result = app(ResellerDomainAssignmentService::class)->assign(auth()->user(), $assignments);
+
+        $message = $result['assigned'] > 0
+            ? sprintf('%d domain%s now show in the customer\'s portal.', $result['assigned'], $result['assigned'] === 1 ? '' : 's')
+            : 'No domains were assigned.';
+        if ($result['skipped'] !== []) {
+            $message .= ' Skipped: '.implode(' ', array_slice($result['skipped'], 0, 5));
+        }
+
+        return redirect()->route('reseller.domains.index')->with($result['assigned'] > 0 ? 'success' : 'error', $message);
     }
 
     public function initiateTransfer(Request $request, Domain $domain)

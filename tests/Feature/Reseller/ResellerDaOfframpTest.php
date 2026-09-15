@@ -8,15 +8,19 @@ use App\Models\ContainerDeployment;
 use App\Models\DaAccountSnapshot;
 use App\Models\DaConvertBatch;
 use App\Models\DaConvertBatchItem;
+use App\Models\Domain;
 use App\Models\Node;
 use App\Models\Product;
 use App\Models\ResellerPackage;
 use App\Models\ResellerProduct;
 use App\Models\Service;
 use App\Models\User;
+use App\Services\DomainInputParser;
 use App\Services\Provisioning\DaAccountSnapshotService;
 use App\Services\Provisioning\DirectAdminService;
 use App\Services\Provisioning\DirectAdminToContainerConvertService;
+use App\Services\Provisioning\DirectAdminToContainerMigrationService;
+use App\Services\Provisioning\DirectAdminToMailcowMigrationService;
 use App\Services\ResellerDirectAdminService;
 use App\Services\ResellerProvisionProductResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -259,6 +263,13 @@ class ResellerDaOfframpTest extends TestCase
         $service = Service::query()->where('external_reference', 'jamesk')->firstOrFail();
         $this->assertSame($reseller->id, (int) $service->reseller_id);
         Bus::assertDispatched(ConvertDirectAdminServiceToContainerJob::class);
+
+        // The customer's portal lists domain rows, so linking made one.
+        $domain = Domain::query()->where('name', 'jameskahiga')->first();
+        $this->assertNotNull($domain);
+        $this->assertSame($customer->id, (int) $domain->user_id);
+        $this->assertSame($reseller->id, (int) $domain->reseller_id);
+        $this->assertSame('dns', $domain->type);
     }
 
     public function test_cut_dns_on_another_resellers_batch_is_not_found(): void
@@ -442,7 +453,13 @@ class ResellerDaOfframpTest extends TestCase
         $convert->shouldReceive('assertHostCapacityForConvert')->andReturnNull()->byDefault();
         $this->app->instance(DirectAdminToContainerConvertService::class, $convert);
 
-        $snapshots = Mockery::mock(DaAccountSnapshotService::class);
+        // Partial with real dependencies: the snapshot capture is faked, the
+        // domain row helper runs for real so the customer's portal gets its row.
+        $snapshots = Mockery::mock(DaAccountSnapshotService::class, [
+            app(DirectAdminToContainerMigrationService::class),
+            app(DomainInputParser::class),
+            app(DirectAdminToMailcowMigrationService::class),
+        ])->makePartial();
         $snapshots->shouldReceive('captureOrFail')->andReturnUsing(function (Service $service): DaAccountSnapshot {
             return DaAccountSnapshot::query()->create([
                 'service_id' => $service->id,

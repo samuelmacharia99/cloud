@@ -89,6 +89,7 @@ class ResellerDomainTransferTest extends TestCase
                 'price' => 850,
                 'epp_code' => 'EPP-CODE-12345',
                 'old_registrar' => 'GoDaddy',
+                'for_own_use' => true,
             ])
             ->assertOk()
             ->assertJson(['success' => true]);
@@ -128,6 +129,7 @@ class ResellerDomainTransferTest extends TestCase
                 'price' => 850,
                 'epp_code' => 'EPP-CODE-12345',
                 'old_registrar' => 'GoDaddy',
+                'for_own_use' => true,
             ])
             ->assertOk();
 

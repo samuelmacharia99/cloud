@@ -339,6 +339,17 @@ class DaAccountSnapshotService
         ];
     }
 
+    /**
+     * The customer's domain row for a hostname on their service, created as
+     * an externally registered DNS domain when the platform has none. Public
+     * because linking a DirectAdmin account needs the same row a snapshot
+     * makes, or the customer's portal shows no domain at all.
+     */
+    public function ensureDomainRow(Service $service, string $hostname): Domain
+    {
+        return $this->findOrCreateDomain($service, strtolower(trim($hostname)));
+    }
+
     private function findOrCreateDomain(Service $service, string $hostname): Domain
     {
         $parts = $this->splitHostname($hostname);

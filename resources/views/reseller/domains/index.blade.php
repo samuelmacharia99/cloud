@@ -37,6 +37,63 @@
         @endif
     </div>
 
+    @if (($unassignedDomains ?? collect())->isNotEmpty())
+        <div class="ui-card p-6 border-amber-200 dark:border-amber-800/60">
+            <div class="flex items-start justify-between gap-4 flex-wrap">
+                <div>
+                    <h2 class="text-lg font-bold text-slate-900 dark:text-white">Domains on your own account</h2>
+                    <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                        These {{ $unassignedDomains->count() }} {{ \Illuminate\Support\Str::plural('domain', $unassignedDomains->count()) }} were registered at wholesale on your account, so no customer can see them in their portal. Assign each to the customer it belongs to. Where a customer's hosting carries the same name, that customer is preselected.
+                    </p>
+                </div>
+            </div>
+            <form method="POST" action="{{ route('reseller.domains.assign') }}" class="mt-4 space-y-3" x-data="{ all: false }">
+                @csrf
+                <div class="ui-table-wrap">
+                    <table class="ui-table">
+                        <thead>
+                            <tr>
+                                <th>Domain</th>
+                                <th>Matches hosting for</th>
+                                <th>Assign to</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach ($unassignedDomains as $row)
+                                @php
+                                    $d = $row['domain'];
+                                    $suggested = $row['suggested'];
+                                @endphp
+                                <tr>
+                                    <td class="font-mono text-sm">{{ $d->fqdn() }}</td>
+                                    <td class="text-sm text-slate-600 dark:text-slate-400">
+                                        @if ($suggested)
+                                            {{ $suggested->name }} <span class="text-xs text-slate-400">(service #{{ $row['service']?->id }})</span>
+                                        @else
+                                            <span class="text-slate-400">No matching hosting</span>
+                                        @endif
+                                    </td>
+                                    <td>
+                                        <select name="assignments[{{ $d->id }}]" class="w-full max-w-xs px-2 py-1.5 border rounded-lg bg-white dark:bg-slate-800 text-sm">
+                                            <option value="">Keep on my account</option>
+                                            @foreach ($cartCustomers as $c)
+                                                <option value="{{ $c->id }}" @selected($suggested && (int) $suggested->id === (int) $c->id)>{{ $c->name }}</option>
+                                            @endforeach
+                                        </select>
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+                <div class="flex items-center justify-between gap-3 flex-wrap">
+                    <p class="text-xs text-slate-500">Assigning moves ownership to the customer at once. The domain then appears under their Domains page and renews from their account.</p>
+                    <button type="submit" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-medium">Assign to customers</button>
+                </div>
+            </form>
+        </div>
+    @endif
+
     <!-- Domain Search Section -->
     <div class="ui-card p-8" x-data="domainSearchManager(@js(['customerMode' => ($cartContext['mode'] ?? 'self') === 'customer', 'knownExtensions' => $knownExtensions]))">
         <h2 class="text-xl font-bold text-slate-900 dark:text-white mb-2">Register a New Domain</h2>
@@ -527,6 +584,16 @@ function domainSearchManager({ customerMode = false, knownExtensions = [] } = {}
         },
 
         async addToCart(domain, extension, price, period) {
+            if (!this.customerMode) {
+                const ownUse = window.confirm(
+                    'The cart is in wholesale mode. ' + domain + ' will be registered on YOUR account and will not appear in any customer\'s portal.\n\n' +
+                    'OK: it is for my own use.\nCancel: go back and pick the customer under "Cart billing mode".'
+                );
+                if (!ownUse) {
+                    return;
+                }
+            }
+
             this.adding = true;
 
             try {
@@ -544,7 +611,8 @@ function domainSearchManager({ customerMode = false, knownExtensions = [] } = {}
                         domain: domainName,
                         extension: resolvedExtension,
                         years: parseInt(period, 10),
-                        price: price
+                        price: price,
+                        for_own_use: !this.customerMode
                     })
                 });
 
@@ -666,6 +734,16 @@ function domainTransferManager({ customerMode = false, knownExtensions = [] } = 
                 return;
             }
 
+            if (!this.customerMode) {
+                const ownUse = window.confirm(
+                    'The cart is in wholesale mode. This transfer lands on YOUR account and will not appear in any customer\'s portal.\n\n' +
+                    'OK: it is for my own use.\nCancel: go back and pick the customer under "Cart billing mode".'
+                );
+                if (!ownUse) {
+                    return;
+                }
+            }
+
             if (this.transferPrice === null) {
                 await this.loadTransferPricing();
             }
@@ -692,6 +770,7 @@ function domainTransferManager({ customerMode = false, knownExtensions = [] } = 
                         epp_code: this.eppCode,
                         old_registrar: this.oldRegistrar,
                         old_registrar_url: this.oldRegistrarUrl || null,
+                        for_own_use: !this.customerMode,
                     })
                 });
 

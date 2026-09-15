@@ -648,6 +648,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
             Route::put('reseller/domains/{domain}/nameservers', [App\Http\Controllers\Reseller\DomainController::class, 'updateNameservers'])->name('reseller.domains.nameservers');
             Route::put('reseller/domains/{domain}/registrant', [App\Http\Controllers\Reseller\DomainController::class, 'updateRegistrant'])->name('reseller.domains.registrant');
             Route::put('reseller/domains/{domain}/registry-options', [App\Http\Controllers\Reseller\DomainController::class, 'updateRegistryOptions'])->name('reseller.domains.registry-options');
+            Route::post('reseller/domains/assign', [App\Http\Controllers\Reseller\DomainController::class, 'assignToCustomers'])->middleware('throttle:20,1')->name('reseller.domains.assign');
             Route::post('reseller/domains/{domain}/transfer', [App\Http\Controllers\Reseller\DomainController::class, 'initiateTransfer'])->name('reseller.domains.transfer');
             Route::post('reseller/domains/{domain}/renew', [App\Http\Controllers\Reseller\DomainController::class, 'addRenewalToCart'])->name('reseller.domains.renew');
             Route::post('reseller/domains/{domain}/auto-renew', [App\Http\Controllers\Reseller\DomainController::class, 'toggleAutoRenew'])->middleware('throttle:20,1')->name('reseller.domains.auto-renew');
