@@ -128,6 +128,7 @@ class ContainerDoctorService
                 'quarantine_suspicious_files',
                 'archive_exposed_files',
                 'restore_wordpress_core',
+                'normalize_app_permissions',
                 // A container that cannot parse its settings is crash-looping
                 // by definition, so requiring it to be running first would
                 // refuse the one repair that fixes it.
@@ -179,6 +180,7 @@ class ContainerDoctorService
             'quarantine_suspicious_files' => $this->treatQuarantineSuspiciousFiles($service),
             'archive_exposed_files' => $this->treatArchiveExposedFiles($service),
             'restore_wordpress_core' => $this->treatRestoreWordPressCore($service),
+            'normalize_app_permissions' => $this->treatNormalizeAppPermissions($service),
             'harden_wordpress_runtime' => $this->wordPressTreatments()->hardenRuntime($service),
             'rotate_wordpress_security_keys' => $this->wordPressTreatments()->rotateSecurityKeys($service),
             'close_wordpress_registration' => $this->wordPressTreatments()->closeRegistration($service),
@@ -584,6 +586,12 @@ class ContainerDoctorService
                     $findings[] = $finding;
                 }
                 foreach ($this->wordPressSecurityFindings($ssh, $service, $deployment, $checks) as $finding) {
+                    $findings[] = $finding;
+                }
+            } elseif ($containerReady && in_array($stack, ['php', 'laravel', 'codeigniter'], true)) {
+                // The same file scan WordPress gets, without the core manifest:
+                // webshells, exposed dumps and permission drift matter to every PHP app.
+                foreach ($this->integrityFindings($ssh, $service, $deployment, $checks, false) as $finding) {
                     $findings[] = $finding;
                 }
             }
@@ -8512,13 +8520,13 @@ PHP;
      * @param  array<string, mixed>  $checks
      * @return list<array<string, mixed>>
      */
-    private function integrityFindings(SSHService $ssh, Service $service, $deployment, array &$checks): array
+    private function integrityFindings(SSHService $ssh, Service $service, $deployment, array &$checks, bool $wordpress = true): array
     {
         $scanner = app(ContainerIntegrityScanner::class);
         // Core is always checked against the manifest (cached on the node); without
         // it the scanner falls back to modification-time guesses about core files.
         try {
-            $result = $scanner->scan($ssh, $deployment, true, withChecksums: true);
+            $result = $scanner->scan($ssh, $deployment, $wordpress, withChecksums: $wordpress);
         } catch (\Throwable $e) {
             $checks['integrity_scanned'] = false;
             $checks['integrity_error'] = mb_substr($e->getMessage(), 0, 160);
@@ -8534,10 +8542,33 @@ PHP;
         $checks['integrity_suspicious'] = count($scanner->suspiciousHits($result['hits']));
         $checks['integrity_exposed'] = count($scanner->exposedHits($result['hits']));
         $checks['integrity_partial'] = (bool) ($result['summary']['truncated'] ?? false);
+        $checks['integrity_permissions'] = count($scanner->permissionHits($result['hits']));
         $scanner->persist($service, $result);
         $checks['security_incidents'] = $this->incidentRows($service);
 
-        return $scanner->findings($result, true);
+        return $scanner->findings($result, $wordpress);
+    }
+
+    /**
+     * @return array{success: bool, message: string}
+     */
+    private function treatNormalizeAppPermissions(Service $service): array
+    {
+        $deployment = $service->containerDeployment;
+        if (! $deployment?->node) {
+            return ['success' => false, 'message' => 'Application is not deployed.'];
+        }
+
+        $stack = (string) ($service->effectiveContainerTemplate()?->slug ?? $service->product?->containerTemplate?->slug ?? 'php');
+        $ssh = SSHService::forNode($deployment->node);
+
+        try {
+            return app(ContainerPermissionNormalizer::class)->normalize($ssh, $service, $deployment, $stack);
+        } catch (\Throwable $e) {
+            return ['success' => false, 'message' => 'Could not normalise permissions: '.$e->getMessage()];
+        } finally {
+            $ssh->disconnect();
+        }
     }
 
     /**

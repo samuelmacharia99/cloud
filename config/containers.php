@@ -228,6 +228,8 @@ return [
         'incident_retention_days' => (int) env('CONTAINER_INCIDENT_RETENTION_DAYS', 90),
         // The nightly pass archives and removes hits that cannot be legitimate on its own.
         'nightly_auto_quarantine' => (bool) env('CONTAINER_INTEGRITY_NIGHTLY_QUARANTINE', true),
+        // A wp-config.php or .env readable by every user is closed to 640 by the nightly pass.
+        'nightly_lock_secrets' => (bool) env('CONTAINER_INTEGRITY_NIGHTLY_LOCK_SECRETS', true),
         // Third-party script hosts a WordPress site may legitimately load from.
         'script_domain_allowlist' => [
             'google.com', 'googleapis.com', 'gstatic.com', 'googletagmanager.com', 'google-analytics.com', 'googlesyndication.com',

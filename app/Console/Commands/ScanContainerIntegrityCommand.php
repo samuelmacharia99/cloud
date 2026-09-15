@@ -40,6 +40,7 @@ class ScanContainerIntegrityCommand extends BaseCronCommand
         $quarantined = 0;
         $alerted = 0;
         $failed = 0;
+        $secured = 0;
 
         foreach ($query->cursor() as $deployment) {
             $service = $deployment->service;
@@ -78,6 +79,26 @@ class ScanContainerIntegrityCommand extends BaseCronCommand
                     }
                 }
 
+                $lockedSecrets = [];
+                if ((bool) config('containers.integrity.nightly_lock_secrets', true)) {
+                    $readable = $scanner->readableSecretPaths($result['hits']);
+                    if ($readable !== []) {
+                        $lockedSecrets = $scanner->lockSecretModes($ssh, $deployment, $readable);
+                        if ($lockedSecrets !== []) {
+                            $secured++;
+                            // Locked paths are no longer drift; keep the rest of the hit list intact.
+                            $result['hits'] = array_values(array_map(function (array $hit) use ($lockedSecrets): array {
+                                if (in_array($hit['path'], $lockedSecrets, true)) {
+                                    $hit['reasons'] = array_values(array_diff($hit['reasons'], [ContainerIntegrityScanner::REASON_SECRETS_READABLE]));
+                                }
+
+                                return $hit;
+                            }, $result['hits']));
+                            $result['hits'] = array_values(array_filter($result['hits'], fn ($h) => $h['reasons'] !== []));
+                        }
+                    }
+                }
+
                 $stored = $scanner->persist($service, $result, $moved['moved']);
                 $incidents->prune($ssh, $deployment);
             } catch (\Throwable $e) {
@@ -103,7 +124,20 @@ class ScanContainerIntegrityCommand extends BaseCronCommand
                     (string) $moved['incident'],
                     ContainerIncidentService::TRIGGER_NIGHTLY,
                     $moved['moved'],
-                    ($keysRotated ? 'Security keys were rotated. ' : '').($stored['suspicious'] > 0 ? $stored['suspicious'].' more file(s) wait for a Doctor decision.' : ''),
+                    ($keysRotated ? 'Security keys were rotated. ' : '')
+                        .($lockedSecrets !== [] ? 'Locked '.implode(', ', $lockedSecrets).' to 640. ' : '')
+                        .($stored['suspicious'] > 0 ? $stored['suspicious'].' more file(s) wait for a Doctor decision.' : ''),
+                );
+                $alerted++;
+            } elseif ($lockedSecrets !== []) {
+                SendTelegramMonitorAlertJob::dispatch(
+                    'security',
+                    'Secrets file locked on '.($deployment->probeHostHeader() ?: $deployment->container_name),
+                    [
+                        'service' => '#'.$service->id.' '.$service->name,
+                        'locked' => implode(', ', $lockedSecrets),
+                    ],
+                    'It was readable by every user on the host; it is now 640, owned by www-data. Nothing else was changed.',
                 );
                 $alerted++;
             } elseif ($stored['new_paths'] !== []) {
@@ -129,6 +163,6 @@ class ScanContainerIntegrityCommand extends BaseCronCommand
             $quarantined,
             $alerted,
             $failed
-        );
+        ).($secured > 0 ? ' Locked secrets files on '.$secured.' stack(s).' : '');
     }
 }

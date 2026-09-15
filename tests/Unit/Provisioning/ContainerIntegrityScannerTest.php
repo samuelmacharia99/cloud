@@ -188,4 +188,37 @@ class ContainerIntegrityScannerTest extends TestCase
         $this->assertSame(1, $meta['exposed_count']);
         $this->assertSame(1, $meta['quarantined_count']);
     }
+
+    #[Test]
+    public function permission_drift_becomes_one_finding_that_normalises_instead_of_deleting(): void
+    {
+        $scanner = app(ContainerIntegrityScanner::class);
+        $result = [
+            'hits' => [
+                ['path' => 'wp-content/uploads/2024', 'reasons' => ['world_writable'], 'size' => 4096, 'mtime' => 1],
+                ['path' => 'wp-content/plugins/x/bin', 'reasons' => ['setuid_file'], 'size' => 10, 'mtime' => 1],
+                ['path' => 'wp-content/uploads/2024/x.php', 'reasons' => ['php_in_uploads', 'world_writable'], 'size' => 10, 'mtime' => 1],
+            ],
+            'core' => ['ran' => false, 'version' => null, 'modified' => [], 'extra' => [], 'missing' => [], 'error' => null],
+            'summary' => ['truncated' => false],
+        ];
+
+        $findings = collect($scanner->findings($result, true))->keyBy('id');
+
+        $drift = $findings->get('integrity_permission_drift');
+        $this->assertNotNull($drift);
+        $this->assertSame('critical', $drift['severity'], 'a setuid file is critical');
+        $this->assertSame('normalize_app_permissions', $drift['treat_action']);
+        $this->assertStringContainsString('1 setuid/setgid file(s)', $drift['title']);
+        $this->assertStringContainsString('2 world-writable path(s)', $drift['title']);
+        $this->assertCount(3, $scanner->permissionHits($result['hits']));
+        $this->assertSame(['wp-content/uploads/2024/x.php'], array_column($scanner->suspiciousHits($result['hits']), 'path'), 'a mode never makes a file malware on its own');
+
+        $warning = $scanner->findings(['hits' => [['path' => 'public/uploads', 'reasons' => ['world_writable'], 'size' => 4096, 'mtime' => 1]], 'core' => ['ran' => false], 'summary' => []], false);
+        $this->assertSame('warning', $warning[0]['severity']);
+
+        $secret = $scanner->findings(['hits' => [['path' => '.env', 'reasons' => ['secrets_readable'], 'size' => 40, 'mtime' => 1]], 'core' => ['ran' => false], 'summary' => []], false);
+        $this->assertSame('critical', $secret[0]['severity']);
+        $this->assertSame(['.env'], $scanner->readableSecretPaths($secret === [] ? [] : [['path' => '.env', 'reasons' => ['secrets_readable'], 'size' => 40, 'mtime' => 1]]));
+    }
 }

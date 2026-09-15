@@ -168,6 +168,52 @@ class IntegrityScanScriptTest extends TestCase
     /**
      * @return array{0: array<string, array{path: string, reasons: list<string>, size: int, mtime: int}>, 1: array<string, mixed>}
      */
+    #[Test]
+    public function permission_drift_is_reported_and_normal_modes_stay_quiet(): void
+    {
+        $tree = $this->root.'/app';
+        $this->writeFixtureTree($tree);
+        File::ensureDirectoryExists($tree.'/wp-content/uploads/2024/02');
+        File::ensureDirectoryExists($tree.'/vendor/pkg');
+        File::put($tree.'/wp-content/uploads/2024/02/open.txt', 'x');
+        File::put($tree.'/wp-content/uploads/2024/02/run.jpg', 'x');
+        File::put($tree.'/wp-content/uploads/2024/02/quiet.jpg', 'x');
+        File::put($tree.'/wp-content/plugins/akismet/suid.php', "<?php\n");
+        File::put($tree.'/vendor/pkg/loose.php', "<?php\n");
+        File::put($tree.'/.env', "APP_KEY=x\n");
+        File::put($tree.'/.env.example', "APP_KEY=\n");
+        chmod($tree.'/wp-config.php', 0644);
+        chmod($tree.'/.env', 0644);
+        chmod($tree.'/.env.example', 0644);
+        chmod($tree.'/wp-content/uploads/2024/02', 0777);
+        chmod($tree.'/wp-content/uploads/2024/02/open.txt', 0666);
+        chmod($tree.'/wp-content/uploads/2024/02/run.jpg', 0755);
+        chmod($tree.'/wp-content/uploads/2024/02/quiet.jpg', 0644);
+        chmod($tree.'/wp-content/plugins/akismet/suid.php', 04755);
+        chmod($tree.'/vendor/pkg/loose.php', 0777);
+        chmod($tree.'/wp-load.php', 0644);
+
+        [$hits] = $this->scan($tree, null);
+        $reasons = fn (string $path) => $hits[$path]['reasons'] ?? [];
+
+        $this->assertContains('secrets_readable', $reasons('wp-config.php'));
+        $this->assertContains('secrets_readable', $reasons('.env'));
+        $this->assertNotContains('secrets_readable', $reasons('.env.example'), 'the example file holds no secrets');
+        $this->assertContains('world_writable', $reasons('wp-content/uploads/2024/02'));
+        $this->assertContains('world_writable', $reasons('wp-content/uploads/2024/02/open.txt'));
+        $this->assertContains('upload_executable', $reasons('run.jpg' === '' ? '' : 'wp-content/uploads/2024/02/run.jpg'));
+        $this->assertNotContains('upload_executable', $reasons('wp-content/uploads/2024/02/quiet.jpg'));
+        $this->assertContains('setuid_file', $reasons('wp-content/plugins/akismet/suid.php'));
+        $this->assertArrayNotHasKey('vendor/pkg/loose.php', $hits, 'dependency trees keep their own modes');
+        $this->assertNotContains('world_writable', $reasons('wp-load.php'));
+
+        chmod($tree.'/wp-config.php', 0640);
+        chmod($tree.'/.env', 0640);
+        [$hits] = $this->scan($tree, null);
+        $this->assertNotContains('secrets_readable', $hits['wp-config.php']['reasons'] ?? []);
+        $this->assertArrayNotHasKey('.env', array_filter($hits, fn ($h) => in_array('secrets_readable', $h['reasons'], true)));
+    }
+
     private function scan(string $tree, ?string $manifest, bool $wordpress = true): array
     {
         $scanner = app(ContainerIntegrityScanner::class);

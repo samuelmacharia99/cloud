@@ -101,6 +101,38 @@ class ScanContainerIntegrityCommandTest extends TestCase
         Bus::assertDispatched(SendTelegramMonitorAlertJob::class, fn (SendTelegramMonitorAlertJob $job) => $job->category === 'security' && str_contains($job->title, 'one-wordpress') && $job->fields['new files'] === 1);
     }
 
+    public function test_a_readable_secrets_file_is_locked_on_its_own_and_reported(): void
+    {
+        Bus::fake([SendTelegramMonitorAlertJob::class]);
+        $node = Node::factory()->containerHost()->create();
+        $api = $this->stack($node, 'laravel', 'api-laravel', 'running');
+
+        $this->mock(ContainerIncidentService::class, fn (MockInterface $incidents) => $incidents->shouldReceive('prune')->once());
+        $this->mock(ContainerIntegrityScanner::class, function (MockInterface $scanner) {
+            $scanner->makePartial();
+            $scanner->shouldReceive('scan')->once()->andReturn([
+                'hits' => [
+                    ['path' => '.env', 'reasons' => ['secrets_readable'], 'size' => 40, 'mtime' => 1],
+                    ['path' => 'storage/app/public', 'reasons' => ['world_writable'], 'size' => 4096, 'mtime' => 1],
+                ],
+                'core' => ['ran' => false, 'version' => null, 'modified' => [], 'extra' => [], 'missing' => [], 'error' => null],
+                'summary' => ['truncated' => false],
+                'scanned_at' => '2026-09-15T03:20:00+00:00',
+            ]);
+            $scanner->shouldReceive('quarantine')->once()->andReturn(['moved' => [], 'quarantine_dir' => '', 'incident' => null, 'bytes' => 0, 'skipped' => []]);
+            $scanner->shouldReceive('lockSecretModes')->once()->withArgs(fn ($ssh, $deployment, $paths) => $paths === ['.env'])->andReturn(['.env']);
+        });
+
+        $this->artisan('cron:scan-container-integrity')
+            ->expectsOutputToContain('Scanned 1 stack(s): 0 with suspicious files, 0 quarantined, 1 alerts, 0 scan failures. Locked secrets files on 1 stack(s).')
+            ->assertExitCode(0);
+
+        $meta = $api->fresh()->service_meta['integrity_scan'];
+        $this->assertSame(['storage/app/public'], array_column($meta['hits'], 'path'), 'the locked secrets file is no longer drift; the world-writable folder still is');
+        $this->assertSame(1, $meta['permission_count']);
+        Bus::assertDispatched(SendTelegramMonitorAlertJob::class, fn (SendTelegramMonitorAlertJob $job) => $job->category === 'security' && str_contains($job->title, 'Secrets file locked') && $job->fields['locked'] === '.env');
+    }
+
     public function test_a_failing_node_is_counted_and_does_not_stop_the_pass(): void
     {
         Bus::fake([SendTelegramMonitorAlertJob::class]);

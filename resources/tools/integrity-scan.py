@@ -5,7 +5,7 @@ Runs on the container host over the bind mount, read-only. Prints one line per
 hit as  reason<TAB>size<TAB>mtime<TAB>path  and a final  __SUMMARY__<TAB>{json}
 line. Contents of files are never printed.
 
-TALKSASA_SCAN_VERSION=5
+TALKSASA_SCAN_VERSION=6
 """
 import argparse
 import hashlib
@@ -17,7 +17,7 @@ import stat
 import sys
 import time
 
-SCAN_VERSION = 5
+SCAN_VERSION = 6
 
 CORE_ROOT_FILES = {
     'index.php', 'wp-activate.php', 'wp-blog-header.php', 'wp-comments-post.php', 'wp-config.php',
@@ -34,6 +34,11 @@ IMAGE_LIKE_EXT = ('.ico', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.txt', '.web
 NO_EXEC_DIRS = ('wp-content/uploads', 'wp-content/languages', 'wp-content/upgrade', 'wp-content/cache',
                 'storage/app/public', 'public/uploads')
 SKIP_CONTENT_DIRS = ('vendor', 'node_modules', 'wp-content/talksasa-disabled', 'wp-content/plugins-disabled', '.git')
+# Files holding database credentials and keys: never readable by other users.
+SECRET_FILES = {'wp-config.php', '.env', '.env.production', '.env.local', '.env.staging', 'auth.json'}
+SECRET_DECOYS = {'.env.example', '.env.sample', '.env.testing', 'wp-config-sample.php'}
+# Ownership and mode rules never look inside dependency trees; package managers set their own bits.
+PERM_SKIP_DIRS = ('vendor', 'node_modules', '.git')
 KNOWN_FAMILY_FILES = {'wp-homes.php', 'wp-conf1g.php', 'wp-l0gin.php', 'wp-includes.php', 'wp-admins.php',
                       'wp-vcd.php', 'wp-tmp.php', 'wp-feml.php', 'class.theme-modules.php',
                       'lock360.php', 'about.php.suspected'}
@@ -396,9 +401,17 @@ class Scanner:
             rdir = rel(self.root, dirpath)
             if rdir == '.':
                 rdir = ''
+            perm_skip = any(rdir == s or rdir.startswith(s + '/') for s in PERM_SKIP_DIRS)
             for d in list(dirs):
                 if d in KNOWN_FAMILY_DIRS:
                     self.emit('known_webshell_family', os.path.join(dirpath, d))
+                if not perm_skip and d not in PERM_SKIP_DIRS:
+                    try:
+                        dst = os.lstat(os.path.join(dirpath, d))
+                    except OSError:
+                        continue
+                    if stat.S_ISDIR(dst.st_mode) and dst.st_mode & stat.S_IWOTH:
+                        self.emit('world_writable', os.path.join(dirpath, d))
             in_no_exec = any(rdir == n or rdir.startswith(n + '/') for n in NO_EXEC_DIRS)
             skip_content = any(rdir == s or rdir.startswith(s + '/') for s in SKIP_CONTENT_DIRS)
             for f in files:
@@ -414,6 +427,8 @@ class Scanner:
                 self.files_seen += 1
                 lower = f.lower()
                 rpath = (rdir + '/' + f) if rdir else f
+                if not perm_skip:
+                    self.check_modes(full, rdir, lower, st, in_no_exec)
                 if lower in KNOWN_FAMILY_FILES:
                     self.emit('known_webshell_family', full)
                 if deceptive_name(f) and (ascii_fold(f).endswith(PHP_EXT) or ascii_fold(f) in CORE_ROOT_FILES):
@@ -447,6 +462,26 @@ class Scanner:
                         self.emit(reason, full)
             if self.out_of_time():
                 return
+
+    # ---- Permission drift ------------------------------------------------------
+    def check_modes(self, full, rdir, lower, st, in_no_exec):
+        mode = st.st_mode
+        if mode & stat.S_IWOTH:
+            self.emit('world_writable', full)
+        if mode & (stat.S_ISUID | stat.S_ISGID):
+            self.emit('setuid_file', full)
+        is_secret = (lower in SECRET_FILES and lower not in SECRET_DECOYS
+                     and (rdir == '' or lower != 'wp-config.php'))
+        if not is_secret and lower.startswith('wp-config') and lower.endswith('.php') and lower not in SECRET_DECOYS and rdir == '':
+            is_secret = True
+        if not is_secret and lower.startswith('.env.') and lower not in SECRET_DECOYS and rdir == '':
+            is_secret = True
+        if is_secret and mode & stat.S_IROTH:
+            self.emit('secrets_readable', full)
+        if in_no_exec and mode & 0o111 and not lower.endswith(('.sh',)):
+            self.emit('upload_executable', full)
+        if self.wordpress and st.st_uid == 0 and rdir.startswith('wp-content'):
+            self.emit('root_owned_content', full)
 
     def is_exposed(self, rdir, lower, size=0):
         if rdir.startswith('wp-content/uploads') or rdir.startswith('wp-content/talksasa-disabled'):

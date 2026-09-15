@@ -53,6 +53,25 @@ class ContainerIntegrityScanner
 
     public const REASON_DECEPTIVE = 'deceptive_name';
 
+    public const REASON_WORLD_WRITABLE = 'world_writable';
+
+    public const REASON_SECRETS_READABLE = 'secrets_readable';
+
+    public const REASON_SETUID = 'setuid_file';
+
+    public const REASON_UPLOAD_EXEC = 'upload_executable';
+
+    public const REASON_ROOT_OWNED = 'root_owned_content';
+
+    /** Modes and ownership that let a compromise spread or leak secrets; fixed by normalising, never by deleting. */
+    public const PERMISSION_REASONS = [
+        self::REASON_WORLD_WRITABLE,
+        self::REASON_SECRETS_READABLE,
+        self::REASON_SETUID,
+        self::REASON_UPLOAD_EXEC,
+        self::REASON_ROOT_OWNED,
+    ];
+
     /** Reasons confident enough to archive and remove without an operator's click. */
     public const AUTO_QUARANTINE_REASONS = [
         self::REASON_KNOWN_FAMILY,
@@ -344,6 +363,57 @@ class ContainerIntegrityScanner
     }
 
     /**
+     * @param  list<array{path: string, reasons: list<string>, size: int, mtime: int}>  $hits
+     * @return list<array{path: string, reasons: list<string>, size: int, mtime: int}>
+     */
+    public function permissionHits(array $hits): array
+    {
+        return array_values(array_filter($hits, fn ($h) => array_intersect($h['reasons'], self::PERMISSION_REASONS) !== []));
+    }
+
+    /**
+     * @param  list<array{path: string, reasons: list<string>, size: int, mtime: int}>  $hits
+     * @return list<string> paths whose secrets file is readable by every user
+     */
+    public function readableSecretPaths(array $hits): array
+    {
+        return array_values(array_map(
+            fn ($h) => $h['path'],
+            array_filter($hits, fn ($h) => in_array(self::REASON_SECRETS_READABLE, $h['reasons'], true))
+        ));
+    }
+
+    /**
+     * Close a readable secrets file on the host bind mount: owner www-data,
+     * mode 640. Nothing else is touched; the nightly pass calls this on its
+     * own because a world-readable wp-config.php or .env is never legitimate.
+     *
+     * @param  list<string>  $relativePaths
+     * @return list<string> paths that were locked
+     */
+    public function lockSecretModes(SSHService $ssh, ContainerDeployment $deployment, array $relativePaths): array
+    {
+        $hostAppPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name.'/app';
+        $locked = [];
+        foreach ($relativePaths as $relative) {
+            $relative = ltrim((string) $relative, '/');
+            if ($relative === '' || str_contains($relative, '..')) {
+                continue;
+            }
+            $full = $hostAppPath.'/'.$relative;
+            $out = trim((string) $ssh->exec(
+                'if [ -f '.escapeshellarg($full).' ] && [ ! -L '.escapeshellarg($full).' ]; then chown 33:33 '.escapeshellarg($full).' && chmod 640 '.escapeshellarg($full).' && echo locked; else echo skipped; fi',
+                15
+            ));
+            if ($out === 'locked') {
+                $locked[] = $relative;
+            }
+        }
+
+        return $locked;
+    }
+
+    /**
      * @param  array{hits: list<array{path: string, reasons: list<string>, size: int, mtime: int}>, core: array<string, mixed>, summary?: array<string, mixed>}  $result
      * @return list<array<string, mixed>>
      */
@@ -354,6 +424,7 @@ class ContainerIntegrityScanner
         $suspicious = $this->suspiciousHits($hits);
         $core = $this->coreHits($hits);
         $exposed = $this->exposedHits($hits);
+        $permissions = $this->permissionHits($hits);
         $verified = (bool) ($result['core']['ran'] ?? false);
         $version = (string) ($result['core']['version'] ?? '');
 
@@ -418,6 +489,34 @@ class ContainerIntegrityScanner
                 'treat_action' => 'archive_exposed_files',
                 'treat_label' => 'Archive '.count($exposed).' file(s)',
                 'manual_steps' => ['Keep backups in the Backups tab, never inside the web root.'],
+                'source' => 'live',
+            ];
+        }
+
+        if ($permissions !== []) {
+            $secrets = $this->readableSecretPaths($permissions);
+            $setuid = array_values(array_filter($permissions, fn ($h) => in_array(self::REASON_SETUID, $h['reasons'], true)));
+            $writable = array_values(array_filter($permissions, fn ($h) => in_array(self::REASON_WORLD_WRITABLE, $h['reasons'], true)));
+            $rootOwned = array_values(array_filter($permissions, fn ($h) => in_array(self::REASON_ROOT_OWNED, $h['reasons'], true)));
+            $critical = $secrets !== [] || $setuid !== [];
+            $parts = array_filter([
+                $secrets !== [] ? count($secrets).' secrets file(s) readable by every user' : null,
+                $writable !== [] ? count($writable).' world-writable path(s)' : null,
+                $setuid !== [] ? count($setuid).' setuid/setgid file(s)' : null,
+                $rootOwned !== [] ? count($rootOwned).' root-owned file(s) under wp-content' : null,
+            ]);
+            $findings[] = [
+                'id' => 'integrity_permission_drift',
+                'severity' => $critical ? 'critical' : 'warning',
+                'title' => 'File permissions have drifted: '.implode(', ', $parts !== [] ? $parts : [count($permissions).' path(s)']),
+                'summary' => ($secrets !== [] ? 'A readable wp-config.php or .env hands the database password and keys to any other process on the host. ' : '')
+                    .($writable !== [] ? 'World-writable files and folders are where a compromised plugin drops its next file; "chmod 777" advice leaves them behind. ' : '')
+                    .($rootOwned !== [] ? 'Files owned by root inside wp-content cannot be updated or cleaned by WordPress itself. ' : '')
+                    .'Normalise sets the owner to the web user, folders to 755, files to 644, secrets to 640, and keeps the upload and cache folders writable. It changes modes only; no file is removed or edited.',
+                'evidence' => $this->evidenceRows($permissions, 12),
+                'treat_action' => 'normalize_app_permissions',
+                'treat_label' => 'Normalise permissions',
+                'manual_steps' => ['If a plugin insists on 777, it is asking for the web user to own the folder, which Normalise already does.'],
                 'source' => 'live',
             ];
         }
@@ -533,6 +632,7 @@ class ContainerIntegrityScanner
             'suspicious_count' => count($suspicious),
             'exposed_count' => count($this->exposedHits($hits)),
             'quarantined_count' => count($movedPaths),
+            'permission_count' => count($this->permissionHits($hits)),
         ];
         $service->forceFill(['service_meta' => $meta])->save();
 
@@ -608,6 +708,11 @@ class ContainerIntegrityScanner
             self::REASON_CORE_EXTRA => 'not part of WordPress core',
             self::REASON_CORE_MISSING => 'core file missing',
             self::REASON_DECEPTIVE => 'hidden characters in the file name',
+            self::REASON_WORLD_WRITABLE => 'writable by every user',
+            self::REASON_SECRETS_READABLE => 'secrets readable by every user',
+            self::REASON_SETUID => 'setuid or setgid bit set',
+            self::REASON_UPLOAD_EXEC => 'executable inside an upload folder',
+            self::REASON_ROOT_OWNED => 'owned by root inside wp-content',
             default => $reason,
         };
     }
