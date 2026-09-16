@@ -1107,6 +1107,10 @@ class ContainerDoctorService
             $httpStatus = $this->probeHttpStatus($ssh, $deployment);
             $checks['http_status'] = $httpStatus;
 
+            if (in_array($stack, ['laravel', 'php'], true) && $httpStatus !== null && $httpStatus >= 300 && $httpStatus < 400) {
+                $findings = array_merge($findings, $this->phpSiteRedirectFindings($ssh, $service, $deployment, $stack, $checks));
+            }
+
             if ($stack === 'nodejs' && $httpStatus !== null && $httpStatus >= 200 && $httpStatus < 400) {
                 $probeUrl = (string) ($deployment->loopbackUrl() ?? '');
                 $html = $probeUrl !== '' ? $this->probeHttpBody($ssh, $probeUrl, $deployment->probeHostHeader()) : null;
@@ -2798,6 +2802,36 @@ PHP);
             $nginxUp = $this->processListUsesPhpFpm($processes);
             $checks['php_production_runtime'] = $nginxUp && ! $phpDashS;
         }
+    }
+
+    /**
+     * A PHP site whose plain status is a redirect: follow it and report where
+     * it lands, since the app's installer or a missing page hides behind a 302.
+     *
+     * @param  array<string, mixed>  $checks
+     * @return list<array<string, mixed>>
+     */
+    private function phpSiteRedirectFindings(SSHService $ssh, Service $service, $deployment, string $stack, array &$checks): array
+    {
+        $loopback = $deployment->loopbackUrl();
+        if (! is_string($loopback) || $loopback === '') {
+            return [];
+        }
+
+        $analyzer = app(ContainerDoctorPhpSiteAnalyzer::class);
+        try {
+            $raw = (string) $ssh->exec($analyzer->bodyProbeCommand($loopback, $deployment->probeHostHeader()), 30, false);
+        } catch (\Throwable) {
+            return [];
+        }
+
+        $page = $analyzer->classify($raw);
+        $checks['http_final_status'] = $page['status'];
+        $checks['http_final_url'] = $page['final_url'];
+
+        $converted = is_array($service->service_meta['da_legacy'] ?? null);
+
+        return $analyzer->findings($page, $checks, $stack, $converted);
     }
 
     private function probeHttpStatus(SSHService $ssh, $deployment): ?int
@@ -5730,6 +5764,30 @@ PHP;
 
         if (in_array($stack, self::STACKS_WITH_APPLICATION_OWNED_SCHEMA, true)) {
             return $this->schemaOwnedByApplicationFinding($databaseName, $stack);
+        }
+
+        if (in_array($stack, ['laravel', 'php'], true)) {
+            // A pulled PHP site with no artisan and no DirectAdmin account left
+            // to dump from: the only way its tables arrive is a SQL import.
+            return [
+                'id' => 'live_empty_database',
+                'severity' => 'critical',
+                'title' => 'Live check: database has no tables',
+                'summary' => 'DB credentials work for "'.$databaseName.'", but the schema is empty and this site has no migration tool the platform can run. '
+                    .'Until its SQL dump is imported the app fails or sends visitors to its installer.',
+                'evidence' => [
+                    'table_count=0',
+                    'DB_DATABASE='.$databaseName,
+                    'stack='.$stack,
+                ],
+                'treat_action' => null,
+                'treat_label' => null,
+                'manual_steps' => [
+                    'Open the Database tab and use Import SQL dump with the dump taken from the old host.',
+                    'Reload the site, then run Diagnose again.',
+                ],
+                'source' => 'live',
+            ];
         }
 
         return null;

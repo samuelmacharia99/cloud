@@ -2185,19 +2185,27 @@ LOG;
     }
 
     #[Test]
-    public function empty_database_finding_without_artisan_is_null_unless_directadmin_legacy(): void
+    public function empty_database_finding_without_artisan_and_no_directadmin_legacy_points_at_a_manual_import(): void
     {
         $service = new Service;
         $service->provisioning_driver_key = 'container';
         $service->service_meta = [];
 
-        $this->assertNull(app(ContainerDoctorService::class)->emptyDatabaseFinding(
+        $finding = app(ContainerDoctorService::class)->emptyDatabaseFinding(
             $service,
             's426_db',
             false,
             'php',
             null
-        ));
+        );
+
+        // Nothing to re-pull and no artisan to migrate with: the doctor still
+        // names the empty schema instead of staying silent, but offers no
+        // one-click treatment because only the customer's dump can fill it.
+        $this->assertNotNull($finding);
+        $this->assertSame('live_empty_database', $finding['id']);
+        $this->assertNull($finding['treat_action']);
+        $this->assertContains('DB_DATABASE=s426_db', $finding['evidence']);
     }
 
     #[Test]
@@ -2409,5 +2417,25 @@ LOG;
         $service = new Service;
         $this->assertSame(['success' => false, 'message' => 'Unknown treatment action.'], $this->callPrivate('treatPrefixedAction', [$service, 'nope']));
         $this->assertSame(['success' => false, 'message' => 'That plugin name is not valid.'], $this->callPrivate('treatPrefixedAction', [$service, 'disable_wordpress_plugin:../etc']));
+    }
+
+    #[Test]
+    public function an_empty_database_on_a_pulled_php_site_with_no_artisan_points_at_the_sql_import(): void
+    {
+        $service = Service::make(['service_meta' => ['username' => 'khonamart', 'domain' => 'khonamart.co.ke']]);
+
+        $finding = app(ContainerDoctorService::class)->emptyDatabaseFinding($service, 'khonamart_mart', false, 'php', null);
+
+        $this->assertNotNull($finding);
+        $this->assertSame('live_empty_database', $finding['id']);
+        $this->assertNull($finding['treat_action']);
+        $this->assertStringContainsString('sends visitors to its installer', $finding['summary']);
+        $this->assertStringContainsString('Import SQL dump', $finding['manual_steps'][0]);
+        $this->assertContains('DB_DATABASE=khonamart_mart', $finding['evidence']);
+
+        $this->assertNull(
+            app(ContainerDoctorService::class)->emptyDatabaseFinding($service, 'appdb', false, 'static-site', null),
+            'a stack with no database of its own gets nothing'
+        );
     }
 }
