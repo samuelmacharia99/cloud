@@ -2,17 +2,28 @@
 
 namespace Tests\Unit\Provisioning;
 
+use App\Models\ContainerDeployment;
+use App\Models\ContainerTemplate;
+use App\Models\Node;
+use App\Models\Product;
+use App\Models\Service;
+use App\Models\User;
 use App\Services\Provisioning\ContainerDoctorPhpSiteAnalyzer;
 use App\Services\Provisioning\ContainerDoctorPhpSiteTreatments;
 use App\Services\Provisioning\ContainerDoctorWordPressAnalyzer;
 use App\Services\Provisioning\ContainerIncidentService;
 use App\Services\Provisioning\DirectAdminToContainerMigrationService;
+use App\Services\SSH\SSHService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
+use Mockery;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class ContainerDoctorPhpSiteTreatmentsTest extends TestCase
 {
+    use RefreshDatabase;
+
     private string $root;
 
     protected function setUp(): void
@@ -188,5 +199,57 @@ PHP);
         $this->assertSame("APP_KEY=live\n", (string) file_get_contents($target));
 
         $this->assertStringContainsString('MISSING=source', $this->bash($t->restoreEnvFromIncidentCommand($this->root.'/incidents/nope/files/.env', $this->root.'/other.env')));
+    }
+
+    /**
+     * The whole treatment against a fixture: the SSH double runs every command
+     * locally with the node path swapped for the fixture, so the probe, the
+     * incident restore and the message are exercised for real.
+     */
+    #[Test]
+    public function mark_installed_restores_the_env_the_exposed_pass_archived_and_says_so(): void
+    {
+        $owner = User::factory()->customer()->create();
+        $template = ContainerTemplate::query()->where('slug', 'laravel')->first() ?? ContainerTemplate::factory()->create(['slug' => 'laravel']);
+        $node = Node::factory()->create(['type' => 'container_host', 'ip_address' => '10.0.0.9']);
+        $service = Service::factory()->create([
+            'user_id' => $owner->id,
+            'product_id' => Product::factory()->containerHosting()->create(['container_template_id' => $template->id])->id,
+            'node_id' => $node->id,
+            'status' => 'active',
+            'name' => 'khonamart.co.ke',
+            'service_meta' => ['security_incidents' => [[
+                'id' => '20260916-165225-he2eap',
+                'kind' => 'exposed',
+                'storage' => 'files',
+                'paths' => ['.env'],
+                'restored_at' => null,
+            ]]],
+        ]);
+        $deployment = ContainerDeployment::factory()->create([
+            'service_id' => $service->id,
+            'node_id' => $node->id,
+            'status' => 'stopped',
+            'container_name' => 'user-'.$owner->id.'-service-'.$service->id.'-laravel',
+        ]);
+        $remoteRoot = '/opt/talksasa/containers/'.$deployment->container_name;
+
+        File::ensureDirectoryExists($this->root.'/app/app/Http/Middleware');
+        File::put($this->root.'/app/app/Http/Middleware/IsInstalled.php', "<?php\nclass IsInstalled { public function handle(\$r, \$n) { if (! file_exists(base_path('.env'))) { return redirect(url('/').'/install'); } return \$n(\$r); } }\n");
+        File::ensureDirectoryExists($this->root.'/incidents/20260916-165225-he2eap/files');
+        File::put($this->root.'/incidents/20260916-165225-he2eap/files/.env', "APP_KEY=base64:abc\n");
+
+        $ssh = Mockery::mock(SSHService::class);
+        $ssh->shouldReceive('exec')->andReturnUsing(function (string $command) use ($remoteRoot): string {
+            return (string) shell_exec('bash -c '.escapeshellarg(str_replace($remoteRoot, $this->root, $command)).' 2>&1');
+        });
+        $ssh->shouldReceive('upload')->never();
+        $ssh->shouldReceive('disconnect')->never();
+
+        $result = $this->treatments()->markInstalled($service->fresh(['product.containerTemplate', 'containerDeployment.node']), $ssh);
+
+        $this->assertTrue($result['success'], $result['message']);
+        $this->assertStringContainsString('restored .env from incident 20260916-165225-he2eap', $result['message']);
+        $this->assertSame("APP_KEY=base64:abc\n", (string) file_get_contents($this->root.'/app/.env'));
     }
 }

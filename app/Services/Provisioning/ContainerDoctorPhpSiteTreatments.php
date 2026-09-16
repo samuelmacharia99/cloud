@@ -27,9 +27,9 @@ class ContainerDoctorPhpSiteTreatments
     /**
      * @return array{success: bool, message: string}
      */
-    public function markInstalled(Service $service): array
+    public function markInstalled(Service $service, ?SSHService $ssh = null): array
     {
-        return $this->onHost($service, function (SSHService $ssh, ContainerDeployment $deployment, string $hostAppPath): array {
+        return $this->onHost($service, function (SSHService $ssh, ContainerDeployment $deployment, string $hostAppPath) use ($service): array {
             $probe = $this->parseProbe((string) $ssh->exec($this->probeCommand($hostAppPath), 60));
             $plan = $this->plan($probe);
             $appRoot = $probe['root'] !== '' ? $probe['root'] : $hostAppPath;
@@ -119,7 +119,7 @@ class ContainerDoctorPhpSiteTreatments
                 'success' => true,
                 'message' => 'Marked as installed: '.implode('; ', $parts).'.'.$cacheNote.$after,
             ];
-        });
+        }, $ssh);
     }
 
     /**
@@ -377,13 +377,14 @@ class ContainerDoctorPhpSiteTreatments
      * @param  callable(SSHService, ContainerDeployment, string): array{success: bool, message: string}  $work
      * @return array{success: bool, message: string}
      */
-    private function onHost(Service $service, callable $work): array
+    private function onHost(Service $service, callable $work, ?SSHService $ssh = null): array
     {
         $deployment = $service->containerDeployment;
         if (! $deployment?->node) {
             return ['success' => false, 'message' => 'Application is not deployed.'];
         }
-        $ssh = SSHService::forNode($deployment->node);
+        $owned = $ssh === null;
+        $ssh ??= SSHService::forNode($deployment->node);
         $hostAppPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name.'/app';
 
         try {
@@ -393,7 +394,9 @@ class ContainerDoctorPhpSiteTreatments
 
             return ['success' => false, 'message' => 'Repair failed: '.$e->getMessage()];
         } finally {
-            $ssh->disconnect();
+            if ($owned) {
+                $ssh->disconnect();
+            }
         }
     }
 }
