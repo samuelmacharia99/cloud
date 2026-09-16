@@ -497,7 +497,7 @@ class DirectAdminService
             ];
         }
 
-        $data = $config['data'];
+        $data = $this->flattenResponseValues($config['data']);
         $suspended = $this->isDirectAdminSuspendedFlag($data['suspended'] ?? null);
 
         return [
@@ -508,6 +508,7 @@ class DirectAdminService
                 'suspended' => $data['suspended'] ?? null,
                 'domain' => $data['domain'] ?? null,
                 'package' => $data['package'] ?? null,
+                'creator' => filled($data['creator'] ?? null) ? strtolower(trim((string) $data['creator'])) : null,
             ],
         ];
     }

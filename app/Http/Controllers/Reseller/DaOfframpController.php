@@ -6,6 +6,7 @@ use App\Enums\DaConvertBatchItemStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Reseller\CutoverDaConvertBatchRequest;
 use App\Http\Requests\Reseller\QueueDaConvertBatchRequest;
+use App\Http\Requests\Reseller\RelinkDaAccountRequest;
 use App\Http\Requests\Reseller\RetryDaConvertAccountRequest;
 use App\Models\DaConvertBatch;
 use App\Models\DaConvertBatchItem;
@@ -82,6 +83,8 @@ class DaOfframpController extends Controller
         return view('reseller.services.offramp', [
             'reseller' => $reseller,
             'accounts' => $accounts,
+            'daUsernames' => $offramp->unlinkedDirectAdminUsernames($reseller),
+            'daNodes' => $offramp->resellerDirectAdminNodes($reseller),
             'packageMap' => $packageMap,
             'plans' => $plans,
             'emailPlans' => $emailPlans,
@@ -181,6 +184,36 @@ class DaOfframpController extends Controller
         return redirect()
             ->route('reseller.directadmin-offramp')
             ->withErrors(['error' => $item?->error ?: ('Could not retry '.$label.'.')]);
+    }
+
+    /**
+     * The DNS snapshot found no such DirectAdmin user: the reseller names the
+     * right user and server for the service, and the move is queued again.
+     */
+    public function relink(RelinkDaAccountRequest $request, Service $service, DaConvertOfframpService $offramp): RedirectResponse
+    {
+        $reseller = $this->reseller($request);
+
+        try {
+            $result = $offramp->relinkDirectAdminAccount(
+                $reseller,
+                $reseller,
+                $service,
+                (string) $request->validated('directadmin_username'),
+                $request->filled('node_id') ? (int) $request->validated('node_id') : null,
+                $request->boolean('retry', true),
+            );
+        } catch (\InvalidArgumentException $e) {
+            abort(404);
+        } catch (\Throwable $e) {
+            return back()->withErrors(['error' => $e->getMessage()])->withInput();
+        }
+
+        $redirect = redirect()->route('reseller.directadmin-offramp');
+
+        return $result['ok']
+            ? $redirect->with('success', $result['message'])
+            : $redirect->withErrors(['error' => $result['message']])->withInput();
     }
 
     /**

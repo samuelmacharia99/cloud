@@ -8,6 +8,7 @@ use App\Jobs\ConvertDirectAdminServiceToContainerJob;
 use App\Models\DaConvertBatch;
 use App\Models\DaConvertBatchItem;
 use App\Models\Domain;
+use App\Models\Node;
 use App\Models\Product;
 use App\Models\ResellerProduct;
 use App\Models\Service;
@@ -336,6 +337,261 @@ class DaConvertOfframpService
         );
 
         return $batch->fresh('items.service') ?? $batch;
+    }
+
+    /**
+     * Live DirectAdmin usernames the reseller owns that no managed service
+     * carries yet: the candidates for pointing a mislinked service at the
+     * right account.
+     *
+     * @return list<string>
+     */
+    public function unlinkedDirectAdminUsernames(User $reseller): array
+    {
+        $linked = [];
+        foreach ($this->scope->managedServicesQuery($reseller)->get(['id', 'service_meta', 'external_reference']) as $service) {
+            $username = $this->serviceDaUsername($service);
+            if ($username !== '') {
+                $linked[] = $username;
+            }
+        }
+
+        $names = array_map(
+            fn (array $entry): string => strtolower((string) ($entry['username'] ?? '')),
+            $this->liveDirectAdminEntries($reseller, $linked)
+        );
+        $names = array_values(array_unique(array_filter($names)));
+        sort($names);
+
+        return $names;
+    }
+
+    /**
+     * DirectAdmin nodes a reseller's account may be pointed at: the node their
+     * reseller login is bound to and any node their managed services already use.
+     *
+     * @return Collection<int, Node>
+     */
+    public function resellerDirectAdminNodes(User $reseller): Collection
+    {
+        $ids = $this->scope->managedServicesQuery($reseller)
+            ->whereNotNull('node_id')
+            ->distinct()
+            ->pluck('node_id')
+            ->map(fn ($id): int => (int) $id)
+            ->all();
+
+        $bound = $this->resellerDirectAdmin->resolveNode($reseller);
+        if ($bound) {
+            $ids[] = (int) $bound->id;
+        }
+
+        if ($ids === []) {
+            return collect();
+        }
+
+        return Node::query()
+            ->whereIn('id', array_values(array_unique($ids)))
+            ->where('type', 'directadmin')
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get();
+    }
+
+    /**
+     * Point a managed shared-hosting service at the DirectAdmin user it really
+     * is, after the DNS snapshot found no such user on its node. The user must
+     * exist on the chosen node and be created by this reseller's DirectAdmin
+     * login, so a reseller cannot pull another reseller's account onto their
+     * book. Then the move is queued again straight away.
+     *
+     * @return array{ok: bool, message: string, batch: ?DaConvertBatch, item: ?DaConvertBatchItem}
+     */
+    public function relinkDirectAdminAccount(
+        User $reseller,
+        User $actor,
+        Service $service,
+        string $username,
+        ?int $nodeId = null,
+        bool $retry = true,
+    ): array {
+        $username = strtolower(trim($username));
+        if ($username === '' || ! preg_match('/^[a-z0-9._-]{1,64}$/', $username)) {
+            return ['ok' => false, 'message' => 'Enter the DirectAdmin username exactly as DirectAdmin shows it.', 'batch' => null, 'item' => null];
+        }
+
+        $managed = $this->scope->managedServicesQuery($reseller)
+            ->with(['user', 'product', 'node'])
+            ->get();
+        $target = $managed->first(fn (Service $row): bool => (int) $row->id === (int) $service->id);
+        if (! $target || ! $target->isSharedHosting()) {
+            throw new InvalidArgumentException('That service is not a DirectAdmin account on this reseller\'s book.');
+        }
+        $service = $target;
+
+        if ($this->isAlreadyBusy($service) && ! $this->isFailedConvert($service)) {
+            return ['ok' => false, 'message' => 'This account is converting or has already moved; its DirectAdmin login cannot be changed now.', 'batch' => null, 'item' => null];
+        }
+
+        $holder = $managed->first(
+            fn (Service $row): bool => (int) $row->id !== (int) $service->id && $this->serviceDaUsername($row) === $username
+        );
+        if ($holder) {
+            return [
+                'ok' => false,
+                'message' => sprintf(
+                    'DirectAdmin user %s is already linked to service #%d (%s). Retry that row instead, or remove the duplicate.',
+                    $username,
+                    $holder->id,
+                    $this->serviceHostname($holder) ?: $holder->name
+                ),
+                'batch' => null,
+                'item' => null,
+            ];
+        }
+
+        $nodes = $this->resellerDirectAdminNodes($reseller)->keyBy('id');
+        $node = $nodeId ? $nodes->get((int) $nodeId) : ($service->node ?? $this->resellerDirectAdmin->resolveNode($reseller));
+        if (! $node || ! $nodes->has((int) $node->id)) {
+            return ['ok' => false, 'message' => 'Choose one of your DirectAdmin servers.', 'batch' => null, 'item' => null];
+        }
+
+        $verdict = $this->verifyDirectAdminOwnership($reseller, $node, $username);
+        if (! $verdict['ok']) {
+            return ['ok' => false, 'message' => $verdict['message'], 'batch' => null, 'item' => null];
+        }
+
+        $previousUsername = $this->serviceDaUsername($service);
+        $previousNodeId = $service->node_id;
+
+        DB::transaction(function () use ($service, $username, $node, $actor, $previousUsername, $previousNodeId, $verdict): void {
+            $meta = is_array($service->service_meta) ? $service->service_meta : [];
+            $meta['username'] = $username;
+            if (filled($verdict['domain'] ?? null) && blank($meta['domain'] ?? null)) {
+                $meta['domain'] = $verdict['domain'];
+            }
+            // Cached account facts from the old login are stale.
+            unset($meta['directadmin_account']);
+            $history = is_array($meta['da_relink'] ?? null) ? $meta['da_relink'] : [];
+            $history[] = [
+                'from_username' => $previousUsername !== '' ? $previousUsername : null,
+                'from_node_id' => $previousNodeId,
+                'to_username' => $username,
+                'to_node_id' => $node->id,
+                'by_user_id' => $actor->id,
+                'at' => now()->toIso8601String(),
+            ];
+            $meta['da_relink'] = array_slice($history, -10);
+
+            $updates = [
+                'service_meta' => $meta,
+                'external_reference' => $username,
+                'node_id' => $node->id,
+            ];
+
+            $credentials = is_string($service->credentials) ? json_decode($service->credentials, true) : null;
+            if (is_array($credentials) && array_key_exists('username', $credentials)) {
+                $credentials['username'] = $username;
+                $updates['credentials'] = json_encode($credentials);
+            }
+
+            $service->update($updates);
+        });
+
+        AdminActivityService::log(
+            'reseller.da_offramp_relink',
+            sprintf(
+                'Pointed service #%d (%s) at DirectAdmin user %s on %s (was %s on node %s)%s',
+                $service->id,
+                $this->serviceHostname($service) ?: $service->name,
+                $username,
+                $node->name,
+                $previousUsername !== '' ? $previousUsername : 'unset',
+                $previousNodeId ?: 'unset',
+                $actor->id === $reseller->id ? ' (by the reseller)' : ''
+            ),
+            $service,
+            [
+                'reseller_user_id' => $reseller->id,
+                'actor_user_id' => $actor->id,
+                'from_username' => $previousUsername,
+                'from_node_id' => $previousNodeId,
+                'to_username' => $username,
+                'to_node_id' => $node->id,
+            ]
+        );
+
+        $service->refresh();
+        $label = $this->serviceHostname($service) ?: $service->name;
+        $saved = sprintf('Service #%d now points at DirectAdmin user %s on %s.', $service->id, $username, $node->name);
+
+        if (! $retry) {
+            return ['ok' => true, 'message' => $saved, 'batch' => null, 'item' => null];
+        }
+
+        $previousItem = $this->latestItemForService($reseller, $service);
+        $listing = $previousItem?->reseller_product_id
+            ? ResellerProduct::query()->where('reseller_id', $reseller->id)->find($previousItem->reseller_product_id)
+            : null;
+        $emailProduct = $previousItem?->batch?->email_product_id
+            ? Product::query()->find($previousItem->batch->email_product_id)
+            : null;
+
+        $batch = $this->queueBatch(
+            $reseller,
+            $actor,
+            [],
+            null,
+            $emailProduct,
+            true,
+            true,
+            ['da:'.$username],
+            [],
+            $listing,
+        );
+        $item = $batch->items->first();
+
+        if ($item?->status?->isActiveConvert()) {
+            return ['ok' => true, 'message' => $saved.' Retrying '.$label.'; the log follows each step.', 'batch' => $batch, 'item' => $item];
+        }
+
+        return [
+            'ok' => false,
+            'message' => $saved.' The retry did not queue: '.($item?->error ?: 'no plan is mapped for it.'),
+            'batch' => $batch,
+            'item' => $item,
+        ];
+    }
+
+    /**
+     * The user must exist on the node and have been created by this reseller's
+     * DirectAdmin login. Without a bound login there is no way to prove
+     * ownership, so the relink is refused rather than guessed.
+     *
+     * @return array{ok: bool, message: string, domain: ?string}
+     */
+    private function verifyDirectAdminOwnership(User $reseller, Node $node, string $username): array
+    {
+        $resellerLogin = strtolower(trim((string) ($reseller->directadmin_username ?? '')));
+        if ($resellerLogin === '') {
+            return ['ok' => false, 'message' => 'Connect your DirectAdmin reseller login first so we can confirm the account is yours.', 'domain' => null];
+        }
+
+        $da = $this->resellerDirectAdmin->adminDirectAdmin($node);
+        if (! $da) {
+            return ['ok' => false, 'message' => 'DirectAdmin on '.$node->name.' is not reachable from the platform right now.', 'domain' => null];
+        }
+
+        $status = $da->getAccountLiveStatus($username);
+        $detail = is_array($status['detail'] ?? null) ? $status['detail'] : [];
+
+        return match ($status['live_status'] ?? '') {
+            'active', 'suspended' => ($detail['creator'] ?? null) === $resellerLogin
+                ? ['ok' => true, 'message' => 'OK', 'domain' => is_string($detail['domain'] ?? null) ? strtolower($detail['domain']) : null]
+                : ['ok' => false, 'message' => sprintf('DirectAdmin user %s on %s was not created by your reseller login (%s), so it cannot be linked here.', $username, $node->name, $resellerLogin), 'domain' => null],
+            'terminated' => ['ok' => false, 'message' => sprintf('There is no DirectAdmin user %s on %s. Check the spelling, or pick the server the account lives on.', $username, $node->name), 'domain' => null],
+            default => ['ok' => false, 'message' => 'Could not read that DirectAdmin user on '.$node->name.': '.(string) ($status['label'] ?? 'unknown error'), 'domain' => null],
+        };
     }
 
     /**
@@ -1416,6 +1672,10 @@ class DaConvertOfframpService
             'percent' => $board['percent'],
             'convert_status' => $board['label'],
             'security' => $this->securitySummary($service),
+            'can_relink' => $service !== null
+                && $service->isSharedHosting()
+                && in_array($board['key'], ['blocked', 'failed', 'ready'], true),
+            'node_id' => $service?->node_id,
         ]);
     }
 

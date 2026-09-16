@@ -36,7 +36,10 @@
         'cutover_batch_id' => $account['cutover_batch_id'] ?? null,
         'cutover_item_id' => $account['cutover_item_id'] ?? null,
         'security' => $account['security'] ?? ['state' => 'pending', 'label' => ''],
+        'can_relink' => (bool) ($account['can_relink'] ?? false),
     ])->values();
+    $daUsernames = $daUsernames ?? [];
+    $daNodes = $daNodes ?? collect();
     $cpu = $computePool['cpu'] ?? [];
     $memory = $computePool['memory'] ?? [];
 @endphp
@@ -185,9 +188,48 @@
                                             <button type="button" class="px-3 py-1.5 border border-slate-300 dark:border-slate-600 rounded-lg text-xs"
                                                     x-on:click.prevent="window.dispatchEvent(new CustomEvent('da-convert-watch', { detail: { itemId: row(@js($account['key']))?.cutover_item_id } }))"
                                                     x-show="row(@js($account['key']))?.cutover_item_id">Watch</button>
+                                            @if ($service)
+                                                <button type="button" class="px-3 py-1.5 border border-slate-300 dark:border-slate-600 rounded-lg text-xs"
+                                                        x-show="row(@js($account['key']))?.can_relink"
+                                                        x-on:click.prevent="toggleFix(@js($account['key']))"
+                                                        x-text="fixingKey === @js($account['key']) ? 'Cancel' : 'Fix DirectAdmin login'"></button>
+                                            @endif
                                         </div>
                                     </td>
                                 </tr>
+                                @if ($service)
+                                    <tr class="border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60" x-show="fixingKey === @js($account['key'])" x-cloak>
+                                        <td colspan="6" class="py-3 px-3">
+                                            <form method="POST" action="{{ route('reseller.directadmin-offramp.relink', $service) }}" class="flex flex-wrap items-end gap-3">
+                                                @csrf
+                                                <div>
+                                                    <label class="block text-xs font-medium mb-1" for="da-username-{{ $service->id }}">DirectAdmin username</label>
+                                                    <input id="da-username-{{ $service->id }}" name="directadmin_username" list="da-usernames" required maxlength="64" pattern="[A-Za-z0-9._-]+"
+                                                           value="{{ old('directadmin_username', $account['da_username'] ?? '') }}"
+                                                           class="w-56 px-2 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-xs font-mono">
+                                                </div>
+                                                @if ($daNodes->count() > 1)
+                                                    <div>
+                                                        <label class="block text-xs font-medium mb-1" for="da-node-{{ $service->id }}">DirectAdmin server</label>
+                                                        <select id="da-node-{{ $service->id }}" name="node_id" class="px-2 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-xs">
+                                                            @foreach ($daNodes as $daNode)
+                                                                <option value="{{ $daNode->id }}" @selected((int) ($account['node_id'] ?? 0) === (int) $daNode->id)>{{ $daNode->name }}</option>
+                                                            @endforeach
+                                                        </select>
+                                                    </div>
+                                                @elseif ($daNodes->count() === 1)
+                                                    <input type="hidden" name="node_id" value="{{ $daNodes->first()->id }}">
+                                                @endif
+                                                <label class="flex items-center gap-2 text-xs pb-2">
+                                                    <input type="checkbox" name="retry" value="1" checked>
+                                                    <span>Retry the move right after saving</span>
+                                                </label>
+                                                <button class="px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white rounded-lg text-xs font-medium">Save and retry</button>
+                                                <p class="basis-full text-xs text-slate-500">The user must exist on that server and belong to your DirectAdmin reseller login. Pick from the list of your accounts not yet linked, or type the username DirectAdmin shows.</p>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                @endif
                             @endforeach
                         </tbody>
                     </table>
@@ -235,6 +277,12 @@
         </div>
     </form>
 
+    <datalist id="da-usernames">
+        @foreach ($daUsernames as $daUsername)
+            <option value="{{ $daUsername }}"></option>
+        @endforeach
+    </datalist>
+
     <form id="da-retry" method="POST" action="{{ route('reseller.directadmin-offramp.retry') }}">
         @csrf
         <input type="hidden" name="reseller_product_id" :value="$refs.product?.value">
@@ -266,6 +314,7 @@ function daOfframpBoard(initialRows, url) {
     return {
         rows: initialRows || [],
         selected: [],
+        fixingKey: null,
         url,
         pollTimer: null,
 
@@ -288,6 +337,10 @@ function daOfframpBoard(initialRows, url) {
 
         toggleAll(checked) {
             this.selected = checked ? this.queueableKeys() : [];
+        },
+
+        toggleFix(key) {
+            this.fixingKey = this.fixingKey === key ? null : key;
         },
 
         toggleKey(key, checked) {

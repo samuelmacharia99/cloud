@@ -660,4 +660,157 @@ class ResellerDaOfframpTest extends TestCase
 
         return [$batch, $item];
     }
+
+    public function test_a_blocked_account_is_pointed_at_the_right_directadmin_user_and_retried_at_once(): void
+    {
+        Bus::fake();
+        $reseller = $this->reseller(['cpu_pool_cores' => 8, 'memory_pool_mb' => 16384]);
+        $service = $this->daService($reseller, 'neodesignassociatesltd.co.ke');
+        $plan = $this->plan($reseller, 'Starter');
+        $node = $this->bindRelinkDirectAdmin($reseller, [
+            'wambuiesther' => ['creator' => 'res_acme', 'suspended' => 'no', 'domain' => 'neodesignassociatesltd.co.ke'],
+        ], ['wambuiesther']);
+        $service->update(['node_id' => $node->id, 'credentials' => json_encode(['username' => 'wambuiesther712', 'password' => 'old'])]);
+        $oldUsername = $service->service_meta['username'];
+        $shell = app(ResellerProvisionProductResolver::class)->shellContainerProduct();
+        [$batch, $item] = $this->batchItem($reseller, $service, $shell, DaConvertBatchItemStatus::Blocked, $plan);
+        $item->update(['error' => 'DirectAdmin on Lani rejected login as wambuiesther712 (HTTP 401 Not logged in).']);
+        $this->bindConvertMock([$service->id => $this->preflightOk('neodesignassociatesltd.co.ke')]);
+
+        $this->actingAs($reseller)
+            ->get(route('reseller.directadmin-offramp'))
+            ->assertOk()
+            ->assertSee('Fix DirectAdmin login')
+            ->assertSee('wambuiesther', false);
+
+        $this->actingAs($reseller)
+            ->post(route('reseller.directadmin-offramp.relink', $service), [
+                'directadmin_username' => 'WambuiEsther',
+                'node_id' => $node->id,
+                'retry' => '1',
+            ])
+            ->assertRedirect(route('reseller.directadmin-offramp'))
+            ->assertSessionHas('success');
+
+        $service->refresh();
+        $this->assertSame('wambuiesther', $service->service_meta['username']);
+        $this->assertSame('wambuiesther', $service->external_reference);
+        $this->assertSame($node->id, (int) $service->node_id);
+        $this->assertSame('wambuiesther', json_decode((string) $service->credentials, true)['username']);
+        $this->assertSame($oldUsername, $service->service_meta['da_relink'][0]['from_username']);
+        $this->assertDatabaseHas('admin_activity_logs', ['action' => 'reseller.da_offramp_relink']);
+
+        $newBatch = DaConvertBatch::query()->where('id', '!=', $batch->id)->firstOrFail();
+        $newItem = $newBatch->items()->firstOrFail();
+        $this->assertSame(DaConvertBatchItemStatus::Queued, $newItem->status);
+        $this->assertSame($plan->id, (int) $newItem->reseller_product_id, 'the plan from the blocked attempt is kept');
+        Bus::assertDispatched(ConvertDirectAdminServiceToContainerJob::class, fn (ConvertDirectAdminServiceToContainerJob $job): bool => $job->serviceId === $service->id && $job->batchItemId === $newItem->id);
+    }
+
+    public function test_a_directadmin_user_created_by_another_reseller_login_cannot_be_linked(): void
+    {
+        Bus::fake();
+        $reseller = $this->reseller();
+        $service = $this->daService($reseller, 'theirs.example.com');
+        $node = $this->bindRelinkDirectAdmin($reseller, [
+            'someoneelse' => ['creator' => 'other_reseller', 'suspended' => 'no', 'domain' => 'theirs.example.com'],
+            'ghost' => null,
+        ]);
+        $service->update(['node_id' => $node->id]);
+        $before = $service->fresh()->service_meta['username'];
+
+        $this->actingAs($reseller)
+            ->post(route('reseller.directadmin-offramp.relink', $service), ['directadmin_username' => 'someoneelse', 'node_id' => $node->id])
+            ->assertRedirect(route('reseller.directadmin-offramp'))
+            ->assertSessionHasErrors('error');
+        $this->assertStringContainsString('not created by your reseller login', session('errors')->first('error'));
+
+        $this->actingAs($reseller)
+            ->post(route('reseller.directadmin-offramp.relink', $service), ['directadmin_username' => 'ghost', 'node_id' => $node->id])
+            ->assertSessionHasErrors('error');
+        $this->assertStringContainsString('no DirectAdmin user ghost', session('errors')->first('error'));
+
+        $this->assertSame($before, $service->fresh()->service_meta['username']);
+        $this->assertSame(0, DaConvertBatch::query()->count());
+        Bus::assertNotDispatched(ConvertDirectAdminServiceToContainerJob::class);
+    }
+
+    public function test_a_username_already_on_another_row_is_refused_and_another_resellers_service_is_not_found(): void
+    {
+        Bus::fake();
+        $reseller = $this->reseller();
+        $service = $this->daService($reseller, 'simbacementfactory.com');
+        $twin = $this->daService($reseller, 'simba-twin.example.com');
+        $node = $this->bindRelinkDirectAdmin($reseller, [
+            $twin->service_meta['username'] => ['creator' => 'res_acme', 'suspended' => 'no', 'domain' => 'simbacementfactory.com'],
+        ]);
+        $service->update(['node_id' => $node->id]);
+
+        $this->actingAs($reseller)
+            ->post(route('reseller.directadmin-offramp.relink', $service), ['directadmin_username' => $twin->service_meta['username'], 'node_id' => $node->id])
+            ->assertSessionHasErrors('error');
+        $this->assertStringContainsString('already linked to service #'.$twin->id, session('errors')->first('error'));
+
+        $other = $this->reseller();
+        $theirs = $this->daService($other, 'other.example.com');
+        $this->actingAs($reseller)
+            ->post(route('reseller.directadmin-offramp.relink', $theirs), ['directadmin_username' => 'anything', 'node_id' => $node->id])
+            ->assertNotFound();
+
+        Bus::assertNotDispatched(ConvertDirectAdminServiceToContainerJob::class);
+    }
+
+    /**
+     * The reseller's DirectAdmin login is bound to a node, and the node's admin
+     * API answers SHOW_USER_CONFIG for the given users (null = no such user).
+     *
+     * @param  array<string, ?array<string, string>>  $users
+     * @param  list<string>  $liveUsernames
+     */
+    private function bindRelinkDirectAdmin(User $reseller, array $users, array $liveUsernames = []): Node
+    {
+        $node = Node::factory()->create([
+            'name' => 'Lani',
+            'type' => 'directadmin',
+            'api_url' => 'https://da.example.test:2222',
+            'is_active' => true,
+        ]);
+        $reseller->forceFill([
+            'directadmin_username' => 'res_acme',
+            'directadmin_login_key' => 'login-key',
+            'reseller_node_id' => $node->id,
+        ])->save();
+
+        $admin = Mockery::mock(DirectAdminService::class);
+        $admin->shouldReceive('getAccountLiveStatus')->andReturnUsing(function (string $username) use ($users): array {
+            $username = strtolower($username);
+            if (! array_key_exists($username, $users) || $users[$username] === null) {
+                return ['live_status' => 'terminated', 'label' => 'Account not found on DirectAdmin', 'detail' => ['username' => $username]];
+            }
+            $row = $users[$username];
+
+            return [
+                'live_status' => ($row['suspended'] ?? 'no') === 'yes' ? 'suspended' : 'active',
+                'label' => 'Active on DirectAdmin',
+                'detail' => ['username' => $username, 'creator' => $row['creator'] ?? null, 'domain' => $row['domain'] ?? null, 'suspended' => $row['suspended'] ?? 'no'],
+            ];
+        });
+
+        $resellerDa = Mockery::mock(DirectAdminService::class);
+        $resellerDa->shouldReceive('listUsersOwnedByReseller')->andReturn($liveUsernames);
+        $resellerDa->shouldReceive('getAccountDirectoryEntries')->andReturnUsing(fn (array $names): array => array_map(
+            fn (string $name): array => ['username' => $name, 'domain' => $users[$name]['domain'] ?? null, 'package' => null, 'email' => null, 'name' => null, 'suspended' => false],
+            $names
+        ));
+
+        $this->mock(ResellerDirectAdminService::class, function ($mock) use ($node, $admin, $resellerDa) {
+            $mock->shouldReceive('resolveNode')->andReturn($node);
+            $mock->shouldReceive('adminDirectAdmin')->andReturn($admin);
+            $mock->shouldReceive('hasDirectAdminBinding')->andReturn(true);
+            $mock->shouldReceive('directAdmin')->andReturn($resellerDa);
+            $mock->shouldReceive('listAssignablePackages')->andReturn(['packages' => [], 'error' => null])->byDefault();
+        });
+
+        return $node;
+    }
 }
