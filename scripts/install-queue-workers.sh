@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Install supervised default and long-running backup queue workers.
+# Install supervised default, DirectAdmin off-ramp convert and long-running backup queue workers.
 #
 set -euo pipefail
 
@@ -25,7 +25,7 @@ if ! [[ "${PLATFORM_CRON_WORKERS}" =~ ^[1-9][0-9]*$ && "${CONTAINER_CRON_WORKERS
   exit 1
 fi
 
-for unit in talksasa-queue.service talksasa-platform-cron-queue@.service talksasa-container-cron-queue@.service talksasa-backup-queue.service; do
+for unit in talksasa-queue.service talksasa-da-convert-queue.service talksasa-platform-cron-queue@.service talksasa-container-cron-queue@.service talksasa-backup-queue.service; do
   source_unit="${APP_PATH}/deploy/${unit}"
   target_unit="/etc/systemd/system/${unit}"
   temp_unit="$(mktemp)"
@@ -45,9 +45,11 @@ done
 
 systemctl daemon-reload
 systemctl enable --now talksasa-queue.service
+systemctl enable --now talksasa-da-convert-queue.service
 systemctl enable --now talksasa-backup-queue.service
 
 systemctl is-active --quiet talksasa-queue.service
+systemctl is-active --quiet talksasa-da-convert-queue.service
 systemctl is-active --quiet talksasa-backup-queue.service
 
 for ((worker = 1; worker <= PLATFORM_CRON_WORKERS; worker++)); do
@@ -60,4 +62,4 @@ for ((worker = 1; worker <= CONTAINER_CRON_WORKERS; worker++)); do
   systemctl is-active --quiet "talksasa-container-cron-queue@${worker}.service"
 done
 
-echo "Installed Talksasa workers: ${PLATFORM_CRON_WORKERS} platform cron, ${CONTAINER_CRON_WORKERS} container cron, default, and backup."
+echo "Installed Talksasa workers: ${PLATFORM_CRON_WORKERS} platform cron, ${CONTAINER_CRON_WORKERS} container cron, default, DirectAdmin off-ramp convert, and backup."

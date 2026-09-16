@@ -9,6 +9,7 @@ queue workers for long-running or remote work. Production must run all five unit
   (two workers by default).
 - `talksasa-container-cron-queue@.service` — customer container cron commands
   (four workers by default).
+- `talksasa-da-convert-queue.service` — DirectAdmin off-ramp converts on the `da-convert` queue; the default worker does not take them.
 - `talksasa-backup-queue.service` — long-running container backups.
 
 Do not add a second crontab entry when the systemd timer is installed. Two scheduler
@@ -59,6 +60,7 @@ sudo systemctl is-active --quiet talksasa-scheduler.timer
 sudo systemctl is-active --quiet talksasa-queue.service
 sudo systemctl is-active --quiet talksasa-platform-cron-queue@1.service
 sudo systemctl is-active --quiet talksasa-container-cron-queue@1.service
+sudo systemctl is-active --quiet talksasa-da-convert-queue.service
 sudo systemctl is-active --quiet talksasa-backup-queue.service
 php artisan cron:verify-runtime
 ```
@@ -74,6 +76,7 @@ journalctl -u talksasa-scheduler.service -n 100 --no-pager
 journalctl -u talksasa-queue.service -n 100 --no-pager
 journalctl -u 'talksasa-platform-cron-queue@*.service' -n 100 --no-pager
 journalctl -u 'talksasa-container-cron-queue@*.service' -n 100 --no-pager
+journalctl -u talksasa-da-convert-queue.service -n 100 --no-pager
 journalctl -u talksasa-backup-queue.service -n 100 --no-pager
 ```
 

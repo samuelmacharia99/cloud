@@ -166,7 +166,7 @@ restart_workers() {
     # systemd then brings it back on the release the symlink now points at.
     artisan "$release" queue:restart || warn "queue:restart failed"
     [[ "${SKIP_SERVICES:-0}" == "1" ]] && { warn "SKIP_SERVICES=1: not restarting workers"; return 0; }
-    local units=(talksasa-queue.service talksasa-backup-queue.service)
+    local units=(talksasa-queue.service talksasa-da-convert-queue.service talksasa-backup-queue.service)
     local i
     for ((i = 1; i <= PLATFORM_CRON_WORKERS; i++)); do units+=("talksasa-platform-cron-queue@${i}.service"); done
     for ((i = 1; i <= CONTAINER_CRON_WORKERS; i++)); do units+=("talksasa-container-cron-queue@${i}.service"); done

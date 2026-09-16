@@ -709,7 +709,7 @@ class DaConvertProgress
         } elseif ($status === 'queued') {
             $label = $this->nodeLockHeld($service)
                 ? 'Queued, but a previous convert run on this DirectAdmin node still holds the node lock, so no worker can start this one. Retry convert clears a stale lock; a lock left by a crashed run expires on its own within 45 minutes.'
-                : 'Convert queued. Waiting for a worker (QUEUE_CONNECTION and the talksasa-queue service must be running)…';
+                : 'Convert queued. Waiting for a worker on the da-convert queue (the talksasa-da-convert-queue service must be running; the default worker does not take these)…';
         } elseif ($status === 'completed' && $siblingsActive !== []) {
             $label = sprintf('Primary converted. %d of %d extra site(s) still converting…', count($siblingsActive), count($siblings));
         } elseif ($status === 'completed' && $siblingsFailed !== []) {

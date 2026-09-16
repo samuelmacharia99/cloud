@@ -1,0 +1,22 @@
+[Unit]
+Description=Talksasa Cloud DirectAdmin off-ramp convert worker
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/talksasa-cloud
+# One convert at a time: the job itself serialises per DirectAdmin node, and a
+# convert can run for 40 minutes, so it must not share the default worker.
+ExecStart=/usr/bin/php artisan queue:work --queue=da-convert --sleep=3 --tries=1 --timeout=2400 --max-time=7200
+ExecReload=/usr/bin/php artisan queue:restart
+Restart=always
+RestartSec=5
+TimeoutStopSec=2460
+KillMode=control-group
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
