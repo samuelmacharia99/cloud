@@ -37,6 +37,7 @@
         'cutover_item_id' => $account['cutover_item_id'] ?? null,
         'security' => $account['security'] ?? ['state' => 'pending', 'label' => ''],
         'can_relink' => (bool) ($account['can_relink'] ?? false),
+        'can_restart' => (bool) ($account['can_restart'] ?? false),
     ])->values();
     $daUsernames = $daUsernames ?? [];
     $daNodes = $daNodes ?? collect();
@@ -47,8 +48,9 @@
 @section('content')
 <div
     class="space-y-6"
-    x-data="daOfframpBoard(@js($boardRows), @js(route('reseller.directadmin-offramp.progress')))"
+    x-data="daOfframpBoard(@js($boardRows), @js(route('reseller.directadmin-offramp.progress')), @js(route('reseller.directadmin-offramp.restart', ['batch' => '__BATCH__', 'item' => '__ITEM__'])))"
 >
+    <div class="rounded-xl border p-4 text-sm" :class="notice.ok ? 'border-emerald-200 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-100' : 'border-red-200 bg-red-50 text-red-800'" x-show="notice.text" x-text="notice.text" x-cloak></div>
     <div class="ui-card p-6">
         <div class="flex items-start justify-between gap-4 flex-wrap">
             <div>
@@ -182,6 +184,12 @@
                                             <template x-if="row(@js($account['key']))?.can_retry">
                                                 <button type="submit" form="da-retry" name="account_key" value="{{ $account['key'] }}" class="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-medium">Retry</button>
                                             </template>
+                                            <template x-if="row(@js($account['key']))?.can_restart && row(@js($account['key']))?.cutover_item_id">
+                                                <button type="button" class="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-medium disabled:opacity-50"
+                                                        :disabled="restartingKey === @js($account['key'])"
+                                                        x-on:click.prevent="restartRow(@js($account['key']))"
+                                                        x-text="restartingKey === @js($account['key']) ? 'Restarting…' : 'Restart'"></button>
+                                            </template>
                                             <template x-if="row(@js($account['key']))?.can_cut_dns && row(@js($account['key']))?.cutover_batch_id">
                                                 <button type="submit" :form="'da-cut-' + row(@js($account['key']))?.cutover_batch_id + '-' + row(@js($account['key']))?.cutover_item_id" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-medium">Cut web DNS</button>
                                             </template>
@@ -310,12 +318,15 @@
 
 @push('scripts')
 <script>
-function daOfframpBoard(initialRows, url) {
+function daOfframpBoard(initialRows, url, restartUrlTemplate) {
     return {
         rows: initialRows || [],
         selected: [],
         fixingKey: null,
+        restartingKey: null,
+        notice: { ok: true, text: '' },
         url,
+        restartUrlTemplate,
         pollTimer: null,
 
         init() {
@@ -341,6 +352,38 @@ function daOfframpBoard(initialRows, url) {
 
         toggleFix(key) {
             this.fixingKey = this.fixingKey === key ? null : key;
+        },
+
+        async restartRow(key) {
+            const row = this.row(key);
+            if (!row?.cutover_batch_id || !row?.cutover_item_id || this.restartingKey) return;
+            this.restartingKey = key;
+            this.notice = { ok: true, text: '' };
+            const target = this.restartUrlTemplate
+                .replace('__BATCH__', encodeURIComponent(row.cutover_batch_id))
+                .replace('__ITEM__', encodeURIComponent(row.cutover_item_id));
+            const token = document.querySelector('meta[name="csrf-token"]')?.content
+                || document.querySelector('input[name="_token"]')?.value || '';
+            try {
+                const response = await fetch(target, {
+                    method: 'POST',
+                    headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-TOKEN': token },
+                    body: '{}',
+                });
+                let result = null;
+                try { result = await response.json(); } catch (error) { result = null; }
+                this.notice = {
+                    ok: response.ok && Boolean(result?.ok),
+                    text: result?.message || (response.ok ? 'Restarted.' : `Restart failed (HTTP ${response.status}).`),
+                };
+                await this.refresh();
+                window.dispatchEvent(new CustomEvent('da-convert-watch', { detail: { itemId: result?.item_id || row.cutover_item_id } }));
+            } catch (error) {
+                console.error('Restart failed', error);
+                this.notice = { ok: false, text: 'Restart failed: could not reach the server.' };
+            } finally {
+                this.restartingKey = null;
+            }
         },
 
         toggleKey(key, checked) {

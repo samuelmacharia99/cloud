@@ -527,12 +527,29 @@ class ResellerDaOfframpTest extends TestCase
             'target_product_name' => $shell->name,
         ]])]);
 
-        $this->actingAs($reseller)
+        // Five newer batches, the way a day of retries leaves them: the queued
+        // item still has to be in the console and the board must offer Restart.
+        for ($i = 0; $i < 5; $i++) {
+            $this->batchItem($reseller, $this->daService($reseller, "later-{$i}.example.com"), $shell, DaConvertBatchItemStatus::Blocked);
+        }
+
+        $progress = $this->actingAs($reseller)
             ->getJson(route('reseller.directadmin-offramp.progress'))
             ->assertOk()
             ->assertJsonPath('current.item_id', $item->id)
             ->assertJsonPath('current.can_restart', true)
             ->assertJsonPath('current.restart_url', route('reseller.directadmin-offramp.restart', [$batch, $item]));
+        $this->assertContains($item->id, array_column($progress->json('items'), 'item_id'));
+        $boardRow = collect($progress->json('accounts'))->firstWhere('service_id', $service->id);
+        $this->assertTrue((bool) ($boardRow['can_restart'] ?? false), 'the board row offers Restart for a stalled queued item');
+        $this->assertSame($item->id, (int) $boardRow['cutover_item_id']);
+
+        $this->actingAs($reseller)
+            ->get(route('reseller.directadmin-offramp'))
+            ->assertOk()
+            ->assertSee('restartRow(', false);
+        $batchesBefore = DaConvertBatch::query()->count();
+        $itemsBefore = DaConvertBatchItem::query()->count();
 
         $this->actingAs($reseller)
             ->postJson(route('reseller.directadmin-offramp.restart', [$batch, $item]))
@@ -556,8 +573,8 @@ class ResellerDaOfframpTest extends TestCase
         $this->assertDatabaseHas('admin_activity_logs', ['action' => 'reseller.da_offramp_restart']);
 
         // No batch or item was created: the same row runs again.
-        $this->assertSame(1, DaConvertBatch::query()->count());
-        $this->assertSame(1, DaConvertBatchItem::query()->count());
+        $this->assertSame($batchesBefore, DaConvertBatch::query()->count());
+        $this->assertSame($itemsBefore, DaConvertBatchItem::query()->count());
     }
 
     public function test_a_convert_that_is_still_moving_cannot_be_restarted(): void
@@ -575,10 +592,12 @@ class ResellerDaOfframpTest extends TestCase
             'target_product_id' => $shell->id,
         ]])]);
 
-        $this->actingAs($reseller)
+        $progress = $this->actingAs($reseller)
             ->getJson(route('reseller.directadmin-offramp.progress'))
             ->assertOk()
             ->assertJsonPath('current.can_restart', false);
+        $boardRow = collect($progress->json('accounts'))->firstWhere('service_id', $service->id);
+        $this->assertFalse((bool) ($boardRow['can_restart'] ?? false), 'a live convert has no Restart on the board');
 
         $this->actingAs($reseller)
             ->postJson(route('reseller.directadmin-offramp.restart', [$batch, $item]))

@@ -1675,8 +1675,28 @@ class DaConvertOfframpService
             'can_relink' => $service !== null
                 && $service->isSharedHosting()
                 && in_array($board['key'], ['blocked', 'failed', 'ready'], true),
+            'can_restart' => $service !== null && $item !== null && $this->itemLooksStalled($item, $service),
             'node_id' => $service?->node_id,
         ]);
+    }
+
+    /**
+     * A queued or converting item whose convert has no sign of life: never
+     * started within the queue grace period, or stopped heartbeating. The
+     * board shows Restart for these; restartItem re-checks before acting.
+     */
+    private function itemLooksStalled(DaConvertBatchItem $item, Service $service): bool
+    {
+        if (! $item->status?->isActiveConvert()) {
+            return false;
+        }
+
+        $progress = app(DaConvertProgress::class);
+        $convert = $progress->convertMeta($service);
+
+        return ! $progress->isActive($convert)
+            || $progress->queuedButNotStarting($convert, $service)
+            || $progress->looksStuck($convert, $service);
     }
 
     /**
@@ -2031,16 +2051,41 @@ class DaConvertOfframpService
      */
     public function operatorProgress(User $reseller, bool $forReseller = false): array
     {
+        // The latest few batches for context, plus every batch that still holds
+        // an open item: each Retry or relink makes a new batch, so a queued
+        // account from earlier today must not drop out of the console.
         $batches = DaConvertBatch::query()
             ->where('reseller_user_id', $reseller->id)
             ->with(['items.service.user'])
             ->latest()
             ->limit(4)
             ->get();
+        $openItems = $this->openConvertItems($reseller);
+        $missingBatchIds = $openItems->pluck('da_convert_batch_id')->map(fn ($id): int => (int) $id)
+            ->diff($batches->pluck('id')->map(fn ($id): int => (int) $id))
+            ->unique()
+            ->values();
+        if ($missingBatchIds->isNotEmpty()) {
+            $batches = $batches->concat(
+                DaConvertBatch::query()->whereIn('id', $missingBatchIds->all())->with(['items.service.user'])->latest()->get()
+            );
+        }
+
+        // One console row per service: the item the board itself follows.
+        $preferredItemIds = [];
+        foreach ($batches->flatMap(fn (DaConvertBatch $batch) => $batch->items)->groupBy('service_id') as $serviceItems) {
+            $preferred = $this->pickPreferredConvertItem($serviceItems->sortByDesc('id')->values());
+            if ($preferred) {
+                $preferredItemIds[(int) $preferred->id] = true;
+            }
+        }
 
         $items = [];
         foreach ($batches as $batch) {
             foreach ($batch->items as $item) {
+                if (! isset($preferredItemIds[(int) $item->id])) {
+                    continue;
+                }
                 $service = $item->service?->fresh();
                 if (! $service) {
                     continue;
