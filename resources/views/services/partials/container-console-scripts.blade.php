@@ -642,7 +642,7 @@ async function importDatabaseSql() {
         outEl.textContent = '';
     }
 
-    const chunkSize = 512 * 1024;
+    const chunkSize = {{ \App\Http\Requests\Customer\ImportContainerDatabaseRequest::CHUNK_BYTES }};
     const chunkTotal = Math.max(1, Math.ceil(file.size / chunkSize));
     const uploadId = Array.from(crypto.getRandomValues(new Uint8Array(16)))
         .map((byte) => byte.toString(16).padStart(2, '0'))

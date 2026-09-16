@@ -114,12 +114,16 @@ class ContainerSqlDumpImportService
         }
         try {
             for ($i = 0; $i < $total; $i++) {
-                $in = fopen($dir.'/'.$i.'.part', 'rb');
+                $part = $dir.'/'.$i.'.part';
+                $in = fopen($part, 'rb');
                 if ($in === false) {
                     throw new \RuntimeException('Missing SQL upload chunk '.$i.'.');
                 }
                 stream_copy_to_stream($in, $out);
                 fclose($in);
+                // Each part is spent once appended; a gigabyte dump should not
+                // sit on the panel's disk twice while it is still assembling.
+                @unlink($part);
             }
         } finally {
             fclose($out);
@@ -442,6 +446,21 @@ class ContainerSqlDumpImportService
     }
 
     /**
+     * How long the transfer and the mysql client may take for a dump of this
+     * size: ten minutes for anything small, then two seconds per megabyte,
+     * capped at two hours. A gigabyte of INSERTs on a small sidecar is slow,
+     * and a timeout that ignored size ended the import halfway with no error
+     * the customer could act on.
+     */
+    public function importTimeoutSeconds(int $bytes): int
+    {
+        $perMegabyte = 2;
+        $scaled = (int) ceil($bytes / (1024 * 1024)) * $perMegabyte;
+
+        return max(600, min(7200, $scaled));
+    }
+
+    /**
      * Import a dump that is already on disk without reading it into PHP memory.
      * MySQL dumps stream through the rewriter; PostgreSQL still reads the file.
      *
@@ -749,9 +768,11 @@ class ContainerSqlDumpImportService
         }
         $localDump .= '.sql';
         // Both routes end in the streaming rewrite, so a dump near the upload
-        // limit never has to fit in the PHP process at once.
+        // limit never has to fit in the PHP process at once. An assembled or
+        // PHP-uploaded file is moved rather than copied: both are ours to
+        // consume, and copying doubled the disk a large dump needed.
         if ($sqlPath !== null) {
-            if (! @copy($sqlPath, $localDump)) {
+            if (! @rename($sqlPath, $localDump) && ! @copy($sqlPath, $localDump)) {
                 throw new \RuntimeException('Could not stage the SQL dump for import.');
             }
         } elseif (file_put_contents($localDump, (string) $sql) === false) {
@@ -766,9 +787,10 @@ class ContainerSqlDumpImportService
         }
 
         $remotePath = $importDir.'/import_'.time().'_'.bin2hex(random_bytes(4)).'.sql';
+        $dumpBytes = (int) (@filesize($localDump) ?: 0);
 
         try {
-            $ssh->uploadFromLocal($localDump, $remotePath);
+            $ssh->uploadFromLocal($localDump, $remotePath, null, $this->importTimeoutSeconds($dumpBytes));
             $this->migrator->waitForComposeMysql(
                 $ssh,
                 $containerPath,
@@ -788,7 +810,7 @@ class ContainerSqlDumpImportService
                     $importPass,
                     $database,
                 ),
-                600
+                $this->importTimeoutSeconds($dumpBytes)
             );
 
             $grantWarning = $this->grantAppUserAfterImport(

@@ -200,4 +200,35 @@ SQL;
         $importer->forgetUpload(426, $uploadId);
         $this->assertFileDoesNotExist($done['path']);
     }
+
+    #[Test]
+    public function the_import_timeout_grows_with_the_dump(): void
+    {
+        $service = app(ContainerSqlDumpImportService::class);
+
+        $this->assertSame(600, $service->importTimeoutSeconds(0));
+        $this->assertSame(600, $service->importTimeoutSeconds(100 * 1024 * 1024), 'a small dump keeps the old ten minutes');
+        $this->assertSame(2048, $service->importTimeoutSeconds(1024 * 1024 * 1024), 'a gigabyte gets two seconds per megabyte');
+        $this->assertSame(7200, $service->importTimeoutSeconds(8 * 1024 * 1024 * 1024), 'and never more than two hours');
+    }
+
+    #[Test]
+    public function assembling_a_chunked_upload_frees_each_part_as_it_goes(): void
+    {
+        $service = app(ContainerSqlDumpImportService::class);
+        $uploadId = str_repeat('ef', 16);
+        $first = UploadedFile::fake()->createWithContent('a.part', "CREATE TABLE a (id INT);\n");
+        $second = UploadedFile::fake()->createWithContent('b.part', "CREATE TABLE b (id INT);\n");
+
+        $this->assertFalse($service->storeChunk(999, $uploadId, 0, 2, $first)['complete']);
+        $done = $service->storeChunk(999, $uploadId, 1, 2, $second);
+
+        $this->assertTrue($done['complete']);
+        $this->assertStringContainsString("CREATE TABLE a (id INT);\nCREATE TABLE b (id INT);\n", (string) file_get_contents($done['path']));
+        $this->assertFileDoesNotExist(dirname($done['path']).'/0.part');
+        $this->assertFileDoesNotExist(dirname($done['path']).'/1.part');
+
+        $service->forgetUpload(999, $uploadId);
+        $this->assertFileDoesNotExist($done['path']);
+    }
 }

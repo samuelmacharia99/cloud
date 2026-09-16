@@ -161,7 +161,7 @@ class ContainerController extends Controller
             'memory_mb' => (int) ($resolvedTemplate?->required_ram_mb ?? $deployment?->memory_limit_mb ?? 0),
             'disk_gb' => (float) ($resolvedTemplate?->required_storage_gb ?? 0),
         ];
-        $dbImportMaxMb = (int) config('security.container_db_import.max_size_mb', 100);
+        $dbImportMaxMb = (int) config('security.container_db_import.max_size_mb', 1024);
         $dbImportPhpLimitLabel = app(ContainerSqlDumpImportService::class)->phpUploadLimitLabel();
 
         $latestBackup = null;

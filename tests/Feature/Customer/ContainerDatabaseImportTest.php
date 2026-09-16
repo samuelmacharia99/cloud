@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Customer;
 
+use App\Http\Requests\Customer\ImportContainerDatabaseRequest;
 use App\Models\ContainerDeployment;
 use App\Models\Node;
 use App\Models\Product;
@@ -84,6 +85,41 @@ class ContainerDatabaseImportTest extends TestCase
             ->assertJsonPath('pending', true)
             ->assertJsonPath('received', 1)
             ->assertJsonPath('total', 2);
+
+        app(ContainerSqlDumpImportService::class)
+            ->forgetUpload((int) $service->id, $uploadId);
+    }
+
+    public function test_a_gigabyte_dump_fits_in_the_chunk_budget_and_a_larger_one_does_not(): void
+    {
+        config(['security.container_db_import.max_size_mb' => 1024]);
+        $customer = User::factory()->customer()->create();
+        $service = $this->runningServiceWithMysql($customer);
+        $uploadId = str_repeat('ab', 16);
+        $chunksForAGigabyte = (int) ceil(1024 * 1024 * 1024 / ImportContainerDatabaseRequest::CHUNK_BYTES);
+
+        $this->actingAs($customer)
+            ->postJson(route('customer.services.container.database.import', $service), [
+                'file' => UploadedFile::fake()->createWithContent('khonamart.sql', "CREATE TABLE t;\n"),
+                'filename' => 'khonamart.sql',
+                'upload_id' => $uploadId,
+                'chunk_index' => 0,
+                'chunk_total' => $chunksForAGigabyte,
+            ])
+            ->assertOk()
+            ->assertJsonPath('pending', true)
+            ->assertJsonPath('total', $chunksForAGigabyte);
+
+        $this->actingAs($customer)
+            ->postJson(route('customer.services.container.database.import', $service), [
+                'file' => UploadedFile::fake()->createWithContent('khonamart.sql', "CREATE TABLE t;\n"),
+                'filename' => 'khonamart.sql',
+                'upload_id' => $uploadId,
+                'chunk_index' => 1,
+                'chunk_total' => ImportContainerDatabaseRequest::maxChunks(1024) + 1,
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('chunk_total');
 
         app(ContainerSqlDumpImportService::class)
             ->forgetUpload((int) $service->id, $uploadId);

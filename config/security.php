@@ -107,8 +107,11 @@ return [
         'max_size_mb' => (int) env('CONTAINER_UPLOAD_MAX_MB', 100),
     ],
 
+    // Dumps travel in 1 MB chunks and are streamed on both ends, so this is a
+    // policy ceiling rather than a PHP or nginx one. Requires matching disk on
+    // the panel (twice the dump, briefly) and on the container node.
     'container_db_import' => [
-        'max_size_mb' => (int) env('CONTAINER_DB_IMPORT_MAX_MB', 100),
+        'max_size_mb' => (int) env('CONTAINER_DB_IMPORT_MAX_MB', 1024),
     ],
 
     /*

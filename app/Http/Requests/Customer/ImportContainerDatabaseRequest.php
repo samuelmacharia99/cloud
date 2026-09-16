@@ -9,16 +9,32 @@ use Illuminate\Http\Exceptions\HttpResponseException;
 
 class ImportContainerDatabaseRequest extends FormRequest
 {
+    /** The browser slices dumps this large; it must stay under PHP's 2 MB post limit. */
+    public const CHUNK_BYTES = 1024 * 1024;
+
+    /** A chunk may carry some multipart overhead beyond CHUNK_BYTES. */
+    public const CHUNK_MAX_KB = 2048;
+
     public function authorize(): bool
     {
         return true;
     }
 
+    /**
+     * How many CHUNK_BYTES slices the largest allowed dump takes, plus one for
+     * the remainder, so the cap on chunk counts follows the size ceiling.
+     */
+    public static function maxChunks(int $maxMb): int
+    {
+        return (int) ceil(($maxMb * 1024 * 1024) / self::CHUNK_BYTES) + 1;
+    }
+
     public function rules(): array
     {
         $chunking = $this->filled('chunk_index');
-        $maxMb = (int) config('security.container_db_import.max_size_mb', 100);
-        $maxKb = $chunking ? 2048 : max(1, $maxMb) * 1024;
+        $maxMb = max(1, (int) config('security.container_db_import.max_size_mb', 1024));
+        $maxKb = $chunking ? self::CHUNK_MAX_KB : $maxMb * 1024;
+        $maxChunks = self::maxChunks($maxMb);
 
         return [
             'file' => [
@@ -27,8 +43,8 @@ class ImportContainerDatabaseRequest extends FormRequest
                 'max:'.$maxKb,
             ],
             'upload_id' => ['required_with:chunk_index', 'nullable', 'regex:/^[a-f0-9]{16,64}$/'],
-            'chunk_index' => ['nullable', 'integer', 'min:0', 'max:400'],
-            'chunk_total' => ['required_with:chunk_index', 'nullable', 'integer', 'min:1', 'max:400'],
+            'chunk_index' => ['nullable', 'integer', 'min:0', 'max:'.($maxChunks - 1)],
+            'chunk_total' => ['required_with:chunk_index', 'nullable', 'integer', 'min:1', 'max:'.$maxChunks],
             'filename' => ['required_with:chunk_index', 'nullable', 'string', 'max:180'],
         ];
     }
@@ -63,7 +79,7 @@ class ImportContainerDatabaseRequest extends FormRequest
                 'The file failed to upload. PHP on this panel allows '.$phpLimit
                 .'. Retry Import SQL — large dumps are sent in small chunks.'
             ),
-            'file.max' => 'SQL file cannot exceed '.(int) config('security.container_db_import.max_size_mb', 100).' MB.',
+            'file.max' => 'SQL file cannot exceed '.(int) config('security.container_db_import.max_size_mb', 1024).' MB.',
             'file.mimes' => 'Only .sql files are supported for database import.',
         ];
     }
