@@ -52,6 +52,7 @@ class ContainerDoctorPhpSiteAnalyzerTest extends TestCase
         $this->assertContains('final URL: http://127.0.0.1:32001/install', $findings[0]['evidence']);
         $this->assertStringContainsString('import the site', $findings[0]['manual_steps'][0]);
         $this->assertStringContainsString('Do not try to reinstall', $findings[0]['manual_steps'][1]);
+        $this->assertNull($findings[0]['treat_action'], 'an empty database is fixed by the import, not by faking a marker');
     }
 
     #[Test]
@@ -66,9 +67,12 @@ class ContainerDoctorPhpSiteAnalyzerTest extends TestCase
         $this->assertStringNotContainsString('DirectAdmin', $findings[0]['summary']);
         $this->assertStringContainsString('storage/installed', $findings[0]['manual_steps'][0]);
         $this->assertStringContainsString('Do not run it over customer data', $findings[0]['manual_steps'][1]);
+        $this->assertSame('mark_php_app_installed', $findings[0]['treat_action']);
+        $this->assertSame('Mark as installed', $findings[0]['treat_label']);
 
         $unreachableDb = $this->analyzer()->findings($page, ['table_count' => null, 'db_ok' => false], 'php', false);
         $this->assertStringContainsString('cannot connect to its database', $unreachableDb[0]['summary']);
+        $this->assertNull($unreachableDb[0]['treat_action']);
         $this->assertStringContainsString('Repair DB credentials', $unreachableDb[0]['manual_steps'][0]);
     }
 

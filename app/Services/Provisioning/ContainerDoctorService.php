@@ -129,6 +129,7 @@ class ContainerDoctorService
                 'archive_exposed_files',
                 'restore_wordpress_core',
                 'normalize_app_permissions',
+                ContainerDoctorPhpSiteTreatments::ACTION_MARK_INSTALLED,
                 // A container that cannot parse its settings is crash-looping
                 // by definition, so requiring it to be running first would
                 // refuse the one repair that fixes it.
@@ -178,6 +179,7 @@ class ContainerDoctorService
             'enable_wordpress_debug_log' => $this->wordPressTreatments()->enableDebugLog($service),
             'purge_wordpress_page_cache' => $this->wordPressTreatments()->purgePageCache($service),
             'quarantine_suspicious_files' => $this->treatQuarantineSuspiciousFiles($service),
+            ContainerDoctorPhpSiteTreatments::ACTION_MARK_INSTALLED => app(ContainerDoctorPhpSiteTreatments::class)->markInstalled($service),
             'archive_exposed_files' => $this->treatArchiveExposedFiles($service),
             'restore_wordpress_core' => $this->treatRestoreWordPressCore($service),
             'normalize_app_permissions' => $this->treatNormalizeAppPermissions($service),

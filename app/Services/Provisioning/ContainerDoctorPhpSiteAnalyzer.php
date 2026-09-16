@@ -89,7 +89,7 @@ class ContainerDoctorPhpSiteAnalyzer
             } elseif ($dbOk === false) {
                 $steps[] = 'The app cannot reach its database. Run Repair DB credentials, then reload the site.';
             } else {
-                $steps[] = 'The database has tables, so the app is failing its own "installed" check. Look for the credentials it really uses: a config file such as config.php or database.php still pointing at the old host, or a marker file or .env key (for example storage/installed or APP_INSTALLED) that did not come across.';
+                $steps[] = 'The database has tables, so the app is failing its own "installed" check. Mark as installed reads that check in the app\'s code and restores the marker file or .env key it looks for (for example storage/installed or APP_INSTALLED). If the code checks something else, look for a config file such as config.php or database.php still pointing at the old host.';
             }
             if ($missing) {
                 $steps[] = 'The installer itself is gone (HTTP 404), which is normal for a site that was already set up on the old host. Do not try to reinstall; restore the data or the marker instead.';
@@ -113,8 +113,8 @@ class ContainerDoctorPhpSiteAnalyzer
                             : 'Its database has tables, so it is the app\'s own installed marker or a credentials file the platform does not rewrite.'))
                     .($converted ? ' This site was pulled from DirectAdmin; the marker or config it relied on there may not have come across.' : ''),
                 'evidence' => $evidence,
-                'treat_action' => null,
-                'treat_label' => null,
+                'treat_action' => (! $empty && $dbOk !== false) ? ContainerDoctorPhpSiteTreatments::ACTION_MARK_INSTALLED : null,
+                'treat_label' => (! $empty && $dbOk !== false) ? 'Mark as installed' : null,
                 'manual_steps' => $steps,
                 'source' => 'live',
             ]];
