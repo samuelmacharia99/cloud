@@ -643,13 +643,14 @@ class DirectAdminToContainerMigrationDatabaseTest extends TestCase
         $tar = $root.'/uploads.tar.gz';
 
         try {
-            foreach ([$migrator->buildUploadsSizeCommand($da), $migrator->buildUploadsTarCommand($da, $tar), $migrator->buildUploadsExtractCommand($tar, $app)] as $command) {
+            $uploads = $da.'/wp-content/uploads';
+            foreach ([$migrator->buildUploadsSizeCommand($uploads), $migrator->buildUploadsTarCommand($uploads, $tar), $migrator->buildUploadsExtractCommand($tar, $app), $migrator->buildUploadsDiscoveryCommand($da, dirname($da, 3))] as $command) {
                 exec('bash -n -c '.escapeshellarg($command).' 2>&1', $syntax, $code);
                 $this->assertSame(0, $code, implode("\n", $syntax));
             }
 
-            $this->assertGreaterThan(0, (int) trim((string) shell_exec('bash -c '.escapeshellarg($migrator->buildUploadsSizeCommand($da)))));
-            shell_exec('bash -c '.escapeshellarg($migrator->buildUploadsTarCommand($da, $tar)).' 2>&1');
+            $this->assertGreaterThan(0, (int) trim((string) shell_exec('bash -c '.escapeshellarg($migrator->buildUploadsSizeCommand($uploads)))));
+            shell_exec('bash -c '.escapeshellarg($migrator->buildUploadsTarCommand($uploads, $tar)).' 2>&1');
             $this->assertFileExists($tar);
             $entries = (string) shell_exec('tar -tzf '.escapeshellarg($tar));
             $this->assertStringContainsString('./uploads/2026/09/lost.jpg', $entries);
@@ -696,5 +697,37 @@ class DirectAdminToContainerMigrationDatabaseTest extends TestCase
         $this->assertTrue($done['success'], $done['message']);
         $this->assertStringContainsString('412 file(s)', $done['message']);
         $this->assertStringContainsString('Rebuild thumbnails', $done['message']);
+    }
+
+    #[Test]
+    public function uploads_are_found_under_the_real_domain_folder_when_the_record_names_the_www_twin_or_a_subfolder(): void
+    {
+        $migrator = app(DirectAdminToContainerMigrationService::class);
+        $root = sys_get_temp_dir().'/talksasa-discover-'.uniqid();
+        $home = $root.'/home/whsafari';
+        $recorded = $home.'/domains/www.whsafaris.co.ke/public_html';
+        $real = $home.'/domains/whsafaris.co.ke/public_html';
+        $nested = $home.'/domains/other.co.ke/public_html/blog';
+        File::ensureDirectoryExists($recorded);
+        File::ensureDirectoryExists($real.'/wp-content/uploads/2026/09');
+        File::ensureDirectoryExists($nested.'/wp-content/uploads/2024/01');
+        File::put($real.'/wp-content/uploads/2026/09/a.jpg', str_repeat('x', 4000));
+        File::put($nested.'/wp-content/uploads/2024/01/b.jpg', str_repeat('y', 100));
+
+        try {
+            $command = $migrator->buildUploadsDiscoveryCommand($recorded, $home);
+            $candidates = $migrator->parseUploadsCandidates((string) shell_exec('bash -c '.escapeshellarg($command).' 2>&1'));
+
+            $paths = array_column($candidates, 'path');
+            $this->assertContains($real.'/wp-content/uploads', $paths, 'the non-www twin of the recorded docroot is checked');
+            $this->assertContains($nested.'/wp-content/uploads', $paths, 'a site one folder down is found too');
+            $this->assertNotContains($recorded.'/wp-content/uploads', $paths, 'the recorded docroot has none');
+
+            $this->assertSame($real.'/wp-content/uploads', $migrator->chooseUploadsDir($candidates, $recorded), 'the fuller library with year folders wins');
+            $this->assertSame($recorded.'/wp-content/uploads', $migrator->chooseUploadsDir(array_merge($candidates, [['path' => $recorded.'/wp-content/uploads', 'bytes' => 10, 'years' => false]]), $recorded), 'a recorded docroot that has files still wins');
+            $this->assertNull($migrator->chooseUploadsDir([['path' => '/x', 'bytes' => 0, 'years' => false]], $recorded), 'an empty folder is no source');
+        } finally {
+            File::deleteDirectory($root);
+        }
     }
 }

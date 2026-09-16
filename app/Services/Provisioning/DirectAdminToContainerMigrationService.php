@@ -2169,13 +2169,23 @@ class DirectAdminToContainerMigrationService
             mkdir(dirname($localTar), 0755, true);
         }
 
+        $daUsername = $this->directAdminUsername($target);
+        if ($daUsername === '') {
+            $daUsername = (string) ($inventory['username'] ?? '');
+        }
+
         $daSsh = SSHService::forNode($daNode);
         try {
-            $exists = trim((string) $daSsh->exec('test -d '.escapeshellarg($docroot.'/wp-content/uploads').' && echo yes || echo no', 15)) === 'yes';
-            if (! $exists) {
-                throw new \RuntimeException('DirectAdmin has no wp-content/uploads under '.$docroot.' any more; nothing to copy. Restore the files from a backup instead.');
+            $daHome = $daUsername !== '' ? '/home/'.$daUsername : dirname($docroot, 3);
+            $candidates = $this->parseUploadsCandidates((string) $daSsh->exec($this->buildUploadsDiscoveryCommand($docroot, $daHome), 300));
+            $uploadsDir = $this->chooseUploadsDir($candidates, $docroot);
+            if ($uploadsDir === null) {
+                throw new \RuntimeException(
+                    'No wp-content/uploads folder is left anywhere under '.$daHome
+                    .' on DirectAdmin (looked under the recorded docroot '.$docroot.', its non-www twin and every domain folder). Restore the files from a backup instead.'
+                );
             }
-            $bytes = (int) trim((string) $daSsh->exec($this->buildUploadsSizeCommand($docroot), 120));
+            $bytes = (int) trim((string) $daSsh->exec($this->buildUploadsSizeCommand($uploadsDir), 120));
             if ($bytes > $capBytes) {
                 throw new \RuntimeException(sprintf(
                     'wp-content/uploads on DirectAdmin is %s, above the %d MB the doctor copies in one go. Use the Backups tab or a manual rsync for a library that size.',
@@ -2184,9 +2194,9 @@ class DirectAdminToContainerMigrationService
                 ));
             }
 
-            $progress('Packing wp-content/uploads ('.DirectAdminMailPullProgress::formatBytes($bytes).') on DirectAdmin');
+            $progress('Packing '.$uploadsDir.' ('.DirectAdminMailPullProgress::formatBytes($bytes).') on DirectAdmin');
             $daSsh->exec('mkdir -p '.escapeshellarg($remoteWork), 15);
-            $daSsh->exec($this->buildUploadsTarCommand($docroot, $remoteTar), 1800);
+            $daSsh->exec($this->buildUploadsTarCommand($uploadsDir, $remoteTar), 1800);
             $files = (int) trim((string) $daSsh->exec('tar -tzf '.escapeshellarg($remoteTar).' 2>/dev/null | grep -vc "/$" || true', 300));
             $progress('Downloading '.$files.' file(s) from DirectAdmin');
             $daSsh->downloadToLocal($remoteTar, $localTar);
@@ -2215,6 +2225,7 @@ class DirectAdminToContainerMigrationService
         $legacy = is_array($meta['da_legacy'] ?? null) ? $meta['da_legacy'] : [];
         $legacy['uploads_reimported_at'] = now()->toIso8601String();
         $legacy['uploads_reimported_files'] = $files;
+        $legacy['uploads_reimported_from'] = $uploadsDir;
         $meta['da_legacy'] = $legacy;
         $target->update(['service_meta' => $meta]);
 
@@ -2223,23 +2234,96 @@ class DirectAdminToContainerMigrationService
             'bytes' => $bytes,
             'da_node_id' => (int) $daNode->id,
             'skipped' => false,
-            'message' => 'Copied wp-content/uploads from DirectAdmin ('.$files.' file(s), '.DirectAdminMailPullProgress::formatBytes($bytes).'). Files already on the container were kept; caches and session files were left behind.',
+            'message' => 'Copied '.$uploadsDir.' from DirectAdmin ('.$files.' file(s), '.DirectAdminMailPullProgress::formatBytes($bytes).'). Files already on the container were kept; caches and session files were left behind.',
         ];
     }
 
-    public function buildUploadsSizeCommand(string $docroot): string
+    /**
+     * Where the uploads really live on the DirectAdmin account. The recorded
+     * docroot is often the www. twin of the real domain folder, or the site
+     * sits one folder down, so every uploads folder under the home is listed
+     * with its size and whether it holds year folders, for chooseUploadsDir().
+     */
+    public function buildUploadsDiscoveryCommand(string $docroot, string $home): string
     {
-        return 'du -sb '.escapeshellarg(rtrim($docroot, '/').'/wp-content/uploads').' 2>/dev/null | cut -f1';
+        $docroot = rtrim($docroot, '/');
+        $twin = preg_replace('#/domains/www\.#', '/domains/', $docroot) ?? $docroot;
+        $home = rtrim($home, '/');
+        $roots = array_values(array_unique(array_filter([$docroot, $twin, $home])));
+
+        $describe = 'd="$1"; [ -d "$d" ] || return 0; b=$(du -sb "$d" 2>/dev/null | cut -f1); '
+            .'y=$(find "$d" -mindepth 1 -maxdepth 1 -type d -name "20[0-9][0-9]" 2>/dev/null | head -1); '
+            .'printf "CANDIDATE=%s\t%s\t%s\n" "$d" "${b:-0}" "$([ -n "$y" ] && echo years || echo noyears)"';
+
+        $parts = ['describe() { '.$describe.'; }'];
+        foreach ($roots as $root) {
+            $parts[] = 'describe '.escapeshellarg($root.'/wp-content/uploads');
+        }
+        $parts[] = 'find '.escapeshellarg($home).' -mindepth 3 -maxdepth 7 -type d -path "*/wp-content/uploads" -not -path "*/wp-content/uploads/*" 2>/dev/null | head -20 | while read -r p; do describe "$p"; done';
+        $parts[] = 'true';
+
+        return implode('; ', $parts);
     }
 
     /**
-     * Pack uploads relative to wp-content so it unpacks straight into the
-     * container's wp-content; the archive is written even if a file changed
-     * while it was read.
+     * @return list<array{path: string, bytes: int, years: bool}>
      */
-    public function buildUploadsTarCommand(string $docroot, string $tarFile): string
+    public function parseUploadsCandidates(string $output): array
     {
-        $base = escapeshellarg(rtrim($docroot, '/').'/wp-content');
+        $seen = [];
+        $rows = [];
+        foreach (preg_split("/\r\n|\n|\r/", $output) ?: [] as $line) {
+            if (preg_match('/^CANDIDATE=([^\t]+)\t(\d+)\t(years|noyears)$/', $line, $m) !== 1) {
+                continue;
+            }
+            $path = rtrim($m[1], '/');
+            if (isset($seen[$path])) {
+                continue;
+            }
+            $seen[$path] = true;
+            $rows[] = ['path' => $path, 'bytes' => (int) $m[2], 'years' => $m[3] === 'years'];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * The recorded docroot wins when it has an uploads folder with anything
+     * in it; otherwise the fullest folder that looks like a media library
+     * (year subfolders), otherwise the fullest at all.
+     *
+     * @param  list<array{path: string, bytes: int, years: bool}>  $candidates
+     */
+    public function chooseUploadsDir(array $candidates, string $docroot): ?string
+    {
+        $candidates = array_values(array_filter($candidates, fn (array $c): bool => $c['bytes'] > 0));
+        if ($candidates === []) {
+            return null;
+        }
+        $recorded = rtrim($docroot, '/').'/wp-content/uploads';
+        foreach ($candidates as $candidate) {
+            if ($candidate['path'] === $recorded) {
+                return $candidate['path'];
+            }
+        }
+        usort($candidates, fn (array $a, array $b): int => [$b['years'], $b['bytes']] <=> [$a['years'], $a['bytes']]);
+
+        return $candidates[0]['path'];
+    }
+
+    public function buildUploadsSizeCommand(string $uploadsDir): string
+    {
+        return 'du -sb '.escapeshellarg(rtrim($uploadsDir, '/')).' 2>/dev/null | cut -f1';
+    }
+
+    /**
+     * Pack the uploads folder relative to its parent so it unpacks straight
+     * into the container's wp-content; the archive is written even if a file
+     * changed while it was read.
+     */
+    public function buildUploadsTarCommand(string $uploadsDir, string $tarFile): string
+    {
+        $base = escapeshellarg(dirname(rtrim($uploadsDir, '/')));
         $tar = 'tar -czf '.escapeshellarg($tarFile)
             .' --exclude=./uploads/cache --exclude=./uploads/sessions --exclude=./uploads/wc-logs --exclude=./uploads/backup* --exclude=./uploads/*.log'
             .' -C '.$base.' ./uploads';
