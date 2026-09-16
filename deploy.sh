@@ -160,12 +160,54 @@ reload_php_and_web() {
     fi
 }
 
+# A worker unit that ships in deploy/ but is not installed on this host yet is
+# rendered the way scripts/install-queue-workers.sh renders it and enabled, so
+# a new queue (da-convert) starts being served by the deploy that introduces
+# it instead of waiting for someone to run the install script by hand.
+install_missing_worker_units() {
+    local release="$1"
+    local php_bin
+    php_bin="$(command -v php || echo /usr/bin/php)"
+    local installed_any=0
+    local unit
+    for unit in talksasa-queue.service talksasa-da-convert-queue.service talksasa-backup-queue.service \
+                talksasa-platform-cron-queue@.service talksasa-container-cron-queue@.service; do
+        [[ -f "$release/deploy/$unit" ]] || continue
+        systemctl cat "$unit" >/dev/null 2>&1 && continue
+        local rendered
+        rendered="$(mktemp)"
+        sed \
+            -e "s|WorkingDirectory=.*|WorkingDirectory=${APP_PATH}|" \
+            -e "s|ExecStart=/usr/bin/php|ExecStart=${php_bin}|" \
+            -e "s|ExecReload=/usr/bin/php|ExecReload=${php_bin}|" \
+            -e "s|User=.*|User=${SERVICE_USER}|" \
+            -e "s|Group=.*|Group=${SERVICE_USER}|" \
+            -e "s|/var/www/talksasa-cloud|${APP_PATH}|g" \
+            "$release/deploy/$unit" > "$rendered"
+        if as_root install -m 644 "$rendered" "/etc/systemd/system/$unit"; then
+            log "Installed new worker unit $unit"
+            installed_any=1
+        else
+            warn "Could not install $unit"
+        fi
+        rm -f "$rendered"
+    done
+    [[ "$installed_any" == "1" ]] || return 0
+    as_root systemctl daemon-reload || warn "daemon-reload failed"
+    for unit in talksasa-queue.service talksasa-da-convert-queue.service talksasa-backup-queue.service; do
+        if [[ -f "/etc/systemd/system/$unit" ]] && ! systemctl is-enabled --quiet "$unit" 2>/dev/null; then
+            as_root systemctl enable --now "$unit" || warn "Could not enable $unit"
+        fi
+    done
+}
+
 restart_workers() {
     local release="$1"
     # queue:restart lets every worker finish its current job before exiting;
     # systemd then brings it back on the release the symlink now points at.
     artisan "$release" queue:restart || warn "queue:restart failed"
     [[ "${SKIP_SERVICES:-0}" == "1" ]] && { warn "SKIP_SERVICES=1: not restarting workers"; return 0; }
+    install_missing_worker_units "$release"
     local units=(talksasa-queue.service talksasa-da-convert-queue.service talksasa-backup-queue.service)
     local i
     for ((i = 1; i <= PLATFORM_CRON_WORKERS; i++)); do units+=("talksasa-platform-cron-queue@${i}.service"); done
