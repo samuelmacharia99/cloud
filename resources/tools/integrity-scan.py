@@ -5,7 +5,7 @@ Runs on the container host over the bind mount, read-only. Prints one line per
 hit as  reason<TAB>size<TAB>mtime<TAB>path  and a final  __SUMMARY__<TAB>{json}
 line. Contents of files are never printed.
 
-TALKSASA_SCAN_VERSION=7
+TALKSASA_SCAN_VERSION=8
 """
 import argparse
 import hashlib
@@ -17,13 +17,16 @@ import stat
 import sys
 import time
 
-SCAN_VERSION = 7
+SCAN_VERSION = 8
 
 CORE_ROOT_FILES = {
     'index.php', 'wp-activate.php', 'wp-blog-header.php', 'wp-comments-post.php', 'wp-config.php',
     'wp-config-sample.php', 'wp-cron.php', 'wp-links-opml.php', 'wp-load.php', 'wp-login.php',
     'wp-mail.php', 'wp-settings.php', 'wp-signup.php', 'wp-trackback.php', 'xmlrpc.php',
 }
+# Shipped by the official wordpress image into the web root on first start; not
+# core, not a lookalike, and not a stray copy of wp-config.php.
+IMAGE_ROOT_FILES = {'wp-config-docker.php'}
 KNOWN_DROPINS = {
     'index.php', 'advanced-cache.php', 'object-cache.php', 'db.php', 'db-error.php', 'sunrise.php',
     'maintenance.php', 'blog-deleted.php', 'blog-inactive.php', 'blog-suspended.php',
@@ -299,6 +302,8 @@ class Scanner:
             lower = name.lower()
             if lower in KNOWN_FAMILY_FILES:
                 self.emit('known_webshell_family', full)
+            if lower in IMAGE_ROOT_FILES:
+                continue
             if lower.endswith(PHP_EXT) and lower not in CORE_ROOT_FILES:
                 self.emit('unexpected_root_php', full)
             if lower.startswith('wp-') and lower.endswith('.php') and lower not in CORE_ROOT_FILES:
@@ -476,7 +481,7 @@ class Scanner:
             self.emit('setuid_file', full)
         is_secret = (lower in SECRET_FILES and lower not in SECRET_DECOYS
                      and (rdir == '' or lower != 'wp-config.php'))
-        if not is_secret and lower.startswith('wp-config') and lower.endswith('.php') and lower not in SECRET_DECOYS and rdir == '':
+        if not is_secret and lower.startswith('wp-config') and lower.endswith('.php') and lower not in SECRET_DECOYS and lower not in IMAGE_ROOT_FILES and rdir == '':
             is_secret = True
         if not is_secret and lower.startswith('.env.') and lower not in SECRET_DECOYS and rdir == '':
             is_secret = True
@@ -497,7 +502,7 @@ class Scanner:
             return False
         if lower in EXPOSED_EXACT:
             return True
-        if lower.startswith('wp-config') and lower not in ('wp-config.php', 'wp-config-sample.php') and lower.endswith(('.php', '.bak', '.old', '.orig', '.txt', '.save', '~', '.swp')):
+        if lower.startswith('wp-config') and lower not in ('wp-config.php', 'wp-config-sample.php') and lower not in IMAGE_ROOT_FILES and lower.endswith(('.php', '.bak', '.old', '.orig', '.txt', '.save', '~', '.swp')):
             return True
         if rdir == '' or rdir == 'wp-content' or rdir.startswith('wp-content/backup') or rdir.startswith('wp-content/ai1wm') or rdir.startswith('wp-content/updraft'):
             return lower.endswith(EXPOSED_SUFFIXES)

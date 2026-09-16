@@ -583,6 +583,23 @@ PHP;
             ];
         }
 
+        if (strtolower(basename((string) ($fatal['file'] ?? ''))) === 'wp-config.php') {
+            return [
+                'id' => 'wordpress_config_unparseable',
+                'severity' => 'critical',
+                'title' => 'wp-config.php does not parse, so every request is a 500',
+                'summary' => 'PHP cannot read wp-config.php: '.$short.'. Nothing in WordPress runs until the file parses. Repair mends the usual damage in place (a define that lost its semicolon, a missing opening tag) and, failing that, writes a fresh file that keeps the table prefix and security keys.',
+                'evidence' => [$short, 'at '.$where, 'body: '.$bodyClass],
+                'treat_action' => ContainerDoctorWordPressTreatments::ACTION_REPAIR_CONFIG,
+                'treat_label' => 'Repair wp-config.php',
+                'manual_steps' => [
+                    'Click Repair wp-config.php. The broken copy is kept outside the web root for reference.',
+                    'Or open wp-config.php in the file manager and fix line '.(int) ($fatal['line'] ?? 0).'; the error names what PHP found there.',
+                ],
+                'source' => 'live',
+            ];
+        }
+
         return [
             'id' => 'wordpress_php_fatal',
             'severity' => 'critical',

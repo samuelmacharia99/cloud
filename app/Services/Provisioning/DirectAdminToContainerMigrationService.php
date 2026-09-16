@@ -4884,9 +4884,27 @@ PHP;
     private function rewriteWpConfigInContainer(SSHService $ssh, string $containerPath, string $appService, array $db): void
     {
         foreach ($db as $key => $value) {
-            $escapedValue = str_replace(['\\', "'"], ['\\\\', "\\'"], $value);
-            $php = <<<PHP
-\$cfg = '/var/www/html/wp-config.php';
+            $ssh->exec(
+                "cd {$containerPath} && docker compose exec -T {$appService} php -r ".escapeshellarg($this->wpConfigDefineRewriteScript((string) $key, (string) $value)),
+                60
+            );
+        }
+    }
+
+    /**
+     * PHP that sets one DB define in wp-config.php to a literal. An existing
+     * define is replaced whatever its value expression was (a literal, getenv,
+     * a variable); a missing one is inserted right after the opening tag with
+     * its semicolon. The insert used to lack the semicolon, which left the
+     * next line as "unexpected identifier define" and the site on HTTP 500.
+     */
+    public function wpConfigDefineRewriteScript(string $key, string $value, string $configPath = '/var/www/html/wp-config.php'): string
+    {
+        $escapedValue = str_replace(['\\', "'"], ['\\\\', "\\'"], $value);
+        $escapedPath = str_replace(['\\', "'"], ['\\\\', "\\'"], $configPath);
+
+        return <<<PHP
+\$cfg = '{$escapedPath}';
 if (! is_file(\$cfg)) {
     fwrite(STDERR, "wp-config.php missing at {\$cfg}\\n");
     exit(1);
@@ -4894,20 +4912,20 @@ if (! is_file(\$cfg)) {
 \$key = '{$key}';
 \$val = '{$escapedValue}';
 \$text = file_get_contents(\$cfg);
-\$pattern = "/define\\s*\\(\\s*['\\"]{\$key}['\\"]\\s*,\\s*['\\"].*?['\\"]\\s*\\)/i";
-\$repl = "define('{\$key}', '{\$val}')";
+\$pattern = "/define\\s*\\(\\s*['\\"]{\$key}['\\"]\\s*,\\s*(?:[^()]|\\([^()]*\\))*\\)\\s*;?/i";
+// The value becomes a PHP literal inside wp-config.php, so quotes and
+// backslashes in a password are escaped there too, not only in this script.
+\$literal = "'" . str_replace(['\\\\', "'"], ['\\\\\\\\', "\\\\'"], \$val) . "'";
+\$repl = "define('{\$key}', {\$literal});";
 if (preg_match(\$pattern, \$text)) {
-    \$text = preg_replace(\$pattern, \$repl, \$text, 1);
+    \$text = preg_replace_callback(\$pattern, static fn () => \$repl, \$text, 1);
+} elseif (preg_match('/<\\?php/', \$text)) {
+    \$text = preg_replace_callback('/<\\?php/', static fn () => "<?php\\n" . \$repl, \$text, 1);
 } else {
-    \$text = preg_replace('/<\\?php/', "<?php\\n" . \$repl, \$text, 1);
+    \$text = "<?php\\n" . \$repl . "\\n" . \$text;
 }
 file_put_contents(\$cfg, \$text);
 PHP;
-            $ssh->exec(
-                "cd {$containerPath} && docker compose exec -T {$appService} php -r ".escapeshellarg($php),
-                60
-            );
-        }
     }
 
     private function cleanupDaWork(Node $node, string $remoteWork): void

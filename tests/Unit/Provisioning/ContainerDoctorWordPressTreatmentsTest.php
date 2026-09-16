@@ -239,4 +239,69 @@ PHP;
 
         return (string) shell_exec(escapeshellcmd(PHP_BINARY).' '.escapeshellarg($file).' 2>&1');
     }
+
+    #[Test]
+    public function a_define_that_lost_its_semicolon_is_mended_in_place_and_a_healthy_file_is_left_alone(): void
+    {
+        $treatments = new ContainerDoctorWordPressTreatments;
+        $broken = "<?php\ndefine('DB_HOST', 's77_db')\ndefine('DB_NAME', 'whsafaris');\n\$table_prefix = 'wp_';\nrequire_once ABSPATH . 'wp-settings.php';\n";
+
+        $mended = $treatments->repairWpConfigText($broken);
+
+        $this->assertSame(['added the missing semicolon to 1 statement'], $mended['changes']);
+        $this->assertStringContainsString("define('DB_HOST', 's77_db');\n", $mended['text']);
+        $this->assertPhpLints($mended['text']);
+
+        $bom = "\xEF\xBB\xBF<?php\ndefine('X', 1);\n";
+        $this->assertSame(['removed a byte-order mark before the opening tag'], $treatments->repairWpConfigText($bom)['changes']);
+
+        $noTag = "define('DB_HOST', 'localhost');\n\$table_prefix = 'wp_';\n";
+        $fixed = $treatments->repairWpConfigText($noTag);
+        $this->assertSame(['added the missing <?php opening tag'], $fixed['changes']);
+        $this->assertPhpLints($fixed['text']);
+
+        $fine = "<?php\ndefine('DB_HOST', getenv_docker('WORDPRESS_DB_HOST', 'mysql'));\nif (! defined('ABSPATH')) {\n    define('ABSPATH', __DIR__ . '/');\n}\n";
+        $this->assertSame([], $treatments->repairWpConfigText($fine)['changes'], 'a multi-line block is not a lost semicolon');
+    }
+
+    #[Test]
+    public function a_regenerated_config_keeps_the_prefix_and_keys_and_takes_the_database_from_the_deployment(): void
+    {
+        $treatments = new ContainerDoctorWordPressTreatments;
+        $salts = '';
+        foreach (['AUTH_KEY', 'SECURE_AUTH_KEY', 'LOGGED_IN_KEY', 'NONCE_KEY', 'AUTH_SALT', 'SECURE_AUTH_SALT', 'LOGGED_IN_SALT', 'NONCE_SALT'] as $key) {
+            $salts .= "define('".$key."', 'kept-".strtolower($key)."-0123456789abcdef');\n";
+        }
+        $broken = "<?php\n%%% garbage\n".$salts."\$table_prefix = 'whs_';\n";
+
+        $fresh = $treatments->regenerateWpConfigText($broken, [
+            'WORDPRESS_DB_NAME' => 'whsafaris',
+            'WORDPRESS_DB_USER' => 'whsuser',
+            'WORDPRESS_DB_PASSWORD' => "p'ss",
+            'WORDPRESS_DB_HOST' => 's77_db',
+        ]);
+
+        $this->assertPhpLints($fresh['text']);
+        $this->assertStringContainsString("define('DB_NAME', 'whsafaris');", $fresh['text']);
+        $this->assertStringContainsString("define('DB_PASSWORD', 'p\\'ss');", $fresh['text']);
+        $this->assertStringContainsString("define('DB_HOST', 's77_db');", $fresh['text']);
+        $this->assertStringContainsString("define('AUTH_KEY', 'kept-auth_key-0123456789abcdef');", $fresh['text']);
+        $this->assertStringContainsString("\$table_prefix = 'whs_';", $fresh['text']);
+        $this->assertStringContainsString('security keys kept', $fresh['summary']);
+        $this->assertStringContainsString("require_once ABSPATH . 'wp-settings.php';", $fresh['text']);
+
+        $fallback = $treatments->regenerateWpConfigText("<?php\n", []);
+        $this->assertPhpLints($fallback['text']);
+        $this->assertStringContainsString("\$table_prefix = 'wp_';", $fallback['text']);
+        $this->assertStringContainsString('regenerated', $fallback['summary']);
+        $this->assertMatchesRegularExpression("/define\('NONCE_SALT', '[0-9a-f]{64}'\);/", $fallback['text']);
+    }
+
+    private function assertPhpLints(string $php): void
+    {
+        $file = $this->root.'/lint-'.uniqid().'.php';
+        File::put($file, $php);
+        exec('php -l '.escapeshellarg($file).' 2>&1', $out, $code);
+        $this->assertSame(0, $code, implode("\n", $out));
+    }
 }

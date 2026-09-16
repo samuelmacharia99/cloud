@@ -314,4 +314,20 @@ class IntegrityScanScriptTest extends TestCase
         $this->assertContains('exposed_backup', $reasons('.env.backup'));
         $this->assertArrayNotHasKey('.env.example', $hits);
     }
+
+    #[Test]
+    public function the_official_images_wp_config_docker_is_neither_a_lookalike_nor_a_backup(): void
+    {
+        $tree = $this->root.'/wp';
+        $this->writeFixtureTree($tree);
+        File::put($tree.'/wp-config-docker.php', "<?php\n// shipped by the wordpress image\n");
+        File::put($tree.'/wp-config-old.php', "<?php\n// somebody's copy\n");
+
+        [$hits] = $this->scan($tree, $this->writeManifest($tree));
+        $reasons = fn (string $path) => $hits[$path]['reasons'] ?? [];
+
+        $this->assertArrayNotHasKey('wp-config-docker.php', $hits);
+        $this->assertContains('core_lookalike', $reasons('wp-config-old.php'));
+        $this->assertContains('exposed_backup', $reasons('wp-config-old.php'));
+    }
 }

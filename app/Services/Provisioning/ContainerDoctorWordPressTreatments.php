@@ -20,11 +20,222 @@ class ContainerDoctorWordPressTreatments
 
     public const DEBUG_LOG_PATH = '/tmp/talksasa-wp-debug.log';
 
+    public const ACTION_REPAIR_CONFIG = 'repair_wordpress_config_syntax';
+
+    private const SALT_KEYS = ['AUTH_KEY', 'SECURE_AUTH_KEY', 'LOGGED_IN_KEY', 'NONCE_KEY', 'AUTH_SALT', 'SECURE_AUTH_SALT', 'LOGGED_IN_SALT', 'NONCE_SALT'];
+
     /*
     |--------------------------------------------------------------------------
     | Treatments (each returns {success, message})
     |--------------------------------------------------------------------------
     */
+
+    /**
+     * wp-config.php does not parse, so every request is a 500 before WordPress
+     * loads. Mend the usual damage in place (a define that lost its semicolon,
+     * a missing opening tag, a byte-order mark) and lint inside the container.
+     * When that is not enough, write a fresh file that keeps the table prefix
+     * and the security keys and takes the database from the deployment. The
+     * broken original is kept beside the incidents, outside the web root.
+     *
+     * @return array{success: bool, message: string}
+     */
+    public function repairConfigSyntax(Service $service): array
+    {
+        return $this->onHost($service, function (SSHService $ssh, ContainerDeployment $deployment, string $hostAppPath): array {
+            $configPath = $hostAppPath.'/wp-config.php';
+            $exists = trim((string) $ssh->exec('test -f '.escapeshellarg($configPath).' && echo yes || echo no', 15)) === 'yes';
+            if (! $exists) {
+                return ['success' => false, 'message' => 'wp-config.php is missing entirely. Run Repair DB credentials, which writes one from the deployment.'];
+            }
+
+            $original = (string) $ssh->downloadFile($configPath);
+            $backup = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name.'/incidents/wp-config-broken-'.now()->format('Ymd-His').'.php';
+            $ssh->mkdirp(dirname($backup));
+            $ssh->upload($original, $backup);
+            $ssh->exec('chmod 600 '.escapeshellarg($backup).' 2>/dev/null; true', 15);
+
+            $mended = $this->repairWpConfigText($original);
+            $lint = null;
+            if ($mended['changes'] !== []) {
+                $ssh->upload($mended['text'], $configPath);
+                $this->ownConfig($ssh, $configPath);
+                $lint = $this->lintConfig($ssh, $deployment);
+                if ($lint['ok']) {
+                    return [
+                        'success' => true,
+                        'message' => 'wp-config.php parses again: '.implode(', ', $mended['changes']).'. The broken copy is kept at '.$backup.'.',
+                    ];
+                }
+            } else {
+                $lint = $this->lintConfig($ssh, $deployment);
+                if ($lint['ok']) {
+                    return ['success' => true, 'message' => 'wp-config.php already parses; PHP reports no syntax error now. Reload the site and run Diagnose again.'];
+                }
+            }
+
+            $env = is_array($deployment->env_values) ? $deployment->env_values : [];
+            $fresh = $this->regenerateWpConfigText($original, $env);
+            $ssh->upload($fresh['text'], $configPath);
+            $this->ownConfig($ssh, $configPath);
+            $lint = $this->lintConfig($ssh, $deployment);
+            if (! $lint['ok']) {
+                return ['success' => false, 'message' => 'Even a freshly written wp-config.php does not parse in this container: '.$lint['output'].' The original is kept at '.$backup.'.'];
+            }
+
+            return [
+                'success' => true,
+                'message' => 'wp-config.php was rewritten from scratch because the damage could not be mended in place: '
+                    .$fresh['summary'].'. Custom defines the old file had were not carried over; the broken copy is kept at '.$backup.' for reference.',
+            ];
+        });
+    }
+
+    /**
+     * Mechanical repairs that do not change what the file means.
+     *
+     * @return array{text: string, changes: list<string>}
+     */
+    public function repairWpConfigText(string $text): array
+    {
+        $changes = [];
+
+        if (str_starts_with($text, "\xEF\xBB\xBF")) {
+            $text = substr($text, 3);
+            $changes[] = 'removed a byte-order mark before the opening tag';
+        }
+
+        if (preg_match('/^\s*<\?php/', $text) !== 1) {
+            if (preg_match('/<\?php/', $text) === 1) {
+                $before = strlen($text) - strlen(ltrim($text));
+                $text = ltrim($text);
+                if ($before > 0) {
+                    $changes[] = 'removed output before the opening tag';
+                }
+            }
+            if (preg_match('/^\s*<\?php/', $text) !== 1) {
+                $text = "<?php\n".$text;
+                $changes[] = 'added the missing <?php opening tag';
+            }
+        }
+
+        $lines = preg_split("/(\r\n|\n|\r)/", $text, -1, PREG_SPLIT_DELIM_CAPTURE) ?: [];
+        $fixed = 0;
+        for ($i = 0; $i < count($lines); $i += 2) {
+            $line = $lines[$i];
+            // A complete define(...) or $var = ...; statement that simply lost its terminator.
+            if (preg_match('/^\s*(?:define\s*\(\s*[\'"][A-Z0-9_]+[\'"]\s*,\s*(?:[^()]|\([^()]*\))*\)|\$[a-z_][a-z0-9_]*\s*=\s*[\'"][^\'"]*[\'"])\s*$/i', $line) === 1) {
+                $lines[$i] = rtrim($line).';';
+                $fixed++;
+            }
+        }
+        if ($fixed > 0) {
+            $text = implode('', $lines);
+            $changes[] = 'added the missing semicolon to '.$fixed.' statement'.($fixed === 1 ? '' : 's');
+        }
+
+        return ['text' => $text, 'changes' => $changes];
+    }
+
+    /**
+     * A new wp-config.php for the deployment: database from its environment,
+     * table prefix and security keys carried over from the broken file when
+     * they can be read, fresh keys otherwise.
+     *
+     * @param  array<string, mixed>  $env
+     * @return array{text: string, summary: string}
+     */
+    public function regenerateWpConfigText(string $broken, array $env): array
+    {
+        $prefix = 'wp_';
+        if (preg_match('/\$table_prefix\s*=\s*[\'"]([A-Za-z0-9_]+)[\'"]/', $broken, $m) === 1) {
+            $prefix = $m[1];
+        }
+
+        $salts = [];
+        foreach (self::SALT_KEYS as $key) {
+            if (preg_match('/define\s*\(\s*[\'"]'.$key.'[\'"]\s*,\s*[\'"](.{16,}?)[\'"]\s*\)/', $broken, $m) === 1 && ! str_contains($m[1], 'put your unique phrase here')) {
+                $salts[$key] = $m[1];
+            }
+        }
+        $keptSalts = count($salts) === count(self::SALT_KEYS);
+        if (! $keptSalts) {
+            $salts = [];
+            foreach (self::SALT_KEYS as $key) {
+                $salts[$key] = bin2hex(random_bytes(32));
+            }
+        }
+
+        $db = [
+            'DB_NAME' => (string) ($env['WORDPRESS_DB_NAME'] ?? 'wordpress'),
+            'DB_USER' => (string) ($env['WORDPRESS_DB_USER'] ?? 'wordpress'),
+            'DB_PASSWORD' => (string) ($env['WORDPRESS_DB_PASSWORD'] ?? ''),
+            'DB_HOST' => (string) ($env['WORDPRESS_DB_HOST'] ?? 'mysql'),
+            'DB_CHARSET' => 'utf8mb4',
+            'DB_COLLATE' => '',
+        ];
+
+        $lines = ['<?php', '// Written by Talksasa Container Doctor after the previous wp-config.php stopped parsing.', ''];
+        foreach ($db as $key => $value) {
+            $lines[] = "define('".$key."', ".$this->phpString($value).');';
+        }
+        $lines[] = '';
+        foreach ($salts as $key => $value) {
+            $lines[] = "define('".$key."', ".$this->phpString($value).');';
+        }
+        $lines[] = '';
+        $lines[] = '$table_prefix = '.$this->phpString($prefix).';';
+        $lines[] = '';
+        $lines[] = "define('WP_DEBUG', false);";
+        $lines[] = "define('WP_DEBUG_DISPLAY', false);";
+        $lines[] = "if (isset(\$_SERVER['HTTP_X_FORWARDED_PROTO']) && \$_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') {";
+        $lines[] = "    \$_SERVER['HTTPS'] = 'on';";
+        $lines[] = '}';
+        $lines[] = '';
+        $lines[] = "if (! defined('ABSPATH')) {";
+        $lines[] = "    define('ABSPATH', __DIR__ . '/');";
+        $lines[] = '}';
+        $lines[] = "require_once ABSPATH . 'wp-settings.php';";
+        $lines[] = '';
+
+        return [
+            'text' => implode("\n", $lines),
+            'summary' => 'table prefix '.$prefix.' kept, security keys '.($keptSalts ? 'kept' : 'regenerated (everyone is signed out once)').', database taken from the deployment',
+        ];
+    }
+
+    private function phpString(string $value): string
+    {
+        return "'".str_replace(['\\', "'"], ['\\\\', "\\'"], $value)."'";
+    }
+
+    /**
+     * @return array{ok: bool, output: string}
+     */
+    private function lintConfig(SSHService $ssh, ContainerDeployment $deployment): array
+    {
+        if (! $deployment->isRunning()) {
+            // No PHP to ask; the in-place mend is the best available answer.
+            return ['ok' => true, 'output' => 'container stopped, lint skipped'];
+        }
+        try {
+            $output = (string) app(LaravelAppInitializationService::class)->dockerExecPublic(
+                $ssh,
+                $deployment->container_name,
+                'php -l '.self::DOCROOT.'/wp-config.php 2>&1 || true',
+                30
+            );
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'output' => mb_substr($e->getMessage(), 0, 200)];
+        }
+
+        return ['ok' => str_contains($output, 'No syntax errors'), 'output' => trim(mb_substr($output, 0, 300))];
+    }
+
+    private function ownConfig(SSHService $ssh, string $configPath): void
+    {
+        $ssh->exec('chown 33:33 '.escapeshellarg($configPath).' 2>/dev/null; chmod 640 '.escapeshellarg($configPath).'; true', 15);
+    }
 
     /**
      * @return array{success: bool, message: string}

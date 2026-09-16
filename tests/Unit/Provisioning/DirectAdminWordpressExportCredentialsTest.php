@@ -406,4 +406,32 @@ PHP;
         $this->assertSame('app-secret', $creds['password']);
         $this->assertSame('root-secret', $creds['root_password']);
     }
+
+    public function test_wp_config_define_rewrite_inserts_a_terminated_define_and_replaces_any_value_expression(): void
+    {
+        $service = app(DirectAdminToContainerMigrationService::class);
+        $dir = sys_get_temp_dir().'/talksasa-wpcfg-'.uniqid();
+        mkdir($dir);
+        $cfg = $dir.'/wp-config.php';
+        try {
+            // DB_HOST is absent: the old insert wrote "define(...)" with no semicolon, so line 3 failed to parse.
+            file_put_contents($cfg, "<?php\ndefine('DB_NAME', getenv('OLD_DB'));\ndefine('DB_USER', \"olduser\");\n\$table_prefix = 'wp_';\n");
+            foreach (['DB_HOST' => 's77_db', 'DB_NAME' => 'whsafaris', 'DB_USER' => "o'brien"] as $key => $value) {
+                $script = $service->wpConfigDefineRewriteScript($key, $value, $cfg);
+                exec('php -r '.escapeshellarg($script).' 2>&1', $out, $code);
+                $this->assertSame(0, $code, implode("\n", $out));
+            }
+
+            $text = (string) file_get_contents($cfg);
+            $this->assertStringContainsString("<?php\ndefine('DB_HOST', 's77_db');\n", $text);
+            $this->assertStringContainsString("define('DB_NAME', 'whsafaris');", $text, 'a getenv() expression is replaced whole');
+            $this->assertStringContainsString("define('DB_USER', 'o\\'brien');", $text);
+            $this->assertSame(1, substr_count($text, 'DB_NAME'), 'no duplicate define');
+            exec('php -l '.escapeshellarg($cfg).' 2>&1', $lint, $lintCode);
+            $this->assertSame(0, $lintCode, implode("\n", $lint));
+        } finally {
+            @unlink($cfg);
+            @rmdir($dir);
+        }
+    }
 }
