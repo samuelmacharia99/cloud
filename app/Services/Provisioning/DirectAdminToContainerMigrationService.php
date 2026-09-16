@@ -2122,6 +2122,145 @@ class DirectAdminToContainerMigrationService
             || filled($inventory['app_root'] ?? null);
     }
 
+    /**
+     * The DirectAdmin account is still there to copy files from: the convert
+     * record names its node and docroot.
+     */
+    public function canRepullDirectAdminFiles(Service $service): bool
+    {
+        $inventory = $this->inventoryFromDirectAdminLegacy($service);
+
+        return $inventory !== null && (filled($inventory['docroot'] ?? null) || filled($inventory['app_root'] ?? null));
+    }
+
+    /**
+     * Copy wp-content/uploads from the still-live DirectAdmin account into the
+     * container's application directory, filling gaps only: a file that exists
+     * on the container is never replaced, so media uploaded since the convert
+     * survives. Caches and PHP session files under uploads are left behind.
+     *
+     * @return array{files: int, bytes: int, da_node_id: int, skipped: bool, message: string}
+     */
+    public function pullWordPressUploadsFromDirectAdmin(Service $target, ?callable $progress = null): array
+    {
+        $progress ??= static function (string $message): void {};
+        $inventory = $this->inventoryFromDirectAdminLegacy($target);
+        if ($inventory === null) {
+            throw new \RuntimeException('This container has no DirectAdmin convert record (da_legacy). Cannot copy uploads from DirectAdmin.');
+        }
+        $docroot = rtrim((string) ($inventory['docroot'] ?? $inventory['app_root'] ?? ''), '/');
+        if ($docroot === '') {
+            throw new \RuntimeException('The DirectAdmin convert record has no docroot to copy uploads from.');
+        }
+
+        $target->loadMissing('containerDeployment.node');
+        $deployment = $target->containerDeployment;
+        if (! $deployment?->node) {
+            throw new \RuntimeException('The container has no node to copy uploads onto.');
+        }
+
+        $daNode = $this->resolveDirectAdminNode($target, $inventory);
+        $capBytes = max(1, (int) config('containers.file_manager.max_extract_mb', 2048)) * 1024 * 1024;
+        $workId = 'da-uploads-repull-'.$target->id.'-'.Str::lower(Str::random(6));
+        $remoteWork = self::WORK_BASE.'/'.$workId;
+        $remoteTar = $remoteWork.'/uploads.tar.gz';
+        $localTar = storage_path('app/migrations/'.$workId.'-uploads.tar.gz');
+        if (! is_dir(dirname($localTar))) {
+            mkdir(dirname($localTar), 0755, true);
+        }
+
+        $daSsh = SSHService::forNode($daNode);
+        try {
+            $exists = trim((string) $daSsh->exec('test -d '.escapeshellarg($docroot.'/wp-content/uploads').' && echo yes || echo no', 15)) === 'yes';
+            if (! $exists) {
+                throw new \RuntimeException('DirectAdmin has no wp-content/uploads under '.$docroot.' any more; nothing to copy. Restore the files from a backup instead.');
+            }
+            $bytes = (int) trim((string) $daSsh->exec($this->buildUploadsSizeCommand($docroot), 120));
+            if ($bytes > $capBytes) {
+                throw new \RuntimeException(sprintf(
+                    'wp-content/uploads on DirectAdmin is %s, above the %d MB the doctor copies in one go. Use the Backups tab or a manual rsync for a library that size.',
+                    DirectAdminMailPullProgress::formatBytes($bytes),
+                    (int) ($capBytes / 1024 / 1024)
+                ));
+            }
+
+            $progress('Packing wp-content/uploads ('.DirectAdminMailPullProgress::formatBytes($bytes).') on DirectAdmin');
+            $daSsh->exec('mkdir -p '.escapeshellarg($remoteWork), 15);
+            $daSsh->exec($this->buildUploadsTarCommand($docroot, $remoteTar), 1800);
+            $files = (int) trim((string) $daSsh->exec('tar -tzf '.escapeshellarg($remoteTar).' 2>/dev/null | grep -vc "/$" || true', 300));
+            $progress('Downloading '.$files.' file(s) from DirectAdmin');
+            $daSsh->downloadToLocal($remoteTar, $localTar);
+        } finally {
+            $daSsh->disconnect();
+            try {
+                $this->cleanupDaWork($daNode, $remoteWork);
+            } catch (\Throwable) {
+            }
+        }
+
+        $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+        $hostAppPath = $containerPath.'/app';
+        $stagedTar = $containerPath.'/.da-uploads-'.$workId.'.tar.gz';
+        $ssh = SSHService::forNode($deployment->node);
+        try {
+            $progress('Copying uploads into the application directory');
+            $ssh->uploadFromLocal($localTar, $stagedTar, null, 1800);
+            $ssh->exec($this->buildUploadsExtractCommand($stagedTar, $hostAppPath), 1800);
+        } finally {
+            $ssh->disconnect();
+            @unlink($localTar);
+        }
+
+        $meta = is_array($target->service_meta) ? $target->service_meta : [];
+        $legacy = is_array($meta['da_legacy'] ?? null) ? $meta['da_legacy'] : [];
+        $legacy['uploads_reimported_at'] = now()->toIso8601String();
+        $legacy['uploads_reimported_files'] = $files;
+        $meta['da_legacy'] = $legacy;
+        $target->update(['service_meta' => $meta]);
+
+        return [
+            'files' => $files,
+            'bytes' => $bytes,
+            'da_node_id' => (int) $daNode->id,
+            'skipped' => false,
+            'message' => 'Copied wp-content/uploads from DirectAdmin ('.$files.' file(s), '.DirectAdminMailPullProgress::formatBytes($bytes).'). Files already on the container were kept; caches and session files were left behind.',
+        ];
+    }
+
+    public function buildUploadsSizeCommand(string $docroot): string
+    {
+        return 'du -sb '.escapeshellarg(rtrim($docroot, '/').'/wp-content/uploads').' 2>/dev/null | cut -f1';
+    }
+
+    /**
+     * Pack uploads relative to wp-content so it unpacks straight into the
+     * container's wp-content; the archive is written even if a file changed
+     * while it was read.
+     */
+    public function buildUploadsTarCommand(string $docroot, string $tarFile): string
+    {
+        $base = escapeshellarg(rtrim($docroot, '/').'/wp-content');
+        $tar = 'tar -czf '.escapeshellarg($tarFile)
+            .' --exclude=./uploads/cache --exclude=./uploads/sessions --exclude=./uploads/wc-logs --exclude=./uploads/backup* --exclude=./uploads/*.log'
+            .' -C '.$base.' ./uploads';
+
+        return $tar.' ; status=$?; if [ "$status" -eq 0 ] || [ "$status" -eq 1 ]; then if [ -s '.escapeshellarg($tarFile).' ]; then exit 0; fi; fi; exit "$status"';
+    }
+
+    /**
+     * Unpack into wp-content without touching a file that already exists,
+     * hand the tree to the web user, and drop the archive.
+     */
+    public function buildUploadsExtractCommand(string $tarFile, string $hostAppPath): string
+    {
+        $content = escapeshellarg(rtrim($hostAppPath, '/').'/wp-content');
+        $uploads = escapeshellarg(rtrim($hostAppPath, '/').'/wp-content/uploads');
+        $t = escapeshellarg($tarFile);
+
+        return 'mkdir -p '.$content.' && tar -xzf '.$t.' -C '.$content.' --skip-old-files'
+            .' && chown -R 33:33 '.$uploads.' 2>/dev/null; rm -f '.$t.'; true';
+    }
+
     public function canImportDirectAdminCodeIgniterSiblings(Service $service): bool
     {
         $inventory = $this->inventoryFromDirectAdminLegacy($service);

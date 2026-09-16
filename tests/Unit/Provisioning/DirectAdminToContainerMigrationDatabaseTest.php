@@ -12,6 +12,7 @@ use App\Services\Provisioning\ContainerDoctorService;
 use App\Services\Provisioning\DirectAdminToContainerMigrationService;
 use App\Services\SSH\SSHService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\File;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -621,5 +622,79 @@ class DirectAdminToContainerMigrationDatabaseTest extends TestCase
         );
         $this->assertStringContainsString('cp -a', $bake);
         $this->assertStringContainsString("'/home/digiworl/domains/roadtrip.digiworldmediasln.com/app'", $bake);
+    }
+
+    #[Test]
+    public function uploads_are_packed_from_directadmin_and_unpacked_without_replacing_what_the_container_already_has(): void
+    {
+        $migrator = app(DirectAdminToContainerMigrationService::class);
+        $root = sys_get_temp_dir().'/talksasa-uploads-'.uniqid();
+        $da = $root.'/da/public_html';
+        $app = $root.'/container/app';
+        File::ensureDirectoryExists($da.'/wp-content/uploads/2026/09');
+        File::ensureDirectoryExists($da.'/wp-content/uploads/cache');
+        File::ensureDirectoryExists($da.'/wp-content/uploads/sessions');
+        File::ensureDirectoryExists($app.'/wp-content/uploads/2026/09');
+        File::put($da.'/wp-content/uploads/2026/09/lost.jpg', 'da-copy');
+        File::put($da.'/wp-content/uploads/2026/09/shared.jpg', 'da-copy');
+        File::put($da.'/wp-content/uploads/cache/x.tmp', 'cache');
+        File::put($da.'/wp-content/uploads/sessions/sess_1', 'sess');
+        File::put($app.'/wp-content/uploads/2026/09/shared.jpg', 'newer-container-copy');
+        $tar = $root.'/uploads.tar.gz';
+
+        try {
+            foreach ([$migrator->buildUploadsSizeCommand($da), $migrator->buildUploadsTarCommand($da, $tar), $migrator->buildUploadsExtractCommand($tar, $app)] as $command) {
+                exec('bash -n -c '.escapeshellarg($command).' 2>&1', $syntax, $code);
+                $this->assertSame(0, $code, implode("\n", $syntax));
+            }
+
+            $this->assertGreaterThan(0, (int) trim((string) shell_exec('bash -c '.escapeshellarg($migrator->buildUploadsSizeCommand($da)))));
+            shell_exec('bash -c '.escapeshellarg($migrator->buildUploadsTarCommand($da, $tar)).' 2>&1');
+            $this->assertFileExists($tar);
+            $entries = (string) shell_exec('tar -tzf '.escapeshellarg($tar));
+            $this->assertStringContainsString('./uploads/2026/09/lost.jpg', $entries);
+            $this->assertStringNotContainsString('uploads/cache/', $entries);
+            $this->assertStringNotContainsString('uploads/sessions/', $entries);
+
+            shell_exec('bash -c '.escapeshellarg($migrator->buildUploadsExtractCommand($tar, $app)).' 2>&1');
+            $this->assertSame('da-copy', (string) file_get_contents($app.'/wp-content/uploads/2026/09/lost.jpg'), 'the missing file is filled in');
+            $this->assertSame('newer-container-copy', (string) file_get_contents($app.'/wp-content/uploads/2026/09/shared.jpg'), 'a file already on the container is never replaced');
+            $this->assertFileDoesNotExist($tar, 'the staged archive is removed');
+        } finally {
+            File::deleteDirectory($root);
+        }
+    }
+
+    #[Test]
+    public function the_doctor_offers_the_copy_only_with_a_convert_record_and_relays_the_migrators_answer(): void
+    {
+        $migrator = app(DirectAdminToContainerMigrationService::class);
+        $node = Node::factory()->create(['type' => 'container_host', 'ip_address' => '10.0.0.7']);
+        $service = Service::factory()->create([
+            'user_id' => User::factory()->customer()->create()->id,
+            'product_id' => Product::factory()->containerHosting()->create()->id,
+            'node_id' => $node->id,
+            'status' => 'active',
+            'service_meta' => [],
+        ]);
+        ContainerDeployment::factory()->create(['service_id' => $service->id, 'node_id' => $node->id, 'status' => 'running', 'container_name' => 'user-1-service-77-wordpress']);
+
+        $this->assertFalse($migrator->canRepullDirectAdminFiles($service->fresh()));
+        $refused = app(ContainerDoctorService::class)->treat($service->fresh(['containerDeployment.node', 'product.containerTemplate']), 'import_da_uploads');
+        $this->assertFalse($refused['success']);
+        $this->assertStringContainsString('no DirectAdmin convert record', $refused['message']);
+
+        $service->update(['service_meta' => ['da_legacy' => ['username' => 'whsafari', 'da_node_id' => $node->id, 'domain' => 'whsafaris.co.ke', 'docroot' => '/home/whsafari/domains/whsafaris.co.ke/public_html', 'stack' => 'wordpress']]]);
+        $this->assertTrue($migrator->canRepullDirectAdminFiles($service->fresh()));
+
+        $this->mock(DirectAdminToContainerMigrationService::class, function ($mock) {
+            $mock->shouldReceive('canRepullDirectAdminFiles')->andReturn(true);
+            $mock->shouldReceive('pullWordPressUploadsFromDirectAdmin')->once()
+                ->andReturn(['files' => 412, 'bytes' => 52428800, 'da_node_id' => 1, 'skipped' => false, 'message' => 'Copied wp-content/uploads from DirectAdmin (412 file(s), 50 MB).']);
+        });
+        $done = app(ContainerDoctorService::class)->treat($service->fresh(['containerDeployment.node', 'product.containerTemplate']), 'import_da_uploads');
+        $this->assertTrue($done['success'], $done['message']);
+        $this->assertStringContainsString('412 file(s)', $done['message']);
+        $this->assertStringContainsString('Rebuild thumbnails', $done['message']);
     }
 }

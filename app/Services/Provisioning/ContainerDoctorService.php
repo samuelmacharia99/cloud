@@ -116,6 +116,7 @@ class ContainerDoctorService
                 'restart_application',
                 'rebuild_node_application',
                 'import_da_database',
+                'import_da_uploads',
                 'import_da_codeigniter_app',
                 'link_codeigniter_system',
                 'heal_codeigniter_runtime',
@@ -203,6 +204,7 @@ class ContainerDoctorService
             self::RUN_APPLICATION_MIGRATIONS_ACTION => $this->treatApplicationMigrations($service),
             'migrate_fresh' => $this->treatMigrateFresh($service),
             'import_da_database' => $this->treatImportDaDatabase($service),
+            'import_da_uploads' => $this->treatImportDaUploads($service),
             'import_da_codeigniter_app' => $this->treatImportDaCodeIgniterApp($service),
             'link_codeigniter_system' => $this->treatLinkCodeIgniterSystem($service),
             'heal_codeigniter_runtime' => $this->treatHealCodeIgniterRuntime($service),
@@ -578,7 +580,8 @@ class ContainerDoctorService
                     $checks['wordpress_missing_originals'] = (int) ($media['missing_originals'] ?? 0);
 
                     $liveUrl = app(WordPressAdminLoginService::class)->resolvePublicBaseUrl($service);
-                    foreach ($this->wordPressMediaFindings($media, $liveUrl) as $finding) {
+                    $canPullUploads = app(DirectAdminToContainerMigrationService::class)->canRepullDirectAdminFiles($service);
+                    foreach ($this->wordPressMediaFindings($media, $liveUrl, $canPullUploads) as $finding) {
                         $findings[] = $finding;
                     }
                 }
@@ -3600,7 +3603,7 @@ PHP;
      * @param  array<string, mixed>  $media
      * @return list<array<string, mixed>>
      */
-    private function wordPressMediaFindings(array $media, ?string $liveUrl): array
+    private function wordPressMediaFindings(array $media, ?string $liveUrl, bool $canPullUploads = false): array
     {
         $findings = [];
         $images = (int) ($media['images'] ?? 0);
@@ -3670,11 +3673,11 @@ PHP;
                     $examples !== [] ? 'for example: '.implode(', ', $examples) : null,
                 ])),
                 'manual_steps' => [
-                    'Copy the missing files into wp-content/uploads from a backup of the old server, then run Rebuild thumbnails.',
+                    'Copy the missing files into wp-content/uploads from the old server (Copy uploads from DirectAdmin when that account still exists), then run Rebuild thumbnails.',
                     'Or delete the affected attachments under Media in wp-admin.',
                 ],
                 'source' => 'live',
-            ];
+            ] + ($canPullUploads ? ['treat_action' => 'import_da_uploads', 'treat_label' => 'Copy uploads from DirectAdmin'] : []);
         }
 
         $unsupported = (int) ($media['unsupported_mime'] ?? 0) + (int) ($media['zero_bytes'] ?? 0);
@@ -3698,16 +3701,21 @@ PHP;
                 'title' => 'Uploaded media files are not on the application disk',
                 'summary' => 'The database lists attachments, but the newest file is missing from the uploads '
                     .'directory. That happens when media was written into a container-only volume, or when a '
-                    .'database was restored without its wp-content files. Redeploy the stack so wp-content is '
-                    .'served from the application directory, then restore the files from a backup.',
+                    .'database was restored without its wp-content files. '
+                    .($canPullUploads
+                        ? 'This site was converted from DirectAdmin and that account is still there: Copy uploads from DirectAdmin fills in every file the container is missing without replacing newer ones.'
+                        : 'Redeploy the stack so wp-content is served from the application directory, then restore the files from a backup.'),
                 'evidence' => array_values(array_filter([
                     'expected file: '.rtrim((string) ($media['basedir'] ?? ''), '/').'/'.(string) ($media['latest_file'] ?? ''),
                     (string) ($media['uploads_error'] ?? '') !== '' ? 'uploads error: '.$media['uploads_error'] : null,
                 ])),
-                'manual_steps' => [
-                    'Redeploy stack — wp-content is then bind-mounted from the application directory.',
-                    'Restore wp-content/uploads from the Backups tab if the files were lost.',
-                ],
+                'treat_action' => $canPullUploads ? 'import_da_uploads' : null,
+                'treat_label' => $canPullUploads ? 'Copy uploads from DirectAdmin' : null,
+                'manual_steps' => array_values(array_filter([
+                    $canPullUploads ? 'Click Copy uploads from DirectAdmin, then Rebuild thumbnails if the doctor still reports missing sizes.' : null,
+                    'If uploads were written into a container-only volume, Redeploy stack first so wp-content is bind-mounted from the application directory.',
+                    'Otherwise restore wp-content/uploads from the Backups tab.',
+                ])),
                 'source' => 'live',
             ];
         }
@@ -5840,6 +5848,45 @@ PHP;
             ],
             'source' => 'live',
         ];
+    }
+
+    /**
+     * @return array{success: bool, message: string}
+     */
+    private function treatImportDaUploads(Service $service): array
+    {
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(0);
+        }
+        @ini_set('max_execution_time', '0');
+
+        $migrator = app(DirectAdminToContainerMigrationService::class);
+        if (! $migrator->canRepullDirectAdminFiles($service)) {
+            return [
+                'success' => false,
+                'message' => 'This container has no DirectAdmin convert record (da_legacy docroot + node). Restore wp-content/uploads from the Backups tab instead.',
+            ];
+        }
+
+        try {
+            $result = $migrator->pullWordPressUploadsFromDirectAdmin($service);
+        } catch (\Throwable $e) {
+            \Log::warning('Doctor could not copy uploads from DirectAdmin', ['service_id' => $service->id, 'error' => $e->getMessage()]);
+
+            return ['success' => false, 'message' => 'Could not copy uploads from DirectAdmin: '.$e->getMessage()];
+        }
+
+        $user = auth()->user();
+        if ($user?->isAdmin()) {
+            AdminActivityService::log(
+                'container.import_da_uploads',
+                'Copied wp-content/uploads from DirectAdmin into service #'.$service->id.' ('.$result['files'].' files)',
+                $service,
+                ['files' => $result['files'], 'bytes' => $result['bytes'], 'da_node_id' => $result['da_node_id']]
+            );
+        }
+
+        return ['success' => true, 'message' => $result['message'].' Run Diagnose again; Rebuild thumbnails is offered if sizes are still missing.'];
     }
 
     private function treatImportDaDatabase(Service $service): array
