@@ -2113,7 +2113,7 @@ class DirectAdminToContainerMigrationService
     public function canRepullDirectAdminDatabase(Service $service): bool
     {
         $inventory = $this->inventoryFromDirectAdminLegacy($service);
-        if ($inventory === null) {
+        if ($inventory === null || $this->directAdminHomeKnownMissing($service)) {
             return false;
         }
 
@@ -2129,8 +2129,22 @@ class DirectAdminToContainerMigrationService
     public function canRepullDirectAdminFiles(Service $service): bool
     {
         $inventory = $this->inventoryFromDirectAdminLegacy($service);
+        if ($inventory === null || $this->directAdminHomeKnownMissing($service)) {
+            return false;
+        }
 
-        return $inventory !== null && (filled($inventory['docroot'] ?? null) || filled($inventory['app_root'] ?? null));
+        return filled($inventory['docroot'] ?? null) || filled($inventory['app_root'] ?? null);
+    }
+
+    /**
+     * A previous copy found the account's home gone from the DirectAdmin
+     * node; nothing there can be pulled again until an operator clears it.
+     */
+    public function directAdminHomeKnownMissing(Service $service): bool
+    {
+        $legacy = is_array($service->service_meta['da_legacy'] ?? null) ? $service->service_meta['da_legacy'] : [];
+
+        return filled($legacy['home_missing_at'] ?? null);
     }
 
     /**
@@ -2177,13 +2191,22 @@ class DirectAdminToContainerMigrationService
         $daSsh = SSHService::forNode($daNode);
         try {
             $daHome = $daUsername !== '' ? '/home/'.$daUsername : dirname($docroot, 3);
-            $candidates = $this->parseUploadsCandidates((string) $daSsh->exec($this->buildUploadsDiscoveryCommand($docroot, $daHome), 300));
-            $uploadsDir = $this->chooseUploadsDir($candidates, $docroot);
-            if ($uploadsDir === null) {
+            $discovery = $this->parseUploadsDiscovery((string) $daSsh->exec($this->buildUploadsDiscoveryCommand($docroot, $daHome), 300));
+            if (! $discovery['home_present']) {
+                $meta = is_array($target->service_meta) ? $target->service_meta : [];
+                $legacy = is_array($meta['da_legacy'] ?? null) ? $meta['da_legacy'] : [];
+                $legacy['home_missing_at'] = now()->toIso8601String();
+                $meta['da_legacy'] = $legacy;
+                $target->update(['service_meta' => $meta]);
+
                 throw new \RuntimeException(
-                    'No wp-content/uploads folder is left anywhere under '.$daHome
-                    .' on DirectAdmin (looked under the recorded docroot '.$docroot.', its non-www twin and every domain folder). Restore the files from a backup instead.'
+                    'The DirectAdmin account '.$daHome.' no longer exists on '.$daNode->name.', so there is nothing left to copy; this button will not be offered again. '
+                    .'Restore wp-content/uploads from the Backups tab, or from a DirectAdmin backup if one was taken before the account was removed.'
                 );
+            }
+            $uploadsDir = $this->chooseUploadsDir($discovery['candidates'], $docroot);
+            if ($uploadsDir === null) {
+                throw new \RuntimeException($this->describeMissingUploads($discovery, $daHome, $docroot));
             }
             $bytes = (int) trim((string) $daSsh->exec($this->buildUploadsSizeCommand($uploadsDir), 120));
             if ($bytes > $capBytes) {
@@ -2250,19 +2273,61 @@ class DirectAdminToContainerMigrationService
         $twin = preg_replace('#/domains/www\.#', '/domains/', $docroot) ?? $docroot;
         $home = rtrim($home, '/');
         $roots = array_values(array_unique(array_filter([$docroot, $twin, $home])));
+        $h = escapeshellarg($home);
 
         $describe = 'd="$1"; [ -d "$d" ] || return 0; b=$(du -sb "$d" 2>/dev/null | cut -f1); '
             .'y=$(find "$d" -mindepth 1 -maxdepth 1 -type d -name "20[0-9][0-9]" 2>/dev/null | head -1); '
             .'printf "CANDIDATE=%s\t%s\t%s\n" "$d" "${b:-0}" "$([ -n "$y" ] && echo years || echo noyears)"';
 
         $parts = ['describe() { '.$describe.'; }'];
+        $parts[] = '[ -d '.$h.' ] && echo "HOME=present" || { echo "HOME=missing"; exit 0; }';
+        $parts[] = 'ls -1 '.$h.'/domains 2>/dev/null | head -40 | sed "s|^|DOMAIN=|"';
         foreach ($roots as $root) {
             $parts[] = 'describe '.escapeshellarg($root.'/wp-content/uploads');
         }
-        $parts[] = 'find '.escapeshellarg($home).' -mindepth 3 -maxdepth 7 -type d -path "*/wp-content/uploads" -not -path "*/wp-content/uploads/*" 2>/dev/null | head -20 | while read -r p; do describe "$p"; done';
+        $parts[] = 'find '.$h.' -mindepth 3 -maxdepth 7 -type d -path "*/wp-content/uploads" -not -path "*/wp-content/uploads/*" 2>/dev/null | head -20 | while read -r p; do describe "$p"; done';
+        // Every WordPress on the account, the UPLOADS override its config may carry,
+        // and any other wp-content folder that holds year folders (a custom media dir).
+        $parts[] = 'find '.$h.' -mindepth 2 -maxdepth 7 -type f -name wp-config.php -not -path "*/wp-content/*" 2>/dev/null | head -10 | while read -r c; do '
+            .'echo "WPCONFIG=$c"; '
+            .'grep -oE "define[[:space:]]*\([[:space:]]*.UPLOADS.[[:space:]]*,[^)]*\)" "$c" 2>/dev/null | head -1 | sed "s|^|UPLOADS_DEFINE=|"; '
+            .'r=$(dirname "$c"); for d in "$r"/wp-content/*/; do [ -d "$d" ] || continue; case "$(basename "$d")" in uploads|plugins|themes|mu-plugins|cache|upgrade|languages) continue;; esac; '
+            .'if [ -n "$(find "$d" -mindepth 1 -maxdepth 1 -type d -name "20[0-9][0-9]" 2>/dev/null | head -1)" ]; then describe "${d%/}"; fi; done; '
+            .'done';
+        $parts[] = 'ls -1 '.$h.'/backups/*.tar.gz '.$h.'/backups/*.zip 2>/dev/null | head -5 | sed "s|^|BACKUP=|"';
         $parts[] = 'true';
 
         return implode('; ', $parts);
+    }
+
+    /**
+     * @return array{home_present: bool, domains: list<string>, candidates: list<array{path: string, bytes: int, years: bool}>, wp_configs: list<string>, uploads_defines: list<string>, backups: list<string>}
+     */
+    public function parseUploadsDiscovery(string $output): array
+    {
+        $result = ['home_present' => false, 'domains' => [], 'candidates' => [], 'wp_configs' => [], 'uploads_defines' => [], 'backups' => []];
+        $seen = [];
+        foreach (preg_split("/\r\n|\n|\r/", $output) ?: [] as $line) {
+            if ($line === 'HOME=present') {
+                $result['home_present'] = true;
+            } elseif (str_starts_with($line, 'DOMAIN=')) {
+                $result['domains'][] = trim(substr($line, 7));
+            } elseif (str_starts_with($line, 'WPCONFIG=')) {
+                $result['wp_configs'][] = trim(substr($line, 9));
+            } elseif (str_starts_with($line, 'UPLOADS_DEFINE=')) {
+                $result['uploads_defines'][] = trim(substr($line, 15));
+            } elseif (str_starts_with($line, 'BACKUP=')) {
+                $result['backups'][] = trim(substr($line, 7));
+            } elseif (preg_match('/^CANDIDATE=([^\t]+)\t(\d+)\t(years|noyears)$/', $line, $m) === 1) {
+                $path = rtrim($m[1], '/');
+                if (! isset($seen[$path])) {
+                    $seen[$path] = true;
+                    $result['candidates'][] = ['path' => $path, 'bytes' => (int) $m[2], 'years' => $m[3] === 'years'];
+                }
+            }
+        }
+
+        return $result;
     }
 
     /**
@@ -2270,21 +2335,36 @@ class DirectAdminToContainerMigrationService
      */
     public function parseUploadsCandidates(string $output): array
     {
-        $seen = [];
-        $rows = [];
-        foreach (preg_split("/\r\n|\n|\r/", $output) ?: [] as $line) {
-            if (preg_match('/^CANDIDATE=([^\t]+)\t(\d+)\t(years|noyears)$/', $line, $m) !== 1) {
-                continue;
-            }
-            $path = rtrim($m[1], '/');
-            if (isset($seen[$path])) {
-                continue;
-            }
-            $seen[$path] = true;
-            $rows[] = ['path' => $path, 'bytes' => (int) $m[2], 'years' => $m[3] === 'years'];
-        }
+        return $this->parseUploadsDiscovery($output)['candidates'];
+    }
 
-        return $rows;
+    /**
+     * Why nothing could be copied, from what the account actually holds.
+     *
+     * @param  array{home_present: bool, domains: list<string>, candidates: list<array{path: string, bytes: int, years: bool}>, wp_configs: list<string>, uploads_defines: list<string>, backups: list<string>}  $discovery
+     */
+    public function describeMissingUploads(array $discovery, string $home, string $docroot): string
+    {
+        $parts = ['No media folder with files in it is left under '.$home.' on DirectAdmin.'];
+        $parts[] = 'Looked under the recorded docroot '.$docroot.', its non-www twin and every domain folder'
+            .($discovery['domains'] !== [] ? ' ('.implode(', ', array_slice($discovery['domains'], 0, 8)).')' : ' (the account has no domains folder)').'.';
+        if ($discovery['wp_configs'] !== []) {
+            $parts[] = 'WordPress installs found: '.implode(', ', array_map(fn (string $c): string => dirname($c), array_slice($discovery['wp_configs'], 0, 5))).'; none has an uploads folder with files.';
+        } else {
+            $parts[] = 'No wp-config.php was found anywhere on the account, so the site files were already removed there.';
+        }
+        if ($discovery['uploads_defines'] !== []) {
+            $parts[] = 'A config overrides the uploads location: '.implode('; ', array_slice($discovery['uploads_defines'], 0, 3)).'.';
+        }
+        $empty = array_values(array_filter($discovery['candidates'], fn (array $c): bool => $c['bytes'] <= 0));
+        if ($empty !== []) {
+            $parts[] = 'Empty uploads folders: '.implode(', ', array_map(fn (array $c): string => $c['path'], array_slice($empty, 0, 3))).'.';
+        }
+        $parts[] = $discovery['backups'] !== []
+            ? 'DirectAdmin user backups exist on the account: '.implode(', ', array_slice($discovery['backups'], 0, 3)).'. Restore wp-content/uploads from one of those, or from the Backups tab.'
+            : 'Restore wp-content/uploads from the Backups tab.';
+
+        return implode(' ', $parts);
     }
 
     /**

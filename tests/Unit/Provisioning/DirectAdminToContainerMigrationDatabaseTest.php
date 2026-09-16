@@ -730,4 +730,52 @@ class DirectAdminToContainerMigrationDatabaseTest extends TestCase
             File::deleteDirectory($root);
         }
     }
+
+    #[Test]
+    public function discovery_reports_a_missing_home_a_custom_media_folder_and_backups_and_the_copy_is_withdrawn_once_the_account_is_gone(): void
+    {
+        $migrator = app(DirectAdminToContainerMigrationService::class);
+        $root = sys_get_temp_dir().'/talksasa-discover2-'.uniqid();
+        $home = $root.'/home/whsafaris';
+        $docroot = $home.'/domains/www.whsafaris.co.ke/public_html';
+
+        try {
+            $gone = $migrator->parseUploadsDiscovery((string) shell_exec('bash -c '.escapeshellarg($migrator->buildUploadsDiscoveryCommand($docroot, $home)).' 2>&1'));
+            $this->assertFalse($gone['home_present']);
+
+            File::ensureDirectoryExists($home.'/domains/whsafaris.co.ke/public_html/wp-content/media/2025/03');
+            File::ensureDirectoryExists($home.'/domains/whsafaris.co.ke/public_html/wp-content/uploads');
+            File::ensureDirectoryExists($home.'/backups');
+            File::put($home.'/domains/whsafaris.co.ke/public_html/wp-config.php', "<?php\ndefine('UPLOADS', 'wp-content/media');\n");
+            File::put($home.'/domains/whsafaris.co.ke/public_html/wp-content/media/2025/03/photo.jpg', str_repeat('p', 500));
+            File::put($home.'/backups/backup-Sep-1-2026.tar.gz', 'tgz');
+
+            $found = $migrator->parseUploadsDiscovery((string) shell_exec('bash -c '.escapeshellarg($migrator->buildUploadsDiscoveryCommand($docroot, $home)).' 2>&1'));
+            $this->assertTrue($found['home_present']);
+            $this->assertSame(['whsafaris.co.ke'], $found['domains']);
+            $this->assertSame([$home.'/domains/whsafaris.co.ke/public_html/wp-config.php'], $found['wp_configs']);
+            $this->assertStringContainsString("'UPLOADS'", $found['uploads_defines'][0]);
+            $this->assertSame([$home.'/backups/backup-Sep-1-2026.tar.gz'], $found['backups']);
+            $this->assertSame($home.'/domains/whsafaris.co.ke/public_html/wp-content/media', $migrator->chooseUploadsDir($found['candidates'], $docroot), 'a custom media folder with year folders is the source; the empty uploads folder is not');
+
+            $description = $migrator->describeMissingUploads(['home_present' => true, 'domains' => ['whsafaris.co.ke'], 'candidates' => [['path' => $docroot.'/wp-content/uploads', 'bytes' => 0, 'years' => false]], 'wp_configs' => [], 'uploads_defines' => [], 'backups' => [$home.'/backups/b.tar.gz']], $home, $docroot);
+            $this->assertStringContainsString('No wp-config.php was found', $description);
+            $this->assertStringContainsString('Empty uploads folders', $description);
+            $this->assertStringContainsString('DirectAdmin user backups exist', $description);
+        } finally {
+            File::deleteDirectory($root);
+        }
+
+        $service = Service::factory()->create([
+            'user_id' => User::factory()->customer()->create()->id,
+            'product_id' => Product::factory()->containerHosting()->create()->id,
+            'service_meta' => ['da_legacy' => ['username' => 'whsafaris', 'da_node_id' => 1, 'docroot' => $docroot, 'databases' => [['name' => 'whs_wp']]]],
+        ]);
+        $this->assertTrue($migrator->canRepullDirectAdminFiles($service));
+        $this->assertTrue($migrator->canRepullDirectAdminDatabase($service));
+
+        $service->update(['service_meta' => ['da_legacy' => ['username' => 'whsafaris', 'da_node_id' => 1, 'docroot' => $docroot, 'databases' => [['name' => 'whs_wp']], 'home_missing_at' => now()->toIso8601String()]]]);
+        $this->assertFalse($migrator->canRepullDirectAdminFiles($service->fresh()), 'once the home is known to be gone the copy is withdrawn');
+        $this->assertFalse($migrator->canRepullDirectAdminDatabase($service->fresh()), 'and so is the database re-pull');
+    }
 }
