@@ -293,4 +293,25 @@ class IntegrityScanScriptTest extends TestCase
 
         return $path;
     }
+
+    #[Test]
+    public function the_live_env_file_is_configuration_while_its_copies_are_exposed_backups(): void
+    {
+        $tree = $this->root.'/php-app';
+        File::ensureDirectoryExists($tree.'/public');
+        File::put($tree.'/index.php', "<?php echo 'hi';\n");
+        File::put($tree.'/.env', "APP_KEY=x\nDB_PASSWORD=secret\n");
+        File::put($tree.'/.env.bak', "APP_KEY=old\n");
+        File::put($tree.'/.env.backup', "APP_KEY=older\n");
+        File::put($tree.'/.env.example', "APP_KEY=\n");
+        chmod($tree.'/.env', 0640);
+
+        [$hits] = $this->scan($tree, null, false);
+        $reasons = fn (string $path) => $hits[$path]['reasons'] ?? [];
+
+        $this->assertNotContains('exposed_backup', $reasons('.env'), 'the file the app runs on is never a stray backup to archive');
+        $this->assertContains('exposed_backup', $reasons('.env.bak'));
+        $this->assertContains('exposed_backup', $reasons('.env.backup'));
+        $this->assertArrayNotHasKey('.env.example', $hits);
+    }
 }

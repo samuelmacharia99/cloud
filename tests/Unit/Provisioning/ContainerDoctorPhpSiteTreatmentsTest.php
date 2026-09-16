@@ -5,6 +5,7 @@ namespace Tests\Unit\Provisioning;
 use App\Services\Provisioning\ContainerDoctorPhpSiteAnalyzer;
 use App\Services\Provisioning\ContainerDoctorPhpSiteTreatments;
 use App\Services\Provisioning\ContainerDoctorWordPressAnalyzer;
+use App\Services\Provisioning\ContainerIncidentService;
 use App\Services\Provisioning\DirectAdminToContainerMigrationService;
 use Illuminate\Support\Facades\File;
 use PHPUnit\Framework\Attributes\Test;
@@ -36,6 +37,7 @@ class ContainerDoctorPhpSiteTreatmentsTest extends TestCase
         return new ContainerDoctorPhpSiteTreatments(
             app(DirectAdminToContainerMigrationService::class),
             new ContainerDoctorPhpSiteAnalyzer(new ContainerDoctorWordPressAnalyzer),
+            app(ContainerIncidentService::class),
         );
     }
 
@@ -137,5 +139,54 @@ PHP);
         $this->assertSame([], $plan['env_keys']);
         $this->assertNotEmpty($plan['evidence']);
         $this->assertStringContainsString('hasTable', $plan['evidence'][0]);
+    }
+
+    #[Test]
+    public function an_install_middleware_that_tests_the_env_file_is_recognised_even_without_the_word_install_on_that_line(): void
+    {
+        File::put($this->root.'/app/Http/Middleware/IsInstalled.php', <<<'PHP'
+<?php
+class IsInstalled {
+    public function handle($request, $next) {
+        $envPath = base_path('.env');
+        if (! file_exists($envPath)) {
+            return redirect(url('/').'/install');
+        }
+        return $next($request);
+    }
+}
+PHP);
+        $t = $this->treatments();
+        $probe = $t->parseProbe($this->bash($t->probeCommand($this->root)));
+
+        $this->assertFalse($probe['env_present'], 'the fixture has no .env');
+        $plan = $t->plan($probe);
+        $this->assertTrue($plan['needs_env_file']);
+        $this->assertSame([], $plan['markers']);
+        $this->assertSame([], $plan['env_keys']);
+        $this->assertStringContainsString("base_path('.env')", implode("\n", $plan['evidence']));
+
+        File::put($this->root.'/.env', "APP_KEY=x\n");
+        $this->assertTrue($t->parseProbe($this->bash($t->probeCommand($this->root)))['env_present']);
+    }
+
+    #[Test]
+    public function a_missing_env_is_copied_back_from_the_incident_that_archived_it_and_never_over_an_existing_one(): void
+    {
+        $t = $this->treatments();
+        File::ensureDirectoryExists($this->root.'/incidents/20260916-165225-he2eap/files');
+        File::put($this->root.'/incidents/20260916-165225-he2eap/files/.env', "APP_KEY=base64:abc\nDB_DATABASE=khonamart\n");
+        $source = $this->root.'/incidents/20260916-165225-he2eap/files/.env';
+        $target = $this->root.'/.env';
+
+        $this->assertStringContainsString('RESTORED=.env', $this->bash($t->restoreEnvFromIncidentCommand($source, $target)));
+        $this->assertSame("APP_KEY=base64:abc\nDB_DATABASE=khonamart\n", (string) file_get_contents($target));
+        $this->assertFileExists($source, 'the incident keeps its copy');
+
+        File::put($target, "APP_KEY=live\n");
+        $this->assertStringContainsString('PRESENT=.env', $this->bash($t->restoreEnvFromIncidentCommand($source, $target)));
+        $this->assertSame("APP_KEY=live\n", (string) file_get_contents($target));
+
+        $this->assertStringContainsString('MISSING=source', $this->bash($t->restoreEnvFromIncidentCommand($this->root.'/incidents/nope/files/.env', $this->root.'/other.env')));
     }
 }

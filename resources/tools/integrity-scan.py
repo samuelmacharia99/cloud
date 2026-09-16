@@ -5,7 +5,7 @@ Runs on the container host over the bind mount, read-only. Prints one line per
 hit as  reason<TAB>size<TAB>mtime<TAB>path  and a final  __SUMMARY__<TAB>{json}
 line. Contents of files are never printed.
 
-TALKSASA_SCAN_VERSION=6
+TALKSASA_SCAN_VERSION=7
 """
 import argparse
 import hashlib
@@ -17,7 +17,7 @@ import stat
 import sys
 import time
 
-SCAN_VERSION = 6
+SCAN_VERSION = 7
 
 CORE_ROOT_FILES = {
     'index.php', 'wp-activate.php', 'wp-blog-header.php', 'wp-comments-post.php', 'wp-config.php',
@@ -43,10 +43,14 @@ KNOWN_FAMILY_FILES = {'wp-homes.php', 'wp-conf1g.php', 'wp-l0gin.php', 'wp-inclu
                       'wp-vcd.php', 'wp-tmp.php', 'wp-feml.php', 'class.theme-modules.php',
                       'lock360.php', 'about.php.suspected'}
 KNOWN_FAMILY_DIRS = {'alfacgiapi', 'jancox', 'ALFA_DATA', '.well-known-pki', 'wso', 'c99'}
-EXPOSED_EXACT = {'.env', 'error_log', 'debug.log', 'php_errorlog', 'php_error.log', '.bash_history', '.mysql_history',
+# The live .env is the application's configuration, not a stray backup: the PHP
+# runtimes deny dotfiles and Laravel serves public/. Copies (.env.bak, .env.old)
+# still match the suffix rules below; a world-readable .env is reported as
+# secrets_readable and fixed by normalising modes, never by removing it.
+EXPOSED_EXACT = {'error_log', 'debug.log', 'php_errorlog', 'php_error.log', '.bash_history', '.mysql_history',
                  'wp-config.php.bak', 'wp-config.php.old', 'wp-config.php.orig', 'wp-config.php.save', 'wp-config.php~',
                  'wp-config.bak', 'wp-config.old', 'wp-config.txt', 'wp-config.php.txt', 'wp-config.php.swp'}
-EXPOSED_SUFFIXES = ('.sql', '.sql.gz', '.sql.zip', '.bak', '.orig', '.old', '.swp', '.tar.gz', '.tgz', '.rar', '.7z', '.zip', '.tar')
+EXPOSED_SUFFIXES = ('.sql', '.sql.gz', '.sql.zip', '.bak', '.backup', '.orig', '.old', '.save', '.swp', '.tar.gz', '.tgz', '.rar', '.7z', '.zip', '.tar')
 NAME_ALLOW = {
     'index', 'admin', 'load', 'error', 'about', 'config', 'setup', 'debug', 'cache', 'class', 'plugin', 'theme',
     'widgets', 'media', 'users', 'edit', 'post', 'link', 'menu', 'ajax', 'cron', 'feed', 'rss', 'atom', 'update',

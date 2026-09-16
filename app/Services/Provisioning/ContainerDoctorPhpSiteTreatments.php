@@ -21,6 +21,7 @@ class ContainerDoctorPhpSiteTreatments
     public function __construct(
         private DirectAdminToContainerMigrationService $migrator,
         private ContainerDoctorPhpSiteAnalyzer $analyzer,
+        private ContainerIncidentService $incidents,
     ) {}
 
     /**
@@ -33,7 +34,15 @@ class ContainerDoctorPhpSiteTreatments
             $plan = $this->plan($probe);
             $appRoot = $probe['root'] !== '' ? $probe['root'] : $hostAppPath;
 
-            if ($plan['markers'] === [] && $plan['env_keys'] === []) {
+            // A missing .env is the commonest "not installed" of all: apps of
+            // this kind test that the file exists, and the exposed-files pass
+            // used to archive it as a stray backup. Put it back before anything else.
+            $envRestored = null;
+            if (! $probe['env_present']) {
+                $envRestored = $this->restoreEnvFile($ssh, $service, $deployment, $appRoot);
+            }
+
+            if ($plan['markers'] === [] && $plan['env_keys'] === [] && $envRestored === null) {
                 $seen = array_slice($plan['evidence'], 0, 6);
 
                 return [
@@ -91,6 +100,9 @@ class ContainerDoctorPhpSiteTreatments
             }
 
             $parts = [];
+            if ($envRestored !== null) {
+                $parts[] = $envRestored;
+            }
             if ($created !== []) {
                 $parts[] = 'created '.implode(', ', $created);
             }
@@ -122,6 +134,7 @@ class ContainerDoctorPhpSiteTreatments
         return 'root='.$root.'; [ -d "$root" ] || exit 0; app="$root"; '
             .'if [ -f "$root/backend/artisan" ]; then app="$root/backend"; fi; '
             .'echo "ROOT=$app"; cd "$app" || exit 0; '
+            .'[ -f .env ] && echo "ENV=present" || echo "ENV=missing"; '
             .'dirs=""; for d in app routes bootstrap config application system includes core src index.php public/index.php; do [ -e "$d" ] && dirs="$dirs $d"; done; '
             .'[ -z "$dirs" ] && exit 0; '
             .'files=$(grep -rIl --include="*.php" -i "install" $dirs 2>/dev/null | grep -vE "(^|/)(vendor|node_modules|storage|lang|views)/" | head -80); '
@@ -129,6 +142,7 @@ class ContainerDoctorPhpSiteTreatments
             .'  if grep -qE "redirect\(|Redirect::|header\([\'\"]Location|->to\(|RedirectResponse" "$f"; then '
             .'    echo "FILE=$f"; '
             .'    grep -nE "file_exists|is_file|File::exists|Storage::|exists\(|env\(|getenv\(|config\(|hasTable|DB::table|redirect|Location" "$f" | grep -iE "install" | head -40 | sed "s|^|LINE=$f:|"; '
+            .'    case "$(basename "$f" | tr A-Z a-z)" in *install*) grep -nE "file_exists|is_file|File::exists|base_path|\.env" "$f" | head -20 | sed "s|^|CHECK=$f:|";; esac; '
             .'  fi; '
             .'done; '
             .'grep -rnE "=> *env\([\'\"][A-Z0-9_]+[\'\"]" config 2>/dev/null | grep -i install | head -50 | sed "s|^|CONFIGENV=|"; '
@@ -136,14 +150,20 @@ class ContainerDoctorPhpSiteTreatments
     }
 
     /**
-     * @return array{root: string, files: list<string>, lines: list<array{file: string, text: string}>, config_env: array<string, string>}
+     * @return array{root: string, env_present: bool, files: list<string>, lines: list<array{file: string, text: string}>, checks: list<array{file: string, text: string}>, config_env: array<string, string>}
      */
     public function parseProbe(string $output): array
     {
-        $result = ['root' => '', 'files' => [], 'lines' => [], 'config_env' => []];
+        $result = ['root' => '', 'env_present' => true, 'files' => [], 'lines' => [], 'checks' => [], 'config_env' => []];
         foreach (preg_split("/\r\n|\n|\r/", $output) ?: [] as $raw) {
             if (str_starts_with($raw, 'ROOT=')) {
                 $result['root'] = trim(substr($raw, 5));
+            } elseif (str_starts_with($raw, 'ENV=')) {
+                $result['env_present'] = trim(substr($raw, 4)) === 'present';
+            } elseif (str_starts_with($raw, 'CHECK=')) {
+                if (preg_match('/^CHECK=([^:]+):(\d+):(.*)$/', $raw, $m) === 1) {
+                    $result['checks'][] = ['file' => $m[1], 'text' => trim($m[3])];
+                }
             } elseif (str_starts_with($raw, 'FILE=')) {
                 $result['files'][] = trim(substr($raw, 5));
             } elseif (str_starts_with($raw, 'LINE=')) {
@@ -167,14 +187,24 @@ class ContainerDoctorPhpSiteTreatments
      * and .env keys to set. Only install-related references count, so a
      * file_exists('.env') next to the redirect never turns into a file.
      *
-     * @param  array{root: string, files: list<string>, lines: list<array{file: string, text: string}>, config_env: array<string, string>}  $probe
-     * @return array{markers: list<string>, env_keys: list<string>, evidence: list<string>}
+     * @param  array{root: string, env_present: bool, files: list<string>, lines: list<array{file: string, text: string}>, checks: list<array{file: string, text: string}>, config_env: array<string, string>}  $probe
+     * @return array{markers: list<string>, env_keys: list<string>, needs_env_file: bool, evidence: list<string>}
      */
     public function plan(array $probe): array
     {
         $markers = [];
         $envKeys = [];
         $evidence = [];
+        $needsEnvFile = false;
+
+        // An install middleware that tests the .env file itself: IsInstalled.php
+        // with base_path('.env') or an $envPath it assigned from it.
+        foreach ($probe['checks'] ?? [] as $check) {
+            if (preg_match('/base_path\s*\(\s*[\'"]\.env[\'"]\s*\)|[\'"]\.env[\'"]|\$env(?:_?path|File|_?file)\b/i', $check['text']) === 1) {
+                $needsEnvFile = true;
+                $evidence[] = $check['file'].': '.mb_substr($check['text'], 0, 140);
+            }
+        }
 
         foreach ($probe['lines'] as $line) {
             $text = $line['text'];
@@ -210,8 +240,58 @@ class ContainerDoctorPhpSiteTreatments
         return [
             'markers' => array_values(array_unique($markers)),
             'env_keys' => array_values(array_unique($envKeys)),
+            'needs_env_file' => $needsEnvFile,
             'evidence' => $evidence,
         ];
+    }
+
+    /**
+     * Put a missing .env back: from the incident that archived it when there
+     * is one, otherwise rendered from the deployment's environment values so
+     * the app at least reads the platform database and app settings.
+     *
+     * @return string|null what was done, for the treatment message
+     */
+    public function restoreEnvFile(SSHService $ssh, Service $service, ContainerDeployment $deployment, string $appRoot): ?string
+    {
+        $target = rtrim($appRoot, '/').'/.env';
+
+        foreach ($this->incidents->incidentsFor($service) as $incident) {
+            $paths = array_map('strval', (array) ($incident['paths'] ?? []));
+            if (! in_array('.env', $paths, true) || ($incident['storage'] ?? '') !== ContainerIncidentService::STORAGE_FILES) {
+                continue;
+            }
+            $id = (string) ($incident['id'] ?? '');
+            if (preg_match('/^\d{8}-\d{6}-[a-z0-9]{6}$/', $id) !== 1) {
+                continue;
+            }
+            $source = $this->incidents->incidentsDir($deployment).'/'.$id.'/'.ContainerIncidentService::FILES_DIR.'/.env';
+            $output = (string) $ssh->exec($this->restoreEnvFromIncidentCommand($source, $target), 30);
+            if (str_contains($output, 'RESTORED=.env')) {
+                return 'restored .env from incident '.$id.' (the exposed-files pass had archived it)';
+            }
+        }
+
+        $values = is_array($deployment->env_values) ? $deployment->env_values : [];
+        if ($values === []) {
+            return null;
+        }
+        $content = app(LaravelAppInitializationService::class)->ensureAppKeyInEnvContent(
+            $this->migrator->mergeEnvAssignments('', array_map('strval', $values))
+        );
+        $ssh->upload($content, $target);
+        $ssh->exec('chown 33:33 '.escapeshellarg($target).' 2>/dev/null; chmod 640 '.escapeshellarg($target).'; true', 15);
+
+        return 'wrote a fresh .env from the deployment\'s environment values (no archived copy was found; app-specific keys the old host had are not in it)';
+    }
+
+    public function restoreEnvFromIncidentCommand(string $source, string $target): string
+    {
+        $s = escapeshellarg($source);
+        $t = escapeshellarg($target);
+
+        return 'if [ -f '.$s.' ] && [ ! -e '.$t.' ]; then cp -a '.$s.' '.$t.' && { chown 33:33 '.$t.' 2>/dev/null || true; } && chmod 640 '.$t.' && echo "RESTORED=.env"; '
+            .'elif [ -e '.$t.' ]; then echo "PRESENT=.env"; else echo "MISSING=source"; fi; true';
     }
 
     /**
