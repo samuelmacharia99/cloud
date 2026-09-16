@@ -727,4 +727,49 @@ class AdminDaConvertOfframpTest extends TestCase
             ],
         ];
     }
+
+    public function test_admin_restarts_a_stalled_queued_convert_from_the_console(): void
+    {
+        Bus::fake();
+        [$admin, $reseller, $ready] = $this->board();
+        $engine = Product::factory()->containerHosting()->create();
+        $batch = DaConvertBatch::query()->create([
+            'reseller_user_id' => $reseller->id,
+            'admin_user_id' => $admin->id,
+            'product_id' => $engine->id,
+            'acknowledge_mail_pull' => true,
+            'acknowledge_addon_sites' => true,
+            'status' => 'converting',
+        ]);
+        $item = DaConvertBatchItem::query()->create([
+            'da_convert_batch_id' => $batch->id,
+            'service_id' => $ready->id,
+            'product_id' => $engine->id,
+            'hostname' => 'ready.example.com',
+            'status' => DaConvertBatchItemStatus::Queued,
+        ]);
+        $ready->update(['service_meta' => array_merge($ready->service_meta ?? [], ['da_convert' => [
+            'status' => 'queued',
+            'queued_at' => now()->subHour()->toIso8601String(),
+            'target_product_id' => $engine->id,
+        ]])]);
+
+        $this->actingAs($admin)
+            ->getJson(route('admin.resellers.directadmin-offramp.progress', $reseller))
+            ->assertOk()
+            ->assertJsonPath('current.can_restart', true)
+            ->assertJsonPath('current.restart_url', route('admin.resellers.directadmin-offramp.restart', [$reseller, $batch, $item]));
+
+        $this->actingAs($admin)
+            ->postJson(route('admin.resellers.directadmin-offramp.restart', [$reseller, $batch, $item]))
+            ->assertOk()
+            ->assertJsonPath('ok', true);
+
+        Bus::assertDispatched(ConvertDirectAdminServiceToContainerJob::class, fn (ConvertDirectAdminServiceToContainerJob $job): bool => $job->batchItemId === $item->id && $job->productId === $engine->id);
+
+        // A plain form post lands back on the board with a flash.
+        $this->actingAs($admin)
+            ->post(route('admin.resellers.directadmin-offramp.restart', [$reseller, $batch, $item]))
+            ->assertRedirect(route('admin.resellers.directadmin-offramp', $reseller));
+    }
 }

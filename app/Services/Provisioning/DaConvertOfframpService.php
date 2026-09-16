@@ -338,6 +338,179 @@ class DaConvertOfframpService
         return $batch->fresh('items.service') ?? $batch;
     }
 
+    /**
+     * The console's Restart button: a queued item no worker ever started, a
+     * converting one that stopped heartbeating, or one that ended blocked or
+     * failed. A convert that is still moving keeps its button hidden.
+     *
+     * @param  array<string, mixed>  $view  the operator view for the item's service
+     */
+    public function canRestartItem(DaConvertBatchItem $item, array $view): bool
+    {
+        if ($view['is_active'] ?? false) {
+            return false;
+        }
+
+        return in_array($item->status, [
+            DaConvertBatchItemStatus::Queued,
+            DaConvertBatchItemStatus::Converting,
+            DaConvertBatchItemStatus::Failed,
+            DaConvertBatchItemStatus::Blocked,
+            DaConvertBatchItemStatus::NeedsAck,
+        ], true);
+    }
+
+    /**
+     * Restart one batch item from the console. A stale queued or converting
+     * item is re-dispatched on the same batch row with the options it was
+     * queued with; a blocked, failed or unacknowledged item goes back through
+     * preflight as a fresh single-account batch, the way the board's Retry does.
+     *
+     * @return array{ok: bool, message: string, batch_id: ?int, item_id: ?int}
+     */
+    public function restartItem(User $reseller, User $actor, DaConvertBatchItem $item): array
+    {
+        $item->loadMissing('batch', 'service');
+        if ((int) ($item->batch?->reseller_user_id ?? 0) !== (int) $reseller->id) {
+            throw new InvalidArgumentException('That convert does not belong to this reseller.');
+        }
+
+        $service = $item->service?->fresh(['user', 'product', 'node']);
+        if (! $service) {
+            return ['ok' => false, 'message' => 'The service behind this convert no longer exists.', 'batch_id' => null, 'item_id' => null];
+        }
+
+        $view = $this->mailPull->operatorView($service);
+        if (! $this->canRestartItem($item, $view)) {
+            $message = $item->status?->isActiveConvert() || ($view['is_active'] ?? false)
+                ? 'This convert is still running. Watch the log; Restart appears once it stalls or stops.'
+                : 'This account has already moved off DirectAdmin; there is nothing to restart.';
+
+            return ['ok' => false, 'message' => $message, 'batch_id' => $item->da_convert_batch_id, 'item_id' => $item->id];
+        }
+
+        if ($item->status?->isActiveConvert()) {
+            return $this->requeueStaleItem($reseller, $actor, $item, $service);
+        }
+
+        $batch = $item->batch;
+        $emailProduct = $batch?->email_product_id ? Product::query()->find($batch->email_product_id) : null;
+        $listing = $item->reseller_product_id
+            ? ResellerProduct::query()->where('reseller_id', $reseller->id)->find($item->reseller_product_id)
+            : null;
+
+        $fresh = $this->queueBatch(
+            $reseller,
+            $actor,
+            [],
+            null,
+            $emailProduct,
+            true,
+            true,
+            [$this->accountKeyForService($service)],
+            [],
+            $listing,
+        );
+        $new = $fresh->items->first();
+        $label = $new?->hostname ?: $item->hostname ?: $service->name;
+
+        if ($new?->status?->isActiveConvert()) {
+            return ['ok' => true, 'message' => 'Retrying '.$label.' from preflight. The log follows each step.', 'batch_id' => $fresh->id, 'item_id' => $new->id];
+        }
+
+        return [
+            'ok' => false,
+            'message' => $new?->error ?: ('Could not retry '.$label.'.'),
+            'batch_id' => $fresh->id,
+            'item_id' => $new?->id,
+        ];
+    }
+
+    /**
+     * @return array{ok: bool, message: string, batch_id: ?int, item_id: ?int}
+     */
+    private function requeueStaleItem(User $reseller, User $actor, DaConvertBatchItem $item, Service $service): array
+    {
+        $batch = $item->batch;
+        $product = Product::query()->find((int) ($item->product_id ?: $batch?->product_id));
+        if (! $product) {
+            return [
+                'ok' => false,
+                'message' => 'The Application Hosting engine this convert was queued with no longer exists. Retry it from the board so a plan is chosen again.',
+                'batch_id' => $batch?->id,
+                'item_id' => $item->id,
+            ];
+        }
+
+        $progress = app(DaConvertProgress::class);
+        $convert = $progress->convertMeta($service);
+        $label = $item->hostname ?: $service->name;
+
+        // A converting run that died may already have switched the row to container.
+        app(DaConvertRetryService::class)->restoreDirectAdminRow($service);
+        $released = $progress->releaseStaleNodeLock($service);
+
+        if ($convert === [] || empty($convert['target_product_id'])) {
+            $listing = $item->reseller_product_id
+                ? ResellerProduct::query()->where('reseller_id', $reseller->id)->find($item->reseller_product_id)
+                : null;
+            $this->markServiceQueued($service, $product, $item->detected_stack, $listing);
+        } else {
+            $progress->merge($service, [
+                'status' => 'queued',
+                'mode' => DaConvertProgress::MODE_PRIMARY,
+                'queued_at' => now()->toIso8601String(),
+                'retried_at' => now()->toIso8601String(),
+                'attempt' => (int) ($convert['attempt'] ?? 0) + 1,
+                'last_error' => $convert['error'] ?? null,
+                'error' => null,
+                'steps' => [],
+                'phase' => 'queued',
+                'phase_fraction' => 0.0,
+                'phase_detail' => '',
+                'completed_at' => null,
+                'failed_at' => null,
+                'target_product_id' => $product->id,
+                'target_product_name' => $product->name,
+            ]);
+        }
+
+        $item->update(['status' => DaConvertBatchItemStatus::Queued, 'error' => null]);
+
+        ConvertDirectAdminServiceToContainerJob::dispatch(
+            (int) $service->id,
+            (int) $product->id,
+            (bool) ($batch?->acknowledge_mail_pull ?? true),
+            null,
+            (bool) ($batch?->acknowledge_addon_sites ?? true),
+            $batch?->email_product_id ? (int) $batch->email_product_id : null,
+            (int) $item->id,
+        )->onQueue(self::QUEUE);
+
+        $batch?->update(['status' => DaConvertBatchStatus::Converting]);
+
+        AdminActivityService::log(
+            'reseller.da_offramp_restart',
+            'Restarted DirectAdmin off-ramp convert for '.$label.' (batch #'.$batch?->id.', item #'.$item->id.')'
+                .($actor->id === $reseller->id ? ' (restarted by the reseller)' : ''),
+            $reseller,
+            [
+                'batch_id' => $batch?->id,
+                'item_id' => $item->id,
+                'service_id' => $service->id,
+                'actor_user_id' => $actor->id,
+                'released_node_lock' => $released,
+            ]
+        );
+
+        return [
+            'ok' => true,
+            'message' => 'Restarted '.$label.'.'.($released ? ' A stale node lock from a crashed run was cleared.' : '').' The log follows each step.',
+            'batch_id' => $batch?->id,
+            'item_id' => $item->id,
+        ];
+    }
+
     public function finalizeItem(int $batchItemId): void
     {
         $item = DaConvertBatchItem::query()->with('service', 'batch')->find($batchItemId);
@@ -1640,6 +1813,10 @@ class DaConvertOfframpService
                     'wizard_url' => $forReseller ? null : route('admin.services.migrate-to-container', $service),
                     ...$view,
                     'is_active' => $itemActive,
+                    'can_restart' => $this->canRestartItem($item, $view),
+                    'restart_url' => $forReseller
+                        ? route('reseller.directadmin-offramp.restart', [$batch, $item])
+                        : route('admin.resellers.directadmin-offramp.restart', [$reseller, $batch, $item]),
                 ];
             }
         }

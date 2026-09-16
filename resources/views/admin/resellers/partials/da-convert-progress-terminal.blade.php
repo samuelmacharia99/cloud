@@ -63,9 +63,20 @@
                 class="text-[11px] leading-relaxed font-mono text-teal-100/90 p-3 h-40 overflow-auto whitespace-pre-wrap rounded-xl bg-[#050508] border border-slate-800"
                 x-text="current?.log || 'Waiting for worker steps…'"
             ></pre>
+            <p class="text-[11px]" :class="notice.ok ? 'text-emerald-300' : 'text-red-300'" x-show="notice.text" x-text="notice.text"></p>
             <div class="flex items-center justify-between gap-2 text-[11px]">
                 <span class="text-slate-500" x-show="payload.active_count > 0" x-text="`${payload.active_count} running`"></span>
-                <a class="text-sky-300 hover:underline" x-show="current?.wizard_url" :href="current?.wizard_url">Open wizard</a>
+                <span class="flex items-center gap-3">
+                    <button
+                        type="button"
+                        class="px-2 py-1 rounded border border-teal-400/40 bg-teal-500/10 text-teal-200 hover:bg-teal-500/20 disabled:opacity-50"
+                        x-show="current?.can_restart"
+                        :disabled="restarting"
+                        @click="restart()"
+                        x-text="restarting ? 'Restarting…' : 'Restart'"
+                    ></button>
+                    <a class="text-sky-300 hover:underline" x-show="current?.wizard_url" :href="current?.wizard_url">Open wizard</a>
+                </span>
             </div>
         </div>
     </div>
@@ -81,6 +92,8 @@ function daConvertProgressTerminal(initial, url) {
         open: Boolean(initial?.is_active),
         minimized: false,
         pollTimer: null,
+        restarting: false,
+        notice: { ok: true, text: '' },
         url,
 
         init() {
@@ -118,6 +131,47 @@ function daConvertProgressTerminal(initial, url) {
                 const el = this.$refs.logEl;
                 if (el) el.scrollTop = el.scrollHeight;
             });
+        },
+
+        csrfToken() {
+            const meta = document.querySelector('meta[name="csrf-token"]');
+            if (meta?.content) return meta.content;
+            const input = document.querySelector('input[name="_token"]');
+            return input?.value || '';
+        },
+
+        async restart() {
+            const target = this.current;
+            if (!target?.restart_url || this.restarting) return;
+            this.restarting = true;
+            this.notice = { ok: true, text: '' };
+            try {
+                const response = await fetch(target.restart_url, {
+                    method: 'POST',
+                    headers: {
+                        Accept: 'application/json',
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRF-TOKEN': this.csrfToken(),
+                    },
+                    body: '{}',
+                });
+                let result = null;
+                try { result = await response.json(); } catch (error) { result = null; }
+                this.notice = {
+                    ok: response.ok && Boolean(result?.ok),
+                    text: result?.message || (response.ok ? 'Restarted.' : `Restart failed (HTTP ${response.status}).`),
+                };
+                if (result?.item_id) this.selectedId = result.item_id;
+                await this.refresh();
+                this.open = true;
+                this.minimized = false;
+            } catch (error) {
+                console.error('Convert restart failed', error);
+                this.notice = { ok: false, text: 'Restart failed: could not reach the server.' };
+            } finally {
+                this.restarting = false;
+            }
         },
 
         async refresh() {

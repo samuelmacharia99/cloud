@@ -8,6 +8,7 @@ use App\Http\Requests\Reseller\CutoverDaConvertBatchRequest;
 use App\Http\Requests\Reseller\QueueDaConvertBatchRequest;
 use App\Http\Requests\Reseller\RetryDaConvertAccountRequest;
 use App\Models\DaConvertBatch;
+use App\Models\DaConvertBatchItem;
 use App\Models\ResellerProduct;
 use App\Models\Service;
 use App\Models\User;
@@ -180,6 +181,37 @@ class DaOfframpController extends Controller
         return redirect()
             ->route('reseller.directadmin-offramp')
             ->withErrors(['error' => $item?->error ?: ('Could not retry '.$label.'.')]);
+    }
+
+    /**
+     * Restart one convert from the console log: a stalled queued or converting
+     * item is re-dispatched, a blocked or failed one goes back through preflight.
+     */
+    public function restart(
+        Request $request,
+        DaConvertBatch $batch,
+        DaConvertBatchItem $item,
+        DaConvertOfframpService $offramp,
+    ): JsonResponse|RedirectResponse {
+        $reseller = $this->reseller($request);
+        abort_if((int) $batch->reseller_user_id !== (int) $reseller->id, 404);
+        abort_if((int) $item->da_convert_batch_id !== (int) $batch->id, 404);
+
+        try {
+            $result = $offramp->restartItem($reseller, $reseller, $item);
+        } catch (\Throwable $e) {
+            $result = ['ok' => false, 'message' => $e->getMessage(), 'batch_id' => $batch->id, 'item_id' => $item->id];
+        }
+
+        if ($request->expectsJson()) {
+            return response()->json($result, $result['ok'] ? 200 : 422);
+        }
+
+        $redirect = redirect()->route('reseller.directadmin-offramp');
+
+        return $result['ok']
+            ? $redirect->with('success', $result['message'])
+            : $redirect->withErrors(['error' => $result['message']]);
     }
 
     public function cutDns(CutoverDaConvertBatchRequest $request, DaConvertBatch $batch, DaConvertOfframpService $offramp): RedirectResponse

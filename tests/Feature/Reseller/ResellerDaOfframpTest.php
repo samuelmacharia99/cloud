@@ -3,6 +3,7 @@
 namespace Tests\Feature\Reseller;
 
 use App\Enums\DaConvertBatchItemStatus;
+use App\Enums\DaConvertBatchStatus;
 use App\Jobs\ConvertDirectAdminServiceToContainerJob;
 use App\Models\ContainerDeployment;
 use App\Models\DaAccountSnapshot;
@@ -23,6 +24,7 @@ use App\Services\Provisioning\DirectAdminToContainerMigrationService;
 use App\Services\Provisioning\DirectAdminToMailcowMigrationService;
 use App\Services\ResellerDirectAdminService;
 use App\Services\ResellerProvisionProductResolver;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Bus;
 use Mockery;
@@ -508,5 +510,154 @@ class ResellerDaOfframpTest extends TestCase
             'must_pull_mail' => false,
             'inventory' => ['domain' => 'blocked.example.com', 'addon_site_count' => 0],
         ];
+    }
+
+    public function test_a_stalled_queued_convert_is_restarted_from_the_console(): void
+    {
+        Bus::fake();
+        $reseller = $this->reseller();
+        $service = $this->daService($reseller, 'simbacementfactory.com');
+        $shell = app(ResellerProvisionProductResolver::class)->shellContainerProduct();
+        [$batch, $item] = $this->batchItem($reseller, $service, $shell, DaConvertBatchItemStatus::Queued);
+        $service->update(['service_meta' => array_merge($service->service_meta, ['da_convert' => [
+            'status' => 'queued',
+            'mode' => 'convert_in_place',
+            'queued_at' => now()->subMinutes(25)->toIso8601String(),
+            'target_product_id' => $shell->id,
+            'target_product_name' => $shell->name,
+        ]])]);
+
+        $this->actingAs($reseller)
+            ->getJson(route('reseller.directadmin-offramp.progress'))
+            ->assertOk()
+            ->assertJsonPath('current.item_id', $item->id)
+            ->assertJsonPath('current.can_restart', true)
+            ->assertJsonPath('current.restart_url', route('reseller.directadmin-offramp.restart', [$batch, $item]));
+
+        $this->actingAs($reseller)
+            ->postJson(route('reseller.directadmin-offramp.restart', [$batch, $item]))
+            ->assertOk()
+            ->assertJsonPath('ok', true)
+            ->assertJsonPath('item_id', $item->id);
+
+        Bus::assertDispatched(ConvertDirectAdminServiceToContainerJob::class, function (ConvertDirectAdminServiceToContainerJob $job) use ($service, $shell, $item): bool {
+            return $job->serviceId === $service->id
+                && $job->productId === $shell->id
+                && $job->batchItemId === $item->id
+                && $job->acknowledgeExtraMailboxes === true;
+        });
+
+        $service->refresh();
+        $this->assertSame('queued', $service->service_meta['da_convert']['status']);
+        $this->assertSame(1, (int) $service->service_meta['da_convert']['attempt']);
+        $this->assertTrue(now()->subMinute()->lt(Carbon::parse($service->service_meta['da_convert']['queued_at'])), 'queued_at is refreshed so the stall clock restarts');
+        $this->assertSame(DaConvertBatchItemStatus::Queued, $item->fresh()->status);
+        $this->assertSame(DaConvertBatchStatus::Converting, $batch->fresh()->status);
+        $this->assertDatabaseHas('admin_activity_logs', ['action' => 'reseller.da_offramp_restart']);
+
+        // No batch or item was created: the same row runs again.
+        $this->assertSame(1, DaConvertBatch::query()->count());
+        $this->assertSame(1, DaConvertBatchItem::query()->count());
+    }
+
+    public function test_a_convert_that_is_still_moving_cannot_be_restarted(): void
+    {
+        Bus::fake();
+        $reseller = $this->reseller();
+        $service = $this->daService($reseller, 'moving.example.com');
+        $shell = app(ResellerProvisionProductResolver::class)->shellContainerProduct();
+        [$batch, $item] = $this->batchItem($reseller, $service, $shell, DaConvertBatchItemStatus::Converting);
+        $service->update(['service_meta' => array_merge($service->service_meta, ['da_convert' => [
+            'status' => 'running',
+            'started_at' => now()->subMinutes(3)->toIso8601String(),
+            'heartbeat_at' => now()->toIso8601String(),
+            'steps' => ['Exporting site files from DirectAdmin'],
+            'target_product_id' => $shell->id,
+        ]])]);
+
+        $this->actingAs($reseller)
+            ->getJson(route('reseller.directadmin-offramp.progress'))
+            ->assertOk()
+            ->assertJsonPath('current.can_restart', false);
+
+        $this->actingAs($reseller)
+            ->postJson(route('reseller.directadmin-offramp.restart', [$batch, $item]))
+            ->assertStatus(422)
+            ->assertJsonPath('ok', false);
+
+        Bus::assertNotDispatched(ConvertDirectAdminServiceToContainerJob::class);
+        $this->assertSame('running', $service->fresh()->service_meta['da_convert']['status']);
+    }
+
+    public function test_a_blocked_convert_restarts_through_preflight_as_a_new_batch(): void
+    {
+        Bus::fake();
+        $reseller = $this->reseller(['cpu_pool_cores' => 8, 'memory_pool_mb' => 16384]);
+        $service = $this->daService($reseller, 'blocked.example.com');
+        $plan = $this->plan($reseller, 'Starter');
+        $shell = app(ResellerProvisionProductResolver::class)->shellContainerProduct();
+        [$batch, $item] = $this->batchItem($reseller, $service, $shell, DaConvertBatchItemStatus::Blocked, $plan);
+        $item->update(['error' => 'Could not capture DNS for: blocked.example.com: DirectAdmin API HTTP 401']);
+        $this->bindConvertMock([$service->id => $this->preflightOk('blocked.example.com')]);
+
+        $this->actingAs($reseller)
+            ->getJson(route('reseller.directadmin-offramp.progress'))
+            ->assertOk()
+            ->assertJsonPath('current.can_restart', true);
+
+        $response = $this->actingAs($reseller)
+            ->postJson(route('reseller.directadmin-offramp.restart', [$batch, $item]))
+            ->assertOk()
+            ->assertJsonPath('ok', true);
+
+        $newBatch = DaConvertBatch::query()->where('id', '!=', $batch->id)->firstOrFail();
+        $newItem = $newBatch->items()->firstOrFail();
+        $this->assertSame($newBatch->id, (int) $response->json('batch_id'));
+        $this->assertSame($newItem->id, (int) $response->json('item_id'));
+        $this->assertSame(DaConvertBatchItemStatus::Queued, $newItem->status);
+        $this->assertSame($plan->id, (int) $newItem->reseller_product_id, 'the plan the account was queued on is kept');
+        Bus::assertDispatched(ConvertDirectAdminServiceToContainerJob::class, fn (ConvertDirectAdminServiceToContainerJob $job): bool => $job->batchItemId === $newItem->id);
+    }
+
+    public function test_another_resellers_convert_cannot_be_restarted(): void
+    {
+        Bus::fake();
+        $reseller = $this->reseller();
+        $other = $this->reseller();
+        $service = $this->daService($other, 'theirs.example.com');
+        $shell = app(ResellerProvisionProductResolver::class)->shellContainerProduct();
+        [$batch, $item] = $this->batchItem($other, $service, $shell, DaConvertBatchItemStatus::Queued);
+
+        $this->actingAs($reseller)
+            ->postJson(route('reseller.directadmin-offramp.restart', [$batch, $item]))
+            ->assertNotFound();
+
+        Bus::assertNotDispatched(ConvertDirectAdminServiceToContainerJob::class);
+    }
+
+    /**
+     * @return array{0: DaConvertBatch, 1: DaConvertBatchItem}
+     */
+    private function batchItem(User $reseller, Service $service, Product $engine, DaConvertBatchItemStatus $status, ?ResellerProduct $listing = null): array
+    {
+        $batch = DaConvertBatch::query()->create([
+            'reseller_user_id' => $reseller->id,
+            'admin_user_id' => $reseller->id,
+            'product_id' => $engine->id,
+            'acknowledge_mail_pull' => true,
+            'acknowledge_addon_sites' => true,
+            'status' => $status === DaConvertBatchItemStatus::Blocked ? DaConvertBatchStatus::Failed : DaConvertBatchStatus::Converting,
+        ]);
+        $item = DaConvertBatchItem::query()->create([
+            'da_convert_batch_id' => $batch->id,
+            'service_id' => $service->id,
+            'product_id' => $engine->id,
+            'reseller_product_id' => $listing?->id,
+            'hostname' => $service->name,
+            'status' => $status,
+            'detected_stack' => 'wordpress',
+        ]);
+
+        return [$batch, $item];
     }
 }

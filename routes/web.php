@@ -288,6 +288,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/resellers/{user}/directadmin-offramp', [DaConvertOfframpController::class, 'store'])->middleware('throttle:da-offramp-mutate')->name('admin.resellers.directadmin-offramp.store');
         Route::post('admin/resellers/{user}/directadmin-offramp/retry', [DaConvertOfframpController::class, 'retry'])->middleware('throttle:da-offramp-mutate')->name('admin.resellers.directadmin-offramp.retry');
         Route::post('admin/resellers/{user}/directadmin-offramp/{batch}/cut-dns', [DaConvertOfframpController::class, 'cutDns'])->middleware('throttle:da-offramp-cut-dns')->name('admin.resellers.directadmin-offramp.cut-dns');
+        Route::post('admin/resellers/{user}/directadmin-offramp/{batch}/items/{item}/restart', [DaConvertOfframpController::class, 'restart'])->middleware('throttle:da-offramp-mutate')->name('admin.resellers.directadmin-offramp.restart');
         Route::get('admin/settings', [SettingController::class, 'index'])->name('admin.settings.index');
         Route::post('admin/settings', [SettingController::class, 'update'])->name('admin.settings.update');
         Route::post('admin/settings/node-nameservers', [SettingController::class, 'updateDirectAdminNameservers'])->name('admin.settings.update-node-nameservers');
@@ -539,6 +540,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('reseller/directadmin-offramp', [DaOfframpController::class, 'store'])->middleware('throttle:da-offramp-mutate')->name('reseller.directadmin-offramp.store');
         Route::post('reseller/directadmin-offramp/retry', [DaOfframpController::class, 'retry'])->middleware('throttle:da-offramp-mutate')->name('reseller.directadmin-offramp.retry');
         Route::post('reseller/directadmin-offramp/{batch}/cut-dns', [DaOfframpController::class, 'cutDns'])->middleware('throttle:da-offramp-cut-dns')->name('reseller.directadmin-offramp.cut-dns');
+        Route::post('reseller/directadmin-offramp/{batch}/items/{item}/restart', [DaOfframpController::class, 'restart'])->middleware('throttle:da-offramp-mutate')->name('reseller.directadmin-offramp.restart');
         Route::get('reseller/services/{service}', [ManagedServiceController::class, 'show'])->name('reseller.services.show');
         Route::patch('reseller/services/{service}', [ManagedServiceController::class, 'update'])->name('reseller.services.update');
         Route::post('reseller/services/{service}/diagnose', [ManagedServiceController::class, 'diagnose'])->middleware('throttle:10,1')->name('reseller.services.diagnose');
