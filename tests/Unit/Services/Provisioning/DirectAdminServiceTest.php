@@ -514,4 +514,39 @@ class DirectAdminServiceTest extends TestCase
         $this->assertSame('unknown', $status['live_status']);
         $this->assertStringContainsString('Timeout', $status['label']);
     }
+
+    public function test_auth_rejected_messages_are_recognised(): void
+    {
+        $this->assertTrue(DirectAdminService::isAuthRejectedMessage(
+            'DirectAdmin API HTTP 401: {"client_ip":"89.167.115.94","error":"Not logged in","have_lost_password":"1","success":"no"}'
+        ));
+        $this->assertTrue(DirectAdminService::isAuthRejectedMessage('Not logged in'));
+        $this->assertFalse(DirectAdminService::isAuthRejectedMessage('You do not own that domain'));
+        $this->assertFalse(DirectAdminService::isAuthRejectedMessage('cURL error 28: Operation timed out'));
+    }
+
+    public function test_account_live_status_tells_a_missing_user_from_a_suspended_one_and_a_bad_key(): void
+    {
+        $node = $this->createDirectAdminNode();
+
+        Http::fake(['*' => Http::sequence()
+            ->push('error=1&text=Unable+to+show+user&details=User+simbace+does+not+exist', 200)
+            ->push('{"suspended":"yes","domain":"reelmagicflies.com","package":"Starter"}', 200)
+            ->push('{"suspended":"no","domain":"aurahub.co.ke","package":"Starter"}', 200)
+            ->push('{"error":"Not logged in","have_lost_password":"1","success":"no"}', 401),
+        ]);
+
+        $missing = (new DirectAdminService($node))->getAccountLiveStatus('simbace');
+        $this->assertSame('terminated', $missing['live_status']);
+
+        $suspended = (new DirectAdminService($node))->getAccountLiveStatus('reelmagic');
+        $this->assertSame('suspended', $suspended['live_status']);
+
+        $active = (new DirectAdminService($node))->getAccountLiveStatus('aurahub');
+        $this->assertSame('active', $active['live_status']);
+
+        $badKey = (new DirectAdminService($node))->getAccountLiveStatus('aurahub');
+        $this->assertSame('unknown', $badKey['live_status']);
+        $this->assertTrue(DirectAdminService::isAuthRejectedMessage($badKey['label']));
+    }
 }

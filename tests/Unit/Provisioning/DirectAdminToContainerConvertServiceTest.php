@@ -1063,4 +1063,52 @@ class DirectAdminToContainerConvertServiceTest extends TestCase
 
         $this->assertNull($service->missingMysqlTemplateBlocker('laravel', ['databases' => [['name' => 'app']]]));
     }
+
+    public function test_preflight_blocks_missing_suspended_and_unreachable_directadmin_accounts(): void
+    {
+        $convert = app(DirectAdminToContainerConvertService::class);
+
+        $missing = $convert->directAdminAccountBlocker([
+            'username' => 'simbace',
+            'account' => ['node' => 'Lani', 'live_status' => 'terminated', 'live_status_label' => 'Account not found on DirectAdmin'],
+        ]);
+        $this->assertStringContainsString('simbace does not exist on Lani', (string) $missing);
+
+        $suspended = $convert->directAdminAccountBlocker([
+            'username' => 'reelmagic',
+            'account' => ['node' => 'Lani', 'live_status' => 'suspended', 'live_status_label' => 'Suspended on DirectAdmin'],
+        ]);
+        $this->assertStringContainsString('reelmagic is suspended on Lani', (string) $suspended);
+        $this->assertStringContainsString('MySQL users', (string) $suspended);
+
+        $dashboardSaysSuspended = $convert->directAdminAccountBlocker([
+            'username' => 'reelmagic',
+            'account' => ['node' => 'Lani', 'live_status' => 'unavailable', 'suspended_on_da' => true],
+        ]);
+        $this->assertStringContainsString('is suspended on Lani', (string) $dashboardSaysSuspended);
+
+        $badKey = $convert->directAdminAccountBlocker([
+            'username' => 'simbace',
+            'account' => [
+                'node' => 'Lani',
+                'live_status' => 'unknown',
+                'live_status_label' => 'DirectAdmin API HTTP 401: {"error":"Not logged in","have_lost_password":"1","success":"no"}',
+            ],
+        ]);
+        $this->assertStringContainsString('rejected the platform admin login', (string) $badKey);
+        $this->assertStringContainsString('login key', (string) $badKey);
+
+        $this->assertNull($convert->directAdminAccountBlocker([
+            'username' => 'aurahub',
+            'account' => ['node' => 'Lani', 'live_status' => 'active', 'live_status_label' => 'Active on DirectAdmin'],
+        ]));
+        $this->assertNull($convert->directAdminAccountBlocker([
+            'username' => 'aurahub',
+            'account' => ['node' => 'Lani', 'live_status' => 'unknown', 'live_status_label' => 'cURL error 28: timed out'],
+        ]), 'a transient read failure is a warning, not a blocker');
+        $this->assertNull($convert->directAdminAccountBlocker([
+            'username' => 'aurahub',
+            'account' => ['node' => 'Lani', 'live_status' => 'unavailable'],
+        ]), 'an unconfigured node is handled elsewhere');
+    }
 }

@@ -225,4 +225,30 @@ class DaAccountSnapshotServiceTest extends TestCase
         ]);
         $this->app->instance(DirectAdminToContainerMigrationService::class, $migrator);
     }
+
+    #[Test]
+    public function it_explains_a_rejected_login_as_instead_of_echoing_directadmin_json(): void
+    {
+        $service = $this->daService();
+        $this->bindInventory($service);
+
+        $api = Mockery::mock(DirectAdminCustomerPanelApi::class);
+        $api->shouldReceive('listDnsRecords')->andReturn([
+            'success' => false,
+            'message' => 'DirectAdmin API HTTP 401: {"client_ip":"89.167.115.94","error":"Not logged in","have_lost_password":"1","success":"no"}',
+            'data' => [],
+        ]);
+        $api->shouldReceive('listEmailAccounts')->andReturn(['success' => true, 'data' => [], 'message' => 'OK']);
+        $api->shouldReceive('listSubdomains')->andReturn(['success' => true, 'data' => [], 'message' => 'OK']);
+        $api->shouldReceive('listFtpAccounts')->andReturn(['success' => true, 'data' => [], 'message' => 'OK']);
+        $api->shouldReceive('getSslInfo')->andReturn(['success' => true, 'data' => [], 'message' => 'OK']);
+
+        $snapshot = app(DaAccountSnapshotService::class)->capture($service, $api);
+
+        $this->assertFalse($snapshot->isCaptured());
+        $this->assertStringContainsString('rejected login as da-shop', (string) $snapshot->error);
+        $this->assertStringContainsString($service->node->name, (string) $snapshot->error);
+        $this->assertStringContainsString('no longer exists on this node', (string) $snapshot->error);
+        $this->assertStringNotContainsString('have_lost_password', (string) $snapshot->error);
+    }
 }

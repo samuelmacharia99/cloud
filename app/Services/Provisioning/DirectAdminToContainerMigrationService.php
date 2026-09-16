@@ -93,11 +93,16 @@ class DirectAdminToContainerMigrationService
             $dashboardError = $e->getMessage();
         }
 
+        $liveStatus = $this->directAdminAccountLiveStatus($source->node, $username);
+
         $warnings = [
             'DNS must be updated to the container host after cutover.',
             'Each live website becomes its own container on the same Application Hosting package. Combined CPU, RAM, disk, and bandwidth above that package is billed as overage.',
             'Mailboxes are pulled to Mailcow (our email infra). Update MX when IMAP sync has caught up, then DirectAdmin can be decommissioned.',
         ];
+        if ($liveStatus['live_status'] === 'unknown' && ! DirectAdminService::isAuthRejectedMessage($liveStatus['label'])) {
+            $warnings[] = 'DirectAdmin account status could not be read: '.$liveStatus['label'];
+        }
 
         $apiDomains = [];
         try {
@@ -232,7 +237,9 @@ class DirectAdminToContainerMigrationService
                     ?? $source->product?->directAdminPackage?->name,
                 'da_package_key' => $meta['package'] ?? $source->product?->directAdminPackage?->package_key,
                 'panel_url' => $dashboard['panel_url'] ?? ($creds['panel_url'] ?? null),
-                'suspended_on_da' => (bool) ($dashboard['suspended'] ?? false),
+                'suspended_on_da' => (bool) ($dashboard['suspended'] ?? false) || $liveStatus['live_status'] === 'suspended',
+                'live_status' => $liveStatus['live_status'],
+                'live_status_label' => $liveStatus['label'],
                 'disk' => $dashboard['disk'] ?? null,
                 'bandwidth' => $dashboard['bandwidth'] ?? null,
                 'counts' => $dashboard['counts'] ?? ($daAccount['counts'] ?? null),
@@ -242,6 +249,28 @@ class DirectAdminToContainerMigrationService
                 'stack_error' => $stackError,
             ],
         ];
+    }
+
+    /**
+     * Ask DirectAdmin as the node admin, without login-as, whether the user still
+     * exists and whether it is suspended. Every login-as call in inventory()
+     * tolerates failure and answers a missing user, a suspended user and a bad
+     * admin key with the same bare HTTP 401, so this is the one place preflight
+     * can tell them apart before the DNS snapshot trips over it.
+     *
+     * @return array{live_status: string, label: string, detail: array<string, mixed>}
+     */
+    public function directAdminAccountLiveStatus(?Node $node, string $username): array
+    {
+        if (! $node || $username === '') {
+            return ['live_status' => 'unavailable', 'label' => 'DirectAdmin node or username missing', 'detail' => []];
+        }
+
+        try {
+            return (new DirectAdminService($node))->getAccountLiveStatus($username);
+        } catch (\Throwable $e) {
+            return ['live_status' => 'unknown', 'label' => $e->getMessage(), 'detail' => []];
+        }
     }
 
     /**
@@ -888,10 +917,7 @@ class DirectAdminToContainerMigrationService
             $this->writeRemoteMysqlDefaultsFile($daSsh, $defaultsFile, $wpCreds);
             try {
                 $progress('Dumping MySQL database '.$dbName, 0.15);
-                $daSsh->exec(
-                    $this->buildMysqlDumpCommand($wpCreds, $dbName, $dumpFile, $defaultsFile),
-                    600
-                );
+                $this->dumpDatabaseOrFallBackToDirectAdminAdmin($daSsh, $wpCreds, $dbName, $dumpFile, $defaultsFile, $progress);
             } finally {
                 @$daSsh->exec('rm -f '.escapeshellarg($defaultsFile));
             }
@@ -1225,10 +1251,7 @@ class DirectAdminToContainerMigrationService
                     $this->writeRemoteMysqlDefaultsFile($daSsh, $defaultsFile, $dbCreds);
                     try {
                         $progress('Dumping MySQL database '.$dbName, 0.15);
-                        $daSsh->exec(
-                            $this->buildMysqlDumpCommand($dbCreds, $dbName, $dumpFile, $defaultsFile),
-                            600
-                        );
+                        $this->dumpDatabaseOrFallBackToDirectAdminAdmin($daSsh, $dbCreds, $dbName, $dumpFile, $defaultsFile, $progress);
                         $progress('Downloading database dump', 0.25);
                         $daSsh->downloadToLocal($dumpFile, $localDump);
                         $localDumpPath = $localDump;
@@ -1259,7 +1282,7 @@ class DirectAdminToContainerMigrationService
                         $this->writeRemoteMysqlDefaultsFile($daSsh, $defaultsFile, $candidateCreds);
                         try {
                             $progress('Dumping MySQL database '.$candidate, 0.15);
-                            $daSsh->exec($this->buildMysqlDumpCommand($candidateCreds, $candidate, $candidateRemote, $defaultsFile), 600);
+                            $this->dumpDatabaseOrFallBackToDirectAdminAdmin($daSsh, $candidateCreds, $candidate, $candidateRemote, $defaultsFile, $progress);
                             $daSsh->downloadToLocal($candidateRemote, $candidateLocal);
                             $localDumps[] = [
                                 'path' => $candidateLocal,
@@ -2852,10 +2875,7 @@ class DirectAdminToContainerMigrationService
             $defaultsFile = $remoteWork.'/mysqldump.cnf';
             $this->writeRemoteMysqlDefaultsFile($daSsh, $defaultsFile, $dbCreds);
             try {
-                $daSsh->exec(
-                    $this->buildMysqlDumpCommand($dbCreds, (string) $dbName, $dumpFile, $defaultsFile),
-                    600
-                );
+                $this->dumpDatabaseOrFallBackToDirectAdminAdmin($daSsh, $dbCreds, (string) $dbName, $dumpFile, $defaultsFile);
                 $daSsh->downloadToLocal($dumpFile, $localDump);
             } finally {
                 @$daSsh->exec('rm -f '.escapeshellarg($defaultsFile));
@@ -4354,6 +4374,94 @@ PHP;
     /**
      * @param  array{DB_NAME?: ?string, DB_USER?: ?string, DB_PASSWORD?: ?string, DB_HOST?: string}  $creds
      */
+    /**
+     * mysqldump as the site's own MySQL user, and when MySQL refuses that user,
+     * again with the DirectAdmin admin credentials from mysql.conf. DirectAdmin
+     * locks every MySQL user of a suspended account (error 3118, "Account is
+     * locked"), and a stale wp-config password gets "Access denied"; the admin
+     * user can read the schema either way. The site's own credentials are still
+     * what the container recreates, so callers keep recording those.
+     *
+     * @param  array{DB_USER?: ?string, DB_PASSWORD?: ?string, DB_HOST?: string}  $creds
+     * @return string 'site' or 'admin', whichever produced the dump
+     */
+    public function dumpDatabaseOrFallBackToDirectAdminAdmin(
+        SSHService $ssh,
+        array $creds,
+        string $dbName,
+        string $dumpFile,
+        string $defaultsFile,
+        ?callable $progress = null,
+    ): string {
+        try {
+            $ssh->exec($this->buildMysqlDumpCommand($creds, $dbName, $dumpFile, $defaultsFile), 600);
+
+            return 'site';
+        } catch (\Throwable $e) {
+            $refusal = self::describeMysqlUserRefusal($e->getMessage());
+            if ($refusal === null) {
+                throw $e;
+            }
+            $siteUser = (string) ($creds['DB_USER'] ?? '');
+
+            $admin = $this->parseDirectAdminAdminMysqlCredentials($ssh);
+            if (blank($admin['DB_USER'])) {
+                throw new \RuntimeException(sprintf(
+                    'MySQL refused user %s for database %s (%s), and the DirectAdmin admin MySQL credentials could not be read from /usr/local/directadmin/conf/mysql.conf to dump it instead. Unsuspend the DirectAdmin account or unlock the MySQL user, then retry.',
+                    $siteUser !== '' ? $siteUser : '(unknown)',
+                    $dbName,
+                    $refusal
+                ), 0, $e);
+            }
+
+            if ($progress) {
+                $progress(sprintf(
+                    'MySQL refused user %s (%s); dumping %s with the DirectAdmin admin MySQL user instead',
+                    $siteUser !== '' ? $siteUser : '(unknown)',
+                    $refusal,
+                    $dbName
+                ), 0.15);
+            }
+            Log::warning('DirectAdmin export fell back to admin MySQL credentials', [
+                'database' => $dbName,
+                'site_user' => $siteUser,
+                'refusal' => $refusal,
+            ]);
+
+            $adminDefaults = $defaultsFile.'.admin';
+            $this->writeRemoteMysqlDefaultsFile($ssh, $adminDefaults, $admin);
+            try {
+                $ssh->exec($this->buildMysqlDumpCommand($admin, $dbName, $dumpFile, $adminDefaults), 600);
+            } finally {
+                @$ssh->exec('rm -f '.escapeshellarg($adminDefaults));
+            }
+
+            return 'admin';
+        }
+    }
+
+    /**
+     * Why MySQL refused the site user, in a few words, or null when the failure
+     * was something else (missing database, disk full) that admin credentials
+     * would not fix.
+     */
+    public static function describeMysqlUserRefusal(string $message): ?string
+    {
+        $haystack = strtolower($message);
+
+        if (str_contains($haystack, 'account is locked') || str_contains($haystack, 'error: 3118')) {
+            return 'account is locked';
+        }
+        if (str_contains($haystack, 'account is blocked')) {
+            return 'account is blocked after failed logins';
+        }
+        if (str_contains($haystack, 'access denied for user')) {
+            return 'access denied';
+        }
+
+        return null;
+    }
+
     public function writeRemoteMysqlDefaultsFile(SSHService $ssh, string $remotePath, array $creds): void
     {
         $user = (string) ($creds['DB_USER'] ?? '');

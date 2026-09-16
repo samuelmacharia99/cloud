@@ -63,7 +63,7 @@ class DaAccountSnapshotService
                 $zone['unowned_reason'] = $zone['dns_error'];
                 $zone['dns_error'] = null;
             } else {
-                $dnsFailures[] = $hostname.': '.($zone['dns_error'] ?? 'DNS list failed.');
+                $dnsFailures[] = $hostname.': '.$this->describeDnsFailure($service, $username, (string) ($zone['dns_error'] ?? 'DNS list failed.'));
             }
             $zones[] = $zone;
         }
@@ -175,6 +175,24 @@ class DaAccountSnapshotService
         }
 
         return $snapshot;
+    }
+
+    /**
+     * A DNS list runs as admin|user. DirectAdmin refuses that with a bare
+     * HTTP 401 when the user is gone from this node or the node key is wrong;
+     * say that instead of echoing the JSON.
+     */
+    private function describeDnsFailure(Service $service, string $username, string $error): string
+    {
+        if (! DirectAdminService::isAuthRejectedMessage($error)) {
+            return $error;
+        }
+
+        return sprintf(
+            'DirectAdmin on %s rejected login as %s (HTTP 401 Not logged in). Either that user no longer exists on this node or the node\'s admin login key is wrong; fix the username or node on this service, then retry.',
+            $service->node?->name ?: 'the DirectAdmin node',
+            $username
+        );
     }
 
     /**

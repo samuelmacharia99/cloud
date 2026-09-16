@@ -610,6 +610,20 @@ class DirectAdminService
         return in_array(strtolower(trim((string) $value)), ['yes', '1', 'on', 'true'], true);
     }
 
+    /**
+     * DirectAdmin answers a rejected Basic-auth pair with a bare HTTP 401
+     * "Not logged in", whether the admin key is wrong or the login-as target
+     * user does not exist. Callers use this to say so instead of echoing JSON.
+     */
+    public static function isAuthRejectedMessage(string $message): bool
+    {
+        $haystack = strtolower($message);
+
+        return str_contains($haystack, 'http 401')
+            || str_contains($haystack, 'not logged in')
+            || str_contains($haystack, 'have_lost_password');
+    }
+
     private function isMissingDirectAdminUserMessage(string $message): bool
     {
         $haystack = strtolower($message);
@@ -740,18 +754,24 @@ class DirectAdminService
         }
 
         if (preg_match('/error=1(?:&|$)/', $trimmed) || str_contains($trimmed, '"error":"1"')) {
+            // DirectAdmin puts the reason in "details" ("User does not exist"),
+            // and only a generic verdict in "text" ("Unable to show user").
             if (preg_match('/text=([^&\n]+)/', $trimmed, $matches)) {
+                $details = preg_match('/details=([^&\n]+)/', $trimmed, $detailMatches) ? trim(urldecode($detailMatches[1])) : '';
+
                 return [
                     'success' => false,
-                    'message' => urldecode($matches[1]),
+                    'message' => urldecode($matches[1]).($details !== '' ? ': '.$details : ''),
                 ];
             }
 
             $json = json_decode($trimmed, true);
             if (is_array($json) && ! empty($json['text'])) {
+                $details = is_string($json['details'] ?? null) ? trim($json['details']) : '';
+
                 return [
                     'success' => false,
-                    'message' => (string) $json['text'],
+                    'message' => (string) $json['text'].($details !== '' ? ': '.$details : ''),
                 ];
             }
 

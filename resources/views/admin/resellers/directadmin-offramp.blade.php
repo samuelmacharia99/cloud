@@ -132,6 +132,9 @@
                                             {{ $account['customer']?->name ?? $account['proposed_name'] }}
                                         </div>
                                         <div class="font-mono text-xs text-slate-600 dark:text-slate-300">{{ $account['domain'] ?: ($account['da_username'] ?: '—') }}</div>
+                                        @if (! empty($account['suspended_on_da']))
+                                            <p class="text-xs text-red-700 dark:text-red-300">Suspended on DirectAdmin. Unsuspend it before converting.</p>
+                                        @endif
                                         @if ($service)
                                             <a href="{{ route('admin.services.show', $service) }}" class="text-xs text-blue-600 hover:underline">#{{ $service->id }}</a>
                                         @else

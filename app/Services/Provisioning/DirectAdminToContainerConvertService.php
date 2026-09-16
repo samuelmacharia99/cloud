@@ -68,6 +68,10 @@ class DirectAdminToContainerConvertService
 
         $stack = $this->normalizeConvertibleStack($inventory);
 
+        if ($blocker = $this->directAdminAccountBlocker($inventory)) {
+            $blockers[] = $blocker;
+        }
+
         if (! $email['success']) {
             $blockers[] = 'Could not list email accounts: '.$email['message'];
         }
@@ -170,6 +174,50 @@ class DirectAdminToContainerConvertService
             'da_email_count' => $daEmailCount,
             'database_warnings' => $databaseWarnings,
         ];
+    }
+
+    /**
+     * The DirectAdmin account itself has to be there and unsuspended before
+     * anything else is worth checking. Inventory tolerates a login-as failure,
+     * so without this the first hard stop was the DNS snapshot, which reported
+     * a missing user, a suspended user and a bad admin key all as "HTTP 401".
+     *
+     * @param  array{username?: string, account?: array<string, mixed>}  $inventory
+     */
+    public function directAdminAccountBlocker(array $inventory): ?string
+    {
+        $account = is_array($inventory['account'] ?? null) ? $inventory['account'] : [];
+        $username = (string) ($inventory['username'] ?? '');
+        $username = $username !== '' ? $username : '(unknown)';
+        $node = (string) ($account['node'] ?? '');
+        $node = $node !== '' ? $node : 'its DirectAdmin node';
+        $status = (string) ($account['live_status'] ?? '');
+        $label = (string) ($account['live_status_label'] ?? '');
+
+        if ($status === 'terminated') {
+            return sprintf(
+                'DirectAdmin user %s does not exist on %s. The account was deleted or recreated under another username; correct the username or node on this service before converting.',
+                $username,
+                $node
+            );
+        }
+
+        if ($status === 'suspended' || ! empty($account['suspended_on_da'])) {
+            return sprintf(
+                'DirectAdmin user %s is suspended on %s. Unsuspend it before converting: DirectAdmin locks a suspended account\'s MySQL users and its site would go live again on the container.',
+                $username,
+                $node
+            );
+        }
+
+        if ($status === 'unknown' && DirectAdminService::isAuthRejectedMessage($label)) {
+            return sprintf(
+                'DirectAdmin on %s rejected the platform admin login (HTTP 401). Check the node\'s DirectAdmin admin username and login key before converting.',
+                $node
+            );
+        }
+
+        return null;
     }
 
     /**

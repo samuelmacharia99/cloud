@@ -142,6 +142,9 @@
                                         @if (! empty($account['package']))
                                             <p class="text-xs text-slate-500">DirectAdmin package: {{ $account['package'] }}</p>
                                         @endif
+                                        @if (! empty($account['suspended_on_da']))
+                                            <p class="text-xs text-red-700 dark:text-red-300">Suspended on DirectAdmin. Unsuspend it before moving it.</p>
+                                        @endif
                                     </td>
                                     <td class="py-3 pr-4">
                                         @if ($plans->isNotEmpty())
