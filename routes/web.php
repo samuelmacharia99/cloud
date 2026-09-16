@@ -406,6 +406,8 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('admin/services/{service}/container/laravel-setup', [App\Http\Controllers\Customer\ContainerController::class, 'laravelSetupStatus'])->name('admin.services.container.laravel-setup');
         Route::post('admin/services/{service}/container/php-extensions', [App\Http\Controllers\Customer\ContainerController::class, 'updatePhpExtensions'])->name('admin.services.container.php-extensions.update');
         Route::post('admin/services/{service}/container/php-version', [App\Http\Controllers\Customer\ContainerController::class, 'updatePhpVersion'])->name('admin.services.container.php-version.update');
+        Route::post('admin/services/{service}/container/wordpress-admin/password', [App\Http\Controllers\Customer\ContainerController::class, 'resetWordPressAdminPassword'])->middleware('throttle:6,10')->name('admin.services.container.wordpress-admin.password');
+        Route::post('admin/services/{service}/container/wordpress-admin/email', [App\Http\Controllers\Customer\ContainerController::class, 'updateWordPressAdminEmail'])->middleware('throttle:6,10')->name('admin.services.container.wordpress-admin.email');
         Route::put('admin/services/{service}/container/environment', [App\Http\Controllers\Customer\ContainerController::class, 'updateEnvironment'])->name('admin.services.container.environment.update');
         Route::delete('admin/services/{service}/container/environment', [App\Http\Controllers\Customer\ContainerController::class, 'deleteEnvironment'])->name('admin.services.container.environment.delete');
         Route::post('admin/services/{service}/container/cron-jobs', [App\Http\Controllers\Customer\ContainerController::class, 'storeCronJob'])->name('admin.services.container.cron-jobs.store');
@@ -545,6 +547,8 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('reseller/services/{service}', [ManagedServiceController::class, 'show'])->name('reseller.services.show');
         Route::patch('reseller/services/{service}', [ManagedServiceController::class, 'update'])->name('reseller.services.update');
         Route::post('reseller/services/{service}/diagnose', [ManagedServiceController::class, 'diagnose'])->middleware('throttle:10,1')->name('reseller.services.diagnose');
+        Route::post('reseller/services/{service}/wordpress-admin/password', [ManagedServiceController::class, 'resetWordPressAdminPassword'])->middleware('throttle:6,10')->name('reseller.services.wordpress-admin.password');
+        Route::post('reseller/services/{service}/wordpress-admin/email', [ManagedServiceController::class, 'updateWordPressAdminEmail'])->middleware('throttle:6,10')->name('reseller.services.wordpress-admin.email');
         Route::post('reseller/services/{service}/suspend', [ManagedServiceController::class, 'suspend'])->name('reseller.services.suspend');
         Route::post('reseller/services/{service}/unsuspend', [ManagedServiceController::class, 'unsuspend'])->name('reseller.services.unsuspend');
         Route::post('reseller/services/{service}/terminate', [ManagedServiceController::class, 'terminate'])->name('reseller.services.terminate');
@@ -881,6 +885,8 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('my/services/{service}/container/laravel-setup', [App\Http\Controllers\Customer\ContainerController::class, 'laravelSetupStatus'])->name('customer.services.container.laravel-setup');
         Route::post('my/services/{service}/container/php-extensions', [App\Http\Controllers\Customer\ContainerController::class, 'updatePhpExtensions'])->middleware('throttle:20,10')->name('customer.services.container.php-extensions.update');
         Route::post('my/services/{service}/container/php-version', [App\Http\Controllers\Customer\ContainerController::class, 'updatePhpVersion'])->middleware('throttle:10,10')->name('customer.services.container.php-version.update');
+        Route::post('my/services/{service}/container/wordpress-admin/password', [App\Http\Controllers\Customer\ContainerController::class, 'resetWordPressAdminPassword'])->middleware('throttle:6,10')->name('customer.services.container.wordpress-admin.password');
+        Route::post('my/services/{service}/container/wordpress-admin/email', [App\Http\Controllers\Customer\ContainerController::class, 'updateWordPressAdminEmail'])->middleware('throttle:6,10')->name('customer.services.container.wordpress-admin.email');
         Route::put('my/services/{service}/container/environment', [App\Http\Controllers\Customer\ContainerController::class, 'updateEnvironment'])->middleware('throttle:10,10')->name('customer.services.container.environment.update');
         Route::delete('my/services/{service}/container/environment', [App\Http\Controllers\Customer\ContainerController::class, 'deleteEnvironment'])->middleware('throttle:10,10')->name('customer.services.container.environment.delete');
         Route::post('my/services/{service}/container/cron-jobs', [App\Http\Controllers\Customer\ContainerController::class, 'storeCronJob'])->middleware('throttle:20,10')->name('customer.services.container.cron-jobs.store');

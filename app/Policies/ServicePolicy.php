@@ -160,6 +160,26 @@ class ServicePolicy
      * route. A reseller supporting a customer needs to see what is wrong; that
      * is not the same as being allowed to restart or rebuild someone's site.
      */
+    /**
+     * Reset or re-address the WordPress administrator of a container site:
+     * the owner, an admin, or the reseller who manages the service. A
+     * reseller supports their customer's login without impersonating them.
+     */
+    public function manageWordPressAdmin(User $user, Service $service): Response
+    {
+        if (! $service->isWordPressContainer()) {
+            return Response::deny('This action is only available for WordPress container services.');
+        }
+
+        if ($user->is_admin || $user->id === $service->user_id) {
+            return Response::allow();
+        }
+
+        return $user->is_reseller && app(ResellerScopeService::class)->managesService($user, $service)
+            ? Response::allow()
+            : Response::deny('You can only manage the WordPress admin of sites you own or manage.');
+    }
+
     public function diagnoseContainer(User $user, Service $service): Response
     {
         if ($service->product?->type !== 'container_hosting') {

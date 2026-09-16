@@ -185,6 +185,18 @@
 
                         @include('customer.services.partials.staging')
 
+                        @if (! empty($wordpressAdminPanel))
+                            @include('services.partials.wordpress-admin-account', [
+                                'wordpressAdminPanel' => $wordpressAdminPanel,
+                                'wpAdminPasswordRoute' => ($containerConsoleContext ?? 'customer') === 'admin'
+                                    ? route('admin.services.container.wordpress-admin.password', $service)
+                                    : route('customer.services.container.wordpress-admin.password', $service),
+                                'wpAdminEmailRoute' => ($containerConsoleContext ?? 'customer') === 'admin'
+                                    ? route('admin.services.container.wordpress-admin.email', $service)
+                                    : route('customer.services.container.wordpress-admin.email', $service),
+                            ])
+                        @endif
+
                         @include('customer.services.partials.overview-quick-links')
 
                         @if (!empty($hermesDashboardPanel))

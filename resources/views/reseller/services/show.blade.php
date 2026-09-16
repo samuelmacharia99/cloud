@@ -225,6 +225,14 @@
         @include('reseller.services.partials.application-diagnosis', ['service' => $service])
     @endif
 
+    @if (! empty($wordpressAdminPanel))
+        @include('services.partials.wordpress-admin-account', [
+            'wordpressAdminPanel' => $wordpressAdminPanel,
+            'wpAdminPasswordRoute' => route('reseller.services.wordpress-admin.password', $service),
+            'wpAdminEmailRoute' => route('reseller.services.wordpress-admin.email', $service),
+        ])
+    @endif
+
     @if ($service->latestDaAccountSnapshot)
         @php $snap = $service->latestDaAccountSnapshot; @endphp
         <div class="ui-card p-6 space-y-3">

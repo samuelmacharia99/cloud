@@ -4,10 +4,13 @@ namespace App\Http\Controllers\Reseller;
 
 use App\Enums\ServiceStatus;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Customer\ResetWordPressAdminPasswordRequest;
+use App\Http\Requests\Customer\UpdateWordPressAdminEmailRequest;
 use App\Models\Service;
 use App\Models\User;
 use App\Services\Provisioning\ContainerDoctorService;
 use App\Services\Provisioning\ProvisioningService;
+use App\Services\Provisioning\WordPressAdminAccountService;
 use App\Services\ResellerManagedServiceUpdateService;
 use App\Services\ResellerManagedServiceUsageService;
 use App\Services\ResellerScopeService;
@@ -138,7 +141,56 @@ class ManagedServiceController extends Controller
             'infrastructureAbsent' => $infrastructureAbsent,
             'transferTargets' => $transferTargets,
             'canTransfer' => $actions['canTransfer'] && $transferTargets->isNotEmpty(),
+            'wordpressAdminPanel' => app(WordPressAdminAccountService::class)->panelState($service, $service->containerDeployment),
         ]);
+    }
+
+    /**
+     * A reseller resets their customer's WordPress admin password without
+     * impersonating them; the new password is shown once.
+     */
+    public function resetWordPressAdminPassword(
+        ResetWordPressAdminPasswordRequest $request,
+        Service $service,
+        WordPressAdminAccountService $accounts,
+    ): RedirectResponse {
+        $this->ensureManaged($service);
+        $this->authorize('manageWordPressAdmin', $service);
+
+        try {
+            $result = $accounts->resetPassword($service, $request->user(), $request->chosenPassword());
+        } catch (\Throwable $e) {
+            report($e);
+
+            return redirect()->route('reseller.services.show', $service)
+                ->withErrors(['error' => $e->getMessage() ?: 'Could not reset the WordPress admin password. Try again in a moment.']);
+        }
+
+        return redirect()->route('reseller.services.show', $service)
+            ->with('success', 'WordPress admin password reset for '.$result['username'].'. Every signed-in session for that user was closed.')
+            ->with('wordpress_admin_password', $result['generated'] ? $result['password'] : null)
+            ->with('wordpress_admin_username', $result['username']);
+    }
+
+    public function updateWordPressAdminEmail(
+        UpdateWordPressAdminEmailRequest $request,
+        Service $service,
+        WordPressAdminAccountService $accounts,
+    ): RedirectResponse {
+        $this->ensureManaged($service);
+        $this->authorize('manageWordPressAdmin', $service);
+
+        try {
+            $result = $accounts->updateEmail($service, $request->user(), (string) $request->validated('email'));
+        } catch (\Throwable $e) {
+            report($e);
+
+            return redirect()->route('reseller.services.show', $service)
+                ->withErrors(['error' => $e->getMessage() ?: 'Could not change the WordPress admin email. Try again in a moment.']);
+        }
+
+        return redirect()->route('reseller.services.show', $service)
+            ->with('success', 'WordPress admin email for '.$result['username'].' is now '.$result['email'].'.');
     }
 
     /**

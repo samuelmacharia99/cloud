@@ -8,9 +8,11 @@ use App\Http\Requests\Customer\BindContainerDomainRequest;
 use App\Http\Requests\Customer\ImportContainerDatabaseRequest;
 use App\Http\Requests\Customer\PullContainerGitRepositoryRequest;
 use App\Http\Requests\Customer\RedeployContainerStackRequest;
+use App\Http\Requests\Customer\ResetWordPressAdminPasswordRequest;
 use App\Http\Requests\Customer\UpdateContainerGitRepositoryRequest;
 use App\Http\Requests\Customer\UpdateContainerPhpExtensionsRequest;
 use App\Http\Requests\Customer\UpdatePhpVersionRequest;
+use App\Http\Requests\Customer\UpdateWordPressAdminEmailRequest;
 use App\Http\Requests\DeleteContainerEnvironmentRequest;
 use App\Http\Requests\UpdateContainerEnvironmentRequest;
 use App\Jobs\InitializeContainerAppJob;
@@ -56,6 +58,7 @@ use App\Services\Provisioning\NginxProxyService;
 use App\Services\Provisioning\StackMemberResolver;
 use App\Services\Provisioning\StackMemberState;
 use App\Services\Provisioning\StackMemberStateService;
+use App\Services\Provisioning\WordPressAdminAccountService;
 use App\Services\SSH\SSHService;
 use App\Services\TechStackRoutingService;
 use App\Support\ContainerConsoleTabs;
@@ -139,6 +142,7 @@ class ContainerController extends Controller
         $phpVersionPanel = $supportsPhpVersion ? $runtimeVersions->panelState($service, $deployment) : null;
         $hermesDashboardPanel = app(ContainerTemplateEnvironmentService::class)
             ->hermesDashboardPanel($service, $deployment);
+        $wordpressAdminPanel = app(WordPressAdminAccountService::class)->panelState($service, $deployment);
         $gitRepositoryService = app(ContainerGitRepositoryService::class);
         $gitCredentialsService = app(ContainerGitCredentialsService::class);
         $supportsGitRepository = $gitRepositoryService->supportsService($service);
@@ -217,6 +221,7 @@ class ContainerController extends Controller
             'supportsPhpVersion' => $supportsPhpVersion,
             'phpVersionPanel' => $phpVersionPanel,
             'hermesDashboardPanel' => $hermesDashboardPanel,
+            'wordpressAdminPanel' => $wordpressAdminPanel,
             'supportsGitRepository' => $supportsGitRepository,
             'gitRepository' => $gitRepository,
             'containerLimits' => $containerLimits,
@@ -564,6 +569,52 @@ class ContainerController extends Controller
         }
 
         return $this->redirectToContainerTab($service, 'php-version')->with($result['changed'] ? 'success' : 'info', $result['message']);
+    }
+
+    public function resetWordPressAdminPassword(
+        ResetWordPressAdminPasswordRequest $request,
+        Service $service,
+        WordPressAdminAccountService $accounts,
+    ): RedirectResponse {
+        $this->authorize('manageWordPressAdmin', $service);
+
+        try {
+            $result = $accounts->resetPassword($service, $request->user(), $request->chosenPassword());
+        } catch (\InvalidArgumentException $e) {
+            return $this->consoleTabRedirect($service, 'overview')->withErrors(['error' => $e->getMessage()]);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return $this->consoleTabRedirect($service, 'overview')
+                ->withErrors(['error' => $e->getMessage() ?: 'Could not reset the WordPress admin password. Try again in a moment.']);
+        }
+
+        return $this->consoleTabRedirect($service, 'overview')
+            ->with('success', 'WordPress admin password reset for '.$result['username'].'. Every signed-in session for that user was closed.')
+            ->with('wordpress_admin_password', $result['generated'] ? $result['password'] : null)
+            ->with('wordpress_admin_username', $result['username']);
+    }
+
+    public function updateWordPressAdminEmail(
+        UpdateWordPressAdminEmailRequest $request,
+        Service $service,
+        WordPressAdminAccountService $accounts,
+    ): RedirectResponse {
+        $this->authorize('manageWordPressAdmin', $service);
+
+        try {
+            $result = $accounts->updateEmail($service, $request->user(), (string) $request->validated('email'));
+        } catch (\InvalidArgumentException $e) {
+            return $this->consoleTabRedirect($service, 'overview')->withErrors(['error' => $e->getMessage()]);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return $this->consoleTabRedirect($service, 'overview')
+                ->withErrors(['error' => $e->getMessage() ?: 'Could not change the WordPress admin email. Try again in a moment.']);
+        }
+
+        return $this->consoleTabRedirect($service, 'overview')
+            ->with('success', 'WordPress admin email for '.$result['username'].' is now '.$result['email'].'.');
     }
 
     public function initializeLaravel(Service $service, LaravelAppInitializationService $initializationService): RedirectResponse
