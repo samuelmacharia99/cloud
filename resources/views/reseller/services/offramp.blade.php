@@ -199,7 +199,7 @@
                                     <td class="py-3">
                                         <div class="flex flex-wrap gap-2">
                                             <template x-if="row(@js($account['key']))?.can_retry">
-                                                <button type="submit" form="da-retry" name="account_key" value="{{ $account['key'] }}" class="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-medium">Retry</button>
+                                                <button type="button" x-on:click.prevent="retryRow(@js($account['key']))" class="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-medium">Retry</button>
                                             </template>
                                             <template x-if="row(@js($account['key']))?.can_restart && row(@js($account['key']))?.cutover_item_id">
                                                 <button type="button" class="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-medium disabled:opacity-50"
@@ -339,8 +339,9 @@
         @endforeach
     </datalist>
 
-    <form id="da-retry" method="POST" action="{{ route('reseller.directadmin-offramp.retry') }}">
+    <form id="da-retry" method="POST" action="{{ route('reseller.directadmin-offramp.retry') }}" x-ref="retryForm">
         @csrf
+        <input type="hidden" name="account_key" x-ref="retryAccountKey">
         <input type="hidden" name="reseller_product_id" :value="$refs.product?.value">
         <input type="hidden" name="email_reseller_product_id" :value="$refs.email?.value">
         <input type="hidden" name="acknowledge_mail_pull" value="1" x-bind:disabled="!$refs.mailAck?.checked">
@@ -402,6 +403,25 @@ function daOfframpBoard(initialRows, url, restartUrlTemplate) {
         toggleFix(key) {
             this.fixingKey = this.fixingKey === key ? null : key;
             if (this.fixingKey) this.repullKey = null;
+        },
+
+        // The row's plan select belongs to the move form; a retry must carry
+        // that choice too, or the account blocks on "choose a plan" again.
+        retryRow(key) {
+            const form = this.$refs.retryForm;
+            if (!form) return;
+            this.$refs.retryAccountKey.value = key;
+            form.querySelectorAll('input[data-retry-plan]').forEach((el) => el.remove());
+            const select = document.querySelector(`select[name="plans[${CSS.escape(key)}]"]`);
+            if (select && select.value) {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = `plans[${key}]`;
+                input.value = select.value;
+                input.dataset.retryPlan = '1';
+                form.appendChild(input);
+            }
+            form.submit();
         },
 
         toggleRepull(key) {

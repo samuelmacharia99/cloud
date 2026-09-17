@@ -283,7 +283,7 @@ class DaConvertOfframpService
 
             $chosen = $chosenListings[$this->accountKeyForService($row['service'])]
                 ?? $chosenListings['service:'.$row['service']->id]
-                ?? null;
+                ?? $this->listingFromLatestItem($reseller, $row['service']);
             $mapped = $this->packages->resolveForService($reseller, $row['service'], $product, $chosen);
             if (! $mapped['listing'] && $fallbackListing) {
                 // Explicit choice, then the DirectAdmin package mapping, then the fallback plan.
@@ -1979,6 +1979,25 @@ class DaConvertOfframpService
      * @param  array<string, int>  $plans
      * @return array<string, ResellerProduct>
      */
+    /**
+     * The plan the account was last queued on, so a Retry that arrives
+     * without a plan choice (the row's select belongs to the move form, not
+     * the retry form) does not fall back to "choose a plan" again.
+     */
+    private function listingFromLatestItem(User $reseller, Service $service): ?ResellerProduct
+    {
+        $item = $this->latestItemForService($reseller, $service);
+        if (! $item?->reseller_product_id) {
+            return null;
+        }
+
+        return ResellerProduct::query()
+            ->where('reseller_id', $reseller->id)
+            ->where('type', 'container_hosting')
+            ->where('is_active', true)
+            ->find($item->reseller_product_id);
+    }
+
     private function resolvePlanChoices(User $reseller, array $plans): array
     {
         $ids = array_values(array_unique(array_filter(array_map('intval', $plans))));

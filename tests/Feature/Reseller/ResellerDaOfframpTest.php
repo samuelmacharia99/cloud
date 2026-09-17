@@ -909,4 +909,31 @@ class ResellerDaOfframpTest extends TestCase
         $page->assertSee('Same domain as service #'.$linked->id, false);
         $page->assertSee('Same domain as service #'.$stale->id, false);
     }
+
+    public function test_a_retry_without_a_plan_choice_keeps_the_plan_the_row_was_queued_on(): void
+    {
+        Bus::fake();
+        $reseller = $this->reseller(['cpu_pool_cores' => 8, 'memory_pool_mb' => 16384]);
+        $service = $this->daService($reseller, 'mobiwave.co.ke');
+        $plan = $this->plan($reseller, 'Starter');
+        $shell = app(ResellerProvisionProductResolver::class)->shellContainerProduct();
+        [$batch, $item] = $this->batchItem($reseller, $service, $shell, DaConvertBatchItemStatus::Blocked, $plan);
+        $item->update(['error' => 'Could not capture DNS']);
+        $this->bindConvertMock([$service->id => $this->preflightOk('mobiwave.co.ke')]);
+
+        $this->actingAs($reseller)
+            ->post(route('reseller.directadmin-offramp.retry'), ['account_key' => 'da:'.$service->service_meta['username']])
+            ->assertRedirect(route('reseller.directadmin-offramp'))
+            ->assertSessionHas('success');
+
+        $newItem = DaConvertBatch::query()->where('id', '!=', $batch->id)->firstOrFail()->items()->firstOrFail();
+        $this->assertSame(DaConvertBatchItemStatus::Queued, $newItem->status, 'the retry queued instead of blocking on a missing plan');
+        $this->assertSame($plan->id, (int) $newItem->reseller_product_id);
+
+        $this->actingAs($reseller)
+            ->get(route('reseller.directadmin-offramp'))
+            ->assertOk()
+            ->assertSee('retryRow(', false)
+            ->assertSee('name="account_key" x-ref="retryAccountKey"', false);
+    }
 }
