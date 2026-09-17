@@ -896,6 +896,17 @@ class ResellerDaOfframpTest extends TestCase
             ->assertOk()
             ->assertSee('lists 2 accounts under your login res_acme')
             ->assertSee('1 linked to a row here, 1 not yet on the platform')
-            ->assertSee('freshuser');
+            ->assertSee('freshuser')
+            ->assertSee('Live on DirectAdmin as');
+
+        // A second row for the same domain whose username DirectAdmin no longer has.
+        $stale = $this->daService($reseller, 'stale-placeholder.example.com');
+        $stale->update(['name' => 'linked.example.com', 'external_reference' => 'oldname', 'service_meta' => ['username' => 'oldname', 'domain' => 'linked.example.com']]);
+
+        $page = $this->actingAs($reseller)->get(route('reseller.directadmin-offramp'))->assertOk();
+        $page->assertSee('Not on DirectAdmin under your login as');
+        $page->assertSee('oldname');
+        $page->assertSee('Same domain as service #'.$linked->id, false);
+        $page->assertSee('Same domain as service #'.$stale->id, false);
     }
 }

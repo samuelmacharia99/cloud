@@ -150,6 +150,14 @@
                                         <div class="font-mono text-xs text-slate-600 dark:text-slate-300">{{ $account['domain'] ?: ($account['da_username'] ?: '—') }}</div>
                                         @if ($service)
                                             <a href="{{ route('reseller.services.show', $service) }}" class="text-xs text-violet-700 dark:text-violet-300 hover:underline">Service #{{ $service->id }}</a>
+                                            @if (($account['da_listed'] ?? null) === true)
+                                                <p class="text-xs text-emerald-700 dark:text-emerald-300">Live on DirectAdmin as <span class="font-mono">{{ $account['da_username'] }}</span></p>
+                                            @elseif (($account['da_listed'] ?? null) === false)
+                                                <p class="text-xs text-amber-700 dark:text-amber-300">Not on DirectAdmin under your login as <span class="font-mono">{{ $account['da_username'] ?: '(no username)' }}</span>: nothing to pull for this row.</p>
+                                            @endif
+                                            @if (! empty($account['duplicate_service_ids']))
+                                                <p class="text-xs text-amber-700 dark:text-amber-300">Same domain as service #{{ implode(', #', $account['duplicate_service_ids']) }}. Move the row that is live on DirectAdmin and delete the other from its service page.</p>
+                                            @endif
                                         @else
                                             <p class="text-xs text-amber-700">Not in your customer list yet. Moving it creates the customer as {{ $account['proposed_email'] ?: 'info@…' }}</p>
                                         @endif

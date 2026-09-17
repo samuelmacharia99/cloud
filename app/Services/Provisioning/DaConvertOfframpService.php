@@ -124,7 +124,75 @@ class DaConvertOfframpService
             $rows[$key] = $this->accountFromDaEntry($reseller, $entry, $key);
         }
 
+        $this->markRowsAgainstDirectAdmin($reseller, $rows);
+
         return collect(array_values($rows));
+    }
+
+    /**
+     * Say, per row, whether DirectAdmin still lists the username the row
+     * carries, and which other rows share its domain. A row whose name is
+     * gone from DirectAdmin has nothing to pull; a domain on two rows means
+     * one of them is a duplicate.
+     *
+     * @param  array<string, array<string, mixed>>  $rows
+     */
+    private function markRowsAgainstDirectAdmin(User $reseller, array &$rows): void
+    {
+        $listed = $this->liveDirectAdminUsernameList($reseller);
+
+        $byDomain = [];
+        foreach ($rows as $key => $row) {
+            $domain = strtolower(trim((string) ($row['domain'] ?? '')));
+            $domain = preg_replace('/^www\./', '', $domain) ?? $domain;
+            if ($domain !== '' && ($row['service'] ?? null) instanceof Service) {
+                $byDomain[$domain][] = (int) $row['service']->id;
+            }
+        }
+
+        foreach ($rows as $key => $row) {
+            $service = $row['service'] ?? null;
+            if (! $service instanceof Service) {
+                $rows[$key]['da_listed'] = true;
+                $rows[$key]['duplicate_service_ids'] = [];
+
+                continue;
+            }
+            $username = strtolower((string) ($row['da_username'] ?? ''));
+            $rows[$key]['da_listed'] = $listed === null || $username === '' ? null : in_array($username, $listed, true);
+            $domain = preg_replace('/^www\./', '', strtolower(trim((string) ($row['domain'] ?? '')))) ?? '';
+            $rows[$key]['duplicate_service_ids'] = array_values(array_filter(
+                $byDomain[$domain] ?? [],
+                fn (int $id): bool => $id !== (int) $service->id
+            ));
+        }
+    }
+
+    /**
+     * The usernames DirectAdmin lists under the reseller's login, from the
+     * same cache the board uses, or null when no login is connected.
+     *
+     * @return list<string>|null
+     */
+    private function liveDirectAdminUsernameList(User $reseller): ?array
+    {
+        if (! $this->resellerDirectAdmin->hasDirectAdminBinding($reseller)) {
+            return null;
+        }
+        $da = $this->resellerDirectAdmin->directAdmin($reseller);
+        if (! $da) {
+            return null;
+        }
+        $generation = $this->liveDaCacheGeneration($reseller);
+
+        return Cache::remember(
+            $this->liveDaUserListCacheKey($reseller, $generation),
+            self::LIVE_DA_USER_LIST_TTL,
+            fn (): array => array_values(array_filter(array_map(
+                static fn (mixed $username): string => strtolower(trim((string) $username)),
+                $da->listUsersOwnedByReseller((string) $reseller->directadmin_username) ?? []
+            )))
+        );
     }
 
     /**
