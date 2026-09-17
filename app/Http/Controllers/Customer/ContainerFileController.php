@@ -16,12 +16,14 @@ use App\Jobs\BuildContainerArchiveJob;
 use App\Jobs\ExtractContainerArchiveJob;
 use App\Models\ContainerDeployment;
 use App\Models\Service;
+use App\Services\Provisioning\ChunkedUploadStore;
 use App\Services\Provisioning\ContainerArchiveCommands;
 use App\Services\Provisioning\ContainerFileOperationProgress;
 use App\Services\Provisioning\ContainerFileService;
 use App\Services\Provisioning\ContainerFileServiceFactory;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -149,6 +151,10 @@ class ContainerFileController extends Controller
         $files = $this->files($service);
         $results = [];
         $failures = 0;
+
+        if ($request->isChunk()) {
+            return $this->uploadChunk($service, $request, $files, $path);
+        }
 
         try {
             if ($request->isLegacySingleFile()) {
@@ -474,6 +480,66 @@ class ContainerFileController extends Controller
     /**
      * @return array<string, mixed>
      */
+    /**
+     * One slice of a large file. Until the last slice lands the answer is
+     * "pending"; then the assembled file takes the same streamed path to the
+     * node as a plain upload, and the panel copy is removed either way.
+     */
+    private function uploadChunk(Service $service, UploadContainerFileRequest $request, ContainerFileService $files, string $path): JsonResponse
+    {
+        $deployment = $service->containerDeployment;
+        $store = app(ChunkedUploadStore::class);
+        $uploadId = (string) $request->validated('upload_id');
+        $filename = $request->chunkFilename();
+
+        try {
+            $stored = $store->store(
+                'files',
+                (int) $service->id,
+                $uploadId,
+                (int) $request->validated('chunk_index'),
+                (int) $request->validated('chunk_total'),
+                $request->file('file'),
+            );
+        } catch (\Throwable $e) {
+            $store->forget('files', (int) $service->id, $uploadId);
+
+            return response()->json(['error' => 'Upload failed: '.$e->getMessage()], 422);
+        }
+
+        if (! $stored['complete']) {
+            return response()->json(['success' => true, 'pending' => true, 'received' => $stored['received'], 'total' => $stored['total']]);
+        }
+
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(0);
+        }
+        @ini_set('max_execution_time', '0');
+
+        try {
+            $assembled = new UploadedFile((string) $stored['path'], $filename, null, null, true);
+            $files->mkdir($service, $deployment, $path, auth()->user(), $request->ip());
+            $relPath = $files->uploadStreamed($service, $deployment, $path, $assembled, auth()->user(), $request->ip());
+            $row = ['name' => $filename, 'path' => $relPath, 'size' => $assembled->getSize(), 'status' => 'uploaded'];
+
+            if ($request->shouldExtract() && ContainerArchiveCommands::kind($filename) !== null) {
+                $operation = $this->startExtract($service, $deployment, $relPath, $path, true, $request);
+                $row['status'] = 'extracting';
+                $row['operation'] = $operation;
+            }
+
+            return response()->json(['success' => true, 'files' => [$row], 'error' => null]);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['success' => false, 'files' => [['name' => $filename, 'status' => 'failed', 'error' => $e->getMessage()]], 'error' => $e->getMessage()], 422);
+        } catch (\Exception $e) {
+            \Log::error("Failed to upload chunked container file for service {$service->id}: ".$e->getMessage());
+
+            return response()->json(['success' => false, 'files' => [['name' => $filename, 'status' => 'failed', 'error' => 'Upload failed. Please try again or contact support.']], 'error' => 'Upload failed. Please try again or contact support.'], 500);
+        } finally {
+            $store->forget('files', (int) $service->id, $uploadId);
+        }
+    }
+
     private function startExtract(Service $service, ContainerDeployment $deployment, string $archivePath, string $destination, bool $deleteArchive, Request $request): array
     {
         $operation = $this->operations->start($service, $deployment, ContainerFileOperationProgress::TYPE_EXTRACT, [

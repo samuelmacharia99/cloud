@@ -1,4 +1,5 @@
-@php($containerUploadMaxMb = (int) config('security.container_file_upload.max_size_mb', 100))
+@php($containerUploadMaxMb = \App\Http\Requests\Customer\UploadContainerFileRequest::maxUploadMb())
+@php($containerUploadMaxLabel = $containerUploadMaxMb >= 1024 ? rtrim(rtrim(number_format($containerUploadMaxMb / 1024, 1), '0'), '.').' GB' : $containerUploadMaxMb.' MB')
 @php($editorMaxKb = (int) round(((int) config('containers.file_editor.max_bytes', 524288)) / 1024))
 @php($maxExtractMb = (int) config('containers.file_manager.max_extract_mb', 2048))
 @php($maxArchiveMb = (int) config('containers.file_manager.max_archive_download_mb', 500))
@@ -44,7 +45,7 @@
                     ↻ Refresh
                 </button>
                 <input type="file" x-ref="fileInput" @change="handleFileSelect" class="hidden" multiple>
-                <span class="text-xs text-slate-500 dark:text-slate-400">Max {{ $containerUploadMaxMb }} MB per file · {{ $editorMaxKb }} KB editor limit</span>
+                <span class="text-xs text-slate-500 dark:text-slate-400">Max {{ $containerUploadMaxLabel }} per file · {{ $editorMaxKb }} KB editor limit</span>
             </div>
 
             <div x-show="selected.length > 0" x-cloak class="flex items-center gap-2 flex-wrap p-2 rounded-lg bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700">
@@ -288,6 +289,8 @@ function fileManager() {
     return {
         maxUploadBytes: {{ $containerUploadMaxMb }} * 1024 * 1024,
         maxUploadMb: {{ $containerUploadMaxMb }},
+        maxUploadLabel: @js($containerUploadMaxLabel),
+        chunkBytes: {{ \App\Services\Provisioning\ChunkedUploadStore::CHUNK_BYTES }},
         open: @json($filesTabActive),
         loading: false,
         busy: false,
@@ -548,9 +551,19 @@ function fileManager() {
         async uploadFiles(files) {
             const tooLarge = files.filter((file) => file.size > this.maxUploadBytes);
             if (tooLarge.length) {
-                this.error = `${tooLarge.map((f) => `"${f.name}"`).join(', ')} exceed${tooLarge.length === 1 ? 's' : ''} the ${this.maxUploadMb} MB upload limit.`;
+                this.error = `${tooLarge.map((f) => `"${f.name}"`).join(', ')} exceed${tooLarge.length === 1 ? 's' : ''} the ${this.maxUploadLabel} upload limit.`;
                 files = files.filter((file) => file.size <= this.maxUploadBytes);
                 if (!files.length) return;
+            }
+
+            // Anything larger than one slice goes up in slices, so the panel's
+            // PHP and nginx body limits never decide what a customer can upload.
+            const large = files.filter((file) => file.size > this.chunkBytes);
+            const small = files.filter((file) => file.size <= this.chunkBytes);
+            if (large.length) {
+                await this.uploadInChunks(large);
+                if (!small.length) return;
+                files = small;
             }
 
             const formData = new FormData();
@@ -605,6 +618,61 @@ function fileManager() {
             } catch (err) {
                 this.error = err.message;
                 this.uploads = this.uploads.map((row) => ({ ...row, status: 'failed', error: err.message }));
+            } finally {
+                this.uploading = false;
+                this.uploadProgress = 0;
+            }
+        },
+
+        async uploadInChunks(files) {
+            this.uploading = true;
+            this.uploadProgress = 0;
+            this.uploadCount = files.length;
+            this.uploads = files.map((file) => ({ name: file.name, status: 'uploading', error: null }));
+            this.error = null;
+            const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
+            let sentBytes = 0;
+
+            try {
+                for (const [position, file] of files.entries()) {
+                    const chunkTotal = Math.max(1, Math.ceil(file.size / this.chunkBytes));
+                    const uploadId = Array.from(crypto.getRandomValues(new Uint8Array(16))).map((b) => b.toString(16).padStart(2, '0')).join('');
+                    let data = {};
+                    for (let index = 0; index < chunkTotal; index++) {
+                        const chunk = file.slice(index * this.chunkBytes, Math.min(file.size, (index + 1) * this.chunkBytes));
+                        const formData = new FormData();
+                        formData.append('file', chunk, file.name);
+                        formData.append('filename', file.name);
+                        formData.append('path', this.currentPath);
+                        formData.append('extract', this.extractAfterUpload ? '1' : '0');
+                        formData.append('upload_id', uploadId);
+                        formData.append('chunk_index', String(index));
+                        formData.append('chunk_total', String(chunkTotal));
+
+                        const response = await fetch(`{{ container_route('files.upload', $service->id) }}`, {
+                            method: 'POST',
+                            headers: { 'X-CSRF-TOKEN': csrf(), 'Accept': 'application/json' },
+                            body: formData,
+                        });
+                        try { data = await response.json(); } catch (_) { data = {}; }
+                        if (!response.ok) {
+                            throw new Error(data.error || data.message || (data.errors ? Object.values(data.errors).flat().join(' ') : `Upload failed (HTTP ${response.status})`));
+                        }
+                        sentBytes += chunk.size;
+                        this.uploadProgress = Math.round((sentBytes / totalBytes) * 100);
+                        if (data.pending && index < chunkTotal - 1) continue;
+                    }
+
+                    const row = (data.files || [])[0] || { name: file.name, status: 'uploaded' };
+                    this.uploads[position] = { name: row.name || file.name, status: row.status, error: row.error || null };
+                    if (row.status === 'extracting' && row.operation) {
+                        this.watchOperation(row.operation);
+                    }
+                }
+                this.loadDirectory();
+            } catch (err) {
+                this.error = err.message;
+                this.uploads = this.uploads.map((row) => (row.status === 'uploading' ? { ...row, status: 'failed', error: err.message } : row));
             } finally {
                 this.uploading = false;
                 this.uploadProgress = 0;

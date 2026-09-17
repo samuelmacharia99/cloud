@@ -10,6 +10,7 @@ use App\Models\Node;
 use App\Models\Product;
 use App\Models\Service;
 use App\Models\User;
+use App\Services\Provisioning\ChunkedUploadStore;
 use App\Services\Provisioning\ContainerFileOperationProgress;
 use App\Services\Provisioning\ContainerFileService;
 use App\Services\Provisioning\ContainerFileServiceFactory;
@@ -249,5 +250,83 @@ class ContainerFileManagerTest extends TestCase
         ]);
 
         return [$customer, $service->fresh(['product.containerTemplate', 'containerDeployment.node'])];
+    }
+
+    public function test_a_large_file_arrives_in_chunks_and_is_streamed_once_the_last_one_lands(): void
+    {
+        Bus::fake();
+        [$customer, $service] = $this->deployedService();
+        $ssh = $this->fakeSsh();
+        $ssh->shouldReceive('mkdirp')->once();
+        $ssh->shouldReceive('execWithStatus')->with(Mockery::pattern('/^df -B1/'), 20)->andReturn(['output' => '999999999999', 'status' => 0]);
+        $streamed = null;
+        $ssh->shouldReceive('uploadFromLocal')->once()->andReturnUsing(function (string $local, string $remote) use (&$streamed): void {
+            $streamed = ['content' => (string) file_get_contents($local), 'remote' => $remote];
+        });
+        $ssh->shouldReceive('exec')->with(Mockery::pattern('/^chown -R/'), 300)->andReturn('');
+        $uploadId = str_repeat('ab', 16);
+
+        $first = $this->actingAs($customer)
+            ->post(route('customer.services.container.files.upload', $service), [
+                'path' => '/wp-content',
+                'extract' => '1',
+                'filename' => 'wp-content.zip',
+                'upload_id' => $uploadId,
+                'chunk_index' => 0,
+                'chunk_total' => 2,
+                'file' => UploadedFile::fake()->createWithContent('wp-content.zip', 'PK-first-half-'),
+            ], ['Accept' => 'application/json']);
+        $first->assertOk()->assertJsonPath('pending', true)->assertJsonPath('received', 1);
+
+        $second = $this->actingAs($customer)
+            ->post(route('customer.services.container.files.upload', $service), [
+                'path' => '/wp-content',
+                'extract' => '1',
+                'filename' => 'wp-content.zip',
+                'upload_id' => $uploadId,
+                'chunk_index' => 1,
+                'chunk_total' => 2,
+                'file' => UploadedFile::fake()->createWithContent('wp-content.zip', 'second-half'),
+            ], ['Accept' => 'application/json']);
+        $this->assertSame(200, $second->status(), $second->getContent());
+        $second->assertJsonPath('success', true)
+            ->assertJsonPath('files.0.path', '/wp-content/wp-content.zip')
+            ->assertJsonPath('files.0.status', 'extracting');
+
+        $this->assertSame('PK-first-half-second-half', $streamed['content'], 'the slices are joined in order');
+        $this->assertStringEndsWith('/wp-content/wp-content.zip', $streamed['remote']);
+        Bus::assertDispatched(ExtractContainerArchiveJob::class, fn ($job) => $job->archivePath === '/wp-content/wp-content.zip');
+        $this->assertDirectoryDoesNotExist(app(ChunkedUploadStore::class)->directory('files', (int) $service->id, $uploadId), 'the panel copy is gone');
+    }
+
+    public function test_a_chunk_with_a_forbidden_name_or_beyond_the_ceiling_is_refused(): void
+    {
+        [$customer, $service] = $this->deployedService();
+        $uploadId = str_repeat('cd', 16);
+
+        $this->actingAs($customer)
+            ->postJson(route('customer.services.container.files.upload', $service), [
+                'path' => '/',
+                'filename' => 'shell.phtml',
+                'upload_id' => $uploadId,
+                'chunk_index' => 0,
+                'chunk_total' => 3,
+                'file' => UploadedFile::fake()->createWithContent('shell.phtml', '<?php'),
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('filename');
+
+        config(['security.container_file_manager_upload.max_size_mb' => 10]);
+        $this->actingAs($customer)
+            ->postJson(route('customer.services.container.files.upload', $service), [
+                'path' => '/',
+                'filename' => 'big.zip',
+                'upload_id' => $uploadId,
+                'chunk_index' => 0,
+                'chunk_total' => 500,
+                'file' => UploadedFile::fake()->createWithContent('big.zip', 'PK'),
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('chunk_total');
     }
 }

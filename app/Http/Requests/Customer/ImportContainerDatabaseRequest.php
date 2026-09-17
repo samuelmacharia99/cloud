@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Customer;
 
+use App\Services\Provisioning\ChunkedUploadStore;
 use App\Services\Provisioning\ContainerSqlDumpImportService;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
@@ -9,11 +10,9 @@ use Illuminate\Http\Exceptions\HttpResponseException;
 
 class ImportContainerDatabaseRequest extends FormRequest
 {
-    /** The browser slices dumps this large; it must stay under PHP's 2 MB post limit. */
-    public const CHUNK_BYTES = 1024 * 1024;
+    public const CHUNK_BYTES = ChunkedUploadStore::CHUNK_BYTES;
 
-    /** A chunk may carry some multipart overhead beyond CHUNK_BYTES. */
-    public const CHUNK_MAX_KB = 2048;
+    public const CHUNK_MAX_KB = ChunkedUploadStore::CHUNK_MAX_KB;
 
     public function authorize(): bool
     {
@@ -26,7 +25,7 @@ class ImportContainerDatabaseRequest extends FormRequest
      */
     public static function maxChunks(int $maxMb): int
     {
-        return (int) ceil(($maxMb * 1024 * 1024) / self::CHUNK_BYTES) + 1;
+        return ChunkedUploadStore::maxChunks($maxMb);
     }
 
     public function rules(): array

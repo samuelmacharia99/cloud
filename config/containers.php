@@ -248,8 +248,10 @@ return [
     ],
 
     'file_manager' => [
-        // Largest declared uncompressed size an archive may extract to.
-        'max_extract_mb' => (int) env('CONTAINER_FILE_MAX_EXTRACT_MB', 2048),
+        // Largest declared uncompressed size an archive may extract to. Follows
+        // the file-manager upload ceiling so an archive that could be uploaded
+        // can also be unpacked; free disk on the node is checked separately.
+        'max_extract_mb' => (int) env('CONTAINER_FILE_MAX_EXTRACT_MB', 102400),
         // Largest selection that "Download as zip" will pack.
         'max_archive_download_mb' => (int) env('CONTAINER_FILE_MAX_ARCHIVE_MB', 500),
         // How long extract / zip-build progress and built archives are kept.

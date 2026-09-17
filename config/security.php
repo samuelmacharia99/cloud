@@ -107,6 +107,13 @@ return [
         'max_size_mb' => (int) env('CONTAINER_UPLOAD_MAX_MB', 100),
     ],
 
+    // The console file manager sends anything above 1 MB in chunks and streams
+    // the assembled file to the node, so this is a policy ceiling, not a PHP
+    // or nginx one. The panel needs disk for the file while it is assembling.
+    'container_file_manager_upload' => [
+        'max_size_mb' => (int) env('CONTAINER_FILE_MANAGER_UPLOAD_MAX_MB', 102400),
+    ],
+
     // Dumps travel in 1 MB chunks and are streamed on both ends, so this is a
     // policy ceiling rather than a PHP or nginx one. Requires matching disk on
     // the panel (twice the dump, briefly) and on the container node.

@@ -82,77 +82,23 @@ class ContainerSqlDumpImportService
      */
     public function storeChunk(int $serviceId, string $uploadId, int $index, int $total, UploadedFile $file): array
     {
-        if ($total < 1 || $index < 0 || $index >= $total) {
-            throw new \InvalidArgumentException('Invalid SQL upload chunk.');
+        $stored = app(ChunkedUploadStore::class)->store('sql-import', $serviceId, $uploadId, $index, $total, $file);
+        if (! $stored['complete']) {
+            return $stored;
         }
 
-        $dir = $this->chunkDirectory($serviceId, $uploadId);
-        if (! is_dir($dir) && ! mkdir($dir, 0700, true) && ! is_dir($dir)) {
-            throw new \RuntimeException('Could not create a temporary directory for the SQL upload.');
-        }
-
-        $file->move($dir, $index.'.part');
-        if (! is_file($dir.'/'.$index.'.part')) {
-            throw new \RuntimeException('Could not store SQL upload chunk '.$index.'.');
-        }
-
-        $received = 0;
-        for ($i = 0; $i < $total; $i++) {
-            if (is_file($dir.'/'.$i.'.part')) {
-                $received++;
-            }
-        }
-
-        if ($received < $total) {
-            return ['complete' => false, 'received' => $received, 'total' => $total];
-        }
-
-        $assembled = $dir.'/assembled.sql';
-        $out = fopen($assembled, 'wb');
-        if ($out === false) {
+        // The importer expects a .sql name for the assembled dump.
+        $assembled = dirname((string) $stored['path']).'/assembled.sql';
+        if (! @rename((string) $stored['path'], $assembled)) {
             throw new \RuntimeException('Could not assemble the SQL dump.');
         }
-        try {
-            for ($i = 0; $i < $total; $i++) {
-                $part = $dir.'/'.$i.'.part';
-                $in = fopen($part, 'rb');
-                if ($in === false) {
-                    throw new \RuntimeException('Missing SQL upload chunk '.$i.'.');
-                }
-                stream_copy_to_stream($in, $out);
-                fclose($in);
-                // Each part is spent once appended; a gigabyte dump should not
-                // sit on the panel's disk twice while it is still assembling.
-                @unlink($part);
-            }
-        } finally {
-            fclose($out);
-        }
 
-        return [
-            'complete' => true,
-            'received' => $received,
-            'total' => $total,
-            'path' => $assembled,
-        ];
+        return ['complete' => true, 'received' => $stored['received'], 'total' => $stored['total'], 'path' => $assembled];
     }
 
     public function forgetUpload(int $serviceId, string $uploadId): void
     {
-        $dir = $this->chunkDirectory($serviceId, $uploadId);
-        if (! is_dir($dir)) {
-            return;
-        }
-
-        foreach (glob($dir.'/*') ?: [] as $path) {
-            @unlink($path);
-        }
-        @rmdir($dir);
-    }
-
-    private function chunkDirectory(int $serviceId, string $uploadId): string
-    {
-        return storage_path('app/db-import-chunks/'.$serviceId.'/'.$uploadId);
+        app(ChunkedUploadStore::class)->forget('sql-import', $serviceId, $uploadId);
     }
 
     public function sanitizeDumpForSidecar(string $sql): string
