@@ -5,6 +5,7 @@ namespace App\Services\Provisioning;
 use App\Models\ContainerDeployment;
 use App\Models\Service;
 use App\Services\SSH\SSHService;
+use Illuminate\Support\Facades\Log;
 
 class ContainerPhpExtensionsService
 {
@@ -291,7 +292,31 @@ class ContainerPhpExtensionsService
             throw new \RuntimeException("PHP extension [{$extensionKey}] could not be enabled.");
         }
 
+        // php -m sees the new module immediately; the running FPM workers do not.
+        $this->reloadPhpFpm($ssh, $deployment);
+
         return true;
+    }
+
+    /**
+     * Ask the running php-fpm master to reload, so requests served by existing
+     * workers pick up a module that was just installed. Best effort: a runtime
+     * without php-fpm (CLI or a web server of its own) simply has nothing to signal.
+     */
+    public function reloadPhpFpm(SSHService $ssh, ContainerDeployment $deployment): void
+    {
+        try {
+            $ssh->exec(
+                'docker exec -u 0 '.escapeshellarg($deployment->container_name)
+                .' sh -lc '.escapeshellarg('master=$(pgrep -o php-fpm 2>/dev/null || true); if [ -n "$master" ]; then kill -USR2 "$master"; fi; true'),
+                20
+            );
+        } catch (\Throwable $e) {
+            Log::warning('PHP-FPM reload after extension install failed', [
+                'container' => $deployment->container_name,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     public function buildInstallScript(string $extensionKey): string
@@ -302,6 +327,12 @@ class ContainerPhpExtensionsService
         }
 
         $parts = ['set -e', 'export DEBIAN_FRONTEND=noninteractive'];
+
+        // The runtime images are php:*-fpm, which ship no compiler: docker-php-ext-install
+        // and pecl both need phpize plus gcc/make. Without this every install failed with a
+        // build error, which is why a CodeIgniter site could sit on HTTP 500 for want of mysqli.
+        $parts[] = 'if ! command -v phpize >/dev/null 2>&1 || ! command -v cc >/dev/null 2>&1 || ! command -v make >/dev/null 2>&1; then '
+            .'apt-get update -qq && apt-get install -y --no-install-recommends ${PHPIZE_DEPS:-autoconf dpkg-dev file g++ gcc libc-dev make pkg-config re2c}; fi';
 
         $aptPackages = array_values(array_filter(
             is_array($definition['apt'] ?? null) ? $definition['apt'] : [],

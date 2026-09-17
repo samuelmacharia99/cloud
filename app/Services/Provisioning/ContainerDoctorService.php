@@ -162,6 +162,7 @@ class ContainerDoctorService
             self::FIX_TRUST_LIST_ACTION => $this->treatFixTrustListSettings($service),
             'ensure_pdo_pgsql' => $this->treatEnsurePdoPgsql($service),
             'ensure_gd' => $this->treatEnsureGd($service),
+            'ensure_mysqli' => $this->treatEnsureMysqli($service),
             'ensure_node' => $this->treatEnsureNode($service),
             'fix_npm_cache_permissions' => $this->treatFixNpmCachePermissions($service),
             'clear_laravel_caches' => $this->treatClearLaravelCaches($service),
@@ -6189,10 +6190,14 @@ PHP;
             app(PhpCodeIgniterPathFixer::class)->linkVendorSystemOnHost($ssh, $hostAppPath);
             app(PhpCodeIgniterPathFixer::class)->ensureWritableOnHost($ssh, $hostAppPath);
 
+            $mysqliNote = '';
             try {
                 app(ContainerPhpExtensionsService::class)->applyExtensionPreference($service, 'mysqli', true);
                 app(ContainerPhpExtensionsService::class)->ensureExtensionInstalled($ssh, $deployment, 'mysqli');
             } catch (\Throwable $e) {
+                // CodeIgniter cannot connect at all without mysqli, so a failure here
+                // is the headline, not a log line nobody reads.
+                $mysqliNote = ' mysqli could not be installed ('.mb_substr($e->getMessage(), 0, 160).'), and CodeIgniter cannot reach MySQL without it.';
                 \Log::warning('Doctor could not enable mysqli for CodeIgniter', [
                     'service_id' => $service->id,
                     'error' => $e->getMessage(),
@@ -6221,7 +6226,8 @@ PHP;
 
                 return [
                     'success' => false,
-                    'message' => 'Wrote sidecar DB credentials, enabled mysqli, encryption.key / app.baseURL / app.allowedHostnames / ALLOWED_HOSTNAMES / writable/, and reloaded php-fpm, but GET / still returns HTTP '.$httpStatus.'. '
+                    'message' => 'Wrote sidecar DB credentials, enabled mysqli, encryption.key / app.baseURL / app.allowedHostnames / ALLOWED_HOSTNAMES / writable/, and reloaded php-fpm, but GET / still returns HTTP '.$httpStatus.'.'
+                        .$mysqliNote.' '
                         .app(PhpRuntime500Probe::class)->summary($phpProbe)
                         .($logLines === [] ? '' : ' Log: '.implode(' | ', array_slice($logLines, 0, 2)))
                         .' MySQL was left running.',
@@ -6717,6 +6723,21 @@ PHP;
                 ];
             }
 
+            // CodeIgniter 3 and plain legacy PHP keep their database settings in
+            // application/config or config.php, so none of the CodeIgniter 4 branches
+            // above fire: they used to land on a Restart that rebuilds the same image.
+            // The app connects through ext-mysqli and this runtime carries only PDO.
+            if (($checks['php_ci_mysqli'] ?? true) === false) {
+                return [
+                    'treat_action' => 'ensure_mysqli',
+                    'treat_label' => 'Install mysqli',
+                    'summary' => 'Live PDO works (tables: '.(string) ($checks['table_count'] ?? '?')
+                        .') because Doctor connects through PDO, but the application uses ext-mysqli, which this runtime image does not carry. '
+                        .'Every request fatals before it reaches the database, which is the empty HTTP '.$httpStatus.'. '
+                        .'Restart cannot help: it rebuilds the same image. Install adds mysqli to the running container, reloads php-fpm and remembers it so redeploys keep it. MySQL stays up and no file is changed.',
+                ];
+            }
+
             if (($checks['php_uses_mysql_ext'] ?? false) === true) {
                 return [
                     'treat_action' => 'restart_application',
@@ -7055,6 +7076,71 @@ PHP;
     /**
      * @return array{success: bool, message: string}
      */
+    /**
+     * The app talks to MySQL through ext-mysqli (CodeIgniter's default, and most
+     * legacy PHP), but the runtime image only carries pdo_mysql, so every request
+     * fatals while Doctor's own PDO probe succeeds. Install it into the running
+     * container, remember it so a redeploy re-applies it, reload php-fpm, and say
+     * whether the site actually came back.
+     *
+     * @return array{success: bool, message: string}
+     */
+    private function treatEnsureMysqli(Service $service): array
+    {
+        $deployment = $service->containerDeployment;
+        if (! $deployment?->node) {
+            return ['success' => false, 'message' => 'Application is not deployed.'];
+        }
+        if (! $deployment->isRunning()) {
+            return ['success' => false, 'message' => 'Start the app first: the extension is installed inside the running container.'];
+        }
+
+        $ssh = SSHService::forNode($deployment->node);
+        $extensions = app(ContainerPhpExtensionsService::class);
+
+        try {
+            $extensions->applyExtensionPreference($service, 'mysqli', true);
+            $extensions->ensureExtensionInstalled($ssh, $deployment, 'mysqli');
+        } catch (\Throwable $e) {
+            $ssh->disconnect();
+
+            return [
+                'success' => false,
+                'message' => 'Could not install mysqli in the container: '.mb_substr($e->getMessage(), 0, 300)
+                    .' The site stays on HTTP 500 until the runtime carries mysqli; report this so the image can be rebuilt with it.',
+            ];
+        }
+
+        try {
+            $httpStatus = $this->probeHttpStatus($ssh, $deployment);
+
+            if ($httpStatus !== null && $httpStatus >= 500) {
+                $probe = [];
+                try {
+                    $probe = app(PhpRuntime500Probe::class)->capture($ssh, $deployment);
+                } catch (\Throwable) {
+                    $probe = [];
+                }
+
+                return [
+                    'success' => true,
+                    'message' => 'mysqli is installed and php-fpm reloaded, and it will be re-applied on every redeploy. '
+                        .'GET / still returns HTTP '.$httpStatus.', so something else is also wrong: '
+                        .app(PhpRuntime500Probe::class)->summary($probe).' Re-scan logs for the next card.',
+                ];
+            }
+
+            return [
+                'success' => true,
+                'message' => 'mysqli installed and php-fpm reloaded'
+                    .($httpStatus !== null ? '; the site now answers HTTP '.$httpStatus : '')
+                    .'. The extension is remembered for this service, so redeploys keep it.',
+            ];
+        } finally {
+            $ssh->disconnect();
+        }
+    }
+
     private function treatEnsureGd(Service $service): array
     {
         $deployment = $service->containerDeployment;

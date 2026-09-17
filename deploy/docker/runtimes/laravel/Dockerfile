@@ -45,6 +45,7 @@ RUN apt-get update \
         gmp \
         intl \
         mbstring \
+        mysqli \
         opcache \
         pcntl \
         pdo_mysql \

@@ -2438,4 +2438,42 @@ LOG;
             'a stack with no database of its own gets nothing'
         );
     }
+
+    #[Test]
+    public function a_codeigniter_3_site_whose_runtime_lacks_mysqli_is_offered_the_install_rather_than_a_restart(): void
+    {
+        $doctor = app(ContainerDoctorService::class);
+        $checks = [
+            'db_ok' => true,
+            'table_count' => 302,
+            'http_status' => 500,
+            'php_ci_mysqli' => false,
+            'php_ci_db_host' => 'user-156-service-38-php-db',
+            'php_ci_db_user' => 'u156_s38',
+        ];
+
+        $treat = $doctor->resolveHttp500Treatment($checks, [], 'php');
+
+        $this->assertSame('ensure_mysqli', $treat['treat_action']);
+        $this->assertSame('Install mysqli', $treat['treat_label']);
+        $this->assertStringContainsString('ext-mysqli', $treat['summary']);
+        $this->assertStringContainsString('Restart cannot help', $treat['summary']);
+
+        // A CodeIgniter 4 tree keeps its broader heal card, which installs mysqli among
+        // the other things that shape of site needs.
+        $ci4 = $doctor->resolveHttp500Treatment(
+            array_merge($checks, [
+                'php_paths_php' => ['/app/app/Config/Paths.php'],
+                'php_ci_system' => true,
+                'php_ci_vendor_system' => true,
+            ]),
+            [],
+            'php',
+        );
+        $this->assertSame('heal_codeigniter_runtime', $ci4['treat_action']);
+
+        // With mysqli present the existing cards are untouched.
+        $withMysqli = $doctor->resolveHttp500Treatment(array_merge($checks, ['php_ci_mysqli' => true]), [], 'php');
+        $this->assertNotSame('ensure_mysqli', $withMysqli['treat_action']);
+    }
 }

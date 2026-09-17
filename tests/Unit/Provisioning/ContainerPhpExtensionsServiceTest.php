@@ -115,4 +115,24 @@ class ContainerPhpExtensionsServiceTest extends TestCase
 
         (new ContainerPhpExtensionsService)->applyExtensionPreference($record, 'not-a-real-ext', true);
     }
+
+    #[Test]
+    public function the_install_script_brings_its_own_build_tools_and_parses_as_shell(): void
+    {
+        $service = app(ContainerPhpExtensionsService::class);
+        $script = $service->buildInstallScript('mysqli');
+
+        $this->assertStringContainsString('PHPIZE_DEPS', $script, 'php:*-fpm ships no compiler; the script must install one');
+        $this->assertStringContainsString('command -v phpize', $script, 'and only when it is missing');
+        $this->assertStringContainsString('docker-php-ext-install', $script);
+
+        $file = sys_get_temp_dir().'/talksasa-ext-'.uniqid().'.sh';
+        file_put_contents($file, $script);
+        exec('bash -n '.escapeshellarg($file).' 2>&1', $out, $code);
+        @unlink($file);
+        $this->assertSame(0, $code, implode("\n", $out));
+
+        // A PECL extension gets the same bootstrap.
+        $this->assertStringContainsString('PHPIZE_DEPS', $service->buildInstallScript('redis'));
+    }
 }

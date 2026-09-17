@@ -111,6 +111,9 @@ return [
         'gmp',
         'intl',
         'mbstring',
+        // CodeIgniter and most legacy PHP connect through mysqli, not PDO. Older
+        // containers were built without it; ensureExtensionInstalled still adds it there.
+        'mysqli',
         'opcache',
         'pcntl',
         'pdo_mysql',
