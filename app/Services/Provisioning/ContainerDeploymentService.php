@@ -1318,6 +1318,10 @@ class ContainerDeploymentService
                 ]);
                 $deployment->increment('restart_attempts');
 
+                // A restart recreates the app container from its image, so anything
+                // installed into the old container is gone: a site repaired with an
+                // extension would 500 again on the next restart without this.
+                $this->syncPhpExtensionsIfSupported($ssh, $service, $deployment);
                 $this->syncDatabaseCredentialsAfterStart($ssh, $service, $deployment, $containerPath);
 
                 \Log::info("Container restarted for service {$service->id}");
@@ -7349,7 +7353,10 @@ class ContainerDeploymentService
     private function syncPhpExtensionsIfSupported(SSHService $ssh, Service $service, ContainerDeployment $deployment): void
     {
         $extensions = app(ContainerPhpExtensionsService::class);
-        if (! $extensions->supportsTemplate($service->product?->containerTemplate?->slug)) {
+        // A template the console does not offer extensions for can still carry one
+        // a repair installed, and it must come back after every recreate.
+        if (! $extensions->supportsTemplate($service->product?->containerTemplate?->slug)
+            && $extensions->enabledExtensionKeys($service) === []) {
             return;
         }
 

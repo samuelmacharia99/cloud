@@ -2563,4 +2563,23 @@ LOG;
         $this->assertSame('gd', $doctor->phpExtensionFromFindingId('ensure_php_extension:gd'));
         $this->assertNull($doctor->phpExtensionFromFindingId('ensure_php_extension:not-a-real-extension'));
     }
+
+    #[Test]
+    public function a_restart_re_applies_installed_php_extensions_so_a_repair_is_not_undone(): void
+    {
+        $source = (string) file_get_contents(base_path('app/Services/Provisioning/ContainerDeploymentService.php'));
+        $restart = substr($source, strpos($source, 'public function restart(Service $service): void'));
+        $restart = substr($restart, 0, strpos($restart, 'Container restarted for service'));
+
+        $this->assertStringContainsString(
+            'syncPhpExtensionsIfSupported',
+            $restart,
+            'a restart recreates the container from its image, so installed extensions must be re-applied'
+        );
+        $this->assertLessThan(
+            strpos($restart, 'syncDatabaseCredentialsAfterStart'),
+            strpos($restart, 'syncPhpExtensionsIfSupported'),
+            'the driver has to be back before credentials are tested with it'
+        );
+    }
 }
