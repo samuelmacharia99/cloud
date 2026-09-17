@@ -29,7 +29,9 @@ class PhpRuntime500Probe
      *     ci_db_driver: ?string,
      *     ci_http_body: ?string,
      *     ci_ospos: bool,
-     *     ci_allowed_hostnames: bool
+     *     ci_allowed_hostnames: bool,
+     *     front_error: ?string,
+     *     http_body_bytes: ?int
      * }
      */
     public function capture(SSHService $ssh, ContainerDeployment $deployment): array
@@ -57,6 +59,8 @@ class PhpRuntime500Probe
             'ci_http_body' => null,
             'ci_ospos' => false,
             'ci_allowed_hostnames' => false,
+            'front_error' => null,
+            'http_body_bytes' => null,
         ];
 
         $probeHost = parse_url((string) ($deployment->getAccessUrl() ?? ''), PHP_URL_HOST);
@@ -287,6 +291,10 @@ class PhpRuntime500Probe
         } elseif ($paths !== []) {
             $parts[] = 'Paths.php at '.implode(', ', array_slice($paths, 0, 3)).'.';
         }
+        $frontError = trim((string) ($probe['front_error'] ?? ''));
+        if ($frontError !== '') {
+            $parts[] = 'Running the front controller says: '.$frontError;
+        }
         $ciHost = trim((string) ($probe['ci_db_host'] ?? ''));
         if ($ciHost !== '') {
             $parts[] = 'CodeIgniter DB hostname: '.$ciHost.'.';
@@ -467,6 +475,34 @@ if (is_string($origin) && $origin !== '') {
     $httpBody = trim(preg_replace('/\\s+/', ' ', strip_tags($origin)) ?? '');
     $httpBody = $httpBody !== '' ? substr($httpBody, 0, 160) : substr(trim($origin), 0, 32);
 }
+$frontError = null;
+$frontFile = null;
+foreach (['/app/public/index.php', '/app/index.php'] as $candidate) {
+    if (is_file($candidate)) {
+        $frontFile = $candidate;
+        break;
+    }
+}
+// php-fpm is told to hide errors, and an app with its own handler prints a short
+// page instead, so the real fatal never reaches a log. Run the same front
+// controller once through the CLI with errors on and read what PHP says.
+if ($frontFile !== null && function_exists('shell_exec')) {
+    $frontOut = (string) @shell_exec(
+        'cd '.escapeshellarg(dirname($frontFile))
+        .' && REQUEST_METHOD=GET REQUEST_URI=/ SCRIPT_NAME=/index.php SERVER_PORT=80'
+        .' HTTP_HOST='.escapeshellarg($probeHost)
+        .' timeout 12 php -d display_errors=1 -d error_reporting=-1 -d log_errors=0 '
+        .escapeshellarg(basename($frontFile)).' 2>&1'
+    );
+    if (preg_match('/(?:PHP )?(?:Fatal error|Parse error|Uncaught [A-Za-z\\\\]*(?:Error|Exception))[^\n]{0,240}/i', $frontOut, $frontMatch) === 1) {
+        $frontError = trim($frontMatch[0]);
+    } elseif (preg_match('/Call to undefined function [A-Za-z0-9_\\\\]+\\(\\)/i', $frontOut, $frontMatch) === 1) {
+        $frontError = trim($frontMatch[0]);
+    } elseif (trim($frontOut) !== '') {
+        $collapsed = trim(preg_replace('/\s+/', ' ', strip_tags($frontOut)) ?? '');
+        $frontError = $collapsed !== '' ? substr($collapsed, 0, 200) : null;
+    }
+}
 $ciLog = null;
 $logFiles = array_merge(
     glob('/app/writable/logs/log-*.log') ?: [],
@@ -483,6 +519,8 @@ if ($logFiles !== []) {
 }
 echo 'TALKSASA_PHP500='.json_encode([
     'fatal' => $pdoError ?: $ciLog,
+    'front_error' => $frontError,
+    'http_body_bytes' => is_string($origin) ? strlen($origin) : null,
     'uses_mysql_ext' => $uses,
     'index_files' => $indexes,
     'lint' => $lint,

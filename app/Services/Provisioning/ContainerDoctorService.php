@@ -1412,6 +1412,12 @@ class ContainerDoctorService
                         if (($phpProbe['paths_php'] ?? []) === [] && is_string($phpProbe['index_require'] ?? null)) {
                             $phpProbeLines[] = 'Config/Paths.php not found under /app';
                         }
+                        if (is_string($phpProbe['front_error'] ?? null) && $phpProbe['front_error'] !== '') {
+                            $phpProbeLines[] = 'front controller: '.$phpProbe['front_error'];
+                        }
+                        if (($phpProbe['http_body_bytes'] ?? null) !== null) {
+                            $phpProbeLines[] = 'response body '.(int) $phpProbe['http_body_bytes'].' bytes';
+                        }
                         if (is_string($phpProbe['ci_db_host'] ?? null) && $phpProbe['ci_db_host'] !== '') {
                             $phpProbeLines[] = 'CI hostname '.$phpProbe['ci_db_host'];
                         }

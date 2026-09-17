@@ -8,6 +8,8 @@ use App\Models\Product;
 use App\Models\Service;
 use App\Services\Provisioning\ContainerAppDirectoryService;
 use App\Services\Provisioning\ContainerDoctorService;
+use App\Services\Provisioning\ContainerPermissionNormalizer;
+use App\Services\Provisioning\PhpRuntime500Probe;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -2475,5 +2477,56 @@ LOG;
         // With mysqli present the existing cards are untouched.
         $withMysqli = $doctor->resolveHttp500Treatment(array_merge($checks, ['php_ci_mysqli' => true]), [], 'php');
         $this->assertNotSame('ensure_mysqli', $withMysqli['treat_action']);
+    }
+
+    #[Test]
+    public function the_php_500_probe_runs_the_front_controller_and_leads_with_what_php_said(): void
+    {
+        $probe = app(PhpRuntime500Probe::class);
+        $script = $probe->script();
+
+        $this->assertStringContainsString('display_errors=1', $script, 'php-fpm hides errors; the probe must ask PHP directly');
+        $this->assertStringContainsString('error_reporting=-1', $script);
+        $this->assertStringContainsString('REQUEST_METHOD=GET', $script, 'the front controller needs a request shape');
+        $this->assertStringContainsString('timeout 12', $script, 'a hung app must not hang the scan');
+
+        $file = tempnam(sys_get_temp_dir(), 'talksasa-probe').'.php';
+        file_put_contents($file, "<?php\n".$script);
+        exec('php -l '.escapeshellarg($file).' 2>&1', $out, $code);
+        @unlink($file);
+        $this->assertSame(0, $code, implode("\n", $out));
+
+        $summary = $probe->summary([
+            'front_error' => 'PHP Fatal error: Uncaught Error: Call to undefined function mysqli_init()',
+            'ci_db_host' => 'user-156-service-38-php-db',
+            'ci_mysqli' => false,
+            'ci_db_driver' => 'MySQLi',
+        ]);
+        $this->assertStringContainsString('Running the front controller says: PHP Fatal error', $summary);
+        $this->assertStringContainsString('mysqli_init()', $summary);
+    }
+
+    #[Test]
+    public function normalising_permissions_closes_a_secrets_file_in_a_sub_application(): void
+    {
+        $root = sys_get_temp_dir().'/talksasa-perm-'.uniqid();
+        @mkdir($root.'/app/classroom_portal', 0755, true);
+        foreach (['app/.env', 'app/classroom_portal/.env', 'app/.env.example'] as $relative) {
+            file_put_contents($root.'/'.$relative, "SECRET=1\n");
+            chmod($root.'/'.$relative, 0664);
+        }
+
+        try {
+            $command = app(ContainerPermissionNormalizer::class)->stripDangerousBitsCommand($root.'/app', false);
+            shell_exec('bash -c '.escapeshellarg($command).' 2>&1');
+
+            $mode = fn (string $relative): string => substr(sprintf('%o', fileperms($root.'/'.$relative)), -3);
+
+            $this->assertSame('640', $mode('app/classroom_portal/.env'), 'a nested .env is a secret too');
+            $this->assertSame('640', $mode('app/.env'));
+            $this->assertSame('664', $mode('app/.env.example'), 'the sample file holds no secret');
+        } finally {
+            exec('rm -rf '.escapeshellarg($root));
+        }
     }
 }

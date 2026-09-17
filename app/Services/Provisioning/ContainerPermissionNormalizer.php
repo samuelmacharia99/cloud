@@ -52,6 +52,11 @@ class ContainerPermissionNormalizer
      * The part no template-specific normaliser does: drop the bits that let a
      * compromise spread, and close secrets files. Dependency trees are skipped.
      */
+    /** Files that hold credentials, wherever they sit; the sample files do not. */
+    private const SECRET_NAME_TESTS = '\\( -name wp-config.php -o -name .env -o -name .env.production'
+        .' -o -name .env.local -o -name .env.staging -o -name auth.json \\)'
+        .' ! -name .env.example ! -name .env.sample ! -name .env.testing ! -name wp-config-sample.php';
+
     public function stripDangerousBitsCommand(string $hostAppPath, bool $wordpress): string
     {
         $root = escapeshellarg(rtrim($hostAppPath, '/'));
@@ -64,8 +69,13 @@ class ContainerPermissionNormalizer
             .' find '.$root.' '.$prune.' -perm -o+w -exec chmod o-w {} + 2>/dev/null;'
             .' find '.$root.' '.$prune.' -type f \\( -perm -4000 -o -perm -2000 \\) -exec chmod u-s,g-s {} + 2>/dev/null;'
             .' for d in '.$uploads.'; do [ -d "$d" ] && find "$d" -type f -perm -o+x -exec chmod a-x {} + 2>/dev/null; done;'
-            .' for f in '.$root.'/wp-config.php '.$root.'/.env '.$root.'/.env.production '.$root.'/.env.local '.$root.'/auth.json; do'
-            .'   [ -f "$f" ] && chown 33:33 "$f" && chmod 640 "$f"; done;'
+            // Secrets at any depth, not only the app root: a sub-application keeps
+            // its own .env (classroom_portal/.env), and the scan reports that one too,
+            // so a root-only pass left the card standing after every Normalise.
+            .' find '.$root.' '.$prune.' -type f '.self::SECRET_NAME_TESTS.' -exec chown 33:33 {} + 2>/dev/null;'
+            // A second pass, because find stops at a failed -exec: a chown that cannot
+            // run must not leave the mode open.
+            .' find '.$root.' '.$prune.' -type f '.self::SECRET_NAME_TESTS.' -exec chmod 640 {} + 2>/dev/null;'
             .($wordpress ? ' [ -d '.$root.'/wp-content ] && chown -R 33:33 '.$root.'/wp-content 2>/dev/null;' : '')
             .' true; fi';
     }
