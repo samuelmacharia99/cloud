@@ -2529,4 +2529,38 @@ LOG;
             exec('rm -rf '.escapeshellarg($root));
         }
     }
+
+    #[Test]
+    public function a_fatal_from_the_front_controller_drives_the_card_and_names_the_missing_extension(): void
+    {
+        $doctor = app(ContainerDoctorService::class);
+        $base = ['db_ok' => true, 'table_count' => 302, 'http_status' => 500];
+
+        $missingExtension = $doctor->resolveHttp500Treatment(
+            array_merge($base, ['php_front_error' => 'PHP Fatal error: Uncaught Error: Call to undefined function imagecreatefromjpeg() in /app/app/Libraries/Thumb.php:22']),
+            [],
+            'php',
+        );
+        $this->assertSame('ensure_php_extension:gd', $missingExtension['treat_action']);
+        $this->assertSame('Install gd', $missingExtension['treat_label']);
+        $this->assertStringContainsString('imagecreatefromjpeg()', $missingExtension['summary']);
+
+        // A fatal that no extension explains is stated plainly instead of promising a restart.
+        $plainFatal = $doctor->resolveHttp500Treatment(
+            array_merge($base, ['php_front_error' => 'PHP Fatal error: Uncaught Error: Class "App\\Libraries\\License" not found in /app/index.php:14']),
+            [],
+            'php',
+        );
+        $this->assertNull($plainFatal['treat_action']);
+        $this->assertStringContainsString('Class "App\\Libraries\\License" not found', $plainFatal['summary']);
+        $this->assertStringContainsString('not the database', $plainFatal['summary']);
+
+        $this->assertSame('mysqli', $doctor->phpExtensionForFatal('Call to undefined function mysqli_init()'));
+        $this->assertSame('pgsql', $doctor->phpExtensionForFatal('Call to undefined function pg_connect()'));
+        $this->assertNull($doctor->phpExtensionForFatal('Call to undefined function my_app_helper()'));
+        $this->assertNull($doctor->phpExtensionForFatal('Uncaught TypeError: foo(): Argument #1 must be of type int'));
+
+        $this->assertSame('gd', $doctor->phpExtensionFromFindingId('ensure_php_extension:gd'));
+        $this->assertNull($doctor->phpExtensionFromFindingId('ensure_php_extension:not-a-real-extension'));
+    }
 }

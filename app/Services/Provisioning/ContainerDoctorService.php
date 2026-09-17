@@ -1385,7 +1385,11 @@ class ContainerDoctorService
                     try {
                         $phpProbe = app(PhpRuntime500Probe::class)->capture($ssh, $deployment);
                         $checks['php_uses_mysql_ext'] = $phpProbe['uses_mysql_ext'];
-                        $checks['php_fatal'] = $phpProbe['fatal'];
+                        // What PHP itself printed beats a log tail or a PDO guess.
+                        $checks['php_front_error'] = $phpProbe['front_error'] ?? null;
+                        $checks['php_fatal'] = trim((string) ($phpProbe['front_error'] ?? '')) !== ''
+                            ? $phpProbe['front_error']
+                            : $phpProbe['fatal'];
                         $checks['php_paths_php'] = $phpProbe['paths_php'] ?? [];
                         $checks['php_index_require'] = $phpProbe['index_require'] ?? null;
                         $checks['php_ci_system'] = $phpProbe['ci_system'] ?? false;
@@ -6729,6 +6733,29 @@ PHP;
                 ];
             }
 
+            $frontError = trim((string) ($checks['php_front_error'] ?? ''));
+            if ($frontError !== '') {
+                $missingExtension = $this->phpExtensionForFatal($frontError);
+                if ($missingExtension !== null) {
+                    return [
+                        'treat_action' => 'ensure_php_extension:'.$missingExtension,
+                        'treat_label' => 'Install '.$missingExtension,
+                        'summary' => 'Running the site\'s own front controller prints: '.$frontError
+                            .'. That function belongs to the PHP extension '.$missingExtension.', which this runtime image does not carry, so every request fatals before it renders. '
+                            .'Install adds it to the running container, reloads php-fpm and remembers it for redeploys. MySQL stays up and no file is changed.',
+                    ];
+                }
+
+                return [
+                    'treat_action' => null,
+                    'treat_label' => null,
+                    'summary' => 'Running the site\'s own front controller prints: '.$frontError
+                        .'. That is the real cause of the HTTP '.$httpStatus.', not the database: Doctor\'s PDO check connects and sees '
+                        .(string) ($checks['table_count'] ?? '?').' tables. '
+                        .'No one-click repair fits this one; fix what the message names, in the Files tab or the Terminal, then re-scan.',
+                ];
+            }
+
             // CodeIgniter 3 and plain legacy PHP keep their database settings in
             // application/config or config.php, so none of the CodeIgniter 4 branches
             // above fire: they used to land on a Restart that rebuilds the same image.
@@ -7091,6 +7118,98 @@ PHP;
      *
      * @return array{success: bool, message: string}
      */
+    /**
+     * A fatal named a function that belongs to a PHP extension this runtime does
+     * not carry. The finding id says which, so one treatment serves them all.
+     *
+     * @return array{success: bool, message: string}
+     */
+    private function treatEnsurePhpExtension(Service $service, ?string $extension): array
+    {
+        $key = $this->phpExtensionFromFindingId((string) $extension);
+        if ($key === null) {
+            return ['success' => false, 'message' => 'That repair did not say which PHP extension to install. Re-scan logs and try the card again.'];
+        }
+        if ($key === 'mysqli') {
+            return $this->treatEnsureMysqli($service);
+        }
+
+        $deployment = $service->containerDeployment;
+        if (! $deployment?->node || ! $deployment->isRunning()) {
+            return ['success' => false, 'message' => 'Start the app first: the extension is installed inside the running container.'];
+        }
+
+        $ssh = SSHService::forNode($deployment->node);
+        $extensions = app(ContainerPhpExtensionsService::class);
+
+        try {
+            $extensions->applyExtensionPreference($service, $key, true);
+            $extensions->ensureExtensionInstalled($ssh, $deployment, $key);
+        } catch (\Throwable $e) {
+            $ssh->disconnect();
+
+            return ['success' => false, 'message' => 'Could not install '.$key.' in the container: '.mb_substr($e->getMessage(), 0, 300)];
+        }
+
+        try {
+            $httpStatus = $this->probeHttpStatus($ssh, $deployment);
+
+            return [
+                'success' => true,
+                'message' => 'PHP extension '.$key.' installed and php-fpm reloaded'
+                    .($httpStatus !== null ? '; the site now answers HTTP '.$httpStatus : '')
+                    .'. It is remembered for this service, so redeploys keep it.',
+            ];
+        } finally {
+            $ssh->disconnect();
+        }
+    }
+
+    /** `ensure_php_extension:intl` → `intl`, and only for a catalogue key. */
+    public function phpExtensionFromFindingId(string $findingId): ?string
+    {
+        $key = str_contains($findingId, ':') ? substr($findingId, strrpos($findingId, ':') + 1) : $findingId;
+        $key = strtolower(trim($key));
+
+        return array_key_exists($key, config('php_extensions.extensions', [])) ? $key : null;
+    }
+
+    /**
+     * The PHP extension behind an undefined function, when the runtime is missing
+     * one: `Call to undefined function mysqli_init()` → mysqli.
+     */
+    public function phpExtensionForFatal(string $fatal): ?string
+    {
+        if (preg_match('/Call to undefined function ([A-Za-z_][A-Za-z0-9_]*)\s*\(/i', $fatal, $match) !== 1) {
+            return null;
+        }
+
+        $function = strtolower($match[1]);
+        $known = [
+            'mysqli' => 'mysqli',
+            'pg_' => 'pgsql',
+            'imagick' => 'imagick',
+            'imagecreate' => 'gd',
+            'imagejpeg' => 'gd',
+            'imagepng' => 'gd',
+            'exif_' => 'exif',
+            'ldap_' => 'ldap',
+            'xsl' => 'xsl',
+            'gettext' => 'gettext',
+            'bindtextdomain' => 'gettext',
+            'socket_' => 'sockets',
+            'soap' => 'soap',
+        ];
+
+        foreach ($known as $prefix => $extension) {
+            if (str_starts_with($function, $prefix)) {
+                return array_key_exists($extension, config('php_extensions.extensions', [])) ? $extension : null;
+            }
+        }
+
+        return null;
+    }
+
     private function treatEnsureMysqli(Service $service): array
     {
         $deployment = $service->containerDeployment;
@@ -8848,6 +8967,10 @@ PHP;
         $prefix = 'disable_wordpress_plugin:';
         if (str_starts_with($action, $prefix)) {
             return $this->wordPressTreatments()->disablePlugin($service, substr($action, strlen($prefix)));
+        }
+        $prefix = 'ensure_php_extension:';
+        if (str_starts_with($action, $prefix)) {
+            return $this->treatEnsurePhpExtension($service, substr($action, strlen($prefix)));
         }
         $prefix = 'restore_incident:';
         if (str_starts_with($action, $prefix)) {
