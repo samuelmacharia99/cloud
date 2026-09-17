@@ -85,6 +85,7 @@ class DaOfframpController extends Controller
             'accounts' => $accounts,
             'daUsernames' => $offramp->unlinkedDirectAdminUsernames($reseller),
             'daNodes' => $offramp->resellerDirectAdminNodes($reseller),
+            'daListing' => $offramp->liveDirectAdminListingStatus($reseller),
             'packageMap' => $packageMap,
             'plans' => $plans,
             'emailPlans' => $emailPlans,

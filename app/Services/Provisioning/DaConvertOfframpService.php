@@ -340,6 +340,98 @@ class DaConvertOfframpService
     }
 
     /**
+     * What the board can see on DirectAdmin and why: whether the reseller's
+     * own DirectAdmin login is connected, which server it answers on, and how
+     * many of their accounts it lists. Without this the board silently shows
+     * only platform rows and the operator cannot tell a missing login from an
+     * account that really is gone.
+     *
+     * @return array{state: string, node: ?string, username: ?string, listed: int, linked: int, unlinked: int, message: string}
+     */
+    public function liveDirectAdminListingStatus(User $reseller): array
+    {
+        $username = trim((string) ($reseller->directadmin_username ?? ''));
+        $node = $this->resellerDirectAdmin->resolveNode($reseller);
+
+        if (! $this->resellerDirectAdmin->hasDirectAdminBinding($reseller)) {
+            $missing = [];
+            if ($username === '') {
+                $missing[] = 'no DirectAdmin reseller username';
+            }
+            if (blank($reseller->directadmin_login_key ?? null)) {
+                $missing[] = 'no login key';
+            }
+            if (! $node) {
+                $missing[] = 'no DirectAdmin server';
+            }
+
+            return [
+                'state' => 'unbound',
+                'node' => $node?->name,
+                'username' => $username !== '' ? $username : null,
+                'listed' => 0,
+                'linked' => 0,
+                'unlinked' => 0,
+                'message' => 'Your DirectAdmin reseller login is not connected ('.implode(', ', $missing).'), so only accounts already on the platform are shown. Ask Talksasa to connect it from your reseller profile; accounts still on DirectAdmin then appear here and the login list fills in.',
+            ];
+        }
+
+        $da = $this->resellerDirectAdmin->directAdmin($reseller);
+        $generation = $this->liveDaCacheGeneration($reseller);
+        $usernames = $da ? Cache::remember(
+            $this->liveDaUserListCacheKey($reseller, $generation),
+            self::LIVE_DA_USER_LIST_TTL,
+            fn (): array => array_values(array_filter(array_map(
+                static fn (mixed $name): string => strtolower(trim((string) $name)),
+                $da->listUsersOwnedByReseller($username) ?? []
+            )))
+        ) : [];
+
+        $probe = $da?->listUsersOwnedByReseller($username);
+        if ($da === null || ($probe === null && $usernames === [])) {
+            return [
+                'state' => 'failed',
+                'node' => $node?->name,
+                'username' => $username,
+                'listed' => 0,
+                'linked' => 0,
+                'unlinked' => 0,
+                'message' => 'DirectAdmin on '.($node?->name ?? 'the server').' did not answer the account listing for login '.$username.'. The login key may have been rotated or the login belongs to a different server. Accounts still on DirectAdmin cannot be shown until that is fixed.',
+            ];
+        }
+
+        $linked = [];
+        foreach ($this->scope->managedServicesQuery($reseller)->get(['id', 'service_meta', 'external_reference']) as $service) {
+            $name = $this->serviceDaUsername($service);
+            if ($name !== '') {
+                $linked[$name] = true;
+            }
+        }
+        $listedNames = $probe !== null
+            ? array_values(array_filter(array_map(static fn (mixed $n): string => strtolower(trim((string) $n)), $probe)))
+            : $usernames;
+        $linkedCount = count(array_filter($listedNames, fn (string $n): bool => isset($linked[$n])));
+
+        return [
+            'state' => 'ok',
+            'node' => $node?->name,
+            'username' => $username,
+            'listed' => count($listedNames),
+            'linked' => $linkedCount,
+            'unlinked' => count($listedNames) - $linkedCount,
+            'message' => sprintf(
+                'DirectAdmin on %s lists %d account%s under your login %s: %d linked to a row here, %d not yet on the platform.',
+                $node?->name ?? 'the server',
+                count($listedNames),
+                count($listedNames) === 1 ? '' : 's',
+                $username,
+                $linkedCount,
+                count($listedNames) - $linkedCount
+            ),
+        ];
+    }
+
+    /**
      * Live DirectAdmin usernames the reseller owns that no managed service
      * carries yet: the candidates for pointing a mislinked service at the
      * right account.

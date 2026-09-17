@@ -43,6 +43,7 @@
     ])->values();
     $daUsernames = $daUsernames ?? [];
     $daNodes = $daNodes ?? collect();
+    $daListing = $daListing ?? ['state' => 'unbound', 'message' => '', 'listed' => 0, 'unlinked' => 0];
     $cpu = $computePool['cpu'] ?? [];
     $memory = $computePool['memory'] ?? [];
 @endphp
@@ -104,6 +105,12 @@
                     <button form="da-import-packages" class="px-3 py-1.5 border border-slate-300 dark:border-slate-600 rounded-lg text-sm text-slate-700 dark:text-slate-200">Import my DirectAdmin packages</button>
                 </div>
             </div>
+
+            @if (! empty($daListing['message']))
+                <p class="text-xs rounded-lg px-3 py-2 {{ ($daListing['state'] ?? '') === 'ok' ? 'bg-slate-50 dark:bg-slate-900/60 text-slate-600 dark:text-slate-300' : 'bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-800' }}">
+                    {{ $daListing['message'] }}
+                </p>
+            @endif
 
             @if ($accounts->isEmpty())
                 <p class="text-sm text-slate-500">No DirectAdmin accounts are waiting. Sites already running on Application Hosting stay out of this list.</p>
@@ -257,7 +264,16 @@
                                                     <span>Retry the move right after saving</span>
                                                 </label>
                                                 <button class="px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white rounded-lg text-xs font-medium">Save and retry</button>
-                                                <p class="basis-full text-xs text-slate-500">The user must exist on that server and belong to your DirectAdmin reseller login. Pick from the list of your accounts not yet linked, or type the username DirectAdmin shows.</p>
+                                                <p class="basis-full text-xs text-slate-500">
+                                                    The user must exist on that server and belong to your DirectAdmin reseller login.
+                                                    @if ($daUsernames !== [])
+                                                        Pick from the list of your {{ count($daUsernames) }} account(s) not yet linked, or type the username DirectAdmin shows.
+                                                    @elseif (($daListing['state'] ?? '') === 'ok')
+                                                        Every account DirectAdmin lists under your login is already linked to a row here, so if this row's username is wrong the right one is on another row: retry that row instead, or remove this duplicate.
+                                                    @else
+                                                        No account list is available: {{ $daListing['message'] ?? 'your DirectAdmin login is not connected.' }}
+                                                    @endif
+                                                </p>
                                             </form>
                                         </td>
                                     </tr>

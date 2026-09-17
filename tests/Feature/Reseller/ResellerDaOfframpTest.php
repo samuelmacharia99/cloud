@@ -874,4 +874,28 @@ class ResellerDaOfframpTest extends TestCase
             ->post(route('reseller.directadmin-offramp.repull', $theirs), ['confirm_wipe' => '1'])
             ->assertNotFound();
     }
+
+    public function test_the_board_says_whether_directadmin_could_be_listed_and_how_many_accounts_it_holds(): void
+    {
+        $reseller = $this->reseller();
+        $linked = $this->daService($reseller, 'linked.example.com');
+
+        $this->actingAs($reseller)
+            ->get(route('reseller.directadmin-offramp'))
+            ->assertOk()
+            ->assertSee('DirectAdmin reseller login is not connected')
+            ->assertSee('no DirectAdmin reseller username');
+
+        $this->bindLiveDirectAdmin($reseller, [
+            ['username' => $linked->service_meta['username'], 'domain' => 'linked.example.com', 'package' => 'Bronze', 'email' => null, 'name' => null, 'suspended' => false],
+            ['username' => 'freshuser', 'domain' => 'fresh.example.com', 'package' => 'Bronze', 'email' => null, 'name' => null, 'suspended' => false],
+        ]);
+
+        $this->actingAs($reseller)
+            ->get(route('reseller.directadmin-offramp'))
+            ->assertOk()
+            ->assertSee('lists 2 accounts under your login res_acme')
+            ->assertSee('1 linked to a row here, 1 not yet on the platform')
+            ->assertSee('freshuser');
+    }
 }
