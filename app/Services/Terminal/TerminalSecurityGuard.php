@@ -330,8 +330,17 @@ class TerminalSecurityGuard
         return max(1024, (int) config('terminal.security.max_command_length', 8192));
     }
 
+    /**
+     * A real background job: a bare `&` that ends the command or separates two
+     * of them. A redirection is not one, and rejecting `2>&1` or `>&2` blocked
+     * the ordinary way of reading a program's errors.
+     */
     private function containsBackgroundExecution(string $command): bool
     {
-        return preg_match('/(^|[^&])&($|[^&])/', $command) === 1;
+        // Drop the shapes that are redirections, then look for what is left.
+        $withoutRedirects = preg_replace('/\d?>&\s*\d+/', '', $command) ?? $command;
+        $withoutRedirects = preg_replace('/\d?<&\s*\d+/', '', $withoutRedirects) ?? $withoutRedirects;
+
+        return preg_match('/(^|[^&])&($|[^&])/', $withoutRedirects) === 1;
     }
 }

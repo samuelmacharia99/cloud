@@ -48,4 +48,28 @@ class TerminalSecurityGuardTest extends TestCase
         $this->assertFalse($result['allowed']);
         $this->assertStringContainsString('1024', $result['reason']);
     }
+
+    #[Test]
+    public function a_redirection_is_not_a_background_job(): void
+    {
+        $guard = app(TerminalSecurityGuard::class);
+
+        foreach ([
+            'php index.php 2>&1',
+            'cat storage/logs/laravel.log 2>&1 | tail -40',
+            'echo hi >&2',
+            'cd /app && REQUEST_METHOD=GET php -d display_errors=1 index.php 2>&1 | head -40',
+        ] as $command) {
+            $this->assertTrue(
+                $guard->validate($command)['allowed'],
+                'reading a program\'s errors is ordinary work: '.$command
+            );
+        }
+
+        foreach (['sleep 30 &', 'sleep 5&', 'php a.php & php b.php'] as $command) {
+            $validation = $guard->validate($command);
+            $this->assertFalse($validation['allowed'], $command);
+            $this->assertSame('Background execution is not allowed', $validation['reason']);
+        }
+    }
 }
