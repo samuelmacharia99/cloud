@@ -1420,7 +1420,11 @@ class ContainerDoctorService
                             $phpProbeLines[] = 'front controller: '.$phpProbe['front_error'];
                         }
                         if (($phpProbe['http_body_bytes'] ?? null) !== null) {
-                            $phpProbeLines[] = 'response body '.(int) $phpProbe['http_body_bytes'].' bytes';
+                            $phpProbeLines[] = 'response body '.(int) $phpProbe['http_body_bytes'].' bytes'
+                                .(trim((string) ($phpProbe['http_body_raw'] ?? '')) !== '' ? ': "'.$phpProbe['http_body_raw'].'"' : '');
+                        }
+                        if (trim((string) ($phpProbe['http_headers'] ?? '')) !== '') {
+                            $phpProbeLines[] = 'response headers '.$phpProbe['http_headers'];
                         }
                         if (is_string($phpProbe['ci_db_host'] ?? null) && $phpProbe['ci_db_host'] !== '') {
                             $phpProbeLines[] = 'CI hostname '.$phpProbe['ci_db_host'];

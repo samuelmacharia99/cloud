@@ -2582,4 +2582,23 @@ LOG;
             'the driver has to be back before credentials are tested with it'
         );
     }
+
+    #[Test]
+    public function the_probe_reports_a_silent_front_controller_and_the_exact_bytes_the_site_answers_with(): void
+    {
+        $probe = app(PhpRuntime500Probe::class);
+        $script = $probe->script();
+
+        $this->assertStringContainsString('printed nothing at all', $script, 'silence is a finding, not a blank');
+        $this->assertStringContainsString('addcslashes', $script, 'a five-byte body has to be readable');
+        $this->assertStringContainsString('http_response_header', $script);
+
+        $summary = $probe->summary([
+            'front_error' => 'the front controller printed nothing at all (it exits silently)',
+            'http_body_bytes' => 5,
+            'http_body_raw' => 'Error',
+        ]);
+        $this->assertStringContainsString('exits silently', $summary);
+        $this->assertStringContainsString('answers with 5 bytes: "Error"', $summary);
+    }
 }

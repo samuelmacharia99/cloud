@@ -31,7 +31,9 @@ class PhpRuntime500Probe
      *     ci_ospos: bool,
      *     ci_allowed_hostnames: bool,
      *     front_error: ?string,
-     *     http_body_bytes: ?int
+     *     http_body_bytes: ?int,
+     *     http_body_raw: ?string,
+     *     http_headers: ?string
      * }
      */
     public function capture(SSHService $ssh, ContainerDeployment $deployment): array
@@ -61,6 +63,8 @@ class PhpRuntime500Probe
             'ci_allowed_hostnames' => false,
             'front_error' => null,
             'http_body_bytes' => null,
+            'http_body_raw' => null,
+            'http_headers' => null,
         ];
 
         $probeHost = parse_url((string) ($deployment->getAccessUrl() ?? ''), PHP_URL_HOST);
@@ -295,6 +299,10 @@ class PhpRuntime500Probe
         if ($frontError !== '') {
             $parts[] = 'Running the front controller says: '.$frontError;
         }
+        $bodyRaw = trim((string) ($probe['http_body_raw'] ?? ''));
+        if ($bodyRaw !== '') {
+            $parts[] = 'The site answers with '.(int) ($probe['http_body_bytes'] ?? 0).' bytes: "'.$bodyRaw.'".';
+        }
         $ciHost = trim((string) ($probe['ci_db_host'] ?? ''));
         if ($ciHost !== '') {
             $parts[] = 'CodeIgniter DB hostname: '.$ciHost.'.';
@@ -471,6 +479,15 @@ $httpBody = null;
 $probeHost = getenv('TALKSASA_PROBE_HOST') ?: 'localhost';
 $ctx = stream_context_create(['http' => ['timeout' => 6, 'ignore_errors' => true, 'header' => 'Host: '.$probeHost."\r\n"]]);
 $origin = @file_get_contents('http://127.0.0.1:8080/', false, $ctx);
+$originRaw = null;
+$originHeaders = null;
+if (is_string($origin)) {
+    // The exact bytes, printable, because a five-byte body says more than its length.
+    $originRaw = addcslashes(substr($origin, 0, 120), "\0..\37\177..\377");
+    if (isset($http_response_header) && is_array($http_response_header)) {
+        $originHeaders = implode(' | ', array_slice($http_response_header, 0, 6));
+    }
+}
 if (is_string($origin) && $origin !== '') {
     $httpBody = trim(preg_replace('/\\s+/', ' ', strip_tags($origin)) ?? '');
     $httpBody = $httpBody !== '' ? substr($httpBody, 0, 160) : substr(trim($origin), 0, 32);
@@ -501,6 +518,11 @@ if ($frontFile !== null && function_exists('shell_exec')) {
     } elseif (trim($frontOut) !== '') {
         $collapsed = trim(preg_replace('/\s+/', ' ', strip_tags($frontOut)) ?? '');
         $frontError = $collapsed !== '' ? substr($collapsed, 0, 200) : null;
+    } else {
+        // Silence from the front controller is a finding of its own: the app
+        // exited without saying anything, so the short page the browser gets
+        // is the app's own, not a PHP error.
+        $frontError = 'the front controller printed nothing at all (it exits silently)';
     }
 }
 $ciLog = null;
@@ -521,6 +543,8 @@ echo 'TALKSASA_PHP500='.json_encode([
     'fatal' => $pdoError ?: $ciLog,
     'front_error' => $frontError,
     'http_body_bytes' => is_string($origin) ? strlen($origin) : null,
+    'http_body_raw' => $originRaw,
+    'http_headers' => $originHeaders,
     'uses_mysql_ext' => $uses,
     'index_files' => $indexes,
     'lint' => $lint,
