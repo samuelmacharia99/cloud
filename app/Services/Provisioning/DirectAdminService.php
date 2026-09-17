@@ -629,7 +629,10 @@ class DirectAdminService
     {
         $haystack = strtolower($message);
 
-        foreach (['does not exist', 'no such user', 'unable to find user', 'user not found', 'invalid user'] as $needle) {
+        // "Unable to show user" with "Error reading their user files" is what
+        // DirectAdmin answers when data/users/<name>/user.conf is gone: the
+        // account was deleted, or only its home folder is left behind.
+        foreach (['does not exist', 'no such user', 'unable to find user', 'user not found', 'invalid user', 'error reading their user files', 'unable to show user'] as $needle) {
             if (str_contains($haystack, $needle)) {
                 return true;
             }

@@ -589,7 +589,7 @@ class DaConvertOfframpService
             'active', 'suspended' => ($detail['creator'] ?? null) === $resellerLogin
                 ? ['ok' => true, 'message' => 'OK', 'domain' => is_string($detail['domain'] ?? null) ? strtolower($detail['domain']) : null]
                 : ['ok' => false, 'message' => sprintf('DirectAdmin user %s on %s was not created by your reseller login (%s), so it cannot be linked here.', $username, $node->name, $resellerLogin), 'domain' => null],
-            'terminated' => ['ok' => false, 'message' => sprintf('There is no DirectAdmin user %s on %s. Check the spelling, or pick the server the account lives on.', $username, $node->name), 'domain' => null],
+            'terminated' => ['ok' => false, 'message' => sprintf('There is no DirectAdmin user %s on %s: DirectAdmin has no user record for that name (the account was deleted, or only its home folder is left). Check the spelling against the list of your accounts, or pick the server the account lives on.', $username, $node->name), 'domain' => null],
             default => ['ok' => false, 'message' => 'Could not read that DirectAdmin user on '.$node->name.': '.(string) ($status['label'] ?? 'unknown error'), 'domain' => null],
         };
     }

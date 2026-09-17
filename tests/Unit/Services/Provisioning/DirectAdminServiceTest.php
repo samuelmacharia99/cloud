@@ -530,11 +530,15 @@ class DirectAdminServiceTest extends TestCase
         $node = $this->createDirectAdminNode();
 
         Http::fake(['*' => Http::sequence()
+            ->push('{ "error": "Unable to show user", "result": "Error reading their user files" }', 500)
             ->push('error=1&text=Unable+to+show+user&details=User+simbace+does+not+exist', 200)
             ->push('{"suspended":"yes","domain":"reelmagicflies.com","package":"Starter"}', 200)
             ->push('{"suspended":"no","domain":"aurahub.co.ke","package":"Starter"}', 200)
             ->push('{"error":"Not logged in","have_lost_password":"1","success":"no"}', 401),
         ]);
+
+        $recordGone = (new DirectAdminService($node))->getAccountLiveStatus('wambuiesther');
+        $this->assertSame('terminated', $recordGone['live_status'], 'no user.conf to read is no user');
 
         $missing = (new DirectAdminService($node))->getAccountLiveStatus('simbace');
         $this->assertSame('terminated', $missing['live_status']);
