@@ -38,6 +38,8 @@
         'security' => $account['security'] ?? ['state' => 'pending', 'label' => ''],
         'can_relink' => (bool) ($account['can_relink'] ?? false),
         'can_restart' => (bool) ($account['can_restart'] ?? false),
+        'can_repull' => (bool) ($account['can_repull'] ?? false),
+        'sibling_count' => (int) ($account['sibling_count'] ?? 0),
     ])->values();
     $daUsernames = $daUsernames ?? [];
     $daNodes = $daNodes ?? collect();
@@ -201,11 +203,33 @@
                                                         x-show="row(@js($account['key']))?.can_relink"
                                                         x-on:click.prevent="toggleFix(@js($account['key']))"
                                                         x-text="fixingKey === @js($account['key']) ? 'Cancel' : 'Fix DirectAdmin login'"></button>
+                                                <button type="button" class="px-3 py-1.5 border border-red-300 dark:border-red-700 text-red-700 dark:text-red-300 rounded-lg text-xs"
+                                                        x-show="row(@js($account['key']))?.can_repull"
+                                                        x-on:click.prevent="toggleRepull(@js($account['key']))"
+                                                        x-text="repullKey === @js($account['key']) ? 'Cancel' : 'Pull again from DirectAdmin'"></button>
                                             @endif
                                         </div>
                                     </td>
                                 </tr>
                                 @if ($service)
+                                    <tr class="border-b border-slate-100 dark:border-slate-800 bg-red-50 dark:bg-red-950/30" x-show="repullKey === @js($account['key'])" x-cloak>
+                                        <td colspan="6" class="py-3 px-3">
+                                            <form method="POST" action="{{ route('reseller.directadmin-offramp.repull', $service) }}" class="space-y-2">
+                                                @csrf
+                                                <p class="text-sm font-medium text-red-800 dark:text-red-200">Pull {{ $account['domain'] ?: $service->name }} from DirectAdmin again, from scratch.</p>
+                                                <p class="text-xs text-slate-600 dark:text-slate-300">
+                                                    This removes the running container with its files and database<span x-show="row(@js($account['key']))?.sibling_count > 0">, and the <span x-text="row(@js($account['key']))?.sibling_count"></span> sibling site container(s) made for its extra domains</span>.
+                                                    Anything uploaded or changed on the container since the first pull is lost. The email service, billing, domains and backups are kept.
+                                                    The account is then exported from DirectAdmin as it is today, deployed, imported and brought live again, and you cut web DNS once more when it is ready.
+                                                </p>
+                                                <label class="flex items-center gap-2 text-xs">
+                                                    <input type="checkbox" name="confirm_wipe" value="1" required>
+                                                    <span>I understand the container-side copy is discarded and replaced by what DirectAdmin holds now.</span>
+                                                </label>
+                                                <button class="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-medium">Wipe and pull again</button>
+                                            </form>
+                                        </td>
+                                    </tr>
                                     <tr class="border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60" x-show="fixingKey === @js($account['key'])" x-cloak>
                                         <td colspan="6" class="py-3 px-3">
                                             <form method="POST" action="{{ route('reseller.directadmin-offramp.relink', $service) }}" class="flex flex-wrap items-end gap-3">
@@ -323,6 +347,7 @@ function daOfframpBoard(initialRows, url, restartUrlTemplate) {
         rows: initialRows || [],
         selected: [],
         fixingKey: null,
+        repullKey: null,
         restartingKey: null,
         notice: { ok: true, text: '' },
         url,
@@ -352,6 +377,12 @@ function daOfframpBoard(initialRows, url, restartUrlTemplate) {
 
         toggleFix(key) {
             this.fixingKey = this.fixingKey === key ? null : key;
+            if (this.fixingKey) this.repullKey = null;
+        },
+
+        toggleRepull(key) {
+            this.repullKey = this.repullKey === key ? null : key;
+            if (this.repullKey) this.fixingKey = null;
         },
 
         async restartRow(key) {

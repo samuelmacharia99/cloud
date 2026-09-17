@@ -595,6 +595,79 @@ class DaConvertOfframpService
     }
 
     /**
+     * Pull a converted account from DirectAdmin again: wipe what the convert
+     * built on the container side, put the row back on DirectAdmin, and
+     * queue it as a fresh single-account batch through preflight.
+     *
+     * @return array{ok: bool, message: string, batch: ?DaConvertBatch, item: ?DaConvertBatchItem}
+     */
+    public function repullFromDirectAdmin(User $reseller, User $actor, Service $service): array
+    {
+        $managed = $this->scope->managedServicesQuery($reseller)->with(['user', 'product', 'node', 'containerDeployment'])->get();
+        $target = $managed->first(fn (Service $row): bool => (int) $row->id === (int) $service->id);
+        if (! $target) {
+            throw new InvalidArgumentException('That service is not on this reseller\'s book.');
+        }
+        $service = $target;
+        $label = $this->serviceHostname($service) ?: $service->name;
+
+        $previousItem = $this->latestItemForService($reseller, $service);
+        $listing = $previousItem?->reseller_product_id
+            ? ResellerProduct::query()->where('reseller_id', $reseller->id)->find($previousItem->reseller_product_id)
+            : null;
+        $emailProduct = $previousItem?->batch?->email_product_id
+            ? Product::query()->find($previousItem->batch->email_product_id)
+            : null;
+
+        $wiped = app(DaConvertRepullService::class)->wipeForRepull($service, $actor);
+
+        AdminActivityService::log(
+            'reseller.da_offramp_repull',
+            sprintf(
+                'Pulled %s (service #%d) from DirectAdmin again: removed container %s and %d sibling site(s)%s',
+                $label,
+                $service->id,
+                $wiped['container'] ?: 'none',
+                $wiped['removed_siblings'],
+                $actor->id === $reseller->id ? ' (by the reseller)' : ''
+            ),
+            $reseller,
+            ['service_id' => $service->id, 'actor_user_id' => $actor->id, 'container' => $wiped['container'], 'removed_siblings' => $wiped['removed_siblings']]
+        );
+
+        $batch = $this->queueBatch(
+            $reseller,
+            $actor,
+            [],
+            null,
+            $emailProduct,
+            true,
+            true,
+            [$this->accountKeyForService($service->fresh())],
+            [],
+            $listing,
+        );
+        $item = $batch->items->first();
+        $wipedNote = 'Removed the old container'.($wiped['removed_siblings'] > 0 ? ' and '.$wiped['removed_siblings'].' sibling site(s)' : '').'.';
+
+        if ($item?->status?->isActiveConvert()) {
+            return [
+                'ok' => true,
+                'message' => $wipedNote.' Pulling '.$label.' from DirectAdmin again; the log follows each step. Cut web DNS again once the new container is ready.',
+                'batch' => $batch,
+                'item' => $item,
+            ];
+        }
+
+        return [
+            'ok' => false,
+            'message' => $wipedNote.' The fresh pull did not queue: '.($item?->error ?: 'no plan is mapped for it.').' The row is back on DirectAdmin; use Retry once that is fixed.',
+            'batch' => $batch,
+            'item' => $item,
+        ];
+    }
+
+    /**
      * The console's Restart button: a queued item no worker ever started, a
      * converting one that stopped heartbeating, or one that ended blocked or
      * failed. A convert that is still moving keeps its button hidden.
@@ -1676,6 +1749,8 @@ class DaConvertOfframpService
                 && $service->isSharedHosting()
                 && in_array($board['key'], ['blocked', 'failed', 'ready'], true),
             'can_restart' => $service !== null && $item !== null && $this->itemLooksStalled($item, $service),
+            'can_repull' => $service !== null && $complete && app(DaConvertRepullService::class)->assess($service)['ok'],
+            'sibling_count' => $service !== null && $complete ? app(DaConvertProgress::class)->siblingServices($service)->count() : 0,
             'node_id' => $service?->node_id,
         ]);
     }

@@ -217,6 +217,32 @@ class DaOfframpController extends Controller
     }
 
     /**
+     * Pull a converted account from DirectAdmin again, from scratch.
+     */
+    public function repull(Request $request, Service $service, DaConvertOfframpService $offramp): RedirectResponse
+    {
+        $reseller = $this->reseller($request);
+        if (! $request->boolean('confirm_wipe')) {
+            return redirect()->route('reseller.directadmin-offramp')
+                ->withErrors(['error' => 'Tick the confirmation: a fresh pull removes the container, its database and every sibling site before pulling again.']);
+        }
+
+        try {
+            $result = $offramp->repullFromDirectAdmin($reseller, $reseller, $service);
+        } catch (\InvalidArgumentException $e) {
+            abort(404);
+        } catch (\Throwable $e) {
+            return redirect()->route('reseller.directadmin-offramp')->withErrors(['error' => 'Could not pull again: '.$e->getMessage()]);
+        }
+
+        $redirect = redirect()->route('reseller.directadmin-offramp');
+
+        return $result['ok']
+            ? $redirect->with('success', $result['message'])
+            : $redirect->withErrors(['error' => $result['message']]);
+    }
+
+    /**
      * Restart one convert from the console log: a stalled queued or converting
      * item is re-dispatched, a blocked or failed one goes back through preflight.
      */

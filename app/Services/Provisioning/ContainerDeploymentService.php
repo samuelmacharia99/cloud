@@ -9077,7 +9077,7 @@ class ContainerDeploymentService
         app(ContainerBackupService::class)->purgeAllForService($service);
     }
 
-    private function unbindAllDomainsForService(Service $service): void
+    public function unbindAllDomainsForService(Service $service): void
     {
         $domains = ContainerDomain::query()
             ->whereHas('deployment', function ($query) use ($service) {

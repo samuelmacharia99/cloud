@@ -2137,6 +2137,40 @@ class DirectAdminToContainerMigrationService
     }
 
     /**
+     * Ask the DirectAdmin node whether the account's home is still there. A
+     * missing home is recorded so the re-pull and copy buttons go away.
+     */
+    public function directAdminHomePresent(Service $service): bool
+    {
+        $inventory = $this->inventoryFromDirectAdminLegacy($service);
+        if ($inventory === null) {
+            return false;
+        }
+        $username = $this->directAdminUsername($service) ?: (string) ($inventory['username'] ?? '');
+        $home = $username !== '' ? '/home/'.$username : dirname((string) ($inventory['docroot'] ?? ''), 3);
+        if ($home === '' || $home === '/' || $home === '.') {
+            return false;
+        }
+
+        $ssh = SSHService::forNode($this->resolveDirectAdminNode($service, $inventory));
+        try {
+            $present = trim((string) $ssh->exec('test -d '.escapeshellarg($home).' && echo yes || echo no', 20)) === 'yes';
+        } finally {
+            $ssh->disconnect();
+        }
+
+        if (! $present) {
+            $meta = is_array($service->service_meta) ? $service->service_meta : [];
+            $legacy = is_array($meta['da_legacy'] ?? null) ? $meta['da_legacy'] : [];
+            $legacy['home_missing_at'] = now()->toIso8601String();
+            $meta['da_legacy'] = $legacy;
+            $service->update(['service_meta' => $meta]);
+        }
+
+        return $present;
+    }
+
+    /**
      * A previous copy found the account's home gone from the DirectAdmin
      * node; nothing there can be pulled again until an operator clears it.
      */

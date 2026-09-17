@@ -18,6 +18,7 @@ use App\Models\Service;
 use App\Models\User;
 use App\Services\DomainInputParser;
 use App\Services\Provisioning\DaAccountSnapshotService;
+use App\Services\Provisioning\DaConvertRepullService;
 use App\Services\Provisioning\DirectAdminService;
 use App\Services\Provisioning\DirectAdminToContainerConvertService;
 use App\Services\Provisioning\DirectAdminToContainerMigrationService;
@@ -831,5 +832,46 @@ class ResellerDaOfframpTest extends TestCase
         });
 
         return $node;
+    }
+
+    public function test_a_finished_convert_is_wiped_and_pulled_again_only_with_the_confirmation(): void
+    {
+        Bus::fake();
+        $reseller = $this->reseller(['cpu_pool_cores' => 8, 'memory_pool_mb' => 16384]);
+        $service = $this->daService($reseller, 'www.whsafaris.co.ke');
+        $plan = $this->plan($reseller, 'Starter');
+        $shell = app(ResellerProvisionProductResolver::class)->shellContainerProduct();
+        [$batch, $item] = $this->batchItem($reseller, $service, $shell, DaConvertBatchItemStatus::Done, $plan);
+        $this->bindConvertMock([$service->id => $this->preflightOk('www.whsafaris.co.ke')]);
+        $this->mock(DaConvertRepullService::class, function ($mock) {
+            $mock->shouldReceive('wipeForRepull')->once()->andReturn(['removed_siblings' => 3, 'container' => 'user-1-service-77-wordpress']);
+            $mock->shouldReceive('assess')->andReturn(['ok' => true, 'blockers' => [], 'siblings' => 3]);
+        });
+
+        $this->actingAs($reseller)
+            ->post(route('reseller.directadmin-offramp.repull', $service), [])
+            ->assertRedirect(route('reseller.directadmin-offramp'))
+            ->assertSessionHasErrors('error');
+        $this->assertStringContainsString('Tick the confirmation', session('errors')->first('error'));
+
+        $this->actingAs($reseller)
+            ->post(route('reseller.directadmin-offramp.repull', $service), ['confirm_wipe' => '1'])
+            ->assertRedirect(route('reseller.directadmin-offramp'))
+            ->assertSessionHas('success');
+        $this->assertStringContainsString('3 sibling site(s)', session('success'));
+        $this->assertStringContainsString('Cut web DNS again', session('success'));
+
+        $fresh = DaConvertBatch::query()->where('id', '!=', $batch->id)->firstOrFail();
+        $newItem = $fresh->items()->firstOrFail();
+        $this->assertSame(DaConvertBatchItemStatus::Queued, $newItem->status);
+        $this->assertSame($plan->id, (int) $newItem->reseller_product_id, 'the plan of the first convert is kept');
+        Bus::assertDispatched(ConvertDirectAdminServiceToContainerJob::class, fn (ConvertDirectAdminServiceToContainerJob $job): bool => $job->batchItemId === $newItem->id);
+        $this->assertDatabaseHas('admin_activity_logs', ['action' => 'reseller.da_offramp_repull']);
+
+        $other = $this->reseller();
+        $theirs = $this->daService($other, 'theirs.example.com');
+        $this->actingAs($reseller)
+            ->post(route('reseller.directadmin-offramp.repull', $theirs), ['confirm_wipe' => '1'])
+            ->assertNotFound();
     }
 }
