@@ -193,4 +193,106 @@ class MailcowProvisioningServiceTest extends TestCase
 
         (new MailcowProvisioningService)->changeMailDomain($service, 'taken.com');
     }
+
+    #[Test]
+    public function an_operator_replaces_a_populated_mail_domain_and_the_new_one_gets_its_info_inbox(): void
+    {
+        $deleted = [];
+        $added = [];
+        Http::fake(function ($request) use (&$deleted, &$added) {
+            $url = $request->url();
+            if (str_contains($url, '/get/mailbox/all/old.com')) {
+                return Http::response([
+                    ['username' => 'head@old.com'],
+                    ['username' => 'bursar@old.com'],
+                ], 200);
+            }
+            if (str_contains($url, '/get/alias/all/old.com')) {
+                return Http::response([['id' => 3, 'address' => 'info@old.com']], 200);
+            }
+            if (str_contains($url, '/get/mailbox/all/new.example.com')) {
+                return Http::response([], 200);
+            }
+            if (str_contains($url, '/delete/domain')) {
+                $deleted[] = $request->data();
+
+                return Http::response([['type' => 'success', 'msg' => 'ok']], 200);
+            }
+            if (str_contains($url, '/add/mailbox')) {
+                $added[] = $request->data();
+
+                return Http::response([['type' => 'success', 'msg' => 'ok']], 200);
+            }
+            if (str_contains($url, '/add/domain') || str_contains($url, '/edit/rl-domain')) {
+                return Http::response([['type' => 'success', 'msg' => 'ok']], 200);
+            }
+
+            return Http::response([], 200);
+        });
+
+        $admin = User::factory()->create(['is_admin' => true]);
+        $customer = User::factory()->customer()->create();
+        $node = Node::factory()->mailcow()->create();
+        $product = Product::factory()->emailHosting()->create();
+        $service = Service::factory()->create([
+            'user_id' => $customer->id,
+            'product_id' => $product->id,
+            'node_id' => $node->id,
+            'status' => 'active',
+            'provisioning_driver_key' => 'mailcow',
+            'external_reference' => 'old.com',
+            'service_meta' => ['mailcow_domain' => 'old.com', 'operator_inbox' => 'info@old.com'],
+        ]);
+
+        $mailcow = app(MailcowProvisioningService::class);
+        $contents = $mailcow->currentMailDomainContents($service);
+        $this->assertSame(['old.com', 2, 1], [$contents['domain'], $contents['mailboxes'], $contents['aliases']]);
+
+        $result = $mailcow->replaceMailDomain($service->fresh(['product', 'node', 'user']), 'new.example.com', $admin);
+
+        $this->assertSame('new.example.com', $result['domain']);
+        $this->assertSame('old.com', $result['previous_domain']);
+        $this->assertSame(2, $result['deleted_mailboxes']);
+        $this->assertSame(1, $result['deleted_aliases']);
+        $this->assertSame('info@new.example.com', $result['info_mailbox']);
+        $this->assertNotEmpty($result['info_password'], 'the operator has to be able to hand the password over');
+
+        $service->refresh();
+        $this->assertSame('new.example.com', $service->external_reference);
+        $this->assertSame('new.example.com', $service->service_meta['mailcow_domain']);
+        $this->assertSame('old.com', $service->service_meta['previous_mailcow_domain']);
+        $this->assertSame('info@new.example.com', $service->service_meta['operator_inbox']);
+        $replacement = $service->service_meta['mailcow_domain_replacements'][0];
+        $this->assertSame(['old.com', 'new.example.com', 2, 1, $admin->id], [
+            $replacement['from'], $replacement['to'], $replacement['destroyed_mailboxes'], $replacement['destroyed_aliases'], $replacement['by_user_id'],
+        ]);
+        $this->assertDatabaseHas('admin_activity_logs', ['action' => 'service.mail_domain_replaced']);
+
+        // delete/domain takes a bare list of domains.
+        $this->assertSame([['old.com']], array_map(fn (array $row): array => array_values($row), $deleted));
+        $this->assertSame('info', $added[0]['local_part'] ?? null);
+        $this->assertSame('new.example.com', $added[0]['domain'] ?? null);
+    }
+
+    #[Test]
+    public function the_customer_facing_change_still_refuses_to_destroy_mail(): void
+    {
+        Http::fake(fn () => Http::response([['username' => 'head@old.com']], 200));
+
+        $customer = User::factory()->customer()->create();
+        $node = Node::factory()->mailcow()->create();
+        $service = Service::factory()->create([
+            'user_id' => $customer->id,
+            'product_id' => Product::factory()->emailHosting()->create()->id,
+            'node_id' => $node->id,
+            'status' => 'active',
+            'provisioning_driver_key' => 'mailcow',
+            'external_reference' => 'old.com',
+            'service_meta' => ['mailcow_domain' => 'old.com'],
+        ]);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Delete all mailboxes on old.com');
+        app(MailcowProvisioningService::class)->changeMailDomain($service, 'new.example.com');
+    }
 }

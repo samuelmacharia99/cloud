@@ -379,6 +379,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/services/{service}/transfer', [ServiceController::class, 'transfer'])->name('admin.services.transfer');
         Route::post('admin/services/{service}/upgrade-hosting', [ServiceController::class, 'upgradeHosting'])->name('admin.services.upgrade-hosting');
         Route::post('admin/services/{service}/reconcile-hosting', [ServiceController::class, 'reconcileHostingPackage'])->name('admin.services.reconcile-hosting');
+        Route::post('admin/services/{service}/mail-domain', [ServiceController::class, 'replaceMailDomain'])->middleware('throttle:6,10')->name('admin.services.mail-domain.replace');
         Route::post('admin/services/{service}/sync-hosting-plan', [ServiceController::class, 'syncHostingPlanFromDirectAdmin'])->name('admin.services.sync-hosting-plan');
 
         // Container management

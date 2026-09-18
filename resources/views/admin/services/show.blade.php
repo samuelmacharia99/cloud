@@ -607,6 +607,10 @@
                 </div>
             @endif
 
+            @if ($service->isEmailHosting())
+                @include('admin.services.partials.mail-domain-card', ['mailDomainContents' => $mailDomainContents ?? null])
+            @endif
+
             <!-- Server Credentials (VPS / Dedicated Server) -->
             @if ($service->product && \App\Models\Product::isServerType($service->product->type) && $service->credentials)
                 <div class="ui-card p-6">

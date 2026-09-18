@@ -8,6 +8,7 @@ use App\Enums\ServiceStatus;
 use App\Exceptions\ResellerBoundaryException;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Customer\ContainerController as CustomerContainerController;
+use App\Http\Requests\Admin\ReplaceMailDomainRequest;
 use App\Http\Requests\BulkDestroyTerminatedServicesRequest;
 use App\Mail\AdminServerOrderMail;
 use App\Models\Domain;
@@ -24,6 +25,7 @@ use App\Services\EmailDeliveryService;
 use App\Services\Hosting\ServicePackageUsageService;
 use App\Services\NotificationService;
 use App\Services\Provisioning\DirectAdminService;
+use App\Services\Provisioning\MailcowProvisioningService;
 use App\Services\Provisioning\ProvisioningService;
 use App\Services\ResellerBoundaryService;
 use App\Services\ResellerEnforcementService;
@@ -35,6 +37,7 @@ use App\Services\ServiceTransferService;
 use App\Services\TaxService;
 use App\Support\ContainerConsoleContext;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -286,8 +289,13 @@ class ServiceController extends Controller
             $containerConsole['containerConsoleContext'] = 'admin';
         }
 
+        $mailDomainContents = $service->isEmailHosting()
+            ? app(MailcowProvisioningService::class)->currentMailDomainContents($service)
+            : null;
+
         return view('admin.services.show', array_merge(compact(
             'service',
+            'mailDomainContents',
             'sameTypeProducts',
             'currencyCode',
             'liveStatus',
@@ -300,6 +308,61 @@ class ServiceController extends Controller
             'infrastructureAbsent',
             'transferCustomers',
         ), $containerConsole));
+    }
+
+    /**
+     * Point an email plan at a different mail domain and destroy the old one
+     * with every mailbox and alias on it. Only an operator can do this: the
+     * customer's own domain change still refuses to delete mail.
+     */
+    public function replaceMailDomain(
+        ReplaceMailDomainRequest $request,
+        Service $service,
+        MailcowProvisioningService $mailcow,
+    ): RedirectResponse {
+        $this->authorize('update', $service);
+
+        if (! $service->isEmailHosting()) {
+            return back()->withErrors(['error' => 'This service is not an email hosting plan.']);
+        }
+
+        $contents = $mailcow->currentMailDomainContents($service);
+        $typed = strtolower(trim((string) $request->validated('confirm_current_domain')));
+        if ($contents['domain'] !== null && $typed !== strtolower((string) $contents['domain'])) {
+            return back()
+                ->withErrors(['confirm_current_domain' => 'Type '.$contents['domain'].' to confirm that its mail is destroyed.'])
+                ->withInput();
+        }
+
+        try {
+            $result = $mailcow->replaceMailDomain($service, (string) $request->validated('domain'), $request->user());
+        } catch (\InvalidArgumentException $e) {
+            return back()->withErrors(['domain' => $e->getMessage()])->withInput();
+        } catch (\Throwable $e) {
+            report($e);
+
+            return back()->withErrors(['error' => 'Could not replace the mail domain: '.$e->getMessage()])->withInput();
+        }
+
+        $message = sprintf(
+            'Mail domain is now %s.%s%s',
+            $result['domain'],
+            $result['previous_domain'] !== null
+                ? sprintf(
+                    ' %s was deleted with %d mailbox(es) and %d alias(es).',
+                    $result['previous_domain'],
+                    $result['deleted_mailboxes'],
+                    $result['deleted_aliases']
+                )
+                : '',
+            $result['info_mailbox'] !== null ? ' Created '.$result['info_mailbox'].'.' : ''
+        );
+
+        return redirect()
+            ->route('admin.services.show', $service)
+            ->with('success', $message.($result['warnings'] !== [] ? ' '.implode(' ', $result['warnings']) : ''))
+            ->with('mail_info_password', $result['info_password'])
+            ->with('mail_info_mailbox', $result['info_mailbox']);
     }
 
     public function transferPreview(Request $request, Service $service, ServiceTransferService $transferService)

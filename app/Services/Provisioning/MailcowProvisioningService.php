@@ -7,6 +7,8 @@ use App\Models\Domain;
 use App\Models\Node;
 use App\Models\Product;
 use App\Models\Service;
+use App\Models\User;
+use App\Services\AdminActivityService;
 use App\Services\DomainActivationService;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -176,6 +178,196 @@ class MailcowProvisioningService
         ]);
 
         return $newFqdn;
+    }
+
+    /**
+     * What a wipe-and-replace would destroy on the current mail domain.
+     *
+     * @return array{domain: ?string, mailboxes: int, aliases: int, readable: bool, message: ?string}
+     */
+    public function currentMailDomainContents(Service $service): array
+    {
+        try {
+            $domain = $this->domainForService($service);
+        } catch (InvalidArgumentException) {
+            return ['domain' => null, 'mailboxes' => 0, 'aliases' => 0, 'readable' => true, 'message' => null];
+        }
+
+        try {
+            $client = $this->clientForService($service);
+            $mailboxes = $client->listMailboxes($domain);
+            $aliases = $client->listAliases($domain);
+
+            if (! ($mailboxes['success'] ?? false) || ! ($aliases['success'] ?? false)) {
+                return [
+                    'domain' => $domain,
+                    'mailboxes' => 0,
+                    'aliases' => 0,
+                    'readable' => false,
+                    'message' => (string) ($mailboxes['message'] ?? $aliases['message'] ?? 'Mailcow did not answer.'),
+                ];
+            }
+
+            return [
+                'domain' => $domain,
+                'mailboxes' => count($mailboxes['data'] ?? []),
+                'aliases' => count($aliases['data'] ?? []),
+                'readable' => true,
+                'message' => null,
+            ];
+        } catch (\Throwable $e) {
+            return ['domain' => $domain, 'mailboxes' => 0, 'aliases' => 0, 'readable' => false, 'message' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Move an email plan to a new mail domain and destroy the old one with
+     * everything in it. Mailcow cannot rename an inbox, so the mail on the old
+     * domain cannot come along and there is no copy of it afterwards: only an
+     * operator who has confirmed the loss may run this. The new domain is left
+     * with the standard info@ inbox a fresh email service gets.
+     *
+     * @return array{domain: string, previous_domain: ?string, deleted_mailboxes: int, deleted_aliases: int, info_mailbox: ?string, info_password: ?string, warnings: list<string>}
+     */
+    public function replaceMailDomain(Service $service, string $newFqdn, User $actor): array
+    {
+        if (! $service->isEmailHosting()) {
+            throw new InvalidArgumentException('This service is not an email hosting plan.');
+        }
+
+        $newFqdn = app(DirectAdminDomainValidator::class)->assertValid($newFqdn);
+        $contents = $this->currentMailDomainContents($service);
+        $previous = $contents['domain'];
+
+        if ($previous !== null && $previous === $newFqdn) {
+            throw new InvalidArgumentException('That is already the mail domain for this service.');
+        }
+
+        $this->assertMailDomainAvailable($service, $newFqdn);
+
+        $client = $this->clientForService($service);
+        $limits = $this->limitsForProduct($service->product);
+        $this->ensureDomainOnMailcow($client, $service, $newFqdn, $limits);
+
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        if ($previous !== null) {
+            $meta['previous_mailcow_domain'] = $previous;
+        }
+        $meta['mailcow_domain'] = $newFqdn;
+        $meta['domain'] = $newFqdn;
+        $meta['mailcow_domain_changed_at'] = now()->toIso8601String();
+        $history = is_array($meta['mailcow_domain_replacements'] ?? null) ? $meta['mailcow_domain_replacements'] : [];
+        $history[] = [
+            'at' => now()->toIso8601String(),
+            'by_user_id' => $actor->id,
+            'from' => $previous,
+            'to' => $newFqdn,
+            'destroyed_mailboxes' => $contents['mailboxes'],
+            'destroyed_aliases' => $contents['aliases'],
+        ];
+        $meta['mailcow_domain_replacements'] = array_slice($history, -10);
+        unset($meta['operator_inbox']);
+
+        $additional = $meta['additional_mail_domains'] ?? [];
+        if (is_array($additional)) {
+            $meta['additional_mail_domains'] = array_values(array_filter(
+                $additional,
+                fn ($item): bool => strtolower(trim((string) $item)) !== $newFqdn
+            ));
+        }
+
+        $owned = $this->ownedDomainRecord($service, $newFqdn);
+        if ($owned) {
+            $meta['domain_id'] = $owned->id;
+            $meta['cloudflare_dns'] = (bool) $owned->cloudflare_dns_enabled;
+        } else {
+            unset($meta['domain_id']);
+        }
+
+        $service->update([
+            'external_reference' => $newFqdn,
+            'service_meta' => $meta,
+        ]);
+
+        $warnings = [];
+        if ($previous !== null && $previous !== $newFqdn) {
+            $deleted = $client->deleteDomain($previous);
+            if (! ($deleted['success'] ?? false)) {
+                $warnings[] = 'The old domain '.$previous.' could not be deleted on Mailcow ('
+                    .mb_substr((string) ($deleted['message'] ?? 'no message'), 0, 160).'); remove it there by hand.';
+                Log::warning('Mailcow old domain delete failed after admin replacement', [
+                    'service_id' => $service->id,
+                    'old_domain' => $previous,
+                    'new_domain' => $newFqdn,
+                ]);
+            }
+        }
+
+        $fresh = $service->fresh(['node', 'product', 'user']);
+
+        $info = $this->ensureInfoMailbox($newFqdn, $fresh);
+        if (! ($info['success'] ?? false)) {
+            $warnings[] = 'The info@ inbox could not be created: '.mb_substr((string) ($info['message'] ?? ''), 0, 160);
+        }
+
+        if (! empty($meta['domain_id']) && empty($meta['transfer_pending'])) {
+            try {
+                app(DomainActivationService::class)->activateFromService($fresh);
+                $fresh = $service->fresh(['node', 'product', 'user']);
+            } catch (\Throwable $e) {
+                Log::info('Mailcow linked domain activation skipped after replacement', [
+                    'service_id' => $service->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        try {
+            app(MailDnsService::class)->applyRecommendedRecords($fresh);
+        } catch (\Throwable $e) {
+            $warnings[] = 'Mail DNS records were not applied automatically; publish MX, SPF, DKIM and DMARC for '.$newFqdn.'.';
+            Log::info('Mailcow DNS auto-apply skipped after replacement', [
+                'service_id' => $service->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        AdminActivityService::log(
+            'service.mail_domain_replaced',
+            sprintf(
+                'Replaced the mail domain on service #%d: %s → %s, destroying %d mailbox(es) and %d alias(es)',
+                $service->id,
+                $previous ?? 'unset',
+                $newFqdn,
+                $contents['mailboxes'],
+                $contents['aliases']
+            ),
+            $service,
+            [
+                'actor_user_id' => $actor->id,
+                'from' => $previous,
+                'to' => $newFqdn,
+                'destroyed_mailboxes' => $contents['mailboxes'],
+                'destroyed_aliases' => $contents['aliases'],
+            ]
+        );
+
+        Log::info('Mailcow mail domain replaced by an operator', [
+            'service_id' => $service->id,
+            'actor_user_id' => $actor->id,
+            'from' => $previous,
+            'to' => $newFqdn,
+        ]);
+
+        return [
+            'domain' => $newFqdn,
+            'previous_domain' => $previous,
+            'deleted_mailboxes' => $contents['mailboxes'],
+            'deleted_aliases' => $contents['aliases'],
+            'info_mailbox' => ($info['success'] ?? false) ? (string) $info['email'] : null,
+            'info_password' => $info['password'] ?? null,
+            'warnings' => $warnings,
+        ];
     }
 
     /**
@@ -604,7 +796,7 @@ class MailcowProvisioningService
             $emailService->update(['service_meta' => $meta]);
         }
 
-        return ['success' => true, 'created' => true, 'email' => $email, 'message' => 'Created '.$email];
+        return ['success' => true, 'created' => true, 'email' => $email, 'password' => $password, 'message' => 'Created '.$email];
     }
 
     /**
