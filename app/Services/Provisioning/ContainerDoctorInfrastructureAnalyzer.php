@@ -320,11 +320,13 @@ class ContainerDoctorInfrastructureAnalyzer
                     return preg_match('/port is already allocated|Bind for [\d.]+:\d+ failed|EADDRINUSE|address already in use/i', $haystack) === 1;
                 },
                 'title' => 'Host port is already in use',
-                'summary' => 'Another container (or a stale copy of this one) still holds the published port, so Compose cannot start this stack.',
-                'treat_action' => 'recreate_application',
-                'treat_label' => 'Recreate containers',
+                'summary' => 'Something on this host already holds the published port, so Compose cannot start this stack. '
+                    .'Recreating on the same port fails the same way; moving the stack to a port the node is not using does not.',
+                'treat_action' => 'move_to_free_port',
+                'treat_label' => 'Move to a free port',
                 'manual_steps' => [
-                    'Recreate containers to drop stale port bindings. If it still fails, an operator must free the host port.',
+                    'Move to a free port — the stack is re-rendered on a port nothing else is listening on and recreated. The database keeps running.',
+                    'If it still fails, the admin node page lists what is holding ports on this host.',
                 ],
             ],
             [

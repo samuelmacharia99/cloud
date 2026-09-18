@@ -132,6 +132,7 @@ class ContainerDoctorService
                 'normalize_app_permissions',
                 ContainerDoctorPhpSiteTreatments::ACTION_MARK_INSTALLED,
                 ContainerDoctorWordPressTreatments::ACTION_REPAIR_CONFIG,
+                'move_to_free_port',
                 // A container that cannot parse its settings is crash-looping
                 // by definition, so requiring it to be running first would
                 // refuse the one repair that fixes it.
@@ -163,6 +164,7 @@ class ContainerDoctorService
             'ensure_pdo_pgsql' => $this->treatEnsurePdoPgsql($service),
             'ensure_gd' => $this->treatEnsureGd($service),
             'ensure_mysqli' => $this->treatEnsureMysqli($service),
+            'move_to_free_port' => $this->treatMoveToFreePort($service),
             'ensure_node' => $this->treatEnsureNode($service),
             'fix_npm_cache_permissions' => $this->treatFixNpmCachePermissions($service),
             'clear_laravel_caches' => $this->treatClearLaravelCaches($service),
@@ -5032,11 +5034,13 @@ PHP;
                     '/address already in use/i',
                 ],
                 'title' => 'Host port is already in use',
-                'summary' => 'Another container (or a stale copy of this one) still holds the published port, so Compose cannot start this stack.',
-                'treat_action' => 'recreate_application',
-                'treat_label' => 'Recreate containers',
+                'summary' => 'Something on this host already holds the published port, so Compose cannot start this stack. '
+                    .'Recreating on the same port fails the same way; moving the stack to a port the node is not using does not.',
+                'treat_action' => 'move_to_free_port',
+                'treat_label' => 'Move to a free port',
                 'manual_steps' => [
-                    'Recreate containers to drop stale port bindings. If it still fails, an operator must free the host port.',
+                    'Move to a free port — the stack is re-rendered on a port nothing else is listening on and recreated. The database keeps running.',
+                    'If it still fails, the admin node page lists what is holding ports on this host.',
                 ],
             ],
             [
@@ -7212,6 +7216,25 @@ PHP;
         }
 
         return null;
+    }
+
+    /**
+     * @return array{success: bool, message: string}
+     */
+    private function treatMoveToFreePort(Service $service): array
+    {
+        try {
+            $result = app(ContainerDeploymentService::class)->moveToFreePublishedPort($service);
+        } catch (\Throwable $e) {
+            \Log::warning('Doctor could not move the stack to a free port', [
+                'service_id' => $service->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return ['success' => false, 'message' => 'Could not move the stack to a free port: '.mb_substr($e->getMessage(), 0, 240)];
+        }
+
+        return ['success' => $result['success'], 'message' => $result['message']];
     }
 
     private function treatEnsureMysqli(Service $service): array

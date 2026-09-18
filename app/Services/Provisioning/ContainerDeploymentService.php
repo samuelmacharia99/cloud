@@ -614,6 +614,71 @@ class ContainerDeploymentService
                     $this->runtimeImages->usesRuntimeImage($template),
                     timeoutSeconds: $composeTimeout,
                     containerName: $containerName,
+                    // Something outside this stack holds the port. Move to one
+                    // the node is not using and let the retry bring it up.
+                    reassignPort: function (?int $busyPort) use (
+                        $ssh,
+                        $node,
+                        $service,
+                        $deployment,
+                        $template,
+                        $containerName,
+                        $containerPath,
+                        $databaseTemplate,
+                        $selectedVersion,
+                        $hostAppPath,
+                        $applicationRuntime,
+                        $laravelDocumentRoot,
+                        $nodeTopology,
+                        &$port,
+                        &$envVars,
+                        &$composeYaml,
+                    ): bool {
+                        $previousPort = (int) $port;
+                        $blocked = array_values(array_unique(array_merge(
+                            $this->nodeListeningPorts($ssh),
+                            array_filter([$previousPort, $busyPort]),
+                        )));
+
+                        $newPort = DB::transaction(function () use ($node, $deployment, $blocked) {
+                            $lockedNode = Node::whereKey($node->id)->lockForUpdate()->firstOrFail();
+
+                            return $this->assignPort($lockedNode, null, [(int) $deployment->id], $blocked);
+                        });
+
+                        if ($newPort === $previousPort) {
+                            return false;
+                        }
+
+                        $port = $newPort;
+                        $envVars['APP_PORT'] = (string) $newPort;
+                        $composeYaml = $this->renderCompose(
+                            $template,
+                            $containerName,
+                            $newPort,
+                            $envVars,
+                            $databaseTemplate,
+                            $deployment,
+                            $selectedVersion,
+                            $hostAppPath,
+                            $applicationRuntime,
+                            $laravelDocumentRoot,
+                            nodeTopology: $nodeTopology,
+                        );
+                        $deployment->update([
+                            'assigned_port' => $newPort,
+                            'env_values' => $envVars,
+                            'docker_compose_content' => $composeYaml,
+                        ]);
+                        $ssh->upload($composeYaml, $containerPath.'/docker-compose.yml');
+                        $this->recordDeploymentEvent($service, $deployment, 'port_reassigned', [
+                            'assigned_port' => $newPort,
+                            'previous_port' => $previousPort,
+                            'reason' => 'host_port_in_use',
+                        ]);
+
+                        return true;
+                    },
                 );
 
                 // Host mount is the source of truth for /app; ensure placeholders after compose is up.
@@ -6771,6 +6836,7 @@ class ContainerDeploymentService
         bool $useExplicitComposeFile = false,
         int $timeoutSeconds = self::DEPLOY_TIMEOUT,
         ?string $containerName = null,
+        ?callable $reassignPort = null,
     ): void {
         $this->ensureSharedDockerNetwork($ssh);
 
@@ -6778,6 +6844,7 @@ class ContainerDeploymentService
         $timeoutSeconds = max(self::DEPLOY_TIMEOUT, $timeoutSeconds);
         $maxAttempts = 3;
         $lastError = null;
+        $portReassigned = false;
 
         for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
             try {
@@ -6824,6 +6891,21 @@ class ContainerDeploymentService
                             $busyPort,
                             $containerName ?: basename(rtrim($containerPath, '/'))
                         );
+                    }
+
+                    // Whatever holds the port is not this stack's leftover, so
+                    // reclaiming freed nothing and another identical attempt
+                    // would fail the same way. Ask for a different port once.
+                    if (! $portReassigned
+                        && $reassignPort !== null
+                        && ($busyPort === null || ! $this->publishedPortIsFree($ssh, $busyPort))) {
+                        $portReassigned = true;
+                        if ($reassignPort($busyPort) === true) {
+                            \Log::info('Published port could not be freed; deploying on a different port', [
+                                'container_path' => $containerPath,
+                                'busy_port' => $busyPort,
+                            ]);
+                        }
                     }
 
                     continue;
@@ -6966,16 +7048,34 @@ class ContainerDeploymentService
 
     public function isDockerHostPortAllocated(string $message): bool
     {
-        return preg_match('/port is already allocated|Bind for [\d.]+:\d+ failed/i', $message) === 1;
+        // Docker has said this three different ways. Newer daemons report
+        // "failed to bind host port 127.0.0.1:30054/tcp: address already in
+        // use", which matched none of the older wordings, so a deploy that hit
+        // it skipped the whole self-heal below and simply failed.
+        return preg_match(
+            '/port is already allocated|Bind for [\d.]+:\d+ failed|failed to bind host port|address already in use|EADDRINUSE/i',
+            $message
+        ) === 1;
     }
 
     public function dockerHostPortFromBindError(string $message): ?int
     {
-        // Loopback-bound stacks report "Bind for 127.0.0.1:PORT failed".
-        if (preg_match('/Bind for [\d.]+:(\d+) failed/i', $message, $matches)) {
-            $port = (int) $matches[1];
+        $patterns = [
+            // Loopback-bound stacks report "Bind for 127.0.0.1:PORT failed".
+            '/Bind for [\d.]+:(\d+) failed/i',
+            // Newer daemons: "failed to bind host port 127.0.0.1:30054/tcp".
+            '/failed to bind host port (?:[\d.]+:)?(\d+)/i',
+            // Fallback: "0.0.0.0:30054: address already in use".
+            '/[\d.]+:(\d+)[^\d]{0,40}address already in use/i',
+        ];
 
-            return $port > 0 && $port <= 65535 ? $port : null;
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $message, $matches) === 1) {
+                $port = (int) $matches[1];
+                if ($port > 0 && $port <= 65535) {
+                    return $port;
+                }
+            }
         }
 
         return null;
@@ -7036,7 +7136,149 @@ class ContainerDeploymentService
             false
         ));
 
-        return $ids === '';
+        if ($ids !== '') {
+            return false;
+        }
+
+        // Docker only knows about Docker. A host process, a tunnel or a
+        // container Docker no longer lists can hold the port just as well, and
+        // asking Docker alone is how a deploy was handed a port the kernel
+        // then refused to bind.
+        try {
+            $listening = trim($ssh->exec($this->portListenerProbeCommand($port), 15, false));
+        } catch (\Throwable $e) {
+            \Log::warning('Could not ask the node whether a port is listening', [
+                'port' => $port,
+                'error' => $e->getMessage(),
+            ]);
+
+            return true;
+        }
+
+        return $listening !== 'busy';
+    }
+
+    /**
+     * Move a stack to a host port the node is not using, then bring it up.
+     * For the case the pre-flight cannot fix by itself: something outside this
+     * stack holds the port and only an operator would otherwise notice.
+     *
+     * @return array{success: bool, message: string, from: ?int, to: ?int}
+     */
+    public function moveToFreePublishedPort(Service $service): array
+    {
+        $service->loadMissing('product.containerTemplate', 'containerDeployment.node');
+        $deployment = $service->containerDeployment;
+
+        if (! $deployment?->node) {
+            return ['success' => false, 'message' => 'Application is not deployed.', 'from' => null, 'to' => null];
+        }
+
+        $previous = (int) $deployment->assigned_port;
+        $ssh = SSHService::forNode($deployment->node);
+
+        try {
+            $blocked = array_values(array_unique(array_merge(
+                $this->nodeListeningPorts($ssh),
+                $previous > 0 ? [$previous] : [],
+            )));
+
+            $newPort = DB::transaction(function () use ($deployment, $blocked) {
+                $lockedNode = Node::whereKey($deployment->node_id)->lockForUpdate()->firstOrFail();
+
+                return $this->assignPort($lockedNode, null, [(int) $deployment->id], $blocked);
+            });
+
+            if ($newPort === $previous) {
+                return ['success' => false, 'message' => 'No free port is left in the platform range on this node.', 'from' => $previous, 'to' => null];
+            }
+
+            $envValues = is_array($deployment->env_values) ? $deployment->env_values : [];
+            $envValues['APP_PORT'] = (string) $newPort;
+            $deployment->update(['assigned_port' => $newPort, 'env_values' => $envValues]);
+            $this->recordDeploymentEvent($service, $deployment, 'port_reassigned', [
+                'assigned_port' => $newPort,
+                'previous_port' => $previous,
+                'reason' => 'operator_moved_off_busy_port',
+            ]);
+        } finally {
+            $ssh->disconnect();
+        }
+
+        // Re-render compose from the stored values and recreate: the same path
+        // an environment change already takes, so the port lands everywhere it
+        // has to without a second renderer to keep in step.
+        $this->applyEnvironmentVariables($service->fresh(['product.containerTemplate', 'containerDeployment.node']), $deployment->fresh());
+
+        return [
+            'success' => true,
+            'message' => 'Moved the stack from port '.$previous.' to '.$newPort.' and recreated it. The database was left running.',
+            'from' => $previous,
+            'to' => $newPort,
+        ];
+    }
+
+    /** Is anything at all listening on this TCP port, Docker or not? */
+    public function portListenerProbeCommand(int $port): string
+    {
+        $port = max(1, min(65535, $port));
+        $quoted = escapeshellarg('sport = :'.$port);
+
+        return 'if command -v ss >/dev/null 2>&1; then'
+            .' if ss -ltnH '.$quoted.' 2>/dev/null | grep -q .; then echo busy; else echo free; fi;'
+            .' elif command -v netstat >/dev/null 2>&1; then'
+            .' if netstat -ltn 2>/dev/null | grep -qE "[:.]'.$port.'[[:space:]]"; then echo busy; else echo free; fi;'
+            .' else echo unknown; fi';
+    }
+
+    /**
+     * Every TCP port in the platform range the node is already listening on,
+     * whoever owns it. Used to pick a port that will actually bind.
+     *
+     * @return list<int>
+     */
+    public function nodeListeningPorts(SSHService $ssh): array
+    {
+        try {
+            $output = (string) $ssh->exec($this->listeningPortsCommand(), 20, false);
+        } catch (\Throwable $e) {
+            \Log::warning('Could not list the ports a node is listening on; falling back to the platform record', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return [];
+        }
+
+        return $this->parseListeningPorts($output);
+    }
+
+    public function listeningPortsCommand(): string
+    {
+        // Both sources, because each misses what the other sees: ss knows every
+        // listener on the host, docker knows a published port whose listener is
+        // still coming up.
+        return '{ ss -ltnH 2>/dev/null || netstat -ltn 2>/dev/null; }; '
+            .'docker ps --format '.escapeshellarg('{{.Ports}}').' 2>/dev/null || true';
+    }
+
+    /**
+     * @return list<int>
+     */
+    public function parseListeningPorts(string $output): array
+    {
+        if (preg_match_all('/[:.](\d{2,5})(?:\s|->|$)/m', $output, $matches) < 1) {
+            return [];
+        }
+
+        $ports = [];
+        foreach ($matches[1] as $candidate) {
+            $port = (int) $candidate;
+            if ($port >= self::PORT_RANGE_START && $port <= self::PORT_RANGE_END) {
+                $ports[$port] = true;
+            }
+        }
+
+        return array_values(array_map('intval', array_keys($ports)));
     }
 
     private function ensurePublishedPortIsAvailable(
@@ -7047,7 +7289,9 @@ class ContainerDeploymentService
         string $containerName,
         string $containerPath,
     ): int {
-        $busyPorts = [];
+        // One listing up front: a replacement drawn only from the platform's own
+        // records can land on another listener and fail the same way.
+        $busyPorts = $this->nodeListeningPorts($ssh);
 
         for ($attempt = 1; $attempt <= 8; $attempt++) {
             $this->reclaimStalePublishedPort($ssh, $containerPath, $port, $containerName);

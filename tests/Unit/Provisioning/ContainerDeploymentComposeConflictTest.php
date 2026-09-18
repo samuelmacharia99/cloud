@@ -133,4 +133,145 @@ class ContainerDeploymentComposeConflictTest extends TestCase
             'user-493-service-457-python'
         );
     }
+
+    #[Test]
+    public function it_recognises_every_wording_docker_uses_for_a_taken_host_port(): void
+    {
+        $service = app(ContainerDeploymentService::class);
+
+        // The wording that slipped through and failed a live deploy.
+        $modern = 'failed to set up container networking: driver failed programming external connectivity on endpoint '
+            .'user-512-service-516-wordpress (f33b95): failed to bind host port 127.0.0.1:30054/tcp: address already in use';
+        $this->assertTrue($service->isDockerHostPortAllocated($modern));
+        $this->assertSame(30054, $service->dockerHostPortFromBindError($modern));
+
+        $classic = 'Bind for 0.0.0.0:30001 failed: port is already allocated';
+        $this->assertTrue($service->isDockerHostPortAllocated($classic));
+        $this->assertSame(30001, $service->dockerHostPortFromBindError($classic));
+
+        $node = 'Error: EADDRINUSE 0.0.0.0:30077: address already in use';
+        $this->assertTrue($service->isDockerHostPortAllocated($node));
+        $this->assertSame(30077, $service->dockerHostPortFromBindError($node));
+
+        $this->assertFalse($service->isDockerHostPortAllocated('no space left on device'));
+        $this->assertNull($service->dockerHostPortFromBindError('no space left on device'));
+    }
+
+    #[Test]
+    public function a_port_held_by_something_else_is_swapped_for_a_free_one_and_the_stack_comes_up(): void
+    {
+        $service = app(ContainerDeploymentService::class);
+        $reassigned = [];
+
+        $ssh = Mockery::mock(SSHService::class);
+        // network ensure, failed up, reclaim probe(s), free-port check, listing, successful up
+        $ssh->shouldReceive('exec')->andReturnUsing(function (string $command) {
+            if (str_contains($command, 'docker compose') && str_contains($command, 'up -d')) {
+                static $attempts = 0;
+                $attempts++;
+                if ($attempts === 1) {
+                    throw new SSHCommandException($command, 'failed to bind host port 127.0.0.1:30054/tcp: address already in use', 'Command exited with status 1');
+                }
+
+                return '';
+            }
+            if (str_contains($command, 'docker ps -q --filter publish')) {
+                return 'c0ffee';        // still held, so reclaiming freed nothing
+            }
+
+            return '';
+        });
+
+        $composeUp = new ReflectionMethod(ContainerDeploymentService::class, 'composeUp');
+        $composeUp->invoke(
+            $service,
+            $ssh,
+            '/opt/talksasa/containers/user-512-service-516-wordpress',
+            true,
+            false,
+            120,
+            'user-512-service-516-wordpress',
+            function (?int $busyPort) use (&$reassigned): bool {
+                $reassigned[] = $busyPort;
+
+                return true;
+            },
+        );
+
+        $this->assertSame([30054], $reassigned, 'the busy port is handed to the caller so it can pick another');
+    }
+
+    #[Test]
+    public function a_port_the_stack_itself_left_behind_is_reclaimed_without_moving_the_stack(): void
+    {
+        $service = app(ContainerDeploymentService::class);
+        $reassigned = 0;
+
+        $ssh = Mockery::mock(SSHService::class);
+        $ssh->shouldReceive('exec')->andReturnUsing(function (string $command) {
+            if (str_contains($command, 'docker compose') && str_contains($command, 'up -d')) {
+                static $attempts = 0;
+                $attempts++;
+                if ($attempts === 1) {
+                    throw new SSHCommandException($command, 'Bind for 127.0.0.1:30054 failed: port is already allocated', 'status 1');
+                }
+
+                return '';
+            }
+            if (str_contains($command, 'docker ps -q --filter publish')) {
+                return '';              // reclaim freed it
+            }
+
+            return '';
+        });
+
+        (new ReflectionMethod(ContainerDeploymentService::class, 'composeUp'))->invoke(
+            $service,
+            $ssh,
+            '/opt/talksasa/containers/user-1-service-2-php',
+            true,
+            false,
+            120,
+            'user-1-service-2-php',
+            function () use (&$reassigned): bool {
+                $reassigned++;
+
+                return true;
+            },
+        );
+
+        $this->assertSame(0, $reassigned, 'our own leftover was cleared, so the stack keeps its port');
+    }
+
+    #[Test]
+    public function the_node_is_asked_what_is_listening_not_only_docker(): void
+    {
+        $service = app(ContainerDeploymentService::class);
+
+        foreach ([$service->portListenerProbeCommand(30054), $service->listeningPortsCommand()] as $command) {
+            $file = tempnam(sys_get_temp_dir(), 'talksasa-port').'.sh';
+            file_put_contents($file, $command);
+            exec('bash -n '.escapeshellarg($file).' 2>&1', $out, $code);
+            @unlink($file);
+            $this->assertSame(0, $code, implode("\n", $out));
+        }
+
+        $this->assertStringContainsString('ss -ltnH', $service->portListenerProbeCommand(30054));
+        $this->assertStringContainsString('netstat', $service->portListenerProbeCommand(30054), 'a host without ss still has to answer');
+
+        // ss output and docker port columns both yield ports, and only ours.
+        $ports = $service->parseListeningPorts(
+            "LISTEN 0 4096 127.0.0.1:30054 0.0.0.0:*\n"
+            ."LISTEN 0 511 0.0.0.0:443 0.0.0.0:*\n"
+            ."127.0.0.1:30055->80/tcp, 3306/tcp\n"
+        );
+        sort($ports);
+        $this->assertSame([30054, 30055], $ports, 'ports outside the platform range are none of our business');
+
+        // A node that cannot answer must not block a deploy.
+        $failing = Mockery::mock(SSHService::class);
+        $failing->shouldReceive('exec')->andThrow(new \RuntimeException('ssh down'));
+        $this->assertSame([], $service->nodeListeningPorts($failing));
+        $this->assertTrue($failing instanceof SSHService);
+    }
 }

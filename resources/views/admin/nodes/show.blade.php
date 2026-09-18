@@ -102,6 +102,10 @@
         @include('admin.nodes.partials.container-analytics', ['containerAnalytics' => $containerAnalytics, 'node' => $node])
     @endif
 
+    @if ($node->type === 'container_host')
+        @include('admin.nodes.partials.port-audit', ['node' => $node])
+    @endif
+
     @if ($node->type === 'directadmin')
         @include('admin.nodes.partials.node-doctor', ['node' => $node, 'nodeEvents' => $nodeEvents ?? collect()])
     @endif

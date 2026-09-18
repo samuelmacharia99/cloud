@@ -10,6 +10,7 @@ use App\Models\NodeMonitoring;
 use App\Models\Service;
 use App\Models\User;
 use App\Services\Provisioning\ContainerNodeAnalyticsService;
+use App\Services\Provisioning\ContainerNodePortAuditService;
 use App\Services\Provisioning\DirectAdminService;
 use App\Services\Provisioning\InfrastructureStorageBoxService;
 use App\Services\Provisioning\MailcowService;
@@ -331,6 +332,17 @@ class NodeController extends Controller
      * connection to a live server, which is not something a page load should do
      * every time somebody glances at it.
      */
+    /**
+     * What this container host is publishing, and which of it has no
+     * deployment row. Read-only: the report never removes a container.
+     */
+    public function portAudit(Node $node, ContainerNodePortAuditService $audit): JsonResponse
+    {
+        // The admin middleware on this route group is the gate, as it is for
+        // every other node action here; nodes have no policy of their own.
+        return response()->json($audit->audit($node));
+    }
+
     public function healthScan(Node $node, NodeDoctorService $doctor): JsonResponse
     {
         if (! $doctor->supports($node)) {
