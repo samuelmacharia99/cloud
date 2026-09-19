@@ -54,6 +54,7 @@ use App\Http\Controllers\Customer\ServiceBrowserController;
 use App\Http\Controllers\Customer\ServiceUpgradeController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\EmailWebhookController;
+use App\Http\Controllers\ImpersonationController;
 use App\Http\Controllers\NotificationPreferenceController;
 use App\Http\Controllers\PaymentWebhookController;
 use App\Http\Controllers\ProfileController;
@@ -87,43 +88,11 @@ Route::post('/currency', [CurrencyPreferenceController::class, 'update'])->name(
 Route::get('/', [PublicHomeController::class, 'index'])->name('home');
 
 Route::middleware(['auth'])->group(function () {
-    Route::post('admin/exit-impersonation', [CustomerController::class, 'exitImpersonation'])->name('admin.exit-impersonation');
-    Route::post('/exit-impersonation', function () {
-        // Check if impersonating from reseller or admin
-        if (session('impersonating_reseller')) {
-            $resellerId = session('impersonating_reseller');
-            $reseller = User::find($resellerId);
-            if (! $reseller || ! $reseller->is_reseller) {
-                session()->forget(['impersonating_reseller', 'impersonating_user_id']);
-                auth()->logout();
-                abort(403, 'Invalid impersonation session');
-            }
-            session()->forget(['impersonating_reseller', 'impersonating_user_id']);
-            auth()->logout();
-            session()->regenerate();
-            auth()->loginUsingId($resellerId);
-            session()->regenerate();
-
-            return redirect()->route('reseller.customers.index')->with('success', 'Exited customer view.');
-        } elseif (session('impersonating')) {
-            $adminId = session('impersonating');
-            $admin = User::find($adminId);
-            if (! $admin || ! $admin->is_admin) {
-                session()->forget(['impersonating', 'impersonating_user_id']);
-                auth()->logout();
-                abort(403, 'Invalid impersonation session');
-            }
-            session()->forget(['impersonating', 'impersonating_user_id']);
-            auth()->logout();
-            session()->regenerate();
-            auth()->loginUsingId($adminId);
-            session()->regenerate();
-
-            return redirect()->route('admin.customers.index')->with('success', 'Exited customer view.');
-        }
-
-        return redirect()->route('dashboard');
-    })->name('exit-impersonation');
+    // Every portal's exit banner posts here. Which account the session returns
+    // to is decided by the impersonation trail, not by which button was pressed,
+    // so a nested view unwinds one level at a time.
+    Route::post('admin/exit-impersonation', [ImpersonationController::class, 'leave'])->name('admin.exit-impersonation');
+    Route::post('/exit-impersonation', [ImpersonationController::class, 'leave'])->name('exit-impersonation');
 });
 
 // Public domain search and checkout (no authentication required)
@@ -686,7 +655,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         });
 
         // Exit impersonation must stay outside reseller.limits — while impersonating the user is a customer.
-        Route::match(['get', 'post'], 'reseller/exit-impersonation', [App\Http\Controllers\Reseller\CustomerController::class, 'exitImpersonation'])->name('reseller.exit-impersonation');
+        Route::match(['get', 'post'], 'reseller/exit-impersonation', [ImpersonationController::class, 'leave'])->name('reseller.exit-impersonation');
 
         Route::get('reseller/invoices/{invoice}/pay', [App\Http\Controllers\Reseller\PaymentController::class, 'selectMethod'])->name('reseller.payment.select-method');
         Route::post('reseller/invoices/{invoice}/pay', [App\Http\Controllers\Reseller\PaymentController::class, 'initiate'])->middleware('throttle:10,1')->name('reseller.payment.initiate');

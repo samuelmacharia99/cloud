@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\ImpersonationService;
 use Closure;
 use Illuminate\Http\Request;
 
@@ -13,7 +14,7 @@ class CheckCustomerRole
             abort(403, 'Unauthorized access');
         }
 
-        if (auth()->user()->is_admin && ! session('impersonating')) {
+        if (auth()->user()->is_admin && ! app(ImpersonationService::class)->isImpersonating()) {
             $user = auth()->user();
             $ownsCustomerAssets = $user->services()->exists() || $user->customerProjects()->exists();
 

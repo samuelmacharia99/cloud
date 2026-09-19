@@ -20,6 +20,7 @@ use App\Services\AdminActivityService;
 use App\Services\Billing\InvoiceNumberService;
 use App\Services\CreditService;
 use App\Services\CustomerResellerTransferService;
+use App\Services\ImpersonationService;
 use App\Services\InvoiceGenerationScheduleService;
 use App\Services\Provisioning\DirectAdminSetupService;
 use App\Services\ResellerDirectAdminService;
@@ -420,7 +421,7 @@ class CustomerController extends Controller
             ->with('success', $flash);
     }
 
-    public function impersonate(User $customer)
+    public function impersonate(User $customer, ImpersonationService $impersonation)
     {
         if ($customer->is_admin) {
             abort(404);
@@ -432,14 +433,12 @@ class CustomerController extends Controller
             $customer,
         );
 
-        // Store the admin ID in session for later exit
-        session(['impersonating' => auth()->id(), 'impersonating_user_id' => $customer->id]);
-
-        // Log out the current admin and log in as the customer
-        auth()->logout();
-        session()->regenerate();
-        auth()->loginUsingId($customer->id);
-        session()->regenerate();
+        $impersonation->begin(
+            auth()->user(),
+            $customer,
+            ImpersonationService::ROLE_ADMIN,
+            url()->previous(),
+        );
 
         return redirect()->route('dashboard')
             ->with('success', "You are now viewing the dashboard as {$customer->name}.");
@@ -456,36 +455,6 @@ class CustomerController extends Controller
 
         return redirect()->route('admin.customers.index')
             ->with('success', "Customer '{$customerName}' has been deleted successfully.");
-    }
-
-    public function exitImpersonation()
-    {
-        if (! session('impersonating')) {
-            return redirect()->route('admin.customers.index');
-        }
-
-        $adminId = session('impersonating');
-
-        // Verify that the stored ID belongs to an actual admin before restoring
-        $admin = User::find($adminId);
-        if (! $admin || ! $admin->is_admin) {
-            // Potentially tampered session — clear everything and log out safely
-            session()->forget(['impersonating', 'impersonating_user_id']);
-            auth()->logout();
-            abort(403, 'Invalid impersonation session');
-        }
-
-        // Clear impersonation session data
-        session()->forget(['impersonating', 'impersonating_user_id']);
-
-        // Log out and log back in as admin
-        auth()->logout();
-        session()->regenerate();
-        auth()->loginUsingId($adminId);
-        session()->regenerate();
-
-        return redirect()->route('admin.customers.index')
-            ->with('success', 'Exited customer view.');
     }
 
     /**

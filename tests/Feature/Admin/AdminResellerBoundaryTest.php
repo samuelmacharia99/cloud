@@ -11,6 +11,7 @@ use App\Models\Setting;
 use App\Models\Ticket;
 use App\Models\User;
 use App\Services\EmailDeliveryService;
+use App\Services\ImpersonationService;
 use App\Services\NotificationService;
 use App\Services\SmsService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -129,7 +130,10 @@ class AdminResellerBoundaryTest extends TestCase
             ->assertRedirect(route('dashboard'));
 
         $this->assertAuthenticatedAs($this->managed);
-        $this->assertSame($this->admin->id, session('impersonating'));
+
+        $frame = app(ImpersonationService::class)->currentFrame();
+        $this->assertSame($this->admin->id, $frame['actor_id']);
+        $this->assertSame(ImpersonationService::ROLE_ADMIN, $frame['actor_role']);
     }
 
     #[Test]

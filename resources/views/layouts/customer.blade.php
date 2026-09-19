@@ -305,39 +305,7 @@
                     </div>
                 </header>
 
-                @if (session('impersonating'))
-                <!-- Admin Impersonation Banner -->
-                <div class="min-h-12 py-3 sm:py-0 sm:h-12 bg-amber-50 dark:bg-amber-950 border-b border-amber-200 dark:border-amber-800 flex flex-col gap-3 sm:flex-row sm:items-center px-4 sm:px-6 sm:justify-between">
-                    <div class="flex items-center gap-2">
-                        <svg class="w-5 h-5 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12a9 9 0 11-18 0 9 9 0 0118 0m-.5 4.5h.01"/>
-                        </svg>
-                        <span class="text-sm font-medium text-amber-900 dark:text-amber-100">You are viewing as a customer. <strong>{{ auth()->user()->name }}</strong></span>
-                    </div>
-                    <form method="POST" action="{{ route('admin.exit-impersonation') }}" class="flex items-center gap-2">
-                        @csrf
-                        <button type="submit" class="px-4 py-1.5 bg-amber-600 hover:bg-amber-700 dark:bg-amber-700 dark:hover:bg-amber-600 text-white text-sm font-medium rounded-lg transition">
-                            Exit View
-                        </button>
-                    </form>
-                </div>
-                @elseif (session('impersonating_reseller'))
-                <!-- Reseller Impersonation Banner -->
-                <div class="min-h-12 py-3 sm:py-0 sm:h-12 bg-cyan-50 dark:bg-cyan-950 border-b border-cyan-200 dark:border-cyan-800 flex flex-col gap-3 sm:flex-row sm:items-center px-4 sm:px-6 sm:justify-between">
-                    <div class="flex items-center gap-2">
-                        <svg class="w-5 h-5 text-cyan-600 dark:text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.658 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
-                        </svg>
-                        <span class="text-sm font-medium text-cyan-900 dark:text-cyan-100">You are viewing as a customer. <strong>{{ auth()->user()->name }}</strong></span>
-                    </div>
-                    <form method="POST" action="{{ route('exit-impersonation') }}" class="flex items-center gap-2" title="Return to your reseller account">
-                        @csrf
-                        <button type="submit" class="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-700 dark:bg-cyan-700 dark:hover:bg-cyan-600 text-white text-sm font-medium rounded-lg transition">
-                            Exit View
-                        </button>
-                    </form>
-                </div>
-                @endif
+                <x-impersonation-banner />
 
                 <x-flash-messages />
 

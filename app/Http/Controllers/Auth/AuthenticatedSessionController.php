@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Models\User;
+use App\Services\ImpersonationService;
 use App\Services\TwoFactorService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -53,6 +54,9 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerate();
 
+        // A fresh login starts at ground level; no trail survives it.
+        app(ImpersonationService::class)->clear();
+
         return redirect()->intended(route('dashboard', absolute: false));
     }
 
@@ -63,8 +67,9 @@ class AuthenticatedSessionController extends Controller
     {
         Auth::guard('web')->logout();
 
-        // Explicitly remove impersonation session keys before invalidating the session
-        $request->session()->forget(['impersonating', 'impersonating_user_id']);
+        // Drop the whole impersonation trail before invalidating the session, so
+        // no frame can outlive the session that created it.
+        app(ImpersonationService::class)->clear();
 
         $request->session()->invalidate();
 

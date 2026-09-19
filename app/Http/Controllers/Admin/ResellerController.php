@@ -16,6 +16,7 @@ use App\Models\User;
 use App\Services\AdminAccountWelcomeService;
 use App\Services\AdminActivityService;
 use App\Services\Billing\InvoiceNumberService;
+use App\Services\ImpersonationService;
 use App\Services\InvoiceGenerationScheduleService;
 use App\Services\ResellerDirectAdminService;
 use App\Services\ResellerEnforcementService;
@@ -587,7 +588,7 @@ class ResellerController extends Controller
         }
     }
 
-    public function impersonate(User $user)
+    public function impersonate(User $user, ImpersonationService $impersonation)
     {
         abort_if(! $user->is_reseller, 404);
 
@@ -597,14 +598,12 @@ class ResellerController extends Controller
             $user,
         );
 
-        // Store the admin ID in session for later exit
-        session(['impersonating' => auth()->id(), 'impersonating_user_id' => $user->id]);
-
-        // Log out the current admin and log in as the reseller
-        auth()->logout();
-        session()->regenerate();
-        auth()->loginUsingId($user->id);
-        session()->regenerate();
+        $impersonation->begin(
+            auth()->user(),
+            $user,
+            ImpersonationService::ROLE_ADMIN,
+            url()->previous(),
+        );
 
         return redirect()->route('dashboard')
             ->with('success', "You are now viewing the dashboard as {$user->name}.");

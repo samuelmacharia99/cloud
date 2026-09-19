@@ -13,6 +13,7 @@ use App\Rules\ValidCountryCode;
 use App\Services\AdminActivityService;
 use App\Services\Customer\StackEligibilityService;
 use App\Services\Dns\DomainCloudflareDnsService;
+use App\Services\ImpersonationService;
 use App\Services\InvoiceGenerationScheduleService;
 use App\Services\ResellerCustomerBillingService;
 use App\Services\ResellerCustomerOrderService;
@@ -513,7 +514,7 @@ class CustomerController extends Controller
             ->with('success', "Customer '{$customerName}' has been deleted successfully.");
     }
 
-    public function impersonate(User $customer)
+    public function impersonate(User $customer, ImpersonationService $impersonation)
     {
         $this->checkOwnership($customer);
 
@@ -531,50 +532,15 @@ class CustomerController extends Controller
             'customer_id' => $customer->id,
         ]);
 
-        session([
-            'impersonating_reseller' => $reseller->id,
-            'impersonating_user_id' => $customer->id,
-        ]);
-
-        auth()->logout();
-        session()->regenerate();
-        auth()->loginUsingId($customer->id);
-        session()->regenerate();
+        $impersonation->begin(
+            $reseller,
+            $customer,
+            ImpersonationService::ROLE_RESELLER,
+            url()->previous(),
+        );
 
         return redirect()->route('dashboard')
             ->with('success', "You are now viewing the dashboard as {$customer->name}.");
-    }
-
-    public function exitImpersonation()
-    {
-        if (! session('impersonating_reseller')) {
-            return redirect()->route('dashboard');
-        }
-
-        $resellerId = (int) session('impersonating_reseller');
-        $customerId = session('impersonating_user_id');
-
-        $reseller = User::find($resellerId);
-        if (! $reseller || ! $reseller->is_reseller) {
-            session()->forget(['impersonating_reseller', 'impersonating_user_id']);
-            auth()->logout();
-            abort(403, 'Invalid impersonation session');
-        }
-
-        session()->forget(['impersonating_reseller', 'impersonating_user_id']);
-
-        auth()->logout();
-        session()->regenerate();
-        auth()->loginUsingId($resellerId);
-        session()->regenerate();
-
-        Log::info('Reseller exited customer impersonation', [
-            'reseller_id' => $resellerId,
-            'customer_id' => $customerId,
-        ]);
-
-        return redirect()->route('reseller.customers.index')
-            ->with('success', 'Exited customer view.');
     }
 
     /**

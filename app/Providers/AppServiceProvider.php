@@ -10,6 +10,7 @@ use App\Services\Customer\CustomerNextStepsService;
 use App\Services\DomainPushService;
 use App\Services\EmailDeliveryService;
 use App\Services\EmailRateLimiter;
+use App\Services\ImpersonationService;
 use App\Services\InAppNotificationService;
 use App\Services\NotificationPreferenceService;
 use App\Services\NotificationService;
@@ -112,7 +113,7 @@ class AppServiceProvider extends ServiceProvider
             }
 
             $user = auth()->user();
-            if ($user->isAdmin() && ! session('impersonating') && ! session('impersonating_reseller')) {
+            if ($user->isAdmin() && ! app(ImpersonationService::class)->isImpersonating()) {
                 return;
             }
 

@@ -283,23 +283,7 @@
                     </div>
                 </header>
 
-                @if (session('impersonating'))
-                <!-- Admin Impersonation Banner -->
-                <div class="min-h-12 py-3 sm:py-0 sm:h-12 bg-amber-50 dark:bg-amber-950 border-b border-amber-200 dark:border-amber-800 flex flex-col gap-3 sm:flex-row sm:items-center px-4 sm:px-6 sm:justify-between">
-                    <div class="flex items-center gap-2">
-                        <svg class="w-5 h-5 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12a9 9 0 11-18 0 9 9 0 0118 0m-.5 4.5h.01"/>
-                        </svg>
-                        <span class="text-sm font-medium text-amber-900 dark:text-amber-100">You are viewing as a reseller. <strong>{{ auth()->user()->name }}</strong></span>
-                    </div>
-                    <form method="POST" action="{{ route('admin.exit-impersonation') }}" class="flex items-center gap-2">
-                        @csrf
-                        <button type="submit" class="px-4 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg transition">
-                            Exit View
-                        </button>
-                    </form>
-                </div>
-                @endif
+                <x-impersonation-banner />
 
                 <x-flash-messages />
 
