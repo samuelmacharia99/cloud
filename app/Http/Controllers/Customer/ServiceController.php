@@ -45,7 +45,16 @@ class ServiceController extends Controller
         $projectService->ensureForUser($user);
 
         $services = $user->services()
-            ->with(['product.containerTemplate', 'resellerProduct', 'invoice', 'project', 'containerDeployment'])
+            ->with([
+                'product.containerTemplate', 'resellerProduct', 'invoice', 'containerDeployment',
+                // The card asks each project whether it can be removed, and the
+                // project it asks is the one hanging off the service, not the one
+                // in $projects. Without this that question is a query per card,
+                // and it drags in every service the project ever had.
+                'project.services' => fn ($query) => $query
+                    ->whereNotIn('status', CustomerProject::GONE_STATUSES)
+                    ->with('product'),
+            ])
             ->whereNotIn('status', ['cancelled', 'terminated'])
             ->whereHas('product', function ($q) {
                 $q->where('type', '!=', 'domain');

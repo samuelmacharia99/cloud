@@ -16,6 +16,12 @@ class CustomerProject extends Model
 
     public const PLAN_POOL_RECIPE = 'plan_pool';
 
+    /**
+     * Statuses that mean a service no longer counts as being in the project.
+     * Shared so an eager-load constraint and liveServices() cannot disagree.
+     */
+    public const GONE_STATUSES = ['terminated', 'cancelled'];
+
     protected $fillable = [
         'user_id',
         'name',
@@ -82,7 +88,7 @@ class CustomerProject extends Model
             ->filter(function (Service $service): bool {
                 $status = $service->status->value ?? (string) $service->status;
 
-                return ! in_array($status, ['terminated', 'cancelled'], true);
+                return ! in_array($status, self::GONE_STATUSES, true);
             })
             ->values();
     }
