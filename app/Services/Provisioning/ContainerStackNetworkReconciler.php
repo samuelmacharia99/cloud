@@ -75,12 +75,28 @@ class ContainerStackNetworkReconciler
         $subnet = trim((string) ($deployment->network_subnet ?? ''));
         $servicePrefix = $this->servicePrefix($containerName);
 
+        // A stack deploying for the first time has no subnet on its row yet, and
+        // every check below keys off one — so this ran as a no-op on exactly the
+        // deploys it was written to protect, and only started working on the
+        // retry, once the failed attempt had left a subnet behind. Allocate here
+        // instead, against what the node reports rather than the database alone,
+        // so the first block handed out is one Docker will actually accept.
+        if ($subnet === '') {
+            $subnet = $this->allocator->ensureFor($deployment, $this->subnetsOf($live));
+            $actions[] = 'allocated '.$subnet;
+        }
+
         $conflicting = [];
         foreach ($live as $network) {
-            if ($network['name'] === $ownNetwork || $subnet === '' || ! in_array($subnet, $network['subnets'], true)) {
+            if ($network['name'] === $ownNetwork) {
                 continue;
             }
-            $conflicting[] = $network;
+            foreach ($network['subnets'] as $candidate) {
+                if ($this->allocator->overlaps($subnet, $candidate)) {
+                    $conflicting[] = $network;
+                    break;
+                }
+            }
         }
 
         $unresolved = false;
@@ -105,18 +121,30 @@ class ContainerStackNetworkReconciler
         }
 
         if ($unresolved) {
-            $liveUsed = [];
-            foreach ($live as $network) {
-                foreach ($network['subnets'] as $s) {
-                    $liveUsed[] = $s;
-                }
-            }
-            $fresh = $this->allocator->reallocate($deployment, $liveUsed);
+            $fresh = $this->allocator->reallocate($deployment, $this->subnetsOf($live));
             $actions[] = 'moved this stack to '.$fresh;
             $subnet = $fresh;
         }
 
         return ['subnet' => $subnet !== '' ? $subnet : null, 'actions' => $actions];
+    }
+
+    /**
+     * Every subnet the node currently has a network on.
+     *
+     * @param  list<array{name: string, subnets: list<string>, containers: int}>  $live
+     * @return list<string>
+     */
+    private function subnetsOf(array $live): array
+    {
+        $subnets = [];
+        foreach ($live as $network) {
+            foreach ($network['subnets'] as $subnet) {
+                $subnets[] = $subnet;
+            }
+        }
+
+        return $subnets;
     }
 
     private function removeNetwork(SSHService $ssh, string $network): void

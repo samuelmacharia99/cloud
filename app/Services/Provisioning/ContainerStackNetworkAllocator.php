@@ -127,18 +127,36 @@ class ContainerStackNetworkAllocator
                 $query->where('id', '!=', $ignoreDeploymentId);
             }
 
-            $used = $query->pluck('network_subnet')
-                ->map(static fn ($subnet): string => trim((string) $subnet))
-                ->flip()
-                ->all();
+            // Ranges, not strings. Docker refuses a block that *overlaps* an
+            // existing network, so comparing the text of two CIDRs misses every
+            // conflict that is not character-for-character identical: a wider
+            // network sitting over the block, or a longer prefix inside it,
+            // both read as free here and are then rejected by the daemon.
+            $taken = [];
+            foreach ($query->pluck('network_subnet') as $subnet) {
+                if ($range = self::rangeOf((string) $subnet)) {
+                    $taken[] = $range;
+                }
+            }
             foreach ($liveUsed as $subnet) {
-                $used[trim((string) $subnet)] = true;
+                if ($range = self::rangeOf((string) $subnet)) {
+                    $taken[] = $range;
+                }
             }
 
             foreach ($this->candidates() as $subnet) {
-                if (! isset($used[$subnet])) {
-                    return $subnet;
+                $range = self::rangeOf($subnet);
+                if ($range === null) {
+                    continue;
                 }
+
+                foreach ($taken as $other) {
+                    if ($range[0] <= $other[1] && $other[0] <= $range[1]) {
+                        continue 2;
+                    }
+                }
+
+                return $subnet;
             }
 
             $label = $node->hostname ?: ($node->name ?: (string) $node->id);
@@ -150,6 +168,50 @@ class ContainerStackNetworkAllocator
                 ."subnet pool {$this->base} is exhausted ({$this->capacity()} blocks)."
             );
         });
+    }
+
+    /**
+     * Whether two CIDRs share any address. This is the test Docker applies
+     * when it accepts or rejects a network.
+     */
+    public function overlaps(string $a, string $b): bool
+    {
+        $left = self::rangeOf($a);
+        $right = self::rangeOf($b);
+
+        if ($left === null || $right === null) {
+            return false;
+        }
+
+        return $left[0] <= $right[1] && $right[0] <= $left[1];
+    }
+
+    /**
+     * First and last address of a CIDR, as integers.
+     *
+     * IPv6 and anything unparseable yield null: the pool is IPv4, so a network
+     * we cannot read cannot be shown to conflict with it.
+     *
+     * @return array{int, int}|null
+     */
+    public static function rangeOf(string $cidr): ?array
+    {
+        [$ip, $prefix] = array_pad(explode('/', trim($cidr), 2), 2, null);
+
+        $long = ip2long((string) $ip);
+        if ($long === false || $prefix === null || ! is_numeric($prefix)) {
+            return null;
+        }
+
+        $prefix = (int) $prefix;
+        if ($prefix < 0 || $prefix > 32) {
+            return null;
+        }
+
+        $size = 2 ** (32 - $prefix);
+        $start = $long - ($long % $size);
+
+        return [$start, $start + $size - 1];
     }
 
     /**

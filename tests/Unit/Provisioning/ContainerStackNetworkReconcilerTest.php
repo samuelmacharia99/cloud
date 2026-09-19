@@ -18,6 +18,67 @@ class ContainerStackNetworkReconcilerTest extends TestCase
     use RefreshDatabase;
 
     #[Test]
+    public function a_first_deploy_is_given_a_subnet_the_node_does_not_already_hold(): void
+    {
+        // The row starts with no subnet, which is the state every brand-new
+        // service is in. Every check in the reconciler keys off one, so it used
+        // to run as a no-op here and the block was chosen later from the
+        // database alone — the deploy then failed on a network the node already
+        // had, and only succeeded on the retry, once the failed attempt had left
+        // a subnet behind for the reconciler to find.
+        [$deployment] = $this->deployment(null);
+
+        $ssh = Mockery::mock(SSHService::class);
+        $ssh->shouldReceive('exec')->andReturnUsing(fn (string $command): string => str_contains($command, 'docker network rm')
+            ? ''
+            : "bridge|172.17.0.0/16 |3\nsomebody-else-net|10.210.0.0/24 |4\nanother-net|10.210.1.0/24 |2\n");
+
+        $result = (new ContainerStackNetworkReconciler(new ContainerStackNetworkAllocator))->reconcile(
+            $ssh,
+            $deployment,
+            'user-156-service-38-static-site',
+            '',
+            function (string $path): void {},
+        );
+
+        $this->assertSame('10.210.2.0/24', $result['subnet'], 'the first two blocks are taken on the node');
+        $this->assertSame('10.210.2.0/24', $deployment->fresh()->network_subnet);
+        $this->assertContains('allocated 10.210.2.0/24', $result['actions']);
+    }
+
+    #[Test]
+    public function a_network_that_overlaps_without_matching_is_still_a_conflict(): void
+    {
+        [$deployment] = $this->deployment('10.210.5.0/24');
+
+        $ssh = Mockery::mock(SSHService::class);
+        $removed = [];
+        $ssh->shouldReceive('exec')->andReturnUsing(function (string $command) use (&$removed): string {
+            if (str_contains($command, 'docker network rm')) {
+                $removed[] = $command;
+
+                return '';
+            }
+
+            // Half of our block, held by an empty network. Docker refuses the
+            // whole /24 over it, but comparing CIDR text found nothing wrong.
+            return "leftover-net|10.210.5.128/25 |0\n";
+        });
+
+        $result = (new ContainerStackNetworkReconciler(new ContainerStackNetworkAllocator))->reconcile(
+            $ssh,
+            $deployment,
+            'user-156-service-38-static-site',
+            '',
+            function (string $path): void {},
+        );
+
+        $this->assertCount(1, $removed);
+        $this->assertStringContainsString("'leftover-net'", $removed[0]);
+        $this->assertSame('10.210.5.0/24', $result['subnet']);
+    }
+
+    #[Test]
     public function live_networks_are_parsed_from_inspect_output(): void
     {
         $reconciler = new ContainerStackNetworkReconciler(new ContainerStackNetworkAllocator);
@@ -152,7 +213,7 @@ class ContainerStackNetworkReconcilerTest extends TestCase
     /**
      * @return array{0: ContainerDeployment, 1: Node}
      */
-    private function deployment(string $subnet): array
+    private function deployment(?string $subnet): array
     {
         $node = Node::factory()->containerHost()->create();
         $service = Service::factory()->create(['node_id' => $node->id]);
