@@ -11,6 +11,35 @@ use Illuminate\Database\Eloquent\Builder;
 
 class ResellerScopeService
 {
+    /**
+     * Customer-id lookups memoised for the life of one request.
+     *
+     * These lists are read several times per page — the reseller dashboard alone
+     * asked for them four times, and the wider list costs three queries each
+     * time. Nothing in a single request may both change a reseller's customers
+     * and then re-read them without saying so, which is what forget() is for.
+     *
+     * @var array<string, list<int>>
+     */
+    private array $customerIdCache = [];
+
+    /**
+     * Drop the memoised lists for a reseller after their customers change.
+     */
+    public function forget(?User $reseller = null): void
+    {
+        if ($reseller === null) {
+            $this->customerIdCache = [];
+
+            return;
+        }
+
+        unset(
+            $this->customerIdCache['managed:'.$reseller->id],
+            $this->customerIdCache['all:'.$reseller->id],
+        );
+    }
+
     public function ownsCustomer(User $reseller, User $customer): bool
     {
         if ($customer->reseller_id === $reseller->id) {
@@ -91,7 +120,10 @@ class ResellerScopeService
      */
     public function managedCustomerIds(User $reseller): array
     {
-        return $this->managedCustomersQuery($reseller)->pluck('id')->all();
+        return $this->customerIdCache['managed:'.$reseller->id] ??= $this->managedCustomersQuery($reseller)
+            ->pluck('id')
+            ->map(fn ($id): int => (int) $id)
+            ->all();
     }
 
     /**
@@ -102,6 +134,10 @@ class ResellerScopeService
      */
     public function allManagedCustomerIds(User $reseller): array
     {
+        if (isset($this->customerIdCache['all:'.$reseller->id])) {
+            return $this->customerIdCache['all:'.$reseller->id];
+        }
+
         $assigned = $this->managedCustomersQuery($reseller)->pluck('id');
 
         $viaServices = Service::query()
@@ -114,12 +150,13 @@ class ResellerScopeService
             ->distinct()
             ->pluck('user_id');
 
-        return $assigned
+        return $this->customerIdCache['all:'.$reseller->id] = $assigned
             ->merge($viaServices)
             ->merge($viaDomains)
             ->unique()
             ->filter()
             ->values()
+            ->map(fn ($id): int => (int) $id)
             ->all();
     }
 

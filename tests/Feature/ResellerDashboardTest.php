@@ -12,6 +12,8 @@ use App\Models\Ticket;
 use App\Models\User;
 use App\Services\ResellerScopeService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class ResellerDashboardTest extends TestCase
@@ -67,6 +69,118 @@ class ResellerDashboardTest extends TestCase
             'billing_cycle' => 'monthly',
             'next_due_date' => now()->addMonth(),
         ]);
+    }
+
+    /**
+     * The dashboard used to run two extra queries for every container the
+     * reseller sold — one for the newest disk metric and one for the transfer
+     * counters — so a reseller with a couple of hundred applications loaded
+     * their own dashboard on several hundred queries. Both are batched now, so
+     * the cost is flat.
+     */
+    public function test_dashboard_query_count_does_not_grow_with_container_count(): void
+    {
+        $counts = [];
+
+        foreach ([1, 12] as $containers) {
+            // Unique package name: the shared helper hardcodes one, and this
+            // test builds two resellers.
+            $reseller = $this->createResellerWithPackage(['name' => 'Pool '.uniqid()]);
+            $this->seedContainerServices($reseller, $containers);
+
+            DB::flushQueryLog();
+            DB::enableQueryLog();
+            $this->actingAs($reseller)->get('/dashboard')->assertOk();
+            $counts[$containers] = count(DB::getQueryLog());
+            DB::disableQueryLog();
+        }
+
+        $this->assertSame(
+            $counts[1],
+            $counts[12],
+            'Dashboard queries scaled with container count: '.json_encode($counts),
+        );
+    }
+
+    /**
+     * A reseller whose DirectAdmin binding is missing or broken is exactly the
+     * one who most needs their dashboard to load. Sizing their accounts costs
+     * two HTTP calls each and belongs to the nightly collector, never a render.
+     */
+    public function test_dashboard_never_calls_directadmin(): void
+    {
+        Http::preventStrayRequests();
+        Http::fake();
+
+        $reseller = $this->createResellerWithPackage();
+        $customer = $this->createManagedCustomer($reseller);
+
+        $product = Product::create([
+            'name' => 'Shared Hosting',
+            'slug' => 'shared-'.uniqid(),
+            'type' => 'shared_hosting',
+            'monthly_price' => 5,
+            'yearly_price' => 50,
+            'is_active' => true,
+            'provisioning_driver_key' => 'directadmin',
+        ]);
+
+        Service::create([
+            'user_id' => $customer->id,
+            'product_id' => $product->id,
+            'reseller_id' => $reseller->id,
+            'name' => 'da-service',
+            'status' => 'active',
+            'billing_cycle' => 'monthly',
+            'next_due_date' => now()->addMonth(),
+            'provisioning_driver_key' => 'directadmin',
+            'external_reference' => 'dauser',
+        ]);
+
+        $this->actingAs($reseller)->get('/dashboard')->assertOk();
+
+        Http::assertNothingSent();
+    }
+
+    private function seedContainerServices(User $reseller, int $count): void
+    {
+        $product = Product::create([
+            'name' => 'App Hosting',
+            'slug' => 'app-'.uniqid(),
+            'type' => 'container_hosting',
+            'monthly_price' => 10,
+            'yearly_price' => 100,
+            'is_active' => true,
+            'provisioning_driver_key' => 'container',
+        ]);
+
+        for ($i = 0; $i < $count; $i++) {
+            $customer = $this->createManagedCustomer($reseller);
+
+            $service = Service::create([
+                'user_id' => $customer->id,
+                'product_id' => $product->id,
+                'reseller_id' => $reseller->id,
+                'name' => "app-{$i}",
+                'status' => 'active',
+                'billing_cycle' => 'monthly',
+                'next_due_date' => now()->addMonth(),
+                'provisioning_driver_key' => 'container',
+            ]);
+
+            $deployment = ContainerDeployment::create([
+                'service_id' => $service->id,
+                'container_name' => 'c'.uniqid(),
+                'status' => 'running',
+                'assigned_port' => 30000 + $i + random_int(0, 100000),
+            ]);
+
+            ContainerMetric::create([
+                'container_deployment_id' => $deployment->id,
+                'disk_used_gb' => 1.5,
+                'recorded_at' => now(),
+            ]);
+        }
     }
 
     public function test_reseller_dashboard_shows_analytics_for_managed_customers(): void

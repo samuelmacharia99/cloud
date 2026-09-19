@@ -187,14 +187,26 @@ class ContainerMetric extends Model
             ->orderBy('id')
             ->get(['net_io_rx_bytes', 'net_io_tx_bytes']);
 
-        if ($samples->count() < 2) {
-            return 0;
-        }
+        return self::transferBytesFromSamples($samples);
+    }
 
+    /**
+     * The delta walk itself, over one deployment's samples in recorded order.
+     *
+     * Kept separate so the single-deployment and batched paths cannot drift
+     * apart: this figure is billed, and a plain SUM of the counters would
+     * invent traffic every time a container restarted.
+     *
+     * @param  iterable<int, self|object>  $samples
+     */
+    public static function transferBytesFromSamples(iterable $samples): int
+    {
         $total = 0;
         $previous = null;
+        $seen = 0;
 
         foreach ($samples as $sample) {
+            $seen++;
             $current = (int) ($sample->net_io_rx_bytes ?? 0) + (int) ($sample->net_io_tx_bytes ?? 0);
 
             if ($previous !== null) {
@@ -209,6 +221,65 @@ class ContainerMetric extends Model
             $previous = $current;
         }
 
-        return $total;
+        // One reading is a position, not a distance.
+        return $seen < 2 ? 0 : $total;
+    }
+
+    /**
+     * Transfer for many deployments at once.
+     *
+     * Reads a bounded number of deployments per query rather than one query per
+     * deployment, and hands each deployment's samples to the same walk used
+     * above, so the batched total equals the per-deployment total exactly.
+     *
+     * @param  list<int>  $deploymentIds
+     * @return array<int, int> deployment id => bytes
+     */
+    public static function transferBytesForDeployments(array $deploymentIds, Carbon $from, Carbon $to): array
+    {
+        $totals = [];
+
+        foreach (array_chunk(array_values(array_unique($deploymentIds)), 50) as $chunk) {
+            $grouped = self::query()
+                ->whereIn('container_deployment_id', $chunk)
+                ->usageSamples()
+                ->inBillingPeriod($from, $to)
+                ->orderBy('container_deployment_id')
+                ->orderBy('recorded_at')
+                ->orderBy('id')
+                ->get(['container_deployment_id', 'net_io_rx_bytes', 'net_io_tx_bytes'])
+                ->groupBy('container_deployment_id');
+
+            foreach ($grouped as $deploymentId => $samples) {
+                $totals[(int) $deploymentId] = self::transferBytesFromSamples($samples);
+            }
+        }
+
+        return $totals;
+    }
+
+    /**
+     * Average disk for many deployments at once, as one grouped aggregate.
+     *
+     * @param  list<int>  $deploymentIds
+     * @return array<int, float> deployment id => average GB
+     */
+    public static function averageDiskUsedGbForDeployments(array $deploymentIds, Carbon $from, Carbon $to): array
+    {
+        $ids = array_values(array_unique($deploymentIds));
+
+        if ($ids === []) {
+            return [];
+        }
+
+        return self::query()
+            ->whereIn('container_deployment_id', $ids)
+            ->usageSamples()
+            ->inBillingPeriod($from, $to)
+            ->selectRaw('container_deployment_id, AVG(disk_used_gb) as average_disk')
+            ->groupBy('container_deployment_id')
+            ->pluck('average_disk', 'container_deployment_id')
+            ->map(fn ($value): float => (float) $value)
+            ->all();
     }
 }

@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Listeners\BlockDestructiveProductionCommands;
 use App\Models\Setting;
+use App\Models\User;
 use App\Services\AdminAttentionService;
 use App\Services\Billing\InvoiceCurrencyService;
 use App\Services\Customer\CustomerNextStepsService;
@@ -21,6 +22,7 @@ use App\Services\ResellerAnalyticsService;
 use App\Services\ResellerBrandingResolver;
 use App\Services\ResellerDomainTransferService;
 use App\Services\ResellerMailService;
+use App\Services\ResellerScopeService;
 use App\Services\ResellerWalletService;
 use App\Services\TalksasaSmsService;
 use App\Services\UserCurrencyService;
@@ -62,6 +64,11 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(UserCurrencyService::class);
         $this->app->singleton(InvoiceCurrencyService::class);
         $this->app->singleton(TalksasaSmsService::class);
+
+        // Scoped, not singleton: the customer-id lists it memoises belong to one
+        // request. A queue worker gets a fresh instance per job, so a long-lived
+        // process cannot serve one reseller's customers to the next.
+        $this->app->scoped(ResellerScopeService::class);
         $this->app->alias(TalksasaSmsService::class, 'talksasa-sms-service');
 
         // Both read config here so the classes themselves stay usable from
@@ -87,6 +94,27 @@ class AppServiceProvider extends ServiceProvider
         $this->shareResellerWalletData();
         $this->shareAdminAttentionData();
         $this->shareCustomerNotificationData();
+        $this->keepResellerScopeCacheHonest();
+    }
+
+    /**
+     * The scope service memoises which customers belong to a reseller for the
+     * length of a request. Anything that moves a customer between resellers, or
+     * adds one, invalidates that within the same request — a transfer then a
+     * re-read would otherwise see the old owner. Hooking the model rather than
+     * each call site means paths added later are covered without remembering to.
+     */
+    private function keepResellerScopeCacheHonest(): void
+    {
+        $forget = fn () => app(ResellerScopeService::class)->forget();
+
+        User::saved(function (User $user) use ($forget) {
+            if ($user->wasRecentlyCreated || $user->wasChanged('reseller_id')) {
+                $forget();
+            }
+        });
+
+        User::deleted($forget);
     }
 
     private function configureHttps(): void

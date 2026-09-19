@@ -413,6 +413,36 @@ class ResellerDirectAdminService
     }
 
     /**
+     * The same figure as fetchTotalHostedDiskMb, but only if it is already
+     * known. Returns null rather than calling DirectAdmin, so a page render can
+     * use a warm number without ever blocking on a remote panel.
+     */
+    public function cachedTotalHostedDiskMb(User $reseller): ?float
+    {
+        if (! filled($reseller->directadmin_username)) {
+            return null;
+        }
+
+        $value = $this->peekMetric($reseller, 'disk_used_mb');
+
+        return $value === null ? null : (float) $value;
+    }
+
+    /**
+     * Read a cached metric without populating it.
+     */
+    private function peekMetric(User $reseller, string $metric): mixed
+    {
+        $memoryKey = "{$reseller->id}:{$metric}";
+
+        if (array_key_exists($memoryKey, $this->requestMetricCache)) {
+            return $this->requestMetricCache[$memoryKey];
+        }
+
+        return Cache::get("reseller_da_metric:{$reseller->id}:{$metric}");
+    }
+
+    /**
      * @template T
      *
      * @param  callable(): T  $callback

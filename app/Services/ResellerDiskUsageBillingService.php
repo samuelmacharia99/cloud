@@ -29,7 +29,7 @@ class ResellerDiskUsageBillingService
         }
 
         ['from' => $from, 'to' => $to] = $period;
-        $usage = $this->diskUsage->averageUsageForPeriod($reseller, $from, $to);
+        $usage = $this->diskUsage->averageUsageForPeriod($reseller, $from, $to, allowRemote: true);
         $poolGb = $this->diskUsage->diskPoolGb($reseller);
         $overageGb = max(0, $usage['total_used_gb'] - $poolGb);
         $rate = $this->diskUsage->diskOverageRate($reseller);

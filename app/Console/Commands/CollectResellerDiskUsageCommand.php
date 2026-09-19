@@ -31,8 +31,12 @@ class CollectResellerDiskUsageCommand extends BaseCronCommand
 
         foreach ($this->diskUsage->resellersWithPackages() as $reseller) {
             try {
-                $usage = $this->diskUsage->collectCurrentUsage($reseller);
-                $this->diskUsage->recordDailySnapshot($reseller);
+                // The one place allowed to call DirectAdmin for this: it runs
+                // nightly, off the request path, and its result is what every
+                // page render reads afterwards. Collected once and handed to
+                // the snapshot rather than gathered twice.
+                $usage = $this->diskUsage->collectCurrentUsage($reseller, allowRemote: true);
+                $this->diskUsage->recordDailySnapshot($reseller, usage: $usage);
                 // Same row, same day, different columns. Recorded from the
                 // start so the history exists whenever compute starts billing;
                 // it cannot be backfilled after the fact.

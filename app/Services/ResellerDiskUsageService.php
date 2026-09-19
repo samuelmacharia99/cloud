@@ -40,11 +40,19 @@ class ResellerDiskUsageService
     }
 
     /**
+     * Current disk usage for a reseller.
+     *
+     * $allowRemote decides whether DirectAdmin may be called to answer this.
+     * It defaults to false because the usual caller is a page render, and the
+     * DirectAdmin path is two HTTP calls per account: a reseller whose panel is
+     * slow or down would otherwise hang their own dashboard. The nightly
+     * collector passes true and is the thing that keeps the figure fresh.
+     *
      * @return array{directadmin_used_gb: float, container_used_gb: float, total_used_gb: float}
      */
-    public function collectCurrentUsage(User $reseller): array
+    public function collectCurrentUsage(User $reseller, bool $allowRemote = false): array
     {
-        $directAdminGb = $this->sumDirectAdminDiskGb($reseller);
+        $directAdminGb = $this->sumDirectAdminDiskGb($reseller, $allowRemote);
         $containerGb = $this->sumContainerDiskGb($reseller);
 
         return [
@@ -54,15 +62,22 @@ class ResellerDiskUsageService
         ];
     }
 
-    public function recordDailySnapshot(User $reseller, ?Carbon $date = null): ResellerDiskUsageSnapshot
-    {
+    /**
+     * @param  array{directadmin_used_gb: float, container_used_gb: float, total_used_gb: float}|null  $usage
+     */
+    public function recordDailySnapshot(
+        User $reseller,
+        ?Carbon $date = null,
+        bool $allowRemote = false,
+        ?array $usage = null,
+    ): ResellerDiskUsageSnapshot {
         // Carbon, not a Y-m-d string. The model casts period_date to a date,
         // so it stores "2026-09-10 00:00:00" while a bare date string binds as
         // "2026-09-10" and matches nothing. Every run after the first each day
         // therefore tried to insert a second row and hit the unique key, which
         // the collector's per-reseller catch swallowed as a warning.
         $date = ($date ?? now())->startOfDay();
-        $usage = $this->collectCurrentUsage($reseller);
+        $usage ??= $this->collectCurrentUsage($reseller, $allowRemote);
 
         return ResellerDiskUsageSnapshot::updateOrCreate(
             [
@@ -81,15 +96,19 @@ class ResellerDiskUsageService
     /**
      * @return array{directadmin_used_gb: float, container_used_gb: float, total_used_gb: float, days: int}
      */
-    public function averageUsageForPeriod(User $reseller, Carbon $from, Carbon $to): array
-    {
+    public function averageUsageForPeriod(
+        User $reseller,
+        Carbon $from,
+        Carbon $to,
+        bool $allowRemote = false,
+    ): array {
         $snapshots = ResellerDiskUsageSnapshot::query()
             ->where('reseller_id', $reseller->id)
             ->whereBetween('period_date', [$from->toDateString(), $to->toDateString()])
             ->get();
 
         if ($snapshots->isEmpty()) {
-            $current = $this->collectCurrentUsage($reseller);
+            $current = $this->collectCurrentUsage($reseller, $allowRemote);
 
             return [
                 'directadmin_used_gb' => $current['directadmin_used_gb'],
@@ -168,21 +187,54 @@ class ResellerDiskUsageService
             ->get();
     }
 
-    private function sumDirectAdminDiskGb(User $reseller): float
+    private function sumDirectAdminDiskGb(User $reseller, bool $allowRemote): float
     {
         $directAdmin = app(ResellerDirectAdminService::class);
-        $accountTotalMb = $directAdmin->fetchTotalHostedDiskMb($reseller);
+
+        // Warm cache is used either way; only a cold one costs a remote call.
+        $accountTotalMb = $allowRemote
+            ? $directAdmin->fetchTotalHostedDiskMb($reseller)
+            : $directAdmin->cachedTotalHostedDiskMb($reseller);
 
         if ($accountTotalMb !== null) {
             return $accountTotalMb / 1024;
         }
 
-        return $this->sumPlatformDirectAdminDiskGb($reseller);
+        $platformGb = $this->sumPlatformDirectAdminDiskGb($reseller, $allowRemote);
+
+        if ($platformGb !== null) {
+            return $platformGb;
+        }
+
+        // The accounts exist but nothing local knows their size and we are not
+        // going to ask DirectAdmin mid-render. The collector's last run is the
+        // most honest number available.
+        return $this->lastRecordedDirectAdminGb($reseller);
     }
 
-    private function sumPlatformDirectAdminDiskGb(User $reseller): float
+    /**
+     * The newest figure the nightly collector managed to record.
+     */
+    private function lastRecordedDirectAdminGb(User $reseller): float
+    {
+        return (float) (ResellerDiskUsageSnapshot::query()
+            ->where('reseller_id', $reseller->id)
+            ->orderByDesc('period_date')
+            ->value('directadmin_used_gb') ?? 0.0);
+    }
+
+    /**
+     * Sum what the platform itself records for this reseller's DirectAdmin
+     * accounts.
+     *
+     * Returns null when accounts exist but none of them could be sized without
+     * calling DirectAdmin, so the caller can fall back to the last recorded
+     * snapshot instead of reporting a confidently wrong zero.
+     */
+    private function sumPlatformDirectAdminDiskGb(User $reseller, bool $allowRemote): ?float
     {
         $totalMb = 0.0;
+        $resolved = 0;
 
         $services = $this->scope->managedServicesQuery($reseller)
             ->with(['node', 'product'])
@@ -195,14 +247,19 @@ class ResellerDiskUsageService
             ->whereIn('status', ['active', 'suspended', 'provisioning'])
             ->get();
 
+        if ($services->isEmpty()) {
+            return 0.0;
+        }
+
         foreach ($services as $service) {
-            $usage = $this->resolveDirectAdminUsageMb($service);
+            $usage = $this->resolveDirectAdminUsageMb($service, $allowRemote);
             if ($usage !== null) {
                 $totalMb += $usage;
+                $resolved++;
             }
         }
 
-        return $totalMb / 1024;
+        return $resolved === 0 ? null : $totalMb / 1024;
     }
 
     private function sumContainerDiskGb(User $reseller): float
@@ -221,15 +278,18 @@ class ResellerDiskUsageService
             return 0.0;
         }
 
+        // One query for the deployments and one for their newest metric, rather
+        // than a metric query per deployment: this runs on every dashboard render
+        // and used to scale with the number of applications the reseller sells.
         $deployments = ContainerDeployment::query()
             ->whereIn('service_id', $serviceIds)
+            ->with('latestRecordedMetric')
             ->get();
 
+        $withoutRecentMetric = [];
+
         foreach ($deployments as $deployment) {
-            $latest = ContainerMetric::query()
-                ->where('container_deployment_id', $deployment->id)
-                ->orderByDesc('recorded_at')
-                ->value('disk_used_gb');
+            $latest = $deployment->latestRecordedMetric?->disk_used_gb;
 
             if ($latest !== null) {
                 $totalGb += (float) $latest;
@@ -237,23 +297,33 @@ class ResellerDiskUsageService
                 continue;
             }
 
-            $avg = ContainerMetric::averageDiskUsedGb(
-                $deployment,
+            $withoutRecentMetric[] = (int) $deployment->id;
+        }
+
+        if ($withoutRecentMetric !== []) {
+            $averages = ContainerMetric::averageDiskUsedGbForDeployments(
+                $withoutRecentMetric,
                 now()->subDay(),
-                now()
+                now(),
             );
 
-            $totalGb += $avg;
+            $totalGb += array_sum($averages);
         }
 
         return $totalGb;
     }
 
-    private function resolveDirectAdminUsageMb(Service $service): ?float
+    private function resolveDirectAdminUsageMb(Service $service, bool $allowRemote): ?float
     {
         $meta = $service->service_meta ?? [];
         if (isset($meta['disk_used_mb'])) {
             return (float) $meta['disk_used_mb'];
+        }
+
+        // Past this point the only way to size the account is to ask its panel,
+        // which is two HTTP calls for this one service. Never during a render.
+        if (! $allowRemote) {
+            return null;
         }
 
         $username = $service->external_reference ?? ($meta['username'] ?? null);

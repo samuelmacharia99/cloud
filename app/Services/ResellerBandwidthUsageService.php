@@ -48,14 +48,20 @@ class ResellerBandwidthUsageService
             return 0.0;
         }
 
+        // Counters are walked per deployment, but read in batches rather than one
+        // query per deployment. The arithmetic is unchanged — the batched reader
+        // hands each deployment's samples to the same walk — so billed transfer
+        // is identical, it is just no longer proportional in queries.
         $bytes = 0;
         ContainerDeployment::query()
             ->whereIn('service_id', $serviceIds)
             ->select(['id', 'service_id'])
             ->chunkById(200, function ($deployments) use (&$bytes, $from, $to) {
-                foreach ($deployments as $deployment) {
-                    $bytes += ContainerMetric::transferBytesForPeriod($deployment, $from, $to);
-                }
+                $bytes += array_sum(ContainerMetric::transferBytesForDeployments(
+                    $deployments->pluck('id')->map(fn ($id): int => (int) $id)->all(),
+                    $from,
+                    $to,
+                ));
             });
 
         return round($bytes / (1024 ** 3), 3);
