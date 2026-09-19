@@ -7,12 +7,10 @@
     $billingService = $project->resolvedBillingService();
     $planLimits = $planUsage['limits'] ?? $project->includedPlanLimits();
     $canDeployIncluded = $project->canDeployIncludedWorkload();
-    $canRemoveProject = $services->contains(fn ($s) => $s->isContainerHosting())
-        && ! $services->contains(function ($s) {
-            $status = $s->status->value ?? (string) $s->status;
-
-            return ! $s->isContainerHosting() && ! in_array($status, ['terminated', 'cancelled'], true);
-        });
+    // One definition, on the project itself: this was written out here and in
+    // the project card, and the two had drifted apart.
+    $canRemoveProject = $project->canBeRemoved();
+    $removeDestroysSites = $project->removalDestroysServices();
     $planHasRoom = $canDeployIncluded && $project->hasRoomForIncludedWorkload();
     $primaryActionLabel = $canDeployIncluded ? ($planHasRoom ? 'Deploy new service' : 'Plan full · upgrade') : 'Choose a plan';
     $primaryActionUrl = $canDeployIncluded && ! $planHasRoom && $billingService
@@ -315,27 +313,39 @@
         <div x-show="showRemoveProject" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink-950/60 backdrop-blur-sm" @keydown.escape.window="showRemoveProject = false">
             <div class="ui-card w-full max-w-md p-6" @click.outside="showRemoveProject = false">
                 <h3 class="font-display text-lg font-bold text-ink-950 dark:text-white">Remove project</h3>
-                <p class="mt-1 text-sm text-ink-600 dark:text-ink-300">
-                    This permanently deletes every Application Hosting site in <strong>{{ $project->name }}</strong>, including containers and files. This cannot be undone. Email Hosting is not deleted this way.
-                </p>
+                @if($removeDestroysSites)
+                    <p class="mt-1 text-sm text-ink-600 dark:text-ink-300">
+                        This permanently deletes every Application Hosting site in <strong>{{ $project->name }}</strong>, including containers and files. This cannot be undone. Email Hosting is not deleted this way.
+                    </p>
+                @else
+                    <p class="mt-1 text-sm text-ink-600 dark:text-ink-300">
+                        <strong>{{ $project->name }}</strong> has nothing running in it, so this only clears the heading away. Nothing is deleted and no billing changes.
+                    </p>
+                @endif
                 <form method="POST" action="{{ route('customer.projects.destroy', $project) }}" class="mt-4 space-y-4">
                     @csrf
                     @method('DELETE')
-                    <label class="block text-sm font-medium text-ink-700 dark:text-ink-200">
-                        Type <span class="font-mono">{{ $project->name }}</span> to confirm
-                        <input type="text" name="confirm_name" x-model="confirmName" required autocomplete="off" class="mt-1.5 w-full px-4 py-2.5">
-                    </label>
-                    <label class="flex items-start gap-2 text-sm text-ink-700 dark:text-ink-200">
-                        <input type="checkbox" name="confirm" value="1" required class="mt-1 rounded">
-                        <span>I understand these Application Hosting sites and their files will be permanently deleted.</span>
-                    </label>
+                    @if($removeDestroysSites)
+                        <label class="block text-sm font-medium text-ink-700 dark:text-ink-200">
+                            Type <span class="font-mono">{{ $project->name }}</span> to confirm
+                            <input type="text" name="confirm_name" x-model="confirmName" required autocomplete="off" class="mt-1.5 w-full px-4 py-2.5">
+                        </label>
+                        <label class="flex items-start gap-2 text-sm text-ink-700 dark:text-ink-200">
+                            <input type="checkbox" name="confirm" value="1" required class="mt-1 rounded">
+                            <span>I understand these Application Hosting sites and their files will be permanently deleted.</span>
+                        </label>
+                    @endif
                     <div class="flex gap-2">
                         <button type="button" @click="showRemoveProject = false" class="btn-secondary flex-1 btn-sm">Keep project</button>
-                        <button
-                            type="submit"
-                            class="btn btn-sm flex-1 bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-500 disabled:opacity-40"
-                            :disabled="confirmName !== @js($project->name)"
-                        >Delete sites</button>
+                        @if($removeDestroysSites)
+                            <button
+                                type="submit"
+                                class="btn btn-sm flex-1 bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-500 disabled:opacity-40"
+                                :disabled="confirmName !== @js($project->name)"
+                            >Delete sites</button>
+                        @else
+                            <button type="submit" class="btn btn-sm flex-1 bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-500">Remove project</button>
+                        @endif
                     </div>
                 </form>
             </div>

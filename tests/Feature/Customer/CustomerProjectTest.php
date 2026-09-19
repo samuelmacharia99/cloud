@@ -409,6 +409,91 @@ YAML,
             ->assertSee('New project');
     }
 
+    public function test_an_empty_project_can_be_removed_without_typing_its_name(): void
+    {
+        // An empty project is a heading over nothing. It used to offer no way
+        // out at all, because the remove option was gated on the project
+        // containing an Application Hosting service in the first place.
+        $customer = User::factory()->customer()->create();
+        $project = CustomerProject::factory()->create([
+            'user_id' => $customer->id,
+            'name' => 'Abandoned Idea',
+        ]);
+
+        $this->actingAs($customer)
+            ->delete(route('customer.projects.destroy', $project))
+            ->assertRedirect(route('customer.services.index'))
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseMissing('customer_projects', ['id' => $project->id]);
+        $this->assertDatabaseMissing('tickets', ['title' => 'Project removed: Abandoned Idea']);
+    }
+
+    public function test_a_project_whose_sites_are_all_gone_can_also_be_removed(): void
+    {
+        $customer = User::factory()->customer()->create();
+        $product = Product::factory()->containerHosting()->create();
+        $project = CustomerProject::factory()->create([
+            'user_id' => $customer->id,
+            'name' => 'Finished Work',
+        ]);
+        Service::factory()->create([
+            'user_id' => $customer->id,
+            'product_id' => $product->id,
+            'project_id' => $project->id,
+            'name' => 'old-site',
+            'status' => 'terminated',
+        ]);
+
+        $this->actingAs($customer)
+            ->delete(route('customer.projects.destroy', $project))
+            ->assertRedirect(route('customer.services.index'))
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseMissing('customer_projects', ['id' => $project->id]);
+    }
+
+    public function test_removing_a_project_with_live_sites_still_demands_the_full_confirmation(): void
+    {
+        $customer = User::factory()->customer()->create();
+        $product = Product::factory()->containerHosting()->create();
+        $project = CustomerProject::factory()->create([
+            'user_id' => $customer->id,
+            'name' => 'Live Work',
+        ]);
+        Service::factory()->create([
+            'user_id' => $customer->id,
+            'product_id' => $product->id,
+            'project_id' => $project->id,
+            'name' => 'live-site',
+            'status' => 'active',
+        ]);
+
+        // Relaxing the confirmation for empty projects must not relax it where
+        // pressing the button destroys containers and files.
+        $this->actingAs($customer)
+            ->delete(route('customer.projects.destroy', $project))
+            ->assertSessionHasErrors('confirm_name');
+
+        $this->assertDatabaseHas('customer_projects', ['id' => $project->id]);
+    }
+
+    public function test_an_empty_project_card_offers_the_remove_action(): void
+    {
+        $customer = User::factory()->customer()->create();
+        CustomerProject::factory()->create([
+            'user_id' => $customer->id,
+            'name' => 'Orphan Empty Project',
+        ]);
+
+        $this->actingAs($customer)
+            ->get(route('customer.services.index'))
+            ->assertOk()
+            ->assertSee('Orphan Empty Project')
+            ->assertSee('Remove project')
+            ->assertSee('has nothing running in it', false);
+    }
+
     public function test_customer_cannot_view_another_users_project(): void
     {
         $owner = User::factory()->customer()->create();

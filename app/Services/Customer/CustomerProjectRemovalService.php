@@ -29,13 +29,11 @@ class CustomerProjectRemovalService
         }
 
         $project->load(['services.product']);
-        $live = $project->services->filter(function (Service $service): bool {
-            $status = $service->status->value ?? (string) $service->status;
+        $live = $project->liveServices();
 
-            return ! in_array($status, ['terminated', 'cancelled'], true);
-        });
-
-        $blocking = $live->filter(fn (Service $service) => ! $service->isContainerHosting());
+        // Same rule the services page offers the button by, read from the
+        // project rather than restated here.
+        $blocking = $project->removalBlockingServices();
         if ($blocking->isNotEmpty()) {
             $names = $blocking->map(fn (Service $service) => $service->customerServiceName())->implode(', ');
 
@@ -73,17 +71,22 @@ class CustomerProjectRemovalService
         $projectName = $project->name;
         $project->delete();
 
-        Ticket::create(array_merge([
-            'user_id' => $actor->id,
-            'title' => 'Project removed: '.$projectName,
-            'description' => sprintf(
-                'Customer removed project “%s” and requested teardown of %d Application Hosting site(s), including files and containers.',
-                $projectName,
-                $terminated
-            ),
-            'status' => 'open',
-            'priority' => 'low',
-        ], app(TicketRoutingService::class)->attributesForCreator($actor)));
+        // Only worth a ticket when something was actually torn down. Clearing an
+        // empty heading away is tidying, and opening a support ticket for it
+        // would bury the real ones the moment customers start using this.
+        if ($terminated > 0) {
+            Ticket::create(array_merge([
+                'user_id' => $actor->id,
+                'title' => 'Project removed: '.$projectName,
+                'description' => sprintf(
+                    'Customer removed project “%s” and requested teardown of %d Application Hosting site(s), including files and containers.',
+                    $projectName,
+                    $terminated
+                ),
+                'status' => 'open',
+                'priority' => 'low',
+            ], app(TicketRoutingService::class)->attributesForCreator($actor)));
+        }
 
         $message = $terminated > 0
             ? "Project “{$projectName}” removed. {$terminated} Application Hosting site(s) were deleted."

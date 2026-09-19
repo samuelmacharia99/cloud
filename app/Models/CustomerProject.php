@@ -88,6 +88,47 @@ class CustomerProject extends Model
     }
 
     /**
+     * Services that have to be dealt with elsewhere before this project can go.
+     *
+     * Removal tears down Application Hosting sites, and nothing else: email and
+     * shared hosting live on their own billing and are not deleted this way, so
+     * a project still holding one has to be emptied first.
+     *
+     * @return Collection<int, Service>
+     */
+    public function removalBlockingServices(): Collection
+    {
+        return $this->liveServices()
+            ->reject(fn (Service $service) => $service->isContainerHosting())
+            ->values();
+    }
+
+    /**
+     * Whether the owner may remove this project.
+     *
+     * The only thing that stops it is a live service removal will not touch.
+     * An empty project — one that never held anything, or whose sites are all
+     * gone — is just a label, and leaving no way to clear it away means the
+     * services page fills up with headings over nothing.
+     */
+    public function canBeRemoved(): bool
+    {
+        return $this->removalBlockingServices()->isEmpty();
+    }
+
+    /**
+     * Whether removing this project destroys anything.
+     *
+     * Drives how hard the confirmation has to be: typing the project name back
+     * is the right barrier in front of deleting live sites and their files, and
+     * pure friction in front of discarding an empty heading.
+     */
+    public function removalDestroysServices(): bool
+    {
+        return $this->liveApplicationHostingServices()->isNotEmpty();
+    }
+
+    /**
      * @return Collection<int, Service>
      */
     public function liveApplicationHostingServices(): Collection
