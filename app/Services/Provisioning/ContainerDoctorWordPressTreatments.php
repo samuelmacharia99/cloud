@@ -188,6 +188,9 @@ class ContainerDoctorWordPressTreatments
         $lines[] = '';
         $lines[] = "define('WP_DEBUG', false);";
         $lines[] = "define('WP_DEBUG_DISPLAY', false);";
+        // The marker matters as much as the code: the hardening path keys off it,
+        // and a rebuilt file without one gets a second copy of the shim bolted on.
+        $lines[] = '/* TALKASA_PROXY_HTTPS */';
         $lines[] = "if (isset(\$_SERVER['HTTP_X_FORWARDED_PROTO']) && \$_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') {";
         $lines[] = "    \$_SERVER['HTTPS'] = 'on';";
         $lines[] = '}';
@@ -421,6 +424,155 @@ PHP;
                 ? ['success' => true, 'message' => 'ABSPATH now resolves to the WordPress directory inside the container.']
                 : ['success' => true, 'message' => 'ABSPATH was already correct; nothing changed.'];
         });
+    }
+
+    /**
+     * Break the redirect loop that survives a correct site address.
+     *
+     * TLS ends at the proxy, so Apache and PHP inside the container are handed
+     * plain HTTP. WordPress compares that to its https address and redirects;
+     * the proxy forwards the retry as HTTP again. Two things can drive it, and
+     * a site can have both, so both are repaired here.
+     *
+     * The wp-config shim covers everything that redirects from PHP, which is
+     * WordPress's own canonical redirect and the SSL plugins. An .htaccess rule
+     * is not covered by it at all: mod_rewrite reads %{HTTPS} from Apache, which
+     * is genuinely off behind the proxy no matter what PHP later believes, so
+     * that condition has to be pointed at the forwarded header instead.
+     *
+     * @return array{success: bool, message: string}
+     */
+    public function trustProxyHttps(Service $service): array
+    {
+        return $this->onHost($service, function (SSHService $ssh, ContainerDeployment $deployment, string $hostAppPath): array {
+            $configPath = $hostAppPath.'/wp-config.php';
+            $configExists = trim((string) $ssh->exec('test -f '.escapeshellarg($configPath).' && echo yes || echo no', 15)) === 'yes';
+
+            if (! $configExists) {
+                return ['success' => false, 'message' => 'wp-config.php is missing, so there is nowhere to record that the proxy terminates TLS.'];
+            }
+
+            $done = [];
+            $stamp = now()->format('Ymd-His');
+            $incidents = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name.'/incidents';
+
+            $config = (string) $ssh->downloadFile($configPath);
+            if (str_contains($config, 'HTTP_X_FORWARDED_PROTO')) {
+                $done[] = 'wp-config.php already trusted the forwarded protocol';
+            } else {
+                $ssh->mkdirp($incidents);
+                $backup = $incidents.'/wp-config-before-proxy-https-'.$stamp.'.php';
+                $ssh->upload($config, $backup);
+                $ssh->exec('chmod 600 '.escapeshellarg($backup).' 2>/dev/null; true', 15);
+
+                $ssh->upload($this->withProxyHttpsShim($config), $configPath);
+                $this->ownConfig($ssh, $configPath);
+
+                $lint = $this->lintConfig($ssh, $deployment);
+                if (! $lint['ok']) {
+                    $ssh->upload($config, $configPath);
+                    $this->ownConfig($ssh, $configPath);
+
+                    return ['success' => false, 'message' => 'Adding the proxy check stopped wp-config.php parsing, so the original was put back: '.$lint['output']];
+                }
+
+                $done[] = 'wp-config.php now treats a forwarded https request as https';
+            }
+
+            $htaccessPath = $hostAppPath.'/.htaccess';
+            $htaccessExists = trim((string) $ssh->exec('test -f '.escapeshellarg($htaccessPath).' && echo yes || echo no', 15)) === 'yes';
+
+            if ($htaccessExists) {
+                $htaccess = (string) $ssh->downloadFile($htaccessPath);
+                $rewritten = $this->rewriteHtaccessHttpsConditions($htaccess);
+
+                if ($rewritten['changed']) {
+                    $ssh->mkdirp($incidents);
+                    $backup = $incidents.'/htaccess-before-proxy-https-'.$stamp.'.txt';
+                    $ssh->upload($htaccess, $backup);
+                    $ssh->exec('chmod 600 '.escapeshellarg($backup).' 2>/dev/null; true', 15);
+
+                    $ssh->upload($rewritten['text'], $htaccessPath);
+                    $this->ownConfig($ssh, $htaccessPath);
+
+                    $done[] = $rewritten['count'].' .htaccess '.($rewritten['count'] === 1 ? 'rule' : 'rules')
+                        .' now test the forwarded protocol instead of %{HTTPS}, which is always off behind the proxy';
+                }
+            }
+
+            if ($done === []) {
+                return [
+                    'success' => false,
+                    'message' => 'Nothing here forces https: wp-config.php already trusts the forwarded protocol and no .htaccess rule redirects. '
+                        .'The loop is coming from a plugin or the theme, so check the active SSL plugin next.',
+                ];
+            }
+
+            return [
+                'success' => true,
+                'message' => ucfirst(implode('; ', $done)).'. Purge the page cache and reload, then run Diagnose again.',
+            ];
+        });
+    }
+
+    /**
+     * Put the forwarded-protocol check directly after the opening tag, which is
+     * ahead of anything wp-settings.php later does with it.
+     */
+    private function withProxyHttpsShim(string $config): string
+    {
+        $snippet = "<?php\n"
+            ."/* TALKASA_PROXY_HTTPS */\n"
+            ."if (isset(\$_SERVER['HTTP_X_FORWARDED_PROTO']) && \$_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') {\n"
+            ."    \$_SERVER['HTTPS'] = 'on';\n"
+            ."}\n";
+
+        // A callback, not a replacement string: the snippet contains $_SERVER and
+        // preg_replace reads $ in a replacement as a backreference.
+        if (preg_match('/<\?php\b/', $config) === 1) {
+            return preg_replace_callback('/<\?php\b/', fn (): string => $snippet, $config, 1) ?? $config;
+        }
+
+        return $snippet.$config;
+    }
+
+    /**
+     * Point a forced-https rewrite at the header the proxy actually sets.
+     *
+     * %{HTTPS} is off for every request the container sees, so a rule written
+     * for a server that terminates its own TLS redirects forever here. The
+     * sense of each condition is kept: one that fired when the request was not
+     * secure still fires when the forwarded protocol is not https.
+     *
+     * @return array{text: string, changed: bool, count: int}
+     */
+    public function rewriteHtaccessHttpsConditions(string $text): array
+    {
+        $count = 0;
+
+        $result = preg_replace_callback(
+            '/^(?<indent>[ \t]*)RewriteCond\s+%\{HTTPS\}\s+(?<test>!?\^?=?(?:on|off)\$?)(?<rest>[^\r\n]*)$/im',
+            function (array $m) use (&$count): string {
+                $test = strtolower($m['test']);
+                $negated = str_contains($test, '!');
+                $matchesOn = str_contains($test, 'on');
+
+                // "off", or "not on", both mean the request was not secure.
+                $firesWhenInsecure = $matchesOn ? $negated : ! $negated;
+                $count++;
+
+                return $m['indent'].'RewriteCond %{HTTP:X-Forwarded-Proto} '
+                    .($firesWhenInsecure ? '!https' : 'https')
+                    .$m['rest'];
+            },
+            $text
+        );
+
+        if (! is_string($result) || $count === 0) {
+            return ['text' => $text, 'changed' => false, 'count' => 0];
+        }
+
+        return ['text' => $result, 'changed' => true, 'count' => $count];
     }
 
     /**

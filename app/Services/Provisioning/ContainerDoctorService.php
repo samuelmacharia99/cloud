@@ -176,6 +176,7 @@ class ContainerDoctorService
             'fix_wordpress_media_processing' => $this->treatFixWordPressMediaProcessing($service),
             'regenerate_wordpress_thumbnails' => $this->treatRegenerateWordPressThumbnails($service),
             'fix_wordpress_site_url' => $this->treatFixWordPressSiteUrl($service),
+            'fix_wordpress_proxy_https' => $this->wordPressTreatments()->trustProxyHttps($service),
             'switch_wordpress_theme_default' => $this->wordPressTreatments()->switchThemeDefault($service),
             'deactivate_missing_wordpress_plugins' => $this->wordPressTreatments()->deactivateMissingPlugins($service),
             'strip_wordpress_php_prepend' => $this->wordPressTreatments()->stripPhpPrepend($service),
@@ -8253,7 +8254,15 @@ PHP;
             $current = rtrim((string) ($media['home'] ?? ''), '/');
 
             if ($current === $target) {
-                return ['success' => true, 'message' => 'WordPress already points at '.$target.'.'];
+                // The address was never the problem, so saying so and stopping
+                // leaves the operator with a repair that reports success while
+                // the site stays down. What is left is the proxy: hand over to
+                // the repair that can actually break the loop.
+                $ssh->disconnect();
+                $proxy = $this->wordPressTreatments()->trustProxyHttps($service);
+                $proxy['message'] = 'WordPress already points at '.$target.', so the site address was not the cause. '.$proxy['message'];
+
+                return $proxy;
             }
 
             app(WordPressAppInstallationService::class)->ensureWpCli($ssh, $containerPath, $deployment->container_name);

@@ -132,7 +132,7 @@ class ContainerDoctorWordPressAnalyzer
 @ini_set('display_errors', '0');
 error_reporting(E_ALL);
 $__root = '/var/www/html';
-$__t = ['loaded' => false, 'fatal' => null, 'active_plugins' => [], 'missing_plugins' => [], 'active_theme' => null, 'theme_exists' => null, 'dropins' => [], 'constants' => [], 'prepend' => null, 'prepend_exists' => null, 'table_prefix' => null, 'options_table' => null, 'home' => null, 'siteurl' => null, 'ext_redis' => extension_loaded('redis'), 'ext_memcached' => class_exists('Memcached'), 'debug_log_tail' => [], 'wp_config_exists' => is_file($__root.'/wp-config.php')];
+$__t = ['loaded' => false, 'fatal' => null, 'active_plugins' => [], 'missing_plugins' => [], 'active_theme' => null, 'theme_exists' => null, 'dropins' => [], 'constants' => [], 'prepend' => null, 'prepend_exists' => null, 'table_prefix' => null, 'options_table' => null, 'home' => null, 'siteurl' => null, 'ext_redis' => extension_loaded('redis'), 'ext_memcached' => class_exists('Memcached'), 'debug_log_tail' => [], 'wp_config_exists' => is_file($__root.'/wp-config.php'), 'https_shim' => false, 'htaccess_https_rule' => null];
 $__emit = function () use (&$__t): void { echo "\nTALKSASA_WPRUNTIME=".json_encode($__t)."\n"; };
 register_shutdown_function(function () use (&$__t, $__emit): void {
     $e = error_get_last();
@@ -160,6 +160,20 @@ foreach ([$__root.'/wp-content/debug.log', '/tmp/talksasa-wp-debug.log'] as $__d
         $__lines = @file($__dl, FILE_IGNORE_NEW_LINES);
         if ($__lines) { $__t['debug_log_tail'] = array_slice($__lines, -20); }
         break;
+    }
+}
+$__cfgPath = $__root.'/wp-config.php';
+if (is_file($__cfgPath)) {
+    $__cfgText = (string) @file_get_contents($__cfgPath);
+    $__t['https_shim'] = str_contains($__cfgText, 'HTTP_X_FORWARDED_PROTO');
+}
+$__htPath = $__root.'/.htaccess';
+if (is_file($__htPath)) {
+    foreach ((array) @file($__htPath, FILE_IGNORE_NEW_LINES) as $__htLine) {
+        if (preg_match('/^\s*RewriteCond\s+%\{HTTPS\}/i', (string) $__htLine) === 1) {
+            $__t['htaccess_https_rule'] = trim((string) $__htLine);
+            break;
+        }
     }
 }
 if (! $__t['wp_config_exists']) { $__t['loaded'] = true; $__emit(); exit(0); }
@@ -393,17 +407,23 @@ PHP;
         }
 
         if ($bodyClass === self::BODY_REDIRECT_LOOP && $hardcoded === null) {
-            $findings[] = [
-                'id' => 'wordpress_redirect_loop',
-                'severity' => 'critical',
-                'title' => 'The homepage redirects endlessly',
-                'summary' => 'After five redirects the site still had not answered. That is usually an https/http mismatch between the stored site address and the proxy.',
-                'evidence' => ['final URL: '.(string) ($body['url'] ?? ''), 'redirects: '.(int) ($body['redirects'] ?? 0)],
-                'treat_action' => 'fix_wordpress_site_url',
-                'treat_label' => 'Fix site URLs',
-                'manual_steps' => ['Set home and siteurl to the https address the site is served on.'],
-                'source' => 'live',
-            ];
+            $findings[] = $this->storedUrlAlreadyCorrect($runtime, $servedHost)
+                ? $this->proxyHttpsFinding($body, $runtime)
+                : [
+                    'id' => 'wordpress_redirect_loop',
+                    'severity' => 'critical',
+                    'title' => 'The homepage redirects endlessly',
+                    'summary' => 'After five redirects the site still had not answered. The stored site address does not match the https address the site is served on, so WordPress keeps sending visitors to the other one.',
+                    'evidence' => array_values(array_filter([
+                        'final URL: '.(string) ($body['url'] ?? ''),
+                        'redirects: '.(int) ($body['redirects'] ?? 0),
+                        isset($runtime['home']) ? 'stored home: '.(string) $runtime['home'] : null,
+                    ])),
+                    'treat_action' => 'fix_wordpress_site_url',
+                    'treat_label' => 'Fix site URLs',
+                    'manual_steps' => ['Set home and siteurl to the https address the site is served on.'],
+                    'source' => 'live',
+                ];
             $explained = true;
         }
 
@@ -656,6 +676,87 @@ PHP;
     /**
      * @param  array<string, mixed>  $constants
      */
+    /**
+     * Whether the address WordPress has stored is already the https address the
+     * site is served on.
+     *
+     * When it is, a redirect loop cannot be a site-address problem, and telling
+     * an operator to fix the site URLs sends them round the same circle: the
+     * repair finds nothing to change and reports success while the site stays
+     * down.
+     *
+     * @param  array<string, mixed>|null  $runtime
+     */
+    private function storedUrlAlreadyCorrect(?array $runtime, ?string $servedHost): bool
+    {
+        $served = strtolower(trim((string) $servedHost));
+        $home = (string) ($runtime['home'] ?? '');
+
+        if ($served === '' || $home === '') {
+            return false;
+        }
+
+        if (strtolower((string) parse_url($home, PHP_URL_SCHEME)) !== 'https') {
+            return false;
+        }
+
+        $host = strtolower((string) parse_url($home, PHP_URL_HOST));
+
+        return $host === $served || 'www.'.$host === $served || $host === 'www.'.$served;
+    }
+
+    /**
+     * The loop that survives a correct site address: TLS ends at the proxy, so
+     * the container is handed plain HTTP. WordPress compares that to its https
+     * address and redirects, the proxy forwards the retry as HTTP again, and the
+     * two bounce the visitor between them forever.
+     *
+     * @param  array{class: string, status: ?int, size: int, url: string, redirects: int, snippet: string}  $body
+     * @param  array<string, mixed>|null  $runtime
+     * @return array<string, mixed>
+     */
+    private function proxyHttpsFinding(array $body, ?array $runtime): array
+    {
+        $shim = (bool) ($runtime['https_shim'] ?? false);
+        $htaccessRule = $runtime['htaccess_https_rule'] ?? null;
+        $plugins = array_map('strval', (array) ($runtime['active_plugins'] ?? []));
+        $sslPlugins = array_values(array_filter(
+            $plugins,
+            fn (string $plugin): bool => (bool) preg_match('/really-simple-ssl|ssl-insecure-content|force-https|wp-force-ssl/i', $plugin)
+        ));
+
+        return [
+            'id' => 'wordpress_proxy_https_unaware',
+            'severity' => 'critical',
+            'title' => 'WordPress cannot tell it is being served over HTTPS',
+            'summary' => 'The stored site address is already the https one the site is served on, so this is not a site-address problem. '
+                .'TLS ends at the proxy and the container is handed plain HTTP, so WordPress believes the request is insecure and redirects '
+                .'it to https; the proxy forwards the retry as HTTP again and the two bounce the visitor between them.',
+            'evidence' => array_values(array_filter([
+                'final URL: '.(string) ($body['url'] ?? ''),
+                'redirects: '.(int) ($body['redirects'] ?? 0),
+                'stored home: '.(string) ($runtime['home'] ?? ''),
+                $shim
+                    ? 'wp-config.php already trusts X-Forwarded-Proto'
+                    : 'wp-config.php does not read X-Forwarded-Proto, so WordPress never sees HTTPS',
+                is_string($htaccessRule) && $htaccessRule !== ''
+                    ? '.htaccess forces https itself: '.mb_substr($htaccessRule, 0, 160)
+                    : null,
+                $sslPlugins !== [] ? 'an SSL plugin is active: '.implode(', ', $sslPlugins) : null,
+            ])),
+            'treat_action' => 'fix_wordpress_proxy_https',
+            'treat_label' => 'Trust the proxy for HTTPS',
+            'manual_steps' => array_values(array_filter([
+                'Add the X-Forwarded-Proto check to wp-config.php above the wp-settings.php require.',
+                is_string($htaccessRule) && $htaccessRule !== ''
+                    ? 'Change the .htaccess rule to test %{HTTP:X-Forwarded-Proto} rather than %{HTTPS}, which is always off behind the proxy.'
+                    : null,
+                $sslPlugins !== [] ? 'If the loop survives both, deactivate the SSL plugin and let the platform terminate TLS.' : null,
+            ])),
+            'source' => 'live',
+        ];
+    }
+
     private function hardcodedUrlMismatch(array $constants, ?string $servedHost): ?string
     {
         $served = strtolower(trim((string) $servedHost));

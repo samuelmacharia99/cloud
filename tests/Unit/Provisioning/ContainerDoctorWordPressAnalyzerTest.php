@@ -24,6 +24,102 @@ class ContainerDoctorWordPressAnalyzerTest extends TestCase
         parent::tearDown();
     }
 
+    /**
+     * @param  array<string, mixed>  $runtime
+     * @return array<string, mixed>|null
+     */
+    private function loopFinding(array $runtime, string $servedHost = 'zeddlimited.com'): ?array
+    {
+        $body = [
+            'class' => 'redirect_loop',
+            'status' => 301,
+            'size' => 0,
+            'url' => 'https://zeddlimited.com/',
+            'redirects' => 5,
+            'snippet' => '',
+        ];
+
+        $findings = (new ContainerDoctorWordPressAnalyzer)->findings($body, $runtime, [], $servedHost, false);
+
+        foreach ($findings as $finding) {
+            if (in_array($finding['id'], ['wordpress_redirect_loop', 'wordpress_proxy_https_unaware'], true)) {
+                return $finding;
+            }
+        }
+
+        return null;
+    }
+
+    #[Test]
+    public function a_loop_with_the_right_address_is_blamed_on_the_proxy_not_the_site_url(): void
+    {
+        $finding = $this->loopFinding([
+            'home' => 'https://zeddlimited.com',
+            'siteurl' => 'https://zeddlimited.com',
+            'constants' => [],
+            'https_shim' => false,
+            'htaccess_https_rule' => null,
+            'active_plugins' => [],
+        ]);
+
+        // Offering "fix site URLs" here is what made the repair a no-op: the
+        // address is already right, so that treatment finds nothing to change
+        // and reports success while the site stays down.
+        $this->assertSame('wordpress_proxy_https_unaware', $finding['id']);
+        $this->assertSame('fix_wordpress_proxy_https', $finding['treat_action']);
+        $this->assertStringContainsString('does not read X-Forwarded-Proto', implode(' ', $finding['evidence']));
+    }
+
+    #[Test]
+    public function a_loop_with_the_wrong_address_still_points_at_the_site_url_repair(): void
+    {
+        $finding = $this->loopFinding([
+            'home' => 'https://old-host.example',
+            'siteurl' => 'https://old-host.example',
+            'constants' => [],
+            'https_shim' => true,
+            'htaccess_https_rule' => null,
+            'active_plugins' => [],
+        ]);
+
+        $this->assertSame('wordpress_redirect_loop', $finding['id']);
+        $this->assertSame('fix_wordpress_site_url', $finding['treat_action']);
+    }
+
+    #[Test]
+    public function an_http_site_address_is_a_site_url_problem_even_on_the_served_host(): void
+    {
+        $finding = $this->loopFinding([
+            'home' => 'http://zeddlimited.com',
+            'siteurl' => 'http://zeddlimited.com',
+            'constants' => [],
+            'https_shim' => true,
+            'htaccess_https_rule' => null,
+            'active_plugins' => [],
+        ]);
+
+        $this->assertSame('wordpress_redirect_loop', $finding['id']);
+    }
+
+    #[Test]
+    public function the_proxy_finding_names_the_htaccess_rule_and_the_ssl_plugin(): void
+    {
+        $finding = $this->loopFinding([
+            'home' => 'https://zeddlimited.com',
+            'siteurl' => 'https://zeddlimited.com',
+            'constants' => [],
+            'https_shim' => true,
+            'htaccess_https_rule' => 'RewriteCond %{HTTPS} off',
+            'active_plugins' => ['really-simple-ssl/rlrsssl-really-simple-ssl.php', 'akismet/akismet.php'],
+        ]);
+
+        $evidence = implode(' | ', $finding['evidence']);
+        $this->assertStringContainsString('already trusts X-Forwarded-Proto', $evidence);
+        $this->assertStringContainsString('.htaccess forces https itself', $evidence);
+        $this->assertStringContainsString('really-simple-ssl', $evidence);
+        $this->assertStringNotContainsString('akismet', $evidence, 'only SSL plugins are worth naming here');
+    }
+
     #[Test]
     public function body_probe_classifies_each_failure_shape(): void
     {

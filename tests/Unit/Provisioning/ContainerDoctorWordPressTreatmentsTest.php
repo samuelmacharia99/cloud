@@ -31,6 +31,86 @@ class ContainerDoctorWordPressTreatmentsTest extends TestCase
     }
 
     #[Test]
+    public function a_forced_https_rewrite_is_pointed_at_the_forwarded_header(): void
+    {
+        $treatments = new ContainerDoctorWordPressTreatments;
+
+        // mod_rewrite reads %{HTTPS} from Apache, which is genuinely off for every
+        // request behind a proxy that terminates TLS, so these rules redirect for
+        // ever no matter what wp-config later tells PHP.
+        $cases = [
+            'RewriteCond %{HTTPS} off' => 'RewriteCond %{HTTP:X-Forwarded-Proto} !https',
+            'RewriteCond %{HTTPS} !=on' => 'RewriteCond %{HTTP:X-Forwarded-Proto} !https',
+            'RewriteCond %{HTTPS} !on' => 'RewriteCond %{HTTP:X-Forwarded-Proto} !https',
+            'RewriteCond %{HTTPS} ^off$' => 'RewriteCond %{HTTP:X-Forwarded-Proto} !https',
+            // The sense is kept: a condition that fired when the request WAS
+            // secure must still only fire when it is.
+            'RewriteCond %{HTTPS} on' => 'RewriteCond %{HTTP:X-Forwarded-Proto} https',
+            'RewriteCond %{HTTPS} !=off' => 'RewriteCond %{HTTP:X-Forwarded-Proto} https',
+        ];
+
+        foreach ($cases as $before => $after) {
+            $result = $treatments->rewriteHtaccessHttpsConditions($before."\n");
+            $this->assertTrue($result['changed'], $before.' should have been rewritten');
+            $this->assertSame($after."\n", $result['text'], $before);
+        }
+    }
+
+    #[Test]
+    public function rewriting_keeps_indentation_flags_and_the_rest_of_the_file(): void
+    {
+        $treatments = new ContainerDoctorWordPressTreatments;
+
+        $htaccess = "# BEGIN WordPress\n"
+            ."<IfModule mod_rewrite.c>\n"
+            ."RewriteEngine On\n"
+            ."    RewriteCond %{HTTPS} off [NC]\n"
+            ."    RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]\n"
+            ."</IfModule>\n"
+            ."# END WordPress\n";
+
+        $result = $treatments->rewriteHtaccessHttpsConditions($htaccess);
+
+        $this->assertSame(1, $result['count']);
+        $this->assertStringContainsString('    RewriteCond %{HTTP:X-Forwarded-Proto} !https [NC]', $result['text']);
+        $this->assertStringContainsString('RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]', $result['text']);
+        $this->assertStringContainsString('# END WordPress', $result['text']);
+        $this->assertStringNotContainsString('%{HTTPS}', $result['text']);
+    }
+
+    #[Test]
+    public function an_htaccess_without_an_https_condition_is_left_exactly_as_it_was(): void
+    {
+        $treatments = new ContainerDoctorWordPressTreatments;
+        $htaccess = "# BEGIN WordPress\nRewriteEngine On\nRewriteRule . /index.php [L]\n";
+
+        $result = $treatments->rewriteHtaccessHttpsConditions($htaccess);
+
+        $this->assertFalse($result['changed']);
+        $this->assertSame(0, $result['count']);
+        $this->assertSame($htaccess, $result['text']);
+    }
+
+    #[Test]
+    public function a_rebuilt_wp_config_carries_the_marker_the_hardening_step_looks_for(): void
+    {
+        $treatments = new ContainerDoctorWordPressTreatments;
+
+        $fresh = $treatments->regenerateWpConfigText("<?php\n", [
+            'WORDPRESS_DB_NAME' => 'wp',
+            'WORDPRESS_DB_USER' => 'wp',
+            'WORDPRESS_DB_PASSWORD' => 'secret',
+            'WORDPRESS_DB_HOST' => 'mysql',
+        ]);
+
+        // Without the marker the hardening path cannot tell the shim is already
+        // there and bolts a second copy on top of it.
+        $this->assertStringContainsString('/* TALKASA_PROXY_HTTPS */', $fresh['text']);
+        $this->assertStringContainsString('HTTP_X_FORWARDED_PROTO', $fresh['text']);
+        $this->assertSame(1, substr_count($fresh['text'], '/* TALKASA_PROXY_HTTPS */'), 'the shim block should appear once');
+    }
+
+    #[Test]
     public function every_command_parses_as_bash(): void
     {
         $treatments = new ContainerDoctorWordPressTreatments;
