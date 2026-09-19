@@ -50,41 +50,43 @@
             <form method="POST" action="{{ route('reseller.domains.assign') }}" class="mt-4 space-y-3" x-data="{ all: false }">
                 @csrf
                 <div class="ui-table-wrap">
-                    <table class="ui-table">
-                        <thead>
-                            <tr>
-                                <th>Domain</th>
-                                <th>Matches hosting for</th>
-                                <th>Assign to</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach ($unassignedDomains as $row)
-                                @php
-                                    $d = $row['domain'];
-                                    $suggested = $row['suggested'];
-                                @endphp
+                    <div class="overflow-x-auto">
+                        <table class="min-w-[44rem] ui-table">
+                            <thead>
                                 <tr>
-                                    <td class="font-mono text-sm">{{ $d->fqdn() }}</td>
-                                    <td class="text-sm text-slate-600 dark:text-slate-400">
-                                        @if ($suggested)
-                                            {{ $suggested->name }} <span class="text-xs text-slate-400">(service #{{ $row['service']?->id }})</span>
-                                        @else
-                                            <span class="text-slate-400">No matching hosting</span>
-                                        @endif
-                                    </td>
-                                    <td>
-                                        <select name="assignments[{{ $d->id }}]" class="w-full max-w-xs px-2 py-1.5 border rounded-lg bg-white dark:bg-slate-800 text-sm">
-                                            <option value="">Keep on my account</option>
-                                            @foreach ($cartCustomers as $c)
-                                                <option value="{{ $c->id }}" @selected($suggested && (int) $suggested->id === (int) $c->id)>{{ $c->name }}</option>
-                                            @endforeach
-                                        </select>
-                                    </td>
+                                    <th>Domain</th>
+                                    <th>Matches hosting for</th>
+                                    <th>Assign to</th>
                                 </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                @foreach ($unassignedDomains as $row)
+                                    @php
+                                        $d = $row['domain'];
+                                        $suggested = $row['suggested'];
+                                    @endphp
+                                    <tr>
+                                        <td class="font-mono text-sm">{{ $d->fqdn() }}</td>
+                                        <td class="text-sm text-slate-600 dark:text-slate-400">
+                                            @if ($suggested)
+                                                {{ $suggested->name }} <span class="text-xs text-slate-400">(service #{{ $row['service']?->id }})</span>
+                                            @else
+                                                <span class="text-slate-400">No matching hosting</span>
+                                            @endif
+                                        </td>
+                                        <td>
+                                            <select name="assignments[{{ $d->id }}]" class="w-full max-w-xs px-2 py-1.5 border rounded-lg bg-white dark:bg-slate-800 text-sm">
+                                                <option value="">Keep on my account</option>
+                                                @foreach ($cartCustomers as $c)
+                                                    <option value="{{ $c->id }}" @selected($suggested && (int) $suggested->id === (int) $c->id)>{{ $c->name }}</option>
+                                                @endforeach
+                                            </select>
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
                 <div class="flex items-center justify-between gap-3 flex-wrap">
                     <p class="text-xs text-slate-500">Assigning moves ownership to the customer at once. The domain then appears under their Domains page and renews from their account.</p>
@@ -284,153 +286,155 @@
         @if($domains->count() > 0)
             <div class="ui-card">
                 <div class="ui-table-wrap overflow-visible">
-                    <table class="ui-table">
-                        <thead>
-                            <tr>
-                                <th>Domain</th>
-                                <th>Customer</th>
-                                <th>Status</th>
-                                <th>Registered</th>
-                                <th>Expires</th>
-                                <th>Auto renew</th>
-                                <th class="text-right">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach($domains as $domain)
+                    <div class="overflow-x-auto">
+                        <table class="min-w-[44rem] ui-table">
+                            <thead>
                                 <tr>
-                                    <td>
-                                        <a href="{{ route('reseller.domains.show', $domain) }}" class="font-semibold text-purple-700 dark:text-purple-300 hover:underline font-mono text-sm">{{ $domain->name }}{{ $domain->extension }}</a>
-                                    </td>
-                                    <td class="text-slate-600 dark:text-slate-400">
-                                        @if($domain->user_id !== auth()->id())
-                                            <x-reseller.customer-link :user="$domain->user" />
-                                            <p class="text-xs text-slate-500">{{ $domain->user?->email }}</p>
-                                        @else
-                                            <span class="text-slate-400">My account</span>
-                                        @endif
-                                    </td>
-                                    <td><x-domain-status-badge :status="$domain->status" /></td>
-                                    <td class="text-slate-600 dark:text-slate-400 whitespace-nowrap">{{ $domain->registered_at?->format('M d, Y') ?? '—' }}</td>
-                                    <td class="whitespace-nowrap">
-                                        <span class="{{ $domain->isExpired() ? 'text-red-600 dark:text-red-400 font-medium' : 'text-slate-600 dark:text-slate-400' }}">
-                                            {{ $domain->expires_at?->format('M d, Y') ?? '—' }}
-                                        </span>
-                                    </td>
-                                    <td>
-                                        @unless($domain->isDnsManaged())
-                                            <form method="POST" action="{{ route('reseller.domains.auto-renew', $domain) }}">
-                                                @csrf
-                                                <input type="hidden" name="auto_renew" value="{{ $domain->auto_renew ? 0 : 1 }}">
-                                                <button type="submit" class="text-xs font-semibold {{ $domain->auto_renew ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-500 dark:text-slate-400' }} hover:underline">
-                                                    {{ $domain->auto_renew ? 'On' : 'Off' }}
+                                    <th>Domain</th>
+                                    <th>Customer</th>
+                                    <th>Status</th>
+                                    <th>Registered</th>
+                                    <th>Expires</th>
+                                    <th>Auto renew</th>
+                                    <th class="text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach($domains as $domain)
+                                    <tr>
+                                        <td>
+                                            <a href="{{ route('reseller.domains.show', $domain) }}" class="font-semibold text-purple-700 dark:text-purple-300 hover:underline font-mono text-sm">{{ $domain->name }}{{ $domain->extension }}</a>
+                                        </td>
+                                        <td class="text-slate-600 dark:text-slate-400">
+                                            @if($domain->user_id !== auth()->id())
+                                                <x-reseller.customer-link :user="$domain->user" />
+                                                <p class="text-xs text-slate-500">{{ $domain->user?->email }}</p>
+                                            @else
+                                                <span class="text-slate-400">My account</span>
+                                            @endif
+                                        </td>
+                                        <td><x-domain-status-badge :status="$domain->status" /></td>
+                                        <td class="text-slate-600 dark:text-slate-400 whitespace-nowrap">{{ $domain->registered_at?->format('M d, Y') ?? '—' }}</td>
+                                        <td class="whitespace-nowrap">
+                                            <span class="{{ $domain->isExpired() ? 'text-red-600 dark:text-red-400 font-medium' : 'text-slate-600 dark:text-slate-400' }}">
+                                                {{ $domain->expires_at?->format('M d, Y') ?? '—' }}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            @unless($domain->isDnsManaged())
+                                                <form method="POST" action="{{ route('reseller.domains.auto-renew', $domain) }}">
+                                                    @csrf
+                                                    <input type="hidden" name="auto_renew" value="{{ $domain->auto_renew ? 0 : 1 }}">
+                                                    <button type="submit" class="text-xs font-semibold {{ $domain->auto_renew ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-500 dark:text-slate-400' }} hover:underline">
+                                                        {{ $domain->auto_renew ? 'On' : 'Off' }}
+                                                    </button>
+                                                </form>
+                                            @else
+                                                <span class="text-xs text-slate-400">—</span>
+                                            @endunless
+                                        </td>
+                                        <td class="text-right overflow-visible">
+                                            <div x-data="{ open: false, showRenewal: false, renewYears: '1', renewing: false }" class="relative inline-block text-left z-10">
+                                                <button type="button" @click="open = !open" class="action-icon-btn text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Domain actions">
+                                                    <svg fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                                                        <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"/>
+                                                    </svg>
                                                 </button>
-                                            </form>
-                                        @else
-                                            <span class="text-xs text-slate-400">—</span>
-                                        @endunless
-                                    </td>
-                                    <td class="text-right overflow-visible">
-                                        <div x-data="{ open: false, showRenewal: false, renewYears: '1', renewing: false }" class="relative inline-block text-left z-10">
-                                            <button type="button" @click="open = !open" class="action-icon-btn text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Domain actions">
-                                                <svg fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
-                                                    <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"/>
-                                                </svg>
-                                            </button>
-                                            <div x-show="open" x-cloak @click.outside="open = false; showRenewal = false"
-                                                class="absolute right-0 mt-1 w-56 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 z-50 overflow-hidden">
-                                                <div x-show="!showRenewal">
-                                                    <button type="button" @click="showRenewal = true"
-                                                        class="w-full text-left px-4 py-3 hover:bg-purple-50 dark:hover:bg-purple-950/40 transition flex items-center gap-3 border-b border-slate-100 dark:border-slate-800 text-sm font-medium text-purple-700 dark:text-purple-300">
-                                                        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                                                        </svg>
-                                                        Renew domain
-                                                    </button>
-                                                    <a href="{{ route('reseller.domains.show', $domain) }}"
-                                                        class="block px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800 transition text-sm font-medium text-slate-700 dark:text-slate-300 border-b border-slate-100 dark:border-slate-800">
-                                                        Manage domain
-                                                    </a>
-                                                    <a href="{{ route('reseller.domains.dns.index', $domain) }}"
-                                                        class="block px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800 transition text-sm font-medium text-slate-700 dark:text-slate-300 border-b border-slate-100 dark:border-slate-800">
-                                                        Manage DNS
-                                                    </a>
-                                                    <a href="{{ route('reseller.cart.index') }}"
-                                                        class="block px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800 transition text-sm font-medium text-slate-700 dark:text-slate-300 border-b border-slate-100 dark:border-slate-800">
-                                                        View cart
-                                                    </a>
-                                                    <form method="POST" action="{{ route('reseller.domains.destroy', $domain) }}"
-                                                        data-confirm="Remove {{ $domain->name }}{{ $domain->extension }} from your account? This only deletes the local record; it does not cancel registration at the registry."
-                                                        @submit="open = false">
-                                                        @csrf
-                                                        @method('DELETE')
-                                                        <button type="submit"
-                                                            class="w-full text-left px-4 py-3 hover:bg-red-50 dark:hover:bg-red-950/40 transition flex items-center gap-3 text-sm font-medium text-red-600 dark:text-red-400">
+                                                <div x-show="open" x-cloak @click.outside="open = false; showRenewal = false"
+                                                    class="absolute right-0 mt-1 w-56 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 z-50 overflow-hidden">
+                                                    <div x-show="!showRenewal">
+                                                        <button type="button" @click="showRenewal = true"
+                                                            class="w-full text-left px-4 py-3 hover:bg-purple-50 dark:hover:bg-purple-950/40 transition flex items-center gap-3 border-b border-slate-100 dark:border-slate-800 text-sm font-medium text-purple-700 dark:text-purple-300">
                                                             <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                                                             </svg>
-                                                            Delete domain
+                                                            Renew domain
                                                         </button>
-                                                    </form>
-                                                </div>
-                                                <div x-show="showRenewal" class="p-4">
-                                                    <button type="button" @click="showRenewal = false" class="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-3 hover:text-slate-700 dark:hover:text-slate-200">← Back</button>
-                                                    <p class="text-sm font-semibold text-slate-900 dark:text-white mb-2">Renewal period</p>
-                                                    <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">
-                                                        Customer-owned domains bill at your <strong>renewal retail</strong> rate. Your own domains use <strong>wholesale renewal</strong> rates.
-                                                    </p>
-                                                    <div class="space-y-2 mb-4">
-                                                        @foreach($periods as $period)
-                                                            <label class="flex items-center gap-2 p-2 rounded-lg border cursor-pointer text-sm transition"
-                                                                :class="renewYears == '{{ $period }}' ? 'border-purple-400 bg-purple-50 dark:bg-purple-950/40 dark:border-purple-600' : 'border-slate-200 dark:border-slate-700'">
-                                                                <input type="radio" value="{{ $period }}" x-model="renewYears" class="text-purple-600">
-                                                                {{ $period }} year{{ $period > 1 ? 's' : '' }}
-                                                            </label>
-                                                        @endforeach
+                                                        <a href="{{ route('reseller.domains.show', $domain) }}"
+                                                            class="block px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800 transition text-sm font-medium text-slate-700 dark:text-slate-300 border-b border-slate-100 dark:border-slate-800">
+                                                            Manage domain
+                                                        </a>
+                                                        <a href="{{ route('reseller.domains.dns.index', $domain) }}"
+                                                            class="block px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800 transition text-sm font-medium text-slate-700 dark:text-slate-300 border-b border-slate-100 dark:border-slate-800">
+                                                            Manage DNS
+                                                        </a>
+                                                        <a href="{{ route('reseller.cart.index') }}"
+                                                            class="block px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800 transition text-sm font-medium text-slate-700 dark:text-slate-300 border-b border-slate-100 dark:border-slate-800">
+                                                            View cart
+                                                        </a>
+                                                        <form method="POST" action="{{ route('reseller.domains.destroy', $domain) }}"
+                                                            data-confirm="Remove {{ $domain->name }}{{ $domain->extension }} from your account? This only deletes the local record; it does not cancel registration at the registry."
+                                                            @submit="open = false">
+                                                            @csrf
+                                                            @method('DELETE')
+                                                            <button type="submit"
+                                                                class="w-full text-left px-4 py-3 hover:bg-red-50 dark:hover:bg-red-950/40 transition flex items-center gap-3 text-sm font-medium text-red-600 dark:text-red-400">
+                                                                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                                                </svg>
+                                                                Delete domain
+                                                            </button>
+                                                        </form>
                                                     </div>
-                                                    <button type="button"
-                                                        @click="async () => {
-                                                            renewing = true;
-                                                            try {
-                                                                const res = await fetch('{{ route('reseller.domains.renew', $domain) }}', {
-                                                                    method: 'POST',
-                                                                    headers: {
-                                                                        'Content-Type': 'application/json',
-                                                                        'Accept': 'application/json',
-                                                                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content
-                                                                    },
-                                                                    body: JSON.stringify({ years: parseInt(renewYears, 10) })
-                                                                });
-                                                                const data = await res.json();
-                                                                if (data.success) {
-                                                                    const badge = document.getElementById('cart-count-badge');
-                                                                    if (badge) {
-                                                                        badge.textContent = data.item_count;
-                                                                        badge.classList.remove('hidden');
+                                                    <div x-show="showRenewal" class="p-4">
+                                                        <button type="button" @click="showRenewal = false" class="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-3 hover:text-slate-700 dark:hover:text-slate-200">← Back</button>
+                                                        <p class="text-sm font-semibold text-slate-900 dark:text-white mb-2">Renewal period</p>
+                                                        <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">
+                                                            Customer-owned domains bill at your <strong>renewal retail</strong> rate. Your own domains use <strong>wholesale renewal</strong> rates.
+                                                        </p>
+                                                        <div class="space-y-2 mb-4">
+                                                            @foreach($periods as $period)
+                                                                <label class="flex items-center gap-2 p-2 rounded-lg border cursor-pointer text-sm transition"
+                                                                    :class="renewYears == '{{ $period }}' ? 'border-purple-400 bg-purple-50 dark:bg-purple-950/40 dark:border-purple-600' : 'border-slate-200 dark:border-slate-700'">
+                                                                    <input type="radio" value="{{ $period }}" x-model="renewYears" class="text-purple-600">
+                                                                    {{ $period }} year{{ $period > 1 ? 's' : '' }}
+                                                                </label>
+                                                            @endforeach
+                                                        </div>
+                                                        <button type="button"
+                                                            @click="async () => {
+                                                                renewing = true;
+                                                                try {
+                                                                    const res = await fetch('{{ route('reseller.domains.renew', $domain) }}', {
+                                                                        method: 'POST',
+                                                                        headers: {
+                                                                            'Content-Type': 'application/json',
+                                                                            'Accept': 'application/json',
+                                                                            'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content
+                                                                        },
+                                                                        body: JSON.stringify({ years: parseInt(renewYears, 10) })
+                                                                    });
+                                                                    const data = await res.json();
+                                                                    if (data.success) {
+                                                                        const badge = document.getElementById('cart-count-badge');
+                                                                        if (badge) {
+                                                                            badge.textContent = data.item_count;
+                                                                            badge.classList.remove('hidden');
+                                                                        }
+                                                                        window.location.href = data.redirect || '{{ route('reseller.cart.index') }}';
+                                                                    } else {
+                                                                        alert(data.message || 'Could not add renewal to cart');
                                                                     }
-                                                                    window.location.href = data.redirect || '{{ route('reseller.cart.index') }}';
-                                                                } else {
-                                                                    alert(data.message || 'Could not add renewal to cart');
+                                                                } catch (e) {
+                                                                    alert('Error: ' + e.message);
+                                                                } finally {
+                                                                    renewing = false;
                                                                 }
-                                                            } catch (e) {
-                                                                alert('Error: ' + e.message);
-                                                            } finally {
-                                                                renewing = false;
-                                                            }
-                                                        }"
-                                                        :disabled="renewing"
-                                                        class="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-medium rounded-lg transition text-sm">
-                                                        <span x-show="!renewing">Add renewal to cart</span>
-                                                        <span x-show="renewing">Adding…</span>
-                                                    </button>
+                                                            }"
+                                                            :disabled="renewing"
+                                                            class="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-medium rounded-lg transition text-sm">
+                                                            <span x-show="!renewing">Add renewal to cart</span>
+                                                            <span x-show="renewing">Adding…</span>
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </div>
-                                        </div>
-                                    </td>
-                                </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
 

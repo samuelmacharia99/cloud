@@ -59,6 +59,15 @@
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2"/></svg>
                             <span class="text-sm font-medium">Services</span>
                         </a>
+                        {{-- Only meaningful once the reseller has a DirectAdmin account to move
+                             from. The attribute is already loaded, so this costs no query; the
+                             board itself reports whether the login actually connects. --}}
+                        @if (filled(auth()->user()->directadmin_username))
+                            <a href="{{ route('reseller.directadmin-offramp') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all {{ request()->routeIs('reseller.directadmin-offramp*') ? 'bg-brand-50 dark:bg-brand-950/70 text-brand-800 dark:text-brand-200 ring-1 ring-brand-200/60 dark:ring-brand-800/50' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800' }}">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/></svg>
+                                <span class="text-sm font-medium">Move to hosting</span>
+                            </a>
+                        @endif
                         <a href="{{ route('reseller.customer-invoices.index') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all {{ request()->routeIs('reseller.customer-invoices.*') ? 'bg-brand-50 dark:bg-brand-950/70 text-brand-800 dark:text-brand-200 ring-1 ring-brand-200/60 dark:ring-brand-800/50' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800' }}">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
                             <span class="text-sm font-medium">Customer invoices</span>

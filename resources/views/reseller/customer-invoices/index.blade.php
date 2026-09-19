@@ -33,32 +33,34 @@
 
     @if ($invoices->count())
         <div class="ui-card overflow-hidden">
-            <table class="w-full">
-                <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800">
-                    <tr>
-                        <th class="px-6 py-4 text-left text-sm font-semibold">Invoice</th>
-                        <th class="px-6 py-4 text-left text-sm font-semibold">Customer</th>
-                        <th class="px-6 py-4 text-right text-sm font-semibold">Total</th>
-                        <th class="px-6 py-4 text-right text-sm font-semibold">Remaining</th>
-                        <th class="px-6 py-4 text-left text-sm font-semibold">Status</th>
-                        <th class="px-6 py-4 text-right text-sm font-semibold">Actions</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
-                    @foreach ($invoices as $invoice)
-                        <tr class="hover:bg-slate-50 dark:hover:bg-slate-800">
-                            <td class="px-6 py-4 font-medium">{{ $invoice->invoice_number }}</td>
-                            <td class="px-6 py-4 text-sm"><x-reseller.customer-link :user="$invoice->user" /></td>
-                            <td class="px-6 py-4 text-right">KSH {{ number_format($invoice->total, 2) }}</td>
-                            <td class="px-6 py-4 text-right text-amber-600 font-medium">KSH {{ number_format($invoice->getAmountRemaining(), 2) }}</td>
-                            <td class="px-6 py-4"><x-status-badge :status="$invoice->status" type="invoice" /></td>
-                            <td class="px-6 py-4 text-right">
-                                <a href="{{ route('reseller.customer-invoices.show', $invoice) }}" class="text-purple-600 text-sm font-medium">View</a>
-                            </td>
+            <div class="overflow-x-auto">
+                <table class="min-w-[44rem] w-full">
+                    <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800">
+                        <tr>
+                            <th class="px-6 py-4 text-left text-sm font-semibold">Invoice</th>
+                            <th class="px-6 py-4 text-left text-sm font-semibold">Customer</th>
+                            <th class="px-6 py-4 text-right text-sm font-semibold">Total</th>
+                            <th class="px-6 py-4 text-right text-sm font-semibold">Remaining</th>
+                            <th class="px-6 py-4 text-left text-sm font-semibold">Status</th>
+                            <th class="px-6 py-4 text-right text-sm font-semibold">Actions</th>
                         </tr>
-                    @endforeach
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
+                        @foreach ($invoices as $invoice)
+                            <tr class="hover:bg-slate-50 dark:hover:bg-slate-800">
+                                <td class="px-6 py-4 font-medium">{{ $invoice->invoice_number }}</td>
+                                <td class="px-6 py-4 text-sm"><x-reseller.customer-link :user="$invoice->user" /></td>
+                                <td class="px-6 py-4 text-right">KSH {{ number_format($invoice->total, 2) }}</td>
+                                <td class="px-6 py-4 text-right text-amber-600 font-medium">KSH {{ number_format($invoice->getAmountRemaining(), 2) }}</td>
+                                <td class="px-6 py-4"><x-status-badge :status="$invoice->status" type="invoice" /></td>
+                                <td class="px-6 py-4 text-right">
+                                    <a href="{{ route('reseller.customer-invoices.show', $invoice) }}" class="text-purple-600 text-sm font-medium">View</a>
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
         </div>
         {{ $invoices->links() }}
     @else

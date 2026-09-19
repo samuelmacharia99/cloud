@@ -29,44 +29,46 @@
 
     @if ($tickets->count())
         <div class="ui-card overflow-hidden">
-            <table class="w-full">
-                <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800">
-                    <tr>
-                        <th class="px-6 py-4 text-left text-sm font-semibold">Ticket</th>
-                        <th class="px-6 py-4 text-left text-sm font-semibold">Customer</th>
-                        <th class="px-6 py-4 text-left text-sm font-semibold">Handled by</th>
-                        <th class="px-6 py-4 text-left text-sm font-semibold">Status</th>
-                        <th class="px-6 py-4 text-right text-sm font-semibold">Actions</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
-                    @foreach ($tickets as $ticket)
-                        <tr class="hover:bg-slate-50 dark:hover:bg-slate-800">
-                            <td class="px-6 py-4">
-                                <p class="font-medium text-slate-900 dark:text-white">{{ $ticket->title }}</p>
-                                <p class="text-xs text-slate-500">#{{ $ticket->id }} · {{ $ticket->created_at->diffForHumans() }}</p>
-                            </td>
-                            <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
-                                @if ($ticket->user_id === auth()->id())
-                                    <span class="text-slate-500">You</span>
-                                @else
-                                    <x-reseller.customer-link :user="$ticket->user" fallback="N/A" />
-                                @endif
-                            </td>
-                            <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
-                                {{ $ticket->handled_by?->label() ?? 'Platform support' }}
-                                @if ($ticket->isEscalated())
-                                    <span class="ml-1 text-xs text-amber-600">(escalated)</span>
-                                @endif
-                            </td>
-                            <td class="px-6 py-4"><x-status-badge :status="$ticket->status" type="ticket" /></td>
-                            <td class="px-6 py-4 text-right">
-                                <a href="{{ route('reseller.tickets.show', $ticket) }}" class="text-purple-600 hover:text-purple-700 text-sm font-medium">View</a>
-                            </td>
+            <div class="overflow-x-auto">
+                <table class="min-w-[44rem] w-full">
+                    <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800">
+                        <tr>
+                            <th class="px-6 py-4 text-left text-sm font-semibold">Ticket</th>
+                            <th class="px-6 py-4 text-left text-sm font-semibold">Customer</th>
+                            <th class="px-6 py-4 text-left text-sm font-semibold">Handled by</th>
+                            <th class="px-6 py-4 text-left text-sm font-semibold">Status</th>
+                            <th class="px-6 py-4 text-right text-sm font-semibold">Actions</th>
                         </tr>
-                    @endforeach
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
+                        @foreach ($tickets as $ticket)
+                            <tr class="hover:bg-slate-50 dark:hover:bg-slate-800">
+                                <td class="px-6 py-4">
+                                    <p class="font-medium text-slate-900 dark:text-white">{{ $ticket->title }}</p>
+                                    <p class="text-xs text-slate-500">#{{ $ticket->id }} · {{ $ticket->created_at->diffForHumans() }}</p>
+                                </td>
+                                <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
+                                    @if ($ticket->user_id === auth()->id())
+                                        <span class="text-slate-500">You</span>
+                                    @else
+                                        <x-reseller.customer-link :user="$ticket->user" fallback="N/A" />
+                                    @endif
+                                </td>
+                                <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
+                                    {{ $ticket->handled_by?->label() ?? 'Platform support' }}
+                                    @if ($ticket->isEscalated())
+                                        <span class="ml-1 text-xs text-amber-600">(escalated)</span>
+                                    @endif
+                                </td>
+                                <td class="px-6 py-4"><x-status-badge :status="$ticket->status" type="ticket" /></td>
+                                <td class="px-6 py-4 text-right">
+                                    <a href="{{ route('reseller.tickets.show', $ticket) }}" class="text-purple-600 hover:text-purple-700 text-sm font-medium">View</a>
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
         </div>
         {{ $tickets->links() }}
     @else

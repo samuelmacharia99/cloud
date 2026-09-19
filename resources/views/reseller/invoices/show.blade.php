@@ -93,31 +93,33 @@
             <!-- Line Items -->
             @if ($invoice->itemsForDisplay()->isNotEmpty())
                 <div class="mb-8">
-                    <table class="w-full mb-4">
-                        <thead>
-                            <tr class="border-b-2 border-slate-300 dark:border-slate-600">
-                                <th class="text-left py-3 px-3 text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Description</th>
-                                <th class="text-right py-3 px-3 text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Qty</th>
-                                <th class="text-right py-3 px-3 text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Unit Price</th>
-                                <th class="text-right py-3 px-3 text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Amount</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach ($invoice->itemsForDisplay() as $item)
-                                <tr class="border-b border-slate-200 dark:border-slate-700">
-                                    <td class="py-3 px-3">
-                                        <x-invoice-item-details
-                                            :item="$item"
-                                            title-class="text-sm font-medium text-slate-900 dark:text-white"
-                                        />
-                                    </td>
-                                    <td class="py-3 px-3 text-right text-sm text-slate-900 dark:text-white">{{ $item->quantity }}</td>
-                                    <td class="py-3 px-3 text-right text-sm text-slate-900 dark:text-white">KSH {{ number_format($item->unit_price, 2) }}</td>
-                                    <td class="py-3 px-3 text-right text-sm font-medium text-slate-900 dark:text-white">KSH {{ number_format($item->amount, 2) }}</td>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-[44rem] w-full mb-4">
+                            <thead>
+                                <tr class="border-b-2 border-slate-300 dark:border-slate-600">
+                                    <th class="text-left py-3 px-3 text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Description</th>
+                                    <th class="text-right py-3 px-3 text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Qty</th>
+                                    <th class="text-right py-3 px-3 text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Unit Price</th>
+                                    <th class="text-right py-3 px-3 text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Amount</th>
                                 </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                @foreach ($invoice->itemsForDisplay() as $item)
+                                    <tr class="border-b border-slate-200 dark:border-slate-700">
+                                        <td class="py-3 px-3">
+                                            <x-invoice-item-details
+                                                :item="$item"
+                                                title-class="text-sm font-medium text-slate-900 dark:text-white"
+                                            />
+                                        </td>
+                                        <td class="py-3 px-3 text-right text-sm text-slate-900 dark:text-white">{{ $item->quantity }}</td>
+                                        <td class="py-3 px-3 text-right text-sm text-slate-900 dark:text-white">KSH {{ number_format($item->unit_price, 2) }}</td>
+                                        <td class="py-3 px-3 text-right text-sm font-medium text-slate-900 dark:text-white">KSH {{ number_format($item->amount, 2) }}</td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             @endif
 

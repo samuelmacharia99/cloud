@@ -230,13 +230,15 @@
                         </div>
                     </div>
                     <div class="p-5 space-y-4">
-                        <table class="w-full text-sm">
-                            <thead><tr class="text-left text-slate-500"><th class="pb-2 pr-4">Param</th><th class="pb-2 pr-4">Required</th><th class="pb-2">Description</th></tr></thead>
-                            <tbody class="text-slate-700 dark:text-slate-300">
-                                <tr><td class="py-1.5 font-mono text-purple-600 dark:text-purple-400">q</td><td>Yes</td><td>Label or FQDN</td></tr>
-                                <tr><td class="py-1.5 font-mono text-purple-600 dark:text-purple-400">period</td><td>No</td><td>Registration years (default 1)</td></tr>
-                            </tbody>
-                        </table>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-[44rem] w-full text-sm">
+                                <thead><tr class="text-left text-slate-500"><th class="pb-2 pr-4">Param</th><th class="pb-2 pr-4">Required</th><th class="pb-2">Description</th></tr></thead>
+                                <tbody class="text-slate-700 dark:text-slate-300">
+                                    <tr><td class="py-1.5 font-mono text-purple-600 dark:text-purple-400">q</td><td>Yes</td><td>Label or FQDN</td></tr>
+                                    <tr><td class="py-1.5 font-mono text-purple-600 dark:text-purple-400">period</td><td>No</td><td>Registration years (default 1)</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
                         @include('reseller.developers.partials.code-block', ['id' => 'domains-search-req', 'code' => "GET {$apiBase}/domains/search?q=acme&period=1"])
                         @include('reseller.developers.partials.code-block', ['id' => 'domains-search-res', 'code' => json_encode([
                             'success' => true,

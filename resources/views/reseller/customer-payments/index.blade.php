@@ -40,42 +40,44 @@
     </form>
 
     <div class="ui-card overflow-hidden">
-        <table class="w-full text-sm">
-            <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800">
-                <tr>
-                    <th class="px-4 py-3 text-left font-semibold">Date</th>
-                    <th class="px-4 py-3 text-left font-semibold">Customer</th>
-                    <th class="px-4 py-3 text-left font-semibold">Invoice</th>
-                    <th class="px-4 py-3 text-left font-semibold">Method</th>
-                    <th class="px-4 py-3 text-left font-semibold">Reference</th>
-                    <th class="px-4 py-3 text-right font-semibold">Amount</th>
-                    <th class="px-4 py-3 text-left font-semibold">Status</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
-                @forelse ($payments as $payment)
-                    <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                        <td class="px-4 py-3 text-slate-600">{{ $payment->created_at?->format('M j, Y') }}</td>
-                        <td class="px-4 py-3"><x-reseller.customer-link :user="$payment->invoice?->user" /></td>
-                        <td class="px-4 py-3">
-                            @if ($payment->invoice)
-                                <a href="{{ route('reseller.customer-invoices.show', $payment->invoice) }}" class="text-purple-600 hover:underline">{{ $payment->invoice->invoice_number }}</a>
-                            @else
-                                —
-                            @endif
-                        </td>
-                        <td class="px-4 py-3"><x-payment-badge :method="$payment->payment_method" /></td>
-                        <td class="px-4 py-3 font-mono text-xs text-slate-500">{{ $payment->transaction_reference ?: '—' }}</td>
-                        <td class="px-4 py-3 text-right font-semibold">KSH {{ number_format((float) $payment->amount, 2) }}</td>
-                        <td class="px-4 py-3"><x-status-badge :status="$payment->status" type="payment" /></td>
-                    </tr>
-                @empty
+        <div class="overflow-x-auto">
+            <table class="min-w-[44rem] w-full text-sm">
+                <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800">
                     <tr>
-                        <td colspan="7" class="px-4 py-12 text-center text-slate-500">No payments found.</td>
+                        <th class="px-4 py-3 text-left font-semibold">Date</th>
+                        <th class="px-4 py-3 text-left font-semibold">Customer</th>
+                        <th class="px-4 py-3 text-left font-semibold">Invoice</th>
+                        <th class="px-4 py-3 text-left font-semibold">Method</th>
+                        <th class="px-4 py-3 text-left font-semibold">Reference</th>
+                        <th class="px-4 py-3 text-right font-semibold">Amount</th>
+                        <th class="px-4 py-3 text-left font-semibold">Status</th>
                     </tr>
-                @endforelse
-            </tbody>
-        </table>
+                </thead>
+                <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                    @forelse ($payments as $payment)
+                        <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                            <td class="px-4 py-3 text-slate-600">{{ $payment->created_at?->format('M j, Y') }}</td>
+                            <td class="px-4 py-3"><x-reseller.customer-link :user="$payment->invoice?->user" /></td>
+                            <td class="px-4 py-3">
+                                @if ($payment->invoice)
+                                    <a href="{{ route('reseller.customer-invoices.show', $payment->invoice) }}" class="text-purple-600 hover:underline">{{ $payment->invoice->invoice_number }}</a>
+                                @else
+                                    —
+                                @endif
+                            </td>
+                            <td class="px-4 py-3"><x-payment-badge :method="$payment->payment_method" /></td>
+                            <td class="px-4 py-3 font-mono text-xs text-slate-500">{{ $payment->transaction_reference ?: '—' }}</td>
+                            <td class="px-4 py-3 text-right font-semibold">KSH {{ number_format((float) $payment->amount, 2) }}</td>
+                            <td class="px-4 py-3"><x-status-badge :status="$payment->status" type="payment" /></td>
+                        </tr>
+                    @empty
+                        <tr>
+                            <td colspan="7" class="px-4 py-12 text-center text-slate-500">No payments found.</td>
+                        </tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
     </div>
 
     {{ $payments->links() }}
