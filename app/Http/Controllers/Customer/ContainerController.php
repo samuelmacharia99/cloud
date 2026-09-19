@@ -1924,10 +1924,20 @@ class ContainerController extends Controller
     }
 
     /**
-     * Format uptime in human-readable format
+     * Format uptime in human-readable format.
+     *
+     * A container that never came up has no deployed_at and so no uptime, and
+     * getUptimeSeconds() returns null for it. Refusing null here threw out of
+     * the health endpoint, which is the one an operator opens to find out why
+     * the deployment failed: the console then sat on "Loading health" for
+     * exactly the services that needed looking at.
      */
-    private function formatUptime(int $seconds): string
+    private function formatUptime(?int $seconds): string
     {
+        if ($seconds === null || $seconds < 0) {
+            return '—';
+        }
+
         $days = intdiv($seconds, 86400);
         $hours = intdiv($seconds % 86400, 3600);
         $minutes = intdiv($seconds % 3600, 60);
