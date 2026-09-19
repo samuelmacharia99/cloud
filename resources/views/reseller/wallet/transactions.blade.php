@@ -79,9 +79,9 @@
                             </td>
                             <td class="px-6 py-4 text-sm text-slate-900 dark:text-white">{{ $transaction->description }}</td>
                             <td class="px-6 py-4 text-right text-sm font-medium {{ $transaction->isDebit() ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400' }}">
-                                {{ $transaction->isDebit() ? '-' : '+' }}KSH {{ number_format($transaction->amount, 2) }}
+                                {{ $transaction->isDebit() ? '-' : '+' }}{{ $wallet->formatAmount($transaction->amount) }}
                             </td>
-                            <td class="px-6 py-4 text-right text-sm font-semibold text-slate-900 dark:text-white">KSH {{ number_format($transaction->balance_after, 2) }}</td>
+                            <td class="px-6 py-4 text-right text-sm font-semibold text-slate-900 dark:text-white">{{ $wallet->formatAmount($transaction->balance_after) }}</td>
                         </tr>
                     @empty
                         <tr>

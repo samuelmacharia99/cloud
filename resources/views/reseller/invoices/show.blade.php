@@ -113,8 +113,8 @@
                                             />
                                         </td>
                                         <td class="py-3 px-3 text-right text-sm text-slate-900 dark:text-white">{{ $item->quantity }}</td>
-                                        <td class="py-3 px-3 text-right text-sm text-slate-900 dark:text-white">KSH {{ number_format($item->unit_price, 2) }}</td>
-                                        <td class="py-3 px-3 text-right text-sm font-medium text-slate-900 dark:text-white">KSH {{ number_format($item->amount, 2) }}</td>
+                                        <td class="py-3 px-3 text-right text-sm text-slate-900 dark:text-white">{{ $invoice->formatMoney($item->unit_price) }}</td>
+                                        <td class="py-3 px-3 text-right text-sm font-medium text-slate-900 dark:text-white">{{ $invoice->formatMoney($item->amount) }}</td>
                                     </tr>
                                 @endforeach
                             </tbody>
@@ -128,26 +128,26 @@
                 <div class="w-full md:w-80">
                     <div class="flex justify-between py-2 border-b border-slate-200 dark:border-slate-700 mb-2">
                         <span class="text-sm text-slate-600 dark:text-slate-400">Subtotal</span>
-                        <span class="text-sm font-medium text-slate-900 dark:text-white">KSH {{ number_format($invoice->subtotal, 2) }}</span>
+                        <span class="text-sm font-medium text-slate-900 dark:text-white">{{ $invoice->formatMoney($invoice->subtotal) }}</span>
                     </div>
                     <div class="flex justify-between py-2 border-b border-slate-200 dark:border-slate-700 mb-3">
                         <span class="text-sm text-slate-600 dark:text-slate-400">Tax</span>
-                        <span class="text-sm font-medium text-slate-900 dark:text-white">KSH {{ number_format($invoice->tax, 2) }}</span>
+                        <span class="text-sm font-medium text-slate-900 dark:text-white">{{ $invoice->formatMoney($invoice->tax) }}</span>
                     </div>
                     <div class="flex justify-between py-3 bg-purple-50 dark:bg-purple-900/20 px-3 rounded">
                         <span class="text-base font-bold text-slate-900 dark:text-white">Total</span>
-                        <span class="text-lg font-bold text-slate-900 dark:text-white">KSH {{ number_format($invoice->total, 2) }}</span>
+                        <span class="text-lg font-bold text-slate-900 dark:text-white">{{ $invoice->formatMoney($invoice->total) }}</span>
                     </div>
                     @if((float) $invoice->wallet_amount_applied > 0)
                     <div class="flex justify-between py-2 mt-2 text-emerald-700 dark:text-emerald-300">
                         <span class="text-sm">Wallet Applied</span>
-                        <span class="text-sm font-semibold">- KSH {{ number_format($invoice->wallet_amount_applied, 2) }}</span>
+                        <span class="text-sm font-semibold">- {{ $invoice->formatMoney($invoice->wallet_amount_applied) }}</span>
                     </div>
                     @endif
                     @if(in_array($invoice->status->value, ['unpaid', 'overdue']))
                     <div class="flex justify-between py-3 mt-2 bg-purple-100 dark:bg-purple-900/40 px-3 rounded">
                         <span class="text-base font-bold text-slate-900 dark:text-white">Amount Due</span>
-                        <span class="text-lg font-bold text-purple-700 dark:text-purple-300">KSH {{ number_format($amountDue, 2) }}</span>
+                        <span class="text-lg font-bold text-purple-700 dark:text-purple-300">{{ $invoice->formatMoney($amountDue) }}</span>
                     </div>
                     @endif
                 </div>
@@ -196,7 +196,7 @@
                             @foreach ($invoice->payments as $payment)
                                 <div class="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800 rounded">
                                     <div>
-                                        <p class="text-sm font-medium text-slate-900 dark:text-white">KSH {{ number_format($payment->amount, 2) }}</p>
+                                        <p class="text-sm font-medium text-slate-900 dark:text-white">{{ $payment->formatMoney() }}</p>
                                         <p class="text-xs text-slate-600 dark:text-slate-400">{{ $payment->payment_method?->label() }} • {{ $payment->created_at->format('M d, Y') }}</p>
                                     </div>
                                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium

@@ -6,6 +6,7 @@ use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
 use App\Services\Billing\InvoiceCurrencyService;
 use App\Services\CreditService;
+use App\Support\CurrencyFormatter;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -53,6 +54,21 @@ class Payment extends Model
     public function user()
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * A payment carries its own currency, which is not always the invoice's —
+     * a wallet settlement in KES against a USD invoice is a normal case. Ledger
+     * rows must therefore be labelled from the payment, not from its parent.
+     */
+    public function displayCurrency(): string
+    {
+        return $this->currency ?: config('currency.base', 'KES');
+    }
+
+    public function formatMoney(float|int|string|null $amount = null): string
+    {
+        return CurrencyFormatter::format((float) ($amount ?? $this->amount), $this->displayCurrency());
     }
 
     public function invoice()

@@ -34,9 +34,9 @@
 }">
     <div>
         <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Select Payment Method</h1>
-        <p class="text-slate-600 dark:text-slate-400 mt-1">Invoice #{{ $invoice->invoice_number }} — Amount due: KSH {{ number_format($amountDue, 2) }}</p>
+        <p class="text-slate-600 dark:text-slate-400 mt-1">Invoice #{{ $invoice->invoice_number }} — Amount due: {{ $invoice->formatMoney($amountDue) }}</p>
         @if((float) $invoice->wallet_amount_applied > 0)
-            <p class="text-sm text-emerald-600 dark:text-emerald-400 mt-1">Wallet applied: KSH {{ number_format($invoice->wallet_amount_applied, 2) }}</p>
+            <p class="text-sm text-emerald-600 dark:text-emerald-400 mt-1">Wallet applied: {{ $invoice->formatMoney($invoice->wallet_amount_applied) }}</p>
         @endif
     </div>
 
@@ -54,11 +54,11 @@
                 <span class="ml-4 flex-1">
                     <span class="font-semibold text-slate-900 dark:text-white">Pay with wallet balance</span>
                     <span class="block text-sm text-slate-600 dark:text-slate-400 mt-1">
-                        Available: KSH {{ number_format($wallet->balance, 2) }}.
+                        Available: {{ $wallet->formatAmount($wallet->balance) }}.
                         @if($walletCoversInvoice)
                             Covers this invoice in full.
                         @else
-                            Covers KSH {{ number_format(min($wallet->balance, $amountDue), 2) }}; choose another method below for the remainder if needed.
+                            Covers {{ $invoice->formatMoney(min($wallet->balance, $amountDue)) }}; choose another method below for the remainder if needed.
                         @endif
                     </span>
                 </span>
@@ -73,7 +73,7 @@
                 <span>
                     <span class="font-medium text-slate-900 dark:text-white">Apply wallet toward this payment</span>
                     <span class="block text-sm text-slate-600 dark:text-slate-400 mt-1">
-                        Use KSH <span x-text="Math.min(walletBalance, amountDue).toFixed(2)"></span> from wallet, then pay KSH <span x-text="remaining.toFixed(2)"></span> with the selected method.
+                        Use {{ $invoice->currencySymbol() }} <span x-text="Math.min(walletBalance, amountDue).toFixed(2)"></span> from wallet, then pay {{ $invoice->currencySymbol() }} <span x-text="remaining.toFixed(2)"></span> with the selected method.
                     </span>
                 </span>
             </label>
@@ -115,11 +115,11 @@
             <div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-4 text-sm text-slate-700 dark:text-slate-300">
                 <div class="flex justify-between gap-4">
                     <span>Wallet applied</span>
-                    <span class="font-semibold">KSH <span x-text="walletApplied.toFixed(2)"></span></span>
+                    <span class="font-semibold">{{ $invoice->currencySymbol() }} <span x-text="walletApplied.toFixed(2)"></span></span>
                 </div>
                 <div class="flex justify-between gap-4 mt-2">
                     <span>Remaining to charge</span>
-                    <span class="font-semibold">KSH <span x-text="remaining.toFixed(2)"></span></span>
+                    <span class="font-semibold">{{ $invoice->currencySymbol() }} <span x-text="remaining.toFixed(2)"></span></span>
                 </div>
             </div>
 

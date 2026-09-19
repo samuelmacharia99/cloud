@@ -20,11 +20,11 @@
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div class="ui-card p-5">
             <p class="text-sm text-slate-500">All-time collected</p>
-            <p class="text-2xl font-bold text-emerald-600 mt-1">KSH {{ number_format($totalCollected, 2) }}</p>
+            <p class="text-2xl font-bold text-emerald-600 mt-1">{{ \App\Support\CurrencyFormatter::format($totalCollected, config('currency.base', 'KES')) }}</p>
         </div>
         <div class="ui-card p-5">
             <p class="text-sm text-slate-500">Last 30 days</p>
-            <p class="text-2xl font-bold text-emerald-600 mt-1">KSH {{ number_format($collected30d, 2) }}</p>
+            <p class="text-2xl font-bold text-emerald-600 mt-1">{{ \App\Support\CurrencyFormatter::format($collected30d, config('currency.base', 'KES')) }}</p>
         </div>
     </div>
 
@@ -67,7 +67,7 @@
                             </td>
                             <td class="px-4 py-3"><x-payment-badge :method="$payment->payment_method" /></td>
                             <td class="px-4 py-3 font-mono text-xs text-slate-500">{{ $payment->transaction_reference ?: '—' }}</td>
-                            <td class="px-4 py-3 text-right font-semibold">KSH {{ number_format((float) $payment->amount, 2) }}</td>
+                            <td class="px-4 py-3 text-right font-semibold">{{ $payment->formatMoney() }}</td>
                             <td class="px-4 py-3"><x-status-badge :status="$payment->status" type="payment" /></td>
                         </tr>
                     @empty

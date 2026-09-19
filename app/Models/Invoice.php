@@ -195,6 +195,15 @@ class Invoice extends Model
     }
 
     /**
+     * Just the symbol, for totals that are computed in the browser and so
+     * cannot go through formatMoney.
+     */
+    public function currencySymbol(): string
+    {
+        return CurrencyFormatter::symbol($this->displayCurrency());
+    }
+
+    /**
      * Check if invoice is fully paid (including credits)
      */
     public function isFullyPaid(): bool

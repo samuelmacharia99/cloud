@@ -65,10 +65,26 @@ class ResellerWallet extends Model
         return $this->last_low_balance_alert_at->diffInHours(now()) >= 96;
     }
 
+    /**
+     * How this wallet's currency is written to its owner.
+     *
+     * KES is shown as KSH because that is what Kenyan customers read on every
+     * other statement they get. Defined once here so the ledger rows cannot
+     * drift from the balance above them, which is what happened while views
+     * hardcoded the label themselves.
+     */
+    public function currencyLabel(): string
+    {
+        return $this->currency === 'KES' ? 'KSH' : (string) $this->currency;
+    }
+
+    public function formatAmount(float|int|string|null $amount): string
+    {
+        return $this->currencyLabel().' '.number_format((float) $amount, 2);
+    }
+
     public function getFormattedBalance(): string
     {
-        $label = $this->currency === 'KES' ? 'KSH' : $this->currency;
-
-        return "{$label} ".number_format($this->balance, 2);
+        return $this->formatAmount($this->balance);
     }
 }

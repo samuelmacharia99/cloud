@@ -42,8 +42,11 @@ class CustomerPaymentController extends Controller
 
         return view('reseller.customer-payments.index', [
             'payments' => $payments,
-            'totalCollected' => (float) (clone $totalsQuery)->sum('amount'),
-            'collected30d' => (float) (clone $totalsQuery)->where('created_at', '>=', now()->subDays(30))->sum('amount'),
+            // sumAmountKes, not sum('amount'): a reseller collecting in more than
+            // one currency was having the raw figures added together, so a USD
+            // payment counted as though it were shillings.
+            'totalCollected' => (clone $totalsQuery)->sumAmountKes(),
+            'collected30d' => (clone $totalsQuery)->where('created_at', '>=', now()->subDays(30))->sumAmountKes(),
         ]);
     }
 }

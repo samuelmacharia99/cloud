@@ -42,11 +42,11 @@
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <div>
                 <p class="text-xs text-slate-500 uppercase">Total</p>
-                <p class="text-xl font-bold">KSH {{ number_format($invoice->total, 2) }}</p>
+                <p class="text-xl font-bold">{{ $invoice->formatMoney($invoice->total) }}</p>
             </div>
             <div>
                 <p class="text-xs text-slate-500 uppercase">Remaining</p>
-                <p class="text-xl font-bold text-amber-600">KSH {{ number_format($amountRemaining ?? $invoice->getAmountRemaining(), 2) }}</p>
+                <p class="text-xl font-bold text-amber-600">{{ $invoice->formatMoney($amountRemaining ?? $invoice->getAmountRemaining()) }}</p>
             </div>
             <div>
                 <p class="text-xs text-slate-500 uppercase">Due</p>
@@ -61,7 +61,7 @@
             @foreach ($invoice->items as $item)
                 <div class="py-3 flex justify-between text-sm">
                     <span>{{ $item->displayDescription() }} × {{ $item->quantity }}</span>
-                    <span>KSH {{ number_format($item->amount, 2) }}</span>
+                    <span>{{ $invoice->formatMoney($item->amount) }}</span>
                 </div>
             @endforeach
         </div>
@@ -74,7 +74,7 @@
                 @foreach ($invoice->payments as $payment)
                     <li class="flex justify-between">
                         <span>{{ $payment->paid_at?->format('M d, Y') ?? $payment->created_at->format('M d, Y') }} · {{ ucfirst($payment->payment_method->value ?? $payment->payment_method) }}</span>
-                        <span class="font-medium">KSH {{ number_format($payment->amount, 2) }}</span>
+                        <span class="font-medium">{{ $payment->formatMoney() }}</span>
                     </li>
                 @endforeach
             </ul>
@@ -91,7 +91,7 @@
             <form method="POST" action="{{ route('reseller.customer-invoices.add-payment', $invoice) }}" class="p-6 space-y-4">
                 @csrf
                 <div>
-                    <label class="block text-sm font-medium mb-2">Amount (KSH)</label>
+                    <label class="block text-sm font-medium mb-2">Amount ({{ $invoice->displayCurrency() }})</label>
                     <input type="number" name="amount" step="0.01" max="{{ $amountRemaining }}" value="{{ $amountRemaining }}" required class="w-full px-4 py-2 border rounded-lg bg-white dark:bg-slate-800">
                 </div>
                 <div>

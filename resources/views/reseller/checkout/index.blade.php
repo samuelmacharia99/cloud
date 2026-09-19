@@ -146,14 +146,14 @@
                 <div class="mb-6 p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-lg">
                     <div class="flex items-center justify-between mb-3">
                         <p class="text-sm font-medium text-emerald-900 dark:text-emerald-200">Wallet Balance</p>
-                        <p class="text-lg font-bold text-emerald-700 dark:text-emerald-300">KSH {{ number_format($wallet->balance, 2) }}</p>
+                        <p class="text-lg font-bold text-emerald-700 dark:text-emerald-300">{{ $wallet->formatAmount($wallet->balance) }}</p>
                     </div>
                     <label class="flex items-start gap-3 cursor-pointer">
                         <input type="checkbox" name="apply_wallet" value="1" x-model="applyWallet" class="mt-1 rounded border-slate-300 text-purple-600 focus:ring-purple-500">
                         <span class="text-sm text-slate-700 dark:text-slate-300">
                             Apply wallet balance to this order
                             <span class="block text-xs text-slate-500 dark:text-slate-400 mt-1" x-show="applyWallet">
-                                Up to KSH {{ number_format($walletApplicable, 2) }} will be used from your wallet.
+                                Up to {{ $wallet->formatAmount($walletApplicable) }} will be used from your wallet.
                             </span>
                         </span>
                     </label>
