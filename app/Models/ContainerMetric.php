@@ -185,7 +185,9 @@ class ContainerMetric extends Model
             ->inBillingPeriod($from, $to)
             ->orderBy('recorded_at')
             ->orderBy('id')
-            ->get(['net_io_rx_bytes', 'net_io_tx_bytes']);
+            ->toBase()
+            ->select(['net_io_rx_bytes', 'net_io_tx_bytes'])
+            ->cursor();
 
         return self::transferBytesFromSamples($samples);
     }
@@ -237,22 +239,48 @@ class ContainerMetric extends Model
      */
     public static function transferBytesForDeployments(array $deploymentIds, Carbon $from, Carbon $to): array
     {
+        $ids = array_values(array_unique($deploymentIds));
+
+        if ($ids === []) {
+            return [];
+        }
+
+        // Samples are taken every five minutes, so a month holds roughly nine
+        // thousand rows per deployment. Reading a batch of them into memory at
+        // once and grouping afterwards is how this exhausted 128 MB on a
+        // reseller with a real number of containers. Stream them instead, in
+        // deployment order, and keep only the one deployment being walked: the
+        // query is still a single pass and the memory no longer depends on how
+        // many containers the reseller has.
         $totals = [];
+        $currentId = null;
+        $samples = [];
 
-        foreach (array_chunk(array_values(array_unique($deploymentIds)), 50) as $chunk) {
-            $grouped = self::query()
-                ->whereIn('container_deployment_id', $chunk)
-                ->usageSamples()
-                ->inBillingPeriod($from, $to)
-                ->orderBy('container_deployment_id')
-                ->orderBy('recorded_at')
-                ->orderBy('id')
-                ->get(['container_deployment_id', 'net_io_rx_bytes', 'net_io_tx_bytes'])
-                ->groupBy('container_deployment_id');
+        $rows = self::query()
+            ->whereIn('container_deployment_id', $ids)
+            ->usageSamples()
+            ->inBillingPeriod($from, $to)
+            ->orderBy('container_deployment_id')
+            ->orderBy('recorded_at')
+            ->orderBy('id')
+            ->toBase()
+            ->select(['container_deployment_id', 'net_io_rx_bytes', 'net_io_tx_bytes'])
+            ->cursor();
 
-            foreach ($grouped as $deploymentId => $samples) {
-                $totals[(int) $deploymentId] = self::transferBytesFromSamples($samples);
+        foreach ($rows as $row) {
+            $id = (int) $row->container_deployment_id;
+
+            if ($currentId !== null && $id !== $currentId) {
+                $totals[$currentId] = self::transferBytesFromSamples($samples);
+                $samples = [];
             }
+
+            $currentId = $id;
+            $samples[] = $row;
+        }
+
+        if ($currentId !== null) {
+            $totals[$currentId] = self::transferBytesFromSamples($samples);
         }
 
         return $totals;
