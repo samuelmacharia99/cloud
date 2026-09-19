@@ -66,7 +66,41 @@
             <div class="ui-card p-6">
                 <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                     <div class="min-w-0">
-                        <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-1">Re-sync with Cloudflare</h2>
+                        @php
+                            $zoneState = $zoneState ?? null;
+                            $stateTone = match ($zoneState['state'] ?? 'unknown') {
+                                'live' => 'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:ring-emerald-800',
+                                'pending' => 'bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:ring-amber-800',
+                                'missing', 'drifted' => 'bg-red-50 text-red-700 ring-red-200 dark:bg-red-950 dark:text-red-300 dark:ring-red-800',
+                                default => 'bg-slate-100 text-slate-600 ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700',
+                            };
+                        @endphp
+
+                        <div class="flex flex-wrap items-center gap-2 mb-2">
+                            <h2 class="text-lg font-bold text-slate-900 dark:text-white">Cloudflare DNS</h2>
+                            @if ($zoneState)
+                                <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold ring-1 {{ $stateTone }}">
+                                    {{ $zoneState['label'] }}
+                                </span>
+                                @if ($zoneState['checked_at'])
+                                    <span class="text-xs text-slate-400 dark:text-slate-500">checked {{ $zoneState['checked_at']->diffForHumans() }}</span>
+                                @endif
+                            @endif
+                        </div>
+
+                        @if ($zoneState)
+                            <p class="text-sm text-slate-600 dark:text-slate-400 max-w-xl mb-2">{{ $zoneState['detail'] }}</p>
+
+                            @if (($zoneState['state'] ?? null) === 'pending')
+                                <p class="text-sm text-slate-500 dark:text-slate-400 max-w-xl mb-2">
+                                    Set these at your registrar:
+                                    <strong>{{ $domain->nameserver_1 ?? '—' }}</strong>@if($domain->nameserver_2) and <strong>{{ $domain->nameserver_2 }}</strong>@endif.
+                                    We check every twenty minutes and will tell you the moment it goes live.
+                                </p>
+                            @endif
+                        @endif
+
+                        <h3 class="text-sm font-semibold text-slate-900 dark:text-white mb-1">Re-sync with Cloudflare</h3>
                         <p class="text-sm text-slate-500 dark:text-slate-400 max-w-xl">
                             Checks that Cloudflare still holds a zone for <strong>{{ $domain->fqdn() }}</strong>, moves this domain onto the right
                             one if the name has changed since the zone was created, republishes the mail records, and re-reads the nameservers.
@@ -75,8 +109,8 @@
                     </div>
                     <form action="{{ route($dnsRoutePrefix.'.provision', $domain) }}" method="POST" class="shrink-0">
                         @csrf
-                        <button type="submit" class="px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm font-medium rounded-lg transition whitespace-nowrap">
-                            Re-sync DNS
+                        <button type="submit" class="px-4 py-2 text-sm font-medium rounded-lg transition whitespace-nowrap {{ ($zoneState['needs_resync'] ?? false) ? 'bg-red-600 hover:bg-red-700 text-white' : 'border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800' }}">
+                            {{ ($zoneState['needs_resync'] ?? false) ? 'Put this domain back on Cloudflare' : 'Re-sync DNS' }}
                         </button>
                     </form>
                 </div>

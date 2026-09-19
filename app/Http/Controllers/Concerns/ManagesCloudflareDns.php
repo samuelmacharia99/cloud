@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Concerns;
 use App\Models\DnsZone;
 use App\Models\Domain;
 use App\Models\User;
+use App\Services\Dns\CloudflareZoneStateService;
 use App\Services\Dns\DomainCloudflareDnsService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -31,6 +32,7 @@ trait ManagesCloudflareDns
                 'usesDirectAdmin' => true,
                 'cloudflareAvailable' => false,
                 'canProvision' => false,
+                'zoneState' => null,
             ];
         }
 
@@ -51,6 +53,10 @@ trait ManagesCloudflareDns
             'cloudflareAvailable' => $dns->isAvailableForCustomer($actor),
             'canProvision' => $dns->shouldOfferCloudflareDns($domain, $actor)
                 && ($domain->cloudflare_dns_enabled || $dns->isAvailableForCustomer($actor)),
+            // Read from what was last recorded, not from Cloudflare: a page
+            // render must not wait on a third party to draw a badge. The state
+            // is refreshed by the re-sync action and by the nightly sweep.
+            'zoneState' => app(CloudflareZoneStateService::class)->current($domain),
         ];
     }
 

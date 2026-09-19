@@ -16,6 +16,14 @@ class DnsZone extends Model
         'status',
         'provider',
         'external_zone_id',
+        'provider_status',
+        'provider_checked_at',
+        'activated_at',
+    ];
+
+    protected $casts = [
+        'provider_checked_at' => 'datetime',
+        'activated_at' => 'datetime',
     ];
 
     public function domain()

@@ -117,6 +117,7 @@ class SettingSeeder extends Seeder
             ['key' => 'notify_service_activated', 'value' => 'true', 'description' => 'Notify when service is activated'],
             ['key' => 'notify_service_terminated', 'value' => 'true', 'description' => 'Notify when service is terminated'],
             ['key' => 'notify_domain_expiry', 'value' => 'true', 'description' => 'Notify on domain expiry warnings'],
+            ['key' => 'notify_domain_dns_live', 'value' => 'true', 'description' => 'Notify the domain owner when its Cloudflare DNS zone goes live'],
             ['key' => 'notify_service_unsuspended', 'value' => 'true', 'description' => 'Notify when service is restored'],
             ['key' => 'notify_hosting_package_usage_warning', 'value' => 'true', 'description' => 'Notify customers when hosting usage reaches the upgrade warning threshold'],
             ['key' => 'notify_hosting_upgrade_completed', 'value' => 'true', 'description' => 'Notify customers when a paid hosting upgrade is applied'],

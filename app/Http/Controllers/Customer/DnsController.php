@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Customer;
 use App\Http\Controllers\Concerns\ManagesCloudflareDns;
 use App\Http\Controllers\Controller;
 use App\Models\Domain;
+use App\Services\Dns\CloudflareZoneStateService;
 use App\Services\Dns\DomainCloudflareDnsService;
 use App\Services\Registrar\RegistrarFulfillmentService;
 use Illuminate\Http\Request;
@@ -29,6 +30,10 @@ class DnsController extends Controller
         $this->authorize('manageDns', $domain);
 
         $result = $this->dns->provisionZone($domain);
+
+        // The action the operator just pressed is the moment to ask
+        // Cloudflare where the zone stands, rather than the next page load.
+        app(CloudflareZoneStateService::class)->refresh($domain->fresh());
 
         if (! $result['success']) {
             return back()->with('error', $result['message']);

@@ -178,6 +178,30 @@ class CloudflareDnsService
      * @param  array<string, mixed>  $zone
      * @return array{success: bool, message: string, zone_id: string, zone_name: string, nameservers: list<string>}
      */
+    /**
+     * Whether a failed lookup means the zone is not there any more, as opposed
+     * to Cloudflare being unreachable or the token being wrong.
+     *
+     * 1049 is an unknown zone identifier and 7003 a route Cloudflare cannot
+     * resolve, both of which it answers for a zone that has been deleted.
+     *
+     * @param  array<string, mixed>  $result
+     */
+    public function looksLikeMissingZone(array $result): bool
+    {
+        if ($result['success'] ?? false) {
+            return false;
+        }
+
+        if ((int) ($result['http_status'] ?? 0) === 404) {
+            return true;
+        }
+
+        $codes = is_array($result['error_codes'] ?? null) ? $result['error_codes'] : [];
+
+        return array_intersect($codes, [1049, 7003]) !== [];
+    }
+
     private function zoneResult(array $zone, string $message): array
     {
         return [
@@ -188,6 +212,11 @@ class CloudflareDnsService
             // row has: renaming a domain leaves the row pointing at a zone still
             // called by the old spelling.
             'zone_name' => strtolower((string) ($zone['name'] ?? '')),
+            // Cloudflare's own word for the zone: initializing, then pending
+            // until it sees the nameservers at the registry, then active. A zone
+            // can also be moved or deleted later.
+            'zone_status' => strtolower((string) ($zone['status'] ?? '')),
+            'activated_on' => (string) ($zone['activated_on'] ?? ''),
             'nameservers' => array_values(array_filter(array_map(
                 'strval',
                 $zone['name_servers'] ?? []
@@ -376,6 +405,15 @@ class CloudflareDnsService
                     return [
                         'success' => false,
                         'message' => $errors !== '' ? $errors : 'Cloudflare API request failed.',
+                        // Carried so a caller can tell a zone that is gone from
+                        // an API that cannot be reached. Telling a customer their
+                        // DNS has vanished because of an outage is worse than
+                        // saying nothing.
+                        'http_status' => $response->status(),
+                        'error_codes' => array_values(array_map(
+                            static fn ($error): int => (int) ($error['code'] ?? 0),
+                            is_array($json['errors'] ?? null) ? $json['errors'] : []
+                        )),
                     ];
                 }
 

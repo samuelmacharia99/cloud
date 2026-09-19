@@ -207,6 +207,13 @@ class CronJobSeeder extends Seeder
                 'enabled' => true,
             ],
             [
+                'name' => 'Refresh Cloudflare Zone Status',
+                'description' => 'Checks Cloudflare for DNS zones that are not live yet and notifies the owner when one activates.',
+                'command' => 'cron:refresh-cloudflare-zones',
+                'schedule' => '*/20 * * * *',
+                'enabled' => true,
+            ],
+            [
                 'name' => 'Collect Reseller Disk Usage',
                 'description' => 'Records daily DirectAdmin and container disk usage per reseller for pool billing.',
                 'command' => 'cron:collect-reseller-disk-usage',

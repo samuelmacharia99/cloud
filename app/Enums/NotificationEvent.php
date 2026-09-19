@@ -51,6 +51,7 @@ enum NotificationEvent: string
     case HostingUpgradeCompleted = 'hosting_upgrade_completed';
     case CustomerAccountTransferred = 'customer_account_transferred';
     case ResellerCustomerAssigned = 'reseller_customer_assigned';
+    case DomainDnsLive = 'domain_dns_live';
     case AdminBroadcast = 'admin_broadcast';
 
     public function settingKey(): string
@@ -102,6 +103,7 @@ enum NotificationEvent: string
             self::HostingUpgradeCompleted => 'notify_hosting_upgrade_completed',
             self::CustomerAccountTransferred => 'notify_customer_account_transferred',
             self::ResellerCustomerAssigned => 'notify_reseller_customer_assigned',
+            self::DomainDnsLive => 'notify_domain_dns_live',
             self::AdminBroadcast => 'notify_admin_broadcast',
         };
     }

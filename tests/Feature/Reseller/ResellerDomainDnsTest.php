@@ -3,6 +3,7 @@
 namespace Tests\Feature\Reseller;
 
 use App\Enums\RegistrarDriver;
+use App\Models\DnsZone;
 use App\Models\Domain;
 use App\Models\DomainExtension;
 use App\Models\Registrar;
@@ -101,6 +102,45 @@ class ResellerDomainDnsTest extends TestCase
             ->assertSee('Add DNS Record')
             ->assertSee('www')
             ->assertSee('1.2.3.4');
+    }
+
+    public function test_the_dns_page_says_where_the_zone_stands(): void
+    {
+        $this->enableCloudflare();
+        $reseller = $this->createReseller();
+        $domain = $this->createManagedDomain($reseller, $reseller, [
+            'cloudflare_dns_enabled' => true,
+            'cloudflare_zone_id' => 'zone-reseller',
+        ]);
+        $this->fakeCloudflareZone();
+
+        // Nothing has been recorded about this zone yet, so the page says so
+        // rather than implying the domain is serving.
+        $this->actingAs($reseller)
+            ->get(route('reseller.domains.dns.index', $domain))
+            ->assertOk()
+            ->assertSee('Status unknown')
+            ->assertSee('Re-sync DNS');
+
+        DnsZone::query()->updateOrCreate(
+            ['domain_id' => $domain->id, 'provider' => 'cloudflare'],
+            ['name' => $domain->fqdn(), 'external_zone_id' => 'zone-reseller', 'provider_status' => 'live', 'provider_checked_at' => now(), 'activated_at' => now()],
+        );
+
+        $this->actingAs($reseller)
+            ->get(route('reseller.domains.dns.index', $domain))
+            ->assertOk()
+            ->assertSee('Live on Cloudflare');
+
+        DnsZone::query()->where('domain_id', $domain->id)->update(['provider_status' => 'missing']);
+
+        // The card has to be able to say the domain is no longer there, and
+        // offer the way back rather than a neutral re-sync.
+        $this->actingAs($reseller)
+            ->get(route('reseller.domains.dns.index', $domain))
+            ->assertOk()
+            ->assertSee('Not on Cloudflare')
+            ->assertSee('Put this domain back on Cloudflare');
     }
 
     public function test_reseller_can_open_dns_page_for_customer_domain(): void
