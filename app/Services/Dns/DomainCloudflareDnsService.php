@@ -137,6 +137,23 @@ class DomainCloudflareDnsService
 
         $fqdn = strtolower($domain->fqdn());
 
+        // A domain that was renamed still points at the zone created under its
+        // old name. Cloudflare then treats every record name we send as relative
+        // to that old zone and appends it, so "_dmarc.new-name.co.ke" lands as
+        // "_dmarc.new-name.co.ke.old-name.co.ke" and the mail records silently
+        // stop meaning anything. Check the zone still carries this name before
+        // trusting the id, and re-provision under the right one when it does not.
+        if ($domain->cloudflare_zone_id && $this->zoneNameHasDrifted($domain, $fqdn)) {
+            Log::warning('Cloudflare zone no longer matches the domain name; re-provisioning', [
+                'domain_id' => $domain->id,
+                'fqdn' => $fqdn,
+                'stale_zone_id' => $domain->cloudflare_zone_id,
+            ]);
+
+            $domain->update(['cloudflare_zone_id' => null]);
+            $domain->refresh();
+        }
+
         if ($domain->cloudflare_zone_id) {
             $this->refreshAssignedNameservers($domain, pushToRegistrar: false);
             $push = $this->pushAssignedNameserversToRegistrar($domain->fresh());
@@ -205,6 +222,25 @@ class DomainCloudflareDnsService
             'message' => $this->provisionedMessage($domain->fresh(), $push, already: false),
             'zone' => $zone,
         ];
+    }
+
+    /**
+     * Whether the zone this domain points at is still named after it.
+     *
+     * A lookup failure is not drift: Cloudflare being unreachable must not cause
+     * a working zone to be abandoned and a duplicate created.
+     */
+    private function zoneNameHasDrifted(Domain $domain, string $fqdn): bool
+    {
+        $zone = $this->cloudflare->getZone((string) $domain->cloudflare_zone_id);
+
+        if (! ($zone['success'] ?? false)) {
+            return false;
+        }
+
+        $zoneName = strtolower(trim((string) ($zone['zone_name'] ?? '')));
+
+        return $zoneName !== '' && $zoneName !== strtolower(trim($fqdn));
     }
 
     public function provisionFromServiceMeta(Domain $domain, array $serviceMeta): void

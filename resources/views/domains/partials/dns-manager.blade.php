@@ -64,6 +64,25 @@
             }"
         >
             <div class="ui-card p-6">
+                <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                    <div class="min-w-0">
+                        <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-1">Re-sync with Cloudflare</h2>
+                        <p class="text-sm text-slate-500 dark:text-slate-400 max-w-xl">
+                            Checks that Cloudflare still holds a zone for <strong>{{ $domain->fqdn() }}</strong>, moves this domain onto the right
+                            one if the name has changed since the zone was created, republishes the mail records, and re-reads the nameservers.
+                            Records you added by hand are left alone.
+                        </p>
+                    </div>
+                    <form action="{{ route($dnsRoutePrefix.'.provision', $domain) }}" method="POST" class="shrink-0">
+                        @csrf
+                        <button type="submit" class="px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm font-medium rounded-lg transition whitespace-nowrap">
+                            Re-sync DNS
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="ui-card p-6">
                 <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-1">Add DNS Record</h2>
                 <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Changes apply on Cloudflare immediately. Proxy (orange cloud) is available for A, AAAA, and CNAME.</p>
                 <form action="{{ route($dnsRoutePrefix.'.add-record', $domain) }}" method="POST" class="grid grid-cols-1 md:grid-cols-2 gap-4">

@@ -176,7 +176,7 @@ class CloudflareDnsService
 
     /**
      * @param  array<string, mixed>  $zone
-     * @return array{success: bool, message: string, zone_id: string, nameservers: list<string>}
+     * @return array{success: bool, message: string, zone_id: string, zone_name: string, nameservers: list<string>}
      */
     private function zoneResult(array $zone, string $message): array
     {
@@ -184,6 +184,10 @@ class CloudflareDnsService
             'success' => true,
             'message' => $message,
             'zone_id' => (string) ($zone['id'] ?? ''),
+            // The name Cloudflare has, which is not always the name the domain
+            // row has: renaming a domain leaves the row pointing at a zone still
+            // called by the old spelling.
+            'zone_name' => strtolower((string) ($zone['name'] ?? '')),
             'nameservers' => array_values(array_filter(array_map(
                 'strval',
                 $zone['name_servers'] ?? []
